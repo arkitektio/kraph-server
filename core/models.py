@@ -16,102 +16,6 @@ import json
 from django.conf import settings
 
 
-class DatasetManager(models.Manager):
-    def get_current_default_for_user(self, user):
-        potential = self.filter(creator=user, is_default=True).first()
-        if not potential:
-            return self.create(creator=user, name="Default", is_default=True)
-
-        return potential
-
-
-class Dataset(models.Model):
-    """
-    A dataset is a collection of data files and metadata files.
-    It mimics the concept of a folder in a file system and is the top level
-    object in the data model.
-
-    """
-
-    creator = models.ForeignKey(
-        get_user_model(),
-        on_delete=models.CASCADE,
-        related_name="created_datasets",
-        help_text="The user that created the dataset",
-    )
-    created_at = models.DateTimeField(
-        auto_now_add=True, help_text="The time the dataset was created"
-    )
-    parent = models.ForeignKey(
-        "self", on_delete=models.CASCADE, null=True, blank=True, related_name="children"
-    )
-    name = models.CharField(max_length=200, help_text="The name of the dataset")
-    description = models.CharField(
-        max_length=1000,
-        null=True,
-        blank=True,
-        help_text="The description of the dataset",
-    )
-    pinned_by = models.ManyToManyField(
-        get_user_model(),
-        related_name="pinned_datasets",
-        blank=True,
-        help_text="The users that have pinned the dataset",
-    )
-    is_default = models.BooleanField(
-        default=False,
-        help_text="Whether the dataset is the current default dataset for the user",
-    )
-    tags = TaggableManager(help_text="Tags for the dataset")
-    history = HistoryField()
-
-    objects = DatasetManager()
-
-    def __str__(self) -> str:
-        return super().__str__()
-
-    class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["creator", "is_default"],
-                name="unique_default_per_creator",
-                condition=models.Q(is_default=True),
-            ),
-        ]
-
-
-class Objective(models.Model):
-    serial_number = models.CharField(max_length=1000, unique=True)
-    name = models.CharField(max_length=1000)
-    magnification = models.FloatField(blank=True, null=True)
-    na = models.FloatField(blank=True, null=True)
-    immersion = models.CharField(max_length=1000, blank=True, null=True)
-
-    history = HistoryField()
-
-
-class Camera(models.Model):
-    serial_number = models.CharField(max_length=1000, unique=True)
-    name = models.CharField(max_length=1000, unique=True)
-    model = models.CharField(max_length=1000, blank=True, null=True)
-    bit_depth = models.IntegerField(blank=True, null=True)
-    sensor_size_x = models.IntegerField(blank=True, null=True)
-    sensor_size_y = models.IntegerField(blank=True, null=True)
-    pixel_size_x = models.FloatField(blank=True, null=True)
-    pixel_size_y = models.FloatField(blank=True, null=True)
-    manufacturer = models.CharField(max_length=1000, blank=True, null=True)
-
-    history = HistoryField()
-
-
-class Instrument(models.Model):
-    name = models.CharField(max_length=1000)
-    manufacturer = models.CharField(max_length=1000, null=True, blank=True)
-    model = models.CharField(max_length=1000, null=True, blank=True)
-    serial_number = models.CharField(max_length=1000, unique=True)
-
-    history = HistoryField()
-
 
 class S3Store(models.Model):
     path = S3Field(
@@ -120,81 +24,6 @@ class S3Store(models.Model):
     key = models.CharField(max_length=1000)
     bucket = models.CharField(max_length=1000)
     populated = models.BooleanField(default=False)
-
-
-class ZarrStore(S3Store):
-    shape = models.JSONField(null=True, blank=True)
-    chunks = models.JSONField(null=True, blank=True)
-    dtype = models.CharField(max_length=1000, null=True, blank=True)
-
-    def fill_info(self, datalayer: Datalayer) -> None:
-        # Create a boto3 S3 client
-        s3 = datalayer.s3v4
-
-        # Extract the bucket and key from the S3 path
-        bucket_name, prefix = self.path.replace("s3://", "").split("/", 1)
-
-        # List all files under the given prefix
-        response = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
-
-        zarr_info = {}
-
-        # Check if the '.zarray' file exists and retrieve its content
-        for obj in response.get("Contents", []):
-            if obj["Key"].endswith(".zarray"):
-                array_name = obj["Key"].split("/")[-2]
-                print(array_name)
-
-                # Get the content of the '.zarray' file
-                zarray_file = s3.get_object(Bucket=bucket_name, Key=obj["Key"])
-                zarray_content = zarray_file["Body"].read().decode("utf-8")
-                zarray_json = json.loads(zarray_content)
-
-                # Retrieve the 'shape' and 'chunks' attributes
-                zarr_info[array_name] = {
-                    "shape": zarray_json.get("shape"),
-                    "chunks": zarray_json.get("chunks"),
-                    "dtype": zarray_json.get("dtype"),
-                }
-
-        
-
-        self.dtype = zarr_info["data"]["dtype"]
-        self.shape = zarr_info["data"]["shape"]
-        self.chunks = zarr_info["data"]["chunks"]
-        self.populated = True
-        self.save()
-
-    @property
-    def c_size(self):
-        return self.shape[0]
-    
-    @property
-    def t_size(self):
-        return self.shape[1]
-    
-    @property
-    def z_size(self):
-        return self.shape[2]
-    
-    @property
-    def y_size(self):
-        return self.shape[3]
-    
-    @property
-    def x_size(self):
-        return self.shape[4]
-
-
-class ParquetStore(S3Store):
-    pass
-
-    def fill_info(self) -> None:
-        pass
-
-    @property
-    def duckdb_string(self):
-        return f"read_parquet('s3://{self.bucket}/{self.key}')"
 
 
 class BigFileStore(S3Store):
@@ -234,29 +63,6 @@ class MediaStore(S3Store):
         s3 = datalayer.s3
         s3.upload_fileobj(file, self.bucket, self.key)
         self.save()
-
-
-class File(models.Model):
-    dataset = models.ForeignKey(
-        Dataset, on_delete=models.CASCADE, null=True, blank=True, related_name="files"
-    )
-    origins = models.ManyToManyField(
-        "self",
-        related_name="derived",
-        symmetrical=False,
-    )
-    store = models.ForeignKey(
-        BigFileStore,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        help_text="The store of the file",
-    )
-    name = models.CharField(
-        max_length=1000, help_text="The name of the file", default=""
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    creator = models.ForeignKey(get_user_model(), on_delete=models.CASCADE, null=True)
 
 
 
@@ -299,8 +105,6 @@ class Protocol(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     history = HistoryField()
-
-
 
 
 class Reagent(models.Model):
@@ -350,7 +154,6 @@ class ProtocolStepTemplate(models.Model):
 
 
 
-    
 
 class ProtocolStep(models.Model):
     """" A protocol step 
@@ -424,8 +227,6 @@ class ProtocolStep(models.Model):
     performed_by = models.ForeignKey(get_user_model(), on_delete=models.CASCADE, null=True, help_text="The user that performed the step")
     history = HistoryField()
     variable_mappings = models.JSONField(null=True, blank=True, help_text="A mapping of variables to values for this step")
-
-
 
 
 class ReagentMapping(models.Model):
@@ -724,34 +525,3 @@ class Model(models.Model):
 
 
 
-class Plot(models.Model):
-    entity = models.CharField(
-        max_length=1000,
-        null=True,
-        blank=True,
-    )
-
-
-    class Meta:
-        abstract = True
-
-
-class RenderedPlot(Plot):
-    name = models.CharField(max_length=1000, help_text="The name of the plot")
-    store = models.ForeignKey(
-        MediaStore,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        help_text="The store of the file",
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    history = HistoryField()
-
-
-
-
-
-
-
-from core import signals

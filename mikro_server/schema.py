@@ -19,7 +19,6 @@ from koherent.strawberry.extension import KoherentExtension
 from authentikate.strawberry.permissions import IsAuthenticated, NeedsScopes, HasScopes
 from core.render.objects import types as render_types
 from core import age
-from core.duck import DuckExtension
 
 @strawberry.type
 class Query:
@@ -286,13 +285,5 @@ schema = strawberry.Schema(
         DjangoOptimizerExtension,
         KoherentExtension,
         DatalayerExtension,
-        DuckExtension,
     ],
-    types=[
-        types.RenderNode,
-        types.ContextNode,
-        types.OverlayNode,
-        types.GridNode,
-        types.SplitNode,
-    ]
 )
