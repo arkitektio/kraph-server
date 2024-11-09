@@ -11,8 +11,6 @@ class HistoryAdmin(SimpleHistoryAdmin):
     search_fields = ["name", "user__username"]
 
 
-admin.site.register(models.Dataset, HistoryAdmin)
 admin.site.register(models.LinkedExpression)
 admin.site.register(models.Graph)
-admin.site.register(models.ZarrStore)
 admin.site.register(models.S3Store)

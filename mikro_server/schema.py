@@ -2,9 +2,7 @@ from kante.types import Info
 from typing import AsyncGenerator
 import strawberry
 from strawberry_django.optimizer import DjangoOptimizerExtension
-
 from core.datalayer import DatalayerExtension
-from core.channel import image_listen
 from strawberry import ID
 from kante.directives import upper, replace, relation
 from strawberry.permission import BasePermission
@@ -16,8 +14,7 @@ from core import subscriptions
 from strawberry.field_extensions import InputMutationExtension
 import strawberry_django
 from koherent.strawberry.extension import KoherentExtension
-from authentikate.strawberry.permissions import IsAuthenticated, NeedsScopes, HasScopes
-from core.render.objects import types as render_types
+from authentikate.strawberry.permissions import IsAuthenticated
 from core import age
 
 @strawberry.type
@@ -241,21 +238,6 @@ class Mutation:
 
 
 
-    # Experiment
-    create_experiment = strawberry_django.mutation(
-        resolver=mutations.create_experiment,
-    )
-
-    update_experiment = strawberry_django.mutation(
-        resolver=mutations.update_experiment,
-    )
-
-
-
-    delete_experiment = strawberry_django.mutation(
-        resolver=mutations.delete_experiment,
-    )
-    
 
 
 
@@ -267,10 +249,9 @@ class Subscription:
         self,
         info: Info,
         user: str,
-    ) -> AsyncGenerator[types.Image, None]:
+    ) -> AsyncGenerator[types.Entity, None]:
         """Join and subscribe to message sent to the given rooms."""
-        async for message in image_listen(info):
-            yield await models.Image.objects.aget(id=message)
+        raise NotImplementedError("This resolver is a placeholder and should be implemented by the developer")
 
 
     

@@ -75,11 +75,6 @@ class ExpressionFilter:
         return queryset.filter(kind=self.kind)
 
 
-@strawberry.django.filter(models.ZarrStore)
-class ZarrStoreFilter:
-    shape: Optional[FilterLookup[int]]
-
-
 
   
 
