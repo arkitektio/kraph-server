@@ -352,6 +352,8 @@ class Expression(models.Model):
             return self.label.replace(" ", "_").replace("-", "_").upper()
         elif self.kind == enums.ExpressionKind.METRIC.value:
             return self.label.replace(" ", "_").replace("-", "_").lower()
+        elif self.kind == enums.ExpressionKind.STRUCTURE.value:
+            return self.label.replace(" ", "_").replace("-", "_").lower()
         else:
             raise ValueError(f"Unknown kind {self.kind}")
 

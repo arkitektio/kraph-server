@@ -12,6 +12,7 @@ from .expression import *
 from .graph import *
 from .reagent import *
 from .protocol_step_template import *
+from .measurement import *
 
 __all__ = [
     "create_channel",

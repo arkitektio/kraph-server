@@ -37,41 +37,6 @@ def create_entity(
     return types.Entity(_value=id)
 
 
-@strawberry.input
-class EntityInput:
-    kind: strawberry.ID
-    group: strawberry.ID  | None = None
-    parent: strawberry.ID | None = None
-    instance_kind: str | None = None
-    name: str | None = None
-
-
-
-
-
-def create_structure(
-    info: Info,
-    input: EntityInput,
-) -> types.Entity:
-    
-    print(input)
-
-    input_kind = models.LinkedExpression.objects.get(id=input.kind)
-
-
-
-    id = age.create_age_entity(input_kind.graph.age_name, input_kind.age_name, name=input.name)
-
-    return types.Entity(_value=id)
-
-
-
-
-
-
-
-
-
 
 
 def delete_entity(

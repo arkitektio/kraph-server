@@ -1,6 +1,6 @@
 from kante.types import Info
 import strawberry
-from core import types, models, age
+from core import types, models, age, inputs
 
 
 @strawberry.input
@@ -41,31 +41,22 @@ def create_entity_relation(
 
 
 @strawberry.input
-class RoiEntityRelationInput:
-    left_roi: strawberry.ID
-    right_roi: strawberry.ID
+class StructureRelationInput:
+    left: inputs.Structure
+    right: inputs.Structure
     kind: strawberry.ID
 
 
-def create_roi_entity_relation(
+def create_structure_relation(
     info: Info,
-    input: RoiEntityRelationInput,
+    input: StructureRelationInput,
 ) -> types.EntityRelation:
     
 
     kind = models.LinkedExpression.objects.get(id=input.kind)
 
-    left_roi = models.ROI.objects.get(id=input.left_roi)
-    right_roi = models.ROI.objects.get(id=input.right_roi)
 
-    if not left_roi.entity:
-        raise ValueError("Left ROI does not have an entity")
-    if not right_roi.entity:
-        raise ValueError("Right ROI does not have an entity")
-    
 
-    left_graph, left_id = left_roi.entity.split(":")
-    right_graph, right_id = right_roi.entity.split(":")
 
     print("Creating relation between", left_graph, left_id, right_graph, right_id)
 

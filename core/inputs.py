@@ -6,9 +6,19 @@ import strawberry
 
 
 @strawberry.input()
+class Structure:
+    identifier: str
+    id: strawberry.ID
+
+
+
+
+@strawberry.input()
 class AssociateInput:
     selfs: List[strawberry.ID]
     other: strawberry.ID
+
+
 
 @strawberry.input()
 class DesociateInput:

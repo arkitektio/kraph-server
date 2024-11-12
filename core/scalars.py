@@ -158,3 +158,10 @@ Any = strawberry.scalar(
     parse_value=lambda v: v,
 )
 
+StructureString = strawberry.scalar(
+    NewType("StructureString", str),
+    description="The `StructureString` scalar type represents a string with a structure",
+    serialize=lambda v: v,
+    parse_value=lambda v: v,
+)
+

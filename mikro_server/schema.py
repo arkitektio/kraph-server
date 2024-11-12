@@ -24,6 +24,8 @@ class Query:
     entities: list[types.Entity] = strawberry_django.field()
     linked_expressions: list[types.LinkedExpression] = strawberry_django.field()
     graphs: list[types.Graph] = strawberry_django.field()
+    reagents: list[types.Reagent] = strawberry_django.field()
+    protocols: list[types.Protocol] = strawberry_django.field()
     expressions: list[types.Expression] = strawberry_django.field()
     ontologies: list[types.Ontology] = strawberry_django.field()
 
@@ -32,6 +34,8 @@ class Query:
     linked_expression_by_agename = strawberry_django.field(
         resolver=queries.linked_expression_by_agename
     )
+    protocol_steps: list[types.ProtocolStep] = strawberry_django.field()
+    protocol_step_templates: list[types.ProtocolStepTemplate] = strawberry_django.field()
 
 
 
@@ -140,6 +144,10 @@ class Mutation:
         resolver=mutations.create_relation_metric,
     )
 
+    create_structure_relation = strawberry_django.mutation(
+        resolver=mutations.create_structure_relation,
+    )
+
 
     attach_metrics_to_entities = strawberry_django.mutation(
         resolver=mutations.attach_metrics_to_entities,
@@ -149,6 +157,10 @@ class Mutation:
         resolver=mutations.create_reagent,
     )
 
+
+    create_measurement = strawberry_django.mutation(
+        resolver=mutations.create_measurement,
+    )
 
 
 

@@ -63,6 +63,7 @@ class MetricDataType(str, Enum):
 
 @strawberry.enum
 class ExpressionKind(str, Enum):
+    STRUCTURE = "STRUCTURE"
     MEASUREMENT = "MEASUREMENT"
     RELATION = "relation"
     ENTITY = "entity"
