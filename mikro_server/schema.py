@@ -24,6 +24,7 @@ class Query:
     entities: list[types.Entity] = strawberry_django.field()
     linked_expressions: list[types.LinkedExpression] = strawberry_django.field()
     graphs: list[types.Graph] = strawberry_django.field()
+    models: list[types.Model] = strawberry_django.field()
     reagents: list[types.Reagent] = strawberry_django.field()
     protocols: list[types.Protocol] = strawberry_django.field()
     expressions: list[types.Expression] = strawberry_django.field()
@@ -41,9 +42,10 @@ class Query:
 
     entities: list[types.Entity] = strawberry_django.field(resolver=queries.entities)
     entity_relations: list[types.EntityRelation] = strawberry_django.field(resolver=queries.entity_relations)
+    paired_entities = strawberry_django.field(resolver=queries.paired_entities)
 
 
-  
+    structure = strawberry_django.field(resolver=queries.structure)
     @strawberry.django.field(
         permission_classes=[IsAuthenticated]
     )
@@ -59,6 +61,9 @@ class Query:
         
 
         return types.Entity(_value=age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id)))
+    
+
+
     
 
 
@@ -80,6 +85,13 @@ class Query:
     )
     def graph(self, info: Info, id: ID) -> types.Graph:
         return models.Graph.objects.get(id=id)
+    
+    @strawberry.django.field(
+        permission_classes=[IsAuthenticated]
+    )
+    def model(self, info: Info, id: ID) -> types.Model:
+        return models.Model.objects.get(id=id)
+    
     
     
     @strawberry.django.field(
@@ -179,7 +191,14 @@ class Mutation:
         resolver=mutations.update_protocol_step,
     )
 
+    # Model
+    create_model = strawberry_django.mutation(
+        resolver=mutations.create_model,
+    )  
 
+    request_upload = strawberry_django.mutation(
+        resolver=mutations.request_upload,
+    )
 
 
     # Entity

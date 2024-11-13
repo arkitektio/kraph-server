@@ -375,6 +375,14 @@ class Entity:
         return self._value.label
     
     @strawberry.django.field()
+    def identifier(self, info: Info) -> str | None:
+        return self._value.identifier
+    
+    @strawberry.django.field()
+    def object(self, info: Info) -> str | None:
+        return self._value.object
+    
+    @strawberry.django.field()
     def valid_from(self, info: Info) -> datetime.datetime:
         return self._value.valid_from
     
@@ -482,4 +490,11 @@ class Ontology:
     description: str | None
     purl: str | None
     expressions: List["Expression"]
+    store: MediaStore | None
+
+
+@strawberry_django.type(models.Model, filters=filters.ModelFilter, pagination=True)
+class Model:
+    id: auto
+    name: str
     store: MediaStore | None

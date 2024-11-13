@@ -26,6 +26,10 @@ def create_graph(
     info: Info,
     input: GraphInput,
 ) -> types.Graph:
+    
+
+
+
     item, created = models.Graph.objects.update_or_create(
         age_name=f"{input.name.replace(' ', '_').lower()}",
         defaults=dict(
@@ -36,7 +40,11 @@ def create_graph(
         )
     )
     if created:
-        age.create_age_graph(item.age_name)
+        try:
+            age.create_age_graph(item.age_name)
+        except Exception as e:
+            item.delete()
+            raise e
 
     return item
 
@@ -57,7 +65,11 @@ def delete_graph(
 ) -> strawberry.ID:
     item = models.Graph.objects.get(id=input.id)
 
-    age.delete_age_graph(item.age_name)
+    try:
+        age.delete_age_graph(item.age_name)
+    except Exception as e:
+        pass
+    
     item.delete()
     return input.id
 

@@ -130,6 +130,8 @@ class EntityFilter:
     kind: strawberry.ID | None = None
     ids: list[strawberry.ID] | None = None
     linked_expression: strawberry.ID | None = None
+    identifier: str | None = None
+    object: strawberry.ID | None = None
     search: str | None = None
 
 @strawberry.input 
@@ -176,6 +178,17 @@ class ProtocolStepTemplateFilter(IDFilterMixin):
         if self.search is None:
             return queryset
         return queryset.filter(name__contains=self.search)
+
+@strawberry.django.filter(models.Model)
+class ModelFilter(IDFilterMixin):
+    id: auto
+    search: str | None
+
+    def filter_search(self, queryset, info):
+        if self.search is None:
+            return queryset
+        return queryset.filter(name__contains=self.search)
+
 
 
 

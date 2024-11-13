@@ -13,6 +13,8 @@ from .graph import *
 from .reagent import *
 from .protocol_step_template import *
 from .measurement import *
+from .model import *
+from .upload import *
 
 __all__ = [
     "create_channel",

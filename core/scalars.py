@@ -33,6 +33,13 @@ FileLike = strawberry.scalar(
     parse_value=lambda v: v,
 )
 
+RemoteUpload = strawberry.scalar(
+    NewType("RemoteUpload", str),
+    description="The `RemoteUpload` scalar type represents a reference to a remote upload on a datalayer",
+    serialize=lambda v: v,
+    parse_value=lambda v: v,
+)
+
 
 ParquetLike = strawberry.scalar(
     NewType("ParquetLike", str),

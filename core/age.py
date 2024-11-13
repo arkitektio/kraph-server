@@ -128,6 +128,14 @@ class RetrievedEntity:
     @property
     def valid_relative_to(self):
         return self.properties.get("__valid_relative_to", None)
+    
+    @property
+    def object(self):
+        return self.properties.get("__object", None)
+    
+    @property
+    def identifier(self):
+        return self.properties.get("__identifier", None)
 
 
     @property
@@ -341,6 +349,28 @@ def create_age_entity(graph_name, kind_age_name, name: str = None) -> RetrievedE
             raise ValueError("No entity created or returned by the query.")
         
 
+def create_age_structure(graph_name, kind_age_name, name: str = None, identifier: str = None, object: str = None, structure: str = None) -> RetrievedEntity:
+
+
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                CREATE (n:{kind_age_name} {{__label: %s, __created_at: %s, __identifier: %s, __object: %s, __structure: %s}})
+                RETURN n
+            $$) as (n agtype);
+            """,
+            (graph_name, name, datetime.datetime.now().isoformat(), identifier, object, structure)
+        )
+        result = cursor.fetchone()
+        if result:
+            entity = result[0]
+            return vertex_ag_to_retrieved_entity(graph_name, entity)
+        else:
+            raise ValueError("No entity created or returned by the query.")
+        
+
 def get_age_entity(graph_name, entity_id) -> RetrievedEntity:
 
     with graph_cursor() as cursor:
@@ -359,6 +389,29 @@ def get_age_entity(graph_name, entity_id) -> RetrievedEntity:
             entity = result[0]
             return vertex_ag_to_retrieved_entity(graph_name, entity)
         raise ValueError("No entity created or returned by the query.")
+    
+
+
+def get_age_structure(graph_name, structure_identifier) -> RetrievedEntity:
+
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (n: {{__structure: structure_identifier = %s}})
+                RETURN n
+            $$) as (n agtype);
+            """,
+            (graph_name, int(structure_identifier))
+        )
+        result = cursor.fetchone()
+        if result:
+            entity = result[0]
+            return vertex_ag_to_retrieved_entity(graph_name, entity)
+        raise ValueError("No entity created or returned by the query.")
+
+
         
 def get_age_entity_relation(graph_name, edge_id) -> RetrievedRelation:
 
@@ -562,6 +615,93 @@ def select_all_entities(graph_name, pagination: pagination.GraphPaginationInput,
         for result in cursor.fetchall():
             print(result)
             yield vertex_ag_to_retrieved_entity(graph_name, result[0])
+
+
+
+def select_paired_entities(graph_name, pagination: pagination.GraphPaginationInput,  relation_filter: filters.EntityRelationFilter | None = None , left_filter: filters.EntityFilter | None = None, right_filter: filters.EntityFilter | None = None):
+    with graph_cursor() as cursor:
+
+        WHERE = ""
+
+        and_clauses = []
+
+        if left_filter:
+
+            if left_filter.ids:
+                and_clauses.append(f'id(n) IN [ {", ".join([to_entity_id(id) for id in filter.ids])}]')
+
+            if left_filter.search:
+                and_clauses.append(f'n.Label STARTS WITH "{filter.search}"')
+
+            if left_filter.linked_expression:
+                expression = models.LinkedExpression.objects.get(id=filter.linked_expression)
+                and_clauses.append(f'label(n) = "{expression.age_name}"')
+
+            if and_clauses:
+                WHERE = "WHERE " + " AND ".join(and_clauses)
+
+
+        if right_filter:
+
+            if right_filter.ids:
+                and_clauses.append(f'id(m) IN [ {", ".join([to_entity_id(id) for id in filter.ids])}]')
+
+            if right_filter.search:
+                and_clauses.append(f'm.Label STARTS WITH "{filter.search}"')
+
+            if right_filter.linked_expression:
+                expression = models.LinkedExpression.objects.get(id=filter.linked_expression)
+                and_clauses.append(f'label(m) = "{expression.age_name}"')
+
+            if and_clauses:
+                WHERE = "WHERE " + " AND ".join(and_clauses)
+
+
+        if relation_filter:
+
+            if relation_filter.left_id:
+                and_clauses.append(f'id(n) = {to_entity_id(relation_filter.left_id)}')
+
+            if relation_filter.right_id:
+                and_clauses.append(f'id(m) = {to_entity_id(relation_filter.right_id)}')
+
+            if not relation_filter.with_self:
+                and_clauses.append(f'id(n) <> id(m)')
+
+            if relation_filter.ids:
+                and_clauses.append(f'id(e) IN [ {", ".join([to_entity_id(id) for id in relation_filter.ids])}]')
+
+            if relation_filter.search:
+                and_clauses.append(f'e.Label STARTS WITH "{relation_filter.search}"')
+
+            if relation_filter.linked_expression:
+                expression = models.LinkedExpression.objects.get(id=relation_filter.linked_expression)
+                and_clauses.append(f'label(e) = "{expression.age_name}"')
+
+
+
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (n) - [e] - (m)
+                {WHERE}
+                RETURN n, m, e
+                SKIP %s
+                LIMIT %s
+            $$) as (n agtype, m agtype, e agtype);
+            """,
+            [graph_name, pagination.offset or 0 , pagination.limit or 200]
+        )
+
+        if cursor.rowcount == 0:
+            return []
+
+        for result in cursor.fetchall():
+            print(result)
+            yield vertex_ag_to_retrieved_entity(graph_name, result[0]), vertex_ag_to_retrieved_entity(graph_name, result[1]), edge_ag_to_retrieved_relation(graph_name, result[2])
+
+
 
 def select_all_relations(graph_name, pagination: pagination.GraphPaginationInput,  filter: filters.EntityRelationFilter):
     with graph_cursor() as cursor:

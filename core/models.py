@@ -58,6 +58,9 @@ class MediaStore(S3Store):
             ExpiresIn=3600,
         )
         return url.replace(settings.AWS_S3_ENDPOINT_URL, host or "")
+    
+    def fill_info(self) -> None:
+        pass
 
     def put_file(self, datalayer: Datalayer, file: FileField):
         s3 = datalayer.s3
@@ -516,7 +519,7 @@ class Model(models.Model):
         help_text="The materialized grpah this model was trained on",
     )
     store = models.ForeignKey(
-        BigFileStore,
+        MediaStore,
         on_delete=models.CASCADE,
         null=True,
         blank=True,
