@@ -9,7 +9,7 @@ class Command(BaseCommand):
     help = "Creates all configured apps or overwrites them"
 
     def handle(self, *args, **options):
-       
+
         default_ontology = models.Ontology.objects.update_or_create(
             name="Internal",
             description="An internal ontology for the core system",
@@ -24,17 +24,5 @@ class Command(BaseCommand):
         entity_kind = models.EntityKind.objects.update_or_create(
             ontology=ontology,
             name="Axon Initial Segment",
-            public_url="http://purl.obolibrary.org/obo/GO_0043194"
+            public_url="http://purl.obolibrary.org/obo/GO_0043194",
         )
-
-        
-
-
-
-
-
-
-
-
-
-        

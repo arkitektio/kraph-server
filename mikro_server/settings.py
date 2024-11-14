@@ -42,8 +42,8 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "django.contrib.postgres",
-    'health_check',                             # required
-    'health_check.db',                          # stock Django health checkers
+    "health_check",  # required
+    "health_check.db",  # stock Django health checkers
     "corsheaders",
     "graphene_django",
     "channels_redis",
@@ -71,7 +71,7 @@ AWS_S3_ENDPOINT_URL = f"{conf.s3.protocol}://{conf.s3.host}:{conf.s3.port}"
 AWS_S3_URL_PROTOCOL = f"{conf.s3.protocol}:"
 AWS_S3_FILE_OVERWRITE = False
 AWS_QUERYSTRING_EXPIRE = 3600
-AWS_S3_REGION_NAME = conf.s3.get("region", "us-east-1")  
+AWS_S3_REGION_NAME = conf.s3.get("region", "us-east-1")
 
 ZARR_BUCKET = conf.s3.buckets.zarr
 PARQUET_BUCKET = conf.s3.buckets.parquet
@@ -96,7 +96,9 @@ CHANNEL_LAYERS = {
 CORS_ALLOW_ALL_ORIGINS = True
 
 
-CSRF_TRUSTED_ORIGINS = conf.get("csrf_trusted_origins", ["http://localhost", "https://localhost"])
+CSRF_TRUSTED_ORIGINS = conf.get(
+    "csrf_trusted_origins", ["http://localhost", "https://localhost"]
+)
 MY_SCRIPT_NAME = conf.get("force_script_name", "")
 
 MIDDLEWARE = [
@@ -156,7 +158,7 @@ DATABASES = {
         "PASSWORD": conf.db.password,
         "HOST": "age",
         "PORT": conf.db.port,
-    }
+    },
 }
 
 

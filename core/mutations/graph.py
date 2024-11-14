@@ -1,6 +1,6 @@
 from kante.types import Info
 import strawberry
-from core import types, models,age
+from core import types, models, age
 
 
 @strawberry.input
@@ -9,6 +9,7 @@ class GraphInput:
     experiment: strawberry.ID | None = None
     description: str | None = None
 
+
 @strawberry.input
 class UpdateGraphInput:
     id: str
@@ -16,28 +17,29 @@ class UpdateGraphInput:
     description: str | None = None
     experiment: strawberry.ID | None = None
 
+
 @strawberry.input
 class DeleteGraphInput:
     id: strawberry.ID
-
 
 
 def create_graph(
     info: Info,
     input: GraphInput,
 ) -> types.Graph:
-    
-
-
 
     item, created = models.Graph.objects.update_or_create(
         age_name=f"{input.name.replace(' ', '_').lower()}",
         defaults=dict(
-            experiment=models.Experiment.objects.get(id=input.experiment) if input.experiment else None,
+            experiment=(
+                models.Experiment.objects.get(id=input.experiment)
+                if input.experiment
+                else None
+            ),
             name=input.name,
             user=info.context.request.user,
             description=input.description,
-        )
+        ),
     )
     if created:
         try:
@@ -69,7 +71,6 @@ def delete_graph(
         age.delete_age_graph(item.age_name)
     except Exception as e:
         pass
-    
+
     item.delete()
     return input.id
-

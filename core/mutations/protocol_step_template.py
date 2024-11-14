@@ -5,7 +5,6 @@ from core import types, models, scalars, age, enums
 import uuid
 
 
-
 @strawberry.input
 class PlateChildInput:
     id: strawberry.ID | None = None
@@ -21,8 +20,6 @@ class PlateChildInput:
     underline: bool | None = None
 
 
-
-
 @strawberry.input
 class ProtocolStepTemplateInput:
     name: str
@@ -32,10 +29,8 @@ class ProtocolStepTemplateInput:
 @strawberry.input
 class UpdateProtocolStepTemplateInput:
     id: strawberry.ID
-    name: str  | None = None
+    name: str | None = None
     plate_children: list[PlateChildInput]
-
-
 
 
 @strawberry.input
@@ -43,19 +38,15 @@ class DeleteProtocolStepTemplateInput:
     id: strawberry.ID
 
 
-
 def create_protocol_step_template(
     info: Info,
     input: ProtocolStepTemplateInput,
 ) -> types.ProtocolStepTemplate:
-    
-
 
     step = models.ProtocolStepTemplate.objects.create(
         name=input.name,
         plate_children=[strawberry.asdict(i) for i in input.plate_children],
-        creator=info.context.request.user
-
+        creator=info.context.request.user,
     )
 
     return step
@@ -63,7 +54,7 @@ def create_protocol_step_template(
 
 def child_to_str(child):
     if child.get("children", []) is None:
-        return " ".join([child_to_str(c) for c in child["children"]]),
+        return (" ".join([child_to_str(c) for c in child["children"]]),)
     else:
         return child.get("value", child.get("text", "")) or ""
 
@@ -77,8 +68,11 @@ def update_protocol_step_template(
     input: UpdateProtocolStepTemplateInput,
 ) -> types.ProtocolStepTemplate:
     step = models.ProtocolStepTemplate.objects.get(id=input.id)
-    step.plate_children = [strawberry.asdict(i) for i in input.plate_children] if input.plate_children else step.plate_children
-
+    step.plate_children = (
+        [strawberry.asdict(i) for i in input.plate_children]
+        if input.plate_children
+        else step.plate_children
+    )
 
     step.save()
     return step
@@ -91,4 +85,3 @@ def delete_protocol_step_template(
     item = models.ProtocolStepTemplate.objects.get(id=input.id)
     item.delete()
     return input.id
-

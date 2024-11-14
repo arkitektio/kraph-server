@@ -9,7 +9,8 @@ def test_create_model(db):
     )
 
     dataset = Dataset.objects.create(
-        name="Test Model", description="This is a test model",
+        name="Test Model",
+        description="This is a test model",
         creator=user,
     )
     my_model = Image.objects.create(

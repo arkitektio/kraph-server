@@ -45,4 +45,3 @@ def delete_reagent(
     item = models.Reagent.objects.get(id=input.id)
     item.delete()
     return input.id
-

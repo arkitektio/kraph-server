@@ -16,28 +16,28 @@ class DeleteLinkedExpressionInput:
     id: strawberry.ID
 
 
-
 def link_expression(
     info: Info,
     input: LinkExpressionInput,
 ) -> types.LinkedExpression:
-    
+
     expression = models.Expression.objects.get(id=input.expression)
     graph = models.Graph.objects.get(id=input.graph)
 
     if input.color:
-        assert len(input.color) == 3 or len(input.color) == 4, "Color must be a list of 3 or 4 values RGBA"
-
+        assert (
+            len(input.color) == 3 or len(input.color) == 4
+        ), "Color must be a list of 3 or 4 values RGBA"
 
     item, _ = models.LinkedExpression.objects.update_or_create(
         expression=expression,
         graph=graph,
         age_name=expression.age_name,
-        defaults=dict(      
+        defaults=dict(
             kind=expression.kind,
             color=input.color or expression.color,
             metric_kind=expression.metric_kind,
-        )
+        ),
     )
 
     if item.kind == enums.ExpressionKind.ENTITY:
@@ -55,9 +55,6 @@ def link_expression(
     else:
         raise ValueError("Invalid kind")
 
-   
-    
-
     return item
 
 
@@ -71,7 +68,6 @@ def unlink_expression(
     return input.id
 
 
-
 @strawberry.input
 class PinLinkedExpressionInput:
     id: strawberry.ID
@@ -82,7 +78,7 @@ def pin_linked_expression(
     info: Info,
     input: PinLinkedExpressionInput,
 ) -> types.LinkedExpression:
-    
+
     if input.pin is not None:
 
         if input.pin:
@@ -105,6 +101,3 @@ def pin_linked_expression(
         item.save()
 
     return item
-
-
-

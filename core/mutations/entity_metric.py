@@ -6,10 +6,17 @@ import datetime
 
 @strawberry.input
 class CreateEntityMetricInput:
-    value: scalars.Metric 
-    entity: strawberry.ID
-    metric: strawberry.ID
-    timepoint: datetime.datetime | None  = None
+    value: scalars.Metric = strawberry.field(description="The value of the metric.")
+    entity: strawberry.ID = strawberry.field(
+        description="The entity to attach the metric to."
+    )
+    metric: strawberry.ID = strawberry.field(
+        description="The metric to attach to the entity."
+    )
+    timepoint: datetime.datetime | None = strawberry.field(
+        default=None, description="The timepoint of the metric."
+    )
+
 
 @strawberry.input
 class EntityValuePairInput:
@@ -17,11 +24,11 @@ class EntityValuePairInput:
     value: scalars.Metric
 
 
-
 @strawberry.input
 class AttachMetricsToEntitiesMetricInput:
-    metric: strawberry.ID 
+    metric: strawberry.ID
     pairs: list[EntityValuePairInput]
+
 
 @strawberry.input
 class DeleteEntityMetricInput:
@@ -29,52 +36,42 @@ class DeleteEntityMetricInput:
     metric: strawberry.ID
 
 
-
 def create_entity_metric(
-        info: Info,
-        input: CreateEntityMetricInput,
+    info: Info,
+    input: CreateEntityMetricInput,
 ) -> types.Entity:
 
     metric = models.LinkedExpression.objects.get(id=input.metric)
 
-
-
-
     entity_graph, entity_id = input.entity.split(":")
-        
-        
-    entity = age.create_age_metric(metric.graph.age_name, metric.age_name, entity_id, input.value, input.timepoint)
 
-
+    entity = age.create_age_metric(
+        metric.graph.age_name, metric.age_name, entity_id, input.value, input.timepoint
+    )
 
     return types.Entity(_value=entity)
 
 
-
-
-
-
-
-def attach_metrics_to_entities(info: Info, input: AttachMetricsToEntitiesMetricInput) -> list[types.Entity]:
+def attach_metrics_to_entities(
+    info: Info, input: AttachMetricsToEntitiesMetricInput
+) -> list[types.Entity]:
     metric = models.LinkedExpression.objects.get(id=input.metric)
 
     returned_entities = []
 
     for pair in input.pairs:
 
-
-        entity_id = age.create_age_metric(metric.graph.age_name, metric.age_name, pair.entity, pair.value)
+        entity_id = age.create_age_metric(
+            metric.graph.age_name, metric.age_name, pair.entity, pair.value
+        )
         returned_entities.append(types.Entity(_value=entity_id))
 
     return returned_entities
-        
 
-    
-        
+
 def delete_entity_metric(
     info: Info,
     input: DeleteEntityMetricInput,
 ) -> strawberry.ID:
     raise NotImplementedError("Not implemented yet")
     return input.id
-

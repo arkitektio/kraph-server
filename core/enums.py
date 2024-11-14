@@ -8,10 +8,9 @@ import strawberry
 from enum import Enum
 
 
-
 class MetricDataTypeChoices(TextChoices):
     INT = "INT"
-    FLOAT= "FLOAT"
+    FLOAT = "FLOAT"
     DATETIME = "DATETIME"
     STRING = "STRING"
     CATEGORY = "CATEGORY"
@@ -23,9 +22,9 @@ class MetricDataTypeChoices(TextChoices):
     N_VECTOR = "N_VECTOR"
 
 
-
 class ProtocolStepKindChoices(TextChoices):
     """Variety expresses the Type of Representation we are dealing with"""
+
     PREPERATION = "PREP"
     ADD_REAGENT = "ADD_REAGENT"
     MEASUREMENT = "MEASUREMENT"
@@ -37,6 +36,7 @@ class ProtocolStepKindChoices(TextChoices):
 @strawberry.enum
 class ProtocolStepKind(str, Enum):
     """Variety expresses the Type of Representation we are dealing with"""
+
     PREPERATION = "PREP"
     ADD_REAGENT = "ADD_REAGENT"
     MEASUREMENT = "MEASUREMENT"
@@ -45,10 +45,11 @@ class ProtocolStepKind(str, Enum):
     CUSTOM = "CUSTOM"
     UNKNOWN = "UNKNOWN"
 
+
 @strawberry.enum
 class MetricDataType(str, Enum):
     INT = "INT"
-    FLOAT= "FLOAT"
+    FLOAT = "FLOAT"
     DATETIME = "DATETIME"
     STRING = "STRING"
     CATEGORY = "CATEGORY"
@@ -58,7 +59,6 @@ class MetricDataType(str, Enum):
     ONE_D_VECTOR = "ONE_D_VECTOR"
     FOUR_D_VECTOR = "FOUR_D_VECTOR"
     N_VECTOR = "N_VECTOR"
-
 
 
 @strawberry.enum

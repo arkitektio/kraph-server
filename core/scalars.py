@@ -96,7 +96,6 @@ Micrograms = strawberry.scalar(
 )
 
 
-
 FourByFourMatrix = strawberry.scalar(
     NewType("FourByFourMatrix", object),
     description="The `FourByFourMatrix` scalar type represents a matrix"
@@ -171,4 +170,3 @@ StructureString = strawberry.scalar(
     serialize=lambda v: v,
     parse_value=lambda v: v,
 )
-

@@ -11,13 +11,10 @@ class Structure:
     id: strawberry.ID
 
 
-
-
 @strawberry.input()
 class AssociateInput:
     selfs: List[strawberry.ID]
     other: strawberry.ID
-
 
 
 @strawberry.input()

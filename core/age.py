@@ -13,35 +13,34 @@ class LinkedStructure:
     object: str
 
 
-
 @dataclass
 class RetrievedRelationMetric:
-    """ Retrieved Class from age
-    
+    """Retrieved Class from age
+
     This is a dataclass that represents a metric that is retrieved from the age database.
     It is used to represent a metric that is attached to a relation in the age database.
 
     Relation ship metrics are stored as properties of the relationship in the age database.
     This diffs fro node metrics which are stored as "relations" of the node onto itself.
-    
-    """
 
+    """
 
     graph_name: str
     kind_age_name: str
     value: str
-    
+
 
 @dataclass
-class RetrievedNodeMetric: 
-    """ Retrieved Class from age
-    
+class RetrievedNodeMetric:
+    """Retrieved Class from age
+
     This is a dataclass that represents a NODE metric that is retrieved from the age database.
     Node Metrics are stored as relations of the node onto itself. This allows for the addition
     of temporal information and other metadata directly to the metric.
-    
+
 
     """
+
     graph_name: str
     id: int
     kind_age_name: str
@@ -54,15 +53,15 @@ class RetrievedNodeMetric:
     @property
     def valid_from(self):
         return self.properties.get("__valid_from", None)
-    
+
     @property
     def valid_to(self):
         return self.properties.get("__valid_to", None)
-    
+
     @property
     def valid_relative_from(self):
         return self.properties.get("__valid_relative_from", None)
-    
+
     @property
     def valid_relative_to(self):
         return self.properties.get("__valid_relative_to", None)
@@ -70,15 +69,15 @@ class RetrievedNodeMetric:
     @property
     def unique_id(self):
         return f"{self.graph_name}:{self.id}"
-    
+
     @property
     def value(self):
         return self.properties.get("value", None)
-    
+
     @property
     def assignation_id(self):
         return self.properties.get("__created_through", None)
-    
+
     @property
     def measured_structure(self) -> LinkedStructure:
         raw_structure = self.properties.get("__structure", None)
@@ -98,10 +97,10 @@ class RetrievedEntity:
 
     def retrieve_relations(self) -> "RetrievedRelation":
         return self.cached_relations or get_age_relations(self.graph_name, self.id)
-    
+
     def retrieve_metrics(self) -> list["RetrievedNodeMetric"]:
         return self.cached_metrics or get_age_metrics(self.graph_name, self.id)
-    
+
     @property
     def label(self):
         return self.properties.get("__label", self.kind_age_name + " - " + str(self.id))
@@ -109,44 +108,44 @@ class RetrievedEntity:
     @property
     def valid_from(self):
         return self.properties.get("__valid_from", None)
-    
+
     @property
     def valid_to(self):
         return self.properties.get("__valid_to", None)
-    
+
     @property
     def created_at(self):
         created_at = self.properties.get("__created_at", None)
         if created_at:
             return datetime.datetime.fromisoformat(created_at)
         return None
-    
+
     @property
     def valid_relative_from(self):
         return self.properties.get("__valid_relative_from", None)
-    
+
     @property
     def valid_relative_to(self):
         return self.properties.get("__valid_relative_to", None)
-    
+
     @property
     def object(self):
         return self.properties.get("__object", None)
-    
+
     @property
     def identifier(self):
         return self.properties.get("__identifier", None)
 
-
     @property
     def unique_id(self):
         return f"{self.graph_name}:{self.id}"
-    
 
-    
     def retrieve_properties(self):
-        return {key: value for key, value in self.properties.items() if key != "id" and key != "labels"}
-
+        return {
+            key: value
+            for key, value in self.properties.items()
+            if key != "id" and key != "labels"
+        }
 
 
 @dataclass
@@ -160,51 +159,53 @@ class RetrievedRelation:
 
     def retrieve_left(self) -> "RetrievedEntity":
         return get_age_entity(self.graph_name, self.left_id)
-    
+
     def retrieve_right(self) -> "RetrievedEntity":
         return get_age_entity(self.graph_name, self.right_id)
-    
 
     @property
     def label(self):
         return self.properties.get("__label", self.kind_age_name + " - " + str(self.id))
-    
+
     @property
     def valid_from(self):
         return self.properties.get("__valid_from", None)
-    
+
     @property
     def valid_to(self):
         return self.properties.get("__valid_to", None)
-    
+
     @property
     def valid_relative_from(self):
         return self.properties.get("__valid_relative_from", None)
-    
+
     @property
     def valid_relative_to(self):
         return self.properties.get("__valid_relative_to", None)
-    
+
     @property
     def unique_left_id(self):
         return f"{self.graph_name}:{self.left_id}"
-    
+
     @property
     def unique_right_id(self):
         return f"{self.graph_name}:{self.right_id}"
-    
+
     @property
     def unique_id(self):
         return f"{self.graph_name}:{self.id}"
-    
+
     def retrieve_metrics(self) -> list["RetrievedRelationMetric"]:
         try:
-            return [RetrievedRelationMetric(kind_age_name=key, value=value, graph_name=self.graph_name) for key, value in self.properties.items() if key != "id" and key != "labels"]
+            return [
+                RetrievedRelationMetric(
+                    kind_age_name=key, value=value, graph_name=self.graph_name
+                )
+                for key, value in self.properties.items()
+                if key != "id" and key != "labels"
+            ]
         except Exception as e:
             raise ValueError(f"Error retrieving metrics {e} {self.properties}")
-        
-
-
 
 
 @contextmanager
@@ -215,54 +216,41 @@ def graph_cursor():
         yield cursor
 
 
-
 def create_age_graph(name: str):
     with graph_cursor() as cursor:
         cursor.execute(
-            "SELECT EXISTS(SELECT 1 FROM ag_catalog.ag_graph WHERE name = %s);",
-            [name]
+            "SELECT EXISTS(SELECT 1 FROM ag_catalog.ag_graph WHERE name = %s);", [name]
         )
         exists = cursor.fetchone()[0]
         if exists:
             return exists
         else:
-            cursor.execute(
-                "SELECT create_graph(%s);",
-                [name]
-            )
+            cursor.execute("SELECT create_graph(%s);", [name])
             print(cursor.fetchone())
+
 
 def delete_age_graph(name: str):
     with graph_cursor() as cursor:
-        cursor.execute(
-            "SELECT drop_graph(%s, true);",
-            [name]
-        )
+        cursor.execute("SELECT drop_graph(%s, true);", [name])
         print(cursor.fetchone())
 
 
 def create_age_entity_kind(graph_name, kind_name):
     with graph_cursor() as cursor:
-            try:
-                cursor.execute(
-                    "SELECT create_vlabel(%s, %s);",
-                    (graph_name, kind_name)
-                )
-                print(cursor.fetchone())
-            except Exception as e:
-                print(e)
+        try:
+            cursor.execute("SELECT create_vlabel(%s, %s);", (graph_name, kind_name))
+            print(cursor.fetchone())
+        except Exception as e:
+            print(e)
 
 
 def create_age_relation_kind(graph_name, kind_name):
     with graph_cursor() as cursor:
-            try:
-                cursor.execute(
-                    "SELECT create_elabel(%s, %s);",
-                    (graph_name, kind_name)
-                )
-                print(cursor.fetchone())
-            except Exception as e:
-                print(e)
+        try:
+            cursor.execute("SELECT create_elabel(%s, %s);", (graph_name, kind_name))
+            print(cursor.fetchone())
+        except Exception as e:
+            print(e)
 
 
 def vertex_ag_to_retrieved_entity(graph_name, vertex):
@@ -270,21 +258,38 @@ def vertex_ag_to_retrieved_entity(graph_name, vertex):
     print("timmed neighbour", trimmed_neighbour)
 
     parsed_neighbour = json.loads(trimmed_neighbour)
-    return RetrievedEntity(graph_name=graph_name, id=parsed_neighbour["id"], kind_age_name=parsed_neighbour["label"], properties=parsed_neighbour["properties"])
+    return RetrievedEntity(
+        graph_name=graph_name,
+        id=parsed_neighbour["id"],
+        kind_age_name=parsed_neighbour["label"],
+        properties=parsed_neighbour["properties"],
+    )
+
 
 def edge_ag_to_retrieved_relation(graph_name, edge):
     trimmed_relationship = edge.replace("::edge", "")
     print("timmed", trimmed_relationship)
     parsed_relationship = json.loads(trimmed_relationship)
-    return RetrievedRelation(graph_name=graph_name, id=parsed_relationship["id"], kind_age_name=parsed_relationship["label"], left_id=parsed_relationship["start_id"], right_id=parsed_relationship["end_id"], properties=parsed_relationship["properties"])
+    return RetrievedRelation(
+        graph_name=graph_name,
+        id=parsed_relationship["id"],
+        kind_age_name=parsed_relationship["label"],
+        left_id=parsed_relationship["start_id"],
+        right_id=parsed_relationship["end_id"],
+        properties=parsed_relationship["properties"],
+    )
 
 
 def edge_ag_to_retrieved_metric(graph_name, edge):
     trimmed_relationship = edge.replace("::edge", "")
     print("timmed", trimmed_relationship)
     parsed_relationship = json.loads(trimmed_relationship)
-    return RetrievedNodeMetric(graph_name=graph_name,  id=parsed_relationship["id"], kind_age_name=parsed_relationship["label"], properties=parsed_relationship["properties"])
-
+    return RetrievedNodeMetric(
+        graph_name=graph_name,
+        id=parsed_relationship["id"],
+        kind_age_name=parsed_relationship["label"],
+        properties=parsed_relationship["properties"],
+    )
 
 
 def get_neighbors_and_edges(graph_name, node_id):
@@ -299,7 +304,7 @@ def get_neighbors_and_edges(graph_name, node_id):
                 RETURN DISTINCT r, neighbor 
             $$) as (relationship agtype, neighbor agtype);
             """,
-            [graph_name, int(node_id)]
+            [graph_name, int(node_id)],
         )
 
         results = cursor.fetchall()
@@ -308,27 +313,24 @@ def get_neighbors_and_edges(graph_name, node_id):
         nodes: list[RetrievedEntity] = []
         relation_ships: list[RetrievedRelation] = []
 
-
         for result in results:
             print(result)
             relationship = result[0]  # Edge connecting the nodes
             neighbour = result[1]  # Starting node
 
-
             if neighbour:
                 nodes.append(vertex_ag_to_retrieved_entity(graph_name, neighbour))
 
             if relationship:
-                relation_ships.append(edge_ag_to_retrieved_relation(graph_name, relationship))
-                
+                relation_ships.append(
+                    edge_ag_to_retrieved_relation(graph_name, relationship)
+                )
+
         print(nodes, relation_ships)
         return nodes, relation_ships
 
 
-
-
 def create_age_entity(graph_name, kind_age_name, name: str = None) -> RetrievedEntity:
-
 
     with graph_cursor() as cursor:
         cursor.execute(
@@ -339,7 +341,7 @@ def create_age_entity(graph_name, kind_age_name, name: str = None) -> RetrievedE
                 RETURN n
             $$) as (n agtype);
             """,
-            (graph_name, name, datetime.datetime.now().isoformat())
+            (graph_name, name, datetime.datetime.now().isoformat()),
         )
         result = cursor.fetchone()
         if result:
@@ -347,10 +349,16 @@ def create_age_entity(graph_name, kind_age_name, name: str = None) -> RetrievedE
             return vertex_ag_to_retrieved_entity(graph_name, entity)
         else:
             raise ValueError("No entity created or returned by the query.")
-        
 
-def create_age_structure(graph_name, kind_age_name, name: str = None, identifier: str = None, object: str = None, structure: str = None) -> RetrievedEntity:
 
+def create_age_structure(
+    graph_name,
+    kind_age_name,
+    name: str = None,
+    identifier: str = None,
+    object: str = None,
+    structure: str = None,
+) -> RetrievedEntity:
 
     with graph_cursor() as cursor:
         cursor.execute(
@@ -361,7 +369,14 @@ def create_age_structure(graph_name, kind_age_name, name: str = None, identifier
                 RETURN n
             $$) as (n agtype);
             """,
-            (graph_name, name, datetime.datetime.now().isoformat(), identifier, object, structure)
+            (
+                graph_name,
+                name,
+                datetime.datetime.now().isoformat(),
+                identifier,
+                object,
+                structure,
+            ),
         )
         result = cursor.fetchone()
         if result:
@@ -369,7 +384,7 @@ def create_age_structure(graph_name, kind_age_name, name: str = None, identifier
             return vertex_ag_to_retrieved_entity(graph_name, entity)
         else:
             raise ValueError("No entity created or returned by the query.")
-        
+
 
 def get_age_entity(graph_name, entity_id) -> RetrievedEntity:
 
@@ -382,14 +397,13 @@ def get_age_entity(graph_name, entity_id) -> RetrievedEntity:
                 RETURN n
             $$) as (n agtype);
             """,
-            (graph_name, int(entity_id))
+            (graph_name, int(entity_id)),
         )
         result = cursor.fetchone()
         if result:
             entity = result[0]
             return vertex_ag_to_retrieved_entity(graph_name, entity)
         raise ValueError("No entity created or returned by the query.")
-    
 
 
 def get_age_structure(graph_name, structure_identifier) -> RetrievedEntity:
@@ -403,7 +417,7 @@ def get_age_structure(graph_name, structure_identifier) -> RetrievedEntity:
                 RETURN n
             $$) as (n agtype);
             """,
-            (graph_name, int(structure_identifier))
+            (graph_name, int(structure_identifier)),
         )
         result = cursor.fetchone()
         if result:
@@ -412,7 +426,6 @@ def get_age_structure(graph_name, structure_identifier) -> RetrievedEntity:
         raise ValueError("No entity created or returned by the query.")
 
 
-        
 def get_age_entity_relation(graph_name, edge_id) -> RetrievedRelation:
 
     with graph_cursor() as cursor:
@@ -425,7 +438,7 @@ def get_age_entity_relation(graph_name, edge_id) -> RetrievedRelation:
                 RETURN e
             $$) as (e agtype);
             """,
-            (graph_name, int(edge_id))
+            (graph_name, int(edge_id)),
         )
         result = cursor.fetchone()
         if result:
@@ -445,16 +458,21 @@ def get_age_metrics(graph_name, node_id):
                     RETURN r
             $$) AS (r agtype);
             """,
-            (graph_name, int(node_id))
+            (graph_name, int(node_id)),
         )
         result = cursor.fetchall()
         print("Retrieved this result", result)
         if result:
-            return [edge_ag_to_retrieved_metric(graph_name, metric[0]) for metric in result]
+            return [
+                edge_ag_to_retrieved_metric(graph_name, metric[0]) for metric in result
+            ]
         else:
             return []
 
-def create_age_metric(graph_name,  metric_name, node_id, value, timepoint: datetime.datetime =None):
+
+def create_age_metric(
+    graph_name, metric_name, node_id, value, timepoint: datetime.datetime = None
+):
     with graph_cursor() as cursor:
         cursor.execute(
             f"""SELECT * FROM cypher(%s, $$
@@ -465,7 +483,12 @@ def create_age_metric(graph_name,  metric_name, node_id, value, timepoint: datet
                 RETURN a
             $$) AS (a agtype);
             """,
-            (graph_name, int(node_id), value, timepoint.isoformat() if timepoint else None)
+            (
+                graph_name,
+                int(node_id),
+                value,
+                timepoint.isoformat() if timepoint else None,
+            ),
         )
         result = cursor.fetchone()
         if result:
@@ -473,7 +496,8 @@ def create_age_metric(graph_name,  metric_name, node_id, value, timepoint: datet
             return vertex_ag_to_retrieved_entity(graph_name, entity)
         else:
             raise ValueError("No entity created or returned by the query.")
-    
+
+
 def create_age_relation_metric(graph_name, metric_name, edge_id, value):
     # We need to add temporal support
     # __valid_from = timestamp or None (None means it is valid from the beginning)
@@ -491,14 +515,14 @@ def create_age_relation_metric(graph_name, metric_name, edge_id, value):
                 RETURN r
             $$) AS (r agtype)
             """,
-            (graph_name, int(edge_id), value)
+            (graph_name, int(edge_id), value),
         )
         result = cursor.fetchone()
 
         if result:
             edge = result[0]
             return edge_ag_to_retrieved_relation(graph_name, edge)
-        
+
         else:
             existence_query = """
                 SELECT count(*)
@@ -515,8 +539,6 @@ def create_age_relation_metric(graph_name, metric_name, edge_id, value):
 
             if edge_count < 1:
                 raise ValueError(f"Edge does not exist. {edge_id}")
-            
-
 
             raise ValueError("No entity created or returned by the query.")
 
@@ -533,14 +555,21 @@ def create_age_relation(graph_name, relation_kind_age_name, left_id, right_id):
                 RETURN id(r), properties(r)
             $$) as (id agtype, properties agtype);
             """,
-            (graph_name, int(left_id), int(right_id))
+            (graph_name, int(left_id), int(right_id)),
         )
         result = cursor.fetchone()
         if result:
             entity_id = result[0]
             properties = result[1]
             print(entity_id, relation_kind_age_name, properties)
-            return RetrievedRelation(id=entity_id, kind_age_name=relation_kind_age_name, properties=properties, graph_name=graph_name, left_id=left_id, right_id=right_id)
+            return RetrievedRelation(
+                id=entity_id,
+                kind_age_name=relation_kind_age_name,
+                properties=properties,
+                graph_name=graph_name,
+                left_id=left_id,
+                right_id=right_id,
+            )
         else:
             existence_query = """
                 SELECT count(*)
@@ -553,20 +582,28 @@ def create_age_relation(graph_name, relation_kind_age_name, left_id, right_id):
 
             cursor.execute(existence_query, (graph_name, left_id, right_id))
             node_count = cursor.fetchone()[0]
-            
-            if node_count < 2:
-                raise ValueError(f"One or both of the nodes do not exist. {left_id}, {right_id}, {graph_name}")
 
+            if node_count < 2:
+                raise ValueError(
+                    f"One or both of the nodes do not exist. {left_id}, {right_id}, {graph_name}"
+                )
 
             raise ValueError("No entity created or returned by the query.")
+
 
 def to_entity_id(id):
     return id.split(":")[1]
 
+
 def to_graph_id(id):
     return id.split(":")[0]
 
-def select_all_entities(graph_name, pagination: pagination.GraphPaginationInput,  filter: filters.EntityFilter):
+
+def select_all_entities(
+    graph_name,
+    pagination: pagination.GraphPaginationInput,
+    filter: filters.EntityFilter,
+):
     with graph_cursor() as cursor:
 
         WHERE = ""
@@ -576,23 +613,23 @@ def select_all_entities(graph_name, pagination: pagination.GraphPaginationInput,
         if filter:
 
             if filter.ids:
-                and_clauses.append(f'id(n) IN [ {", ".join([to_entity_id(id) for id in filter.ids])}]')
+                and_clauses.append(
+                    f'id(n) IN [ {", ".join([to_entity_id(id) for id in filter.ids])}]'
+                )
 
             if filter.search:
                 and_clauses.append(f'n.Label STARTS WITH "{filter.search}"')
 
             if filter.linked_expression:
-                expression = models.LinkedExpression.objects.get(id=filter.linked_expression)
+                expression = models.LinkedExpression.objects.get(
+                    id=filter.linked_expression
+                )
                 and_clauses.append(f'label(n) = "{expression.age_name}"')
 
             if and_clauses:
                 WHERE = "WHERE " + " AND ".join(and_clauses)
 
-
-
         print(WHERE)
-
-
 
         cursor.execute(
             f"""
@@ -606,7 +643,7 @@ def select_all_entities(graph_name, pagination: pagination.GraphPaginationInput,
                 LIMIT %s
             $$) as (n agtype);
             """,
-            [graph_name, pagination.offset or 0 , pagination.limit or 200]
+            [graph_name, pagination.offset or 0, pagination.limit or 200],
         )
 
         if cursor.rowcount == 0:
@@ -617,8 +654,13 @@ def select_all_entities(graph_name, pagination: pagination.GraphPaginationInput,
             yield vertex_ag_to_retrieved_entity(graph_name, result[0])
 
 
-
-def select_paired_entities(graph_name, pagination: pagination.GraphPaginationInput,  relation_filter: filters.EntityRelationFilter | None = None , left_filter: filters.EntityFilter | None = None, right_filter: filters.EntityFilter | None = None):
+def select_paired_entities(
+    graph_name,
+    pagination: pagination.GraphPaginationInput,
+    relation_filter: filters.EntityRelationFilter | None = None,
+    left_filter: filters.EntityFilter | None = None,
+    right_filter: filters.EntityFilter | None = None,
+):
     with graph_cursor() as cursor:
 
         WHERE = ""
@@ -628,57 +670,65 @@ def select_paired_entities(graph_name, pagination: pagination.GraphPaginationInp
         if left_filter:
 
             if left_filter.ids:
-                and_clauses.append(f'id(n) IN [ {", ".join([to_entity_id(id) for id in filter.ids])}]')
+                and_clauses.append(
+                    f'id(n) IN [ {", ".join([to_entity_id(id) for id in filter.ids])}]'
+                )
 
             if left_filter.search:
                 and_clauses.append(f'n.Label STARTS WITH "{filter.search}"')
 
             if left_filter.linked_expression:
-                expression = models.LinkedExpression.objects.get(id=filter.linked_expression)
+                expression = models.LinkedExpression.objects.get(
+                    id=filter.linked_expression
+                )
                 and_clauses.append(f'label(n) = "{expression.age_name}"')
 
             if and_clauses:
                 WHERE = "WHERE " + " AND ".join(and_clauses)
 
-
         if right_filter:
 
             if right_filter.ids:
-                and_clauses.append(f'id(m) IN [ {", ".join([to_entity_id(id) for id in filter.ids])}]')
+                and_clauses.append(
+                    f'id(m) IN [ {", ".join([to_entity_id(id) for id in filter.ids])}]'
+                )
 
             if right_filter.search:
                 and_clauses.append(f'm.Label STARTS WITH "{filter.search}"')
 
             if right_filter.linked_expression:
-                expression = models.LinkedExpression.objects.get(id=filter.linked_expression)
+                expression = models.LinkedExpression.objects.get(
+                    id=filter.linked_expression
+                )
                 and_clauses.append(f'label(m) = "{expression.age_name}"')
 
             if and_clauses:
                 WHERE = "WHERE " + " AND ".join(and_clauses)
 
-
         if relation_filter:
 
             if relation_filter.left_id:
-                and_clauses.append(f'id(n) = {to_entity_id(relation_filter.left_id)}')
+                and_clauses.append(f"id(n) = {to_entity_id(relation_filter.left_id)}")
 
             if relation_filter.right_id:
-                and_clauses.append(f'id(m) = {to_entity_id(relation_filter.right_id)}')
+                and_clauses.append(f"id(m) = {to_entity_id(relation_filter.right_id)}")
 
             if not relation_filter.with_self:
-                and_clauses.append(f'id(n) <> id(m)')
+                and_clauses.append(f"id(n) <> id(m)")
 
             if relation_filter.ids:
-                and_clauses.append(f'id(e) IN [ {", ".join([to_entity_id(id) for id in relation_filter.ids])}]')
+                and_clauses.append(
+                    f'id(e) IN [ {", ".join([to_entity_id(id) for id in relation_filter.ids])}]'
+                )
 
             if relation_filter.search:
                 and_clauses.append(f'e.Label STARTS WITH "{relation_filter.search}"')
 
             if relation_filter.linked_expression:
-                expression = models.LinkedExpression.objects.get(id=relation_filter.linked_expression)
+                expression = models.LinkedExpression.objects.get(
+                    id=relation_filter.linked_expression
+                )
                 and_clauses.append(f'label(e) = "{expression.age_name}"')
-
-
 
         cursor.execute(
             f"""
@@ -691,7 +741,7 @@ def select_paired_entities(graph_name, pagination: pagination.GraphPaginationInp
                 LIMIT %s
             $$) as (n agtype, m agtype, e agtype);
             """,
-            [graph_name, pagination.offset or 0 , pagination.limit or 200]
+            [graph_name, pagination.offset or 0, pagination.limit or 200],
         )
 
         if cursor.rowcount == 0:
@@ -699,11 +749,20 @@ def select_paired_entities(graph_name, pagination: pagination.GraphPaginationInp
 
         for result in cursor.fetchall():
             print(result)
-            yield vertex_ag_to_retrieved_entity(graph_name, result[0]), vertex_ag_to_retrieved_entity(graph_name, result[1]), edge_ag_to_retrieved_relation(graph_name, result[2])
+            yield vertex_ag_to_retrieved_entity(
+                graph_name, result[0]
+            ), vertex_ag_to_retrieved_entity(
+                graph_name, result[1]
+            ), edge_ag_to_retrieved_relation(
+                graph_name, result[2]
+            )
 
 
-
-def select_all_relations(graph_name, pagination: pagination.GraphPaginationInput,  filter: filters.EntityRelationFilter):
+def select_all_relations(
+    graph_name,
+    pagination: pagination.GraphPaginationInput,
+    filter: filters.EntityRelationFilter,
+):
     with graph_cursor() as cursor:
 
         WHERE = ""
@@ -713,29 +772,30 @@ def select_all_relations(graph_name, pagination: pagination.GraphPaginationInput
         if filter:
 
             if filter.left_id:
-                and_clauses.append(f'id(a) = {to_entity_id(filter.left_id)}')
+                and_clauses.append(f"id(a) = {to_entity_id(filter.left_id)}")
 
             if filter.right_id:
-                and_clauses.append(f'id(b) = {to_entity_id(filter.right_id)}')
-
+                and_clauses.append(f"id(b) = {to_entity_id(filter.right_id)}")
 
             if not filter.with_self:
-                and_clauses.append(f'id(a) <> id(b)')
+                and_clauses.append(f"id(a) <> id(b)")
 
             if filter.ids:
-                and_clauses.append(f'id(e) IN [ {", ".join([to_entity_id(id) for id in filter.ids])}]')
+                and_clauses.append(
+                    f'id(e) IN [ {", ".join([to_entity_id(id) for id in filter.ids])}]'
+                )
 
             if filter.search:
                 and_clauses.append(f'e.Label STARTS WITH "{filter.search}"')
 
             if filter.linked_expression:
-                expression = models.LinkedExpression.objects.get(id=filter.linked_expression)
+                expression = models.LinkedExpression.objects.get(
+                    id=filter.linked_expression
+                )
                 and_clauses.append(f'label(e) = "{expression.age_name}"')
 
             if and_clauses:
                 WHERE = "WHERE " + " AND ".join(and_clauses)
-
-
 
         print(WHERE)
 
@@ -753,7 +813,7 @@ def select_all_relations(graph_name, pagination: pagination.GraphPaginationInput
                     LIMIT %s
                 $$) as (e agtype);
                 """,
-                [graph_name, pagination.offset or 0 , pagination.limit or 200]
+                [graph_name, pagination.offset or 0, pagination.limit or 200],
             )
 
             print("here")
@@ -782,8 +842,15 @@ def get_age_relations(graph_name, entity_id):
                 RETURN id(r), type(r), id(a), id(b), properties(r)
             $$) as (id agtype, type agtype, left agtype, right agtype, properties agtype);
             """,
-            [graph_name, entity_id]
+            [graph_name, entity_id],
         )
         print(cursor.fetchall())
         for result in cursor.fetchall():
-            yield RetrievedRelation(id=result[0], kind_age_name=result[1], left_id=result[2], right_id=result[3], properties=result[4], graph_name=graph_name)
+            yield RetrievedRelation(
+                id=result[0],
+                kind_age_name=result[1],
+                left_id=result[2],
+                right_id=result[3],
+                properties=result[4],
+                graph_name=graph_name,
+            )

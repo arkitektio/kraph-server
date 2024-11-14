@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 class Channel:
     """A GraphQL channel."""
 
-
     def __init__(self, name) -> None:
         self.name = name
         print("CHANNEL", name)
@@ -43,7 +42,7 @@ class Channel:
         for group in groups:
             # Join room group
             logger.debug(f"Joining group {group} for channel {ws.channel_name}")
-            print("GROUP", group , ws.channel_name)
+            print("GROUP", group, ws.channel_name)
             await channel_layer.group_add(group, ws.channel_name)
 
         async with ws.listen_to_channel(f"channel.{self.name}", groups=groups) as cm:

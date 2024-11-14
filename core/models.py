@@ -10,11 +10,11 @@ import koherent.signals
 from django_choices_field import TextChoicesField
 from core.fields import S3Field
 from core.datalayer import Datalayer
+
 # Create your models here.
 import boto3
 import json
 from django.conf import settings
-
 
 
 class S3Store(models.Model):
@@ -32,7 +32,12 @@ class BigFileStore(S3Store):
     def fill_info(self) -> None:
         pass
 
-    def get_presigned_url(self, info, datalayer: Datalayer, host: str | None = None, ) -> str:
+    def get_presigned_url(
+        self,
+        info,
+        datalayer: Datalayer,
+        host: str | None = None,
+    ) -> str:
         s3 = datalayer.s3
         url = s3.generate_presigned_url(
             ClientMethod="get_object",
@@ -46,8 +51,10 @@ class BigFileStore(S3Store):
 
 
 class MediaStore(S3Store):
-    
-    def get_presigned_url(self, info,  datalayer: Datalayer, host: str | None = None) -> str:
+
+    def get_presigned_url(
+        self, info, datalayer: Datalayer, host: str | None = None
+    ) -> str:
         s3 = datalayer.s3
         url: str = s3.generate_presigned_url(
             ClientMethod="get_object",
@@ -58,7 +65,7 @@ class MediaStore(S3Store):
             ExpiresIn=3600,
         )
         return url.replace(settings.AWS_S3_ENDPOINT_URL, host or "")
-    
+
     def fill_info(self) -> None:
         pass
 
@@ -66,7 +73,6 @@ class MediaStore(S3Store):
         s3 = datalayer.s3
         s3.upload_fileobj(file, self.bucket, self.key)
         self.save()
-
 
 
 class Experiment(models.Model):
@@ -79,7 +85,6 @@ class Experiment(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     history = HistoryField()
-
 
 
 class Protocol(models.Model):
@@ -111,9 +116,14 @@ class Protocol(models.Model):
 
 
 class Reagent(models.Model):
-    expression = models.ForeignKey("Expression", on_delete=models.CASCADE, help_text="The type of reagent (based on an ontology)")
+    expression = models.ForeignKey(
+        "Expression",
+        on_delete=models.CASCADE,
+        help_text="The type of reagent (based on an ontology)",
+    )
     active = models.BooleanField(
-        help_text="Whether the reagent is the active stock for most experiments", default=False,
+        help_text="Whether the reagent is the active stock for most experiments",
+        default=False,
     )
     mass = models.FloatField(
         help_text="The mass of the reagent in the protocol",
@@ -156,13 +166,11 @@ class ProtocolStepTemplate(models.Model):
     history = HistoryField()
 
 
-
-
 class ProtocolStep(models.Model):
-    """" A protocol step 
+    """ " A protocol step
 
     Protocol steps allow to describe what happened to an entity in an experiment
-    (e.g it was stained, imaged, etc.) or what happend to a reagent 
+    (e.g it was stained, imaged, etc.) or what happend to a reagent
     when it was created (mixed, diluted, etc.)
 
     Protocolsteps always have a kind, which is used to describe the kind of the step
@@ -174,7 +182,7 @@ class ProtocolStep(models.Model):
     primary antibody staining step, you would use the expression field to describe
     the purpose of the staining step. Expressions are linked to an ontology and
     allow you to search for steps in a more structured way. (e.g. searching all
-    entities that were stained with a primary antibody). 
+    entities that were stained with a primary antibody).
 
     They are used to describe the steps of an experiment and are used to describe
     the steps of a protocol. Protocolsteps are supposed to be as atomic as possible
@@ -206,6 +214,7 @@ class ProtocolStep(models.Model):
     - 5. STORAGE_STEP: Store: Store reagent A in the fridge
 
     """
+
     for_reagent = models.ForeignKey(
         "Reagent",
         on_delete=models.CASCADE,
@@ -227,9 +236,18 @@ class ProtocolStep(models.Model):
         help_text="The template that was used to create the step",
     )
     performed_at = models.DateTimeField(auto_now_add=True, auto_created=True)
-    performed_by = models.ForeignKey(get_user_model(), on_delete=models.CASCADE, null=True, help_text="The user that performed the step")
+    performed_by = models.ForeignKey(
+        get_user_model(),
+        on_delete=models.CASCADE,
+        null=True,
+        help_text="The user that performed the step",
+    )
     history = HistoryField()
-    variable_mappings = models.JSONField(null=True, blank=True, help_text="A mapping of variables to values for this step")
+    variable_mappings = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="A mapping of variables to values for this step",
+    )
 
 
 class ReagentMapping(models.Model):
@@ -277,16 +295,14 @@ class Ontology(models.Model):
 
     def __str__(self) -> str:
         return self.name
-    
 
     @property
     def age_name(self) -> str:
         return self.name.replace(" ", "_").lower()
 
 
-
 def random_color():
-    levels = range(32,256,32)
+    levels = range(32, 256, 32)
     return tuple(random.choice(levels) for _ in range(3))
 
 
@@ -317,7 +333,7 @@ class Expression(models.Model):
         choices_enum=enums.MetricDataTypeChoices,
         help_text="The data type (if a metric)",
         null=True,
-        blank = True
+        blank=True,
     )
     description = models.CharField(
         max_length=1000,
@@ -361,7 +377,6 @@ class Expression(models.Model):
             raise ValueError(f"Unknown kind {self.kind}")
 
 
-
 class Graph(models.Model):
     """An EntityGroup is a collection of Entities.
 
@@ -371,6 +386,7 @@ class Graph(models.Model):
     to their name.
 
     """
+
     user = models.ForeignKey(
         get_user_model(),
         on_delete=models.CASCADE,
@@ -398,8 +414,6 @@ class Graph(models.Model):
         unique=True,
     )
 
-    
-
 
 class LinkedExpression(models.Model):
     """An EntityClass is the semantic class of an entity"""
@@ -422,12 +436,12 @@ class LinkedExpression(models.Model):
         max_length=1000,
         help_text="The kind of the entity class",
         null=True,
-    )    
+    )
     metric_kind = TextChoicesField(
         choices_enum=enums.MetricDataTypeChoices,
         help_text="The data type (if a metric)",
         null=True,
-        blank = True
+        blank=True,
     )
     color = models.JSONField(
         max_length=1000,
@@ -458,21 +472,22 @@ class LinkedExpression(models.Model):
 
     def __str__(self) -> str:
         return f"{self.expression} in {self.graph}"
-    
-    def create_entity(self, group, name: str = None,  instance_kind: str = None, metrics: dict = None) -> str:
+
+    def create_entity(
+        self, group, name: str = None, instance_kind: str = None, metrics: dict = None
+    ) -> str:
         from core.age import create_age_entity
+
         return create_age_entity(self.graph.age_name, self.age_name)
-    
 
     @property
     def rgb_color_string(self) -> str:
         return f"rgb({self.color[0]}, {self.color[1]}, {self.color[2]})"
-    
-
 
 
 class GraphViews(models.Model):
-    """ A view of a graph that is materialized"""
+    """A view of a graph that is materialized"""
+
     graph = models.ForeignKey(
         Graph,
         on_delete=models.CASCADE,
@@ -482,16 +497,14 @@ class GraphViews(models.Model):
         help_text="The graph this materialized graph belongs to",
     )
     query = models.CharField(
-        max_length=7000,
-        help_text="The query that is used to materialize the graph"
+        max_length=7000, help_text="The query that is used to materialize the graph"
     )
     name = models.CharField(
-        max_length=1000,
-        help_text="The name of the materialized graph"
+        max_length=1000, help_text="The name of the materialized graph"
     )
     kind = models.CharField(
         max_length=1000,
-        help_text="The kind of the materialized graph (i.e one-to-one, one-to-many, many-to-many)"
+        help_text="The kind of the materialized graph (i.e one-to-one, one-to-many, many-to-many)",
     )
 
 
@@ -503,12 +516,14 @@ class MaterializedGraph(models.Model):
         help_text="The graph this model was trained on",
     )
     materialized_at = models.DateTimeField(
-        auto_now_add=True, help_text="The time the model was materialized. All newer entities are not part of the materialized graph"
+        auto_now_add=True,
+        help_text="The time the model was materialized. All newer entities are not part of the materialized graph",
     )
 
 
 class Model(models.Model):
-    """ A Model is a deep learning model """
+    """A Model is a deep learning model"""
+
     name = models.CharField(max_length=1000, help_text="The name of the model")
     materialized_graph = models.ForeignKey(
         MaterializedGraph,
@@ -526,7 +541,3 @@ class Model(models.Model):
         related_name="models",
         help_text="The store of the model",
     )
-
-
-
-
