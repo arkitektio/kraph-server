@@ -434,13 +434,13 @@ class Entity:
 
     _value: strawberry.Private[age.RetrievedEntity]
 
-    @strawberry.django.field(
+    @strawberry.field(
         description="The unique identifier of the entity within its graph"
     )
     def id(self, info: Info) -> strawberry.ID:
         return f"{self._value.graph_name}:{self._value.id}"
 
-    @strawberry.django.field(
+    @strawberry_django.field(
         description="The expression that defines this entity's type"
     )
     async def linked_expression(self, info: Info) -> "LinkedExpression":
@@ -448,39 +448,39 @@ class Entity:
             f"{self._value.graph_name}:{self._value.kind_age_name}"
         )
 
-    @strawberry.django.field(description="The name of the entity's type/kind")
+    @strawberry.field(description="The name of the entity's type/kind")
     def kind_name(self, info: Info) -> str:
         return self._value.kind_age_name
 
-    @strawberry.django.field(description="A human readable label for this entity")
+    @strawberry.field(description="A human readable label for this entity")
     def label(self, info: Info) -> str:
         return self._value.label
 
-    @strawberry.django.field(
+    @strawberry.field(
         description="A unique identifier for this entity if available"
     )
     def identifier(self, info: Info) -> str | None:
         return self._value.identifier
 
-    @strawberry.django.field(
+    @strawberry.field(
         description="Reference to an external object if this entity represents one"
     )
     def object(self, info: Info) -> str | None:
         return self._value.object
 
-    @strawberry.django.field(description="Timestamp from when this entity is valid")
+    @strawberry.field(description="Timestamp from when this entity is valid")
     def valid_from(self, info: Info) -> datetime.datetime:
         return self._value.valid_from
 
-    @strawberry.django.field(description="Timestamp until when this entity is valid")
+    @strawberry.field(description="Timestamp until when this entity is valid")
     def valid_to(self, info: Info) -> datetime.datetime:
         return self._value.valid_to
 
-    @strawberry.django.field(description="When this entity was created")
+    @strawberry.field(description="When this entity was created")
     def created_at(self, info: Info) -> datetime.datetime:
         return self._value.created_at or datetime.datetime.now()
 
-    @strawberry.django.field(
+    @strawberry_django.field(
         description="Relations this entity has with other entities"
     )
     def relations(

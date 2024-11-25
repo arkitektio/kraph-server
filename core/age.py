@@ -413,11 +413,12 @@ def get_age_structure(graph_name, structure_identifier) -> RetrievedEntity:
             f"""
             SELECT * 
             FROM cypher(%s, $$
-                MATCH (n: {{__structure: structure_identifier = %s}})
+                MATCH (n)
+                WHERE n.__structure = %s
                 RETURN n
             $$) as (n agtype);
             """,
-            (graph_name, int(structure_identifier)),
+            (graph_name, structure_identifier),
         )
         result = cursor.fetchone()
         if result:

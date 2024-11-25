@@ -9,7 +9,6 @@ def structure(
 
     graph = models.Graph.objects.get(id=graph)
 
-    return [
-        types.Entity(_value=entity)
-        for entity in age.get_age_structure(graph.age_name, structure)
-    ]
+    return types.Entity(_value=age.get_age_structure(graph.age_name, structure))
+    
+    
