@@ -10,5 +10,3 @@ def structure(
     graph = models.Graph.objects.get(id=graph)
 
     return types.Entity(_value=age.get_age_structure(graph.age_name, structure))
-    
-    

@@ -456,9 +456,7 @@ class Entity:
     def label(self, info: Info) -> str:
         return self._value.label
 
-    @strawberry.field(
-        description="A unique identifier for this entity if available"
-    )
+    @strawberry.field(description="A unique identifier for this entity if available")
     def identifier(self, info: Info) -> str | None:
         return self._value.identifier
 
