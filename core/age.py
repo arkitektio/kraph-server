@@ -162,6 +162,10 @@ class RetrievedRelation:
 
     def retrieve_right(self) -> "RetrievedEntity":
         return get_age_entity(self.graph_name, self.right_id)
+    
+    @property
+    def value(self):
+        return self.properties.get("value", None)
 
     @property
     def label(self):
@@ -169,11 +173,11 @@ class RetrievedRelation:
 
     @property
     def valid_from(self):
-        return self.properties.get("__valid_from", None)
+        return self.properties.get("valid_from", None)
 
     @property
     def valid_to(self):
-        return self.properties.get("__valid_to", None)
+        return self.properties.get("valid_to", None)
 
     @property
     def valid_relative_from(self):
@@ -254,15 +258,15 @@ def create_age_relation_kind(graph_name, kind_name):
 
 
 def vertex_ag_to_retrieved_entity(graph_name, vertex):
-    trimmed_neighbour = vertex.replace("::vertex", "")
-    print("timmed neighbour", trimmed_neighbour)
+    trimmed_vertex = vertex.replace("::vertex", "")
+    print("timmed neighbour", trimmed_vertex)
 
-    parsed_neighbour = json.loads(trimmed_neighbour)
+    parsed_vertex = json.loads(trimmed_vertex)
     return RetrievedEntity(
         graph_name=graph_name,
-        id=parsed_neighbour["id"],
-        kind_age_name=parsed_neighbour["label"],
-        properties=parsed_neighbour["properties"],
+        id=parsed_vertex["id"],
+        kind_age_name=parsed_vertex["label"],
+        properties=parsed_vertex["properties"],
     )
 
 
@@ -354,7 +358,6 @@ def create_age_entity(graph_name, kind_age_name, name: str = None) -> RetrievedE
 def create_age_structure(
     graph_name,
     kind_age_name,
-    name: str = None,
     identifier: str = None,
     object: str = None,
     structure: str = None,
@@ -365,13 +368,12 @@ def create_age_structure(
             f"""
             SELECT * 
             FROM cypher(%s, $$
-                CREATE (n:{kind_age_name} {{__label: %s, __created_at: %s, __identifier: %s, __object: %s, __structure: %s}})
+                CREATE (n:{kind_age_name} {{__created_at: %s, __identifier: %s, __object: %s, __structure: %s}})
                 RETURN n
             $$) as (n agtype);
             """,
             (
                 graph_name,
-                name,
                 datetime.datetime.now().isoformat(),
                 identifier,
                 object,
@@ -384,6 +386,47 @@ def create_age_structure(
             return vertex_ag_to_retrieved_entity(graph_name, entity)
         else:
             raise ValueError("No entity created or returned by the query.")
+
+
+
+
+def create_age_measurement(
+    graph_name, metric_name, structure: str, entity: str , value = None, 
+    valid_from: datetime.datetime = None,
+    valid_to: datetime.datetime = None
+):
+    with graph_cursor() as cursor:
+        print("Creating measurement", graph_name, metric_name, structure, entity, value, valid_from, valid_to)
+        print(type(value))
+        
+        if isinstance(value, list):
+            value = json.dumps(value)
+            
+        cursor.execute(
+            f"""SELECT * FROM cypher(%s, $$
+                MATCH (a) WHERE id(a) = %s
+                MATCH (b) WHERE id(b) = %s
+                CREATE (a)-[r:{metric_name}]->(b)
+                SET r.value = %s, r.valid_from = %s, r.valid_to = %s
+                RETURN r
+            $$) AS (r agtype);
+            """,
+            (
+                graph_name,
+                structure,
+                entity,
+                value,
+                valid_from.isoformat() if valid_from else None,
+                valid_to.isoformat() if valid_to else None,
+            ),
+        )
+        result = cursor.fetchone()
+        if result:
+            entity = result[0]
+            return edge_ag_to_retrieved_relation(graph_name, entity)
+        else:
+            raise ValueError("No entity created or returned by the query.")
+
 
 
 def get_age_entity(graph_name, entity_id) -> RetrievedEntity:
@@ -470,33 +513,6 @@ def get_age_metrics(graph_name, node_id):
         else:
             return []
 
-
-def create_age_metric(
-    graph_name, metric_name, node_id, value, timepoint: datetime.datetime = None
-):
-    with graph_cursor() as cursor:
-        cursor.execute(
-            f"""SELECT * FROM cypher(%s, $$
-                MATCH (a) 
-                WHERE id(a) = %s
-                CREATE (a)-[r:{metric_name}]->(a)
-                SET r.value = %s , r.timepoint = %s
-                RETURN a
-            $$) AS (a agtype);
-            """,
-            (
-                graph_name,
-                int(node_id),
-                value,
-                timepoint.isoformat() if timepoint else None,
-            ),
-        )
-        result = cursor.fetchone()
-        if result:
-            entity = result[0]
-            return vertex_ag_to_retrieved_entity(graph_name, entity)
-        else:
-            raise ValueError("No entity created or returned by the query.")
 
 
 def create_age_relation_metric(graph_name, metric_name, edge_id, value):
@@ -653,6 +669,44 @@ def select_all_entities(
         for result in cursor.fetchall():
             print(result)
             yield vertex_ag_to_retrieved_entity(graph_name, result[0])
+            
+            
+            
+            
+def select_latest_nodes(
+    graph_name,
+    pagination: pagination.GraphPaginationInput,
+    filter: filters.EntityFilter,
+):
+    
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT *
+            FROM cypher(%s, $$
+                MATCH (n)
+                RETURN n
+                ORDER BY n.__created_at DESC
+                SKIP %s
+                LIMIT %s
+            $$) as (n agtype);
+            """,
+            [graph_name, pagination.offset or 0, pagination.limit or 200],
+        )
+        
+        if cursor.rowcount == 0:
+            return []
+        
+        for result in cursor.fetchall():
+            yield vertex_ag_to_retrieved_entity(graph_name, result[0])
+            
+            
+            
+            
+            
+            
+            
+            
 
 
 def select_paired_entities(
@@ -855,3 +909,6 @@ def get_age_relations(graph_name, entity_id):
                 properties=result[4],
                 graph_name=graph_name,
             )
+
+
+

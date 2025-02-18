@@ -17,8 +17,8 @@ from core.datalayer import get_current_datalayer
 from strawberry.experimental import pydantic
 from typing import Union
 from strawberry import LazyType
-from core import age, pagination as p
-
+from core import age, pagination as p, filters as f
+from strawberry_django.pagination import OffsetPaginationInput
 
 @strawberry_django.type(AppModel, description="An app.")
 class App:
@@ -166,6 +166,23 @@ class ProtocolStepTemplate:
     created_at: datetime.datetime
 
 
+
+
+
+def entity_to_node_subtype(entity: age.RetrievedEntity) -> Union["Structure","Entity"]:
+    if entity.identifier:
+        return Structure(_value=entity)
+    else:
+        return Entity(_value=entity)
+    
+
+def relation_to_edge_subtype(relation: age.RetrievedRelation) -> Union["Measurement","Relation"]:
+    if relation.value:
+        return Measurement(_value=relation)
+    else:
+        return Relation(_value=relation)
+
+
 @strawberry_django.type(
     models.ProtocolStep, filters=filters.ProtocolStepFilter, pagination=True
 )
@@ -271,76 +288,230 @@ class History:
         return changes
 
 
-@strawberry.type
-class NodeMetric:
-    _value: strawberry.Private[age.RetrievedNodeMetric]
-    """A metric."""
+@strawberry.django.type(
+    models.Graph,
+    filters=filters.GraphFilter,
+    pagination=True,
+    description="A graph, that contains entities and relations.",
+)
+class Graph:
+    id: auto
+    ontology: "Ontology"
+    name: str
+    description: str | None
+    age_name: str
+    
+    @strawberry_django.field()
+    def latest_nodes(self, info: Info, filters: filters.EntityFilter | None = None , pagination: p.GraphPaginationInput | None = None) -> List["Node"]:
+        
+        filters = filters or f.EntityFilter()
+        pagination = pagination or p.GraphPaginationInput()
+        
+        return [entity_to_node_subtype(i) for i in age.select_latest_nodes(self.age_name, pagination, filter=filters)]
+    
+    
+  
+@strawberry.django.type(
+    models.GraphQuery,
+    filters=filters.GraphQueryFilter,
+    pagination=True,
+    description="A view of a graph, that contains entities and relations.",
+)
+class GraphQuery:
+    id: auto
+    name: str
+    description: str | None
+    kind: enums.ViewKind
+    ontology: "Ontology"
+    
 
-    @strawberry.django.field()
-    def id(self, info: Info) -> strawberry.ID:
-        return f"{self._value.graph_name}:{self._value.id}"
 
-    @strawberry.django.field()
-    async def linked_expression(self, info: Info) -> "LinkedExpression":
-        return await loaders.linked_expression_loader.load(
-            f"{self._value.graph_name}:{self._value.kind_age_name}"
-        )
+@strawberry.django.type(
+    models.NodeQuery,
+    filters=filters.NodeQueryFilter,
+    pagination=True,
+    description="A view of a node entities and relations.",
+)
+class NodeQuery:
+    id: auto
+    name: str
+    description: str | None
+    kind: enums.ViewKind
+    ontology: "Ontology"
+    
+    
 
-    @strawberry.django.field()
-    async def valid_from(self, info: Info) -> datetime.datetime | None:
-        return self._value.valid_from
+    
 
-    @strawberry.django.field()
-    async def valid_to(self, info: Info) -> datetime.datetime | None:
-        return self._value.valid_to
 
-    @strawberry.django.field()
-    async def value(self, info: Info) -> scalars.Metric | None:
-        return self._value.value
+@strawberry.django.type(
+    models.GraphView,
+    filters=filters.GraphViewFilter,
+    pagination=True,
+    description="A view of a graph, that contains entities and relations.",
+)
+class GraphView:
+    id: auto
+    graph: Graph
+    query: "GraphQuery"
 
+
+
+@strawberry.django.type(
+    models.NodeView,
+    filters=filters.NodeViewFilter,
+    pagination=True,
+    description="A view of a graph, that contains entities and relations.",
+)
+class NodeView:
+    id: auto
+    node: "Node"
+    node: "NodeQuery"
+
+@strawberry.interface
+class Node: 
+    _value: strawberry.Private[age.RetrievedEntity]
+
+    def __hash__(self):
+        return self._value.id
+    
+    
     @strawberry.django.field()
-    async def key(self, info: Info) -> str:
+    def label(self, info: Info) -> str:
         return self._value.kind_age_name
 
 
-@strawberry.type
-class RelationMetric:
-    _value: strawberry.Private[age.RetrievedRelationMetric]
-    """A metric."""
+    @strawberry.field(
+        description="The unique identifier of the entity within its graph"
+    )
+    def id(self, info: Info) -> scalars.NodeID:
+        return f"{self._value.graph_name}:{self._value.id}"
+
+    @strawberry.field(
+        description="The unique identifier of the entity within its graph"
+    )
+    def right_edges(self, info: Info) -> List["Edge"]:
+        return [Edge(_value=edge) for edge in self._value.right_edges]
+    
+    @strawberry.field(
+        description="The unique identifier of the entity within its graph"
+    )
+    def left_edges(self, info: Info) -> List["Edge"]:
+        return [Edge(_value=edge) for edge in self._value.left_edges]
+    
+    @strawberry.field(
+        description="The unique identifier of the entity within its graph"
+    )
+    def edges(self, info: Info,
+        filter: filters.EntityRelationFilter | None = None,
+        pagination: p.GraphPaginationInput | None = None,
+    ) -> List["Edge"]:
+        from_arg_relations = []
+        if not pagination:
+            pagination = p.GraphPaginationInput()
+
+        if not filter:
+            filter = filters.EntityRelationFilter()
+
+        if not filter.left_id and not filter.right_id:
+            filter.left_id = self._value.unique_id
+
+        return [
+            Edge(_value=x)
+            for x in age.select_all_relations(
+                self._value.graph_name, pagination, filter
+            )
+        ]
+    
+
+
+
+@strawberry.type(description="A Structure is a recorded data point in a graph. It can measure a property of an entity through a direct measurement edge, that connects the entity to the structure. It of course can relate to other structures through relation edges.")
+class Structure(Node):
+    pass
+
+    def __hash__(self):
+        return self._value.id
+
+
+    @strawberry.field(description="The unique identifier of the entity within its graph")
+    def identifier(self, info: Info) -> strawberry.ID:
+        return self._value.identifier
+    
+    @strawberry.field(description="The expression that defines this entity's type")
+    def object(self, info: Info) -> str | None:
+        return self._value.object
+
+
+
+
+@strawberry.type(description="A Entity is a recorded data point in a graph. It can measure a property of an entity through a direct measurement edge, that connects the entity to the structure. It of course can relate to other structures through relation edges.")
+class Entity(Node):
+    
+    def __hash__(self):
+        return self._value.id
+
+
+
+
+    @strawberry.django.field(
+        description="Protocol steps where this entity was the target"
+    )
+    def subjected_to(self) -> list[ProtocolStep]:
+        return models.ProtocolStep.objects.filter(for_entity_id=self._value.unique_id)
+
+    @strawberry.django.field(description="Protocol steps where this entity was used")
+    def used_in(self) -> list[ProtocolStep]:
+        return models.ProtocolStep.objects.filter(used_entity_id=self._value.unique_id)
+
+
 
     @strawberry.django.field()
-    async def linked_expression(self, info: Info) -> "LinkedExpression":
-        return await loaders.linked_expression_loader.load(
+    async def expression(self, info: Info) -> "Expression":
+        return await loaders.expression_loader.load(
             f"{self._value.graph_name}:{self._value.kind_age_name}"
         )
 
-    @strawberry.django.field()
-    async def value(self, info: Info) -> str:
-        return self._value.value
 
 
-@strawberry.type
-class EntityRelation:
-    """A relation."""
 
+@strawberry.interface
+class Edge:
     _value: strawberry.Private[age.RetrievedRelation]
 
-    @strawberry.django.field()
-    def id(self, info: Info) -> strawberry.ID:
-        return self._value.unique_id
+
+    def __hash__(self):
+        return self._value.id
+    
+    
+    @strawberry.field(description="The unique identifier of the entity within its graph")
+    def id(self, info: Info) -> scalars.NodeID:
+        return f"{self._value.graph_name}:{self._value.id}"
+
 
     @strawberry.django.field()
-    async def linked_expression(self, info: Info) -> "LinkedExpression":
-        return await loaders.linked_expression_loader.load(
+    async def expression(self, info: Info) -> "Expression":
+        return await loaders.expression_loader.load(
             f"{self._value.graph_name}:{self._value.kind_age_name}"
         )
+        
+        
+    @strawberry.django.field()
+    async def infered_by(self, info: Info) -> "Edge":
+        return Edge(_value=self._value.infered_by)
+
 
     @strawberry.django.field()
-    def left(self, info: Info) -> "Entity":
+    def label(self, info: Info) -> str:
+        return self._value.kind_age_name
+
+
+    @strawberry.django.field()
+    def left(self, info: Info) -> "Node":
         return Entity(_value=self._value.retrieve_left())
 
     @strawberry.django.field()
-    def right(self, info: Info) -> "Entity":
+    def right(self, info: Info) -> "Node":
         return Entity(_value=self._value.retrieve_right())
 
     @strawberry.django.field()
@@ -351,120 +522,59 @@ class EntityRelation:
     def right_id(self, info: Info) -> str:
         return self._value.unique_right_id
 
-    @strawberry.django.field()
-    def label(self, info: Info) -> str:
-        return self._value.kind_age_name
 
-    @strawberry.django.field()
-    def metrics(self, info: Info) -> List[RelationMetric]:
-        return [
-            RelationMetric(_value=metric) for metric in self._value.retrieve_metrics()
-        ]
-
-    @strawberry.django.field()
-    def metric_map(self, info: Info) -> scalars.MetricMap:
-        return self._value.retrieve_properties()
-
-
-@strawberry_django.type(
-    models.Expression,
-    filters=filters.ExpressionFilter,
-    pagination=True,
-    description="""An expression in an ontology. Expression are used to label entities and their relations in a graph like structure. Depending on the kind of the expression
-    it can be used to describe different aspects of the entities and relations.""",
-)
+@strawberry_django.type(models.Expression)
 class Expression:
-    id: auto = strawberry.field(description="The unique identifier of the expression.")
     ontology: "Ontology" = strawberry.field(
         description="The ontology the expression belongs to."
     )
-    kind: enums.ExpressionKind = strawberry.field(
-        description="The kind of the expression."
-    )
-    label: str = strawberry.field(description="The label of the expression. The class")
+   
     description: str | None = strawberry.field(
         description="A description of the expression."
     )
     store: MediaStore | None = strawberry.field(
         description="An image or other media file that can be used to represent the expression."
     )
-    metric_kind: enums.MetricDataType | None = strawberry.field(
-        description="The kind of metric that can be attached to the expression."
-    )
-    linked_expressions: List["LinkedExpression"] = strawberry.field(
-        description="The linked expressions of the expression. i.e in which graphs the expression is used."
-    )
+    id: strawberry.ID = strawberry.field(description="The unique identifier of the expression within its graph")
+    age_name: str = strawberry.field(description="The unique identifier of the expression within its graph")    
+    color: str | None = strawberry.field()
 
-
-@strawberry.django.type(
-    models.Graph,
-    filters=filters.GraphFilter,
-    pagination=True,
-    description="A graph, that contains entities and relations.",
-)
-class Graph:
-    id: auto
-    name: str
-    description: str | None
-    linked_expressions: List["LinkedExpression"]
-    age_name: str
-
-
-@strawberry.type(
-    description="""An entity is a node in a graph. Entities are the building blocks of the data model in kraph.
-                 
-                 They are used to represent the different objects in your data model, and how they are connected to each other, through
-                 relations. 
-
-                 Kraph distinguishes between two core types of entities: Biological entities and Data entities. Biological entities
-                 are describing real-world objects, such as cells, tissues, organs, etc. Data entities are describing data objects, such as
-                 images, tables, etc.
-
-                 While you can relate any entity to any other entity, it is important to keep in mind that the relations between entities
-                    should be meaningful, and should reflect the real-world relationships between the objects they represent.
-                 
-                 If you want to attach measurments or metrics to an entity, you should never attach them directly to the entity, but rather
-                 point from the measurement (the data object) to the entity. This way, you can keep track of the provenance of the data, and
-                 ensure that you never know anything about the entity that is not backed by data.
-           
-                 """
-)
-class Entity:
-    """An entity is a node in a graph representing either a biological object or data object."""
-
-    _value: strawberry.Private[age.RetrievedEntity]
-
-    @strawberry.field(
-        description="The unique identifier of the entity within its graph"
-    )
-    def id(self, info: Info) -> strawberry.ID:
-        return f"{self._value.graph_name}:{self._value.id}"
-
-    @strawberry_django.field(
-        description="The expression that defines this entity's type"
-    )
-    async def linked_expression(self, info: Info) -> "LinkedExpression":
-        return await loaders.linked_expression_loader.load(
-            f"{self._value.graph_name}:{self._value.kind_age_name}"
-        )
-
-    @strawberry.field(description="The name of the entity's type/kind")
-    def kind_name(self, info: Info) -> str:
-        return self._value.kind_age_name
-
-    @strawberry.field(description="A human readable label for this entity")
+    @strawberry_django.field(description="The unique identifier of the expression within its graph")
     def label(self, info: Info) -> str:
-        return self._value.label
+        return self.label or self.age_name
 
-    @strawberry.field(description="A unique identifier for this entity if available")
-    def identifier(self, info: Info) -> str | None:
-        return self._value.identifier
 
-    @strawberry.field(
-        description="Reference to an external object if this entity represents one"
-    )
-    def object(self, info: Info) -> str | None:
-        return self._value.object
+    @strawberry.field(description=" The value  type of the metric")
+    def kind(self, info: Info) -> Optional["MetricKind"]:
+        
+        return self.kind
+    
+    @strawberry.field(description=" The unit  type of the metric")
+    def unit(self, info: Info) -> str | None:
+        return "µm"
+    
+    
+@strawberry.enum
+class MetricKind(str, Enum):
+    STRING = "STRING"
+    NUMBER = "NUMBER"
+    BOOLEAN = "BOOLEAN"
+    DATE = "DATE"
+    VECTOR = "VECTOR"
+
+
+@strawberry.type(description="""A measurement is an edge from a structure to an entity. Importantly Measurement are always directed from the structure to the entity, and never the other way around. 
+
+Why an edge? 
+Because a measurement is a relation between two entities, and it is important to keep track of the provenance of the data. 
+                 By making the measurement an edge, we can keep track of the timestamp when the data point (entity) was taken,
+                  and the timestamp when the measurment was created. We can also keep track of the validity of the measurment
+                 over time (valid_from, valid_to). Through these edges we can establish when a entity really existed (i.e. when it was measured)
+                 """)
+class Measurement(Edge):
+
+    def __hash__(self):
+        return self._value.id
 
     @strawberry.field(description="Timestamp from when this entity is valid")
     def valid_from(self, info: Info) -> datetime.datetime:
@@ -477,97 +587,80 @@ class Entity:
     @strawberry.field(description="When this entity was created")
     def created_at(self, info: Info) -> datetime.datetime:
         return self._value.created_at or datetime.datetime.now()
-
-    @strawberry_django.field(
-        description="Relations this entity has with other entities"
-    )
-    def relations(
-        self,
-        filter: filters.EntityRelationFilter | None = None,
-        pagination: p.GraphPaginationInput | None = None,
-    ) -> List[EntityRelation]:
-        from_arg_relations = []
-        if not pagination:
-            pagination = p.GraphPaginationInput()
-
-        if not filter:
-            filter = filters.EntityRelationFilter()
-
-        if not filter.left_id and not filter.right_id:
-            filter.left_id = self._value.unique_id
-
-        return [
-            EntityRelation(_value=x)
-            for x in age.select_all_relations(
-                self._value.graph_name, pagination, filter
-            )
-        ]
-
-    @strawberry.django.field(
-        description="Protocol steps where this entity was the target"
-    )
-    def subjected_to(self) -> list[ProtocolStep]:
-        return models.ProtocolStep.objects.filter(for_entity_id=self._value.unique_id)
-
-    @strawberry.django.field(description="Protocol steps where this entity was used")
-    def used_in(self) -> list[ProtocolStep]:
-        return models.ProtocolStep.objects.filter(used_entity_id=self._value.unique_id)
-
-    @strawberry.django.field(
-        description="Map of metric values associated with this entity"
-    )
-    def metric_map(self, info: Info) -> scalars.MetricMap:
-        return self._value.retrieve_properties()
-
-    @strawberry.django.field(description="List of metrics associated with this entity")
-    def metrics(self, info: Info) -> List[NodeMetric]:
-        metrics = self._value.retrieve_metrics()
-        print(metrics)
-        return [NodeMetric(_value=metric) for metric in metrics]
-
-
-@strawberry_django.type(
-    models.LinkedExpression, filters=filters.LinkedExpressionFilter, pagination=True
-)
-class LinkedExpression:
-    id: auto
-    graph: "Graph"
-    expression: "Expression"
-    kind: enums.ExpressionKind
-    description: str | None
-    purl: str | None
-    data_kind: enums.MetricDataType | None = None
-
+    
     @strawberry.django.field()
-    def color(self, info: Info) -> str:
-        return self.rgb_color_string
+    async def expression(self, info: Info) -> "Expression":
+        return await loaders.expression_loader.load(
+            f"{self._value.graph_name}:{self._value.kind_age_name}"
+        )
+    
+    
+    @strawberry.field(description="The value of the measurement")
+    def value(self, info: Info) -> scalars.Metric:
+        return self._value.value
+    
 
+@strawberry.type(description="""A relation is an edge between two entities. It is a directed edge, that connects two entities and established a relationship
+                 that is not a measurement between them. I.e. when they are an subjective assertion about the entities.
+                 
+                 
+                 
+                 """)
+class Relation(Edge):
+
+    def __hash__(self):
+        return self._value.id
+
+    @strawberry.field(description="Timestamp from when this entity is valid")
+    def valid_from(self, info: Info) -> datetime.datetime:
+        return self._value.valid_from
+
+    @strawberry.field(description="Timestamp until when this entity is valid")
+    def valid_to(self, info: Info) -> datetime.datetime:
+        return self._value.valid_to
+
+    @strawberry.field(description="When this entity was created")
+    def created_at(self, info: Info) -> datetime.datetime:
+        return self._value.created_at or datetime.datetime.now()
+    
     @strawberry.django.field()
-    def label(self, info: Info) -> str:
-        return f"{self.expression.label} @ {self.graph.name}"
+    async def expression(self, info: Info) -> "Expression":
+        return await loaders.expression_loader.load(
+            f"{self._value.graph_name}:{self._value.kind_age_name}"
+        )
 
-    @strawberry_django.field()
-    def entities(
-        self,
-        filter: filters.EntityFilter | None = None,
-        pagination: p.GraphPaginationInput | None = None,
-    ) -> List[Entity]:
-        if filter is None:
-            filter = filters.EntityFilter()
 
-        filter.linked_expression = self.id
 
-        if pagination is None:
-            pagination = p.GraphPaginationInput()
 
-        return [
-            Entity(_value=x)
-            for x in age.select_all_entities(self.graph.age_name, pagination, filter)
-        ]
+@strawberry.type(description=" A ComputedMeasurement is a measurement that is computed from other measurements. It is a special kind of measurement that is derived from other measurements.")
+class ComputedMeasurement(Measurement):
+    pass
 
+    @strawberry.field(description="Timestamp from when this entity is valid")
+    def valid_from(self, info: Info) -> datetime.datetime:
+        return self._value.valid_from
+
+    @strawberry.field(description="Timestamp until when this entity is valid")
+    def valid_to(self, info: Info) -> datetime.datetime:
+        return self._value.valid_to
+    
     @strawberry.django.field()
-    def pinned(self, info: Info) -> bool:
-        return self.pinned_by.filter(id=info.context.request.user.id).exists()
+    async def expression(self, info: Info) -> "Expression":
+        return await loaders.expression_loader.load(
+            f"{self._value.graph_name}:{self._value.kind_age_name}"
+        )
+    
+
+    @strawberry.field(description="When this entity was created")
+    def computed_from(self, info: Info) -> List[Measurement]:
+        # get the computed from measurements
+        return [Measurement(_value=x) for x in self._value.computed_from]
+
+
+def type_caster(self, value: models.Expression) -> Expression:
+    
+    if value.kind == enums.ExpressionKind.ENTITY:
+        return EntityExpression()
 
 
 @strawberry_django.type(
@@ -593,6 +686,32 @@ class Ontology:
     store: MediaStore | None = strawberry.field(
         description="Optional associated media files like documentation or diagrams"
     )
+    node_queries: List["NodeQuery"] = strawberry_django.field(
+        description="The list of node queries defined in this ontology"
+    )
+    graph_queries: List["GraphQuery"] = strawberry_django.field(
+        description="The list of graph queries defined in this ontology"
+    )
+    
+    graphs: List["Graph"] = strawberry_django.field(
+        description="The list of graphs defined in this ontology"
+    )
+    
+    
+    @strawberry.django.field()
+    def expressions(self, 
+        info: Info,
+        filters: filters.ExpressionFilter | None = strawberry.UNSET,
+        pagination: OffsetPaginationInput | None = strawberry.UNSET,
+    ) -> list[Expression]:
+        qs = models.Expression.objects.filter(ontology=self)
+
+
+        # apply filters if defined
+        if filters is not strawberry.UNSET:
+            qs = strawberry_django.filters.apply(filters, qs, info)
+
+        return qs.all()
 
 
 @strawberry_django.type(

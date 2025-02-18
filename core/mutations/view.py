@@ -1,37 +1,31 @@
+
+
+
 from kante.types import Info
 import strawberry
-from core import types, models, age
+from core import types, models, age, enums
 
 
 @strawberry.input
-class GraphInput:
-    ontology: strawberry.ID 
+class GraphViewInput:
+    graph: strawberry.ID
+    kind: enums.GraphViewKind
     name: str
-    experiment: strawberry.ID | None = None
     description: str | None = None
-
+    
 
 @strawberry.input
-class UpdateGraphInput:
-    id: str
-    name: str | None = None
-    description: str | None = None
-    experiment: strawberry.ID | None = None
-
-
-@strawberry.input
-class DeleteGraphInput:
+class DeleteGraphViewInput:
     id: strawberry.ID
 
 
-def create_graph(
+def create_graph_view(
     info: Info,
-    input: GraphInput,
-) -> types.Graph:
+    input: GraphViewInput,
+) -> types.GraphView:
 
     item, created = models.Graph.objects.update_or_create(
         age_name=f"{input.name.replace(' ', '_').lower()}",
-        ontology=models.Ontology.objects.get(id=input.ontology),
         defaults=dict(
             experiment=(
                 models.Experiment.objects.get(id=input.experiment)

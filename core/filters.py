@@ -79,48 +79,29 @@ class ExpressionFilter:
         return queryset.filter(kind=self.kind)
 
 
-@strawberry_django.filter(models.LinkedExpression)
-class LinkedExpressionFilter:
-    graph: strawberry.ID | None
-    search: str | None
-    pinned: bool | None
-    kind: enums.ExpressionKind | None
-    ids: list[strawberry.ID] | None
-
-    def filter_ids(self, queryset, info):
-        if self.ids is None:
-            return queryset
-        return queryset.filter(id__in=self.ids)
-
-    def filter_graph(self, queryset, info):
-        if self.graph is None:
-            return queryset
-        return queryset.filter(graph_id=self.graph)
-
-    def filter_search(self, queryset, info):
-        if self.search is None:
-            return queryset
-        return queryset.filter(expression__label__contains=self.search)
-
-    def filter_kind(self, queryset, info):
-        if self.kind is None:
-            return queryset
-        return queryset.filter(expression__kind=self.kind)
-
-    def filter_pinned(self, queryset, info):
-        if self.pinned is None:
-            return queryset
-        if self.pinned and info.context.request.user:
-            try:
-                return queryset.filter(pinned_by=info.context.request.user)
-            except:
-                raise ValueError("User not authenticated")
-        return queryset
-
-
 @strawberry.django.filter(models.Graph)
 class GraphFilter(IDFilterMixin, SearchFilterMixin):
     id: auto
+
+@strawberry.django.filter(models.GraphView)
+class GraphViewFilter(IDFilterMixin, SearchFilterMixin):
+    id: auto
+
+
+@strawberry.django.filter(models.GraphView)
+class GraphQueryFilter(IDFilterMixin, SearchFilterMixin):
+    id: auto
+
+
+@strawberry.django.filter(models.NodeView)
+class NodeViewFilter(IDFilterMixin, SearchFilterMixin):
+    id: auto
+
+
+@strawberry.django.filter(models.NodeQuery)
+class NodeQueryFilter(IDFilterMixin, SearchFilterMixin):
+    id: auto
+
 
 
 @strawberry.input(description="Filter for entities in the graph")

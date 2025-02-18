@@ -70,3 +70,11 @@ class ExpressionKind(str, Enum):
     METRIC = "metric"
     RELATION_METRIC = "relation_metric"
     CONCEPT = "concept"
+
+
+@strawberry.enum
+class ViewKind(str, Enum):
+    PATH = "PATH"
+    INT_METRIC = "INT_METRIC"
+    FLOAT_METRIC = "FLOAT_METRIC"
+    

@@ -25,6 +25,13 @@ UntypedPlateChild = strawberry.scalar(
 )
 
 
+Cypher = strawberry.scalar(
+    NewType("Cypher", str),
+    description="The `Cypher` scalar type represents a cypher query",
+    serialize=lambda v: v,
+    parse_value=lambda v: v,
+)
+
 FileLike = strawberry.scalar(
     NewType("FileLike", str),
     description="The `FileLike` scalar type represents a reference to a big file"
@@ -167,6 +174,13 @@ Any = strawberry.scalar(
 StructureString = strawberry.scalar(
     NewType("StructureString", str),
     description="The `StructureString` scalar type represents a string with a structure",
+    serialize=lambda v: v,
+    parse_value=lambda v: v,
+)
+
+NodeID = strawberry.scalar(
+    NewType("NodeID", str),
+    description="The `NodeID` scalar type represents a graph node ID",
     serialize=lambda v: v,
     parse_value=lambda v: v,
 )

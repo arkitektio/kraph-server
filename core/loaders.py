@@ -2,7 +2,7 @@ from strawberry.dataloader import DataLoader
 from core import models
 
 
-async def load_linked_expressions(age_names):
+async def load_expressions(age_names):
     """
     Asynchronously loads linked expressions based on the provided age names.
 
@@ -17,13 +17,17 @@ async def load_linked_expressions(age_names):
     """
 
     gotten = []
+    graphs = {}
 
     for i in age_names:
         graph_name, age_name = i.split(":")
+        
+        if graph_name not in graphs:
+            graphs[graph_name] = await models.Graph.objects.select_related("ontology").aget(age_name=graph_name)
 
         gotten.append(
-            await models.LinkedExpression.objects.aget(
-                graph__age_name=graph_name,
+            await models.Expression.objects.aget(
+                ontology=graphs[graph_name].ontology,
                 age_name=age_name,
             )
         )
@@ -51,7 +55,7 @@ async def metric_key_loader(keys):
         graph_name, age_name = i.split(":")
 
         gotten.append(
-            await models.LinkedExpression.objects.aget(
+            await models.Expression.objects.aget(
                 graph__age_name=graph_name,
                 age_name=age_name,
             )
@@ -60,7 +64,7 @@ async def metric_key_loader(keys):
     return gotten
 
 
-linked_expression_loader = DataLoader(load_fn=load_linked_expressions)
+expression_loader = DataLoader(load_fn=load_expressions)
 
 
-metric_key_loader = DataLoader(load_fn=load_linked_expressions)
+metric_key_loader = DataLoader(load_fn=metric_key_loader)

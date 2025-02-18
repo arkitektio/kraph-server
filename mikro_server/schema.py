@@ -1,3 +1,4 @@
+from itertools import chain
 from kante.types import Info
 from typing import Annotated, AsyncGenerator
 import strawberry
@@ -9,6 +10,7 @@ from strawberry.permission import BasePermission
 from typing import Any, Type
 from core import types, models
 from core import mutations
+from core import filters
 from core import queries
 from core import subscriptions
 from strawberry.field_extensions import InputMutationExtension
@@ -16,7 +18,7 @@ import strawberry_django
 from koherent.strawberry.extension import KoherentExtension
 from authentikate.strawberry.permissions import IsAuthenticated
 from core import age
-
+from strawberry_django.pagination import OffsetPaginationInput
 
 @strawberry.type
 class Query:
@@ -57,13 +59,7 @@ class Query:
         Most methods require authentication through IsAuthenticated permission class,
         except for entity and entity_relation queries which are publicly accessible.
     """
-
-    entities: list[types.Entity] = strawberry_django.field(
-        description="List of all knowledge graph entities"
-    )
-    linked_expressions: list[types.LinkedExpression] = strawberry_django.field(
-        description="List of all expressions that are linked in a Graph"
-    )
+    
     graphs: list[types.Graph] = strawberry_django.field(
         description="List of all knowledge graphs"
     )
@@ -83,18 +79,16 @@ class Query:
         description="List of all ontologies"
     )
 
-    knowledge_graph = strawberry_django.field(
-        resolver=queries.knowledge_graph,
+    path = strawberry_django.field(
+        resolver=queries.path,
         description="Retrieves the complete knowledge graph starting from an entity",
     )
-    entity_graph = strawberry_django.field(
-        resolver=queries.entity_graph,
-        description="Retrieves the graph of entities and their relationships",
+    pairs = strawberry_django.field(
+        resolver=queries.pairs,
+        description="Retrieves paired entities",
     )
-    linked_expression_by_agename = strawberry_django.field(
-        resolver=queries.linked_expression_by_agename,
-        description="Gets a linked expression by its AGE name",
-    )
+    
+
     protocol_steps: list[types.ProtocolStep] = strawberry_django.field(
         description="List of all protocol steps"
     )
@@ -102,21 +96,62 @@ class Query:
         description="List of all protocol step templates"
     )
 
-    entities: list[types.Entity] = strawberry_django.field(
-        resolver=queries.entities, description="List of all entities in the system"
+    nodes: list[types.Entity] = strawberry_django.field(
+        resolver=queries.nodes, description="List of all entities in the system"
     )
-    entity_relations: list[types.EntityRelation] = strawberry_django.field(
-        resolver=queries.entity_relations,
+    edges: list[types.Edge] = strawberry_django.field(
+        resolver=queries.edges,
         description="List of all relationships between entities",
     )
-    paired_entities = strawberry_django.field(
-        resolver=queries.paired_entities, description="Retrieves paired entities"
+    pairs = strawberry_django.field(
+        resolver=queries.pairs, description="Retrieves paired entities"
     )
 
     structure = strawberry_django.field(
         resolver=queries.structure,
         description="Gets a specific structure e.g an image, video, or 3D model",
     )
+    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    def expression(self, info: Info, id: ID) -> types.Expression:
+        return models.Expression.objects.get(id=id)
+    
+      
+    
+    
+    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    def expressions(self, info: Info,
+        filters: filters.ExpressionFilter | None = strawberry.UNSET,
+        pagination: OffsetPaginationInput | None = strawberry.UNSET,
+    ) -> list[types.Expression]:
+        if types is strawberry.UNSET:
+            view_relations = [
+                "label_accessors",
+                "image_accessors",
+            ]
+        else:
+            view_relations = [kind.value for kind in types]
+
+        results = []
+
+        base = models.Table.objects.get(id=self._table_id)
+
+        for relation in view_relations:
+            qs = (
+                getattr(base, relation)
+                .filter(keys__contains=[self._duckdb_column[0]])
+                .all()
+            )
+
+            # apply filters if defined
+            if filters is not strawberry.UNSET:
+                qs = strawberry_django.filters.apply(filters, qs, info)
+
+            results.append(qs)
+
+        return list(chain(*results))
+    
+    
+    
 
     @strawberry.django.field(permission_classes=[IsAuthenticated])
     def reagent(self, info: Info, id: ID) -> types.Reagent:
@@ -124,23 +159,19 @@ class Query:
         return models.Reagent.objects.get(id=id)
 
     @strawberry.django.field(permission_classes=[])
-    def entity(self, info: Info, id: ID) -> types.Entity:
+    def node(self, info: Info, id: ID) -> types.Node:
 
-        return types.Entity(
+        return types.Node(
             _value=age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id))
         )
 
     @strawberry.django.field(permission_classes=[])
-    def entity_relation(self, info: Info, id: ID) -> types.EntityRelation:
-        return types.EntityRelation(
+    def edge(self, info: Info, id: ID) -> types.Edge:
+        return types.Edge(
             _value=age.get_age_entity_relation(
                 age.to_graph_id(id), age.to_entity_id(id)
             )
         )
-
-    @strawberry.django.field(permission_classes=[IsAuthenticated])
-    def linked_expression(self, info: Info, id: ID) -> types.LinkedExpression:
-        return models.LinkedExpression.objects.get(id=id)
 
     @strawberry.django.field(permission_classes=[IsAuthenticated])
     def graph(self, info: Info, id: ID) -> types.Graph:
@@ -188,41 +219,26 @@ class Mutation:
         resolver=mutations.delete_graph, description="Delete an existing graph"
     )
 
-    create_entity_relation = strawberry_django.mutation(
-        resolver=mutations.create_entity_relation,
+    create_relation = strawberry_django.mutation(
+        resolver=mutations.create_relation,
         description="Create a new relation between entities",
     )
+    
 
-    create_entity_metric = strawberry_django.mutation(
-        resolver=mutations.create_entity_metric,
+    create_measurement = strawberry_django.mutation(
+        resolver=mutations.create_measurement,
         description="Create a new metric for an entity",
     )
-    create_relation_metric = strawberry_django.mutation(
-        resolver=mutations.create_relation_metric,
-        description="Create a new metric for a relation",
-    )
 
-    create_structure_relation = strawberry_django.mutation(
-        resolver=mutations.create_structure_relation,
-        description="Create a relation between structures",
-    )
-
-    attach_metrics_to_entities = strawberry_django.mutation(
-        resolver=mutations.attach_metrics_to_entities,
-        description="Attach metrics to multiple entities",
+    create_structure = strawberry_django.mutation(
+        resolver=mutations.create_structure,
+        description="Create a new structure",
     )
 
     create_reagent = strawberry_django.mutation(
         resolver=mutations.create_reagent, description="Create a new reagent"
     )
 
-    create_measurement = strawberry_django.mutation(
-        resolver=mutations.create_measurement, description="Create a new measurement"
-    )
-
-    pin_linked_expression = strawberry_django.mutation(
-        resolver=mutations.pin_linked_expression, description="Pin a linked expression"
-    )
 
     create_protocol_step = strawberry_django.mutation(
         resolver=mutations.create_protocol_step,
@@ -252,15 +268,6 @@ class Mutation:
         resolver=mutations.delete_entity, description="Delete an existing entity"
     )
 
-    link_expression = strawberry_django.mutation(
-        resolver=mutations.link_expression,
-        description="Link an expression to an entity",
-    )
-    unlink_expression = strawberry_django.mutation(
-        resolver=mutations.unlink_expression,
-        description="Unlink an expression from an entity",
-    )
-
     create_ontology = strawberry_django.mutation(
         resolver=mutations.create_ontology, description="Create a new ontology"
     )
@@ -270,6 +277,18 @@ class Mutation:
     update_ontology = strawberry_django.mutation(
         resolver=mutations.update_ontology, description="Update an existing ontology"
     )
+    
+    
+    create_graph_query = strawberry_django.mutation(
+        resolver=mutations.create_graph_query, description="Create a new graph query"
+    )
+    
+    create_node_query = strawberry_django.mutation(
+        resolver=mutations.create_node_query, description="Create a new node query"
+    )
+    
+    
+    
 
     create_expression = strawberry_django.mutation(
         resolver=mutations.create_expression, description="Create a new expression"
@@ -278,7 +297,6 @@ class Mutation:
         resolver=mutations.update_expression,
         description="Update an existing expression",
     )
-
     delete_expression = strawberry_django.mutation(
         resolver=mutations.delete_expression,
         description="Delete an existing expression",
@@ -332,4 +350,5 @@ schema = strawberry.Schema(
         KoherentExtension,
         DatalayerExtension,
     ],
+    types=[types.Entity, types.Edge, types.Node, types.Relation, types.Structure, types.Measurement, types.ComputedMeasurement],
 )

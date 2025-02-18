@@ -6,17 +6,9 @@ import uuid
 
 @strawberry.input(description="Input type for creating a new entity")
 class EntityInput:
-    kind: strawberry.ID = strawberry.field(
+    graph: strawberry.ID
+    expression: strawberry.ID  = strawberry.field(
         description="The ID of the kind (LinkedExpression) to create the entity from"
-    )
-    group: strawberry.ID | None = strawberry.field(
-        default=None, description="Optional group ID to associate the entity with"
-    )
-    parent: strawberry.ID | None = strawberry.field(
-        default=None, description="Optional parent entity ID"
-    )
-    instance_kind: str | None = strawberry.field(
-        default=None, description="Optional instance kind specification"
     )
     name: str | None = strawberry.field(
         default=None, description="Optional name for the entity"
@@ -34,11 +26,12 @@ def create_entity(
 ) -> types.Entity:
 
     print(input)
-
-    input_kind = models.LinkedExpression.objects.get(id=input.kind)
+    
+    graph = models.Graph.objects.get(id=input.graph)
+    input_kind = models.Expression.objects.get(id=input.expression)
 
     id = age.create_age_entity(
-        input_kind.graph.age_name, input_kind.age_name, name=input.name
+        graph.age_name, input_kind.age_name, name=input.name
     )
 
     return types.Entity(_value=id)

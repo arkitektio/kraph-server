@@ -2,7 +2,7 @@ from kante.types import Info
 from core.datalayer import get_current_datalayer
 
 import strawberry
-from core import types, models, enums, scalars
+from core import types, models, enums, scalars, manager
 from core import age
 from strawberry.file_uploads import Upload
 from django.conf import settings
@@ -99,15 +99,20 @@ def create_expression(
 
     vocab, _ = models.Expression.objects.update_or_create(
         ontology=ontology,
-        label=input.label,
-        kind=input.kind,
-        metric_kind=input.metric_kind,
+        age_name=manager.build_age_name(input.label, input.kind),
         defaults=dict(
             description=input.description,
             purl=input.purl,
             store=media_store,
+            label=input.label,
+            kind=input.kind,
+            metric_kind=input.metric_kind,
         ),
     )
+    
+    
+    for i in ontology.graphs.all():
+        manager.rebuild_graph(i)
 
     return vocab
 

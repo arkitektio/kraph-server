@@ -1,11 +1,8 @@
 from .entity import *
-from .linked_expression import *
 from .graph import *
 from .ontology import *
 from .protocol import *
-from .entity_relation import *
-from .entity_metric import *
-from .relation_metric import *
+from .relation import *
 from .protocol_step import *
 from .expression import *
 from .graph import *
@@ -14,6 +11,9 @@ from .protocol_step_template import *
 from .measurement import *
 from .model import *
 from .upload import *
+from .structure import *
+from .graph_query import *
+from .node_query import *
 
 __all__ = [
     "create_channel",

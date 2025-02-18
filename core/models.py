@@ -352,29 +352,24 @@ class Expression(models.Model):
         default=random_color,
         null=True,
     )
+    
+    age_name = models.CharField(
+        max_length=1000,
+        help_text="The name of the graph class in the age graph",
+    )
 
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=["ontology", "label"],
+                fields=["ontology", "age_name"],
                 name="unique_label_in_ontology",
             )
         ]
+        
+    
 
-    @property
-    def age_name(self) -> str:
-        if self.kind == enums.ExpressionKind.ENTITY.value:
-            return self.label.replace(" ", "_").replace("-", "_").lower()
-        elif self.kind == enums.ExpressionKind.RELATION.value:
-            return self.label.replace(" ", "_").replace("-", "_").upper()
-        elif self.kind == enums.ExpressionKind.RELATION_METRIC.value:
-            return self.label.replace(" ", "_").replace("-", "_").upper()
-        elif self.kind == enums.ExpressionKind.METRIC.value:
-            return self.label.replace(" ", "_").replace("-", "_").lower()
-        elif self.kind == enums.ExpressionKind.STRUCTURE.value:
-            return self.label.replace(" ", "_").replace("-", "_").lower()
-        else:
-            raise ValueError(f"Unknown kind {self.kind}")
+    
+   
 
 
 class Graph(models.Model):
@@ -386,7 +381,12 @@ class Graph(models.Model):
     to their name.
 
     """
-
+    ontology = models.ForeignKey(
+        Ontology,
+        on_delete=models.CASCADE,
+        related_name="graphs",
+        help_text="The ontology this graph adheres to",
+    )
     user = models.ForeignKey(
         get_user_model(),
         on_delete=models.CASCADE,
@@ -413,81 +413,61 @@ class Graph(models.Model):
         help_text="The name of the graph class in the age graph",
         unique=True,
     )
+    
 
 
-class LinkedExpression(models.Model):
-    """An EntityClass is the semantic class of an entity"""
 
-    graph = models.ForeignKey(
-        Graph,
+class GraphQuery(models.Model):
+    ontology = models.ForeignKey(
+        Ontology,
         on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="linked_expressions",
-        help_text="The group this entity class belongs to",
+        related_name="graph_queries",
+        help_text="The ontology this query belongs to",
     )
-    expression = models.ForeignKey(
-        Expression,
-        on_delete=models.CASCADE,
-        related_name="linked_expressions",
-        help_text="The expression this entity class belongs to",
+    query = models.CharField(
+        max_length=7000, help_text="The query that is used to materialize the graph"
+    )
+    name = models.CharField(
+        max_length=1000, help_text="The name of the materialized graph"
+    )
+    description = models.CharField(
+        max_length=1000,
+        help_text="The description of the materialized graph",
+        null=True,
     )
     kind = models.CharField(
         max_length=1000,
-        help_text="The kind of the entity class",
-        null=True,
+        help_text="The kind of the materialized graph (i.e path, property, etc.)",
     )
-    metric_kind = TextChoicesField(
-        choices_enum=enums.MetricDataTypeChoices,
-        help_text="The data type (if a metric)",
-        null=True,
-        blank=True,
+    
+class NodeQuery(models.Model):
+    ontology = models.ForeignKey(
+        Ontology,
+        on_delete=models.CASCADE,
+        related_name="node_queries",
+        help_text="The ontology this query belongs to",
     )
-    color = models.JSONField(
+    query = models.CharField(
+        max_length=7000, help_text="The query that is used to materialize the graph"
+    )
+    name = models.CharField(
+        max_length=1000, help_text="The name of the materialized graph"
+    )
+    description = models.CharField(
         max_length=1000,
-        help_text="The color of the entity class as RGB",
-        default=random_color,
+        help_text="The description of the materialized graph",
         null=True,
     )
-    age_name = models.CharField(
-        max_length=1000,
-        help_text="The name of the entity class in the age graph",
-        null=True,
-    )
-    pinned_by = models.ManyToManyField(
-        get_user_model(),
-        related_name="pinned_linked_expressions",
-        blank=True,
-        help_text="The users that pinned this Expression",
-    )
-
-    class Meta:
-        default_related_name = "linked_expressions"
-        constraints = [
-            models.UniqueConstraint(
-                fields=["graph", "age_name"],
-                name="unique_age_name_in_graph",
-            )
-        ]
-
-    def __str__(self) -> str:
-        return f"{self.expression} in {self.graph}"
-
-    def create_entity(
-        self, group, name: str = None, instance_kind: str = None, metrics: dict = None
-    ) -> str:
-        from core.age import create_age_entity
-
-        return create_age_entity(self.graph.age_name, self.age_name)
-
-    @property
-    def rgb_color_string(self) -> str:
-        return f"rgb({self.color[0]}, {self.color[1]}, {self.color[2]})"
+    
 
 
-class GraphViews(models.Model):
+
+
+
+
+
+class GraphView(models.Model):
     """A view of a graph that is materialized"""
-
     graph = models.ForeignKey(
         Graph,
         on_delete=models.CASCADE,
@@ -496,21 +476,31 @@ class GraphViews(models.Model):
         related_name="graph_views",
         help_text="The graph this materialized graph belongs to",
     )
-    query = models.CharField(
-        max_length=7000, help_text="The query that is used to materialize the graph"
+    query = models.ForeignKey(
+        GraphQuery,
+        on_delete=models.CASCADE,
+        related_name="views",
+        help_text="The query that is used to materialize the graph",
     )
-    name = models.CharField(
-        max_length=1000, help_text="The name of the materialized graph"
+    
+    
+    
+class NodeView(models.Model):
+    node_id = models.CharField(
+        max_length=1000, help_text="The node that is used to materialize the graph"
     )
-    kind = models.CharField(
-        max_length=1000,
-        help_text="The kind of the materialized graph (i.e one-to-one, one-to-many, many-to-many)",
+    query = models.ForeignKey(
+        NodeQuery,
+        on_delete=models.CASCADE,
+        related_name="views",
+        help_text="The query that is used to materialize the graph",
     )
+    
 
 
 class MaterializedGraph(models.Model):
     view = models.ForeignKey(
-        GraphViews,
+        GraphView,
         on_delete=models.CASCADE,
         related_name="materialized_graphs",
         help_text="The graph this model was trained on",

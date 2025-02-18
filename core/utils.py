@@ -3,6 +3,7 @@ import strawberry
 from typing import Optional, List, Any
 
 
+
 # Factor out pagination logic into a separate function
 def paginate_querysets(
     *querysets: Any,
@@ -41,3 +42,14 @@ def paginate_querysets(
 
     # Return the paginated items and the total count
     return items
+
+
+def node_id_to_graph_name(node_id: str) -> str:
+    return str(node_id.split(":")[0])
+
+
+def node_id_to_graph_id(node_id: str) -> str:
+    return int(node_id.split(":")[1])
+
+
+

@@ -3,11 +3,11 @@ import strawberry
 from kante.types import Info
 
 
-def entities(
+def nodes(
     info: Info,
     filters: f.EntityFilter | None = None,
     pagination: p.GraphPaginationInput | None = None,
-) -> list[types.Entity]:
+) -> list[types.Node]:
 
     if not filters:
         filters = f.EntityFilter()

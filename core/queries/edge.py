@@ -2,11 +2,11 @@ from core import models, types, enums, filters as f, pagination as p, age
 import strawberry
 
 
-def entity_relations(
+def edges(
     info,
     filters: f.EntityRelationFilter | None = None,
     pagination: p.GraphPaginationInput | None = None,
-) -> list[types.EntityRelation]:
+) -> list[types.Edge]:
 
     if not filters:
         filters = f.EntityFilter()
@@ -25,6 +25,6 @@ def entity_relations(
     print("Called")
 
     return [
-        types.EntityRelation(_value=rel)
+        types.Edge(_value=rel)
         for rel in age.select_all_relations(graph.age_name, pagination, filters)
     ]
