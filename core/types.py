@@ -508,13 +508,6 @@ class Edge:
         return self._value.kind_age_name
 
 
-    @strawberry.django.field()
-    def left(self, info: Info) -> "Node":
-        return Entity(_value=self._value.retrieve_left())
-
-    @strawberry.django.field()
-    def right(self, info: Info) -> "Node":
-        return Entity(_value=self._value.retrieve_right())
 
     @strawberry.django.field()
     def left_id(self, info: Info) -> str:
@@ -539,7 +532,7 @@ class Expression:
     )
     id: strawberry.ID = strawberry.field(description="The unique identifier of the expression within its graph")
     age_name: str = strawberry.field(description="The unique identifier of the expression within its graph")    
-    color: str | None = strawberry.field()
+    color: list[float] | None = strawberry.field()
     kind: enums.ExpressionKind = strawberry.field(description="The kind of expression")
 
 
@@ -730,3 +723,29 @@ class Model:
     store: MediaStore | None = strawberry.field(
         description="Optional file storage location containing the model weights/parameters"
     )
+
+
+@strawberry.type
+class Path:
+    nodes: list[Node]
+    edges: list[Edge]
+
+
+@strawberry.type(
+    description="A paired structure two entities and the relation between them."
+)
+class Pair:
+    left: Node = strawberry.field(description="The left entity.")
+    right: Node = strawberry.field(description="The right entity.")
+    edge: Edge = strawberry.field(
+        description="The relation between the two entities."
+    )
+
+
+@strawberry.type(
+    description="A collection of paired entities."
+)
+class Pairs:
+    pairs: list[Pair] = strawberry.field(description="The paired entities.")
+
+

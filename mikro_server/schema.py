@@ -87,6 +87,11 @@ class Query:
         resolver=queries.pairs,
         description="Retrieves paired entities",
     )
+
+    render_graph = strawberry_django.field(
+        resolver=queries.render_graph,
+        description="Renders a graph query",
+    )
     
 
     protocol_steps: list[types.ProtocolStep] = strawberry_django.field(
@@ -111,6 +116,8 @@ class Query:
         resolver=queries.structure,
         description="Gets a specific structure e.g an image, video, or 3D model",
     )
+
+    
     @strawberry.django.field(permission_classes=[IsAuthenticated])
     def expression(self, info: Info, id: ID) -> types.Expression:
         return models.Expression.objects.get(id=id)

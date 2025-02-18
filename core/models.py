@@ -19,7 +19,7 @@ from django.conf import settings
 
 class S3Store(models.Model):
     path = S3Field(
-        null=True, blank=True, help_text="The store of the image", unique=True
+        null=True, blank=True, help_text="The stodre of the image", unique=True
     )
     key = models.CharField(max_length=1000)
     bucket = models.CharField(max_length=1000)

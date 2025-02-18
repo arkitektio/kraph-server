@@ -75,6 +75,7 @@ class ExpressionKind(str, Enum):
 @strawberry.enum
 class ViewKind(str, Enum):
     PATH = "PATH"
+    PAIRS = "PAIRS"
     INT_METRIC = "INT_METRIC"
     FLOAT_METRIC = "FLOAT_METRIC"
     

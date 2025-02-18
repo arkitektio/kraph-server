@@ -1,12 +1,12 @@
 import json
-from core.age import RetrievedEntity, graph_cursor, RetrievedRelation, vertex_ag_to_retrieved_entity, edge_ag_to_retrieved_relation
+from core.age import RetrievedEntity, graph_cursor, RetrievedRelation, vertex_ag_to_retrieved_entity
 import strawberry
 from core import models, types
 import re
 import json
 import re
 import json
-
+from kante.types import Info
 
 
 
@@ -25,7 +25,7 @@ def parse_age_path(graph_name, raw_path):
     for match in vertex_pattern.findall(raw_path):
         print(match)
         vertex_data = json.loads(match)  # Convert JSON string to dict
-        nodes.add(entity_to_node_subtype(
+        nodes.add(types.entity_to_node_subtype(
             RetrievedEntity(
                 graph_name=graph_name,
                 id=vertex_data["id"], 
@@ -38,7 +38,7 @@ def parse_age_path(graph_name, raw_path):
     for match in edge_pattern.findall(raw_path):
         print(match)
         edge_data = json.loads(match)  # Convert JSON string to dict
-        edges.add(relation_to_edge_subtype(
+        edges.add(types.relation_to_edge_subtype(
                  RetrievedRelation(
             graph_name=graph_name,
             id=edge_data["id"],
@@ -55,13 +55,9 @@ def parse_age_path(graph_name, raw_path):
 
 
 
-@strawberry.type
-class Path:
-    nodes: list[types.Node]
-    edges: list[types.Edge]
 
 
-def path(graph: strawberry.ID, query: str) -> Path:
+def path(info: Info, graph: strawberry.ID, query: str) -> types.Path:
     """
     Query the knowledge graph for information about a given entity.
 
@@ -111,4 +107,4 @@ def path(graph: strawberry.ID, query: str) -> Path:
             
                 
 
-    return Path(nodes=all_nodes, edges=all_edges)
+    return types.Path(nodes=all_nodes, edges=all_edges)

@@ -4,22 +4,14 @@ from kante.types import Info
 from typing import Annotated
 
 
-@strawberry.type(
-    description="A paired structure two entities and the relation between them."
-)
-class Pair:
-    left: types.Node = strawberry.field(description="The left entity.")
-    right: types.Node = strawberry.field(description="The right entity.")
-    edge: types.Edge = strawberry.field(
-        description="The relation between the two entities."
-    )
+
 
 
 def pairs(
     info: Info,
     graph: strawberry.ID,
     query: str
-) -> list[Pair]:
+) -> list[types.Pair]:
 
     if not query:
         raise ValueError("Query is required")
@@ -27,7 +19,7 @@ def pairs(
 
 
     return [
-        Pair(
+        types.Pair(
             left=types.Node(_value=left),
             right=types.Node(_value=right),
             relation=types.Edge(_value=edge),
