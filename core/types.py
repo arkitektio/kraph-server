@@ -323,6 +323,7 @@ class GraphQuery:
     description: str | None
     kind: enums.ViewKind
     ontology: "Ontology"
+    query: str
     
 
 
@@ -338,6 +339,7 @@ class NodeQuery:
     description: str | None
     kind: enums.ViewKind
     ontology: "Ontology"
+    query: str
     
     
 
@@ -538,6 +540,8 @@ class Expression:
     id: strawberry.ID = strawberry.field(description="The unique identifier of the expression within its graph")
     age_name: str = strawberry.field(description="The unique identifier of the expression within its graph")    
     color: str | None = strawberry.field()
+    kind: enums.ExpressionKind = strawberry.field(description="The kind of expression")
+
 
     @strawberry_django.field(description="The unique identifier of the expression within its graph")
     def label(self, info: Info) -> str:
@@ -545,9 +549,9 @@ class Expression:
 
 
     @strawberry.field(description=" The value  type of the metric")
-    def kind(self, info: Info) -> Optional["MetricKind"]:
+    def metric_kind(self, info: Info) -> Optional["MetricKind"]:
         
-        return self.kind
+        return self.metric_kind
     
     @strawberry.field(description=" The unit  type of the metric")
     def unit(self, info: Info) -> str | None:
