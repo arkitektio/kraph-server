@@ -35,6 +35,18 @@ async def load_expressions(age_names):
     return gotten
 
 
+async def graph_loader_func(graph_names):
+    
+    gotten = []
+    
+    for i in graph_names:
+        gotten.append(
+            await models.Graph.objects.aget(age_name=i)
+        )
+    
+    return gotten
+
+
 async def metric_key_loader(keys):
     """
     Asynchronously loads metric keys and retrieves corresponding LinkedExpression objects.
@@ -65,6 +77,6 @@ async def metric_key_loader(keys):
 
 
 expression_loader = DataLoader(load_fn=load_expressions)
-
+graph_loader = DataLoader(load_fn=graph_loader_func)
 
 metric_key_loader = DataLoader(load_fn=metric_key_loader)

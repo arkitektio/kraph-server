@@ -76,6 +76,13 @@ class ExpressionKind(str, Enum):
 class ViewKind(str, Enum):
     PATH = "PATH"
     PAIRS = "PAIRS"
+    TABLE = "TABLE"
     INT_METRIC = "INT_METRIC"
     FLOAT_METRIC = "FLOAT_METRIC"
     
+    
+@strawberry.enum
+class ColumnKind(str, Enum):
+    NODE = "NODE"
+    VALUE = "VALUE"
+    EDGE = "EDGE"

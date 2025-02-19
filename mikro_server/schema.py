@@ -93,6 +93,11 @@ class Query:
         description="Renders a graph query",
     )
     
+    render_node = strawberry_django.field(
+        resolver=queries.render_node,
+        description = "Renders a node query"
+    )
+    
 
     protocol_steps: list[types.ProtocolStep] = strawberry_django.field(
         description="List of all protocol steps"
@@ -168,9 +173,7 @@ class Query:
     @strawberry.django.field(permission_classes=[])
     def node(self, info: Info, id: ID) -> types.Node:
 
-        return types.Node(
-            _value=age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id))
-        )
+        return types.entity_to_node_subtype(age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id)))
 
     @strawberry.django.field(permission_classes=[])
     def edge(self, info: Info, id: ID) -> types.Edge:

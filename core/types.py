@@ -83,6 +83,23 @@ class AccessCredentials:
     path: str
 
 
+
+
+@strawberry.type(
+    description="A column definition for a table view."
+)
+class Column:
+    name: str
+    kind: enums.ColumnKind
+    label: str | None = None
+    description: str | None = None
+    expression: strawberry.ID | None = None
+    value_kind: enums.MetricDataType | None = None
+    searchable: bool | None = None
+    
+    
+
+
 @strawberry.django.type(models.BigFileStore)
 class BigFileStore:
     id: auto
@@ -378,6 +395,11 @@ class Node:
         return self._value.id
     
     
+    @strawberry.field(description="The unique identifier of the entity within its graph")
+    async def graph(self, info: Info) -> "Graph":
+        return await loaders.graph_loader.load(self._value.graph_name)
+    
+    
     @strawberry.django.field()
     def label(self, info: Info) -> str:
         return self._value.kind_age_name
@@ -437,11 +459,11 @@ class Structure(Node):
 
 
     @strawberry.field(description="The unique identifier of the entity within its graph")
-    def identifier(self, info: Info) -> strawberry.ID:
+    def identifier(self, info: Info) -> str:
         return self._value.identifier
     
     @strawberry.field(description="The expression that defines this entity's type")
-    def object(self, info: Info) -> str | None:
+    def object(self, info: Info) -> str:
         return self._value.object
 
 
@@ -749,3 +771,10 @@ class Pairs:
     pairs: list[Pair] = strawberry.field(description="The paired entities.")
 
 
+@strawberry.type(
+    description="A collection of paired entities."
+)
+class Table:
+    rows: list[scalars.Any] = strawberry.field(description="The paired entities.")
+    columns: list[Column] = strawberry.field(description="The columns describind this table.")
+    

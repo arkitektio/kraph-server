@@ -383,6 +383,7 @@ def create_age_structure(
         result = cursor.fetchone()
         if result:
             entity = result[0]
+            print("Created structure", entity)
             return vertex_ag_to_retrieved_entity(graph_name, entity)
         else:
             raise ValueError("No entity created or returned by the query.")

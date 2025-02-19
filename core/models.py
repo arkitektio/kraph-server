@@ -439,6 +439,16 @@ class GraphQuery(models.Model):
         max_length=1000,
         help_text="The kind of the materialized graph (i.e path, property, etc.)",
     )
+    columns = models.JSONField(
+        help_text="The columns (if ViewKind is Table)",
+        default=None,
+        null=True,
+    )
+    
+    @property
+    def input_columns(self):
+        from core import inputs
+        return [inputs.ColumnInput(**i) for i in self.columns]
     
 class NodeQuery(models.Model):
     ontology = models.ForeignKey(
@@ -458,6 +468,20 @@ class NodeQuery(models.Model):
         help_text="The description of the materialized graph",
         null=True,
     )
+    kind = models.CharField(
+        max_length=1000,
+        help_text="The kind of the materialized graph (i.e path, property, etc.)",
+    )
+    columns = models.JSONField(
+        help_text="The columns (if ViewKind is Table)",
+        default=None,
+        null=True,
+    )
+    
+    @property
+    def input_columns(self):
+        from core import inputs
+        return [inputs.ColumnInput(**i) for i in self.columns]
     
 
 

@@ -1,5 +1,5 @@
 import strawberry_django
-from core import models
+from core import models, enums
 from typing import List, Optional
 from strawberry import ID
 import strawberry
@@ -21,3 +21,14 @@ class AssociateInput:
 class DesociateInput:
     selfs: List[strawberry.ID]
     other: strawberry.ID
+    
+    
+@strawberry.input()
+class ColumnInput:
+    name: str
+    kind: enums.ColumnKind
+    label: str | None = None
+    description: str | None = None
+    expression: strawberry.ID | None = None
+    value_kind: enums.MetricDataType | None = None
+    searchable: bool | None = None
