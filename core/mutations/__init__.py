@@ -4,7 +4,7 @@ from .ontology import *
 from .protocol import *
 from .relation import *
 from .protocol_step import *
-from .expression import *
+from .generic_category import *
 from .graph import *
 from .reagent import *
 from .protocol_step_template import *
@@ -14,6 +14,11 @@ from .upload import *
 from .structure import *
 from .graph_query import *
 from .node_query import *
+from .graph_view import *
+from .node_view import *
+from .structure_category import *
+from .measurement_category import *
+from .relation_category import *
 
 __all__ = [
     "create_channel",

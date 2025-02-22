@@ -63,11 +63,11 @@ def create_structure(
     age_name, identifier, object_id = scalar_string_to_graph_name(input.structure)
 
    
-    expression, _ = models.Expression.objects.update_or_create(
-        age_name=manager.build_age_name(age_name, enums.ExpressionKind.STRUCTURE),
+    expression, _ = models.StructureCategory.objects.update_or_create(
+        age_name=age_name,
         ontology=graph.ontology,
         defaults=dict(
-            kind=enums.ExpressionKind.STRUCTURE,
+            identifier=identifier,
         ),
     )
     

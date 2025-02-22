@@ -6,7 +6,7 @@ from core import types, models, enums, scalars, inputs
 from core import age
 from strawberry.file_uploads import Upload
 from django.conf import settings
-from core.queries import path, pairs, table
+from core.renderers.graph import render
 
 
 @strawberry.input(description="Input for creating a new expression")
@@ -25,6 +25,9 @@ class GraphQueryInput:
     )
     columns: list[inputs.ColumnInput] | None = strawberry.field(
         default=None, description="The columns (if ViewKind is Table)"
+    )
+    test_against: strawberry.ID | None = strawberry.field(
+        default=None, description="The graph to test against"
     )
 
 
@@ -62,14 +65,8 @@ def create_graph_query(
                 description="Default ontology for {}".format(user.username),
             ),
         )
-
-    for graph in ontology.graphs.all()[:1]:
-        if input.kind == enums.ViewKind.PATH:
-            path(info, graph.id, input.query)
-        elif input.kind == enums.ViewKind.PAIRS:
-            pairs(info, graph.id, input.query)
-        elif input.kind == enums.ViewKind.TABLE:
-            table(info, graph.id, input.query, input.columns)
+        
+        
         
         
 
@@ -83,6 +80,24 @@ def create_graph_query(
             columns=[strawberry.asdict(c) for c in input.columns] if input.columns else [],
         ),
     )
+    
+    graph = models.Graph.objects.get(id=input.test_against) if input.test_against else models.Graph.objects.filter(user=info.context.request.user).first()
+    
+    
+    if graph:
+        graph_view, _ = models.GraphView.objects.get_or_create(
+            graph=graph,
+            query=vocab,
+            creator = info.context.request.user,
+        )
+        try:
+            render.render_graph_view(graph_view)
+        except Exception as e:
+            graph_view.delete()
+            vocab.delete()
+            raise e
+       
+       
 
     return vocab
 

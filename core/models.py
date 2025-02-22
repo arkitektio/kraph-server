@@ -299,7 +299,23 @@ class Ontology(models.Model):
     @property
     def age_name(self) -> str:
         return self.name.replace(" ", "_").lower()
+    
+    
+    @property
+    def structure_categories(self):
+        return StructureCategory.objects.filter(ontology=self)
+    
+    @property
+    def generic_categories(self):
+        return GenericCategory.objects.filter(ontology=self)
+    
+    @property
+    def relation_categories(self):
+        return RelationCategory.objects.filter(ontology=self)
 
+    @property
+    def measurement_categories(self):
+        return MeasurementCategory.objects.filter(ontology=self)
 
 def random_color():
     levels = range(32, 256, 32)
@@ -310,12 +326,6 @@ class Expression(models.Model):
     ontology = models.ForeignKey(
         Ontology,
         on_delete=models.CASCADE,
-        related_name="expressions",
-    )
-    kind = models.CharField(
-        max_length=1000,
-        help_text="The kind of the entity class",
-        null=True,
     )
     store = models.ForeignKey(
         MediaStore,
@@ -329,12 +339,7 @@ class Expression(models.Model):
         help_text="The label of the entity class",
         null=True,
     )
-    metric_kind = TextChoicesField(
-        choices_enum=enums.MetricDataTypeChoices,
-        help_text="The data type (if a metric)",
-        null=True,
-        blank=True,
-    )
+    
     description = models.CharField(
         max_length=1000,
         help_text="The description of the entity class",
@@ -357,6 +362,21 @@ class Expression(models.Model):
         max_length=1000,
         help_text="The name of the graph class in the age graph",
     )
+    
+    left = models.ForeignKey(
+        "Expression",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="left_edges",
+    )
+    right = models.ForeignKey(
+        "Expression",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="right_edges",
+    )
 
     class Meta:
         constraints = [
@@ -366,9 +386,69 @@ class Expression(models.Model):
             )
         ]
         
-    
 
+class StructureCategory(Expression):
+    """ A Structure class is a class represents a datapoint in the ontology"""
     
+    identifier = models.CharField(
+        max_length=1000,
+        help_text="The structure identifier that the node relates to",
+        null=True,
+        blank=True,
+    )
+    
+         
+    class Meta:
+        default_related_name = "structure_categories"
+
+class GenericCategory(Expression):
+    """ A Generic class is a class that describes a concrete entity.
+    
+    A car, a mouse, a neuron, etc. would be a generic class.
+    They can be subjected to measurements, and have protocols associated with them.
+    
+    
+    """
+    instance_kind = models.CharField(
+        max_length=1000,
+        help_text="The instance kind that the node relates to",
+        null=True,
+        blank=True,
+    )
+    
+    class Meta:
+        default_related_name = "generic_categories"
+
+
+
+
+
+
+
+class MeasurementCategory(Expression):
+    """ A Measurement class is a class that describes an edge with a value"""
+    
+   
+    
+    metric_kind = TextChoicesField(
+        choices_enum=enums.MeasurementKindChoices,
+        help_text="The data type (if a metric)",
+        null=True,
+        blank=True,
+    )
+    
+    class Meta:
+        default_related_name = "edge_categories"
+    
+    
+    
+class RelationCategory(Expression):
+    """ A Relation class is a class that describes a relation between two entities without a value"""
+    
+    class Meta:
+        default_related_name = "relation_categories"
+
+
    
 
 
@@ -490,13 +570,12 @@ class NodeQuery(models.Model):
 
 
 
+
 class GraphView(models.Model):
     """A view of a graph that is materialized"""
     graph = models.ForeignKey(
         Graph,
         on_delete=models.CASCADE,
-        null=True,
-        blank=True,
         related_name="graph_views",
         help_text="The graph this materialized graph belongs to",
     )
@@ -506,12 +585,28 @@ class GraphView(models.Model):
         related_name="views",
         help_text="The query that is used to materialize the graph",
     )
+    creator = models.ForeignKey(
+        get_user_model(),
+        on_delete=models.CASCADE,
+        related_name="graph_views",
+        help_text="The user that created the view",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, help_text="The time the view was created" )
     
-    
+
+
+
     
 class NodeView(models.Model):
+    graph = models.ForeignKey(
+        Graph,
+        on_delete=models.CASCADE,
+        related_name="node_views",
+        help_text="The graph this materialized graph belongs to",
+    )
+    
     node_id = models.CharField(
-        max_length=1000, help_text="The node that is used to materialize the graph"
+        max_length=1000, help_text="The node thdat is used to materialize the graph"
     )
     query = models.ForeignKey(
         NodeQuery,
@@ -519,7 +614,52 @@ class NodeView(models.Model):
         related_name="views",
         help_text="The query that is used to materialize the graph",
     )
+    creator = models.ForeignKey(
+        get_user_model(),
+        on_delete=models.CASCADE,
+        related_name="node_views",
+        help_text="The user that created the view",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, help_text="The time the view was created" )
     
+
+
+class ScatterPlot(models.Model):
+    query = models.ForeignKey(
+        GraphQuery,
+        on_delete=models.CASCADE,
+        related_name="scatter_plots",
+        help_text="The query this scatter plot was trained on",
+    )
+    name = models.CharField(max_length=1000, help_text="The name of the scatter plot")
+    description = models.CharField(
+        max_length=1000,
+        help_text="The description of the scatter plot",
+        null=True,
+    )
+    id_column = models.CharField(
+        max_length=1000,
+        help_text="The column that assigns the row_id (could be an edge, a node, etc.)",
+    )
+    x_column = models.CharField(
+        max_length=1000, help_text="The column that assigns the x value", null=True
+    )
+    y_column = models.CharField(
+        max_length=1000, help_text="The column that assigns the y value", null=True
+    )
+    color_column = models.CharField(
+        max_length=1000, help_text="The column that assigns the color value", null=True
+    )
+    size_column = models.CharField(
+        max_length=1000, help_text="The column that assigns the size value", null=True
+    )
+    shape_column = models.CharField(
+        max_length=1000, help_text="The column that assigns the shape value", null=True
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+
 
 
 class MaterializedGraph(models.Model):

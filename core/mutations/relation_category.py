@@ -9,7 +9,7 @@ from django.conf import settings
 
 
 @strawberry.input(description="Input for creating a new expression")
-class ExpressionInput:
+class RelationCategoryInput:
     ontology: strawberry.ID | None = strawberry.field(
         default=None,
         description="The ID of the ontology this expression belongs to. If not provided, uses default ontology",
@@ -24,19 +24,13 @@ class ExpressionInput:
     color: list[int] | None = strawberry.field(
         default=None, description="RGBA color values as list of 3 or 4 integers"
     )
-    kind: enums.ExpressionKind = strawberry.field(
-        description="The kind/type of this expression"
-    )
-    metric_kind: enums.MetricDataType | None = strawberry.field(
-        default=None, description="The type of metric data this expression represents"
-    )
     image: scalars.RemoteUpload | None = strawberry.field(
         default=None, description="An optional image associated with this expression"
     )
 
 
 @strawberry.input(description="Input for updating an existing expression")
-class UpdateExpressionInput:
+class UpdateRelationCategoryInput:
     id: strawberry.ID = strawberry.field(
         description="The ID of the expression to update"
     )
@@ -58,16 +52,16 @@ class UpdateExpressionInput:
 
 
 @strawberry.input(description="Input for deleting an expression")
-class DeleteExpressionInput:
+class DeleteRelationCategoryInput:
     id: strawberry.ID = strawberry.field(
         description="The ID of the expression to delete"
     )
 
 
-def create_expression(
+def create_relation_category(
     info: Info,
-    input: ExpressionInput,
-) -> types.Expression:
+    input: RelationCategoryInput,
+) -> types.RelationCategory:
 
     ontology = (
         models.Ontology.objects.get(id=input.ontology) if input.ontology else None
@@ -97,16 +91,14 @@ def create_expression(
     else:
         media_store = None
 
-    vocab, _ = models.Expression.objects.update_or_create(
+    vocab, _ = models.RelationCategory.objects.update_or_create(
         ontology=ontology,
-        age_name=manager.build_age_name(input.label, input.kind),
+        age_name=manager.build_relation_age_name(input.label),
         defaults=dict(
             description=input.description,
             purl=input.purl,
             store=media_store,
             label=input.label,
-            kind=input.kind,
-            metric_kind=input.metric_kind,
         ),
     )
     
@@ -117,8 +109,8 @@ def create_expression(
     return vocab
 
 
-def update_expression(info: Info, input: UpdateExpressionInput) -> types.Expression:
-    item = models.Expression.objects.get(id=input.id)
+def update_relation_category(info: Info, input: UpdateRelationCategoryInput) -> types.RelationCategory:
+    item = models.RelationCategory.objects.get(id=input.id)
 
     if input.color:
         assert (
@@ -142,10 +134,10 @@ def update_expression(info: Info, input: UpdateExpressionInput) -> types.Express
     return item
 
 
-def delete_expression(
+def delete_relation_category(
     info: Info,
-    input: DeleteExpressionInput,
+    input: DeleteRelationCategoryInput,
 ) -> strawberry.ID:
-    item = models.Expression.objects.get(id=input.id)
+    item = models.RelationCategory.objects.get(id=input.id)
     item.delete()
     return input.id

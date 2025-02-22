@@ -25,7 +25,7 @@ def paginate_querysets(
             continue
 
         # Calculate how many items to fetch from this queryset
-        qs_items = qs[current_offset : current_offset + remaining_limit]
+        qs_items = qs[current_offset : current_offset + max(0, remaining_limit)]
         current_offset = (
             0  # After processing the first queryset, reset offset for the next one
         )

@@ -30,5 +30,7 @@ class ColumnInput:
     label: str | None = None
     description: str | None = None
     expression: strawberry.ID | None = None
-    value_kind: enums.MetricDataType | None = None
+    value_kind: enums.MeasurementKind | None = None
     searchable: bool | None = None
+    
+    

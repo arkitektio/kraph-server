@@ -108,4 +108,4 @@ def table(info: Info, graph: strawberry.ID, query: str, columns: list[inputs.Col
             
                 
 
-    return types.Table(rows=rows, columns=input_to_columns(columns))
+    return types.Table(rows=rows, columns=input_to_columns(columns), graph=tgraph)

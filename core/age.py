@@ -355,6 +355,33 @@ def create_age_entity(graph_name, kind_age_name, name: str = None) -> RetrievedE
             raise ValueError("No entity created or returned by the query.")
 
 
+
+def get_random_node(graph_name):
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (n)
+                RETURN n
+                ORDER BY rand()
+                LIMIT 1
+            $$) as (n agtype);
+            """,
+            [graph_name],
+        )
+        
+        result = cursor.fetchone()
+        if result:
+            entity = result[0]
+            return vertex_ag_to_retrieved_entity(graph_name, entity)
+        else:
+            raise ValueError("No entity created or returned by the query.")
+        
+
+
+
+
 def create_age_structure(
     graph_name,
     kind_age_name,

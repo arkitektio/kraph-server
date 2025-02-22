@@ -63,6 +63,43 @@ class Query:
     graphs: list[types.Graph] = strawberry_django.field(
         description="List of all knowledge graphs"
     )
+    node_views: list[types.NodeView] = strawberry_django.field(
+        description="List of all node views"
+    )
+    graph_views: list[types.GraphView] = strawberry_django.field(
+        description="List of all graph views"
+    )
+    
+    
+    graph_queries: list[types.GraphQuery] = strawberry_django.field(
+        description="List of all graph queries"
+    )
+    node_queries: list[types.NodeQuery] = strawberry_django.field(
+        description="List of all node queries"
+    )
+    
+    # Node Categories
+    generic_categories: list[types.GenericCategory] = strawberry_django.field(
+        description="List of all generic categories"
+    )
+    
+    structure_categories: list[types.StructureCategory] = strawberry_django.field(
+        description="List of all structure categories"
+    )
+    
+    
+    # Edge Categories
+    relation_categories: list[types.RelationCategory] = strawberry_django.field(
+        description="List of all relation categories"
+    )
+    measurement_categories: list[types.MeasurementCategory] = strawberry_django.field(
+        description="List of all measurement categories"
+    )
+    
+    
+    
+    
+    
     models: list[types.Model] = strawberry_django.field(
         description="List of all deep learning models (e.g. neural networks)"
     )
@@ -78,26 +115,8 @@ class Query:
     ontologies: list[types.Ontology] = strawberry_django.field(
         description="List of all ontologies"
     )
-
-    path = strawberry_django.field(
-        resolver=queries.path,
-        description="Retrieves the complete knowledge graph starting from an entity",
-    )
-    pairs = strawberry_django.field(
-        resolver=queries.pairs,
-        description="Retrieves paired entities",
-    )
-
-    render_graph = strawberry_django.field(
-        resolver=queries.render_graph,
-        description="Renders a graph query",
-    )
     
-    render_node = strawberry_django.field(
-        resolver=queries.render_node,
-        description = "Renders a node query"
-    )
-    
+
 
     protocol_steps: list[types.ProtocolStep] = strawberry_django.field(
         description="List of all protocol steps"
@@ -113,55 +132,73 @@ class Query:
         resolver=queries.edges,
         description="List of all relationships between entities",
     )
-    pairs = strawberry_django.field(
-        resolver=queries.pairs, description="Retrieves paired entities"
-    )
 
     structure = strawberry_django.field(
         resolver=queries.structure,
         description="Gets a specific structure e.g an image, video, or 3D model",
     )
+    
+    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    def node_category(self, info: Info, id: ID) -> types.NodeCategory:
+        return models.NodeCategory.objects.get(id=id)
+    
+    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    def edge_category(self, info: Info, id: ID) -> types.EdgeCategory:
+        return models.EdgeCategory.objects.get(id=id)
+    
+    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    def generic_category(self, info: Info, id: ID) -> types.GenericCategory:
+        return models.GenericCategory.objects.get(id=id)
+    
+    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    def structure_category(self, info: Info, id: ID) -> types.StructureCategory:
+        return models.StructureCategory.objects.get(id=id)
+    
+    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    def relation_category(self, info: Info, id: ID) -> types.RelationCategory:
+        return models.RelationCategory.objects.get(id=id)
+    
+    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    def measurement_category(self, info: Info, id: ID) -> types.MeasurementCategory:
+        return models.MeasurementCategory.objects.get(id=id)
+    
+    
+    
+    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    def node_categories(self, info: Info, input: OffsetPaginationInput) -> list[types.NodeCategory]:
+        raise NotImplementedError("This resolver is a placeholder and should be implemented by the developer")
+    
+    
+    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    def edge_categories(self, info: Info, input: OffsetPaginationInput) -> list[types.EdgeCategory]:
+        raise NotImplementedError("This resolver is a placeholder and should be implemented by the developer")
+    
+    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    def categories(self, info: Info, input: OffsetPaginationInput) -> list[types.Category]:
+        raise NotImplementedError("This resolver is a placeholder and should be implemented by the developer")
+    
+    
 
     
     @strawberry.django.field(permission_classes=[IsAuthenticated])
     def expression(self, info: Info, id: ID) -> types.Expression:
         return models.Expression.objects.get(id=id)
     
-      
-    
+    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    def graph_view(self, info: Info, id: ID) -> types.GraphView:
+        return models.GraphView.objects.get(id=id)
     
     @strawberry.django.field(permission_classes=[IsAuthenticated])
-    def expressions(self, info: Info,
-        filters: filters.ExpressionFilter | None = strawberry.UNSET,
-        pagination: OffsetPaginationInput | None = strawberry.UNSET,
-    ) -> list[types.Expression]:
-        if types is strawberry.UNSET:
-            view_relations = [
-                "label_accessors",
-                "image_accessors",
-            ]
-        else:
-            view_relations = [kind.value for kind in types]
-
-        results = []
-
-        base = models.Table.objects.get(id=self._table_id)
-
-        for relation in view_relations:
-            qs = (
-                getattr(base, relation)
-                .filter(keys__contains=[self._duckdb_column[0]])
-                .all()
-            )
-
-            # apply filters if defined
-            if filters is not strawberry.UNSET:
-                qs = strawberry_django.filters.apply(filters, qs, info)
-
-            results.append(qs)
-
-        return list(chain(*results))
+    def node_view(self, info: Info, id: ID) -> types.NodeView:
+        return models.NodeView.objects.get(id=id)
     
+    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    def node_query(self, info: Info, id: ID) -> types.NodeQuery:
+        return models.NodeQuery.objects.get(id=id)
+    
+    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    def graph_query(self, info: Info, id: ID) -> types.GraphQuery:
+        return models.GraphQuery.objects.get(id=id)
     
     
 
@@ -228,6 +265,16 @@ class Mutation:
     delete_graph = strawberry_django.mutation(
         resolver=mutations.delete_graph, description="Delete an existing graph"
     )
+    
+    
+    create_graph_view = strawberry_django.mutation(
+        resolver=mutations.create_graph_view, description="Create a new graph view"
+    )
+    
+    create_node_view = strawberry_django.mutation(
+        resolver=mutations.create_node_view, description="Create a new node view"
+    )
+    
 
     create_relation = strawberry_django.mutation(
         resolver=mutations.create_relation,
@@ -300,17 +347,55 @@ class Mutation:
     
     
 
-    create_expression = strawberry_django.mutation(
-        resolver=mutations.create_expression, description="Create a new expression"
+    create_measurement_category = strawberry_django.mutation(
+        resolver=mutations.create_measurement_category, description="Create a new expression"
     )
-    update_expression = strawberry_django.mutation(
-        resolver=mutations.update_expression,
+    update_measurement_category = strawberry_django.mutation(
+        resolver=mutations.update_measurement_category,
         description="Update an existing expression",
     )
-    delete_expression = strawberry_django.mutation(
-        resolver=mutations.delete_expression,
+    delete_measurement_category = strawberry_django.mutation(
+        resolver=mutations.delete_measurement_category,
         description="Delete an existing expression",
     )
+    
+    create_structure_category = strawberry_django.mutation(
+        resolver=mutations.create_structure_category, description="Create a new expression"
+    )
+    update_structure_category = strawberry_django.mutation(
+        resolver=mutations.update_structure_category,
+        description="Update an existing expression",
+    )
+    delete_structure_category = strawberry_django.mutation(
+        resolver=mutations.delete_structure_category,
+        description="Delete an existing expression",
+    )
+    
+    create_relation_category = strawberry_django.mutation(
+        resolver=mutations.create_relation_category, description="Create a new expression"
+    )
+    update_relation_category = strawberry_django.mutation(
+        resolver=mutations.update_relation_category,
+        description="Update an existing expression",
+    )
+    delete_relation_category = strawberry_django.mutation(
+        resolver=mutations.delete_relation_category,
+        description="Delete an existing expression",
+    )
+    
+    create_generic_category = strawberry_django.mutation(
+        resolver=mutations.create_generic_category, description="Create a new expression"
+    )
+    update_generic_category = strawberry_django.mutation(
+        resolver=mutations.update_generic_category,
+        description="Update an existing expression",
+    )
+    delete_generic_category = strawberry_django.mutation(
+        resolver=mutations.delete_generic_category,
+        description="Delete an existing expression",
+    )
+    
+
 
     create_protocol = strawberry_django.mutation(
         resolver=mutations.create_protocol, description="Create a new protocol"

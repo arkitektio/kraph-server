@@ -178,6 +178,13 @@ StructureString = strawberry.scalar(
     parse_value=lambda v: v,
 )
 
+StructureIdentifier = strawberry.scalar(
+    NewType("StructureIdentifier", str),
+    description="The `StructureIdentifier` scalar type represents a identifier of a structure",
+    serialize=lambda v: v,
+    parse_value=lambda v: v,
+)
+
 NodeID = strawberry.scalar(
     NewType("NodeID", str),
     description="The `NodeID` scalar type represents a graph node ID",

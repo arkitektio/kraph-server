@@ -31,20 +31,24 @@ def create_relation(
     input: RelationInput,
 ) -> types.Relation:
 
-    kind = models.LinkedExpression.objects.get(id=input.kind)
+    kind = models.RelationCategory.objects.get(id=input.kind)
 
     left_graph = node_id_to_graph_name(input.left)
     right_graph = node_id_to_graph_name(input.right)
+    
 
     assert (
         left_graph == right_graph
     ), "Cannot create a relation between entities in different graphs"
+    
+    
+    tleft_graph = models.Graph.objects.get(age_name=left_graph)
 
     retrieve = age.create_age_relation(
-        kind.graph.age_name, kind.age_name, node_id_to_graph_id(input.left), node_id_to_graph_id(input.left)
+        tleft_graph.age_name, kind.age_name, node_id_to_graph_id(input.left), node_id_to_graph_id(input.left)
     )
 
-    return types.EntityRelation(_value=retrieve)
+    return types.Relation(_value=retrieve)
 
 
 

@@ -8,7 +8,7 @@ import strawberry
 from enum import Enum
 
 
-class MetricDataTypeChoices(TextChoices):
+class MeasurementKindChoices(TextChoices):
     INT = "INT"
     FLOAT = "FLOAT"
     DATETIME = "DATETIME"
@@ -47,7 +47,7 @@ class ProtocolStepKind(str, Enum):
 
 
 @strawberry.enum
-class MetricDataType(str, Enum):
+class MeasurementKind(str, Enum):
     INT = "INT"
     FLOAT = "FLOAT"
     DATETIME = "DATETIME"
@@ -70,6 +70,23 @@ class ExpressionKind(str, Enum):
     METRIC = "metric"
     RELATION_METRIC = "relation_metric"
     CONCEPT = "concept"
+
+
+@strawberry.enum
+class InstanceKind(str, Enum):
+    """ Describes how the instance is related to the class.
+    
+    I.e. a LOT means that the instance reflects some instances of the class. (Antibody Lot)
+    an ENTITY means that the instance is a single instance of the class. (A single mouse)
+    
+    
+    """
+    LOT = "LOT"
+    SAMPLE = "SAMPLE_OF"
+    ENTITY = "ENTITY"
+    UNKNOWN = "UNKNOWN"
+
+
 
 
 @strawberry.enum

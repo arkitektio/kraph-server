@@ -92,6 +92,10 @@ class GraphViewFilter(IDFilterMixin, SearchFilterMixin):
 class GraphQueryFilter(IDFilterMixin, SearchFilterMixin):
     id: auto
 
+@strawberry.django.filter(models.ScatterPlot)
+class ScatterPlotFilter(IDFilterMixin, SearchFilterMixin):
+    id: auto
+
 
 @strawberry.django.filter(models.NodeView)
 class NodeViewFilter(IDFilterMixin, SearchFilterMixin):

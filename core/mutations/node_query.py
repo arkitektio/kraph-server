@@ -6,7 +6,7 @@ from core import types, models, enums, scalars, inputs
 from core import age
 from strawberry.file_uploads import Upload
 from django.conf import settings
-
+from core.renderers.node import render
 
 @strawberry.input(description="Input for creating a new expression")
 class NodeQueryInput:
@@ -24,6 +24,12 @@ class NodeQueryInput:
     )
     columns: list[inputs.ColumnInput] | None = strawberry.field(
         default=None, description="The columns (if ViewKind is Table)"
+    )
+    test_against: strawberry.ID | None = strawberry.field(
+        default=None, description="The node to test against"
+    )
+    allowed_entities: list[strawberry.ID] | None = strawberry.field(
+        default=None, description="The allowed entitie classes for this query"
     )
 
 
@@ -72,6 +78,37 @@ def create_node_query(
             columns=[strawberry.asdict(c) for c in input.columns] if input.columns else [],
         ),
     )
+    
+    if not input.test_against:
+        graph = models.Graph.objects.filter(user=info.context.request.user).first()
+        if not graph:
+            return vocab
+        try:
+            node = age.get_random_node(graph.age_name)
+        except Exception as e:
+            return vocab
+        
+        node_id = node.unique_id
+
+    else:
+        graph = models.Graph.objects.get(age_name=age.to_graph_id(input.test_against))
+        node_id = input.test_against
+    
+        
+    
+    new_view, _ = models.NodeView.objects.get_or_create(
+        graph = graph,
+        node_id = node_id,
+        query = vocab,
+        creator = info.context.request.user,
+    )
+    try:
+        render.render_node_view(new_view)
+    except Exception as e:
+        new_view.delete()
+        vocab.delete()
+        raise e
+       
 
     return vocab
 

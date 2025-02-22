@@ -2,32 +2,32 @@ from core import models, enums, age, inputs
 
 def rebuild_graph(graph: models.Graph):
     
-    for item in graph.ontology.expressions.all():
+    for item in graph.ontology.generic_categories.all():
+       age.create_age_entity_kind(graph.age_name, item.age_name)
+
+    for item in graph.ontology.measurement_categories.all():
+        age.create_age_relation_kind(graph.age_name, item.age_name)
         
-        if item.kind == enums.ExpressionKind.ENTITY:
-            age.create_age_entity_kind(graph.age_name, item.age_name)
-
-        elif item.kind == enums.ExpressionKind.RELATION:
-            age.create_age_relation_kind(graph.age_name, item.age_name)
-
-        elif item.kind == enums.ExpressionKind.METRIC:
-            age.create_age_relation_kind(graph.age_name, item.age_name)
-
-        elif item.kind == enums.ExpressionKind.RELATION_METRIC:
-            age.create_age_relation_kind(graph.age_name, item.age_name)
-
+    for item in graph.ontology.relation_categories.all():
+        age.create_age_relation_kind(graph.age_name, item.age_name)
         
+    for item in graph.ontology.structure_categories.all():
+        age.create_age_entity_kind(graph.age_name, item.age_name)
+
+
+ 
+ 
+ 
+def build_generic_age_name(label: str):
+    return label.replace(" ", "_").replace("-", "_").lower()       
         
-def build_age_name(label: str, kind: enums.ExpressionKind):
-    if kind == enums.ExpressionKind.ENTITY.value:
-            return label.replace(" ", "_").replace("-", "_").lower()
-    elif kind == enums.ExpressionKind.RELATION.value:
-        return label.replace(" ", "_").replace("-", "_").upper()
-    elif kind == enums.ExpressionKind.RELATION_METRIC.value:
-        return label.replace(" ", "_").replace("-", "_").upper()
-    elif kind == enums.ExpressionKind.METRIC.value:
-        return label.replace(" ", "_").replace("-", "_").lower()
-    elif kind == enums.ExpressionKind.STRUCTURE.value:
-        return label.replace(" ", "_").replace("-", "_").lower()
-    else:
-        raise ValueError(f"Unknown kind {kind}")
+def build_structure_age_name(identifier:str):
+    return identifier.replace(" ", "_").replace("-", "_").lower()
+
+def build_relation_age_name(label: str):
+    return label.replace(" ", "_").replace("-", "_").upper()
+
+def build_measurement_age_name(label: str):
+    return label.replace(" ", "_").replace("-", "_").lower()
+
+    
