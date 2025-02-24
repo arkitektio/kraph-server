@@ -96,7 +96,13 @@ class Query:
         description="List of all measurement categories"
     )
     
-    
+    scatter_plots: list[types.ScatterPlot] = strawberry_django.field(
+        description="List of all scatter plots"
+    )
+
+    plot_views: list[types.PlotView] = strawberry_django.field(
+        description="List of all plot views"
+    )
     
     
     
@@ -137,6 +143,10 @@ class Query:
         resolver=queries.structure,
         description="Gets a specific structure e.g an image, video, or 3D model",
     )
+
+    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    def plot_view(self, info: Info, id: ID) -> types.PlotView:
+        return models.PlotView.objects.get(id=id)
     
     @strawberry.django.field(permission_classes=[IsAuthenticated])
     def node_category(self, info: Info, id: ID) -> types.NodeCategory:
@@ -145,6 +155,10 @@ class Query:
     @strawberry.django.field(permission_classes=[IsAuthenticated])
     def edge_category(self, info: Info, id: ID) -> types.EdgeCategory:
         return models.EdgeCategory.objects.get(id=id)
+    
+    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    def scatter_plot(self, info: Info, id: ID) -> types.ScatterPlot:
+        return models.ScatterPlot.objects.get(id=id )
     
     @strawberry.django.field(permission_classes=[IsAuthenticated])
     def generic_category(self, info: Info, id: ID) -> types.GenericCategory:
@@ -274,7 +288,22 @@ class Mutation:
     create_node_view = strawberry_django.mutation(
         resolver=mutations.create_node_view, description="Create a new node view"
     )
+
+
+
+    # Scatter Plot
+    create_scatter_plot = strawberry_django.mutation(
+        resolver=mutations.create_scatter_plot, description="Create a new scatter plot"
+    )
+    delete_scatter_plot = strawberry_django.mutation(
+        resolver=mutations.delete_scatter_plot, description="Delete an existing scatter plot"
+    )
     
+
+    # Plot View
+    create_plot_view = strawberry_django.mutation(
+        resolver=mutations.create_plot_view, description="Create a new plot view"
+    )
 
     create_relation = strawberry_django.mutation(
         resolver=mutations.create_relation,

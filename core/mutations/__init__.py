@@ -19,6 +19,8 @@ from .node_view import *
 from .structure_category import *
 from .measurement_category import *
 from .relation_category import *
+from .scatter_plot import *
+from .plot_view import *
 
 __all__ = [
     "create_channel",

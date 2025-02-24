@@ -328,7 +328,13 @@ class Graph:
         
         return [entity_to_node_subtype(i) for i in age.select_latest_nodes(self.age_name, pagination, filter=filters)]
     
-    
+    @strawberry_django.field()
+    def plot_views(self, info: Info, filters: filters.PlotViewFilter | None = None , pagination: OffsetPaginationInput | None = None) -> List["PlotView"]:
+        
+        filters = filters or f.PlotViewFilter()
+        pagination = pagination or OffsetPaginationInput()
+        
+        return models.PlotView.objects.filter(view__graph=self).all()
   
 @strawberry.django.type(
     models.GraphQuery,
@@ -343,6 +349,8 @@ class GraphQuery:
     kind: enums.ViewKind
     ontology: "Ontology"
     query: str
+    scatter_plots: List["ScatterPlot"]
+    views: List["GraphView"]
 
 @strawberry.django.type(
     models.ScatterPlot,
@@ -354,12 +362,13 @@ class ScatterPlot:
     graph: GraphQuery
     id: auto
     name: str
+    description: str | None
     id_column: str
     x_column: str
     y_column: str
-    color_column: str
-    size_column: str
-    shape_column: str
+    color_column: str | None
+    size_column: str | None
+    shape_column: str | None
     created_at: datetime.datetime
 
 
@@ -893,16 +902,33 @@ class GraphView:
     id: auto
     graph: Graph
     query: "GraphQuery"
+    plot_views: List["PlotView"]
     
     @strawberry_django.field()
     def render(self, info: Info) -> Pairs | Path | Table:
         from core.renderers.graph import render
         return render.render_graph_view(self)
         
-
     @strawberry.django.field()
     def label(self, info: Info) -> str:
         return self.query.name + " for " + self.graph.name
+    
+
+@strawberry.django.type(
+    models.PlotView,
+    filters=filters.PlotViewFilter,
+    pagination=True,
+    description="A view of a graph, that contains entities and relations.",
+)
+class PlotView:
+    id: auto
+    view: GraphView
+    plot: "ScatterPlot"
+
+    @strawberry_django.field()
+    def name (self, info: Info) -> str:
+        return self.plot.name
+    
 
 
 @strawberry.django.type(

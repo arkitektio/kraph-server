@@ -644,8 +644,14 @@ class ScatterPlot(models.Model):
     x_column = models.CharField(
         max_length=1000, help_text="The column that assigns the x value", null=True
     )
+    x_id_column = models.CharField(
+        max_length=1000, help_text="The column that assigns the x_id value", null=True
+    )
     y_column = models.CharField(
         max_length=1000, help_text="The column that assigns the y value", null=True
+    )
+    y_id_column = models.CharField(
+        max_length=1000, help_text="The column that assigns an ID to the y value", null=True
     )
     color_column = models.CharField(
         max_length=1000, help_text="The column that assigns the color value", null=True
@@ -657,7 +663,42 @@ class ScatterPlot(models.Model):
         max_length=1000, help_text="The column that assigns the shape value", null=True
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    creator = models.ForeignKey(
+        get_user_model(),
+        on_delete=models.CASCADE,
+        related_name="scatter_plots",
+        help_text="The user that created the scatter plot",
+    )
 
+
+
+class PlotView(models.Model):
+    plot = models.ForeignKey(
+        ScatterPlot,
+        on_delete=models.CASCADE,
+        related_name="views",
+        help_text="The scatter plot this view belongs to",
+    )
+    view = models.ForeignKey(
+        GraphView,
+        on_delete=models.CASCADE,
+        related_name="plot_views",
+        help_text="The graph this view belongs to",
+    )
+    creator = models.ForeignKey(
+        get_user_model(),
+        on_delete=models.CASCADE,
+        related_name="plot_views",
+        help_text="The user that created the view",
+    )
+    pinned_by = models.ManyToManyField(
+        get_user_model(),
+        related_name="pinned_plotviews",
+        help_text="The users that pinned the view",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True, help_text="The time the view was created" )
+    
 
 
 
