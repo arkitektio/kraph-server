@@ -12,7 +12,7 @@ import re
 @strawberry.input
 class StructureInput:
     structure: scalars.StructureString
-    graph: strawberry.ID
+    graph: strawberry.ID | None = None
     
 
 
@@ -58,7 +58,7 @@ def create_structure(
     input: StructureInput,
 ) -> types.Structure:
 
-    graph = models.Graph.objects.get(id=input.graph)
+    graph = models.Graph.objects.get(id=input.graph) if input.graph else models.Graph.get_active(info.context.request.user)
 
     age_name, identifier, object_id = scalar_string_to_graph_name(input.structure)
 

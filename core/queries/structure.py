@@ -3,10 +3,8 @@ import strawberry
 from kante.types import Info
 
 
-def structure(
-    info: Info, graph: strawberry.ID, structure: scalars.StructureString
-) -> types.Structure:
+def structure(self, info: Info, identifier: scalars.StructureIdentifier, object: strawberry.ID, graph: strawberry.ID | None = None) -> types.Structure:
+        
+    tgraph = models.Graph.objects.get(id=graph) if graph else models.Graph.objects.filter(user=info.context.request.user).first()
 
-    the_graph = models.Graph.objects.get(id=graph)
-
-    return types.Entity(_value=age.get_age_structure(the_graph.age_name, structure))
+    return types.Structure(_value=age.get_age_structure(tgraph.age_name, f"{identifier}:{object}"))

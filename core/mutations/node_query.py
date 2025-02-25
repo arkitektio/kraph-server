@@ -7,6 +7,8 @@ from core import age
 from strawberry.file_uploads import Upload
 from django.conf import settings
 from core.renderers.node import render
+from django.contrib.auth import get_user_model
+
 
 @strawberry.input(description="Input for creating a new expression")
 class NodeQueryInput:
@@ -122,3 +124,27 @@ def delete_node_query(
     item = models.NodeQuery.objects.get(id=input.id)
     item.delete()
     return input.id
+
+
+
+@strawberry.input
+class PinNodeQueryInput:
+    id: strawberry.ID
+    pinned: bool
+
+
+
+def pin_node_query(
+    info: Info,
+    input: PinNodeQueryInput,
+) -> types.NodeQuery:
+    item = models.NodeQuery.objects.get(id=input.id)
+
+
+    if input.pinned:
+        item.pinned_by.add(info.context.request.user)
+    else:
+        item.pinned_by.remove(info.context.request.user)
+
+    item.save()
+    return item

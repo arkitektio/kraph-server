@@ -111,3 +111,25 @@ def delete_graph_query(
     item = models.NodeQuery.objects.get(id=input.id)
     item.delete()
     return input.id
+
+@strawberry.input
+class PinGraphQueryInput:
+    id: strawberry.ID
+    pinned: bool
+
+
+
+def pin_graph_query(
+    info: Info,
+    input: PinGraphQueryInput,
+) -> types.GraphQuery:
+    item = models.GraphQuery.objects.get(id=input.id)
+
+
+    if input.pinned:
+        item.pinned_by.add(info.context.request.user)
+    else:
+        item.pinned_by.remove(info.context.request.user)
+
+    item.save()
+    return item

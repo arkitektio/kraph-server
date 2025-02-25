@@ -336,6 +336,13 @@ class Graph:
         
         return models.PlotView.objects.filter(view__graph=self).all()
   
+    
+    @strawberry.django.field()
+    def pinned(self, info: Info) -> bool:
+        return info.context.request.user in self.pinned_by.all()
+    
+
+
 @strawberry.django.type(
     models.GraphQuery,
     filters=filters.GraphQueryFilter,
@@ -351,6 +358,11 @@ class GraphQuery:
     query: str
     scatter_plots: List["ScatterPlot"]
     views: List["GraphView"]
+    
+    @strawberry.django.field()
+    def pinned(self, info: Info) -> bool:
+        return info.context.request.user in self.pinned_by.all()
+    
 
 @strawberry.django.type(
     models.ScatterPlot,
@@ -385,6 +397,10 @@ class NodeQuery:
     kind: enums.ViewKind
     ontology: "Ontology"
     query: str
+    
+    @strawberry.django.field()
+    def pinned(self, info: Info) -> bool:
+        return info.context.request.user in self.pinned_by.all()
     
     
 
@@ -463,6 +479,32 @@ class Node:
                 self._value.graph_name, pagination, filter
             )
         ]
+        
+    @strawberry.django.field(description="Protocol steps where this entity was the target")
+    def pinned_views(self, info: Info) -> List["NodeView"]:
+        
+        graph = models.Graph.objects.get(age_name=self._value.graph_name)
+        
+        queries = models.NodeQuery.objects.filter(ontology=graph.ontology, pinned_by=info.context.request.user).all()
+
+        views = []
+        
+        for query in queries:
+            
+            
+            view, _ = models.NodeView.objects.get_or_create(
+                node_id=self._value.unique_id,
+                query=query,
+                graph=graph,
+                creator=info.context.request.user
+            )
+            
+            
+            views.append(view)
+        
+        print("views", views)
+        
+        return views
     
 
 
@@ -490,7 +532,10 @@ class Structure(Node):
     @strawberry.field(description="The expression that defines this entity's type")
     def object(self, info: Info) -> str:
         return self._value.object
-
+    
+    
+    
+        
 
 
 
@@ -719,7 +764,7 @@ class EdgeCategory:
     pass
 
 
-@strawberry_django.type(models.GenericCategory, filters=filters.ExpressionFilter, pagination=True)
+@strawberry_django.type(models.GenericCategory, filters=filters.GenericCategoryFilter, pagination=True)
 class GenericCategory(NodeCategory, Category):
     """ A GenericExpression is a class that describes the relationship between two entities."""
     
@@ -737,7 +782,7 @@ class RelationCategory(EdgeCategory, Category):
     
     pass
 
-@strawberry_django.type(models.MeasurementCategory, filters=filters.ExpressionFilter, pagination=True)
+@strawberry_django.type(models.MeasurementCategory, filters=filters.MeasurementCategoryFilter, pagination=True)
 class MeasurementCategory(EdgeCategory, Category):
     """ A MeasurementExpression is a class that describes the relatisonship between two entities."""
     metric_kind: enums.MeasurementKind = strawberry.field(description="The kind of metric this expression represents")

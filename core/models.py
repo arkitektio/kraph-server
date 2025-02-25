@@ -493,6 +493,16 @@ class Graph(models.Model):
         help_text="The name of the graph class in the age graph",
         unique=True,
     )
+    pinned_by = models.ManyToManyField(
+        get_user_model(),
+        related_name="pinned_graphs",
+        help_text="The users that have this query active",
+        
+    )
+    
+    @classmethod
+    def get_active(cls, user):
+        return cls.objects.filter(user=user).first()
     
 
 
@@ -523,6 +533,12 @@ class GraphQuery(models.Model):
         help_text="The columns (if ViewKind is Table)",
         default=None,
         null=True,
+    )
+    pinned_by = models.ManyToManyField(
+        get_user_model(),
+        related_name="pinned_graph_queries",
+        help_text="The users that have this query active",
+        
     )
     
     @property
@@ -557,11 +573,25 @@ class NodeQuery(models.Model):
         default=None,
         null=True,
     )
+    pinned_by = models.ManyToManyField(
+        get_user_model(),
+        related_name="pinned_node_queries",
+        help_text="The users that have this query active",
+        
+    )
+    
     
     @property
     def input_columns(self):
         from core import inputs
         return [inputs.ColumnInput(**i) for i in self.columns]
+    
+    
+    @classmethod
+    def active_for_user_and_graph(self, user, graph):
+        
+        return self.objects.filter(ontology=graph.ontology, pinned_by=user).first()
+        
     
 
 

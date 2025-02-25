@@ -17,7 +17,7 @@ from strawberry.field_extensions import InputMutationExtension
 import strawberry_django
 from koherent.strawberry.extension import KoherentExtension
 from authentikate.strawberry.permissions import IsAuthenticated
-from core import age
+from core import age, scalars
 from strawberry_django.pagination import OffsetPaginationInput
 
 @strawberry.type
@@ -105,6 +105,12 @@ class Query:
     )
     
     
+    structure = strawberry_django.field(
+        resolver=queries.structure,
+        description="Gets a specific structure e.g an image, video, or 3D model",
+    )
+    
+    
     
     models: list[types.Model] = strawberry_django.field(
         description="List of all deep learning models (e.g. neural networks)"
@@ -139,10 +145,7 @@ class Query:
         description="List of all relationships between entities",
     )
 
-    structure = strawberry_django.field(
-        resolver=queries.structure,
-        description="Gets a specific structure e.g an image, video, or 3D model",
-    )
+    
 
     @strawberry.django.field(permission_classes=[IsAuthenticated])
     def plot_view(self, info: Info, id: ID) -> types.PlotView:
@@ -190,6 +193,7 @@ class Query:
     @strawberry.django.field(permission_classes=[IsAuthenticated])
     def categories(self, info: Info, input: OffsetPaginationInput) -> list[types.Category]:
         raise NotImplementedError("This resolver is a placeholder and should be implemented by the developer")
+    
     
     
 
@@ -280,6 +284,9 @@ class Mutation:
         resolver=mutations.delete_graph, description="Delete an existing graph"
     )
     
+    pin_graph = strawberry_django.mutation(
+        resolver=mutations.pin_graph, description="Pin or unpin a graph"
+    )
     
     create_graph_view = strawberry_django.mutation(
         resolver=mutations.create_graph_view, description="Create a new graph view"
@@ -369,8 +376,16 @@ class Mutation:
         resolver=mutations.create_graph_query, description="Create a new graph query"
     )
     
+    pin_graph_query = strawberry_django.mutation(
+        resolver=mutations.pin_graph_query, description="Pin or unpin a graph query"
+    )
+    
     create_node_query = strawberry_django.mutation(
         resolver=mutations.create_node_query, description="Create a new node query"
+    )
+    
+    pin_node_query = strawberry_django.mutation(
+        resolver=mutations.pin_node_query, description="Pin or unpin a node query"
     )
     
     
