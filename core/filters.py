@@ -86,6 +86,15 @@ class GenericCategoryFilter:
     search: str | None
     graph: strawberry.ID | None 
     ontology: strawberry.ID | None
+    pinned: bool | None
+    
+    
+    def filter_pinned(self, queryset, info):
+        if self.pinned is None:
+            return queryset
+        return queryset.filter(pinned_by=info.context.request.user)
+    
+    
     def filter_ids(self, queryset, info):
         if self.ids is None:
             return queryset
@@ -111,6 +120,91 @@ class GenericCategoryFilter:
             return queryset
         return queryset.filter(ontology_id=self.ontology)
     
+@strawberry.django.filter(models.RelationCategory)
+class RelationCategoryFilter:
+    ids: list[strawberry.ID] | None
+    id: auto
+    search: str | None
+    graph: strawberry.ID | None 
+    ontology: strawberry.ID | None
+    pinned: bool | None
+    
+    
+    def filter_pinned(self, queryset, info):
+        if self.pinned is None:
+            return queryset
+        return queryset.filter(pinned_by=info.context.request.user)
+    
+    
+    def filter_ids(self, queryset, info):
+        if self.ids is None:
+            return queryset
+        return queryset.filter(id__in=self.ids)
+
+    def filter_search(self, queryset, info):
+        if self.search is None:
+            return queryset
+        return queryset.filter(label__contains=self.search)
+
+    def filter_kind(self, queryset, info):
+        if self.kind is None:
+            return queryset
+        return queryset.filter(kind=self.kind)
+    
+    def filter_graph(self, queryset, info):
+        if self.graph is None:
+            return queryset
+        return queryset.filter(ontology=models.Graph.objects.get(id=self.graph).ontology)
+    
+    def filter_ontology(self, queryset, info):
+        if self.ontology is None:
+            return queryset
+        return queryset.filter(ontology_id=self.ontology)    
+    
+    
+@strawberry.django.filter(models.StructureCategory)
+class StructureCategoryFilter:
+    ids: list[strawberry.ID] | None
+    id: auto
+    search: str | None
+    graph: strawberry.ID | None 
+    ontology: strawberry.ID | None
+    pinned: bool | None
+    
+    
+    def filter_pinned(self, queryset, info):
+        if self.pinned is None:
+            return queryset
+        return queryset.filter(pinned_by=info.context.request.user)
+    
+    
+    
+    
+    def filter_ids(self, queryset, info):
+        if self.ids is None:
+            return queryset
+        return queryset.filter(id__in=self.ids)
+
+    def filter_search(self, queryset, info):
+        if self.search is None:
+            return queryset
+        return queryset.filter(label__contains=self.search)
+
+    def filter_kind(self, queryset, info):
+        if self.kind is None:
+            return queryset
+        return queryset.filter(kind=self.kind)
+    
+    def filter_graph(self, queryset, info):
+        if self.graph is None:
+            return queryset
+        return queryset.filter(ontology=models.Graph.objects.get(id=self.graph).ontology)
+    
+    def filter_ontology(self, queryset, info):
+        if self.ontology is None:
+            return queryset
+        return queryset.filter(ontology_id=self.ontology)    
+        
     
 @strawberry.django.filter(models.MeasurementCategory)
 class MeasurementCategoryFilter:

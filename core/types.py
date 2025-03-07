@@ -770,13 +770,13 @@ class GenericCategory(NodeCategory, Category):
     
     pass
 
-@strawberry_django.type(models.StructureCategory, filters=filters.ExpressionFilter, pagination=True)
+@strawberry_django.type(models.StructureCategory, filters=filters.StructureCategoryFilter, pagination=True)
 class StructureCategory(NodeCategory, Category):
     identifier: str = strawberry.field(description="The structure that this class represents")
     pass
     
     
-@strawberry_django.type(models.RelationCategory, filters=filters.ExpressionFilter, pagination=True)
+@strawberry_django.type(models.RelationCategory, filters=filters.RelationCategoryFilter, pagination=True)
 class RelationCategory(EdgeCategory, Category):
     """ A RelationExpression is a class that describes the relationship between two entities."""
     
