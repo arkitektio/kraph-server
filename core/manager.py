@@ -31,3 +31,17 @@ def build_measurement_age_name(label: str):
     return label.replace(" ", "_").replace("-", "_").lower()
 
     
+    
+def create_default_structure_queries_for_structure(structure_category: models.StructureCategory, entity: age.RetrievedEntity):
+    
+    # Should create a query that takes all self-referencing relations as measurements
+    # and returns it as a table
+    node_query = f"""
+    MATCH (n:{entity.age_name}) -[r]-> (n)
+    
+    RETURN n
+    """
+    
+    return None
+    
+    

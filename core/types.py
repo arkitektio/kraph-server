@@ -403,6 +403,23 @@ class NodeQuery:
         return info.context.request.user in self.pinned_by.all()
     
     
+    @strawberry_django.field()
+    def relevant_for(self, info: Info) -> List["Category"]:
+        
+        relevants = []
+        
+        for category in self.relevant_for.all():
+            if category.structurecategory:
+                relevants.append(category.structurecategory)
+            if category.genericcategory:
+                relevants.append(category.genericcategory)
+            if category.relationcategory:
+                relevants.append(category.relationcategory)
+            if category.measurementcategory:
+                relevants.append(category.measurementcategory)
+        return relevants
+    
+    
 
     
 
@@ -485,7 +502,7 @@ class Node:
         
         graph = models.Graph.objects.get(age_name=self._value.graph_name)
         
-        queries = models.NodeQuery.objects.filter(ontology=graph.ontology, pinned_by=info.context.request.user).all()
+        queries = models.NodeQuery.objects.filter(ontology=graph.ontology, pinned_by=info.context.request.user, relevant_for__kind_name=self._value.kind_age_name).all()
 
         views = []
         
@@ -563,6 +580,8 @@ class Entity(Node):
     @strawberry.django.field(description="Protocol steps where this entity was used")
     def used_in(self) -> list[ProtocolStep]:
         return models.ProtocolStep.objects.filter(used_entity_id=self._value.unique_id)
+    
+    
 
 
 @strawberry.interface
@@ -773,6 +792,20 @@ class GenericCategory(NodeCategory, Category):
 @strawberry_django.type(models.StructureCategory, filters=filters.StructureCategoryFilter, pagination=True)
 class StructureCategory(NodeCategory, Category):
     identifier: str = strawberry.field(description="The structure that this class represents")
+    
+    
+    
+    @strawberry.django.field()
+    def relevant_queries(self, info: Info) -> List["GraphQuery"]:
+        
+        queries = []
+        
+        for query in self.relevant_queries.all():
+            
+            if query.node_id:
+                queries.append(query)
+        
+        return queries
     pass
     
     

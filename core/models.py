@@ -538,7 +538,11 @@ class GraphQuery(models.Model):
         get_user_model(),
         related_name="pinned_graph_queries",
         help_text="The users that have this query active",
-        
+    )
+    relevant_for = models.ManyToManyField(
+        Expression,
+        related_name="relevant_graph_queries",
+        help_text="The expression that this query should be mostly used for",
     )
     
     @property
@@ -577,7 +581,11 @@ class NodeQuery(models.Model):
         get_user_model(),
         related_name="pinned_node_queries",
         help_text="The users that have this query active",
-        
+    )
+    relevant_for = models.ManyToManyField(
+        Expression,
+        related_name="relevant_node_queries",
+        help_text="The entities that this query should be mostly used for",
     )
     
     

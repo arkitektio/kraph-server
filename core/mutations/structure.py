@@ -13,6 +13,7 @@ import re
 class StructureInput:
     structure: scalars.StructureString
     graph: strawberry.ID | None = None
+    create_default_view: bool = True
     
 
 
@@ -63,7 +64,7 @@ def create_structure(
     age_name, identifier, object_id = scalar_string_to_graph_name(input.structure)
 
    
-    expression, _ = models.StructureCategory.objects.update_or_create(
+    category, created = models.StructureCategory.objects.update_or_create(
         age_name=age_name,
         ontology=graph.ontology,
         defaults=dict(
@@ -71,14 +72,18 @@ def create_structure(
         ),
     )
     
+    
 
     structure = age.create_age_structure(
         graph.age_name,
-        expression.age_name,
+        category.age_name,
         identifier=identifier,
         object=object_id,
         structure=input.structure,
     )
+    
+    if input.create_default_view and created:
+        manager.create_default_structure_queries_for_structure(category, structure)
 
     return types.Structure(_value=structure)
 
