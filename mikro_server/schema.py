@@ -95,6 +95,9 @@ class Query:
     measurement_categories: list[types.MeasurementCategory] = strawberry_django.field(
         description="List of all measurement categories"
     )
+    step_categories: list[types.StepCategory] = strawberry_django.field(
+        description="List of all step categories"
+    )
     
     scatter_plots: list[types.ScatterPlot] = strawberry_django.field(
         description="List of all scatter plots"
@@ -166,6 +169,10 @@ class Query:
     @strawberry.django.field(permission_classes=[IsAuthenticated])
     def generic_category(self, info: Info, id: ID) -> types.GenericCategory:
         return models.GenericCategory.objects.get(id=id)
+    
+    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    def step_category(self, info: Info, id: ID) -> types.StepCategory:
+        return models.StepCategory.objects.get(id=id)
     
     @strawberry.django.field(permission_classes=[IsAuthenticated])
     def structure_category(self, info: Info, id: ID) -> types.StructureCategory:
@@ -389,6 +396,17 @@ class Mutation:
     )
     
     
+    create_step_category = strawberry_django.mutation(
+        resolver=mutations.create_step_category, description="Create a new expression"
+    )
+    update_step_category = strawberry_django.mutation(
+        resolver=mutations.update_step_category,
+        description="Update an existing expression",
+    )
+    delete_step_category = strawberry_django.mutation(
+        resolver=mutations.delete_step_category,
+        description="Delete an existing expression",
+    )
     
 
     create_measurement_category = strawberry_django.mutation(

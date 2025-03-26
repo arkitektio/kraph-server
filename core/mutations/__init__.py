@@ -21,6 +21,7 @@ from .measurement_category import *
 from .relation_category import *
 from .scatter_plot import *
 from .plot_view import *
+from .step_category import *
 
 __all__ = [
     "create_channel",

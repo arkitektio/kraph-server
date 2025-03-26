@@ -316,6 +316,10 @@ class Ontology(models.Model):
     @property
     def measurement_categories(self):
         return MeasurementCategory.objects.filter(ontology=self)
+    
+    @property
+    def step_categories(self):
+        return StepCategory.objects.filter(ontology=self)
 
 def random_color():
     levels = range(32, 256, 32)
@@ -339,6 +343,29 @@ class Expression(models.Model):
         help_text="The label of the entity class",
         null=True,
     )
+    position_x = models.FloatField(
+        help_text="The x position of the entity class in the graph",
+        null=True,
+    )
+    position_y = models.FloatField(
+        help_text="The y position of the entity class in the graph",
+        null=True,
+    )
+    height = models.FloatField(
+        help_text="The height of the entity class in the graph",
+        null=True,
+    )
+    width = models.FloatField(
+        help_text="The width of the entity class in the graph",
+        null=True,
+    )
+    color = models.JSONField(
+        max_length=1000,
+        help_text="The color of the entity class as RGB",
+        default=random_color,
+        null=True,
+    )
+    
     
     description = models.CharField(
         max_length=1000,
@@ -377,6 +404,16 @@ class Expression(models.Model):
         blank=True,
         related_name="right_edges",
     )
+    
+    
+    def get_real_instance(self):
+        """Returns the real instance if it is a child class."""
+        print("Getting real instance", dir(self))
+        for child in ["structure_categories", "generic_categories", "measurment_categories", "relation_categories"]:
+            if hasattr(self, child.lower()):
+                return getattr(self, child.lower())
+    
+        raise ValueError("No real instance found")
 
     class Meta:
         constraints = [
@@ -439,7 +476,19 @@ class MeasurementCategory(Expression):
     
     class Meta:
         default_related_name = "edge_categories"
+ 
+class StepCategory(Expression):
+    """ A Step class describes a protocol step that was taken"""
     
+    template = models.ForeignKey(
+        ProtocolStepTemplate,
+        on_delete=models.CASCADE,
+        related_name="step_categories",
+        help_text="The template that was used to create the step",
+    )
+    
+    class Meta:
+        default_related_name = "step_categories"   
     
     
 class RelationCategory(Expression):

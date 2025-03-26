@@ -145,7 +145,7 @@ def create_structure_category(
     return vocab
 
 
-def update_structure_category(info: Info, input: StructureCategoryInput) -> types.Expression:
+def update_structure_category(info: Info, input: UpdateStructureCategoryInput) -> types.StructureCategory:
     item = models.StructureCategory.objects.get(id=input.id)
 
     if input.color:

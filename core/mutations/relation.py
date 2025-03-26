@@ -45,7 +45,7 @@ def create_relation(
     tleft_graph = models.Graph.objects.get(age_name=left_graph)
 
     retrieve = age.create_age_relation(
-        tleft_graph.age_name, kind.age_name, node_id_to_graph_id(input.left), node_id_to_graph_id(input.left)
+        tleft_graph.age_name, kind.age_name, node_id_to_graph_id(input.left), node_id_to_graph_id(input.right)
     )
 
     return types.Relation(_value=retrieve)

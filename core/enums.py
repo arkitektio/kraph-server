@@ -103,3 +103,18 @@ class ColumnKind(str, Enum):
     NODE = "NODE"
     VALUE = "VALUE"
     EDGE = "EDGE"
+    
+    
+@strawberry.enum
+class OntologyNodeKind(str, Enum):
+    """ Describes the kind of ontology node"""
+    ENTITY = "ENTITY"
+    STRUCTURE = "STRUCTURE"
+    
+    
+@strawberry.enum
+class OntologyEdgeKind(str, Enum):
+    """ Describes the kind of ontology node"""
+    RELATION = "RELATION"
+    MEASUREMENT = "MEASUREMENT"
+    STEP = "STEP"

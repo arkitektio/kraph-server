@@ -97,6 +97,12 @@ class RetrievedEntity:
 
     def retrieve_relations(self) -> "RetrievedRelation":
         return self.cached_relations or get_age_relations(self.graph_name, self.id)
+    
+    def retrieve_right_relations(self) -> "RetrievedRelation":
+        return get_right_relations(self.graph_name, self.id)
+    
+    def retrieve_left_relations(self) -> "RetrievedRelation":
+        return  get_left_relations(self.graph_name, self.id)
 
     def retrieve_metrics(self) -> list["RetrievedNodeMetric"]:
         return self.cached_metrics or get_age_metrics(self.graph_name, self.id)
@@ -923,20 +929,65 @@ def get_age_relations(graph_name, entity_id):
             FROM cypher(%s, $$
                 MATCH (a)-[r]-(b) WHERE id(a) = %s
                 RETURN id(r), type(r), id(a), id(b), properties(r)
-            $$) as (id agtype, type agtype, left agtype, right agtype, properties agtype);
+            $$) as (rel_id agtype, rel_type agtype, start_id agtype, end_id agtype, rel_props agtype);
             """,
             [graph_name, entity_id],
         )
-        print(cursor.fetchall())
         for result in cursor.fetchall():
+            print(result)
             yield RetrievedRelation(
                 id=result[0],
                 kind_age_name=result[1],
                 left_id=result[2],
                 right_id=result[3],
-                properties=result[4],
+                properties=json.loads(result[4]),
                 graph_name=graph_name,
             )
 
 
+def get_right_relations(graph_name, entity_id):
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (a)-[r]->(b) WHERE id(a) = %s
+                RETURN id(r), type(r), id(a), id(b), properties(r)
+            $$) as (rel_id agtype, rel_type agtype, start_id agtype, end_id agtype, rel_props agtype);
+            """,
+            [graph_name, entity_id],
+        )
+        for result in cursor.fetchall():
+            print(result)
+            yield RetrievedRelation(
+                id=result[0],
+                kind_age_name=result[1],
+                left_id=result[2],
+                right_id=result[3],
+                properties=json.loads(result[4]),
+                graph_name=graph_name,
+            )
 
+
+def get_left_relations(graph_name, entity_id):
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (a)<-[r]-(b) WHERE id(a) = %s
+                RETURN id(r), type(r), id(b), id(a), properties(r)
+            $$) as (rel_id agtype, rel_type agtype, start_id agtype, end_id agtype, rel_props agtype);
+            """,
+            [graph_name, entity_id],
+        )
+        for result in cursor.fetchall():
+            print(result)
+            yield RetrievedRelation(
+                id=result[0],
+                kind_age_name=result[1],
+                left_id=result[2],
+                right_id=result[3],
+                properties=json.loads(result[4]),
+                graph_name=graph_name,
+            )

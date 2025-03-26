@@ -13,6 +13,27 @@ def rebuild_graph(graph: models.Graph):
         
     for item in graph.ontology.structure_categories.all():
         age.create_age_entity_kind(graph.age_name, item.age_name)
+        
+        
+        
+def rebuild_default_views(graph: models.Graph):
+    
+    for item in graph.ontology.generic_categories.all():
+        
+        # Create a measurement view for each entity
+        
+        
+        
+        age.create_default_entity_view(graph.age_name, item.age_name)
+        
+    for item in graph.ontology.measurement_categories.all():
+        age.create_default_measurement_view(graph.age_name, item.age_name)
+        
+    for item in graph.ontology.relation_categories.all():
+        age.create_default_relation_view(graph.age_name, item.age_name)
+        
+    for item in graph.ontology.structure_categories.all():
+        age.create_default_structure_view(graph.age_name, item.age_name)
 
 
  
@@ -30,6 +51,8 @@ def build_relation_age_name(label: str):
 def build_measurement_age_name(label: str):
     return label.replace(" ", "_").replace("-", "_").lower()
 
+def build_step_age_name(label: str):
+    return label.replace(" ", "_").replace("-", "_").lower()
     
     
 def create_default_structure_queries_for_structure(structure_category: models.StructureCategory, entity: age.RetrievedEntity):
