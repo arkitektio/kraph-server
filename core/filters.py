@@ -31,33 +31,9 @@ class SearchFilterMixin:
         return queryset.filter(name__contains=self.search)
 
 
-@strawberry.django.filter(models.Reagent)
-class ReagentFilter:
-    ids: list[strawberry.ID] | None = strawberry.field(
-        default=None, description="Filter by list of reagent IDs"
-    )
-    search: str | None = strawberry.field(
-        default=None, description="Search reagents by text"
-    )
 
-    def filter_ids(self, queryset, info):
-        if self.ids is None:
-            return queryset
-        return queryset.filter(id__in=self.ids)
-
-    def filter_search(self, queryset, info):
-        if self.search is None:
-            return queryset
-        return queryset.filter(expression__label__contains=self.search)
-
-    def filter_kind(self, queryset, info):
-        if self.kind is None:
-            return queryset
-        return queryset.filter(kind=self.kind)
-
-
-@strawberry.django.filter(models.Expression)
-class ExpressionFilter:
+@strawberry.django.filter(models.Category)
+class CategoryFilter:
     ids: list[strawberry.ID] | None
     id: auto
     search: str | None
@@ -79,8 +55,8 @@ class ExpressionFilter:
         return queryset.filter(kind=self.kind)
     
     
-@strawberry.django.filter(models.GenericCategory)
-class GenericCategoryFilter:
+@strawberry.django.filter(models.EntityCategory)
+class EntityCategoryFilter:
     ids: list[strawberry.ID] | None
     id: auto
     search: str | None
@@ -113,7 +89,7 @@ class GenericCategoryFilter:
     def filter_graph(self, queryset, info):
         if self.graph is None:
             return queryset
-        return queryset.filter(ontology=models.Graph.objects.get(id=self.graph).ontology)
+        return queryset.filter(graph_id=self.graph)
     
     def filter_ontology(self, queryset, info):
         if self.ontology is None:
@@ -154,12 +130,43 @@ class RelationCategoryFilter:
     def filter_graph(self, queryset, info):
         if self.graph is None:
             return queryset
-        return queryset.filter(ontology=models.Graph.objects.get(id=self.graph).ontology)
+        return queryset.filter(graph_id=self.graph)
     
-    def filter_ontology(self, queryset, info):
-        if self.ontology is None:
+@strawberry.django.filter(models.ParticipantCategory)
+class ParticipantCategoryFilter:
+    ids: list[strawberry.ID] | None
+    id: auto
+    search: str | None
+    graph: strawberry.ID | None 
+    ontology: strawberry.ID | None
+    pinned: bool | None
+    
+    
+    def filter_pinned(self, queryset, info):
+        if self.pinned is None:
             return queryset
-        return queryset.filter(ontology_id=self.ontology)    
+        return queryset.filter(pinned_by=info.context.request.user)
+    
+    
+    def filter_ids(self, queryset, info):
+        if self.ids is None:
+            return queryset
+        return queryset.filter(id__in=self.ids)
+
+    def filter_search(self, queryset, info):
+        if self.search is None:
+            return queryset
+        return queryset.filter(label__contains=self.search)
+
+    def filter_kind(self, queryset, info):
+        if self.kind is None:
+            return queryset
+        return queryset.filter(kind=self.kind)
+    
+    def filter_graph(self, queryset, info):
+        if self.graph is None:
+            return queryset
+        return queryset.filter(graph_id=self.graph)
     
     
 @strawberry.django.filter(models.StructureCategory)
@@ -204,13 +211,12 @@ class StructureCategoryFilter:
             return queryset
         return queryset.filter(ontology_id=self.ontology)    
     
-@strawberry.django.filter(models.StepCategory)
-class StepCategoryFilter:
+@strawberry.django.filter(models.MetricCategory)
+class MetricCategoryFilter:
     ids: list[strawberry.ID] | None
     id: auto
     search: str | None
     graph: strawberry.ID | None 
-    ontology: strawberry.ID | None
     pinned: bool | None
     
     
@@ -218,7 +224,6 @@ class StepCategoryFilter:
         if self.pinned is None:
             return queryset
         return queryset.filter(pinned_by=info.context.request.user)
-    
 
     
     def filter_ids(self, queryset, info):
@@ -239,12 +244,77 @@ class StepCategoryFilter:
     def filter_graph(self, queryset, info):
         if self.graph is None:
             return queryset
-        return queryset.filter(ontology=models.Graph.objects.get(id=self.graph).ontology)
+        return queryset.filter(graph_id=self.graph)
+
+@strawberry.django.filter(models.NaturalEventCategory)
+class NaturalEventCategoryFilter:
+    ids: list[strawberry.ID] | None
+    id: auto
+    search: str | None
+    graph: strawberry.ID | None 
+    pinned: bool | None
     
-    def filter_ontology(self, queryset, info):
-        if self.ontology is None:
+    
+    def filter_pinned(self, queryset, info):
+        if self.pinned is None:
             return queryset
-        return queryset.filter(ontology_id=self.ontology)   
+        return queryset.filter(pinned_by=info.context.request.user)
+
+    
+    def filter_ids(self, queryset, info):
+        if self.ids is None:
+            return queryset
+        return queryset.filter(id__in=self.ids)
+
+    def filter_search(self, queryset, info):
+        if self.search is None:
+            return queryset
+        return queryset.filter(label__contains=self.search)
+
+    def filter_kind(self, queryset, info):
+        if self.kind is None:
+            return queryset
+        return queryset.filter(kind=self.kind)
+    
+    def filter_graph(self, queryset, info):
+        if self.graph is None:
+            return queryset
+        return queryset.filter(graph_id=self.graph)
+    
+@strawberry.django.filter(models.ProtocolEventCategory)
+class ProtocolEventCategoryFilter:
+    ids: list[strawberry.ID] | None
+    id: auto
+    search: str | None
+    graph: strawberry.ID | None 
+    pinned: bool | None
+    
+    
+    def filter_pinned(self, queryset, info):
+        if self.pinned is None:
+            return queryset
+        return queryset.filter(pinned_by=info.context.request.user)
+
+    
+    def filter_ids(self, queryset, info):
+        if self.ids is None:
+            return queryset
+        return queryset.filter(id__in=self.ids)
+
+    def filter_search(self, queryset, info):
+        if self.search is None:
+            return queryset
+        return queryset.filter(label__contains=self.search)
+
+    def filter_kind(self, queryset, info):
+        if self.kind is None:
+            return queryset
+        return queryset.filter(kind=self.kind)
+    
+    def filter_graph(self, queryset, info):
+        if self.graph is None:
+            return queryset
+        return queryset.filter(graph_id=self.graph)
         
     
 @strawberry.django.filter(models.MeasurementCategory)
@@ -253,8 +323,6 @@ class MeasurementCategoryFilter:
     id: auto
     search: str | None
     graph: strawberry.ID | None 
-    ontology: strawberry.ID | None
-    metric_kind: enums.MeasurementKind | None
     
     
     def filter_ids(self, queryset, info):
@@ -275,17 +343,13 @@ class MeasurementCategoryFilter:
     def filter_graph(self, queryset, info):
         if self.graph is None:
             return queryset
-        return queryset.filter(ontology=models.Graph.objects.get(id=self.graph).ontology)
+        return queryset.filter(graph_id=self.graph)
     
     def filter_ontology(self, queryset, info):
         if self.ontology is None:
             return queryset
         return queryset.filter(ontology_id=self.ontology)
     
-    def filter_metric_kind(self, queryset, info):
-        if self.metric_kind is None:
-            return queryset
-        return queryset.filter(metric_kind=self.metric_kind)
 
 
 
@@ -299,28 +363,14 @@ class GraphFilter(IDFilterMixin, SearchFilterMixin):
             return queryset
         return queryset.filter(pinned_by=info.context.request.user)
 
-@strawberry.django.filter(models.GraphView)
-class GraphViewFilter(IDFilterMixin, SearchFilterMixin):
-    id: auto
 
-@strawberry.django.filter(models.PlotView)
-class PlotViewFilter(IDFilterMixin, SearchFilterMixin):
-    id: auto
-
-
-@strawberry.django.filter(models.GraphView)
+@strawberry.django.filter(models.GraphQuery)
 class GraphQueryFilter(IDFilterMixin, SearchFilterMixin):
     id: auto
 
 @strawberry.django.filter(models.ScatterPlot)
 class ScatterPlotFilter(IDFilterMixin, SearchFilterMixin):
     id: auto
-
-
-@strawberry.django.filter(models.NodeView)
-class NodeViewFilter(IDFilterMixin, SearchFilterMixin):
-    id: auto
-
 
 @strawberry.django.filter(models.NodeQuery)
 class NodeQueryFilter(IDFilterMixin, SearchFilterMixin):
@@ -381,41 +431,11 @@ class EntityRelationFilter:
     )
 
 
-@strawberry.django.filter(models.Ontology, description="Filter for ontologies")
-class OntologyFilter(IDFilterMixin, SearchFilterMixin):
-    id: auto = strawberry.field(description="Filter by ontology ID")
-
-
-@strawberry.django.filter(models.Protocol)
-class ProtocolFilter(IDFilterMixin, SearchFilterMixin):
-    id: auto
 
 
 @strawberry.django.filter(models.Experiment)
 class ExperimentFilter(IDFilterMixin, SearchFilterMixin):
     id: auto
-
-
-@strawberry.django.filter(models.ProtocolStep)
-class ProtocolStepFilter(IDFilterMixin, SearchFilterMixin):
-    id: auto
-    protocol: strawberry.ID | None = None
-
-    def filter_protocol(self, queryset, info):
-        if self.protocol is None:
-            return queryset
-        return queryset.filter(protocol_id=self.protocol)
-
-
-@strawberry.django.filter(models.ProtocolStepTemplate)
-class ProtocolStepTemplateFilter(IDFilterMixin):
-    id: auto
-    search: str | None
-
-    def filter_search(self, queryset, info):
-        if self.search is None:
-            return queryset
-        return queryset.filter(name__contains=self.search)
 
 
 @strawberry.django.filter(models.Model)
@@ -428,13 +448,3 @@ class ModelFilter(IDFilterMixin):
             return queryset
         return queryset.filter(name__contains=self.search)
 
-
-@strawberry.django.filter(models.ReagentMapping)
-class ReagentMappingFilter(IDFilterMixin, SearchFilterMixin):
-    id: auto
-    protocol: strawberry.ID | None = None
-
-    def filter_protocol(self, queryset, info):
-        if self.protocol is None:
-            return queryset
-        return queryset.filter(protocol_id=self.protocol)

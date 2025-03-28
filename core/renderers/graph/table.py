@@ -20,7 +20,7 @@ def input_to_columns(columns: list[inputs.ColumnInput]) -> list[types.Column]:
 
 
 
-def table(graph_view: models.GraphView) -> types.Table:
+def table(graph_query: models.GraphQuery) -> types.Table:
     """
     Query the knowledge graph for information about a given entity.
 
@@ -34,9 +34,9 @@ def table(graph_view: models.GraphView) -> types.Table:
     rows = []
     print("Called")
     
-    tgraph = graph_view.graph
-    query = graph_view.query.query
-    columns = graph_view.query.input_columns
+    tgraph = graph_query.graph
+    query = graph_query.query
+    columns = graph_query.input_columns
     print(tgraph.age_name)
     
     

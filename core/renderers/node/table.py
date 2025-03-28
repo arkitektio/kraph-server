@@ -20,7 +20,7 @@ def input_to_columns(columns: list[inputs.ColumnInput]) -> list[types.Column]:
 
 
 
-def table(view: models.NodeView) -> types.Table:
+def table(node_query: models.NodeQuery, node_id: str) -> types.Table:
     """
     Query the knowledge graph for information about a given entity.
 
@@ -34,10 +34,10 @@ def table(view: models.NodeView) -> types.Table:
     rows = []
     print("Called")
     
-    tgraph = view.graph
-    query = view.query.query
-    columns = view.query.input_columns
-    node_id = to_entity_id(view.node_id)
+    tgraph = node_query.graph
+    query = node_query.query
+    columns = node_query.input_columns
+    node_id = to_entity_id(node_id)
     print(tgraph.age_name)
     
     

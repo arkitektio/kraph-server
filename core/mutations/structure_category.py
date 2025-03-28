@@ -17,7 +17,7 @@ scalar_string_re = re.compile(
 
 @strawberry.input(description="Input for creating a new expression")
 class StructureCategoryInput:
-    ontology: strawberry.ID | None = strawberry.field(
+    graph: strawberry.ID | None = strawberry.field(
         default=None,
         description="The ID of the ontology this expression belongs to. If not provided, uses default ontology",
     )
@@ -95,8 +95,8 @@ def create_structure_category(
     input: StructureCategoryInput,
 ) -> types.StructureCategory:
 
-    ontology = (
-        models.Ontology.objects.get(id=input.ontology) if input.ontology else None
+    graph = (
+        models.Graph.objects.get(id=input.graph) if input.graph else None
     )
 
     if not ontology:
@@ -127,7 +127,7 @@ def create_structure_category(
     age_name, identifier = scalar_identifier_to_graph_name(input.identifier)
 
     vocab, _ = models.StructureCategory.objects.update_or_create(
-        ontology=ontology,
+        graph=graph,
         age_name=age_name,
         defaults=dict(
             description=input.description,

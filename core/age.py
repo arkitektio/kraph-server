@@ -423,15 +423,70 @@ def create_age_structure(
 
 
 
-
-def create_age_measurement(
-    graph_name, metric_name, structure: str, entity: str , value = None, 
+def associate_structure(
+    graph_name: str,
+    structure_identifier: str,
+    structure_id: str,
+    entity_id: str,
     valid_from: datetime.datetime = None,
-    valid_to: datetime.datetime = None
+    valid_to: datetime.datetime = None,
+    assignation_id: str = None,
+    created_by: str = None,
+):
+    """ Associate a structure to an entity
+    
+    Associate a structure to an entity in the graph database.
+    Creates the second link in the measurment path
+    
+    (metric: Metric) -> [describes] -> (Structure) -> [measures] -> (Entity)
+                                                        ++++++
+    
+    Parameters:
+        graph_name (str): The name of the graph.
+        structure_identifier (str): The identifier of the structure. Think "@mikro/image"
+        structure_id (str): The ID of the structure. Think "566"
+        entity_id (str): The ID of the entity (bioentity). Think "566"
+        valid_from (datetime.datetime): The date from which the association is valid.
+        valid_to (datetime.datetime): The date until which the association is valid.
+        assignation_id (str): The ID of the assignation (based on the rekuest ID, if applicable).
+        created_by (str): The ID of the user who created the association.
+    
+    """
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""SELECT * FROM cypher(%s, $$
+                MATCH (a: Structure) WHERE a.identifier = %s AND a.object = %s
+                MATCH (b) WHERE id(b) = %s
+                CREATE (a)-[r:MEASURES]->(b)
+                SET r.__valid_from = %s, r.__valid_to = %s, r.__created_at = %s, r.__created_through = %s, r.__created_by = %s
+                
+                RETURN r
+            $$) AS (r agtype);
+            """,
+            (
+                graph_name,
+                structure_identifier,
+                structure_id,
+                entity_id,
+                valid_from.isoformat() if valid_from else None,
+                valid_to.isoformat() if valid_to else None,
+                datetime.datetime.now().isoformat(),
+                assignation_id,
+                created_by,
+            ),
+        )
+
+
+def create_age_metric(
+    graph_name,  
+    metric_name: str,
+    structure_identifier: str, 
+    structure_object: str,
+    value ,
+    assignation_id: str = None,
+    created_by: str = None,
 ):
     with graph_cursor() as cursor:
-        print("Creating measurement", graph_name, metric_name, structure, entity, value, valid_from, valid_to)
-        print(type(value))
         
         if isinstance(value, list):
             value = json.dumps(value)
@@ -439,30 +494,29 @@ def create_age_measurement(
         cursor.execute(
             f"""SELECT * FROM cypher(%s, $$
                 MATCH (a) WHERE id(a) = %s
-                MATCH (b) WHERE id(b) = %s
-                CREATE (a)-[r:{metric_name}]->(b)
-                SET r.value = %s, r.valid_from = %s, r.valid_to = %s
-                RETURN r
+                CREATE (b: {metric_name} {{identifier: %s, object: %s, value: %s, created_at: %s, created_by: %s, created_through: %s}})
+                CREATE (a)-[r:DESCRIBES]->(b)
+                RETURN b
             $$) AS (r agtype);
             """,
             (
                 graph_name,
-                structure,
-                entity,
+                structure_identifier,
+                structure_object,
                 value,
-                valid_from.isoformat() if valid_from else None,
-                valid_to.isoformat() if valid_to else None,
+                datetime.datetime.now().isoformat(),
+                created_by,
+                assignation_id,
             ),
         )
         result = cursor.fetchone()
         if result:
             entity = result[0]
-            return edge_ag_to_retrieved_relation(graph_name, entity)
+            return vertex_ag_to_retrieved_entity(graph_name, entity)
         else:
             raise ValueError("No entity created or returned by the query.")
-
-
-
+        
+    
 def get_age_entity(graph_name, entity_id) -> RetrievedEntity:
 
     with graph_cursor() as cursor:
@@ -590,6 +644,54 @@ def create_age_relation_metric(graph_name, metric_name, edge_id, value):
 
             if edge_count < 1:
                 raise ValueError(f"Edge does not exist. {edge_id}")
+
+            raise ValueError("No entity created or returned by the query.")
+        
+        
+def create_age_natural_event(graph_name, relation_kind_age_name, left_id, right_id):
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (a) WHERE id(a) = %s
+                MATCH (b) WHERE id(b) = %s
+                CREATE (a)-[r:{relation_kind_age_name}]->(b)
+                RETURN id(r), properties(r)
+            $$) as (id agtype, properties agtype);
+            """,
+            (graph_name, int(left_id), int(right_id)),
+        )
+        result = cursor.fetchone()
+        if result:
+            entity_id = result[0]
+            properties = result[1]
+            print(entity_id, relation_kind_age_name, properties)
+            return RetrievedRelation(
+                id=entity_id,
+                kind_age_name=relation_kind_age_name,
+                properties=properties,
+                graph_name=graph_name,
+                left_id=left_id,
+                right_id=right_id,
+            )
+        else:
+            existence_query = """
+                SELECT count(*)
+                FROM cypher(%s, $$
+                    MATCH (a), (b)
+                    WHERE id(a) = %s AND id(b) = %s
+                    RETURN count(*)
+                $$) as (count agtype);
+            """
+
+            cursor.execute(existence_query, (graph_name, left_id, right_id))
+            node_count = cursor.fetchone()[0]
+
+            if node_count < 2:
+                raise ValueError(
+                    f"One or both of the nodes do not exist. {left_id}, {right_id}, {graph_name}"
+                )
 
             raise ValueError("No entity created or returned by the query.")
 

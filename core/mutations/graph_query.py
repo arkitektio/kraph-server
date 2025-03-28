@@ -11,7 +11,7 @@ from core.renderers.graph import render
 
 @strawberry.input(description="Input for creating a new expression")
 class GraphQueryInput:
-    ontology: strawberry.ID | None = strawberry.field(
+    graph: strawberry.ID | None = strawberry.field(
         default=None,
         description="The ID of the ontology this expression belongs to. If not provided, uses default ontology",
     )
@@ -50,28 +50,13 @@ def create_graph_query(
     input: GraphQueryInput,
 ) -> types.GraphQuery:
 
-    ontology = (
-        models.Ontology.objects.get(id=input.ontology) if input.ontology else None
-    )
-
-    if not ontology:
-
-        user = info.context.request.user
-
-        ontology, _ = models.Ontology.objects.get_or_create(
-            user=user,
-            defaults=dict(
-                name="Default for {}".format(user.username),
-                description="Default ontology for {}".format(user.username),
-            ),
-        )
-        
+    
         
         
         
 
-    vocab, _ = models.GraphQuery.objects.update_or_create(
-        ontology=ontology,
+    graph_query, _ = models.GraphQuery.objects.update_or_create(
+        graph_id=input.graph,
         query = input.query,
         defaults=dict(
             name=input.name,
@@ -81,25 +66,12 @@ def create_graph_query(
         ),
     )
     
-    graph = models.Graph.objects.get(id=input.test_against) if input.test_against else models.Graph.objects.filter(user=info.context.request.user).first()
     
-    
-    if graph:
-        graph_view, _ = models.GraphView.objects.get_or_create(
-            graph=graph,
-            query=vocab,
-            creator = info.context.request.user,
-        )
-        try:
-            render.render_graph_view(graph_view)
-        except Exception as e:
-            graph_view.delete()
-            vocab.delete()
-            raise e
+    render.render_graph_query(graph_query)
        
        
 
-    return vocab
+    return graph_query
 
 
 

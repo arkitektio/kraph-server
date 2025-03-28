@@ -47,7 +47,7 @@ class ProtocolStepKind(str, Enum):
 
 
 @strawberry.enum
-class MeasurementKind(str, Enum):
+class MetricKind(str, Enum):
     INT = "INT"
     FLOAT = "FLOAT"
     DATETIME = "DATETIME"
@@ -110,11 +110,16 @@ class OntologyNodeKind(str, Enum):
     """ Describes the kind of ontology node"""
     ENTITY = "ENTITY"
     STRUCTURE = "STRUCTURE"
+    METRIC = "METRIC"
+    NATURAL_EVENT = "NATURAL_EVENT"
+    PROTOCOL_EVENT = "PROTOCOL_EVENT"
     
     
 @strawberry.enum
 class OntologyEdgeKind(str, Enum):
-    """ Describes the kind of ontology node"""
+    """ Describes the kind of ontology edge"""
     RELATION = "RELATION"
     MEASUREMENT = "MEASUREMENT"
-    STEP = "STEP"
+    DESCRIPTION = "DESCRIPTION"
+    IN_EVENT = "IN_EVENT"
+    OUT_EVENT = "OUT_EVENT"

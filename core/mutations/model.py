@@ -12,6 +12,7 @@ class CreateModelInput:
     view: strawberry.ID | None = strawberry.field(
         description="Optional view ID to associate with the model", default=None
     )
+    
 
 
 def create_model(

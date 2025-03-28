@@ -11,6 +11,5 @@ class HistoryAdmin(SimpleHistoryAdmin):
     search_fields = ["name", "user__username"]
 
 
-admin.site.register(models.Ontology)
 admin.site.register(models.Graph)
 admin.site.register(models.S3Store)

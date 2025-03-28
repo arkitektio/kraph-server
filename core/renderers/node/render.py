@@ -13,14 +13,14 @@ from .table import table
 from .pairs import pairs
 
 
-def render_node_view(graph_view: models.NodeView):
+def render_node_view(node_query: models.NodeQuery, node_id: str):
     
-    if graph_view.query.kind == enums.ViewKind.PATH:
-        return path(graph_view)
-    if graph_view.query.kind == enums.ViewKind.TABLE:
-        return table(graph_view)
-    if graph_view.query.kind == enums.ViewKind.PAIRS:
-        return pairs(graph_view)
+    if node_query.query == enums.ViewKind.PATH:
+        return path(node_query, node_id)
+    if node_query.query == enums.ViewKind.TABLE:
+        return table(node_query, node_id)
+    if node_query.query == enums.ViewKind.PAIRS:
+        return pairs(node_query, node_id)
     
     raise ValueError("Unknown view kind")
     

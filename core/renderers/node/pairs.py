@@ -8,16 +8,13 @@ from typing import Annotated
 
 
 def pairs(
-    info: Info,
-    node: strawberry.ID,
-    query: str
-) -> list[tuple[age.RetrievedEntity, age.RetrievedEntity, age.RetrievedRelation]]:
-
-    if not query:
-        raise ValueError("Query is required")
+    node_query: models.NodeQuery,
+    node_id: str,
+) -> types.Pairs:
 
 
+    tgraph = node_query.graph
+    query = node_query.query
 
-    return age.select_paired_entities(
-            graph.age_name, pagination, relation_filter, left_filter, right_filter
-        )
+
+    raise NotImplementedError("Pairs view is not implemented yet")

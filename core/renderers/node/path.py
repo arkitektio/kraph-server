@@ -11,7 +11,7 @@ from core.renderers.utils import parse_age_path
 
 
 
-def path(view: models.NodeView) -> types.Path:
+def path(node_query: models.NodeQuery, node_id: str) -> types.Path:
     """
     Query the knowledge graph for information about a given entity.
 
@@ -27,10 +27,10 @@ def path(view: models.NodeView) -> types.Path:
     
     print("Called")
     
-    tgraph = view.graph
-    query = view.query.query
-    node = view.node_id
+    tgraph = node_query.graph
+    query = node_query.query
     print(tgraph.age_name)
+    node = node_id
     
     
     # First set the timeout

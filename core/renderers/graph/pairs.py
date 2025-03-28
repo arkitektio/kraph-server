@@ -8,21 +8,12 @@ from typing import Annotated
 
 
 def pairs(
-    graph_view: models.GraphView,
+    graph_query: models.GraphQuery,
 ) -> types.Pairs:
 
 
-    tgraph = graph_view.graph
-    query = graph_view.query.query
+    tgraph = graph_query.graph
+    query = graph_query.query
 
 
-    return types.Pairs(pairs=[
-        types.Pair(
-            left=types.Node(_value=left),
-            right=types.Node(_value=right),
-            relation=types.Edge(_value=edge),
-        )
-        for left, right, edge in age.select_paired_entities(
-            tgraph.age_name, pagination, relation_filter, left_filter, right_filter
-        )
-    ], graph=tgraph)
+    raise NotImplementedError("Pairs view is not implemented yet")

@@ -51,8 +51,18 @@ def build_relation_age_name(label: str):
 def build_measurement_age_name(label: str):
     return label.replace(" ", "_").replace("-", "_").lower()
 
+def build_protocol_event_age_name(label: str):
+    return label.replace(" ", "").replace("-", "").lower()+"Event"
+
+def build_protocol_event_age_name(label: str):
+    return label.replace(" ", "").replace("-", "").lower()+"NaturalEvent"
+
 def build_step_age_name(label: str):
     return label.replace(" ", "_").replace("-", "_").lower()
+
+
+def build_participant_age_name(label: str):
+    return "AS_" + label.replace(" ", "_").replace("-", "_").upper() 
     
     
 def create_default_structure_queries_for_structure(structure_category: models.StructureCategory, entity: age.RetrievedEntity):

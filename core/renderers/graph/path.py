@@ -10,7 +10,7 @@ from kante.types import Info
 from core.renderers.utils import parse_age_path
 
 
-def path(graph_view: models.GraphView) -> types.Path:
+def path(graph_query: models.GraphQuery) -> types.Path:
     """
     Query the knowledge graph for information about a given entity.
 
@@ -21,15 +21,14 @@ def path(graph_view: models.GraphView) -> types.Path:
         A dictionary containing information about the entity.
     """
     
-    graph_view
 
     all_nodes = []
     all_edges = []
     
     print("Called")
     
-    tgraph = graph_view.graph
-    query = graph_view.query.query
+    tgraph = graph_query.graph
+    query = graph_query.query
     
     
     # First set the timeout

@@ -12,7 +12,7 @@ from django.contrib.auth import get_user_model
 
 @strawberry.input(description="Input for creating a new expression")
 class NodeQueryInput:
-    ontology: strawberry.ID | None = strawberry.field(
+    graph: strawberry.ID = strawberry.field(
         default=None,
         description="The ID of the ontology this expression belongs to. If not provided, uses default ontology",
     )
@@ -54,24 +54,10 @@ def create_node_query(
     input: NodeQueryInput,
 ) -> types.NodeQuery:
 
-    ontology = (
-        models.Ontology.objects.get(id=input.ontology) if input.ontology else None
-    )
+    graph = models.Graph.objects.get(id=input.graph)
 
-    if not ontology:
-
-        user = info.context.request.user
-
-        ontology, _ = models.Ontology.objects.get_or_create(
-            user=user,
-            defaults=dict(
-                name="Default for {}".format(user.username),
-                description="Default ontology for {}".format(user.username),
-            ),
-        )
-
-    vocab, _ = models.NodeQuery.objects.update_or_create(
-        ontology=ontology,
+    node_query, _ = models.NodeQuery.objects.update_or_create(
+        graph=graph,
         query = input.query,
         defaults=dict(
             name=input.name,
@@ -81,38 +67,24 @@ def create_node_query(
         ),
     )
     
-    if not input.test_against:
-        graph = models.Graph.objects.filter(user=info.context.request.user).first()
-        if not graph:
-            return vocab
-        try:
-            node = age.get_random_node(graph.age_name)
-        except Exception as e:
-            return vocab
-        
-        node_id = node.unique_id
-
-    else:
-        graph = models.Graph.objects.get(age_name=age.to_graph_id(input.test_against))
-        node_id = input.test_against
+   
     
-        
-    
-    new_view, _ = models.NodeView.objects.get_or_create(
-        graph = graph,
-        node_id = node_id,
-        query = vocab,
-        creator = info.context.request.user,
-    )
     try:
-        render.render_node_view(new_view)
+        if not input.test_against:
+            node = age.get_random_node(graph.age_name)
+            node_id = node.unique_id
+
+        else:
+            node_id = input.test_against
+            
+        
+        render.render_node_view(node_query, node_id)
     except Exception as e:
-        new_view.delete()
-        vocab.delete()
+        node_query.delete()
         raise e
        
 
-    return vocab
+    return node_query
 
 
 
