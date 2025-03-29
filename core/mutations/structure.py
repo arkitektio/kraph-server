@@ -14,6 +14,9 @@ class StructureInput:
     structure: scalars.StructureString
     graph: strawberry.ID | None = None
     create_default_view: bool = True
+    context: inputs.ContextInput | None = strawberry.field(
+        default=None, description="The context of the measurement"
+    )
     
 
 

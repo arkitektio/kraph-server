@@ -163,6 +163,24 @@ def random_color():
     return tuple(random.choice(levels) for _ in range(3))
 
 
+class CategoryTag(models.Model):
+    """A tag for a category"""
+    value = models.CharField(
+        max_length=1000,
+        unique=True,
+        help_text="The value of the tag",
+    )
+    description = models.CharField(
+        max_length=1000,
+        help_text="The description of the tag",
+        null=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    
+
+
 class Category(models.Model):
     graph = models.ForeignKey(
         "Graph",
@@ -212,7 +230,12 @@ class Category(models.Model):
         help_text="The PURL (Persistent Uniform Resource Locator)",
         null=True,
     )
-
+    tags = models.ManyToManyField(
+        CategoryTag,
+        related_name="categories",
+        help_text="The tags of the category",
+        blank=True,
+    )
     color = models.JSONField(
         max_length=1000,
         help_text="The color of the entity class as RGB",
@@ -397,6 +420,59 @@ class EntityCategory(Category):
     
     class Meta:
         default_related_name = "entity_categories"
+
+class ReagentCategory(Category):
+    """ An Regation class is a class that describes a node in the graph which represent
+    a reagent in the graph that does not have a biological meaning in this graph (e.g. a
+    4% formaldehyde, a 10% DMSO, etc.). 
+    
+    On temporality:
+    
+    Bioentity by design are meant to "immortal" and for the purpose of the graph should
+    not be considered to be deleted. Instead when there is no measurement or relation
+    pointing towards them in the active validation window, they are not considered for the
+    ongoing analysis. Imaging a cell that was image in one of your experiments and then
+    was not imaged in the next experiment. The cell still existed ONCE in time, but will not
+    be monitored in the next experiment, so will have no structure point to it.
+    
+    If you of course create a timelapse of the cell, you will have multiple measurements 
+    pointing to the same cell, so the cell will still exist in the graph in the next experiment.
+    
+    They belong to these subgraphs:
+    
+    The measurement path:
+    (b: $Metric) -[d: describes] -> (a: $Structure) -> [m: measures] -> (c: $Bioentity)
+    
+    E.g. the intensity (metric) of the image (structure) that measures the cell (bioentity)
+    
+    The relation path:
+    (a: $Bioentity) -[r: $RELATION] -> (b: $Bioentity)
+    
+    E.g. A cell was related for the timestramp of the experiment to another cell
+    
+    The natural event path:
+    (a: Structure) -> [d: determines] ->  (b: NaturalEvent) 
+    (a: $Bioentity) -[r: underwent]-> (b: NaturalEvent) -> [d: created] -> (c: $Bioentity)
+    
+    E.g. the cell (a bioentity) "budded" (the relation) another cell (another bioentity)) at the time of the valid relation (informed structure in metadata)
+   
+    The protocol event path:
+    (a: $Bioentity) -[r: underwent]-> (b: ProtocolEvent) -> [d: created] -> (c: $Bioentity)
+    
+    E.g. A cell was isolated from a cell culture and is now considered a new bioentity, that backlinks to
+    the parent through the protocols
+   
+    
+    """
+    instance_kind = models.CharField(
+        max_length=1000,
+        help_text="What an instance of this class represents (e.g. a LOT, an object, etc.)",
+        null=True,
+        blank=True,
+    )
+    
+    class Meta:
+        default_related_name = "reagent_categories"
 
 
 class MetricCategory(Category):

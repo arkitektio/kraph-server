@@ -9,12 +9,12 @@ from django.conf import settings
 
 
 @strawberry.input(description="Input for creating a new expression")
-class EntityCategoryInput(inputs.CategoryInput):
+class ReagentCategoryInput(inputs.CategoryInput):
     label: str = strawberry.field(description="The label/name of the expression")
 
 
 @strawberry.input(description="Input for updating an existing generic category")
-class UpdateEntityCategoryInput:
+class UpdateReagentCategoryInput:
     id: strawberry.ID = strawberry.field(
         description="The ID of the expression to update"
     )
@@ -36,16 +36,16 @@ class UpdateEntityCategoryInput:
 
 
 @strawberry.input(description="Input for deleting a generic category")
-class DeleteEntityCategoryInput:
+class DeleteReagentCategoryInput:
     id: strawberry.ID = strawberry.field(
         description="The ID of the expression to delete"
     )
 
 
-def create_entity_category(
+def create_reagent_category(
     info: Info,
-    input: EntityCategoryInput,
-) -> types.EntityCategory:
+    input: ReagentCategoryInput,
+) -> types.ReagentCategory:
 
 
     if input.color:
@@ -60,7 +60,7 @@ def create_entity_category(
     else:
         media_store = None
 
-    vocab, created = models.EntityCategory.objects.update_or_create(
+    vocab, created = models.ReagentCategory.objects.update_or_create(
         graph_id=input.graph,
         age_name=manager.build_generic_age_name(input.label),
         defaults=dict(
@@ -75,7 +75,7 @@ def create_entity_category(
     if input.tags:
         vocab.tags.clear()
         for tag in input.tags:
-            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag)
+            tag_obj = models.CategoryTag.objects.get(value=tag)
             vocab.tags.add(tag_obj)
     
     if created:
@@ -84,8 +84,8 @@ def create_entity_category(
     return vocab
 
 
-def update_entity_category(info: Info, input: UpdateEntityCategoryInput) -> types.EntityCategory:
-    item = models.EntityCategory.objects.get(id=input.id)
+def update_reagent_category(info: Info, input: UpdateReagentCategoryInput) -> types.ReagentCategory:
+    item = models.ReagentCategory.objects.get(id=input.id)
 
     if input.color:
         assert (
@@ -109,10 +109,10 @@ def update_entity_category(info: Info, input: UpdateEntityCategoryInput) -> type
     return item
 
 
-def delete_entity_category(
+def delete_reagent_category(
     info: Info,
-    input: DeleteEntityCategoryInput,
+    input: DeleteReagentCategoryInput,
 ) -> strawberry.ID:
-    item = models.EntityCategory.objects.get(id=input.id)
+    item = models.ReagentCategory.objects.get(id=input.id)
     item.delete()
     return input.id

@@ -7,95 +7,45 @@ from core import age
 from strawberry.file_uploads import Upload
 from django.conf import settings
 
-@strawberry.input
-class PlateChildInput:
-    id: strawberry.ID | None = None
-    type: str | None = None
-    text: str | None = None
-    children: list["PlateChildInput"] | None = None
-    value: str | None = None
-    color: str | None = None
-    fontSize: str | None = None
-    backgroundColor: str | None = None
-    bold: bool | None = None
-    italic: bool | None = None
-    underline: bool | None = None
-
-def child_to_str(child):
-    if child.get("children", []) is None:
-        return (" ".join([child_to_str(c) for c in child["children"]]),)
-    else:
-        return child.get("value", child.get("text", "")) or ""
 
 
-def plate_children_to_str(children):
-    return " ".join([child_to_str(c) for c in children])
-
-
-@strawberry.input(description="Input for creating a new expression")
-class PortDefinition:
-    param: str = strawberry.field(description="The parameter name")
-    tag_filters: list[str] = strawberry.field(
-        default=None,
-        description="A list of tags to filter the entities",
-    ) 
-    class_filters: list[str] = strawberry.field(
-        default=None,
-        description="A list of classes to filter the entities",
-    )
-    needs_quantity: bool = strawberry.field(
-        default=False,
-        description="Whether this port needs a quantity or not",
-    )
     
-    
-@strawberry.input(description="Input for creating a new expression")
-class VariableDefinition:
-    param: str = strawberry.field(description="The parameter name")
-    tag_filters: list[str] = strawberry.field(
-        default=None,
-        description="A list of tags to filter the entities",
-    ) 
-    class_filters: list[str] = strawberry.field(
-        default=None,
-        description="A list of classes to filter the entities",
-    )
-    
+
 
 
 @strawberry.input(description="Input for creating a new expression")
 class ProtocolEventCategoryInput(inputs.CategoryInput):
     label: str = strawberry.field(description="The label/name of the expression")
-    place_children: list[PlateChildInput] = strawberry.field(
+    plate_children: list[inputs.PlateChildInput]  | None = strawberry.field(
         default=None,
         description="A list of children for the plate",
     )
     kind: enums.MetricKind = strawberry.field(
         default=None, description="The type of metric data this expression represents"
     )
-    source_definitions: list[PortDefinition] = strawberry.field(
+    source_definitions: list[inputs.ParticipantDefinition] = strawberry.field(
         default=None,
-        description="A list of source definitions for the expression",
+        description="The source definitions for this expression",
     )
-    target_definitions: list[PortDefinition] = strawberry.field(
+    target_definitions: list[inputs.ParticipantDefinition] = strawberry.field(
         default=None,
-        description="A list of target definitions for the expression",
+        description="The target definitions for this expression",
     )
+    variable_definitions: list[inputs.VariableDefinition] = strawberry.field(
+        default=None,
+        description="The variable definitions for this expression",
+    )
+
 
 
 @strawberry.input(description="Input for updating an existing expression")
-class UpdateMeasurementCategoryInput:
-    label: str = strawberry.field(description="The label/name of the expression")
-    kind: enums.MetricKind = strawberry.field(
-        default=None, description="The type of metric data this expression represents"
+class UpdateProtocolEventCategoryInput(ProtocolEventCategoryInput):
+    id: strawberry.ID = strawberry.field(
+        description="The ID of the expression to update"
     )
-    structure: scalars.StructureIdentifier = strawberry.field(
-        default=None, description="The structure this expression belongs to"
-    )
-
 
 @strawberry.input(description="Input for deleting an expression")
-class DeleteMeasurementCategoryInput:
+class DeleteProtocolEventCategoryInput:
     id: strawberry.ID = strawberry.field(
         description="The ID of the expression to delete"
     )
@@ -104,7 +54,7 @@ class DeleteMeasurementCategoryInput:
 def create_protocol_event_category(
     info: Info,
     input: ProtocolEventCategoryInput,
-) -> types.MetricCategory:
+) -> types.ProtocolEventCategory:
 
 
     protocol_event, created = models.ProtocolEventCategory.objects.update_or_create(
@@ -121,6 +71,12 @@ def create_protocol_event_category(
             source_definitions=[strawberry.asdict(v) for v in input.source_definitions]
         )
     )
+    
+    if input.tags:
+        protocol_event.tags.clear()
+        for tag in input.tags:
+            tag_obj = models.CategoryTag.objects.get(value=tag)
+            protocol_event.tags.add(tag_obj)
     
     for port in input.source_definitions:
         available_ports = models.EntityCategory.objects.filter(
@@ -158,8 +114,8 @@ def create_protocol_event_category(
     return protocol_event
 
 
-def update_metric_category(info: Info, input: UpdateMeasurementCategoryInput) -> types.MetricCategory:
-    item = models.MetricCategory.objects.get(id=input.id)
+def update_protocol_event_category(info: Info, input: UpdateProtocolEventCategoryInput) -> types.ProtocolEventCategory:
+    item = models.ProtocolEventCategory.objects.get(id=input.id)
 
     if input.color:
         assert (
@@ -183,10 +139,10 @@ def update_metric_category(info: Info, input: UpdateMeasurementCategoryInput) ->
     return item
 
 
-def delete_measurement_category(
+def delete_protocol_event_category(
     info: Info,
-    input: DeleteMeasurementCategoryInput,
+    input: DeleteProtocolEventCategoryInput,
 ) -> strawberry.ID:
-    item = models.MeasurementCategory.objects.get(id=input.id)
+    item = models.ProtocolEventCategory.objects.get(id=input.id)
     item.delete()
     return input.id

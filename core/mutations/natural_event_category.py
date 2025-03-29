@@ -8,26 +8,6 @@ from strawberry.file_uploads import Upload
 from django.conf import settings
 
 
-
-@strawberry.input(description="Input for creating a new expression")
-class Filter:
-    key: str = strawberry.field(description="The key of the filter")
-    value: str = strawberry.field(description="The value of the filter")
-    
-
-
-@strawberry.input(description="Input for creating a new expression")
-class PortDefinition:
-    param: str = strawberry.field(description="The parameter name")
-    tag_filters: list[str] = strawberry.field(
-        default=None,
-        description="A list of tags to filter the entities",
-    ) 
-    class_filters: list[str] = strawberry.field(
-        default=None,
-        description="A list of classes to filter the entities",
-    )
-    
     
 
 
@@ -37,13 +17,21 @@ class NaturalEventCategoryInput(inputs.CategoryInput):
     kind: enums.MetricKind = strawberry.field(
         default=None, description="The type of metric data this expression represents"
     )
-    source_definitions: list[PortDefinition] = strawberry.field(
+    source_definitions: list[inputs.ParticipantDefinition] = strawberry.field(
         default=None,
         description="The source definitions for this expression",
     )
-    target_definitions: list[PortDefinition] = strawberry.field(
+    target_definitions: list[inputs.ParticipantDefinition] = strawberry.field(
         default=None,
         description="The target definitions for this expression",
+    )
+    supporting_structures: list[scalars.StructureIdentifier] = strawberry.field(
+        default=None,
+        description="The supporting structure for this expression",
+    )
+    plate_children: list[inputs.PlateChildInput]  | None = strawberry.field(
+        default=None,
+        description="A list of children for the plate",
     )
 
 
@@ -59,7 +47,7 @@ class UpdateNaturalEventCategoryInput(NaturalEventCategoryInput):
 
 
 @strawberry.input(description="Input for deleting an expression")
-class DeleteMeasurementCategoryInput:
+class DeleteNaturalEventCategoryInput:
     id: strawberry.ID = strawberry.field(
         description="The ID of the expression to delete"
     )
@@ -68,7 +56,14 @@ class DeleteMeasurementCategoryInput:
 def create_natural_event_category(
     info: Info,
     input: NaturalEventCategoryInput,
-) -> types.MetricCategory:
+) -> types.NaturalEventCategory:
+    
+    if input.image:
+        media_store = models.MediaStore.objects.get(
+            id=input.image,
+        )
+    else:
+        media_store = None
 
 
     protocol_event, created = models.ProtocolEventCategory.objects.update_or_create(
@@ -85,6 +80,12 @@ def create_natural_event_category(
             source_definitions=[strawberry.asdict(v) for v in input.source_definitions]
         )
     )
+    
+    if input.tags:
+        protocol_event.tags.clear()
+        for tag in input.tags:
+            tag_obj = models.CategoryTag.objects.get(value=tag)
+            protocol_event.tags.add(tag_obj)
     
     for port in input.source_definitions:
         available_ports = models.EntityCategory.objects.filter(
@@ -122,8 +123,8 @@ def create_natural_event_category(
     return protocol_event
 
 
-def update_metric_category(info: Info, input: UpdateMeasurementCategoryInput) -> types.MetricCategory:
-    item = models.MetricCategory.objects.get(id=input.id)
+def update_natural_event_category(info: Info, input: UpdateNaturalEventCategoryInput) -> types.NaturalEventCategory:
+    item = models.NaturalEventCategory.objects.get(id=input.id)
 
     if input.color:
         assert (
@@ -147,10 +148,10 @@ def update_metric_category(info: Info, input: UpdateMeasurementCategoryInput) ->
     return item
 
 
-def delete_measurement_category(
+def delete_natural_event_category(
     info: Info,
-    input: DeleteMeasurementCategoryInput,
+    input: DeleteNaturalEventCategoryInput,
 ) -> strawberry.ID:
-    item = models.MeasurementCategory.objects.get(id=input.id)
+    item = models.NaturalEventCategory.objects.get(id=input.id)
     item.delete()
     return input.id

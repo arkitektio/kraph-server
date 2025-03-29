@@ -104,6 +104,13 @@ class ColumnKind(str, Enum):
     VALUE = "VALUE"
     EDGE = "EDGE"
     
+@strawberry.enum
+class ParticipantKind(str, Enum):
+    """ Describes the kind of participant"""
+    REAGENT = "REAGENT"
+    ENTITY = "ENTITY"
+    
+    
     
 @strawberry.enum
 class OntologyNodeKind(str, Enum):

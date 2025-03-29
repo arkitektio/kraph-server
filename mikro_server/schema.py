@@ -130,10 +130,26 @@ class Query:
     def entity_category(self, info: Info, id: ID) -> types.EntityCategory:
         return models.EntityCategory.objects.get(id=id)
     
+    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    def metric_category(self, info: Info, id: ID) -> types.MetricCategory:
+        return models.MetricCategory.objects.get(id=id)
     
     @strawberry.django.field(permission_classes=[IsAuthenticated])
     def structure_category(self, info: Info, id: ID) -> types.StructureCategory:
         return models.StructureCategory.objects.get(id=id)
+    
+    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    def natural_event_category(self, info: Info, id: ID) -> types.NaturalEventCategory:
+        return models.NaturalEventCategory.objects.get(id=id)
+    
+    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    def protocol_event_category(self, info: Info, id: ID) -> types.ProtocolEventCategory:
+        return models.ProtocolEventCategory.objects.get(id=id)
+    
+    
+    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    def reagent_cateogry(self, info: Info, id: ID) -> types.ReagentCategory:
+        return models.ReagentCategory.objects.get(id=id)
     
     @strawberry.django.field(permission_classes=[IsAuthenticated])
     def relation_category(self, info: Info, id: ID) -> types.RelationCategory:
@@ -143,19 +159,21 @@ class Query:
     def measurement_category(self, info: Info, id: ID) -> types.MeasurementCategory:
         return models.MeasurementCategory.objects.get(id=id)
     
-    
+    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    def participant_category(self, info: Info, id: ID) -> types.ParticipantCategory:
+        return models.ParticipantCategory.objects.get(id=id)
     
     @strawberry.django.field(permission_classes=[IsAuthenticated])
-    def node_categories(self, info: Info, input: OffsetPaginationInput) -> list[types.NodeCategory]:
+    def node_categories(self, info: Info, input: OffsetPaginationInput | None = None, filters: filters.EdgeCategoryFilter | None = None) -> list[types.NodeCategory]:
         raise NotImplementedError("This resolver is a placeholder and should be implemented by the developer")
     
     
     @strawberry.django.field(permission_classes=[IsAuthenticated])
-    def edge_categories(self, info: Info, input: OffsetPaginationInput) -> list[types.EdgeCategory]:
+    def edge_categories(self, info: Info, input: OffsetPaginationInput | None = None, filters: filters.NodeCategoryFilter | None = None) -> list[types.EdgeCategory]:
         raise NotImplementedError("This resolver is a placeholder and should be implemented by the developer")
     
     @strawberry.django.field(permission_classes=[IsAuthenticated])
-    def categories(self, info: Info, input: OffsetPaginationInput) -> list[types.Category]:
+    def categories(self, info: Info, input: OffsetPaginationInput | None = None, filters: filters.CategoryFilter | None = None) -> list[types.Category]:
         raise NotImplementedError("This resolver is a placeholder and should be implemented by the developer")
     
     
@@ -214,8 +232,116 @@ class Mutation:
     pin_graph = strawberry_django.mutation(
         resolver=mutations.pin_graph, description="Pin or unpin a graph"
     )
+    
+    # Create a new Metric Category (Always attached to a structure)
+    create_metric_category = strawberry_django.mutation(
+        resolver=mutations.create_metric_category, description="Create a new expression"
+    )
+    update_metric_category = strawberry_django.mutation(
+        resolver=mutations.update_metric_category,
+        description="Update an existing expression",
+    )
+    delete_metric_category = strawberry_django.mutation(
+        resolver=mutations.delete_metric_category,
+        description="Delete an existing expression",
+    )
+    
+    # Create a new Measureement Category (Relation from a structure to an entity, ie. delineates, )
+    create_measurement_category = strawberry_django.mutation(
+        resolver=mutations.create_measurement_category, description="Create a new expression"
+    )
+    update_measurement_category = strawberry_django.mutation(
+        resolver=mutations.update_measurement_category,
+        description="Update an existing expression",
+    )
+    delete_measurement_category = strawberry_django.mutation(
+        resolver=mutations.delete_measurement_category,
+        description="Delete an existing expression",
+    )
+    
+    
+    
+    # Create a new Structure Category (Always attached to a structure)
+    create_structure_category = strawberry_django.mutation(
+        resolver=mutations.create_structure_category, description="Create a new expression"
+    )
+    update_structure_category = strawberry_django.mutation(
+        resolver=mutations.update_structure_category,
+        description="Update an existing expression",
+    )
+    delete_structure_category = strawberry_django.mutation(
+        resolver=mutations.delete_structure_category,
+        description="Delete an existing expression",
+    )
+    
+    # Create a new Relation Category (Entity to Entity Relations)
+    create_relation_category = strawberry_django.mutation(
+        resolver=mutations.create_relation_category, description="Create a new expression"
+    )
+    update_relation_category = strawberry_django.mutation(
+        resolver=mutations.update_relation_category,
+        description="Update an existing expression",
+    )
+    delete_relation_category = strawberry_django.mutation(
+        resolver=mutations.delete_relation_category,
+        description="Delete an existing expression",
+    )
+    
+    # Create a new Entity Category (a cell, an organelle, a structure, etc)
+    create_entity_category = strawberry_django.mutation(
+        resolver=mutations.create_entity_category, description="Create a new expression"
+    )
+    update_entitiy_category = strawberry_django.mutation(
+        resolver=mutations.update_entity_category,
+        description="Update an existing expression",
+    )
+    delete_entity_category = strawberry_django.mutation(
+        resolver=mutations.delete_entity_category,
+        description="Delete an existing expression",
+    )
+    
+    # Create a new Reagent Category (4% PFA, 1% BSA, etc)
+    create_reagent_category = strawberry_django.mutation(
+        resolver=mutations.create_reagent_category, description="Create a new expression"
+    )
+    update_reagent_category = strawberry_django.mutation(
+        resolver=mutations.update_reagent_category,
+        description="Update an existing expression",
+    )
+    delete_reagent_category = strawberry_django.mutation(
+        resolver=mutations.delete_reagent_category,
+        description="Delete an existing expression",
+    )
 
 
+    # Natural Event Categories (external events that were measured)
+    create_natural_event_category = strawberry_django.mutation(
+        resolver=mutations.create_natural_event_category,
+        description="Create a new natural event category",
+    )
+    update_natural_event_category = strawberry_django.mutation(
+        resolver=mutations.update_natural_event_category,
+        description="Update an existing natural event category",
+    )
+    delete_natural_event_category = strawberry_django.mutation(
+        resolver=mutations.delete_natural_event_category,
+        description="Delete an existing natural event category",
+    )
+    
+    
+    # Protocol Event Categories (external events that are forced upon a participant)
+    create_protocol_event_category = strawberry_django.mutation(
+        resolver=mutations.create_protocol_event_category,
+        description="Create a new protocol event category",
+    )
+    update_protocol_event_category = strawberry_django.mutation(
+        resolver=mutations.update_protocol_event_category,
+        description="Update an existing protocol event category",
+    )
+    delete_protocol_event_category = strawberry_django.mutation(
+        resolver=mutations.delete_protocol_event_category,
+        description="Delete an existing protocol event category",
+    )
 
 
     # Scatter Plot
@@ -225,6 +351,32 @@ class Mutation:
     delete_scatter_plot = strawberry_django.mutation(
         resolver=mutations.delete_scatter_plot, description="Delete an existing scatter plot"
     )
+    
+    record_natural_event = strawberry_django.mutation(
+        resolver=mutations.record_natural_event,
+        description="Record a new natural event",
+    )
+    
+    record_protocol_event = strawberry_django.mutation(
+        resolver=mutations.record_protocol_event,
+        description="Record a new protocol event",
+    )
+    
+    create_toldyouso = strawberry_django.mutation(
+        resolver=mutations.create_toldyouso,
+        description="Create a new 'told you so' supporting structure",
+    )
+    delete_toldyouso = strawberry_django.mutation(
+        resolver=mutations.delete_toldyouso,
+        description="Delete a 'told you so' supporting structure",
+    )
+    
+    
+    create_measurement = strawberry_django.mutation(
+        resolver=mutations.create_measurement,
+        description="Create a new measurement edge",
+    )
+    
     
 
     create_relation = strawberry_django.mutation(
@@ -278,41 +430,7 @@ class Mutation:
     
     
     
-    create_structure_category = strawberry_django.mutation(
-        resolver=mutations.create_structure_category, description="Create a new expression"
-    )
-    update_structure_category = strawberry_django.mutation(
-        resolver=mutations.update_structure_category,
-        description="Update an existing expression",
-    )
-    delete_structure_category = strawberry_django.mutation(
-        resolver=mutations.delete_structure_category,
-        description="Delete an existing expression",
-    )
     
-    create_relation_category = strawberry_django.mutation(
-        resolver=mutations.create_relation_category, description="Create a new expression"
-    )
-    update_relation_category = strawberry_django.mutation(
-        resolver=mutations.update_relation_category,
-        description="Update an existing expression",
-    )
-    delete_relation_category = strawberry_django.mutation(
-        resolver=mutations.delete_relation_category,
-        description="Delete an existing expression",
-    )
-    
-    create_entity_category = strawberry_django.mutation(
-        resolver=mutations.create_entity_category, description="Create a new expression"
-    )
-    update_entitiy_category = strawberry_django.mutation(
-        resolver=mutations.update_entity_category,
-        description="Update an existing expression",
-    )
-    delete_entity_category = strawberry_django.mutation(
-        resolver=mutations.delete_entity_category,
-        description="Delete an existing expression",
-    )
     
 
 

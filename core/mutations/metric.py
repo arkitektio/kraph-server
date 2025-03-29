@@ -14,6 +14,9 @@ import re
 class MetricInput:
     structure: scalars.StructureIdentifier
     category: strawberry.ID
+    context: inputs.ContextInput | None = strawberry.field(
+        default=None, description="The context of the measurement"
+    )
     # value: scalars.Metric
 
 

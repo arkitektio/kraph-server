@@ -20,7 +20,7 @@ class MetricCategoryInput(inputs.CategoryInput):
 
 
 @strawberry.input(description="Input for updating an existing expression")
-class UpdateMeasurementCategoryInput:
+class UpdatMetricCategoryInput:
     label: str = strawberry.field(description="The label/name of the expression")
     kind: enums.MetricKind = strawberry.field(
         default=None, description="The type of metric data this expression represents"
@@ -31,7 +31,7 @@ class UpdateMeasurementCategoryInput:
 
 
 @strawberry.input(description="Input for deleting an expression")
-class DeleteMeasurementCategoryInput:
+class DeleteMetricCategoryInput:
     id: strawberry.ID = strawberry.field(
         description="The ID of the expression to delete"
     )
@@ -56,13 +56,21 @@ def create_metric_category(
     )
     
     
+    if input.tags:
+        metric_category.tags.clear()
+        for tag in input.tags:
+            tag_obj = models.CategoryTag.objects.get(value=tag)
+            metric_category.tags.add(tag_obj)
+    
+    
+    
     if created:
         manager.rebuild_graph(metric_category.graph)
 
     return vocab
 
 
-def update_metric_category(info: Info, input: UpdateMeasurementCategoryInput) -> types.MetricCategory:
+def update_metric_category(info: Info, input: UpdatMetricCategoryInput) -> types.MetricCategory:
     item = models.MetricCategory.objects.get(id=input.id)
 
     if input.color:
@@ -87,9 +95,9 @@ def update_metric_category(info: Info, input: UpdateMeasurementCategoryInput) ->
     return item
 
 
-def delete_measurement_category(
+def delete_metric_category(
     info: Info,
-    input: DeleteMeasurementCategoryInput,
+    input: DeleteMetricCategoryInput,
 ) -> strawberry.ID:
     item = models.MeasurementCategory.objects.get(id=input.id)
     item.delete()

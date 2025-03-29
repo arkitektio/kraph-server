@@ -11,11 +11,14 @@ import re
 
 
 @strawberry.input
-class AssociateStructureInput:
+class MeasurementInput:
     structure: scalars.StructureIdentifier
     entity: scalars.NodeID
     valid_from: datetime.datetime | None = None
     valid_to: datetime.datetime | None = None
+    context: inputs.ContextInput | None = strawberry.field(
+        default=None, description="The context of the measurement"
+    )
 
 
 
@@ -23,9 +26,9 @@ class AssociateStructureInput:
 class DeleteMeasurementInput:
     id: strawberry.ID
 
-def associate_structure(
+def create_measurement(
     info: Info,
-    input: AssociateStructureInput,
+    input: MeasurementInput,
 ) -> types.Measurement:
 
     structure_graph_name, strucuture_identifier, structure_id = scalar_string_to_graph_name(input.structure)

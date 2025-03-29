@@ -8,14 +8,17 @@ from core import types, models, age, inputs
 class RelationInput:
     """Input type for creating a relation between two entities"""
 
-    left: strawberry.ID = strawberry.field(
+    source: strawberry.ID = strawberry.field(
         description="ID of the left entity (format: graph:id)"
     )
-    right: strawberry.ID = strawberry.field(
+    target: strawberry.ID = strawberry.field(
         description="ID of the right entity (format: graph:id)"
     )
     kind: strawberry.ID = strawberry.field(
         description="ID of the relation kind (LinkedExpression)"
+    )
+    context: inputs.ContextInput | None = strawberry.field(
+        default=None, description="The context of the measurement"
     )
 
 
@@ -33,8 +36,8 @@ def create_relation(
 
     kind = models.RelationCategory.objects.get(id=input.kind)
 
-    left_graph = node_id_to_graph_name(input.left)
-    right_graph = node_id_to_graph_name(input.right)
+    left_graph = node_id_to_graph_name(input.source)
+    right_graph = node_id_to_graph_name(input.target)
     
 
     assert (
@@ -45,7 +48,7 @@ def create_relation(
     tleft_graph = models.Graph.objects.get(age_name=left_graph)
 
     retrieve = age.create_age_relation(
-        tleft_graph.age_name, kind.age_name, node_id_to_graph_id(input.left), node_id_to_graph_id(input.right)
+        tleft_graph.age_name, kind.age_name, node_id_to_graph_id(input.source), node_id_to_graph_id(input.target)
     )
 
     return types.Relation(_value=retrieve)

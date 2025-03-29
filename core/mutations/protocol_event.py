@@ -1,7 +1,7 @@
 from kante.types import Info
 from core.utils import node_id_to_graph_id, node_id_to_graph_name, scalar_string_to_graph_name
 import strawberry
-from core import types, models, age, inputs, scalars, enums
+from core import types, models, age, inputs, scalars, enums, inputs
 import uuid
 import datetime
 import re
@@ -17,8 +17,9 @@ class InputMapping:
 @strawberry.input
 class RecordProtocolEventInput:
     category: strawberry.ID
-    sources: list[InputMapping] | None = None
-    targets: list[InputMapping] | None = None
+    sources: list[inputs.InputMapping] | None = None
+    targets: list[inputs.InputMapping] | None = None
+    variables: list[inputs.InputMapping] | None = None
     
 
 
@@ -29,7 +30,7 @@ class DeleteMeasurementInput:
 def record_protocol_event(
     info: Info,
     input: RecordProtocolEventInput,
-) -> types.Metric:
+) -> types.ProtocolEvent:
 
     
     
@@ -48,7 +49,7 @@ def record_protocol_event(
         created_by=info.context.request.user,
     )
 
-    return types.Metric(_value=id)
+    return types.ProtocolEvent(_value=id)
 
 
 

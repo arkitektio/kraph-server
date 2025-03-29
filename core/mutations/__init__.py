@@ -7,14 +7,21 @@ from .graph import *
 from .metric import *
 from .model import *
 from .upload import *
+from .natural_event import *
+from .protocol_event import *
 from .structure import *
 from .graph_query import *
 from .node_query import *
 from .structure_category import *
 from .metric_category import *
+from .natural_event_category import *
+from .protocol_event_category import *
+from .measurement_category import *
 from .relation_category import *
 from .scatter_plot import *
-
+from .measurement import *
+from .toldyouso import *
+from .reagent_category import *
 __all__ = [
     "create_channel",
     "pin_channel",

@@ -2,24 +2,40 @@ from kante.types import Info
 from core.datalayer import get_current_datalayer
 
 import strawberry
-from core import types, models, enums, scalars, manager, inputs
+from core import types, models, enums, scalars, manager
 from core import age
 from strawberry.file_uploads import Upload
 from django.conf import settings
 
 
 @strawberry.input(description="Input for creating a new expression")
-class EntityCategoryInput(inputs.CategoryInput):
+class MeasurementCategoryInput:
+    graph: strawberry.ID | None = strawberry.field(
+        default=None,
+        description="The ID of the ontology this expression belongs to. If not provided, uses default ontology",
+    )
     label: str = strawberry.field(description="The label/name of the expression")
+    description: str | None = strawberry.field(
+        default=None, description="A detailed description of the expression"
+    )
+    purl: str | None = strawberry.field(
+        default=None, description="Permanent URL identifier for the expression"
+    )
+    color: list[int] | None = strawberry.field(
+        default=None, description="RGBA color values as list of 3 or 4 integers"
+    )
+    image: scalars.RemoteUpload | None = strawberry.field(
+        default=None, description="An optional image associated with this expression"
+    )
 
 
-@strawberry.input(description="Input for updating an existing generic category")
-class UpdateEntityCategoryInput:
+@strawberry.input(description="Input for updating an existing expression")
+class UpdateMeasurementCategoryInput:
     id: strawberry.ID = strawberry.field(
         description="The ID of the expression to update"
     )
     label: str | None = strawberry.field(
-        default=None, description="New label for the generic category"
+        default=None, description="New label for the expression"
     )
     description: str | None = strawberry.field(
         default=None, description="New description for the expression"
@@ -35,19 +51,21 @@ class UpdateEntityCategoryInput:
     )
 
 
-@strawberry.input(description="Input for deleting a generic category")
-class DeleteEntityCategoryInput:
+@strawberry.input(description="Input for deleting an expression")
+class DeleteMeasurementCategoryInput:
     id: strawberry.ID = strawberry.field(
         description="The ID of the expression to delete"
     )
 
 
-def create_entity_category(
+def create_measurement_category(
     info: Info,
-    input: EntityCategoryInput,
-) -> types.EntityCategory:
+    input: MeasurementCategoryInput,
+) -> types.MeasurementCategory:
 
-
+    graph = models.Graph.objects.get(
+        id=input.ontology,
+    ) 
     if input.color:
         assert (
             len(input.color) == 3 or len(input.color) == 4
@@ -60,32 +78,33 @@ def create_entity_category(
     else:
         media_store = None
 
-    vocab, created = models.EntityCategory.objects.update_or_create(
-        graph_id=input.graph,
-        age_name=manager.build_generic_age_name(input.label),
+    vocab, created = models.MeasurementCategory.objects.update_or_create(
+        graph=graph,
+        age_name=manager.build_relation_age_name(input.label),
         defaults=dict(
             description=input.description,
             purl=input.purl,
             store=media_store,
             label=input.label,
-            instance_kind=enums.InstanceKind.ENTITY,
         ),
     )
+    
     
     if input.tags:
         vocab.tags.clear()
         for tag in input.tags:
-            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag)
+            tag_obj = models.CategoryTag.objects.get(value=tag)
             vocab.tags.add(tag_obj)
     
-    if created:
-        manager.rebuild_graph(vocab.graph)
+    
+    
+    manager.rebuild_graph(vocab.graph)
 
     return vocab
 
 
-def update_entity_category(info: Info, input: UpdateEntityCategoryInput) -> types.EntityCategory:
-    item = models.EntityCategory.objects.get(id=input.id)
+def update_measurement_category(info: Info, input: UpdateMeasurementCategoryInput) -> types.MeasurementCategory:
+    item = models.MeasurementCategory.objects.get(id=input.id)
 
     if input.color:
         assert (
@@ -109,10 +128,10 @@ def update_entity_category(info: Info, input: UpdateEntityCategoryInput) -> type
     return item
 
 
-def delete_entity_category(
+def delete_measurement_category(
     info: Info,
-    input: DeleteEntityCategoryInput,
+    input: DeleteMeasurementCategoryInput,
 ) -> strawberry.ID:
-    item = models.EntityCategory.objects.get(id=input.id)
+    item = models.MeasurementCategory.objects.get(id=input.id)
     item.delete()
     return input.id

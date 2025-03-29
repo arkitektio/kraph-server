@@ -26,8 +26,9 @@ class GraphQueryInput:
     columns: list[inputs.ColumnInput] | None = strawberry.field(
         default=None, description="The columns (if ViewKind is Table)"
     )
-    test_against: strawberry.ID | None = strawberry.field(
-        default=None, description="The graph to test against"
+    relevant_for: list[strawberry.ID] | None = strawberry.field(
+        default=None,
+        description="A list of categories where this query is releveant and should be shown",
     )
 
 
@@ -66,10 +67,16 @@ def create_graph_query(
         ),
     )
     
-    
-    render.render_graph_query(graph_query)
+    try:
+        render.render_graph_query(graph_query)
+    except Exception as e:
+        graph_query.delete()
+        raise Exception(f"Failed to render graph query: {e}")
        
-       
+    if input.linked_categories:
+        for category in input.linked_categories:
+            category_obj = models.Category.objects.get(id=category)
+            graph_query.relevant_for.add(category_obj)
 
     return graph_query
 

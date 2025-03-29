@@ -521,6 +521,12 @@ class Metric(Node):
         return await loaders.generic_category_loader.load(
             f"{self._value.graph_name}:{self._value.kind_age_name}"
         )
+        
+    @strawberry.django.field(
+        description="The value of the metric"
+    )
+    async def value(self) -> float:
+        return self._value.value
 
 @strawberry.type(description="A Metric is a recorded data point in a graph. It always describes a structure and through the structure it can bring meaning to the measured entity. It can measure a property of an entity through a direct measurement edge, that connects the entity to the structure. It of course can relate to other structures through relation edges.")
 class NaturalEvent(Node):
@@ -536,6 +542,18 @@ class NaturalEvent(Node):
         return await loaders.generic_category_loader.load(
             f"{self._value.graph_name}:{self._value.kind_age_name}"
         )
+        
+    @strawberry.django.field(
+        description="Protocol steps where this entity was the target"
+    )
+    async def valid_from(self) -> datetime.datetime:
+        return self._value.valid_from
+    
+    @strawberry.django.field(
+        description="Protocol steps where this entity was the target"
+    )
+    async def valid_to(self) -> datetime.datetime:
+        return self._value.valid_to
 
 @strawberry.type(description="A Metric is a recorded data point in a graph. It always describes a structure and through the structure it can bring meaning to the measured entity. It can measure a property of an entity through a direct measurement edge, that connects the entity to the structure. It of course can relate to other structures through relation edges.")
 class ProtocolEvent(Node):
@@ -557,6 +575,19 @@ class ProtocolEvent(Node):
     )
     async def variables(self) -> scalars.Any:
        raise NotImplementedError("Not implemented yet")
+   
+   
+    @strawberry.django.field(
+        description="Protocol steps where this entity was the target"
+    )
+    async def valid_from(self) -> datetime.datetime:
+        return self._value.valid_from
+    
+    @strawberry.django.field(
+        description="Protocol steps where this entity was the target"
+    )
+    async def valid_to(self) -> datetime.datetime:
+        return self._value.valid_to
 
     
 
@@ -672,6 +703,14 @@ class Participant(Edge):
         return await loaders.relation_category_loader.load(
             f"{self._value.graph_name}:{self._value.kind_age_name}"
         )
+        
+    @strawberry.field(description="Timestamp from when this entity is valid")
+    def quantity(self, info: Info) -> float:
+        return self._value.quantity
+    
+    @strawberry.field(description="Timestamp from when this entity is valid")
+    def role(self, info: Info) -> str:
+        return self._value.role
 
 
 @strawberry_django.type(models.Category, filters=filters.CategoryFilter, pagination=True)
@@ -754,29 +793,36 @@ class EntityCategory(NodeCategory, BaseCategory):
     
     pass
 
+@strawberry_django.type(models.ReagentCategory, filters=filters.ReagentCategoryFilter, pagination=True)
+class ReagentCategory(NodeCategory, BaseCategory):
+    """ A ReagentCategory is a class of Reagent that describes the relationship between two entities. It is the same as a entity, but should
+    be used when designating that this entitiy in this graph is used as a reagent (mostly in protocolevents)"""
+    label: str = strawberry.field(description="The label of the expression")
+    
+    pass
+
 @strawberry_django.type(models.StructureCategory, filters=filters.StructureCategoryFilter, pagination=True)
 class StructureCategory(NodeCategory, BaseCategory):
     identifier: str = strawberry.field(description="The structure that this class represents")
     
 
-@strawberry_django.type(models.MetricCategory, filters=filters.MeasurementCategoryFilter, pagination=True)
+@strawberry_django.type(models.MetricCategory, filters=filters.MetricCategoryFilter, pagination=True)
 class MetricCategory(NodeCategory, BaseCategory):
     """ A MeasurementExpression is a class that describes the relatisonship between two entities."""
     metric_kind: enums.MetricKind = strawberry.field(description="The kind of metric this expression represents")
     
     pass  
 
-@strawberry_django.type(models.NaturalEventCategory, filters=filters.MeasurementCategoryFilter, pagination=True)
+@strawberry_django.type(models.NaturalEventCategory, filters=filters.NaturalEventCategoryFilter, pagination=True)
 class NaturalEventCategory(NodeCategory, BaseCategory):
     """ A MeasurementExpression is a class that describes the relatisonship between two entities."""
-    metric_kind: enums.MetricKind = strawberry.field(description="The kind of metric this expression represents")
-    
+    plate_children: list[scalars.UntypedPlateChild] = strawberry.field(description="The children of this plate")
     pass
 
-@strawberry_django.type(models.ProtocolEventCategory, filters=filters.MeasurementCategoryFilter, pagination=True)
+@strawberry_django.type(models.ProtocolEventCategory, filters=filters.ProtocolEventCategoryFilter, pagination=True)
 class ProtocolEventCategory(NodeCategory, BaseCategory):
     """ A MeasurementExpression is a class that describes the relatisonship between two entities."""
-    metric_kind: enums.MetricKind = strawberry.field(description="The kind of metric this expression represents")
+    plate_children: list[scalars.UntypedPlateChild] = strawberry.field(description="The children of this plate")
     
     pass 
     
