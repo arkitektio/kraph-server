@@ -8,34 +8,41 @@ from strawberry.file_uploads import Upload
 from django.conf import settings
 
 
-
-    
-
-
-
 @strawberry.input(description="Input for creating a new expression")
 class ProtocolEventCategoryInput(inputs.CategoryInput):
     label: str = strawberry.field(description="The label/name of the expression")
-    plate_children: list[inputs.PlateChildInput]  | None = strawberry.field(
+    plate_children: list[inputs.PlateChildInput] | None = strawberry.field(
         default=None,
         description="A list of children for the plate",
     )
-    kind: enums.MetricKind = strawberry.field(
-        default=None, description="The type of metric data this expression represents"
+    source_entity_roles: list[inputs.EntityRoleDefinitionInput] | None = (
+        strawberry.field(
+            default=None,
+            description="The source definitions for this expression",
+        )
     )
-    source_definitions: list[inputs.ParticipantDefinition] = strawberry.field(
-        default=None,
-        description="The source definitions for this expression",
+    source_reagent_roles: list[inputs.ReagentRoleDefinitionInput] | None = (
+        strawberry.field(
+            default=None,
+            description="The target definitions for this expression",
+        )
     )
-    target_definitions: list[inputs.ParticipantDefinition] = strawberry.field(
-        default=None,
-        description="The target definitions for this expression",
+    target_entity_roles: list[inputs.EntityRoleDefinitionInput] | None = (
+        strawberry.field(
+            default=None,
+            description="The target definitions for this expression",
+        )
     )
-    variable_definitions: list[inputs.VariableDefinition] = strawberry.field(
+    target_reagent_roles: list[inputs.ReagentRoleDefinitionInput] | None = (
+        strawberry.field(
+            default=None,
+            description="The target definitions for this expression",
+        )
+    )
+    variable_definitions: list[inputs.VariableDefinition] | None = strawberry.field(
         default=None,
         description="The variable definitions for this expression",
     )
-
 
 
 @strawberry.input(description="Input for updating an existing expression")
@@ -43,6 +50,7 @@ class UpdateProtocolEventCategoryInput(ProtocolEventCategoryInput):
     id: strawberry.ID = strawberry.field(
         description="The ID of the expression to update"
     )
+
 
 @strawberry.input(description="Input for deleting an expression")
 class DeleteProtocolEventCategoryInput:
@@ -56,65 +64,60 @@ def create_protocol_event_category(
     input: ProtocolEventCategoryInput,
 ) -> types.ProtocolEventCategory:
 
-
     protocol_event, created = models.ProtocolEventCategory.objects.update_or_create(
         graph_id=input.graph,
-        age_name=manager.build_measurement_age_name(input.label),
+        age_name=manager.build_protocol_event_age_name(input.label),
         defaults=dict(
             description=input.description,
             purl=input.purl,
-            plate_children=[strawberry.asdict(i) for i in input.plate_children],
             label=input.label,
-            metric_kind=input.kind,
+            source_entity_roles=(
+                [strawberry.asdict(v) for v in input.source_entity_roles]
+                if input.source_entity_roles
+                else []
+            ),
+            target_entity_roles=(
+                [strawberry.asdict(v) for v in input.target_entity_roles]
+                if input.target_entity_roles
+                else []
+            ),
+            source_reagent_roles=(
+                [strawberry.asdict(v) for v in input.source_reagent_roles]
+                if input.source_reagent_roles
+                else []
+            ),
+            target_reagent_roles=(
+                [strawberry.asdict(v) for v in input.target_reagent_roles]
+                if input.target_reagent_roles
+                else []
+            ),
+            variable_definitions=(
+                [strawberry.asdict(v) for v in input.variable_definitions]
+                if input.variable_definitions
+                else []
+            ),
+            plate_children=(
+                [strawberry.asdict(v) for v in input.plate_children]
+                if input.plate_children
+                else []
+            ),
         ),
-        vars=dict(
-            source_definitions=[strawberry.asdict(v) for v in input.source_definitions]
-        )
     )
-    
+
+    age.create_age_protocol_event_kind(protocol_event)
+
     if input.tags:
         protocol_event.tags.clear()
         for tag in input.tags:
-            tag_obj = models.CategoryTag.objects.get(value=tag)
+            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag)
             protocol_event.tags.add(tag_obj)
-    
-    for port in input.source_definitions:
-        available_ports = models.EntityCategory.objects.filter(
-            tags__in=port.tag_filters,
-            age_name___in=port.class_filters,
-        )
-        
-        for available_port in available_ports:
-            x = models.ParticipantCategory.objects.update_or_create(
-                graph_id=input.graph,
-                age_name=manager.build_participant_age_name(input.label),
-                defaults=dict(
-                    needs_quantity=port.needs_quantity,
-                ),
-            )
-            
-    for port in input.target_definitions:
-        available_ports = models.EntityCategory.objects.filter(
-            tags__in=port.tag_filters,
-            age_name___in=port.class_filters,
-        )
-        
-        for available_port in available_ports:
-            x = models.ParticipantCategory.objects.update_or_create(
-                graph_id=input.graph,
-                age_name=manager.build_participant_age_name(input.label),
-                defaults=dict(
-                    needs_quantity=port.needs_quantity,
-                ),
-            )
-    
-    
-    manager.rebuild_graph(protocol_event.graph)
 
     return protocol_event
 
 
-def update_protocol_event_category(info: Info, input: UpdateProtocolEventCategoryInput) -> types.ProtocolEventCategory:
+def update_protocol_event_category(
+    info: Info, input: UpdateProtocolEventCategoryInput
+) -> types.ProtocolEventCategory:
     item = models.ProtocolEventCategory.objects.get(id=input.id)
 
     if input.color:

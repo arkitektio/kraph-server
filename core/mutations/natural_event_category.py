@@ -8,28 +8,22 @@ from strawberry.file_uploads import Upload
 from django.conf import settings
 
 
-    
-
-
 @strawberry.input(description="Input for creating a new expression")
 class NaturalEventCategoryInput(inputs.CategoryInput):
     label: str = strawberry.field(description="The label/name of the expression")
-    kind: enums.MetricKind = strawberry.field(
-        default=None, description="The type of metric data this expression represents"
-    )
-    source_definitions: list[inputs.ParticipantDefinition] = strawberry.field(
+    source_entity_roles: list[inputs.EntityRoleDefinitionInput] = strawberry.field(
         default=None,
         description="The source definitions for this expression",
     )
-    target_definitions: list[inputs.ParticipantDefinition] = strawberry.field(
+    target_entity_roles: list[inputs.EntityRoleDefinitionInput] = strawberry.field(
         default=None,
         description="The target definitions for this expression",
     )
-    supporting_structures: list[scalars.StructureIdentifier] = strawberry.field(
+    support_definition: inputs.CategoryDefinitionInput = strawberry.field(
         default=None,
-        description="The supporting structure for this expression",
+        description="The support definition for this expression",
     )
-    plate_children: list[inputs.PlateChildInput]  | None = strawberry.field(
+    plate_children: list[inputs.PlateChildInput] | None = strawberry.field(
         default=None,
         description="A list of children for the plate",
     )
@@ -57,7 +51,7 @@ def create_natural_event_category(
     info: Info,
     input: NaturalEventCategoryInput,
 ) -> types.NaturalEventCategory:
-    
+
     if input.image:
         media_store = models.MediaStore.objects.get(
             id=input.image,
@@ -65,8 +59,7 @@ def create_natural_event_category(
     else:
         media_store = None
 
-
-    protocol_event, created = models.ProtocolEventCategory.objects.update_or_create(
+    protocol_event, created = models.NaturalEventCategory.objects.update_or_create(
         graph_id=input.graph,
         age_name=manager.build_measurement_age_name(input.label),
         defaults=dict(
@@ -74,56 +67,31 @@ def create_natural_event_category(
             purl=input.purl,
             store=media_store,
             label=input.label,
-            metric_kind=input.kind,
+            source_entity_roles=[
+                strawberry.asdict(v) for v in input.source_entity_roles
+            ],
+            target_entity_roles=[
+                strawberry.asdict(v) for v in input.target_entity_roles
+            ],
         ),
-        vars=dict(
-            source_definitions=[strawberry.asdict(v) for v in input.source_definitions]
-        )
     )
-    
+
     if input.tags:
         protocol_event.tags.clear()
         for tag in input.tags:
-            tag_obj = models.CategoryTag.objects.get(value=tag)
+            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag)
             protocol_event.tags.add(tag_obj)
-    
-    for port in input.source_definitions:
-        available_ports = models.EntityCategory.objects.filter(
-            tags__in=port.tag_filters,
-            age_name___in=port.class_filters,
-        )
-        
-        for available_port in available_ports:
-            x = models.ParticipantCategory.objects.update_or_create(
-                graph_id=input.graph,
-                age_name=manager.build_participant_age_name(input.label),
-                defaults=dict(
-                    needs_quantity=port.needs_quantity,
-                ),
-            )
-            
-    for port in input.target_definitions:
-        available_ports = models.EntityCategory.objects.filter(
-            tags__in=port.tag_filters,
-            age_name___in=port.class_filters,
-        )
-        
-        for available_port in available_ports:
-            x = models.ParticipantCategory.objects.update_or_create(
-                graph_id=input.graph,
-                age_name=manager.build_participant_age_name(input.label),
-                defaults=dict(
-                    needs_quantity=port.needs_quantity,
-                ),
-            )
-    
-    
-    manager.rebuild_graph(protocol_event.graph)
+
+    age.create_age_natural_event_kind(
+        protocol_event,
+    )
 
     return protocol_event
 
 
-def update_natural_event_category(info: Info, input: UpdateNaturalEventCategoryInput) -> types.NaturalEventCategory:
+def update_natural_event_category(
+    info: Info, input: UpdateNaturalEventCategoryInput
+) -> types.NaturalEventCategory:
     item = models.NaturalEventCategory.objects.get(id=input.id)
 
     if input.color:

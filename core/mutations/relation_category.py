@@ -101,15 +101,16 @@ def create_relation_category(
             label=input.label,
         ),
     )
-    
-    
+
     for i in ontology.graphs.all():
         manager.rebuild_graph(i)
 
     return vocab
 
 
-def update_relation_category(info: Info, input: UpdateRelationCategoryInput) -> types.RelationCategory:
+def update_relation_category(
+    info: Info, input: UpdateRelationCategoryInput
+) -> types.RelationCategory:
     item = models.RelationCategory.objects.get(id=input.id)
 
     if input.color:

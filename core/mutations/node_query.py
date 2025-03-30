@@ -13,11 +13,12 @@ from django.contrib.auth import get_user_model
 @strawberry.input(description="Input for creating a new expression")
 class NodeQueryInput:
     graph: strawberry.ID = strawberry.field(
-        default=None,
         description="The ID of the ontology this expression belongs to. If not provided, uses default ontology",
     )
     name: str = strawberry.field(description="The label/name of the expression")
-    query: scalars.Cypher = strawberry.field(description="The label/name of the expression")
+    query: scalars.Cypher = strawberry.field(
+        description="The label/name of the expression"
+    )
     description: str | None = strawberry.field(
         default=None, description="A detailed description of the expression"
     )
@@ -58,17 +59,17 @@ def create_node_query(
 
     node_query, _ = models.NodeQuery.objects.update_or_create(
         graph=graph,
-        query = input.query,
+        query=input.query,
         defaults=dict(
             name=input.name,
             description=input.description,
             kind=input.kind,
-            columns=[strawberry.asdict(c) for c in input.columns] if input.columns else [],
+            columns=(
+                [strawberry.asdict(c) for c in input.columns] if input.columns else []
+            ),
         ),
     )
-    
-   
-    
+
     try:
         if not input.test_against:
             node = age.get_random_node(graph.age_name)
@@ -76,17 +77,13 @@ def create_node_query(
 
         else:
             node_id = input.test_against
-            
-        
+
         render.render_node_view(node_query, node_id)
     except Exception as e:
         node_query.delete()
         raise e
-       
 
     return node_query
-
-
 
 
 def delete_node_query(
@@ -98,12 +95,10 @@ def delete_node_query(
     return input.id
 
 
-
 @strawberry.input
 class PinNodeQueryInput:
     id: strawberry.ID
     pinned: bool
-
 
 
 def pin_node_query(
@@ -111,7 +106,6 @@ def pin_node_query(
     input: PinNodeQueryInput,
 ) -> types.NodeQuery:
     item = models.NodeQuery.objects.get(id=input.id)
-
 
     if input.pinned:
         item.pinned_by.add(info.context.request.user)

@@ -19,15 +19,11 @@ class ScatterPlotInput:
     id_column: str = strawberry.field(
         description="The column to use for the ID of the points"
     )
-    x_column: str = strawberry.field(
-        description="The column to use for the x-axis"
-    )
+    x_column: str = strawberry.field(description="The column to use for the x-axis")
     x_id_column: str | None = strawberry.field(
         default=None, description="The column to use for the x-axis ID (node, or edge)"
     )
-    y_column: str = strawberry.field(
-        description="The column to use for the y-axis"
-    )
+    y_column: str = strawberry.field(description="The column to use for the y-axis")
     y_id_column: str | None = strawberry.field(
         default=None, description="The column to use for the y-axis ID (node, or edge)"
     )
@@ -58,13 +54,19 @@ class DeleteScatterPlotInput:
         description="The ID of the expression to delete"
     )
 
-def check_column(columns: list[inputs.ColumnInput], name: str, assert_kind: list[enums.ColumnKind] | None = None) -> inputs.ColumnInput:
+
+def check_column(
+    columns: list[inputs.ColumnInput],
+    name: str,
+    assert_kind: list[enums.ColumnKind] | None = None,
+) -> inputs.ColumnInput:
     for column in columns:
         if column.name == name:
             if assert_kind and column.kind not in assert_kind:
                 raise ValueError(f"Column {name} is not of kind {assert_kind}")
             return column.name
     raise ValueError(f"Column {name} not found in query")
+
 
 def check_id_column(columns: list[inputs.ColumnInput], name: str) -> inputs.ColumnInput:
     return check_column(columns, name, [enums.ColumnKind.NODE, enums.ColumnKind.EDGE])
@@ -82,12 +84,21 @@ def create_scatter_plot(
     id_column = check_id_column(columns, input.id_column)
     x_column = check_column(columns, input.x_column)
     y_column = check_column(columns, input.y_column)
-    x_id_column = check_id_column(columns, input.x_id_column) if input.x_id_column else None
-    y_id_column = check_id_column(columns, input.y_id_column) if input.y_id_column else None
-    size_column = check_column(columns, input.size_column) if input.size_column else None
-    color_column = check_column(columns, input.color_column) if input.color_column else None
-    shape_column = check_column(columns, input.shape_column) if input.shape_column else None
-
+    x_id_column = (
+        check_id_column(columns, input.x_id_column) if input.x_id_column else None
+    )
+    y_id_column = (
+        check_id_column(columns, input.y_id_column) if input.y_id_column else None
+    )
+    size_column = (
+        check_column(columns, input.size_column) if input.size_column else None
+    )
+    color_column = (
+        check_column(columns, input.color_column) if input.color_column else None
+    )
+    shape_column = (
+        check_column(columns, input.shape_column) if input.shape_column else None
+    )
 
     scatter_plot = models.ScatterPlot.objects.create(
         name=input.name,
@@ -103,12 +114,8 @@ def create_scatter_plot(
         shape_column=shape_column,
         creator=info.context.request.user,
     )
-    
-       
 
     return scatter_plot
-
-
 
 
 def delete_scatter_plot(

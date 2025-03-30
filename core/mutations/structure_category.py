@@ -2,7 +2,7 @@ from kante.types import Info
 from core.datalayer import get_current_datalayer
 
 import strawberry
-from core import types, models, enums, scalars, manager
+from core import types, models, enums, scalars, manager, inputs
 from core import age
 from strawberry.file_uploads import Upload
 from django.conf import settings
@@ -14,14 +14,11 @@ scalar_string_re = re.compile(
 )
 
 
-
 @strawberry.input(description="Input for creating a new expression")
-class StructureCategoryInput:
-    graph: strawberry.ID | None = strawberry.field(
-        default=None,
-        description="The ID of the ontology this expression belongs to. If not provided, uses default ontology",
+class StructureCategoryInput(inputs.CategoryInput):
+    identifier: scalars.StructureIdentifier = strawberry.field(
+        description="The label/name of the expression"
     )
-    identifier: scalars.StructureIdentifier = strawberry.field(description="The label/name of the expression")
     description: str | None = strawberry.field(
         default=None, description="A detailed description of the expression"
     )
@@ -58,14 +55,14 @@ def scalar_identifier_to_graph_name(scalar_string: str) -> str:
     )
 
 
-
-
 @strawberry.input(description="Input for updating an existing expression")
 class UpdateStructureCategoryInput:
     id: strawberry.ID = strawberry.field(
         description="The ID of the expression to update"
     )
-    identifier: str | None = strawberry.field(description="The label/name of the expression")
+    identifier: str | None = strawberry.field(
+        description="The label/name of the expression"
+    )
     label: str | None = strawberry.field(
         default=None, description="New label for the expression"
     )
@@ -95,21 +92,9 @@ def create_structure_category(
     input: StructureCategoryInput,
 ) -> types.StructureCategory:
 
-    graph = (
-        models.Graph.objects.get(id=input.graph) if input.graph else None
+    graph = models.Graph.objects.get(
+        id=input.graph,
     )
-
-    if not ontology:
-
-        user = info.context.request.user
-
-        ontology, _ = models.Ontology.objects.get_or_create(
-            user=user,
-            defaults=dict(
-                name="Default for {}".format(user.username),
-                description="Default ontology for {}".format(user.username),
-            ),
-        )
 
     if input.color:
         assert (
@@ -122,30 +107,28 @@ def create_structure_category(
         )
     else:
         media_store = None
-        
-        
+
     age_name, identifier = scalar_identifier_to_graph_name(input.identifier)
 
     vocab, _ = models.StructureCategory.objects.update_or_create(
         graph=graph,
-        age_name=age_name,
+        age_name=manager.build_structure_age_name(identifier),
         defaults=dict(
             description=input.description,
             purl=input.purl,
             store=media_store,
-            label=identifier,
             identifier=identifier,
         ),
     )
-    
-    
-    for i in ontology.graphs.all():
-        manager.rebuild_graph(i)
+
+    age.create_age_structure_kind(vocab)
 
     return vocab
 
 
-def update_structure_category(info: Info, input: UpdateStructureCategoryInput) -> types.StructureCategory:
+def update_structure_category(
+    info: Info, input: UpdateStructureCategoryInput
+) -> types.StructureCategory:
     item = models.StructureCategory.objects.get(id=input.id)
 
     if input.color:

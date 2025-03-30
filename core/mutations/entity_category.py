@@ -47,7 +47,6 @@ def create_entity_category(
     input: EntityCategoryInput,
 ) -> types.EntityCategory:
 
-
     if input.color:
         assert (
             len(input.color) == 3 or len(input.color) == 4
@@ -62,7 +61,7 @@ def create_entity_category(
 
     vocab, created = models.EntityCategory.objects.update_or_create(
         graph_id=input.graph,
-        age_name=manager.build_generic_age_name(input.label),
+        age_name=manager.build_entity_age_name(input.label),
         defaults=dict(
             description=input.description,
             purl=input.purl,
@@ -71,20 +70,21 @@ def create_entity_category(
             instance_kind=enums.InstanceKind.ENTITY,
         ),
     )
-    
+
+    age.create_age_entity_kind(vocab)
+
     if input.tags:
         vocab.tags.clear()
         for tag in input.tags:
             tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag)
             vocab.tags.add(tag_obj)
-    
-    if created:
-        manager.rebuild_graph(vocab.graph)
 
     return vocab
 
 
-def update_entity_category(info: Info, input: UpdateEntityCategoryInput) -> types.EntityCategory:
+def update_entity_category(
+    info: Info, input: UpdateEntityCategoryInput
+) -> types.EntityCategory:
     item = models.EntityCategory.objects.get(id=input.id)
 
     if input.color:

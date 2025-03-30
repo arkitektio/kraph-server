@@ -96,11 +96,19 @@ class Graph(models.Model):
     to their name.
 
     """
+
     user = models.ForeignKey(
         get_user_model(),
         on_delete=models.CASCADE,
         related_name="entity_groups",
         help_text="The user that this entity group belongs to",
+    )
+    store = models.ForeignKey(
+        MediaStore,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        help_text="The store of the image if associated with the category",
     )
     name = models.CharField(max_length=1000, help_text="The name of the entity group")
     description = models.CharField(
@@ -126,22 +134,20 @@ class Graph(models.Model):
         get_user_model(),
         related_name="pinned_graphs",
         help_text="The users that have this query active",
-        
     )
-    
+
     @classmethod
     def get_active(cls, user):
         return cls.objects.filter(user=user).first()
-    
-    
+
     @property
     def structure_categories(self):
         return StructureCategory.objects.filter(graph=self)
-    
+
     @property
     def entity_categories(self):
         return EntityCategory.objects.filter(graph=self)
-    
+
     @property
     def relation_categories(self):
         return RelationCategory.objects.filter(graph=self)
@@ -149,14 +155,7 @@ class Graph(models.Model):
     @property
     def measurement_categories(self):
         return MeasurementCategory.objects.filter(graph=self)
-    
-    
-    
-    
-    
-    
-    
-   
+
 
 def random_color():
     levels = range(32, 256, 32)
@@ -165,6 +164,7 @@ def random_color():
 
 class CategoryTag(models.Model):
     """A tag for a category"""
+
     value = models.CharField(
         max_length=1000,
         unique=True,
@@ -177,8 +177,6 @@ class CategoryTag(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
-    
 
 
 class Category(models.Model):
@@ -193,11 +191,52 @@ class Category(models.Model):
         blank=True,
         help_text="The store of the image if associated with the category",
     )
-    label = models.CharField(
+    color = models.JSONField(
         max_length=1000,
-        help_text="The label of the entity class",
+        help_text="The color of  node class in the graph (if a node)",
+        default=random_color,
         null=True,
     )
+    age_name = models.CharField(
+        max_length=1000,
+        help_text="The name of the graph class in the age graph",
+    )
+    description = models.CharField(
+        max_length=1000,
+        help_text="The description of category",
+        null=True,
+    )
+    purl = models.CharField(
+        max_length=1000,
+        help_text="The PURL (Persistent Uniform Resource Locator)",
+        null=True,
+    )
+    tags = models.ManyToManyField(
+        CategoryTag,
+        help_text="The tags of the category",
+        blank=True,
+    )
+    color = models.JSONField(
+        max_length=1000,
+        help_text="The color of the entity class as RGB",
+        default=random_color,
+        null=True,
+    )
+
+    class Meta:
+        default_related_name = "categories"
+        unique_together = ("graph", "age_name")
+
+
+class NodeCategory(Category):
+    """A Node class is a class that describes a node in the graph which represent
+    a bioentity (e.g. a cell, a tissue, etc.). Node classes are the most basic building
+    block of the graph and represent physical objects that can be measured
+    by structures, related to other entities by relations and subjected to specific
+    protocol steps.
+
+    """
+
     position_x = models.FloatField(
         help_text="The x position of the node class in the graph (if a node)",
         null=True,
@@ -214,146 +253,145 @@ class Category(models.Model):
         help_text="The width of the  node class in the graph (if a node)",
         null=True,
     )
-    color = models.JSONField(
-        max_length=1000,
-        help_text="The color of  node class in the graph (if a node)",
-        default=random_color,
-        null=True,
-    )
-    description = models.CharField(
-        max_length=1000,
-        help_text="The description of category",
-        null=True,
-    )
-    purl = models.CharField(
-        max_length=1000,
-        help_text="The PURL (Persistent Uniform Resource Locator)",
-        null=True,
-    )
-    tags = models.ManyToManyField(
-        CategoryTag,
-        related_name="categories",
-        help_text="The tags of the category",
-        blank=True,
-    )
-    color = models.JSONField(
-        max_length=1000,
-        help_text="The color of the entity class as RGB",
-        default=random_color,
-        null=True,
-    )
-    
-    age_name = models.CharField(
-        max_length=1000,
-        help_text="The name of the graph class in the age graph",
-    )
-    
-    left = models.ForeignKey(
-        "Category",
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="left_edges",
-    )
-    right = models.ForeignKey(
-        "Category",
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="right_edges",
-    )
-    
-    
-    def get_real_instance(self):
-        """Returns the real instance if it is a child class."""
-        print("Getting real instance", dir(self))
-        for child in ["structure_categories", "generic_categories", "measurement_categories", "relation_categories"]:
-            if hasattr(self, child.lower()):
-                return getattr(self, child.lower())
-    
-        raise ValueError("No real instance found")
 
-    class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["graph", "age_name", "left", "right"],
-                name="unique_age_name_per_graph_and_mapping_left_and_right",
-            )
-        ]
-        
+    def get_age_vertex_name(self):
+        raise NotImplementedError("Not implemented needs to be implemented")
 
-class StructureCategory(Category):
-    """ A Structure class is a class represents a datapoint in your graph and
+    def get_age_type_name(self):
+        raise NotImplementedError("Not implemented needs to be implemented")
+
+
+class EdgeCategory(Category):
+    source_definition = models.JSONField(
+        default=dict,
+        help_text="Filters for the right side of the metric (e.g. which tags the right side should have)",
+        null=True,
+    )
+    target_definition = models.JSONField(
+        default=dict,
+        help_text="Filters for the left side of the metric (e.g. which tags the left side should have)",
+        null=True,
+    )
+
+    def get_age_edge_name(self):
+        raise NotImplementedError("Not implemented needs to be implemented")
+
+    def get_age_type_name(self):
+        raise NotImplementedError("Not implemented needs to be implemented")
+
+
+class StructureCategory(NodeCategory):
+    """A Structure class is a class represents a datapoint in your graph and
     will relate metrics (like Intensity, Area, etc.) to it and then in turn
     relate temporally to a bioentity. It therefore is one element in the
-    
+
     (b: Metric) -[d: describes] -> (a: Structure) -> [m: measures] -> (c: Bioentity) path.
-    
+
     Structure are just datapoints in the graph and should be considered inspectable links
     to the data that was analysed, e.g. the image that was taken, metrics hold the actual
     information about that image (e.g. the cell count in the image, the maximum intensity and
     so forth).
-    
+
     """
-    
+
     identifier = models.CharField(
         max_length=1000,
         help_text="The structure identifier that the node relates to",
         null=True,
         blank=True,
     )
-    
-         
+
+    def get_age_vertex_name(self):
+        return "Structure"
+
+    def get_age_type_name(self):
+        return self.identifier
+
     class Meta:
         default_related_name = "structure_categories"
-        
-        
-class NaturalEventCategory(Category):
-    """ A natural event class is a class that describes a natural event that happened
+
+
+class NaturalEventCategory(NodeCategory):
+    """A natural event class is a class that describes a natural event that happened
     to some bioenties (e.g. a cell division, a cell death, etc.). Natural events are
     used to describe the natural events that happen to a bioentity and are not
     to be confused with protocol events, which happen as an external variable to
     the bioentity.
-    
+
     Natural events will always be associated with a supporting measurement node
     the justifys the event (e.g. a cell division event will be associated with a
     tracking image that shows the cell division event).
-    
+
     This is unnegotiable, and a "itoldyousou" object will be created for natural events
     that are not associated with a supporting measurement node.
-    
+
     """
-    source_definitions = models.JSONField(
-       default=list,
-       help_text="The categories or expressions that an event of this class can source from (source edges)", 
+
+    source_entity_roles = models.JSONField(
+        default=list,
+        help_text="The categories or expressions that an event of this class can source from (source edges)",
     )
-    target_definitions = models.JSONField(
+    target_entity_roles = models.JSONField(
         default=list,
         help_text="The categories or expressions that an of this class can target to (target edges)",
     )
-         
+    label = models.CharField(
+        max_length=1000,
+        help_text="The label of the natural event class",
+    )
+    plate_children = models.JSONField(null=True, blank=True)
+
+    def get_inrole_vertex_name(self, role):
+        return role
+
+    def get_outrole_vertex_name(self, role):
+        return role
+
+    def get_age_vertex_name(self):
+        return "NaturalEvent"
+
+    def get_age_type_name(self):
+        return self.age_name
+
+    @property
+    def collected_in_role_vertex_name(self):
+        return ["UNDERWENT"]  # TODO This needs to be implemented but currently not used
+
+    @property
+    def collected_out_role_vertex_name(self):
+        return ["CREATED"]  # TODO This needs to be implemented but currently not used
+
     class Meta:
         default_related_name = "natural_event_categories"
-        
-        
-class ProtocolEventCategory(Category):
-    """ A protocol event class is a node that describes a protocol event that some
-    entities were subjected to using, creating or altering them. 
-    
+
+
+class ProtocolEventCategory(NodeCategory):
+    """A protocol event class is a node that describes a protocol event that some
+    entities were subjected to using, creating or altering them.
+
     E.g.
-    
+
     CreationEvent:
         (a: Animal) -> [r: SUBJECTED_IN] -> (p: ExtractionEvent) -> [d: PRODUCED] -> (b: Hippocampus)
-        
+
     Transformation:
         (a: Animal) -> [r: SUBJECTED_IN] -> (f: FixationEvent) -> [d: PRODUCED] -> (b: Animal)
         (b: FourPercentFormaldayhyde) -> [r: SUBJECTED_IN {quantity: 50µm }] -> (f: FixationEvent)
     """
-    source_definitions = models.JSONField(
-       default=list,
-       help_text="The categories or expressions that an event of this class can sourc from (source edges)", 
+
+    source_entity_roles = models.JSONField(
+        default=list,
+        help_text="The categories or expressions that an event of this class can source from (source edges)",
     )
-    target_definitions = models.JSONField(
+    target_entity_roles = models.JSONField(
+        default=list,
+        help_text="The categories or expressions that an of this class can target to (target edges)",
+    )
+    source_reagent_roles = models.JSONField(
+        default=list,
+        help_text="The categories or expressions that an event of this class can source from (source edges)",
+    )
+    target_reagent_roles = models.JSONField(
         default=list,
         help_text="The categories or expressions that an of this class can target to (target edges)",
     )
@@ -362,180 +400,251 @@ class ProtocolEventCategory(Category):
         help_text="The variables of a instance this protocol event will needs (properties on the node)",
     )
     plate_children = models.JSONField(null=True, blank=True)
-    
+    label = models.CharField(
+        max_length=1000,
+        help_text="The label of the natural event class",
+    )
+
+    def get_inrole_vertex_name(self, role):
+        return role
+
+    def get_outrole_vertex_name(self, role):
+        return role
+
+    def get_age_vertex_name(self):
+        return "ProtocolEvent"
+
+    def get_age_type_name(self):
+        return self.age_name
+
+    @property
+    def collected_in_role_vertex_name(self):
+        return ["UNDERWENT"]  # TODO This needs to be implemented but currently not used
+
+    @property
+    def collected_out_role_vertex_name(self):
+        return ["CREATED"]  # TODO This needs to be implemented but currently not used
+
     class Meta:
         default_related_name = "protocol_event_categories"
 
-class EntityCategory(Category):
-    """ An Entity class is a class that describes a node in the graph which represent
+
+class EntityCategory(NodeCategory):
+    """An Entity class is a class that describes a node in the graph which represent
     a bioentity (e.g. a cell, a tissue, etc.). Entitys are the most basic building
     block of the graph and represent physical objects that can be measured
     by structures, related to other entities by relations and subjected to specific
     protocol steps.
-    
+
     On temporality:
-    
+
     Bioentity by design are meant to "immortal" and for the purpose of the graph should
     not be considered to be deleted. Instead when there is no measurement or relation
     pointing towards them in the active validation window, they are not considered for the
     ongoing analysis. Imaging a cell that was image in one of your experiments and then
     was not imaged in the next experiment. The cell still existed ONCE in time, but will not
     be monitored in the next experiment, so will have no structure point to it.
-    
-    If you of course create a timelapse of the cell, you will have multiple measurements 
+
+    If you of course create a timelapse of the cell, you will have multiple measurements
     pointing to the same cell, so the cell will still exist in the graph in the next experiment.
-    
+
     They belong to these subgraphs:
-    
+
     The measurement path:
     (b: $Metric) -[d: describes] -> (a: $Structure) -> [m: measures] -> (c: $Bioentity)
-    
+
     E.g. the intensity (metric) of the image (structure) that measures the cell (bioentity)
-    
+
     The relation path:
     (a: $Bioentity) -[r: $RELATION] -> (b: $Bioentity)
-    
+
     E.g. A cell was related for the timestramp of the experiment to another cell
-    
+
     The natural event path:
-    (a: Structure) -> [d: determines] ->  (b: NaturalEvent) 
+    (a: Structure) -> [d: determines] ->  (b: NaturalEvent)
     (a: $Bioentity) -[r: underwent]-> (b: NaturalEvent) -> [d: created] -> (c: $Bioentity)
-    
+
     E.g. the cell (a bioentity) "budded" (the relation) another cell (another bioentity)) at the time of the valid relation (informed structure in metadata)
-   
+
     The protocol event path:
     (a: $Bioentity) -[r: underwent]-> (b: ProtocolEvent) -> [d: created] -> (c: $Bioentity)
-    
+
     E.g. A cell was isolated from a cell culture and is now considered a new bioentity, that backlinks to
     the parent through the protocols
-   
-    
+
+
     """
+
     instance_kind = models.CharField(
         max_length=1000,
         help_text="What an instance of this class represents (e.g. a LOT, an object, etc.)",
         null=True,
         blank=True,
     )
-    
+    label = models.CharField(
+        max_length=1000,
+        help_text="The label of the entity class",
+    )
+
+    def get_age_vertex_name(self):
+        return "Entity"
+
+    def get_age_type_name(self):
+        return self.age_name
+
     class Meta:
         default_related_name = "entity_categories"
 
-class ReagentCategory(Category):
-    """ An Regation class is a class that describes a node in the graph which represent
+
+class ReagentCategory(NodeCategory):
+    """An Regation class is a class that describes a node in the graph which represent
     a reagent in the graph that does not have a biological meaning in this graph (e.g. a
-    4% formaldehyde, a 10% DMSO, etc.). 
-    
+    4% formaldehyde, a 10% DMSO, etc.).
+
     On temporality:
-    
+
     Bioentity by design are meant to "immortal" and for the purpose of the graph should
     not be considered to be deleted. Instead when there is no measurement or relation
     pointing towards them in the active validation window, they are not considered for the
     ongoing analysis. Imaging a cell that was image in one of your experiments and then
     was not imaged in the next experiment. The cell still existed ONCE in time, but will not
     be monitored in the next experiment, so will have no structure point to it.
-    
-    If you of course create a timelapse of the cell, you will have multiple measurements 
+
+    If you of course create a timelapse of the cell, you will have multiple measurements
     pointing to the same cell, so the cell will still exist in the graph in the next experiment.
-    
+
     They belong to these subgraphs:
-    
+
     The measurement path:
     (b: $Metric) -[d: describes] -> (a: $Structure) -> [m: measures] -> (c: $Bioentity)
-    
+
     E.g. the intensity (metric) of the image (structure) that measures the cell (bioentity)
-    
+
     The relation path:
     (a: $Bioentity) -[r: $RELATION] -> (b: $Bioentity)
-    
+
     E.g. A cell was related for the timestramp of the experiment to another cell
-    
+
     The natural event path:
-    (a: Structure) -> [d: determines] ->  (b: NaturalEvent) 
+    (a: Structure) -> [d: determines] ->  (b: NaturalEvent)
     (a: $Bioentity) -[r: underwent]-> (b: NaturalEvent) -> [d: created] -> (c: $Bioentity)
-    
+
     E.g. the cell (a bioentity) "budded" (the relation) another cell (another bioentity)) at the time of the valid relation (informed structure in metadata)
-   
+
     The protocol event path:
     (a: $Bioentity) -[r: underwent]-> (b: ProtocolEvent) -> [d: created] -> (c: $Bioentity)
-    
+
     E.g. A cell was isolated from a cell culture and is now considered a new bioentity, that backlinks to
     the parent through the protocols
-   
-    
+
+
     """
+
     instance_kind = models.CharField(
         max_length=1000,
         help_text="What an instance of this class represents (e.g. a LOT, an object, etc.)",
         null=True,
         blank=True,
     )
-    
+    label = models.CharField(
+        max_length=1000,
+        help_text="The label of the entity class",
+    )
+
+    def get_age_vertex_name(self):
+        return "Reagent"
+
+    def get_age_type_name(self):
+        return self.age_name
+
     class Meta:
         default_related_name = "reagent_categories"
 
 
-class MetricCategory(Category):
-    """ A Metric class is an analticay statement that describes a structure. 
-    
+class MetricCategory(NodeCategory):
+    """A Metric class is an analticay statement that describes a structure.
+
     Metric classes are used to describe a kind of  metric that described a certain measurment
     (e.g. intensity, area, etc.) and will always be attached to a structure that in turn
     measures a bioentity. It therefore is one element in the
-    
+
     (b: Metric) -[d: describes] -> (a: Structure) -> [m: measures] -> (c: Bioentity) path.
-    
+
     Kraph will always enfore that metrics are linked to a structure category first
     and disallow liking them directly to a bioentity. This is to ensure that the graph
     is temporally consistent (e.g. multiple same structures can measure the same bioentity at the different times)
-    
+
     While this may no seem obvious at first clance, it is important to understand that
     the graph is not a static representation of your world but a dynamic representation
-    of the world that is constantly changing. 
-    
+    of the world that is constantly changing.
+
     """
-    
+
     metric_kind = TextChoicesField(
         choices_enum=enums.MeasurementKindChoices,
         help_text="The data type (if a metric)",
         null=True,
         blank=True,
     )
-    
+    label = models.CharField(
+        max_length=1000,
+        help_text="The label of the entity class",
+    )
+    structure_definition = models.JSONField(
+        default=dict,
+        help_text="Filters for the right side of the metric (e.g. which tags the right side should have)",
+        null=True,
+    )
+
+    def get_age_vertex_name(self):
+        return "Metric"
+
+    def get_age_type_name(self):
+        return self.age_name
+
     class Meta:
         default_related_name = "metric_categories"
 
 
+class MeasurementCategory(EdgeCategory):
+    """A Measurement class is a class that describes an edge with a value"""
 
-
-class MeasurementCategory(Category):
-    """ A Measurement class is a class that describes an edge with a value"""
-    
     metric_kind = TextChoicesField(
         choices_enum=enums.MeasurementKindChoices,
         help_text="The data type (if a metric)",
         null=True,
         blank=True,
     )
-    
+    label = models.CharField(
+        max_length=1000,
+        help_text="The label of the entity class",
+    )
+
+    def get_age_vertex_name(self):
+        return "Measurement"
+
+    def get_age_type_name(self):
+        return self.age_name
+
     class Meta:
         default_related_name = "measurement_categories"
- 
-class ParticipantCategory(Category):
-    """ A Step class describes a protocol step that was taken"""
-    
-    acting_as = models.CharField(
+
+
+class RelationCategory(EdgeCategory):
+    """A Relation class is a class that describes a relation between two entities without a value"""
+
+    label = models.CharField(
         max_length=1000,
         help_text="How this step acts in the protocol (e.g. as which reagent)",
         null=True,
     )
-    
-    class Meta:
-        default_related_name = "participant_categories"   
-    
-    
-class RelationCategory(Category):
-    """ A Relation class is a class that describes a relation between two entities without a value"""
-    
+
+    def get_age_vertex_name(self):
+        return "Relation"
+
+    def get_age_type_name(self):
+        return self.age_name
+
     class Meta:
         default_related_name = "relation_categories"
 
@@ -577,12 +686,14 @@ class GraphQuery(models.Model):
         related_name="relevant_graph_queries",
         help_text="The expression that this query should be mostly used for",
     )
-    
+
     @property
     def input_columns(self):
         from core import inputs
+
         return [inputs.ColumnInput(**i) for i in self.columns]
-    
+
+
 class NodeQuery(models.Model):
     graph = models.ForeignKey(
         Graph,
@@ -615,35 +726,27 @@ class NodeQuery(models.Model):
         related_name="pinned_node_queries",
         help_text="The users that have this query active",
     )
-    relevant_for = models.ManyToManyField(
+    relevant_for_nodes = models.ManyToManyField(
         Category,
         related_name="relevant_node_queries",
         help_text="The entities that this query should be mostly used for",
     )
-    
-    
+
     @property
     def input_columns(self):
         from core import inputs
+
         return [inputs.ColumnInput(**i) for i in self.columns]
-    
-    
+
     @classmethod
     def active_for_user_and_graph(self, user, graph):
-        
+
         return self.objects.filter(graph=graph, pinned_by=user).first()
-        
-    
-
-
-
-
-
-
 
 
 class MaterializedView(models.Model):
     """A view of a graph that is materialized"""
+
     query = models.ForeignKey(
         GraphQuery,
         on_delete=models.CASCADE,
@@ -670,11 +773,6 @@ class MaterializedView(models.Model):
         null=True,
         blank=True,
     )
-    
-
-
-
-    
 
 
 class ScatterPlot(models.Model):
@@ -712,7 +810,9 @@ class ScatterPlot(models.Model):
         max_length=1000, help_text="The column that assigns the y value", null=True
     )
     y_id_column = models.CharField(
-        max_length=1000, help_text="The column that assigns an ID to the y value", null=True
+        max_length=1000,
+        help_text="The column that assigns an ID to the y value",
+        null=True,
     )
     color_column = models.CharField(
         max_length=1000, help_text="The column that assigns the color value", null=True
@@ -730,9 +830,6 @@ class ScatterPlot(models.Model):
         related_name="scatter_plots",
         help_text="The user that created the scatter plot",
     )
-
-
-
 
 
 class Model(models.Model):

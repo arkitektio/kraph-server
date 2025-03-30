@@ -13,12 +13,18 @@ class ToldYouSoInput:
         default=None, description="Optional name for the entity"
     )
     external_id: str | None = strawberry.field(
-        default=None, description="An optional external ID for the entity (will upsert if exists)"
+        default=None,
+        description="An optional external ID for the entity (will upsert if exists)",
     )
     context: inputs.ContextInput | None = strawberry.field(
         default=None, description="The context of the measurement"
     )
-
+    valid_from: str | None = strawberry.field(
+        default=None, description="The start date of the measurement"
+    )
+    valid_to: str | None = strawberry.field(
+        default=None, description="The end date of the measurement"
+    )
 
 @strawberry.input
 class DeleteToldYouSoInput:
@@ -29,8 +35,6 @@ def create_toldyouso(
     info: Info,
     input: ToldYouSoInput,
 ) -> types.Structure:
-
-    input_kind = models.StructureCategory.objects.get(id=input.expression)
 
     id = age.create_age_entity(
         input_kind.graph.age_name, input_kind.age_name, name=input.name

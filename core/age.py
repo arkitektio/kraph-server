@@ -5,12 +5,29 @@ from django.db import connections
 from core import models
 from dataclasses import dataclass
 from core import filters, pagination
+import typing
+from pydantic import BaseModel, Field
+
+if typing.TYPE_CHECKING:
+    from core import models
 
 
 @dataclass
 class LinkedStructure:
     identifier: str
     object: str
+
+
+class ProtocolInEdge(BaseModel):
+    source: int
+    role: str
+    quantity: float | None = None
+
+
+class ProtocolOutEdge(BaseModel):
+    target: int
+    role: str
+    quantity: float | None = None
 
 
 @dataclass
@@ -97,12 +114,12 @@ class RetrievedEntity:
 
     def retrieve_relations(self) -> "RetrievedRelation":
         return self.cached_relations or get_age_relations(self.graph_name, self.id)
-    
+
     def retrieve_right_relations(self) -> "RetrievedRelation":
         return get_right_relations(self.graph_name, self.id)
-    
+
     def retrieve_left_relations(self) -> "RetrievedRelation":
-        return  get_left_relations(self.graph_name, self.id)
+        return get_left_relations(self.graph_name, self.id)
 
     def retrieve_metrics(self) -> list["RetrievedNodeMetric"]:
         return self.cached_metrics or get_age_metrics(self.graph_name, self.id)
@@ -114,6 +131,22 @@ class RetrievedEntity:
     @property
     def valid_from(self):
         return self.properties.get("__valid_from", None)
+    
+    @property
+    def value(self):
+        return self.properties.get("__value", None)
+
+    @property
+    def category_type(
+        self,
+    ) -> typing.Literal[
+        "ENTITY", "STRUCTURE", "NATURAL_EVENT", "PROTOCOL_EVENT", "REAGENT", "METRIC"
+    ]:
+        return self.properties.get("__type", None)
+
+    @property
+    def category_id(self) -> str:
+        return self.properties["__category_id"]
 
     @property
     def valid_to(self):
@@ -168,7 +201,17 @@ class RetrievedRelation:
 
     def retrieve_right(self) -> "RetrievedEntity":
         return get_age_entity(self.graph_name, self.right_id)
-    
+
+    @property
+    def category_type(
+        self,
+    ) -> typing.Literal["MEASUREMENT", "RELATION", "PARTICIPANT", "DESCRIPTION"]:
+        return self.properties.get("__type", None)
+
+    @property
+    def category_id(self) -> str:
+        return self.properties.get("__category_id", None)
+
     @property
     def value(self):
         return self.properties.get("value", None)
@@ -179,11 +222,11 @@ class RetrievedRelation:
 
     @property
     def valid_from(self):
-        return self.properties.get("valid_from", None)
+        return self.properties.get("__valid_from", None)
 
     @property
     def valid_to(self):
-        return self.properties.get("valid_to", None)
+        return self.properties.get("__valid_to", None)
 
     @property
     def valid_relative_from(self):
@@ -223,7 +266,9 @@ def graph_cursor():
     with connections["default"].cursor() as cursor:
         cursor.execute("LOAD 'age';")
         cursor.execute('SET search_path = ag_catalog, "$user", public')
+        print(f"Creating new graph cursor. Use this to support AGE queries.")
         yield cursor
+        print(f"Closing graph cursor.")
 
 
 def create_age_graph(name: str):
@@ -245,19 +290,147 @@ def delete_age_graph(name: str):
         print(cursor.fetchone())
 
 
-def create_age_entity_kind(graph_name, kind_name):
+def create_age_entity_kind(category: "models.EntityCategory"):
     with graph_cursor() as cursor:
         try:
-            cursor.execute("SELECT create_vlabel(%s, %s);", (graph_name, kind_name))
+            cursor.execute(
+                "SELECT create_vlabel(%s, %s);",
+                (category.graph.age_name, category.get_age_vertex_name()),
+            )
             print(cursor.fetchone())
         except Exception as e:
             print(e)
 
 
-def create_age_relation_kind(graph_name, kind_name):
+def create_age_relation_kind(category: "models.RelationCategory"):
     with graph_cursor() as cursor:
         try:
-            cursor.execute("SELECT create_elabel(%s, %s);", (graph_name, kind_name))
+            cursor.execute(
+                "SELECT create_elabel(%s, %s);",
+                (category.graph.age_name, category.get_age_vertex_name()),
+            )
+            print(cursor.fetchone())
+        except Exception as e:
+            print(e)
+
+
+def create_age_structure_kind(category: "models.StructureCategory"):
+    with graph_cursor() as cursor:
+        try:
+            cursor.execute(
+                "SELECT create_vlabel(%s, %s);",
+                (category.graph.age_name, category.get_age_vertex_name()),
+            )
+            print(cursor.fetchone())
+        except Exception as e:
+            print(e)
+
+
+def create_age_natural_event_kind(category: "models.NaturalEventCategory"):
+    with graph_cursor() as cursor:
+        try:
+            cursor.execute(
+                "SELECT create_vlabel(%s, %s);",
+                (category.graph.age_name, category.get_age_vertex_name()),
+            )
+            print(cursor.fetchone())
+        except Exception as e:
+            print(e)
+
+        for role in category.collected_in_role_vertex_name:
+            try:
+                cursor.execute(
+                    "SELECT create_elabel(%s, %s);",
+                    (category.graph.age_name, category.get_inrole_vertex_name(role)),
+                )
+                print(cursor.fetchone())
+            except Exception as e:
+                print(e)
+        for role in category.collected_in_role_vertex_name:
+            try:
+                cursor.execute(
+                    "SELECT create_elabel(%s, %s);",
+                    (category.graph.age_name, category.get_outrole_vertex_name(role)),
+                )
+                print(cursor.fetchone())
+            except Exception as e:
+                print(e)
+
+
+def create_age_protocol_event_kind(category: "models.ProtocolEventCategory"):
+    with graph_cursor() as cursor:
+        try:
+            cursor.execute(
+                "SELECT create_vlabel(%s, %s);",
+                (category.graph.age_name, category.get_age_vertex_name()),
+            )
+            print(cursor.fetchone())
+        except Exception as e:
+            print(e)
+
+        for role in category.collected_in_role_vertex_name:
+            try:
+                cursor.execute(
+                    "SELECT create_elabel(%s, %s);",
+                    (category.graph.age_name, category.get_inrole_vertex_name(role)),
+                )
+                print(cursor.fetchone())
+            except Exception as e:
+                print(e)
+        for role in category.collected_in_role_vertex_name:
+            try:
+                cursor.execute(
+                    "SELECT create_elabel(%s, %s);",
+                    (category.graph.age_name, category.get_outrole_vertex_name(role)),
+                )
+                print(cursor.fetchone())
+            except Exception as e:
+                print(e)
+
+
+def create_age_metric_kind(category: "models.MetricCategory"):
+    with graph_cursor() as cursor:
+        try:
+            cursor.execute(
+                "SELECT create_vlabel(%s, %s);",
+                (category.graph.age_name, category.get_age_vertex_name()),
+            )
+            print(cursor.fetchone())
+        except Exception as e:
+            print(e)
+
+
+def create_age_reagent_kind(category: "models.ReagentCategory"):
+    with graph_cursor() as cursor:
+        try:
+            cursor.execute(
+                "SELECT create_vlabel(%s, Reagent);",
+                (category.graph.age_name, category.get_age_vertex_name()),
+            )
+            print(cursor.fetchone())
+        except Exception as e:
+            print(e)
+
+
+def create_age_measurement_kind(category: "models.MeasurementCategory"):
+    with graph_cursor() as cursor:
+        try:
+            cursor.execute(
+                "SELECT create_elabel(%s, %s);",
+                (category.graph.age_name, category.get_age_vertex_name()),
+            )
+            print(cursor.fetchone())
+        except Exception as e:
+            print(e)
+
+
+def create_age_relation_kind(category: "models.RelationCategory"):
+    with graph_cursor() as cursor:
+        try:
+            cursor.execute(
+                "SELECT create_elabel(%s, %s);",
+                (category.graph.age_name, category.get_age_vertex_name()),
+            )
             print(cursor.fetchone())
         except Exception as e:
             print(e)
@@ -340,26 +513,406 @@ def get_neighbors_and_edges(graph_name, node_id):
         return nodes, relation_ships
 
 
-def create_age_entity(graph_name, kind_age_name, name: str = None) -> RetrievedEntity:
+def create_age_entity(
+    category: "models.EntityCategory",
+    name: str | None = None,
+    external_id: str | None = None,
+) -> RetrievedEntity:
 
+    with graph_cursor() as cursor:
+        if external_id:
+            # Try to find existing reagent first
+            cursor.execute(
+                f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (n:{category.get_age_vertex_name()} {{__type: "ENTITY", __category_id: %s, __category_type: %s}}) 
+                WHERE n.__external_id = %s
+                SET n.__label = %s
+                SET n.__created_at = %s
+                RETURN n
+            $$) as (n agtype);
+            """,
+                (
+                    category.graph.age_name,
+                    category.id,
+                    category.get_age_type_name(),
+                    external_id,
+                    name,
+                    datetime.datetime.now().isoformat(),
+                ),
+            )
+            existing = cursor.fetchone()
+            if existing:
+                return vertex_ag_to_retrieved_entity(
+                    category.graph.age_name, existing[0]
+                )
+
+        # Create new reagent if not found
+
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                CREATE (n:{category.get_age_vertex_name()} {{__type: "REAGENT", __category_id: %s,  __category_type: %s, __label: %s, __created_at: %s, __external_id: %s}})
+                RETURN n
+            $$) as (n agtype);
+            """,
+            (
+                category.graph.age_name,
+                category.id,
+                category.get_age_type_name(),
+                name,
+                datetime.datetime.now().isoformat(),
+                external_id,
+            ),
+        )
+        result = cursor.fetchone()
+        if result:
+            entity = result[0]
+            return vertex_ag_to_retrieved_entity(category.graph.age_name, entity)
+        else:
+            raise ValueError("No entity created or returned by the query.")
+
+
+def create_age_reagent(
+    category: "models.ReagentCategory",
+    name: str | None = None,
+    external_id: str | None = None,
+) -> RetrievedEntity:
+
+    with graph_cursor() as cursor:
+        if external_id:
+            # Try to find existing reagent first
+            cursor.execute(
+                f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (n:{category.get_age_vertex_name()} {{__type: "REAGENT", __category_id: %s, __category_type: %s}}) 
+                WHERE n.__external_id = %s
+                SET n.__label = %s
+                SET n.__created_at = %s
+                RETURN n
+            $$) as (n agtype);
+            """,
+                (
+                    category.graph.age_name,
+                    category.id,
+                    category.get_age_type_name(),
+                    external_id,
+                    name,
+                    datetime.datetime.now().isoformat(),
+                ),
+            )
+            existing = cursor.fetchone()
+            if existing:
+                return vertex_ag_to_retrieved_entity(
+                    category.graph.age_name, existing[0]
+                )
+
+        # Create new reagent if not found
+
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                CREATE (n:{category.get_age_vertex_name()} {{__type: "REAGENT", __category_id: %s, __category_type: %s, __label: %s, __created_at: %s, __external_id: %s}})
+                RETURN n
+            $$) as (n agtype);
+            """,
+            (
+                category.graph.age_name,
+                category.id,
+                category.get_age_type_name(),
+                name,
+                datetime.datetime.now().isoformat(),
+                external_id,
+            ),
+        )
+        result = cursor.fetchone()
+        if result:
+            entity = result[0]
+            return vertex_ag_to_retrieved_entity(category.graph.age_name, entity)
+        else:
+            raise ValueError("No entity created or returned by the query.")
+
+
+def get_active_reagent_for_reagent_category(category: "models.ReagentCategory"):
+
+    # get the active reagent for the category
     with graph_cursor() as cursor:
         cursor.execute(
             f"""
             SELECT * 
             FROM cypher(%s, $$
-                CREATE (n:{kind_age_name} {{__label: %s, __created_at: %s}})
+                MATCH (n:{category.get_age_vertex_name()} {{__type: "REAGENT", __category_id: %s, __category_type: %s}}) 
+                WHERE n.__active = true
                 RETURN n
             $$) as (n agtype);
             """,
-            (graph_name, name, datetime.datetime.now().isoformat()),
+            (category.graph.age_name, category.id, category.get_age_type_name()),
         )
         result = cursor.fetchone()
         if result:
             entity = result[0]
-            return vertex_ag_to_retrieved_entity(graph_name, entity)
+            return vertex_ag_to_retrieved_entity(category.graph.age_name, entity)
         else:
             raise ValueError("No entity created or returned by the query.")
 
+
+def set_as_active_reagent_for_category(
+    category: "models.ReagentCategory", entity_id: str
+) -> RetrievedEntity:
+
+    # unsert old active
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (n:{category.get_age_vertex_name()} {{__type: "REAGENT", __category_id: %s, __category_type: %s}}) 
+                WHERE n.__active = true
+                SET n.__active = false
+                RETURN n
+            $$) as (n agtype);
+            """,
+            (category.graph.age_name, category.id, category.get_age_type_name()),
+        )
+
+    # set new active
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (n:{category.get_age_vertex_name()} {{__type: "REAGENT", __category_id: %s, __category_type: %s}}) 
+                WHERE id(n) = %s
+                SET n.__active = true
+                RETURN n
+            $$) as (n agtype);
+            """,
+            (
+                category.graph.age_name,
+                category.id,
+                category.get_age_type_name(),
+                int(entity_id),
+            ),
+        )
+        result = cursor.fetchone()
+        if result:
+            entity = result[0]
+            return vertex_ag_to_retrieved_entity(category.graph.age_name, entity)
+        else:
+            raise ValueError("No entity created or returned by the query.")
+
+
+def create_age_protocol_event(
+    category: "models.ProtocolEventCategory",
+    name: str | None = None,
+    external_id: str | None = None,
+    valid_from: datetime.datetime | None = None,
+    valid_to: datetime.datetime | None = None,
+) -> RetrievedEntity:
+
+    with graph_cursor() as cursor:
+        if external_id:
+            # Try to find existing reagent first
+            cursor.execute(
+                f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (n:{category.get_age_vertex_name()} {{__type: "PROTOCOL_EVENT", __category_id: %s, __category_type: %s}}) 
+                WHERE n.__external_id = %s
+                SET n.__label = %s
+                SET n.__created_at = %s
+                SET n.__valid_from = %s
+                SET n.__valid_to = %s
+                RETURN n
+            $$) as (n agtype);
+            """,
+                (
+                    category.graph.age_name,
+                    category.id,
+                    category.get_age_type_name(),
+                    external_id,
+                    name,
+                    datetime.datetime.now().isoformat(),
+                    valid_from.isoformat() if valid_from else None,
+                    valid_to.isoformat() if valid_to else None,
+                ),
+            )
+            existing = cursor.fetchone()
+            if existing:
+                return vertex_ag_to_retrieved_entity(
+                    category.graph.age_name, existing[0]
+                )
+
+        # Create new reagent if not found
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                CREATE (n:{category.get_age_vertex_name()} {{__type: "PROTOCOL_EVENT", __category_id: %s, __category_type: %s, __label: %s, __created_at: %s, __external_id: %s, valid_from: %s, valid_to: %s}})
+                RETURN n
+            $$) as (n agtype);
+            """,
+            (
+                category.graph.age_name,
+                category.id,
+                category.get_age_type_name(),
+                name,
+                datetime.datetime.now().isoformat(),
+                external_id,
+                valid_from.isoformat() if valid_from else None,
+                valid_to.isoformat() if valid_to else None,
+            ),
+        )
+        result = cursor.fetchone()
+        if result:
+            entity = result[0]
+            return vertex_ag_to_retrieved_entity(category.graph.age_name, entity)
+        else:
+            raise ValueError("No entity created or returned by the query.")
+
+def create_age_natural_event(
+    category: "models.NaturalEventCategory",
+    name: str | None = None,
+    external_id: str | None = None,
+    valid_from: datetime.datetime | None = None,
+    valid_to: datetime.datetime | None = None,
+) -> RetrievedEntity:
+
+    with graph_cursor() as cursor:
+        if external_id:
+            # Try to find existing reagent first
+            cursor.execute(
+                f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (n:{category.get_age_vertex_name()} {{__type: "NATURAL_EVENT", __category_id: %s, __category_type: %s}}) 
+                WHERE n.__external_id = %s
+                SET n.__label = %s
+                SET n.__created_at = %s
+                SET n.__valid_from = %s
+                SET n.__valid_to = %s
+                RETURN n
+            $$) as (n agtype);
+            """,
+                (
+                    category.graph.age_name,
+                    category.id,
+                    category.get_age_type_name(),
+                    external_id,
+                    name,
+                    datetime.datetime.now().isoformat(),
+                    valid_from.isoformat() if valid_from else None,
+                    valid_to.isoformat() if valid_to else None,
+                ),
+            )
+            existing = cursor.fetchone()
+            if existing:
+                return vertex_ag_to_retrieved_entity(
+                    category.graph.age_name, existing[0]
+                )
+
+        # Create new reagent if not found
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                CREATE (n:{category.get_age_vertex_name()} {{__type: "NATURAL_EVENT", __category_id: %s, __category_type: %s, __label: %s, __created_at: %s, __external_id: %s, valid_from: %s, valid_to: %s}})
+                RETURN n
+            $$) as (n agtype);
+            """,
+            (
+                category.graph.age_name,
+                category.id,
+                category.get_age_type_name(),
+                name,
+                datetime.datetime.now().isoformat(),
+                external_id,
+                valid_from.isoformat() if valid_from else None,
+                valid_to.isoformat() if valid_to else None,
+            ),
+        )
+        result = cursor.fetchone()
+        if result:
+            entity = result[0]
+            return vertex_ag_to_retrieved_entity(category.graph.age_name, entity)
+        else:
+            raise ValueError("No entity created or returned by the query.")
+
+
+def create_age_event_in_edge(
+    category: "models.ProtocolEventCategory",
+    event_entity: RetrievedEntity,
+    edge: ProtocolInEdge,
+):
+
+    # Create the edge between the entity and the event
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (a) WHERE id(a) = %s
+                MATCH (b) WHERE id(b) = %s
+                CREATE (a)-[r: {category.get_inrole_vertex_name(edge.role)} {{quantity: %s, role: %s}}]->(b)
+                RETURN r
+            $$) as (r agtype);
+            """,
+            (
+                event_entity.graph_name,
+                edge.source,
+                event_entity.id,
+                edge.role,
+                edge.quantity,
+            ),
+        )
+        result = cursor.fetchone()
+        if result:
+            new_edge = result[0]
+            return edge_ag_to_retrieved_relation(event_entity.graph_name, new_edge)
+        else:
+            raise ValueError(
+                f"No entity created or returned by the query. To created {event_entity} {edge}"
+            )
+
+
+def create_age_event_out_edge(
+    category: "models.ProtocolEventCategory",
+    event_entity: RetrievedEntity,
+    edge: ProtocolOutEdge,
+):
+
+    # Create the edge between the entity and the event
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (a) WHERE id(a) = %s
+                MATCH (b) WHERE id(b) = %s
+                CREATE (a)-[r: {category.get_outrole_vertex_name(edge.role)} {{quantity: %s, role: %s}}]->(b)
+                RETURN r
+            $$) as (r agtype);
+            """,
+            (
+                event_entity.graph_name,
+                event_entity.id,
+                edge.target,
+                edge.role,
+                edge.quantity,
+            ),
+        )
+        result = cursor.fetchone()
+        if result:
+            new_edge = result[0]
+            return edge_ag_to_retrieved_relation(event_entity.graph_name, new_edge)
+        else:
+            raise ValueError(
+                f"No entity created or returned by the query. To created {event_entity} {edge}"
+            )
 
 
 def get_random_node(graph_name):
@@ -376,24 +929,18 @@ def get_random_node(graph_name):
             """,
             [graph_name],
         )
-        
+
         result = cursor.fetchone()
         if result:
             entity = result[0]
             return vertex_ag_to_retrieved_entity(graph_name, entity)
         else:
             raise ValueError("No entity created or returned by the query.")
-        
-
-
 
 
 def create_age_structure(
-    graph_name,
-    kind_age_name,
-    identifier: str = None,
+    category: "models.StructureCategory",
     object: str = None,
-    structure: str = None,
 ) -> RetrievedEntity:
 
     with graph_cursor() as cursor:
@@ -401,26 +948,30 @@ def create_age_structure(
             f"""
             SELECT * 
             FROM cypher(%s, $$
-                CREATE (n:{kind_age_name} {{__created_at: %s, __identifier: %s, __object: %s, __structure: %s}})
-                RETURN n
-            $$) as (n agtype);
+                CREATE (s: {category.get_age_vertex_name()} {{__type: "STRUCTURE", __category_type: %s, __category_id: %s}})
+                SET s.__object = %s
+                SET s.__created_at = %s
+                SET s.__identifier = %s
+                RETURN s
+            $$) as (s agtype);
             """,
             (
-                graph_name,
-                datetime.datetime.now().isoformat(),
-                identifier,
+                category.graph.age_name,
+                category.get_age_type_name(),
+                category.id,
                 object,
-                structure,
+                datetime.datetime.now().isoformat(),
+                category.identifier,
             ),
+            
         )
         result = cursor.fetchone()
         if result:
             entity = result[0]
             print("Created structure", entity)
-            return vertex_ag_to_retrieved_entity(graph_name, entity)
+            return vertex_ag_to_retrieved_entity(category.graph.age_name, entity)
         else:
             raise ValueError("No entity created or returned by the query.")
-
 
 
 def associate_structure(
@@ -433,14 +984,14 @@ def associate_structure(
     assignation_id: str = None,
     created_by: str = None,
 ):
-    """ Associate a structure to an entity
-    
+    """Associate a structure to an entity
+
     Associate a structure to an entity in the graph database.
     Creates the second link in the measurment path
-    
+
     (metric: Metric) -> [describes] -> (Structure) -> [measures] -> (Entity)
                                                         ++++++
-    
+
     Parameters:
         graph_name (str): The name of the graph.
         structure_identifier (str): The identifier of the structure. Think "@mikro/image"
@@ -450,7 +1001,7 @@ def associate_structure(
         valid_to (datetime.datetime): The date until which the association is valid.
         assignation_id (str): The ID of the assignation (based on the rekuest ID, if applicable).
         created_by (str): The ID of the user who created the association.
-    
+
     """
     with graph_cursor() as cursor:
         cursor.execute(
@@ -477,32 +1028,92 @@ def associate_structure(
         )
 
 
+def create_measurement(
+    category: "models.MeasurementCategory",
+    structure_id: str,
+    entity_id: str,
+    valid_from: datetime.datetime = None,
+    valid_to: datetime.datetime = None,
+    assignation_id: str = None,
+    created_by: str = None,
+    created_at: datetime.datetime = None,
+):
+    """Associate a structure to an entity
+
+    Associate a structure to an entity in the graph database.
+    Creates the second link in the measurment path
+
+    (metric: Metric) -> [describes] -> (Structure) -> [measures] -> (Entity)
+                                                        ++++++
+
+    Parameters:
+        graph_name (str): The name of the graph.
+        structure_identifier (str): The identifier of the structure. Think "@mikro/image"
+        structure_id (str): The ID of the structure. Think "566"
+        entity_id (str): The ID of the entity (bioentity). Think "566"
+        valid_from (datetime.datetime): The date from which the association is valid.
+        valid_to (datetime.datetime): The date until which the association is valid.
+        assignation_id (str): The ID of the assignation (based on the rekuest ID, if applicable).
+        created_by (str): The ID of the user who created the association.
+
+    """
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""SELECT * FROM cypher(%s, $$
+                MATCH (a) WHERE id(a) = %s
+                MATCH (b) WHERE id(b) = %s
+                CREATE (a)-[r: {category.get_age_vertex_name()} {{__type: "MEASUREMENT", __category_type: %s, __category_id: %s}}]->(b)
+                SET r.__valid_from = %s, r.__valid_to = %s, r.__created_at = %s, r.__created_through = %s, r.__created_by = %s
+                RETURN r
+            $$) AS (r agtype);
+            """,
+            (
+                category.graph.age_name,
+                structure_id,
+                entity_id,
+                category.get_age_type_name(),
+                category.id,
+                valid_from.isoformat() if valid_from else None,
+                valid_to.isoformat() if valid_to else None,
+                created_at.isoformat() if created_at else None,
+                assignation_id,
+                created_by,
+            ),
+        )
+        
+        result = cursor.fetchone()
+        if result:
+            measurement = result[0]
+            return edge_ag_to_retrieved_relation(category.graph.age_name, measurement)
+        else:
+            raise ValueError("No measurement created or returned by the query.")
+
+
 def create_age_metric(
-    graph_name,  
-    metric_name: str,
-    structure_identifier: str, 
-    structure_object: str,
-    value ,
+    metric_category: "models.MetricCategory",
+    structure_id: str,
+    value,
     assignation_id: str = None,
     created_by: str = None,
 ):
     with graph_cursor() as cursor:
-        
+
         if isinstance(value, list):
             value = json.dumps(value)
-            
+
         cursor.execute(
             f"""SELECT * FROM cypher(%s, $$
                 MATCH (a) WHERE id(a) = %s
-                CREATE (b: {metric_name} {{identifier: %s, object: %s, value: %s, created_at: %s, created_by: %s, created_through: %s}})
-                CREATE (a)-[r:DESCRIBES]->(b)
+                CREATE (b: {metric_category.get_age_vertex_name()} {{__type: "METRIC", __category_type: %s, __category_id: %s, __value: %s, __created_at: %s, __created_by: %s, __created_through: %s}})
+                CREATE (b)-[r:DESCRIBES]->(a)
                 RETURN b
             $$) AS (r agtype);
             """,
             (
-                graph_name,
-                structure_identifier,
-                structure_object,
+                metric_category.graph.age_name,
+                structure_id,
+                metric_category.get_age_type_name(),
+                metric_category.id,
                 value,
                 datetime.datetime.now().isoformat(),
                 created_by,
@@ -512,11 +1123,11 @@ def create_age_metric(
         result = cursor.fetchone()
         if result:
             entity = result[0]
-            return vertex_ag_to_retrieved_entity(graph_name, entity)
+            return vertex_ag_to_retrieved_entity(metric_category.age_name, entity)
         else:
             raise ValueError("No entity created or returned by the query.")
-        
-    
+
+
 def get_age_entity(graph_name, entity_id) -> RetrievedEntity:
 
     with graph_cursor() as cursor:
@@ -602,7 +1213,6 @@ def get_age_metrics(graph_name, node_id):
             return []
 
 
-
 def create_age_relation_metric(graph_name, metric_name, edge_id, value):
     # We need to add temporal support
     # __valid_from = timestamp or None (None means it is valid from the beginning)
@@ -644,54 +1254,6 @@ def create_age_relation_metric(graph_name, metric_name, edge_id, value):
 
             if edge_count < 1:
                 raise ValueError(f"Edge does not exist. {edge_id}")
-
-            raise ValueError("No entity created or returned by the query.")
-        
-        
-def create_age_natural_event(graph_name, relation_kind_age_name, left_id, right_id):
-    with graph_cursor() as cursor:
-        cursor.execute(
-            f"""
-            SELECT * 
-            FROM cypher(%s, $$
-                MATCH (a) WHERE id(a) = %s
-                MATCH (b) WHERE id(b) = %s
-                CREATE (a)-[r:{relation_kind_age_name}]->(b)
-                RETURN id(r), properties(r)
-            $$) as (id agtype, properties agtype);
-            """,
-            (graph_name, int(left_id), int(right_id)),
-        )
-        result = cursor.fetchone()
-        if result:
-            entity_id = result[0]
-            properties = result[1]
-            print(entity_id, relation_kind_age_name, properties)
-            return RetrievedRelation(
-                id=entity_id,
-                kind_age_name=relation_kind_age_name,
-                properties=properties,
-                graph_name=graph_name,
-                left_id=left_id,
-                right_id=right_id,
-            )
-        else:
-            existence_query = """
-                SELECT count(*)
-                FROM cypher(%s, $$
-                    MATCH (a), (b)
-                    WHERE id(a) = %s AND id(b) = %s
-                    RETURN count(*)
-                $$) as (count agtype);
-            """
-
-            cursor.execute(existence_query, (graph_name, left_id, right_id))
-            node_count = cursor.fetchone()[0]
-
-            if node_count < 2:
-                raise ValueError(
-                    f"One or both of the nodes do not exist. {left_id}, {right_id}, {graph_name}"
-                )
 
             raise ValueError("No entity created or returned by the query.")
 
@@ -805,16 +1367,14 @@ def select_all_entities(
         for result in cursor.fetchall():
             print(result)
             yield vertex_ag_to_retrieved_entity(graph_name, result[0])
-            
-            
-            
-            
+
+
 def select_latest_nodes(
     graph_name,
     pagination: pagination.GraphPaginationInput,
     filter: filters.EntityFilter,
 ):
-    
+
     with graph_cursor() as cursor:
         cursor.execute(
             f"""
@@ -829,20 +1389,12 @@ def select_latest_nodes(
             """,
             [graph_name, pagination.offset or 0, pagination.limit or 200],
         )
-        
+
         if cursor.rowcount == 0:
             return []
-        
+
         for result in cursor.fetchall():
             yield vertex_ag_to_retrieved_entity(graph_name, result[0])
-            
-            
-            
-            
-            
-            
-            
-            
 
 
 def select_paired_entities(

@@ -22,6 +22,8 @@ from .scatter_plot import *
 from .measurement import *
 from .toldyouso import *
 from .reagent_category import *
+from .reagent import *
+
 __all__ = [
     "create_channel",
     "pin_channel",

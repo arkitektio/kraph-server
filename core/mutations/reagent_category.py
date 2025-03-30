@@ -47,7 +47,6 @@ def create_reagent_category(
     input: ReagentCategoryInput,
 ) -> types.ReagentCategory:
 
-
     if input.color:
         assert (
             len(input.color) == 3 or len(input.color) == 4
@@ -62,7 +61,7 @@ def create_reagent_category(
 
     vocab, created = models.ReagentCategory.objects.update_or_create(
         graph_id=input.graph,
-        age_name=manager.build_generic_age_name(input.label),
+        age_name=manager.build_reagent_age_name(input.label),
         defaults=dict(
             description=input.description,
             purl=input.purl,
@@ -71,20 +70,21 @@ def create_reagent_category(
             instance_kind=enums.InstanceKind.ENTITY,
         ),
     )
-    
+
+    age.create_age_reagent_kind(vocab)
+
     if input.tags:
         vocab.tags.clear()
         for tag in input.tags:
-            tag_obj = models.CategoryTag.objects.get(value=tag)
+            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag)
             vocab.tags.add(tag_obj)
-    
-    if created:
-        manager.rebuild_graph(vocab.graph)
 
     return vocab
 
 
-def update_reagent_category(info: Info, input: UpdateReagentCategoryInput) -> types.ReagentCategory:
+def update_reagent_category(
+    info: Info, input: UpdateReagentCategoryInput
+) -> types.ReagentCategory:
     item = models.ReagentCategory.objects.get(id=input.id)
 
     if input.color:

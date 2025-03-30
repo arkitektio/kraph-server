@@ -74,19 +74,18 @@ class ExpressionKind(str, Enum):
 
 @strawberry.enum
 class InstanceKind(str, Enum):
-    """ Describes how the instance is related to the class.
-    
+    """Describes how the instance is related to the class.
+
     I.e. a LOT means that the instance reflects some instances of the class. (Antibody Lot)
     an ENTITY means that the instance is a single instance of the class. (A single mouse)
-    
-    
+
+
     """
+
     LOT = "LOT"
     SAMPLE = "SAMPLE_OF"
     ENTITY = "ENTITY"
     UNKNOWN = "UNKNOWN"
-
-
 
 
 @strawberry.enum
@@ -96,35 +95,40 @@ class ViewKind(str, Enum):
     TABLE = "TABLE"
     INT_METRIC = "INT_METRIC"
     FLOAT_METRIC = "FLOAT_METRIC"
-    
-    
+    NODE_LIST = "NODE_LIST"
+    EDGE_LIST = "EDGE_LIST"
+
+
 @strawberry.enum
 class ColumnKind(str, Enum):
     NODE = "NODE"
     VALUE = "VALUE"
     EDGE = "EDGE"
-    
+
+
 @strawberry.enum
 class ParticipantKind(str, Enum):
-    """ Describes the kind of participant"""
+    """Describes the kind of participant"""
+
     REAGENT = "REAGENT"
     ENTITY = "ENTITY"
-    
-    
-    
+
+
 @strawberry.enum
 class OntologyNodeKind(str, Enum):
-    """ Describes the kind of ontology node"""
+    """Describes the kind of ontology node"""
+
     ENTITY = "ENTITY"
     STRUCTURE = "STRUCTURE"
     METRIC = "METRIC"
     NATURAL_EVENT = "NATURAL_EVENT"
     PROTOCOL_EVENT = "PROTOCOL_EVENT"
-    
-    
+
+
 @strawberry.enum
 class OntologyEdgeKind(str, Enum):
-    """ Describes the kind of ontology edge"""
+    """Describes the kind of ontology edge"""
+
     RELATION = "RELATION"
     MEASUREMENT = "MEASUREMENT"
     DESCRIPTION = "DESCRIPTION"

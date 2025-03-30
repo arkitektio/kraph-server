@@ -1,5 +1,6 @@
 from core import models, enums
 
+
 def all_informed_measurements_view_builder(structure: models.StructureCategory):
     return f"""
         MATCH (n) -> [r] -> (m)
@@ -7,13 +8,14 @@ def all_informed_measurements_view_builder(structure: models.StructureCategory):
         
         
     """
-    
-    
-    
+
+
 def all_measurements_for_generic_node(node: models.GenericCategory):
-    
-    measurements = node.ontology.measurement_categories.filter(target=node).values_list("age_name", flat=True)
-    
+
+    measurements = node.ontology.measurement_categories.filter(target=node).values_list(
+        "age_name", flat=True
+    )
+
     # Return all measurements that are connected to this node as a table of
     # index: node_id
     # values: [measurment_a_value] [measurement_b_value] ...

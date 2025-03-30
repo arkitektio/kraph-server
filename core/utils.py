@@ -58,21 +58,20 @@ scalar_string_re = re.compile(
 )
 
 
-
 def scalar_string_to_graph_name(scalar_string: str) -> tuple[str, str, str]:
-    """ Parse a scalar string into its components.
-    
+    """Parse a scalar string into its components.
+
     The scalar string is expected to be in the format:
     "@external_name/scalar_name:entity_id".
-    
+
     The function will extract the external name, scalar name, and entity ID from the string.
-    
+
     Params:
         scalar_string (str): The scalar string to parse.
-        
+
     Returns:
         tuple: A tuple containing the graph name, the trimme identifier, and the last id
-        
+
     """
 
     assert "@" in scalar_string, f"Invalid scalar string: {scalar_string}"
@@ -96,9 +95,8 @@ def scalar_string_to_graph_name(scalar_string: str) -> tuple[str, str, str]:
         identifier,
         entity_id,
     )
-    
-    
-    
+
+
 def is_keyword(age_name) -> bool:
     """
     Check if the edge is a keyword.

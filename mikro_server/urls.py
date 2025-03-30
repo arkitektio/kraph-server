@@ -22,7 +22,7 @@ from .basepath import basepath
 
 from mikro_server.schema import schema
 
-url = ""
+url = "s"
 
 urlpatterns = [
     basepath("admin/", admin.site.urls),

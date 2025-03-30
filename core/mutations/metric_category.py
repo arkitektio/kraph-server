@@ -10,12 +10,13 @@ from django.conf import settings
 
 @strawberry.input(description="Input for creating a new expression")
 class MetricCategoryInput(inputs.CategoryInput):
+    structure_definition: inputs.CategoryDefinitionInput = strawberry.field(
+        default=None,
+        description="The structure category for this expression",
+    )
     label: str = strawberry.field(description="The label/name of the expression")
     kind: enums.MetricKind = strawberry.field(
         default=None, description="The type of metric data this expression represents"
-    )
-    structure: scalars.StructureIdentifier = strawberry.field(
-        default=None, description="The structure this expression belongs to"
     )
 
 
@@ -24,9 +25,6 @@ class UpdatMetricCategoryInput:
     label: str = strawberry.field(description="The label/name of the expression")
     kind: enums.MetricKind = strawberry.field(
         default=None, description="The type of metric data this expression represents"
-    )
-    structure: scalars.StructureIdentifier = strawberry.field(
-        default=None, description="The structure this expression belongs to"
     )
 
 
@@ -42,35 +40,34 @@ def create_metric_category(
     input: MetricCategoryInput,
 ) -> types.MetricCategory:
 
-
     metric_category, created = models.MetricCategory.objects.update_or_create(
         graph_id=input.graph,
-        age_name=manager.build_measurement_age_name(input.label),
+        age_name=manager.build_metric_age_name(input.label),
         defaults=dict(
             description=input.description,
             purl=input.purl,
-            store=media_store,
-            label=input.label,
             metric_kind=input.kind,
+            structure_definition=strawberry.asdict(
+                input.structure_definition,
+            ),
+            label=input.label,
         ),
     )
-    
-    
+
+    age.create_age_metric_kind(metric_category)
+
     if input.tags:
         metric_category.tags.clear()
         for tag in input.tags:
-            tag_obj = models.CategoryTag.objects.get(value=tag)
+            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag)
             metric_category.tags.add(tag_obj)
-    
-    
-    
-    if created:
-        manager.rebuild_graph(metric_category.graph)
 
-    return vocab
+    return metric_category
 
 
-def update_metric_category(info: Info, input: UpdatMetricCategoryInput) -> types.MetricCategory:
+def update_metric_category(
+    info: Info, input: UpdatMetricCategoryInput
+) -> types.MetricCategory:
     item = models.MetricCategory.objects.get(id=input.id)
 
     if input.color:

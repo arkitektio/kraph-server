@@ -38,21 +38,21 @@ def create_relation(
 
     left_graph = node_id_to_graph_name(input.source)
     right_graph = node_id_to_graph_name(input.target)
-    
 
     assert (
         left_graph == right_graph
     ), "Cannot create a relation between entities in different graphs"
-    
-    
+
     tleft_graph = models.Graph.objects.get(age_name=left_graph)
 
     retrieve = age.create_age_relation(
-        tleft_graph.age_name, kind.age_name, node_id_to_graph_id(input.source), node_id_to_graph_id(input.target)
+        tleft_graph.age_name,
+        kind.age_name,
+        node_id_to_graph_id(input.source),
+        node_id_to_graph_id(input.target),
     )
 
     return types.Relation(_value=retrieve)
-
 
 
 def delete_relation(

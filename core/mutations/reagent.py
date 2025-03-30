@@ -5,8 +5,8 @@ import uuid
 
 
 @strawberry.input(description="Input type for creating a new entity")
-class EntityInput:
-    entity_category: strawberry.ID = strawberry.field(
+class ReagentInput:
+    reagent_category: strawberry.ID = strawberry.field(
         description="The ID of the kind (LinkedExpression) to create the entity from"
     )
     name: str | None = strawberry.field(
@@ -16,30 +16,37 @@ class EntityInput:
         default=None,
         description="An optional external ID for the entity (will upsert if exists)",
     )
+    set_active: bool | None = strawberry.field(
+        default=False, description="Set the reagent as active"
+    )
 
 
 @strawberry.input
-class DeleteEntityInput:
+class DeleteReagentInput:
     id: strawberry.ID
 
 
-def create_entity(
+def create_reagent(
     info: Info,
-    input: EntityInput,
-) -> types.Entity:
+    input: ReagentInput,
+) -> types.Reagent:
 
-    entity_category = models.EntityCategory.objects.get(id=input.entity_category)
+    input_kind = models.ReagentCategory.objects.get(id=input.reagent_category)
 
-    id = age.create_age_entity(
-        entity_category, name=input.name, external_id=input.external_id
+    print(input_kind.graph.age_name)
+    id = age.create_age_reagent(
+        input_kind, name=input.name, external_id=input.external_id
     )
 
-    return types.Entity(_value=id)
+    if input.set_active:
+        age.set_as_active_reagent_for_category(input_kind, id)
+
+    return types.Reagent(_value=id)
 
 
-def delete_entity(
+def delete_reagent(
     info: Info,
-    input: DeleteEntityInput,
+    input: DeleteReagentInput,
 ) -> strawberry.ID:
     raise NotImplementedError("Not implemented yet")
     return input.id

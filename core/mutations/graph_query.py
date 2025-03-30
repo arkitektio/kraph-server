@@ -11,12 +11,14 @@ from core.renderers.graph import render
 
 @strawberry.input(description="Input for creating a new expression")
 class GraphQueryInput:
-    graph: strawberry.ID | None = strawberry.field(
+    graph: strawberry.ID = strawberry.field(
         default=None,
         description="The ID of the ontology this expression belongs to. If not provided, uses default ontology",
     )
     name: str = strawberry.field(description="The label/name of the expression")
-    query: scalars.Cypher = strawberry.field(description="The label/name of the expression")
+    query: scalars.Cypher = strawberry.field(
+        description="The label/name of the expression"
+    )
     description: str | None = strawberry.field(
         default=None, description="A detailed description of the expression"
     )
@@ -51,36 +53,31 @@ def create_graph_query(
     input: GraphQueryInput,
 ) -> types.GraphQuery:
 
-    
-        
-        
-        
-
     graph_query, _ = models.GraphQuery.objects.update_or_create(
         graph_id=input.graph,
-        query = input.query,
+        query=input.query,
         defaults=dict(
             name=input.name,
             description=input.description,
             kind=input.kind,
-            columns=[strawberry.asdict(c) for c in input.columns] if input.columns else [],
+            columns=(
+                [strawberry.asdict(c) for c in input.columns] if input.columns else []
+            ),
         ),
     )
-    
+
     try:
         render.render_graph_query(graph_query)
     except Exception as e:
         graph_query.delete()
         raise Exception(f"Failed to render graph query: {e}")
-       
-    if input.linked_categories:
-        for category in input.linked_categories:
+
+    if input.relevant_for:
+        for category in input.relevant_for:
             category_obj = models.Category.objects.get(id=category)
             graph_query.relevant_for.add(category_obj)
 
     return graph_query
-
-
 
 
 def delete_graph_query(
@@ -91,11 +88,11 @@ def delete_graph_query(
     item.delete()
     return input.id
 
+
 @strawberry.input
 class PinGraphQueryInput:
     id: strawberry.ID
     pinned: bool
-
 
 
 def pin_graph_query(
@@ -103,7 +100,6 @@ def pin_graph_query(
     input: PinGraphQueryInput,
 ) -> types.GraphQuery:
     item = models.GraphQuery.objects.get(id=input.id)
-
 
     if input.pinned:
         item.pinned_by.add(info.context.request.user)

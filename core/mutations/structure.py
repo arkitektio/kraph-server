@@ -6,23 +6,17 @@ import datetime
 import re
 
 
-
-
-
 @strawberry.input
 class StructureInput:
     structure: scalars.StructureString
-    graph: strawberry.ID | None = None
-    create_default_view: bool = True
+    graph: strawberry.ID 
     context: inputs.ContextInput | None = strawberry.field(
         default=None, description="The context of the measurement"
     )
-    
-
 
 
 @strawberry.input
-class DeleteMeasurementInput:
+class DeleteStructureInput:
     id: scalars.NodeID
 
 
@@ -62,43 +56,30 @@ def create_structure(
     input: StructureInput,
 ) -> types.Structure:
 
-    graph = models.Graph.objects.get(id=input.graph) if input.graph else models.Graph.get_active(info.context.request.user)
+    graph = models.Graph.objects.get(id=input.graph)
 
     age_name, identifier, object_id = scalar_string_to_graph_name(input.structure)
 
-   
-    category, created = models.StructureCategory.objects.update_or_create(
-        age_name=age_name,
-        ontology=graph.ontology,
+    category, created = models.StructureCategory.objects.get_or_create(
+        age_name=manager.build_structure_age_name(identifier),
+        graph=graph,
         defaults=dict(
             identifier=identifier,
         ),
     )
-    
-    
 
     structure = age.create_age_structure(
-        graph.age_name,
-        category.age_name,
-        identifier=identifier,
-        object=object_id,
-        structure=input.structure,
+        category,
+        object_id,
     )
-    
-    if input.create_default_view and created:
-        manager.create_default_structure_queries_for_structure(category, structure)
+
 
     return types.Structure(_value=structure)
 
 
 def delete_structure(
     info: Info,
-    input: DeleteMeasurementInput,
+    input: DeleteStructureInput,
 ) -> strawberry.ID:
-    
-    
-    
-    
-    
-    raise NotImplementedError("Not implemented yet")
 
+    raise NotImplementedError("Not implemented yet")
