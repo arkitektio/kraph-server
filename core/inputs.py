@@ -42,9 +42,9 @@ def plate_children_to_str(children):
 
 
 @strawberry.input(description="Input for creating a new expression")
-class VariableDefinition:
+class VariableDefinitionInput:
     param: str = strawberry.field(description="The parameter name")
-    variable_kind: enums.MetricKind = strawberry.field(
+    value_kind: enums.MetricKind = strawberry.field(
         default=None,
         description="The type of metric data this expression represents",
     )
@@ -163,6 +163,25 @@ class CategoryInput:
     graph: strawberry.ID = strawberry.field(
         description="The ID of the graph this expression belongs to. If not provided, uses default ontology",
     )
+    description: str | None = strawberry.field(
+        default=None, description="A detailed description of the expression"
+    )
+    purl: str | None = strawberry.field(
+        default=None, description="Permanent URL identifier for the expression"
+    )
+    color: list[int] | None = strawberry.field(
+        default=None, description="RGBA color values as list of 3 or 4 integers"
+    )
+    image: strawberry.ID | None = strawberry.field(
+        default=None, description="An optional image associated with this expression"
+    )
+    tags: list[str] | None = strawberry.field(
+        default=None, description="A list of tags associated with this expression"
+    )
+
+
+@strawberry.input()
+class UpdateCategoryInput:
     description: str | None = strawberry.field(
         default=None, description="A detailed description of the expression"
     )

@@ -111,6 +111,7 @@ class Graph(models.Model):
         help_text="The store of the image if associated with the category",
     )
     name = models.CharField(max_length=1000, help_text="The name of the entity group")
+    purl = models.CharField(max_length=1000, help_text="The name of the entity group", null=True, blank=True)
     description = models.CharField(
         max_length=2000,
         help_text="The description of the entity group",
@@ -155,6 +156,23 @@ class Graph(models.Model):
     @property
     def measurement_categories(self):
         return MeasurementCategory.objects.filter(graph=self)
+    
+    @property
+    def metric_categories(self):
+        return MetricCategory.objects.filter(graph=self)
+    
+    @property
+    def protocol_event_categories(self):
+        return ProtocolEventCategory.objects.filter(graph=self)
+    
+    @property
+    def natural_event_categories(self):
+        return NaturalEventCategory.objects.filter(graph=self)
+    
+    @property
+    def reagent_categories(self):
+        return ReagentCategory.objects.filter(graph=self)
+
 
 
 def random_color():

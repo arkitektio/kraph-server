@@ -28,5 +28,3 @@ def nodes(
         types.Entity(_value=entity)
         for entity in age.select_all_entities(graph.age_name, pagination, filters)
     ]
-
-

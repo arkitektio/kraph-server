@@ -95,6 +95,11 @@ def delete_node_query(
     return input.id
 
 
+    
+    
+
+
+
 @strawberry.input
 class PinNodeQueryInput:
     id: strawberry.ID

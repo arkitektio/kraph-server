@@ -61,6 +61,7 @@ class UpdateStructureCategoryInput:
         description="The ID of the expression to update"
     )
     identifier: str | None = strawberry.field(
+        default=None,
         description="The label/name of the expression"
     )
     label: str | None = strawberry.field(
@@ -143,7 +144,6 @@ def update_structure_category(
     else:
         media_store = None
 
-    item.label = input.label if input.label else item.label
     item.description = input.description if input.description else item.description
     item.purl = input.purl if input.purl else item.purl
     item.color = input.color if input.color else item.color

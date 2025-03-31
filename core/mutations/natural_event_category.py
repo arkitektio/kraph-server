@@ -30,14 +30,32 @@ class NaturalEventCategoryInput(inputs.CategoryInput):
 
 
 @strawberry.input(description="Input for updating an existing expression")
-class UpdateNaturalEventCategoryInput(NaturalEventCategoryInput):
-    label: str = strawberry.field(description="The label/name of the expression")
-    kind: enums.MetricKind = strawberry.field(
-        default=None, description="The type of metric data this expression represents"
+class UpdateNaturalEventCategoryInput(inputs.UpdateCategoryInput):
+    id: strawberry.ID = strawberry.field(
+        description="The ID of the expression to update"
     )
-    structure: scalars.StructureIdentifier = strawberry.field(
-        default=None, description="The structure this expression belongs to"
+    label: str  | None = strawberry.field(default=None, description="The label/name of the expression")
+    source_entity_roles: list[inputs.EntityRoleDefinitionInput] | None= strawberry.field(
+        default=None,
+        description="The source definitions for this expression",
     )
+    target_entity_roles: list[inputs.EntityRoleDefinitionInput]| None = strawberry.field(
+        default=None,
+        description="The target definitions for this expression",
+    )
+    support_definition: inputs.CategoryDefinitionInput | None= strawberry.field(
+        default=None,
+        description="The support definition for this expression",
+    )
+    plate_children: list[inputs.PlateChildInput] | None = strawberry.field(
+        default=None,
+        description="A list of children for the plate",
+    )
+    image: strawberry.ID | None = strawberry.field(
+        default=None,
+        description="An optional ID reference to an associated image",
+    )
+    
 
 
 @strawberry.input(description="Input for deleting an expression")
@@ -111,6 +129,23 @@ def update_natural_event_category(
     item.purl = input.purl if input.purl else item.purl
     item.color = input.color if input.color else item.color
     item.store = media_store if media_store else item.store
+    
+    if input.source_entity_roles:
+        item.source_entity_roles = [
+            strawberry.asdict(v) for v in input.source_entity_roles
+        ]
+        
+    if input.target_entity_roles:
+        item.target_entity_roles = [
+            strawberry.asdict(v) for v in input.target_entity_roles
+        ]
+        
+    if input.plate_children:
+        item.plate_children = [
+            strawberry.asdict(v) for v in input.plate_children
+        ]
+        
+    #TODO: Check if we need to kill some events in order to update the source and target entity roles
 
     item.save()
     return item

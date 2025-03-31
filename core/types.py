@@ -237,8 +237,12 @@ class Graph:
     name: str
     description: str | None
     age_name: str
-    node_queries: List["NodeQuery"]
-    graph_queries: List["GraphQuery"]
+    node_queries: List["NodeQuery"]  = strawberry_django.field(
+        description="The list of metric expressions defined in this ontology"
+    )
+    graph_queries: List["GraphQuery"]  = strawberry_django.field(
+        description="The list of metric expressions defined in this ontology"
+    )
 
     # Nodes
     metric_categories: List["MetricCategory"] = strawberry_django.field(
@@ -255,6 +259,9 @@ class Graph:
     )
     entity_categories: List["EntityCategory"] = strawberry_django.field(
         description="The list of generic expressions defined in this ontology"
+    )
+    reagent_categories: List["ReagentCategory"] = strawberry_django.field(
+        description="The list of reagent expressions defined in this ontology"
     )
 
     # Edges
@@ -342,7 +349,9 @@ class GraphQuery:
     kind: enums.ViewKind
     graph: Graph
     query: str
-    scatter_plots: List["ScatterPlot"]
+    scatter_plots: List["ScatterPlot"]  = strawberry_django.field(
+        description="The list of metric expressions defined in this ontology"
+    )
 
     @strawberry.django.field()
     def pinned(self, info: Info) -> bool:
@@ -408,6 +417,12 @@ class Node:
 
     def __hash__(self):
         return self._value.id
+    
+    @strawberry_django.field(
+        description="The unique identifier of the entity within its graph"
+    )
+    def external_id(self, info: Info) -> str | None:
+        return self._value.external_id
 
     @strawberry_django.field()
     def renders(self, info: Info) -> List[Union["Path", "Pairs", "Table"]]:
@@ -416,9 +431,32 @@ class Node:
         return [
             render_node_view(self, self._value.id)
             for self in models.NodeQuery.objects.filter(
-                node_id=self._value.unique_id
+               graph__age_name=self._value.graph_name,
+               relevant_for_nodes=self._value.category_id
             ).all()
         ]
+        
+    @strawberry.django.field(description="The best view of the node given the current context")
+    def best_view(self, info: Info ) -> Union["Path", "Pairs", "Table"] | None:
+        from core.renderers.node.render import render_node_view
+        
+        best_query = models.NodeQuery.objects.filter(
+            graph__age_name=self._value.graph_name,
+            relevant_for_nodes=self._value.category_id
+        ).first()
+        
+        if not best_query:
+            return None
+        
+        
+        
+        return render_node_view(self, best_query.id)
+        
+        
+        
+        
+        
+        
 
     @strawberry.field(
         description="The unique identifier of the entity within its graph"
@@ -511,7 +549,17 @@ class Structure(Node):
     @strawberry.field(description="The expression that defines this entity's type")
     def object(self, info: Info) -> str:
         return self._value.object
+    
+    
+    @strawberry.field(description="The expression that defines this entity's type")
+    def metrics(self) -> List["Metric"]:
+        return []
 
+    @strawberry.field(
+        description="The unique identifier of the entity within its graph"
+    )
+    def measures(self, info: Info) -> List["Entity"]:
+        return []
 
 @strawberry.type(
     description="A Entity is a recorded data point in a graph. It can measure a property of an entity through a direct measurement edge, that connects the entity to the structure. It of course can relate to other structures through relation edges."
@@ -526,7 +574,21 @@ class Entity(Node):
     )
     async def category(self) -> "EntityCategory":
         return await loaders.entity_category_loader.load(self._value.category_id)
+    
+    
+    @strawberry.field(
+        description="Subjectable to"
+    )
+    def subjectable_to(self) -> List["ProtocolEventCategory"]:
+        # Convert category_id to string since your JSON stores them as strings
+        category_id_str = str(self._value.category_id)
 
+        # Using the contains lookup for JSON fields
+        return models.ProtocolEventCategory.objects.filter(
+            source_entity_roles__contains=[
+                {"category_definition": {"category_filters": [category_id_str]}}
+            ]
+        )
 
 @strawberry.type(
     description="A Entity is a recorded data point in a graph. It can measure a property of an entity through a direct measurement edge, that connects the entity to the structure. It of course can relate to other structures through relation edges."
@@ -541,6 +603,35 @@ class Reagent(Node):
     )
     async def category(self) -> "ReagentCategory":
         return await loaders.reagent_category_loader.load(self._value.category_id)
+    
+    
+    @strawberry.field(
+        description="Subjectable to"
+    )
+    def usable_in(self) -> List["ProtocolEventCategory"]:
+        # Convert category_id to string since your JSON stores them as strings
+        category_id_str = str(self._value.category_id)
+
+        # Using the contains lookup for JSON fields
+        return models.ProtocolEventCategory.objects.filter(
+            source_reagent_roles__contains=[
+                {"category_definition": {"category_filters": [category_id_str]}}
+            ]
+        )
+        
+    @strawberry.field(
+        description="Subjectable to"
+    )
+    def createable_from(self) -> List["ProtocolEventCategory"]:
+        # Convert category_id to string since your JSON stores them as strings
+        category_id_str = str(self._value.category_id)
+
+        # Using the contains lookup for JSON fields
+        return models.ProtocolEventCategory.objects.filter(
+            target_reagent_roles__contains=[
+                {"category_definition": {"category_filters": [category_id_str]}}
+            ]
+        )
 
 
 @strawberry.type(
@@ -753,6 +844,16 @@ class Participant(Edge):
         return self._value.role
 
 
+@strawberry_django.type(
+    models.CategoryTag,
+    filters=filters.TagFilter,
+    pagination=True,
+    description="A tag is a label that can be assigned to entities and relations.",
+)
+class Tag:
+    id: strawberry.ID 
+    value: str
+
 @strawberry.interface()
 class BaseCategory:
     graph: "Graph" = strawberry.field(
@@ -773,6 +874,15 @@ class BaseCategory:
     )
     color: list[float] | None = strawberry.field()
     kind: enums.ExpressionKind = strawberry.field(description="The kind of expression")
+    tags: list["Tag"] = strawberry.field(
+        description="The tags that are associated with the expression"
+    )
+    
+    @strawberry.django.field()
+    def best_query(self, info: Info) -> Optional["GraphQuery"]:
+        return models.GraphQuery.objects.filter(
+            graph=self.graph, relevant_for=self.id
+        ).first()
 
 
 @strawberry.interface()
@@ -796,11 +906,6 @@ class NodeCategory:
         description="The color of the node in the graph"
     )
 
-    @strawberry.field(
-        description="The unique identifier of the expression within its graph"
-    )
-    def instance_kind(self, info: Info) -> enums.InstanceKind:
-        return self.instance_kind if self.instance_kind else enums.InstanceKind.ENTITY
 
     pass
 
@@ -849,7 +954,7 @@ class EntityCategoryDefinition(CategoryDefintion):
             querysets = querysets.exclude(category__id=i)
 
         return querysets.all()
-
+    
 
 @strawberry.type()
 class StructureCategoryDefinition(CategoryDefintion):
@@ -897,6 +1002,8 @@ class ReagentCategoryDefinition(CategoryDefintion):
             querysets = querysets.exclude(category__id=i)
 
         return querysets.all()
+    
+    
 
 
 @strawberry.type()
@@ -929,8 +1036,8 @@ class EntityRoleDefinition:
         return self._value.get("role", "")
 
     @strawberry_django.field()
-    def category_definition(self, info: Info) -> StructureCategoryDefinition:
-        return StructureCategoryDefinition(
+    def category_definition(self, info: Info) -> EntityCategoryDefinition:
+        return EntityCategoryDefinition(
             _value=self._value.get("category_definition", ""), _graph=self._graph
         )
 
@@ -955,6 +1062,15 @@ class EntityCategory(NodeCategory, BaseCategory):
 
     label: str = strawberry.field(description="The label of the expression")
 
+    
+
+    @strawberry.field(
+        description="The unique identifier of the expression within its graph"
+    )
+    def instance_kind(self, info: Info) -> enums.InstanceKind:
+        return self.instance_kind if self.instance_kind else enums.InstanceKind.ENTITY
+
+
     pass
 
 
@@ -967,6 +1083,14 @@ class ReagentCategory(NodeCategory, BaseCategory):
     """
 
     label: str = strawberry.field(description="The label of the expression")
+
+    
+
+    @strawberry.field(
+        description="The unique identifier of the expression within its graph"
+    )
+    def instance_kind(self, info: Info) -> enums.InstanceKind:
+        return self.instance_kind if self.instance_kind else enums.InstanceKind.ENTITY
 
     pass
 
@@ -1016,17 +1140,46 @@ class NaturalEventCategory(NodeCategory, BaseCategory):
     @strawberry_django.field(
         description="The unique identifier of the expression within its graph"
     )
-    def source_definitions(self, info: Info) -> List[EntityCategoryDefinition]:
-        return [EntityCategoryDefinition(_value=i) for i in self.source_definitions]
+    def source_entity_roles(self, info: Info) -> List[EntityRoleDefinition]:
+        return [EntityRoleDefinition(_value=i, _graph=self.graph.id) for i in self.source_entity_roles]
 
     @strawberry_django.field(
         description="The unique identifier of the expression within its graph"
     )
-    def target_definitions(self, info: Info) -> List[EntityCategoryDefinition]:
-        return [EntityCategoryDefinition(_value=i) for i in self.target_definitions]
+    def target_entity_roles(self, info: Info) -> List[EntityRoleDefinition]:
+        return [EntityRoleDefinition(_value=i, _graph=self.graph.id) for i in self.target_entity_roles]
 
     pass
 
+
+
+@strawberry.type
+class VariableDefinition:
+    _variable: strawberry.Private[dict]
+    _graph: strawberry.Private[str]
+    
+    @strawberry.django.field()
+    def value_kind(self) -> enums.MetricKind:
+        return self._variable.get("value_kind", None)
+    
+    
+    @strawberry.django.field()
+    def param(self) -> str:
+        return self._variable.get("param", None)
+    
+    @strawberry.django.field()
+    def optional(self) -> bool:
+        optional = self._variable.get("optional", None)
+        return optional if optional is not None else False
+    
+    @strawberry.django.field()
+    def needs_quantity(self) -> bool:
+        return self._variable.get("needs_quantity", False)
+
+
+    @strawberry.django.field()
+    def default(self) -> scalars.Any:
+        return self._variable.get("default", None)
 
 @strawberry_django.type(
     models.ProtocolEventCategory,
@@ -1044,28 +1197,32 @@ class ProtocolEventCategory(NodeCategory, BaseCategory):
     @strawberry_django.field(
         description="The unique identifier of the expression within its graph"
     )
-    def source_roles(self, info: Info) -> List[EntityRoleDefinition]:
-        return [EntityRoleDefinition(_value=i) for i in self.source_definitions]
+    def source_entity_roles(self, info: Info) -> List[EntityRoleDefinition]:
+        return [EntityRoleDefinition(_value=i, _graph=self.graph.id) for i in self.source_entity_roles]
+
+    @strawberry_django.field(
+        description="The unique identifier of the expression within its graph"
+    )
+    def target_entity_roles(self, info: Info) -> List[EntityRoleDefinition]:
+        return [EntityRoleDefinition(_value=i, _graph=self.graph.id) for i in self.target_entity_roles]
 
     @strawberry_django.field(
         description="The unique identifier of the expression within its graph"
     )
     def source_reagent_roles(self, info: Info) -> List[ReagentRoleDefinition]:
-        return [ReagentRoleDefinition(_value=i) for i in self.source_definitions]
+        return [ReagentRoleDefinition(_value=i, _graph=self.graph.id) for i in self.source_reagent_roles]
 
     @strawberry_django.field(
         description="The unique identifier of the expression within its graph"
     )
-    def target_roles(self, info: Info) -> List[EntityRoleDefinition]:
-        return [EntityRoleDefinition(_value=i) for i in self.target_definitions]
+    def target_reagent_roles(self, info: Info) -> List[ReagentRoleDefinition]:
+        return [ReagentRoleDefinition(_value=i, _graph=self.graph.id) for i in self.target_reagent_roles]
+    
+    
+    @strawberry_django.field()
+    def variable_definitions(self, info: Info) -> List[VariableDefinition]:
+        return [VariableDefinition(_variable=i, _graph=self.graph.id) for i in self.variable_definitions]
 
-    @strawberry_django.field(
-        description="The unique identifier of the expression within its graph"
-    )
-    def target_reagent_definitions(self, info: Info) -> List[ReagentRoleDefinition]:
-        return [ReagentRoleDefinition(_value=i) for i in self.source_definitions]
-
-    pass
 
 
 @strawberry_django.type(

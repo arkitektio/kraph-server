@@ -394,6 +394,23 @@ class GraphFilter(IDFilterMixin, SearchFilterMixin):
         return queryset.filter(pinned_by=info.context.request.user)
 
 
+@strawberry.django.filter(models.CategoryTag)
+class TagFilter(IDFilterMixin, SearchFilterMixin):
+    id: auto
+    name: str | None = None
+    values: list[str] | None = None
+    
+    def filter_name(self, queryset, info):
+        if self.name is None:
+            return queryset
+        return queryset.filter(name__contains=self.name)
+    
+    def filter_values(self, queryset, info):
+        if self.values is None:
+            return queryset
+        return queryset.filter(value__in=self.values)
+
+
 @strawberry.django.filter(models.GraphQuery)
 class GraphQueryFilter(IDFilterMixin, SearchFilterMixin):
     id: auto
@@ -415,6 +432,31 @@ class EntityFilter:
         default=None, description="Filter by graph ID"
     )
     kind: strawberry.ID | None = strawberry.field(
+        default=None, description="Filter by entity kind"
+    )
+    ids: list[strawberry.ID] | None = strawberry.field(
+        default=None, description="Filter by list of entity IDs"
+    )
+    linked_expression: strawberry.ID | None = strawberry.field(
+        default=None, description="Filter by linked expression ID"
+    )
+    identifier: str | None = strawberry.field(
+        default=None, description="Filter by structure identifier"
+    )
+    object: strawberry.ID | None = strawberry.field(
+        default=None, description="Filter by associated object ID"
+    )
+    search: str | None = strawberry.field(
+        default=None, description="Search entities by text"
+    )
+    
+    
+@strawberry.input(description="Filter for entities in the graph")
+class NodeFilter:
+    graph: strawberry.ID | None = strawberry.field(
+        default=None, description="Filter by graph ID"
+    )
+    category: strawberry.ID | None = strawberry.field(
         default=None, description="Filter by entity kind"
     )
     ids: list[strawberry.ID] | None = strawberry.field(

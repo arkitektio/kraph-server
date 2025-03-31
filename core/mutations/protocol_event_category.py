@@ -39,16 +39,56 @@ class ProtocolEventCategoryInput(inputs.CategoryInput):
             description="The target definitions for this expression",
         )
     )
-    variable_definitions: list[inputs.VariableDefinition] | None = strawberry.field(
+    variable_definitions: list[inputs.VariableDefinitionInput] | None = strawberry.field(
         default=None,
         description="The variable definitions for this expression",
     )
 
 
 @strawberry.input(description="Input for updating an existing expression")
-class UpdateProtocolEventCategoryInput(ProtocolEventCategoryInput):
+class UpdateProtocolEventCategoryInput(inputs.UpdateCategoryInput):
     id: strawberry.ID = strawberry.field(
         description="The ID of the expression to update"
+    )
+    label: str | None = strawberry.field(
+        default=None,
+        description="The label/name of the expression",
+    )
+    plate_children: list[inputs.PlateChildInput] | None = strawberry.field(
+        default=None,
+        description="A list of children for the plate",
+    )
+    source_entity_roles: list[inputs.EntityRoleDefinitionInput] | None = (
+        strawberry.field(
+            default=None,
+            description="The source definitions for this expression",
+        )
+    )
+    source_reagent_roles: list[inputs.ReagentRoleDefinitionInput] | None = (
+        strawberry.field(
+            default=None,
+            description="The target definitions for this expression",
+        )
+    )
+    target_entity_roles: list[inputs.EntityRoleDefinitionInput] | None = (
+        strawberry.field(
+            default=None,
+            description="The target definitions for this expression",
+        )
+    )
+    target_reagent_roles: list[inputs.ReagentRoleDefinitionInput] | None = (
+        strawberry.field(
+            default=None,
+            description="The target definitions for this expression",
+        )
+    )
+    variable_definitions: list[inputs.VariableDefinitionInput] | None = strawberry.field(
+        default=None,
+        description="The variable definitions for this expression",
+    )
+    image: strawberry.ID | None = strawberry.field(
+        default=None,
+        description="An optional ID reference to an associated image",
     )
 
 
@@ -137,6 +177,33 @@ def update_protocol_event_category(
     item.purl = input.purl if input.purl else item.purl
     item.color = input.color if input.color else item.color
     item.store = media_store if media_store else item.store
+    
+    if input.source_entity_roles:
+        item.source_entity_roles = [
+            strawberry.asdict(v) for v in input.source_entity_roles
+        ]
+        
+    if input.target_entity_roles:
+        item.target_entity_roles = [
+            strawberry.asdict(v) for v in input.target_entity_roles
+        ]
+        
+    if input.source_reagent_roles:
+        item.source_reagent_roles = [
+            strawberry.asdict(v) for v in input.source_reagent_roles
+        ]
+        
+    if input.target_reagent_roles:
+        item.target_reagent_roles = [
+            strawberry.asdict(v) for v in input.target_reagent_roles
+        ]
+        
+    if input.plate_children:
+        item.plate_children = [
+            strawberry.asdict(v) for v in input.plate_children
+        ]
+        
+    #TODO: Check if we need to kill some events in order to update the source and target entity roles
 
     item.save()
     return item

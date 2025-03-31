@@ -135,6 +135,10 @@ class RetrievedEntity:
     @property
     def value(self):
         return self.properties.get("__value", None)
+    
+    @property
+    def external_id(self):
+        return self.properties.get("__external_id", None)
 
     @property
     def category_type(
@@ -554,7 +558,7 @@ def create_age_entity(
             f"""
             SELECT * 
             FROM cypher(%s, $$
-                CREATE (n:{category.get_age_vertex_name()} {{__type: "REAGENT", __category_id: %s,  __category_type: %s, __label: %s, __created_at: %s, __external_id: %s}})
+                CREATE (n:{category.get_age_vertex_name()} {{__type: "ENTITY", __category_id: %s,  __category_type: %s, __label: %s, __created_at: %s, __external_id: %s}})
                 RETURN n
             $$) as (n agtype);
             """,
@@ -1166,6 +1170,27 @@ def get_age_structure(graph_name, structure_identifier) -> RetrievedEntity:
         if result:
             entity = result[0]
             return vertex_ag_to_retrieved_entity(graph_name, entity)
+        raise ValueError("No entity created or returned by the query.")
+    
+    
+def get_age_structure_by_object(structure: "models.StructureCategory", object: str) -> RetrievedEntity:
+
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (n)
+                WHERE n.__object = %s
+                RETURN n
+            $$) as (n agtype);
+            """,
+            (structure.graph.age_name, object),
+        )
+        result = cursor.fetchone()
+        if result:
+            entity = result[0]
+            return vertex_ag_to_retrieved_entity(structure.graph.age_name, entity)
         raise ValueError("No entity created or returned by the query.")
 
 

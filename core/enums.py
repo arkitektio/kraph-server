@@ -115,7 +115,7 @@ class ParticipantKind(str, Enum):
 
 
 @strawberry.enum
-class OntologyNodeKind(str, Enum):
+class NodeCategoryKind(str, Enum):
     """Describes the kind of ontology node"""
 
     ENTITY = "ENTITY"
@@ -123,10 +123,10 @@ class OntologyNodeKind(str, Enum):
     METRIC = "METRIC"
     NATURAL_EVENT = "NATURAL_EVENT"
     PROTOCOL_EVENT = "PROTOCOL_EVENT"
-
+    
 
 @strawberry.enum
-class OntologyEdgeKind(str, Enum):
+class EdgeCategoryKind(str, Enum):
     """Describes the kind of ontology edge"""
 
     RELATION = "RELATION"

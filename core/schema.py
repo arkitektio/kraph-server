@@ -121,15 +121,6 @@ class Query:
         resolver=queries.edges,
         description="List of all relationships between entities",
     )
-    
-    tags: list[types.Tag] = strawberry_django.field(
-        description="List of all tags in the system"
-    )
-    
-    render_node_query = strawberry_django.field(
-        resolver=queries.render_node_query,
-        description="Render a node query",
-    )
 
     @strawberry.django.field(permission_classes=[IsAuthenticated])
     def scatter_plot(self, info: Info, id: ID) -> types.ScatterPlot:
@@ -225,19 +216,6 @@ class Query:
         return types.entity_to_node_subtype(
             age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id))
         )
-        
-    @strawberry.django.field(permission_classes=[])
-    def structure_by_identifier(
-        self,
-        info: Info,
-        graph: strawberry.ID,
-        identifier: scalars.StructureIdentifier,
-        object: strawberry.ID,
-    ) -> types.Structure:
-        
-        structure = models.StructureCategory.objects.get_or_create(identifier=identifier, graph_id=graph)
-
-        return age.get_age_structure_by_object(structure, object)
 
     @strawberry.django.field(permission_classes=[])
     def structures(

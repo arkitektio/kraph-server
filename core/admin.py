@@ -13,3 +13,4 @@ class HistoryAdmin(SimpleHistoryAdmin):
 
 admin.site.register(models.Graph)
 admin.site.register(models.S3Store)
+admin.site.register(models.ProtocolEventCategory)
