@@ -31,8 +31,9 @@ class NodeQueryInput:
     test_against: strawberry.ID | None = strawberry.field(
         default=None, description="The node to test against"
     )
-    allowed_entities: list[strawberry.ID] | None = strawberry.field(
-        default=None, description="The allowed entitie classes for this query"
+    relevant_for: list[strawberry.ID] | None = strawberry.field(
+        default=None,
+        description="The list of categories this expression is relevant for",
     )
 
 
@@ -82,6 +83,11 @@ def create_node_query(
     except Exception as e:
         node_query.delete()
         raise e
+    
+    if input.relevant_for:
+        for category in input.relevant_for:
+            category_obj = models.Category.objects.get(id=category)
+            node_query.relevant_for_nodes.add(category_obj)
 
     return node_query
 

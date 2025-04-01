@@ -20,11 +20,11 @@ from .pairs import pairs
 
 def render_node_view(node_query: models.NodeQuery, node_id: str):
 
-    if node_query.query == enums.ViewKind.PATH:
+    if node_query.kind == enums.ViewKind.PATH:
         return path(node_query, node_id)
-    if node_query.query == enums.ViewKind.TABLE:
+    if node_query.kind == enums.ViewKind.TABLE:
         return table(node_query, node_id)
-    if node_query.query == enums.ViewKind.PAIRS:
+    if node_query.kind == enums.ViewKind.PAIRS:
         return pairs(node_query, node_id)
 
     raise ValueError("Unknown view kind")

@@ -56,6 +56,14 @@ class VariableDefinitionInput:
         default=None,
         description="The default value for this port",
     )
+    description: str | None = strawberry.field(
+        default=None,
+        description="A detailed description of the role",
+    )
+    label: str | None = strawberry.field(
+        default=None,
+        description="The label/name of the role",
+    )
 
 
 @strawberry.input(description="Input for creating a new expression")
@@ -96,6 +104,18 @@ class ReagentRoleDefinitionInput:
     category_definition: CategoryDefinitionInput = strawberry.field(
         description="The category definition for this expression",
     )
+    description: str | None = strawberry.field(
+        default=None,
+        description="A detailed description of the role",
+    )
+    label: str | None = strawberry.field(
+        default=None,
+        description="The label/name of the role",
+    )
+    allow_multiple: bool | None = strawberry.field(
+        default=False,
+        description="Whether this port allows multiple entities or not",
+    )
 
 
 @strawberry.input(description="Input for creating a new expression")
@@ -111,6 +131,18 @@ class EntityRoleDefinitionInput:
     )
     category_definition: CategoryDefinitionInput = strawberry.field(
         description="The category definition for this expression",
+    )
+    description: str | None = strawberry.field(
+        default=None,
+        description="A detailed description of the role",
+    )
+    label: str | None = strawberry.field(
+        default=None,
+        description="The label/name of the role",
+    )
+    allow_multiple: bool | None = strawberry.field(
+        default=False,
+        description="Whether this port allows multiple entities or not",
     )
 
 
@@ -178,6 +210,9 @@ class CategoryInput:
     tags: list[str] | None = strawberry.field(
         default=None, description="A list of tags associated with this expression"
     )
+    pin: bool | None = strawberry.field(
+        default=None, description="Whether this expression should be pinned or not"
+    )
 
 
 @strawberry.input()
@@ -196,4 +231,7 @@ class UpdateCategoryInput:
     )
     tags: list[str] | None = strawberry.field(
         default=None, description="A list of tags associated with this expression"
+    )
+    pin: bool | None = strawberry.field(
+        default=None, description="Whether this expression should be pinned or not"
     )

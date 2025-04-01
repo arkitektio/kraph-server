@@ -266,7 +266,10 @@ class Query:
         filters: filters.EntityFilter | None = None,
         pagination: pagination.GraphPaginationInput | None = None,
     ) -> list[types.Entity]:
-        return []
+        return [types.entity_to_node_subtype(i) for i in age.get_entities(
+            filters=filters,
+            pagination=pagination,
+        )]
 
     @strawberry.django.field(permission_classes=[])
     def reagent(self, info: Info, id: ID) -> types.Reagent:
@@ -282,7 +285,10 @@ class Query:
         filters: filters.ReagentFilter | None = None,
         pagination: pagination.GraphPaginationInput | None = None,
     ) -> list[types.Reagent]:
-        return []
+        return [types.entity_to_node_subtype(i) for i in age.get_reagents(
+            filters=filters,
+            pagination=pagination,
+        )]
 
     @strawberry.django.field(permission_classes=[])
     def protocol_event(self, info: Info, id: ID) -> types.ProtocolEvent:

@@ -76,6 +76,15 @@ def create_natural_event_category(
         )
     else:
         media_store = None
+        
+        
+    
+    source_entity_role_names = map(lambda v: v.role, input.source_entity_roles) if input.source_entity_roles else []
+    target_entity_role_names= map(lambda v: v.role, input.target_entity_roles) if input.target_entity_roles else []
+    
+    
+    all_roles = source_entity_role_names + target_entity_role_names 
+    assert len(all_roles) == len(set(all_roles)), "Roles must be unique" 
 
     protocol_event, created = models.NaturalEventCategory.objects.update_or_create(
         graph_id=input.graph,
@@ -93,6 +102,8 @@ def create_natural_event_category(
             ],
         ),
     )
+    
+    
 
     if input.tags:
         protocol_event.tags.clear()
@@ -129,6 +140,14 @@ def update_natural_event_category(
     item.purl = input.purl if input.purl else item.purl
     item.color = input.color if input.color else item.color
     item.store = media_store if media_store else item.store
+    
+    source_entity_role_names = map(lambda v: v.role, input.source_entity_roles) if input.source_entity_roles else []
+    target_entity_role_names= map(lambda v: v.role, input.target_entity_roles) if input.target_entity_roles else []
+    
+    
+    all_roles = source_entity_role_names + target_entity_role_names 
+    assert len(all_roles) == len(set(all_roles)), "Roles must be unique" 
+    
     
     if input.source_entity_roles:
         item.source_entity_roles = [

@@ -9,7 +9,7 @@ import typing
 from pydantic import BaseModel, Field
 
 if typing.TYPE_CHECKING:
-    from core import models
+    from core import models, filters, pagination
 
 
 @dataclass
@@ -1150,6 +1150,246 @@ def get_age_entity(graph_name, entity_id) -> RetrievedEntity:
             entity = result[0]
             return vertex_ag_to_retrieved_entity(graph_name, entity)
         raise ValueError("No entity created or returned by the query.")
+    
+    
+def get_entities(filters: typing.Optional["filters.EntityFilter"], pagination: typing.Optional["pagination.GraphPaginationInput"] = None) -> RetrievedEntity:
+    from core import models, filters as f, pagination as p
+    
+    if not filters:
+        filters = f.EntityFilter()
+    
+    if not pagination:
+        pagination = p.GraphPaginationInput()
+    
+    base_qs = models.EntityCategory.objects
+    
+    match_statements = []
+    
+    print(filters)
+    
+    if filters.graph:
+        base_qs = base_qs.filter(
+            graph_id=filters.graph
+        )
+    
+    if filters.tags:
+        base_qs = base_qs.filter(
+            tags__value__in=filters.tags
+        )
+    
+    if filters.categories:
+        base_qs = base_qs.filter(
+            id__in=filters.categories
+        )
+        
+    categories = base_qs.all()
+    if categories.count() == 0:
+        raise ValueError(f"No categories found for {filters.categories} and {filters.tags}")
+    
+    if not filters.graph:
+        graph_name = categories[0].graph.age_name
+        for category in categories:
+            if category.graph.age_name != graph_name:
+                raise ValueError("All categories must belong to the same graph.")
+    else:
+        graph_name = models.Graph.objects.get(id=filters.graph).age_name
+        
+    
+    query_params = [
+        graph_name,
+    ]
+    
+    match_statements.append(
+        f"n.__category_id IN {[cat.id for cat in categories]}"
+    )
+    
+    
+    if filters.external_ids:
+        match_statements.append(
+            f"n.__external_id IN [{', '.join(map(str, filters.external_ids))}]"
+        )
+        
+    if filters.search:
+        match_statements.append(
+            f"n.__label ILIKE '%{filters.search}%'"
+        )
+        
+    if filters.created_after:
+        match_statements.append(
+            f"n.__created_at > '{filters.created_after.isoformat()}'"
+        )
+        
+    if filters.created_before:
+        match_statements.append(
+            f"n.__created_at < '{filters.created_before.isoformat()}'"
+        )
+        
+    if filters.ids:
+        graph_names = [to_graph_id(i) for i in filters.ids]
+        assert set(graph_names) == {graph_name}, "All ids must belong to the same graph."
+        
+        
+        match_statements.append(
+            f"id(n) IN {[int(to_entity_id(i)) for i in filters.ids]}"
+        )
+        
+    if filters.active:
+        match_statements.append(
+            f"n.__active = true"
+        )
+        
+    
+
+    FINAL_MATCH = " AND ".join(match_statements)
+    print("Final match", FINAL_MATCH)
+    print("Graphname", graph_name)
+        
+    final_query = f"""
+            SELECT *
+            FROM cypher(%s, $$
+                MATCH (n) WHERE {FINAL_MATCH}
+                RETURN n
+            $$) as (n agtype);
+    """
+    
+    
+    print("Final query", final_query, query_params)
+    
+
+    with graph_cursor() as cursor:
+        cursor.execute(
+            final_query,
+            query_params,
+        )
+        result = cursor.fetchall()
+        print("Retrieved this result", result)
+        if result:
+            return [
+                vertex_ag_to_retrieved_entity(graph_name, metric[0]) for metric in result
+            ]
+        else:
+            return []
+
+
+def get_reagents(filters: typing.Optional["filters.ReagentFilter"], pagination: typing.Optional["pagination.GraphPaginationInput"] = None) -> RetrievedEntity:
+    from core import models, filters as f, pagination as p
+    
+    if not filters:
+        filters = f.ReagentFilter()
+    
+    if not pagination:
+        pagination = p.GraphPaginationInput()
+    
+    base_qs = models.ReagentCategory.objects
+    
+    match_statements = []
+    
+    print(filters)
+    
+    if filters.graph:
+        base_qs = base_qs.filter(
+            graph_id=filters.graph
+        )
+    
+    if filters.tags:
+        base_qs = base_qs.filter(
+            tags__value__in=filters.tags
+        )
+    
+    if filters.categories:
+        base_qs = base_qs.filter(
+            id__in=filters.categories
+        )
+        
+    categories = base_qs.all()
+    
+    if categories.count() == 0:
+        raise ValueError(f"No categories found for {filters.categories} and {filters.tags}")
+    
+    if not filters.graph:
+        graph_name = categories[0].graph.age_name
+        for category in categories:
+            if category.graph.age_name != graph_name:
+                raise ValueError("All categories must belong to the same graph.")
+    else:
+        graph_name = models.Graph.objects.get(id=filters.graph).age_name
+        
+    
+    query_params = [
+        graph_name,
+    ]
+    
+    match_statements.append(
+        f"n.__category_id IN {[cat.id for cat in categories]}"
+    )
+    
+    
+    if filters.external_ids:
+        match_statements.append(
+            f"n.__external_id IN [{', '.join(map(str, filters.external_ids))}]"
+        )
+        
+    if filters.search:
+        match_statements.append(
+            f"n.__label ILIKE '%{filters.search}%'"
+        )
+        
+    if filters.created_after:
+        match_statements.append(
+            f"n.__created_at > '{filters.created_after.isoformat()}'"
+        )
+        
+    if filters.created_before:
+        match_statements.append(
+            f"n.__created_at < '{filters.created_before.isoformat()}'"
+        )
+        
+    if filters.ids:
+        graph_names = [to_graph_id(i) for i in filters.ids]
+        assert set(graph_names) == {graph_name}, "All ids must belong to the same graph."
+        
+        
+        match_statements.append(
+            f"id(n) IN {[int(to_entity_id(i)) for i in filters.ids]}"
+        )
+        
+    if filters.active:
+        match_statements.append(
+            f"n.__active = true"
+        )
+        
+    
+
+    FINAL_MATCH = " AND ".join(match_statements)
+    print("Final match", FINAL_MATCH)
+    print("Graphname", graph_name)
+        
+    final_query = f"""
+            SELECT *
+            FROM cypher(%s, $$
+                MATCH (n) WHERE {FINAL_MATCH}
+                RETURN n
+            $$) as (n agtype);
+    """
+    
+    
+    print("Final query", final_query, query_params)
+    
+
+    with graph_cursor() as cursor:
+        cursor.execute(
+            final_query,
+            query_params,
+        )
+        result = cursor.fetchall()
+        print("Retrieved this result", result)
+        if result:
+            return [
+                vertex_ag_to_retrieved_entity(graph_name, metric[0]) for metric in result
+            ]
+        else:
+            return []
+
 
 
 def get_age_structure(graph_name, structure_identifier) -> RetrievedEntity:

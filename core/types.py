@@ -19,7 +19,7 @@ from typing import Union
 from strawberry import LazyType
 from core import age, pagination as p, filters as f
 from strawberry_django.pagination import OffsetPaginationInput
-
+from django.db.models import Q
 
 @strawberry_django.type(AppModel, description="An app.")
 class App:
@@ -425,12 +425,12 @@ class Node:
         return self._value.external_id
 
     @strawberry_django.field()
-    def renders(self, info: Info) -> List[Union["Path", "Pairs", "Table"]]:
+    def queries(self, info: Info) -> List["NodeQuery"]:
         from core.renderers.node.render import render_node_view
 
         return [
-            render_node_view(self, self._value.id)
-            for self in models.NodeQuery.objects.filter(
+            q
+            for q in models.NodeQuery.objects.filter(
                graph__age_name=self._value.graph_name,
                relevant_for_nodes=self._value.category_id
             ).all()
@@ -439,6 +439,7 @@ class Node:
     @strawberry.django.field(description="The best view of the node given the current context")
     def best_view(self, info: Info ) -> Union["Path", "Pairs", "Table"] | None:
         from core.renderers.node.render import render_node_view
+
         
         best_query = models.NodeQuery.objects.filter(
             graph__age_name=self._value.graph_name,
@@ -450,7 +451,7 @@ class Node:
         
         
         
-        return render_node_view(self, best_query.id)
+        return render_node_view(best_query, self._value.unique_id)
         
         
         
@@ -561,6 +562,26 @@ class Structure(Node):
     def measures(self, info: Info) -> List["Entity"]:
         return []
 
+
+
+@strawberry.type(description="Playable Role in Protocol Event")
+class PlayableEntityRoleInProtocolEvent:
+    _role: strawberry.Private[str]
+    _category: strawberry.Private[str]
+    
+    @strawberry.field(description="The unique identifier of the entity within its graph")
+    def role(self, info: Info) -> str:
+        return self._role
+    
+    
+    @strawberry.field(description="The unique identifier of the entity within its graph")
+    async def category(self, info: Info) -> "ProtocolEventCategory":
+        return await loaders.protocol_event_category_loader.load(self._category)
+    
+
+
+
+
 @strawberry.type(
     description="A Entity is a recorded data point in a graph. It can measure a property of an entity through a direct measurement edge, that connects the entity to the structure. It of course can relate to other structures through relation edges."
 )
@@ -576,19 +597,110 @@ class Entity(Node):
         return await loaders.entity_category_loader.load(self._value.category_id)
     
     
-    @strawberry.field(
+    @strawberry_django.field(
         description="Subjectable to"
     )
-    def subjectable_to(self) -> List["ProtocolEventCategory"]:
+    def subjectable_to(self) -> List["PlayableEntityRoleInProtocolEvent"]:
         # Convert category_id to string since your JSON stores them as strings
+       
         category_id_str = str(self._value.category_id)
+        entity_cat = models.EntityCategory.objects.get(id=self._value.category_id)
 
         # Using the contains lookup for JSON fields
-        return models.ProtocolEventCategory.objects.filter(
-            source_entity_roles__contains=[
-                {"category_definition": {"category_filters": [category_id_str]}}
-            ]
+        tags = set([str(tag.value) for tag in entity_cat.tags.all()][:1])
+        q = Q()
+        for tag in tags:
+            q |= Q(source_entity_roles__contains=[
+            {"category_definition": {"tag_filters": [tag]}}
+            ])
+
+        protocol_events =  models.ProtocolEventCategory.objects.filter(
+            Q(source_entity_roles__contains=[
+            {"category_definition": {"category_filters": [str(entity_cat.id)]}}
+            ]) |
+            q
         )
+        
+        playable_roles = []      
+           
+        for event in protocol_events:
+            for source in event.source_entity_roles:
+                
+                category_filters = source.get("category_definition", {}).get("category_filters", None) 
+                tag_filters = source.get("category_definition", {}).get("tag_filters", None)
+                
+                if category_filters:
+                    if category_id_str in category_filters:
+                        playable_roles.append(PlayableEntityRoleInProtocolEvent(
+                            _role=source["role"],
+                            _category=event.id
+                        ))
+                        continue
+                if tag_filters:
+                    if tags.intersection(
+                        set(tag_filters)
+                    ):
+                        playable_roles.append(PlayableEntityRoleInProtocolEvent(
+                            _role=source["role"],
+                            _category=event.id
+                        ))
+                        continue
+                
+        return playable_roles
+    
+    @strawberry_django.field(
+        description="Subjectable to"
+    )
+    def targetable_by(self) -> List["PlayableEntityRoleInProtocolEvent"]:
+        # Convert category_id to string since your JSON stores them as strings
+       
+        category_id_str = str(self._value.category_id)
+        entity_cat = models.EntityCategory.objects.get(id=self._value.category_id)
+
+        # Using the contains lookup for JSON fields
+        tags = set([str(tag.value) for tag in entity_cat.tags.all()][:1])
+        q = Q()
+        for tag in tags:
+            q |= Q(target_entity_roles__contains=[
+            {"category_definition": {"tag_filters": [tag]}}
+            ])
+
+        protocol_events =  models.ProtocolEventCategory.objects.filter(
+            Q(target_entity_roles__contains=[
+            {"category_definition": {"category_filters": [str(entity_cat.id)]}}
+            ]) |
+            q
+        )
+        
+        playable_roles = []      
+           
+        for event in protocol_events:
+            for target in event.target_entity_roles:
+                
+                category_filters = target.get("category_definition", {}).get("category_filters", None) 
+                tag_filters = target.get("category_definition", {}).get("tag_filters", None)
+                
+                if category_filters:
+                    if category_id_str in category_filters:
+                        playable_roles.append(PlayableEntityRoleInProtocolEvent(
+                            _role=target["role"],
+                            _category=event.id
+                        ))
+                        continue
+                if tag_filters:
+                    if tags.intersection(
+                        set(tag_filters)
+                    ):
+                        playable_roles.append(PlayableEntityRoleInProtocolEvent(
+                            _role=target["role"],
+                            _category=event.id
+                        ))
+                        continue
+                
+        return playable_roles
+        
+        
+        
 
 @strawberry.type(
     description="A Entity is a recorded data point in a graph. It can measure a property of an entity through a direct measurement edge, that connects the entity to the structure. It of course can relate to other structures through relation edges."
@@ -877,12 +989,19 @@ class BaseCategory:
     tags: list["Tag"] = strawberry.field(
         description="The tags that are associated with the expression"
     )
+    purl: str | None = strawberry.field(
+        description="The unique identifier of the expression within its graph"
+    )
     
     @strawberry.django.field()
     def best_query(self, info: Info) -> Optional["GraphQuery"]:
         return models.GraphQuery.objects.filter(
             graph=self.graph, relevant_for=self.id
         ).first()
+        
+    @strawberry.django.field()
+    def pinned(self, info: Info) -> bool:
+        return info.context.request.user in self.pinned_by.all()
 
 
 @strawberry.interface()
@@ -1017,13 +1136,45 @@ class ReagentRoleDefinition:
 
     @strawberry_django.field()
     def category_definition(self, info: Info) -> ReagentCategoryDefinition:
+        cat_def = self._value.get("category_definition", None)
+        if not cat_def:
+            raise ValueError("No category definition found. Integrity error")
+        
+        
         return ReagentCategoryDefinition(
-            _value=self._value.get("category_definition", ""), _graph=self._graph
+            _value=cat_def, _graph=self._graph
         )
 
     @strawberry_django.field()
-    def needs_quantity(self, info: Info) -> bool:
-        return self._value.get("needs_quantity", False)
+    def allow_multiple(self, info: Info) -> bool:
+        return self._value.get("allow_multiple", False)
+    
+    @strawberry_django.field()
+    def description(self, info: Info) -> str | None:
+        return self._value.get("description", None)
+    
+    @strawberry_django.field()
+    def label(self, info: Info) -> str | None:
+        return self._value.get("label", None)
+    
+    
+    @strawberry_django.field()
+    def current_default(self, info: Info) -> Optional["Reagent"]:
+        cat_def = self._value.get("category_definition", None)
+        if not cat_def:
+            raise ValueError("No category definition found. Integrity error")
+        
+        default_use_active = cat_def.get("default_use_active")
+        if not default_use_active:
+            return None
+        
+        active = age.get_active_reagent_for_reagent_category(
+            models.ReagentCategory.objects.get(id=default_use_active),
+        )
+        
+        return Reagent(_value=active)
+        
+        
 
 
 @strawberry.type()
@@ -1044,6 +1195,38 @@ class EntityRoleDefinition:
     @strawberry_django.field()
     def needs_quantity(self, info: Info) -> bool:
         return self._value.get("needs_quantity", False)
+    
+    @strawberry_django.field()
+    def allow_multiple(self, info: Info) -> bool:
+        return self._value.get("allow_multiple", False)
+    
+    @strawberry_django.field()
+    def description(self, info: Info) -> str | None:
+        return self._value.get("description", None)
+    
+    @strawberry_django.field()
+    def label(self, info: Info) -> str | None:
+        return self._value.get("label", None)
+    
+    @strawberry_django.field()
+    def current_default(self, info: Info) -> Optional["Entity"]:
+        cat_def = self._value.get("category_definition", None)
+        if not cat_def:
+            raise ValueError("No category definition found. Integrity error")
+        
+        default_use_active = cat_def.get("default_use_active")
+        if not default_use_active:
+            return None
+        
+        active = age.get_active_reagent_for_reagent_category(
+            models.ReagentCategory.objects.get(id=default_use_active),
+        )
+        
+        return Reagent(_value=active)
+        
+        
+    
+    
 
 
 @strawberry.interface()
@@ -1168,6 +1351,14 @@ class VariableDefinition:
         return self._variable.get("param", None)
     
     @strawberry.django.field()
+    def description(self) -> str | None:
+        return self._variable.get("description", None)
+    
+    @strawberry.django.field()
+    def label(self) -> str | None:
+        return self._variable.get("param", None)
+    
+    @strawberry.django.field()
     def optional(self) -> bool:
         optional = self._variable.get("optional", None)
         return optional if optional is not None else False
@@ -1178,7 +1369,7 @@ class VariableDefinition:
 
 
     @strawberry.django.field()
-    def default(self) -> scalars.Any:
+    def default(self) -> scalars.Any | None:
         return self._variable.get("default", None)
 
 @strawberry_django.type(

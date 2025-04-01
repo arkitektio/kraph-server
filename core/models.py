@@ -240,6 +240,11 @@ class Category(models.Model):
         default=random_color,
         null=True,
     )
+    pinned_by = models.ManyToManyField(
+        get_user_model(),
+        related_name="pinned_categories",
+        help_text="The users that have this query active",
+    )
 
     class Meta:
         default_related_name = "categories"

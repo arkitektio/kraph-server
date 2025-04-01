@@ -14,7 +14,7 @@ class ReagentCategoryInput(inputs.CategoryInput):
 
 
 @strawberry.input(description="Input for updating an existing generic category")
-class UpdateReagentCategoryInput:
+class UpdateReagentCategoryInput(inputs.UpdateCategoryInput):
     id: strawberry.ID = strawberry.field(
         description="The ID of the expression to update"
     )
@@ -78,6 +78,12 @@ def create_reagent_category(
         for tag in input.tags:
             tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag)
             vocab.tags.add(tag_obj)
+            
+    if input.pin is not None:
+        if input.pin:
+            vocab.pinned_by.add(info.context.user)
+        else:
+            vocab.pinned_by.remove(info.context.user)
 
     return vocab
 
@@ -105,6 +111,18 @@ def update_reagent_category(
     item.color = input.color if input.color else item.color
     item.store = media_store if media_store else item.store
 
+    
+    if input.tags:
+        item.tags.clear()
+        for tag in input.tags:
+            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag)
+            item.tags.add(tag_obj)
+            
+    if input.pin is not None:
+        if input.pin:
+            item.pinned_by.add(info.context.user)
+        else:
+            item.pinned_by.remove(info.context.user)
     item.save()
     return item
 

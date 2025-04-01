@@ -1,3 +1,4 @@
+import datetime
 import strawberry
 from core import models, enums
 from koherent.strawberry.filters import ProvenanceFilter
@@ -39,6 +40,7 @@ class EntityCategoryFilter:
     graph: strawberry.ID | None
     ontology: strawberry.ID | None
     pinned: bool | None
+    tags: list[str] | None
 
     def filter_pinned(self, queryset, info):
         if self.pinned is None:
@@ -64,6 +66,12 @@ class EntityCategoryFilter:
         if self.graph is None:
             return queryset
         return queryset.filter(graph_id=self.graph)
+    
+    def filter_tags(self, queryset, info):
+        if self.tags is None:
+            return queryset
+        return queryset.filter(tags__value__in=self.tags)
+    
 
 
 @strawberry.input
@@ -428,27 +436,65 @@ class NodeQueryFilter(IDFilterMixin, SearchFilterMixin):
 
 @strawberry.input(description="Filter for entities in the graph")
 class EntityFilter:
-    graph: strawberry.ID | None = strawberry.field(
-        default=None, description="Filter by graph ID"
-    )
-    kind: strawberry.ID | None = strawberry.field(
-        default=None, description="Filter by entity kind"
-    )
     ids: list[strawberry.ID] | None = strawberry.field(
         default=None, description="Filter by list of entity IDs"
     )
-    linked_expression: strawberry.ID | None = strawberry.field(
-        default=None, description="Filter by linked expression ID"
-    )
-    identifier: str | None = strawberry.field(
-        default=None, description="Filter by structure identifier"
-    )
-    object: strawberry.ID | None = strawberry.field(
-        default=None, description="Filter by associated object ID"
+    external_ids: list[strawberry.ID] | None = strawberry.field(
+        default=None, description="Filter by list of entity IDs"
     )
     search: str | None = strawberry.field(
         default=None, description="Search entities by text"
     )
+    tags: list[str] | None = strawberry.field(
+        default=None, description="Filter by list of categorie tags"
+    )
+    graph: strawberry.ID | None = strawberry.field(
+        default=None, description="Filter by graph ID"
+    )
+    categories: list[strawberry.ID] | None = strawberry.field(
+        default=None, description="Filter by list of entity categories"
+    )
+    created_before: datetime.datetime | None = strawberry.field(
+        default=None, description="Filter by creation date before this date"
+    )
+    created_after: datetime.datetime | None = strawberry.field(
+        default=None, description="Filter by creation date after this date"
+    )
+    active: bool | None = strawberry.field(
+        default=None, description="Filter by active status"
+    )
+    
+    
+@strawberry.input(description="Filter for entities in the graph")
+class ReagentFilter:
+    ids: list[strawberry.ID] | None = strawberry.field(
+        default=None, description="Filter by list of entity IDs"
+    )
+    external_ids: list[strawberry.ID] | None = strawberry.field(
+        default=None, description="Filter by list of entity IDs"
+    )
+    search: str | None = strawberry.field(
+        default=None, description="Search entities by text"
+    )
+    tags: list[str] | None = strawberry.field(
+        default=None, description="Filter by list of categorie tags"
+    )
+    graph: strawberry.ID | None = strawberry.field(
+        default=None, description="Filter by graph ID"
+    )
+    categories: list[strawberry.ID] | None = strawberry.field(
+        default=None, description="Filter by list of entity categories"
+    )
+    created_before: datetime.datetime | None = strawberry.field(
+        default=None, description="Filter by creation date before this date"
+    )
+    created_after: datetime.datetime | None = strawberry.field(
+        default=None, description="Filter by creation date after this date"
+    )
+    active: bool | None = strawberry.field(
+        default=None, description="Filter by active status"
+    )
+    
     
     
 @strawberry.input(description="Filter for entities in the graph")
@@ -564,11 +610,6 @@ class EdgeFilter:
     )
 
 
-@strawberry.input(description="Filter for entity relations in the graph")
-class EntityFilter(NodeFilter):
-    kind: strawberry.ID | None = strawberry.field(
-        default=None, description="Filter by relation kind"
-    )
 
 
 @strawberry.input(description="Filter for entity relations in the graph")
@@ -606,11 +647,6 @@ class NaturalEventFilter(NodeFilter):
     )
 
 
-@strawberry.input(description="Filter for entity relations in the graph")
-class ReagentFilter(NodeFilter):
-    kind: strawberry.ID | None = strawberry.field(
-        default=None, description="Filter by relation kind"
-    )
 
 
 @strawberry.input(description="Filter for entity relations in the graph")

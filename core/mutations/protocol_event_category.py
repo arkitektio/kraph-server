@@ -103,6 +103,16 @@ def create_protocol_event_category(
     info: Info,
     input: ProtocolEventCategoryInput,
 ) -> types.ProtocolEventCategory:
+    source_entity_role_names = list(map(lambda v: v.role, input.source_entity_roles)) if input.source_entity_roles else []
+    target_entity_role_names = list(map(lambda v: v.role, input.target_entity_roles)) if input.target_entity_roles else []
+    source_reagent_role_names = list(map(lambda v: v.role, input.source_reagent_roles)) if input.source_reagent_roles else []
+    target_reagent_role_names = list(map(lambda v: v.role, input.target_reagent_roles)) if input.target_reagent_roles else []
+    variable_params = list(map(lambda v: v.variable, input.variable_definitions)) if input.variable_definitions else []
+    
+    
+    all_roles = source_entity_role_names + target_entity_role_names + source_reagent_role_names + target_reagent_role_names + variable_params
+    assert len(all_roles) == len(set(all_roles)), "Roles must be unique" 
+    
 
     protocol_event, created = models.ProtocolEventCategory.objects.update_or_create(
         graph_id=input.graph,
@@ -158,6 +168,18 @@ def create_protocol_event_category(
 def update_protocol_event_category(
     info: Info, input: UpdateProtocolEventCategoryInput
 ) -> types.ProtocolEventCategory:
+    source_entity_role_names = list(map(lambda v: v.role, input.source_entity_roles)) if input.source_entity_roles else []
+    target_entity_role_names = list(map(lambda v: v.role, input.target_entity_roles)) if input.target_entity_roles else []
+    source_reagent_role_names = list(map(lambda v: v.role, input.source_reagent_roles)) if input.source_reagent_roles else []
+    target_reagent_role_names = list(map(lambda v: v.role, input.target_reagent_roles)) if input.target_reagent_roles else []
+    variable_params = list(map(lambda v: v.param, input.variable_definitions)) if input.variable_definitions else []
+    
+    
+    all_roles = source_entity_role_names + target_entity_role_names + source_reagent_role_names + target_reagent_role_names + variable_params
+    assert len(all_roles) == len(set(all_roles)), "Roles must be unique" 
+    
+    
+    
     item = models.ProtocolEventCategory.objects.get(id=input.id)
 
     if input.color:
@@ -177,6 +199,9 @@ def update_protocol_event_category(
     item.purl = input.purl if input.purl else item.purl
     item.color = input.color if input.color else item.color
     item.store = media_store if media_store else item.store
+    
+    
+    
     
     if input.source_entity_roles:
         item.source_entity_roles = [
@@ -202,6 +227,13 @@ def update_protocol_event_category(
         item.plate_children = [
             strawberry.asdict(v) for v in input.plate_children
         ]
+        
+    if input.variable_definitions:
+        item.variable_definitions = [
+            strawberry.asdict(v) for v in input.variable_definitions
+        ]
+        
+        
         
     #TODO: Check if we need to kill some events in order to update the source and target entity roles
 
