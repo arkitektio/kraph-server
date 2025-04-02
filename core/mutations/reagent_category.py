@@ -9,29 +9,14 @@ from django.conf import settings
 
 
 @strawberry.input(description="Input for creating a new expression")
-class ReagentCategoryInput(inputs.CategoryInput):
+class ReagentCategoryInput(inputs.CategoryInput, inputs.NodeCategoryInput):
     label: str = strawberry.field(description="The label/name of the expression")
 
 
 @strawberry.input(description="Input for updating an existing generic category")
-class UpdateReagentCategoryInput(inputs.UpdateCategoryInput):
+class UpdateReagentCategoryInput(inputs.UpdateCategoryInput, inputs.NodeCategoryInput):
     id: strawberry.ID = strawberry.field(
         description="The ID of the expression to update"
-    )
-    label: str | None = strawberry.field(
-        default=None, description="New label for the generic category"
-    )
-    description: str | None = strawberry.field(
-        default=None, description="New description for the expression"
-    )
-    purl: str | None = strawberry.field(
-        default=None, description="New permanent URL for the expression"
-    )
-    color: list[int] | None = strawberry.field(
-        default=None, description="New RGBA color values as list of 3 or 4 integers"
-    )
-    image: strawberry.ID | None = strawberry.field(
-        default=None, description="New image ID for the expression"
     )
 
 
@@ -72,7 +57,8 @@ def create_reagent_category(
     )
 
     age.create_age_reagent_kind(vocab)
-
+    manager.set_age_sequence(vocab, input.sequence, auto_create=input.auto_create_sequence)
+    
     if input.tags:
         vocab.tags.clear()
         for tag in input.tags:
@@ -85,6 +71,7 @@ def create_reagent_category(
         else:
             vocab.pinned_by.remove(info.context.user)
 
+    manager.set_position_info(vocab, input)
     return vocab
 
 
@@ -120,9 +107,11 @@ def update_reagent_category(
             
     if input.pin is not None:
         if input.pin:
-            item.pinned_by.add(info.context.user)
+            item.pinned_by.add(info.context.request.user)
         else:
-            item.pinned_by.remove(info.context.user)
+            item.pinned_by.remove(info.context.request.user)
+            
+    manager.set_position_info(item, input)
     item.save()
     return item
 

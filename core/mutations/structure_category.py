@@ -56,28 +56,13 @@ def scalar_identifier_to_graph_name(scalar_string: str) -> str:
 
 
 @strawberry.input(description="Input for updating an existing expression")
-class UpdateStructureCategoryInput:
+class UpdateStructureCategoryInput(inputs.UpdateCategoryInput):
     id: strawberry.ID = strawberry.field(
         description="The ID of the expression to update"
     )
     identifier: str | None = strawberry.field(
         default=None,
         description="The label/name of the expression"
-    )
-    label: str | None = strawberry.field(
-        default=None, description="New label for the expression"
-    )
-    description: str | None = strawberry.field(
-        default=None, description="New description for the expression"
-    )
-    purl: str | None = strawberry.field(
-        default=None, description="New permanent URL for the expression"
-    )
-    color: list[int] | None = strawberry.field(
-        default=None, description="New RGBA color values as list of 3 or 4 integers"
-    )
-    image: strawberry.ID | None = strawberry.field(
-        default=None, description="New image ID for the expression"
     )
 
 

@@ -9,7 +9,7 @@ from django.conf import settings
 
 
 @strawberry.input(description="Input for creating a new expression")
-class NaturalEventCategoryInput(inputs.CategoryInput):
+class NaturalEventCategoryInput(inputs.CategoryInput, inputs.NodeCategoryInput):
     label: str = strawberry.field(description="The label/name of the expression")
     source_entity_roles: list[inputs.EntityRoleDefinitionInput] = strawberry.field(
         default=None,
@@ -30,7 +30,7 @@ class NaturalEventCategoryInput(inputs.CategoryInput):
 
 
 @strawberry.input(description="Input for updating an existing expression")
-class UpdateNaturalEventCategoryInput(inputs.UpdateCategoryInput):
+class UpdateNaturalEventCategoryInput(inputs.UpdateCategoryInput, inputs.NodeCategoryInput):
     id: strawberry.ID = strawberry.field(
         description="The ID of the expression to update"
     )
@@ -114,6 +114,7 @@ def create_natural_event_category(
     age.create_age_natural_event_kind(
         protocol_event,
     )
+    manager.set_position_info(protocol_event, input)
 
     return protocol_event
 
@@ -166,6 +167,7 @@ def update_natural_event_category(
         
     #TODO: Check if we need to kill some events in order to update the source and target entity roles
 
+    manager.set_position_info(item, input)
     item.save()
     return item
 

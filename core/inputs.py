@@ -213,6 +213,36 @@ class CategoryInput:
     pin: bool | None = strawberry.field(
         default=None, description="Whether this expression should be pinned or not"
     )
+    sequence: strawberry.ID | None = strawberry.field(
+        default=None,
+        description="The ID of the sequence this category will get internal_ids from",
+    )
+    auto_create_sequence: bool | None = strawberry.field(
+        default=False,
+        description="Whether to create a sequence if it does not exist",
+    )
+    
+    
+@strawberry.input()
+class NodeCategoryInput:
+    position_x: float | None = strawberry.field(
+        default=None, description="An optional x position for the ontology node"
+    )
+    position_y: float | None = strawberry.field(
+        default=None, description="An optional y position for the ontology node"
+    )
+    height: float | None = strawberry.field(
+        default=None, description="An optional height for the ontology node"
+    )
+    width: float | None = strawberry.field(
+        default=None, description="An optional width for the ontology node"
+    )
+    color: list[int] | None = strawberry.field(
+        default=None, description="An optional RGBA color for the ontology node"
+    )
+    
+    
+
 
 
 @strawberry.input()

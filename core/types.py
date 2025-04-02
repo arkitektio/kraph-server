@@ -139,6 +139,17 @@ class Experiment:
     creator: User | None
 
 
+
+@strawberry_django.type(
+    models.GraphSequence, filters=filters.GraphSequenceFilter, pagination=True
+)
+class GraphSequence:
+    graph: "Graph"
+    id: auto
+    categories: List["BaseCategory"]
+
+
+
 def entity_to_node_subtype(
     entity: age.RetrievedEntity,
 ) -> Union["Structure", "Entity", "Metric", "NaturalEvent", "ProtocolEvent", "Reagent"]:
@@ -992,6 +1003,11 @@ class BaseCategory:
     purl: str | None = strawberry.field(
         description="The unique identifier of the expression within its graph"
     )
+    sequence: GraphSequence | None  = strawberry.field(
+        description="The sequence of the expression within its graph"
+    )
+    
+    
     
     @strawberry.django.field()
     def best_query(self, info: Info) -> Optional["GraphQuery"]:
@@ -1302,7 +1318,7 @@ class MetricCategory(NodeCategory, BaseCategory):
         description="The unique identifier of the expression within its graph"
     )
     def structure_definition(self, info: Info) -> StructureCategoryDefinition:
-        return StructureCategoryDefinition(_value=self.source_definition)
+        return StructureCategoryDefinition(_value=self.structure_definition, _graph=self.graph.id)
 
     pass
 
@@ -1428,11 +1444,11 @@ class RelationCategory(EdgeCategory, BaseCategory):
         description="The unique identifier of the expression within its graph"
     )
     def source_definition(self, info: Info) -> EntityCategoryDefinition:
-        return EntityCategoryDefinition(_value=self.source_definition)
+        return EntityCategoryDefinition(_value=self.source_definition, _graph=self.graph.id)
 
     @strawberry_django.field()
     def target_definition(self, info: Info) -> EntityCategoryDefinition:
-        return EntityCategoryDefinition(_value=self.source_definition)
+        return EntityCategoryDefinition(_value=self.source_definition, _graph=self.graph.id)
 
 
 @strawberry_django.type(

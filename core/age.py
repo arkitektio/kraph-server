@@ -270,6 +270,7 @@ def graph_cursor():
     with connections["default"].cursor() as cursor:
         cursor.execute("LOAD 'age';")
         cursor.execute('SET search_path = ag_catalog, "$user", public')
+        
         print(f"Creating new graph cursor. Use this to support AGE queries.")
         yield cursor
         print(f"Closing graph cursor.")
@@ -522,8 +523,24 @@ def create_age_entity(
     name: str | None = None,
     external_id: str | None = None,
 ) -> RetrievedEntity:
+    
+    
+        
+    
 
     with graph_cursor() as cursor:
+        if category.sequence:
+            sequence_name = category.sequence.ps_name
+            cursor.execute(
+                f"""
+                SELECT nextval('{sequence_name}') AS seq_id;
+                """,
+            )
+            seq_id = cursor.fetchone()[0]
+        else:
+            seq_id = None
+            
+            
         if external_id:
             # Try to find existing reagent first
             cursor.execute(
@@ -553,15 +570,20 @@ def create_age_entity(
                 )
 
         # Create new reagent if not found
+        
+        create_query = f"""
+        SELECT * 
+        FROM cypher(%s, $$
+            CREATE (n:{category.get_age_vertex_name()} {{__type: "ENTITY", __category_id: %s,  __category_type: %s, __label: %s, __created_at: %s, __external_id: %s}})
+            SET n.__sequence = %s
+            RETURN n
+        $$) as (n agtype);"""
+
+
+        print("create query", create_query)
 
         cursor.execute(
-            f"""
-            SELECT * 
-            FROM cypher(%s, $$
-                CREATE (n:{category.get_age_vertex_name()} {{__type: "ENTITY", __category_id: %s,  __category_type: %s, __label: %s, __created_at: %s, __external_id: %s}})
-                RETURN n
-            $$) as (n agtype);
-            """,
+            create_query,
             (
                 category.graph.age_name,
                 category.id,
@@ -569,6 +591,7 @@ def create_age_entity(
                 name,
                 datetime.datetime.now().isoformat(),
                 external_id,
+                seq_id,
             ),
         )
         result = cursor.fetchone()
@@ -785,6 +808,14 @@ def create_age_natural_event(
     valid_from: datetime.datetime | None = None,
     valid_to: datetime.datetime | None = None,
 ) -> RetrievedEntity:
+    
+    if category.sequence:
+        select_sequence = f"SELECT nextval({category.sequence.ps_name}) AS next_id"
+        sequence_setting = "SET n.__sequence = next_id"
+    else:
+        select_sequence = ""
+        sequence_setting = ""
+        
 
     with graph_cursor() as cursor:
         if external_id:
@@ -792,6 +823,7 @@ def create_age_natural_event(
             cursor.execute(
                 f"""
             SELECT * 
+            {select_sequence}
             FROM cypher(%s, $$
                 MATCH (n:{category.get_age_vertex_name()} {{__type: "NATURAL_EVENT", __category_id: %s, __category_type: %s}}) 
                 WHERE n.__external_id = %s
@@ -799,6 +831,7 @@ def create_age_natural_event(
                 SET n.__created_at = %s
                 SET n.__valid_from = %s
                 SET n.__valid_to = %s
+                {sequence_setting}
                 RETURN n
             $$) as (n agtype);
             """,
@@ -866,6 +899,7 @@ def create_age_event_in_edge(
             $$) as (r agtype);
             """,
             (
+                event_entity.graph_name,
                 event_entity.graph_name,
                 edge.source,
                 event_entity.id,
@@ -1910,3 +1944,23 @@ def get_left_relations(graph_name, entity_id):
                 properties=json.loads(result[4]),
                 graph_name=graph_name,
             )
+
+
+
+def create_age_sequence(
+    sequence: "models.GraphSequence"
+) -> RetrievedEntity:
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""
+            CREATE SEQUENCE {sequence.ps_name}
+                START WITH {sequence.start_value}
+                INCREMENT BY {sequence.step_size}
+                MINVALUE {sequence.min_value}
+                CACHE 1
+                {"MAXVALUE " + str(sequence.max_value) if sequence.max_value else ""}
+                {"CYCLE " if sequence.cycle else ""}
+            
+            """,
+        )
+        return cursor.fetchone() if cursor.rowcount > 0 else None

@@ -180,6 +180,64 @@ def random_color():
     return tuple(random.choice(levels) for _ in range(3))
 
 
+
+
+class GraphSequence(models.Model):
+    """A node index for a category"""
+    graph = models.ForeignKey(
+        Graph,
+        on_delete=models.CASCADE,
+        related_name="graph_sequences",
+        help_text="The graph this sequence belongs to",
+    )
+    index = models.CharField(
+        max_length=1000,
+        help_text="The index name that was created",
+    )
+    label = models.CharField(
+        max_length=1000,
+        help_text="The label of the sequence",
+        null=True,
+    )
+    description = models.CharField(
+        max_length=1000,
+        help_text="The description of the sequence",
+        null=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    min_value = models.IntegerField(
+        default=0
+    )
+    start_value = models.IntegerField(
+        default=0
+    )
+    max_value = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="The maximum value of the sequence (can be null if not set)",
+    )
+    cycle = models.BooleanField(
+        default=False,
+        help_text="If the sequence is circular (e.g. 1,2,3,4,5,1,2,3,4,5)",
+    )
+    step_size = models.IntegerField(
+        default=1,
+        help_text="The step size of the sequence (e.g. 1,2,3,4,5,6)",
+    )
+    
+    class Meta:
+        unique_together = ("graph", "index")
+        default_related_name = "graph_sequences"
+        
+    @property
+    def ps_name(self):
+        return f"{self.graph.age_name}{self.index}"
+    
+
+
+
+
 class CategoryTag(models.Model):
     """A tag for a category"""
 
@@ -201,6 +259,14 @@ class Category(models.Model):
     graph = models.ForeignKey(
         "Graph",
         on_delete=models.CASCADE,
+    )
+    sequence = models.ForeignKey(
+        GraphSequence,
+        on_delete=models.CASCADE,
+        related_name="categories",
+        null=True,
+        blank=True,
+        help_text="The index of this category (new entities will be created with this index)",
     )
     store = models.ForeignKey(
         MediaStore,

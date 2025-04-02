@@ -9,12 +9,12 @@ from django.conf import settings
 
 
 @strawberry.input(description="Input for creating a new expression")
-class EntityCategoryInput(inputs.CategoryInput):
+class EntityCategoryInput(inputs.CategoryInput, inputs.NodeCategoryInput):
     label: str = strawberry.field(description="The label/name of the expression")
 
 
 @strawberry.input(description="Input for updating an existing generic category")
-class UpdateEntityCategoryInput(inputs.UpdateCategoryInput):
+class UpdateEntityCategoryInput(inputs.UpdateCategoryInput, inputs.NodeCategoryInput):
     id: strawberry.ID = strawberry.field(
         description="The ID of the expression to update"
     )
@@ -58,6 +58,8 @@ def create_entity_category(
         )
     else:
         media_store = None
+        
+    
 
     vocab, created = models.EntityCategory.objects.update_or_create(
         graph_id=input.graph,
@@ -70,8 +72,11 @@ def create_entity_category(
             instance_kind=enums.InstanceKind.ENTITY,
         ),
     )
-
+    
+    
+    manager.set_position_info(vocab, input)
     age.create_age_entity_kind(vocab)
+    manager.set_age_sequence(vocab, input.sequence, auto_create=input.auto_create_sequence)
 
     if input.tags:
         vocab.tags.clear()

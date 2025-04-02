@@ -9,7 +9,7 @@ from django.conf import settings
 
 
 @strawberry.input(description="Input for creating a new expression")
-class MetricCategoryInput(inputs.CategoryInput):
+class MetricCategoryInput(inputs.CategoryInput, inputs.NodeCategoryInput):
     structure_definition: inputs.CategoryDefinitionInput = strawberry.field(
         default=None,
         description="The structure category for this expression",
@@ -21,9 +21,8 @@ class MetricCategoryInput(inputs.CategoryInput):
 
 
 @strawberry.input(description="Input for updating an existing expression")
-class UpdatMetricCategoryInput:
-    label: str = strawberry.field(description="The label/name of the expression")
-    kind: enums.MetricKind = strawberry.field(
+class UpdateMetricCategoryInput(inputs.UpdateCategoryInput, inputs.NodeCategoryInput):
+    kind: enums.MetricKind | None = strawberry.field(
         default=None, description="The type of metric data this expression represents"
     )
 
@@ -55,7 +54,9 @@ def create_metric_category(
     )
 
     age.create_age_metric_kind(metric_category)
-
+    manager.set_age_sequence(metric_category, input.sequence, auto_create=input.auto_create_sequence)
+    manager.set_position_info(metric_category, input)
+    
     if input.tags:
         metric_category.tags.clear()
         for tag in input.tags:
@@ -66,7 +67,7 @@ def create_metric_category(
 
 
 def update_metric_category(
-    info: Info, input: UpdatMetricCategoryInput
+    info: Info, input: UpdateMetricCategoryInput
 ) -> types.MetricCategory:
     item = models.MetricCategory.objects.get(id=input.id)
 
@@ -87,6 +88,7 @@ def update_metric_category(
     item.purl = input.purl if input.purl else item.purl
     item.color = input.color if input.color else item.color
     item.store = media_store if media_store else item.store
+    manager.set_position_info(item, input)
 
     item.save()
     return item

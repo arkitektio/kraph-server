@@ -9,7 +9,7 @@ from django.conf import settings
 
 
 @strawberry.input(description="Input for creating a new expression")
-class ProtocolEventCategoryInput(inputs.CategoryInput):
+class ProtocolEventCategoryInput(inputs.CategoryInput, inputs.NodeCategoryInput):
     label: str = strawberry.field(description="The label/name of the expression")
     plate_children: list[inputs.PlateChildInput] | None = strawberry.field(
         default=None,
@@ -46,7 +46,7 @@ class ProtocolEventCategoryInput(inputs.CategoryInput):
 
 
 @strawberry.input(description="Input for updating an existing expression")
-class UpdateProtocolEventCategoryInput(inputs.UpdateCategoryInput):
+class UpdateProtocolEventCategoryInput(inputs.UpdateCategoryInput, inputs.NodeCategoryInput):
     id: strawberry.ID = strawberry.field(
         description="The ID of the expression to update"
     )
@@ -155,6 +155,8 @@ def create_protocol_event_category(
     )
 
     age.create_age_protocol_event_kind(protocol_event)
+    manager.set_age_sequence(protocol_event, input.sequence, auto_create=input.auto_create_sequence)
+    manager.set_position_info(protocol_event, input)
 
     if input.tags:
         protocol_event.tags.clear()
@@ -233,7 +235,7 @@ def update_protocol_event_category(
             strawberry.asdict(v) for v in input.variable_definitions
         ]
         
-        
+    manager.set_position_info(item, input)
         
     #TODO: Check if we need to kill some events in order to update the source and target entity roles
 

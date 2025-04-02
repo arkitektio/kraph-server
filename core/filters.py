@@ -555,6 +555,11 @@ class ExperimentFilter(IDFilterMixin, SearchFilterMixin):
     id: auto
 
 
+
+@strawberry.django.filter(models.GraphSequence)
+class GraphSequenceFilter(IDFilterMixin, SearchFilterMixin):
+    id: auto
+
 @strawberry.django.filter(models.Model)
 class ModelFilter(IDFilterMixin):
     id: auto

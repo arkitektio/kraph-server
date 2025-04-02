@@ -100,3 +100,63 @@ def create_default_structure_queries_for_structure(
     """
 
     return None
+
+
+
+
+
+
+def set_age_sequence(category: "models.Category", sequence_id: str | None = None, auto_create: bool = True):
+    if sequence_id:
+        index = models.GraphSequence.objects.get(id=sequence_id)
+        category.sequence = index
+        category.save()
+    else:
+        if not auto_create:
+            pass
+        
+        graph_id = category.graph.id
+        index, created = models.GraphSequence.objects.get_or_create(
+            graph_id=graph_id,
+            index=category.age_name.lower() + "_sequence",
+            defaults=dict(
+                description=f"Sequence for {category.age_name}",
+                label="Sequence for " + category.age_name,
+                graph=category.graph,
+                min_value=0,
+                start_value=0,
+                max_value=None,
+                cycle=False,
+                step_size=1,
+            ),
+        )
+        
+        if created:
+            try:
+                age.create_age_sequence(index)
+            except Exception as e:
+                index.delete()
+                raise e
+            
+        category.sequence = index
+        category.save()
+            
+
+    return index
+
+
+
+
+def set_position_info(category: "models.NodeCategory", input: inputs.NodeCategoryInput):
+    if input.position_x:
+        category.position_x = input.position_x
+    if input.position_y:
+        category.position_y = input.position_y
+    if input.height:
+        category.height = input.height
+    if input.width:
+        category.width = input.width
+    if input.color:
+        category.color = input.color
+        
+    category.save()

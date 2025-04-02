@@ -65,6 +65,9 @@ class Query:
     graphs: list[types.Graph] = strawberry_django.field(
         description="List of all knowledge graphs"
     )
+    graph_sequences: list[types.GraphSequence] = strawberry_django.field(
+        description="List of all graph sequences"
+    )
 
     graph_queries: list[types.GraphQuery] = strawberry_django.field(
         description="List of all graph queries"
@@ -134,6 +137,12 @@ class Query:
     @strawberry.django.field(permission_classes=[IsAuthenticated])
     def scatter_plot(self, info: Info, id: ID) -> types.ScatterPlot:
         return models.ScatterPlot.objects.get(id=id)
+    
+    
+    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    def graph_sequence(self, info: Info, id: ID) -> types.GraphSequence:
+        return models.GraphSequence.objects.get(id=id)
+
 
     @strawberry.django.field(permission_classes=[IsAuthenticated])
     def entity_category(self, info: Info, id: ID) -> types.EntityCategory:
