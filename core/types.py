@@ -944,9 +944,7 @@ class Relation(Edge):
 
     @strawberry.django.field()
     async def category(self, info: Info) -> "RelationCategory":
-        return await loaders.relation_category_loader.load(
-            f"{self._value.graph_name}:{self._value.kind_age_name}"
-        )
+        return await loaders.relation_category_loader.load(self._value.category_id)
 
 
 @strawberry.type(
@@ -1007,6 +1005,11 @@ class BaseCategory:
         description="The sequence of the expression within its graph"
     )
     
+    @strawberry.django.field()
+    def relevant_queries(self, info: Info) -> List["GraphQuery"]:
+        return models.GraphQuery.objects.filter(
+            graph=self.graph, relevant_for=self.id
+        ).all()
     
     
     @strawberry.django.field()
@@ -1163,7 +1166,10 @@ class ReagentRoleDefinition:
 
     @strawberry_django.field()
     def allow_multiple(self, info: Info) -> bool:
-        return self._value.get("allow_multiple", False)
+        optional = self._value.get("allow_multiple", None)
+        if optional is None:
+            return False
+        return optional
     
     @strawberry_django.field()
     def description(self, info: Info) -> str | None:
@@ -1172,6 +1178,20 @@ class ReagentRoleDefinition:
     @strawberry_django.field()
     def label(self, info: Info) -> str | None:
         return self._value.get("label", None)
+    
+    @strawberry_django.field()
+    def optional(self, info: Info) -> bool:
+        optional = self._value.get("optional", None)
+        if optional is None:
+            return False
+        return optional
+    
+    @strawberry_django.field()
+    def needsQuantity(self, info: Info) -> bool:
+        optional = self._value.get("needs_quantity", None)
+        if optional is None:
+            return False
+        return optional
     
     
     @strawberry_django.field()
@@ -1207,14 +1227,13 @@ class EntityRoleDefinition:
         return EntityCategoryDefinition(
             _value=self._value.get("category_definition", ""), _graph=self._graph
         )
-
-    @strawberry_django.field()
-    def needs_quantity(self, info: Info) -> bool:
-        return self._value.get("needs_quantity", False)
     
     @strawberry_django.field()
     def allow_multiple(self, info: Info) -> bool:
-        return self._value.get("allow_multiple", False)
+        optional = self._value.get("allow_multiple", None)
+        if optional is None:
+            return False
+        return optional
     
     @strawberry_django.field()
     def description(self, info: Info) -> str | None:
@@ -1223,6 +1242,13 @@ class EntityRoleDefinition:
     @strawberry_django.field()
     def label(self, info: Info) -> str | None:
         return self._value.get("label", None)
+    
+    @strawberry_django.field()
+    def optional(self, info: Info) -> bool:
+        optional = self._value.get("optional", None)
+        if optional is None:
+            return False
+        return optional
     
     @strawberry_django.field()
     def current_default(self, info: Info) -> Optional["Entity"]:
@@ -1448,7 +1474,7 @@ class RelationCategory(EdgeCategory, BaseCategory):
 
     @strawberry_django.field()
     def target_definition(self, info: Info) -> EntityCategoryDefinition:
-        return EntityCategoryDefinition(_value=self.source_definition, _graph=self.graph.id)
+        return EntityCategoryDefinition(_value=self.target_definition, _graph=self.graph.id)
 
 
 @strawberry_django.type(

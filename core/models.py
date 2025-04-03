@@ -709,7 +709,7 @@ class MeasurementCategory(EdgeCategory):
         help_text="The label of the entity class",
     )
 
-    def get_age_vertex_name(self):
+    def get_age_edge_name(self):
         return "Measurement"
 
     def get_age_type_name(self):
@@ -728,7 +728,7 @@ class RelationCategory(EdgeCategory):
         null=True,
     )
 
-    def get_age_vertex_name(self):
+    def get_age_edge_name(self):
         return "Relation"
 
     def get_age_type_name(self):

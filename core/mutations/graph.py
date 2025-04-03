@@ -154,6 +154,9 @@ def delete_graph(
     input: DeleteGraphInput,
 ) -> strawberry.ID:
     item = models.Graph.objects.get(id=input.id)
+    
+    age.delete_age_graph(item.age_name)
+    
     item.delete()
 
     return input.id

@@ -14,8 +14,8 @@ class RelationInput:
     target: strawberry.ID = strawberry.field(
         description="ID of the right entity (format: graph:id)"
     )
-    kind: strawberry.ID = strawberry.field(
-        description="ID of the relation kind (LinkedExpression)"
+    category: strawberry.ID = strawberry.field(
+        description="ID of the relation category (LinkedExpression)"
     )
     context: inputs.ContextInput | None = strawberry.field(
         default=None, description="The context of the measurement"
@@ -34,7 +34,7 @@ def create_relation(
     input: RelationInput,
 ) -> types.Relation:
 
-    kind = models.RelationCategory.objects.get(id=input.kind)
+    category = models.RelationCategory.objects.get(id=input.category)
 
     left_graph = node_id_to_graph_name(input.source)
     right_graph = node_id_to_graph_name(input.target)
@@ -46,8 +46,7 @@ def create_relation(
     tleft_graph = models.Graph.objects.get(age_name=left_graph)
 
     retrieve = age.create_age_relation(
-        tleft_graph.age_name,
-        kind.age_name,
+        category,
         node_id_to_graph_id(input.source),
         node_id_to_graph_id(input.target),
     )

@@ -2,7 +2,7 @@ from kante.types import Info
 from core.datalayer import get_current_datalayer
 
 import strawberry
-from core import types, models, enums, scalars, manager, inputs
+from core import types, models, enums, scalars, manager, inputs, validators
 from core import age
 from strawberry.file_uploads import Upload
 from django.conf import settings
@@ -25,6 +25,10 @@ class UpdateMetricCategoryInput(inputs.UpdateCategoryInput, inputs.NodeCategoryI
     kind: enums.MetricKind | None = strawberry.field(
         default=None, description="The type of metric data this expression represents"
     )
+    structure_definition: inputs.CategoryDefinitionInput | None= strawberry.field(
+        default=None,
+        description="The structure category for this expression",
+    )
 
 
 @strawberry.input(description="Input for deleting an expression")
@@ -38,17 +42,21 @@ def create_metric_category(
     info: Info,
     input: MetricCategoryInput,
 ) -> types.MetricCategory:
+    
+    graph = models.Graph.objects.get(
+        id=input.graph,
+    )
 
     metric_category, created = models.MetricCategory.objects.update_or_create(
-        graph_id=input.graph,
+        graph=graph,
         age_name=manager.build_metric_age_name(input.label),
         defaults=dict(
             description=input.description,
             purl=input.purl,
             metric_kind=input.kind,
-            structure_definition=strawberry.asdict(
-                input.structure_definition,
-            ),
+            structure_definition=validators.validate_structure_definition(
+                input.structure_definition, graph
+            ) if input.structure_definition else None,
             label=input.label,
         ),
     )
@@ -88,6 +96,13 @@ def update_metric_category(
     item.purl = input.purl if input.purl else item.purl
     item.color = input.color if input.color else item.color
     item.store = media_store if media_store else item.store
+    
+    if input.structure_definition:
+        item.structure_definition = validators.validate_structure_definition(
+            input.structure_definition, item.graph
+        )
+    
+    
     manager.set_position_info(item, input)
 
     item.save()

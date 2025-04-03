@@ -900,7 +900,6 @@ def create_age_event_in_edge(
             """,
             (
                 event_entity.graph_name,
-                event_entity.graph_name,
                 edge.source,
                 event_entity.id,
                 edge.role,
@@ -1100,7 +1099,7 @@ def create_measurement(
             f"""SELECT * FROM cypher(%s, $$
                 MATCH (a) WHERE id(a) = %s
                 MATCH (b) WHERE id(b) = %s
-                CREATE (a)-[r: {category.get_age_vertex_name()} {{__type: "MEASUREMENT", __category_type: %s, __category_id: %s}}]->(b)
+                CREATE (a)-[r: {category.get_age_edge_name()} {{__type: "MEASUREMENT", __category_type: %s, __category_id: %s}}]->(b)
                 SET r.__valid_from = %s, r.__valid_to = %s, r.__created_at = %s, r.__created_through = %s, r.__created_by = %s
                 RETURN r
             $$) AS (r agtype);
@@ -1557,7 +1556,7 @@ def create_age_relation_metric(graph_name, metric_name, edge_id, value):
             raise ValueError("No entity created or returned by the query.")
 
 
-def create_age_relation(graph_name, relation_kind_age_name, left_id, right_id):
+def create_age_relation(category: "models.RelationCategory", left_id, right_id):
     with graph_cursor() as cursor:
         cursor.execute(
             f"""
@@ -1565,25 +1564,15 @@ def create_age_relation(graph_name, relation_kind_age_name, left_id, right_id):
             FROM cypher(%s, $$
                 MATCH (a) WHERE id(a) = %s
                 MATCH (b) WHERE id(b) = %s
-                CREATE (a)-[r:{relation_kind_age_name}]->(b)
-                RETURN id(r), properties(r)
-            $$) as (id agtype, properties agtype);
+                CREATE (a)-[r:{category.get_age_edge_name()} {{__type: "METRIC", __category_type: %s, __category_id: %s}}]->(b)
+                RETURN r
+            $$) as (r agtype);
             """,
-            (graph_name, int(left_id), int(right_id)),
+            (category.graph.age_name, int(left_id), int(right_id), category.get_age_type_name(), category.id ),
         )
         result = cursor.fetchone()
         if result:
-            entity_id = result[0]
-            properties = result[1]
-            print(entity_id, relation_kind_age_name, properties)
-            return RetrievedRelation(
-                id=entity_id,
-                kind_age_name=relation_kind_age_name,
-                properties=properties,
-                graph_name=graph_name,
-                left_id=left_id,
-                right_id=right_id,
-            )
+            return edge_ag_to_retrieved_relation(category.graph.age_name, result[0])
         else:
             existence_query = """
                 SELECT count(*)
@@ -1594,12 +1583,12 @@ def create_age_relation(graph_name, relation_kind_age_name, left_id, right_id):
                 $$) as (count agtype);
             """
 
-            cursor.execute(existence_query, (graph_name, left_id, right_id))
+            cursor.execute(existence_query, (category.graph.age_name, int(left_id), int(right_id)))
             node_count = cursor.fetchone()[0]
 
             if node_count < 2:
                 raise ValueError(
-                    f"One or both of the nodes do not exist. {left_id}, {right_id}, {graph_name}"
+                    f"One or both of the nodes do not exist. {left_id}, {right_id}, {category.graph.age_name}"
                 )
 
             raise ValueError("No entity created or returned by the query.")

@@ -133,6 +133,19 @@ async def load_measurement_categories(ids):
     return gotten
 
 
+async def load_relation_categories(ids):
+    gotten = []
+    for i in ids:
+
+        gotten.append(
+            await models.RelationCategory.objects.aget(
+                id=i,
+            )
+        )
+
+    return gotten
+
+
 async def load_generic_cateogries(age_names):
     """
     Asynchronously loads linked expressions based on the provided age names.
@@ -238,39 +251,6 @@ async def load_structure_cateogries(age_names):
     return gotten
 
 
-async def load_relation_category(age_names):
-    """
-    Asynchronously loads linked expressions based on the provided age names.
-
-    Args:
-        age_names (list of str): A list of strings where each string is in the format "graph_name:age_name".
-
-    Returns:
-        list: A list of LinkedExpression objects that match the provided age names.
-
-    Raises:
-        models.LinkedExpression.DoesNotExist: If no LinkedExpression object is found for the given age names.
-    """
-
-    gotten = []
-    graphs = {}
-
-    for i in age_names:
-        graph_name, age_name = i.split(":")
-
-        if graph_name not in graphs:
-            graphs[graph_name] = await models.Graph.objects.select_related(
-                "ontology"
-            ).aget(age_name=graph_name)
-
-        gotten.append(
-            await models.RelationCategory.objects.aget(
-                ontology=graphs[graph_name].ontology,
-                age_name=age_name,
-            )
-        )
-
-    return gotten
 
 
 
@@ -376,7 +356,7 @@ natural_event_category_loader = DataLoader(load_fn=load_natural_event_categories
 metric_category_loader = DataLoader(load_fn=load_metric_categories)
 protocol_event_category_loader = DataLoader(load_fn=load_protocol_event_categories)
 expression_loader = DataLoader(load_fn=load_expressions)
-relation_category_loader = DataLoader(load_fn=load_relation_category)
+relation_category_loader = DataLoader(load_fn=load_relation_categories)
 protocolstep_template_loader = DataLoader(load_fn=load_protocolstep_templates)
 measurement_category_loader = DataLoader(load_fn=load_measurement_categories)
 step_category_loader = DataLoader(load_fn=load_step_category)

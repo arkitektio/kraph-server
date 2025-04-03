@@ -2,7 +2,7 @@ from kante.types import Info
 from core.datalayer import get_current_datalayer
 
 import strawberry
-from core import types, models, enums, scalars, manager, inputs
+from core import types, models, enums, scalars, manager, inputs, validators
 from core import age
 from strawberry.file_uploads import Upload
 from django.conf import settings
@@ -19,6 +19,8 @@ class MeasurementCategoryInput(inputs.CategoryInput):
         default=None,
         description="The target definition for this expression",
     )
+    
+    
 
 
 @strawberry.input(description="Input for updating an existing expression")
@@ -58,6 +60,9 @@ def create_measurement_category(
     graph = models.Graph.objects.get(
         id=input.graph,
     )
+    
+        
+    
     if input.color:
         assert (
             len(input.color) == 3 or len(input.color) == 4
@@ -78,8 +83,12 @@ def create_measurement_category(
             purl=input.purl,
             store=media_store,
             label=input.label,
-            source_definition=strawberry.asdict(input.structure_definition),
-            target_definition=strawberry.asdict(input.entity_definition),
+            source_definition=validators.validate_structure_definition(
+                input.structure_definition, graph
+            ) if input.structure_definition else None,
+            target_definition=validators.validate_entity_definition(
+                input.entity_definition, graph
+            ) if input.entity_definition else None,
         ),
     )
 
