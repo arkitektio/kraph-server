@@ -361,6 +361,8 @@ class EdgeCategory(Category):
         help_text="Filters for the left side of the metric (e.g. which tags the left side should have)",
         null=True,
     )
+    
+    
 
     def get_age_edge_name(self):
         raise NotImplementedError("Not implemented needs to be implemented")
@@ -708,6 +710,7 @@ class MeasurementCategory(EdgeCategory):
         max_length=1000,
         help_text="The label of the entity class",
     )
+    
 
     def get_age_edge_name(self):
         return "Measurement"
@@ -717,6 +720,8 @@ class MeasurementCategory(EdgeCategory):
 
     class Meta:
         default_related_name = "measurement_categories"
+        
+        
 
 
 class RelationCategory(EdgeCategory):

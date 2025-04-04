@@ -106,6 +106,19 @@ def create_structure_category(
             identifier=identifier,
         ),
     )
+    
+    if input.tags:
+        vocab.tags.clear()
+        for tag in input.tags:
+            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag)
+            vocab.tags.add(tag_obj)
+            
+    
+    if input.pin is not None:
+        if input.pin:
+            vocab.pinned_by.add(info.context.user)
+        else:
+            vocab.pinned_by.remove(info.context.user)
 
     age.create_age_structure_kind(vocab)
 
@@ -133,6 +146,21 @@ def update_structure_category(
     item.purl = input.purl if input.purl else item.purl
     item.color = input.color if input.color else item.color
     item.store = media_store if media_store else item.store
+    
+    
+    if input.tags:
+        item.tags.clear()
+        for tag in input.tags:
+            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag)
+            item.tags.add(tag_obj)
+            
+    
+    
+    if input.pin is not None:
+        if input.pin:
+            item.pinned_by.add(info.context.request.user)
+        else:
+            item.pinned_by.remove(info.context.request.user)
 
     item.save()
     return item

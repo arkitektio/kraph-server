@@ -170,7 +170,7 @@ def entity_to_node_subtype(
 
 def relation_to_edge_subtype(
     relation: age.RetrievedRelation,
-) -> Union["Measurement", "Relation", "Participant"]:
+) -> Union["Measurement", "Relation", "Participant", "Description"]:
     match relation.category_type:
         case "MEASUREMENT":
             return Measurement(_value=relation)
@@ -178,6 +178,11 @@ def relation_to_edge_subtype(
             return Relation(_value=relation)
         case "PARTICIPANT":
             return Participant(_value=relation)
+        case "DESCRIPTION":
+            return Description(_value=relation)
+        
+        
+    raise Exception(f"Unknown relation type {relation.category_type}")
 
 
 @strawberry.enum
@@ -421,6 +426,26 @@ class NodeQuery:
 
         return render_node_view(self, node_id)
 
+@strawberry.type()
+class NodeQueryView:
+    _query: strawberry.Private[models.NodeQuery]
+    _node_id: strawberry.Private[str]
+    
+    
+    @strawberry.field()
+    def query(self, info: Info) -> "NodeQuery":
+        return self._query 
+    
+    @strawberry_django.field()
+    def render(self, info: Info) -> Union["Path", "Pairs", "Table"]:
+        from core.renderers.node.render import render_node_view
+        return render_node_view(self._query, self._node_id)
+    
+    
+    @strawberry.field()
+    def node_id(self, info: Info) -> str:
+        return self._node_id
+
 
 @strawberry.interface
 class Node:
@@ -436,7 +461,7 @@ class Node:
         return self._value.external_id
 
     @strawberry_django.field()
-    def queries(self, info: Info) -> List["NodeQuery"]:
+    def relevant_queries(self, info: Info) -> List["NodeQuery"]:
         from core.renderers.node.render import render_node_view
 
         return [
@@ -447,22 +472,34 @@ class Node:
             ).all()
         ]
         
+    @strawberry_django.field()
+    def views(self, info: Info) -> List["NodeQueryView"]:
+        from core.renderers.node.render import render_node_view
+
+        return [
+            q
+            for q in models.NodeQuery.objects.filter(
+               graph__age_name=self._value.graph_name,
+               relevant_for_nodes=self._value.category_id
+               
+            ).annotate(pinned=Q(pinned_by=info.context.request.user)).order_by('-pinned').all()
+        ]
+        
     @strawberry.django.field(description="The best view of the node given the current context")
-    def best_view(self, info: Info ) -> Union["Path", "Pairs", "Table"] | None:
+    def best_view(self, info: Info ) -> NodeQueryView | None:
         from core.renderers.node.render import render_node_view
 
         
         best_query = models.NodeQuery.objects.filter(
             graph__age_name=self._value.graph_name,
             relevant_for_nodes=self._value.category_id
-        ).first()
+        ).annotate(pinned=Q(pinned_by=info.context.request.user)).order_by('pinned').first()
         
         if not best_query:
             return None
         
         
-        
-        return render_node_view(best_query, self._value.unique_id)
+        return NodeQueryView(_query=best_query, _node_id=self._value.unique_id)
         
         
         
@@ -561,6 +598,27 @@ class Structure(Node):
     @strawberry.field(description="The expression that defines this entity's type")
     def object(self, info: Info) -> str:
         return self._value.object
+    
+    
+    @strawberry_django.field(description="The active measurements of this entity according to the graph")
+    def active_measurements(self, info: Info) -> List["Measurement"]:
+        measurement_categories = models.MeasurementCategory.objects.filter(
+            graph__age_name=self._value.graph_name, pinned_by=info.context.request.user
+        )
+        
+        if (measurement_categories.count() == 0):
+            return []
+        
+        
+        return [
+            Measurement(_value=x)
+            for x in age.select_measurements_for_structure(
+                self._value.graph_name, self._value.id, categories=measurement_categories
+            )
+        ]
+        
+        
+        
     
     
     @strawberry.field(description="The expression that defines this entity's type")
@@ -957,12 +1015,22 @@ class Participant(Edge):
         return self._value.id
 
     @strawberry.field(description="Timestamp from when this entity is valid")
-    def quantity(self, info: Info) -> float:
+    def quantity(self, info: Info) -> float | None:
         return self._value.quantity
 
     @strawberry.field(description="Timestamp from when this entity is valid")
     def role(self, info: Info) -> str:
         return self._value.role
+    
+    
+@strawberry.type(
+    description="""A participant edge maps bioentitiy to an event (valid from is not necessary)
+                 """
+)
+class Description(Edge):
+
+    def __hash__(self):
+        return self._value.id
 
 
 @strawberry_django.type(
@@ -1009,6 +1077,12 @@ class BaseCategory:
     def relevant_queries(self, info: Info) -> List["GraphQuery"]:
         return models.GraphQuery.objects.filter(
             graph=self.graph, relevant_for=self.id
+        ).all()
+        
+    @strawberry.django.field()
+    def relevant_node_queries(self, info: Info) -> List["NodeQuery"]:
+        return models.NodeQuery.objects.filter(
+            graph=self.graph, relevant_for_nodes=self.id
         ).all()
     
     

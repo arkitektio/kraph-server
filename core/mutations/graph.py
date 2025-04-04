@@ -16,6 +16,10 @@ class GraphInput:
     image: strawberry.ID | None = strawberry.field(
         default=None, description="An optional ID reference to an associated image"
     )
+    pin: bool | None = strawberry.field(
+        default=None,
+        description="Whether this ontology should be pinned or not",
+    )
 
 
 @strawberry.input(description="Input type for creating a new ontology node")
@@ -58,6 +62,10 @@ class UpdateGraphInput:
     nodes: list[GraphNodeInput] | None = strawberry.field(
         default=None, description="New nodes for the ontology"
     )
+    pin: bool | None = strawberry.field(
+        default=None,
+        description="Whether this ontology should be pinned or not",
+    )
 
 
 @strawberry.input(description="Input type for deleting an ontology")
@@ -95,8 +103,18 @@ def create_graph(
             name=input.name,
         ),
     )
+    
+    
 
     age.create_age_graph(item.age_name)
+    
+     
+    if input.pin is not None:
+        if input.pin:
+            item.pinned_by.add(info.context.request.user)
+        else:
+            item.pinned_by.remove(info.context.request.user)
+
 
     return item
 
@@ -136,15 +154,14 @@ def update_graph(info: Info, input: UpdateGraphInput) -> types.Graph:
                 x.color = i.color
                 
             x.save()
+    
+    
+    if input.pin is not None:
+        if input.pin:
+            item.pinned_by.add(info.context.request.user)
+        else:
+            item.pinned_by.remove(info.context.request.user)
 
-
-
-
-    else:
-        if input.nodes:
-            raise Exception("You must provide both nodes and edges if you provide any")
-        if input.edges:
-            raise Exception("You must provide both nodes and edges if you provide any")
 
     return item
 

@@ -54,7 +54,7 @@ def get_nessessary_inedges(
                 age.ProtocolInEdge(
                     source=age.to_entity_id(role_fullfiller.node),
                     quantity=role_fullfiller.quantity,
-                    role=role,
+                    role=role_fullfiller.key,
                 )
             )
 
@@ -115,7 +115,7 @@ def get_nessessary_outedges(
                 age.ProtocolOutEdge(
                     target=age.to_entity_id(role_fullfiller.node),
                     quantity=role_fullfiller.quantity,
-                    role=role,
+                    role=role_fullfiller.key,
                 )
             )
 

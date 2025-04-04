@@ -32,12 +32,20 @@ class GraphQueryInput:
         default=None,
         description="A list of categories where this query is releveant and should be shown",
     )
+    pin: bool | None = strawberry.field(
+        default=None,
+        description="Whether to pin this expression for the current user",
+    )
 
 
 @strawberry.input(description="Input for updating an existing expression")
 class UpdateGraphQueryInput(GraphQueryInput):
     id: strawberry.ID = strawberry.field(
         description="The ID of the expression to update"
+    )
+    pin: bool | None = strawberry.field(
+        default=None,
+        description="Whether to pin this expression for the current user",
     )
 
 
@@ -77,6 +85,12 @@ def create_graph_query(
             category_obj = models.Category.objects.get(id=category)
             graph_query.relevant_for.add(category_obj)
 
+    if input.pin is not None:
+        if input.pin:
+            graph_query.pinned_by.add(info.context.request.user)
+        else:
+            graph_query.pinned_by.remove(info.context.request.user)
+            
     return graph_query
 
 
@@ -92,7 +106,7 @@ def delete_graph_query(
 @strawberry.input
 class PinGraphQueryInput:
     id: strawberry.ID
-    pinned: bool
+    pin: bool
 
 
 def pin_graph_query(
@@ -101,7 +115,7 @@ def pin_graph_query(
 ) -> types.GraphQuery:
     item = models.GraphQuery.objects.get(id=input.id)
 
-    if input.pinned:
+    if input.pin:
         item.pinned_by.add(info.context.request.user)
     else:
         item.pinned_by.remove(info.context.request.user)

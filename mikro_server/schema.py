@@ -1,6 +1,6 @@
 from itertools import chain
 from kante.types import Info
-from typing import Annotated, AsyncGenerator
+from typing import Annotated, AsyncGenerator, List
 import strawberry
 from strawberry_django.optimizer import DjangoOptimizerExtension
 from core.datalayer import DatalayerExtension
@@ -133,6 +133,42 @@ class Query:
         resolver=queries.render_node_query,
         description="Render a node query",
     )
+    
+    
+    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    def active_graph_structures_for_identifier(self, info: Info, identifier: scalars.StructureIdentifier, object: strawberry.ID) -> List[types.Structure]:
+        
+        # filtered StructureCategory
+        structure_category = models.StructureCategory.objects.filter(identifier=identifier, graph__pinned_by=info.context.request.user)
+        
+        retrieved_entities = []
+        
+        for scat in structure_category:
+            print("scat", scat)
+            try:
+                # get all structures with the same identifier
+                retrieved_entitiy = age.get_age_structure_by_object(scat, object)
+                retrieved_entities.append(retrieved_entitiy)
+            except Exception as e:
+                print(f"Error retrieving structure: {e}")
+        
+        
+        
+        return [types.entity_to_node_subtype(r) for r in retrieved_entities]
+    
+    
+    @strawberry.django.field(description="The best view of the node given the current context")
+    def node_view(self, info: Info, query: strawberry.ID, node_id: strawberry.ID ) -> types.NodeQueryView:
+        from core.renderers.node.render import render_node_view
+
+        
+        best_query = models.NodeQuery.objects.get(id=query)
+        
+        if not best_query:
+            return None
+        
+        
+        return types.NodeQueryView(_query=best_query, _node_id=node_id)
 
     @strawberry.django.field(permission_classes=[IsAuthenticated])
     def scatter_plot(self, info: Info, id: ID) -> types.ScatterPlot:
@@ -183,7 +219,7 @@ class Query:
         self,
         info: Info,
         input: OffsetPaginationInput | None = None,
-        filters: filters.EdgeCategoryFilter | None = None,
+        filters: filters.NodeCategoryFilter | None = None,
     ) -> list[types.NodeCategory]:
         raise NotImplementedError(
             "This resolver is a placeholder and should be implemented by the developer"
@@ -658,5 +694,6 @@ schema = strawberry.Schema(
         types.Relation,
         types.Participant,
         types.Reagent,
+        types.Description,
     ],
 )

@@ -132,6 +132,7 @@ class RetrievedEntity:
     def valid_from(self):
         return self.properties.get("__valid_from", None)
     
+   
     @property
     def value(self):
         return self.properties.get("__value", None)
@@ -231,6 +232,16 @@ class RetrievedRelation:
     @property
     def valid_to(self):
         return self.properties.get("__valid_to", None)
+    
+    @property
+    def role(self):
+        return self.properties.get("role", None)
+    
+    
+    @property
+    def quantity(self):
+        return self.properties.get("quantity", None)
+    
 
     @property
     def valid_relative_from(self):
@@ -894,7 +905,7 @@ def create_age_event_in_edge(
             FROM cypher(%s, $$
                 MATCH (a) WHERE id(a) = %s
                 MATCH (b) WHERE id(b) = %s
-                CREATE (a)-[r: {category.get_inrole_vertex_name(edge.role)} {{quantity: %s, role: %s}}]->(b)
+                CREATE (a)-[r: {category.get_inrole_vertex_name(edge.role)} {{quantity: %s, role: %s, __type: "PARTICIPANT"}}]->(b)
                 RETURN r
             $$) as (r agtype);
             """,
@@ -902,8 +913,8 @@ def create_age_event_in_edge(
                 event_entity.graph_name,
                 edge.source,
                 event_entity.id,
-                edge.role,
                 edge.quantity,
+                edge.role,
             ),
         )
         result = cursor.fetchone()
@@ -930,7 +941,7 @@ def create_age_event_out_edge(
             FROM cypher(%s, $$
                 MATCH (a) WHERE id(a) = %s
                 MATCH (b) WHERE id(b) = %s
-                CREATE (a)-[r: {category.get_outrole_vertex_name(edge.role)} {{quantity: %s, role: %s}}]->(b)
+                CREATE (a)-[r: {category.get_outrole_vertex_name(edge.role)} {{quantity: %s, role: %s, __type: "PARTICIPANT"}}]->(b)
                 RETURN r
             $$) as (r agtype);
             """,
@@ -938,8 +949,8 @@ def create_age_event_out_edge(
                 event_entity.graph_name,
                 event_entity.id,
                 edge.target,
-                edge.role,
                 edge.quantity,
+                edge.role,
             ),
         )
         result = cursor.fetchone()
@@ -1424,6 +1435,28 @@ def get_reagents(filters: typing.Optional["filters.ReagentFilter"], pagination: 
             return []
 
 
+def select_measurements_for_structure(graph_name, structure_id, categories: list["models.MeasurementCategory"]):
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (n)-[r]->(m)
+                WHERE id(n) = %s 
+                AND r.__category_id IN {[cat.id for cat in categories]}
+                RETURN r
+            $$) as (r agtype);
+            """,
+            (graph_name, structure_id),
+        )
+        result = cursor.fetchall()
+        if result:
+            return [
+                edge_ag_to_retrieved_relation(graph_name, measurement[0]) for measurement in result
+            ]
+        else:
+            return []
+
 
 def get_age_structure(graph_name, structure_identifier) -> RetrievedEntity:
 
@@ -1455,10 +1488,11 @@ def get_age_structure_by_object(structure: "models.StructureCategory", object: s
             FROM cypher(%s, $$
                 MATCH (n)
                 WHERE n.__object = %s
+                AND n.__category_id = %s
                 RETURN n
             $$) as (n agtype);
             """,
-            (structure.graph.age_name, object),
+            (structure.graph.age_name, object, structure.id),
         )
         result = cursor.fetchone()
         if result:
@@ -1564,7 +1598,7 @@ def create_age_relation(category: "models.RelationCategory", left_id, right_id):
             FROM cypher(%s, $$
                 MATCH (a) WHERE id(a) = %s
                 MATCH (b) WHERE id(b) = %s
-                CREATE (a)-[r:{category.get_age_edge_name()} {{__type: "METRIC", __category_type: %s, __category_id: %s}}]->(b)
+                CREATE (a)-[r:{category.get_age_edge_name()} {{__type: "RELATION", __category_type: %s, __category_id: %s}}]->(b)
                 RETURN r
             $$) as (r agtype);
             """,

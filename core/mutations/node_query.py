@@ -35,12 +35,20 @@ class NodeQueryInput:
         default=None,
         description="The list of categories this expression is relevant for",
     )
+    pin: bool | None = strawberry.field(
+        default=None,
+        description="Whether to pin this expression for the current user",
+    )
 
 
 @strawberry.input(description="Input for updating an existing expression")
 class UpdateNodeQueryInput(NodeQueryInput):
     id: strawberry.ID = strawberry.field(
         description="The ID of the expression to update"
+    )
+    pin: bool | None = strawberry.field(
+        default=None,
+        description="Whether to pin this expression for the current user",
     )
 
 
@@ -109,7 +117,7 @@ def delete_node_query(
 @strawberry.input
 class PinNodeQueryInput:
     id: strawberry.ID
-    pinned: bool
+    pin: bool
 
 
 def pin_node_query(
@@ -118,7 +126,7 @@ def pin_node_query(
 ) -> types.NodeQuery:
     item = models.NodeQuery.objects.get(id=input.id)
 
-    if input.pinned:
+    if input.pin:
         item.pinned_by.add(info.context.request.user)
     else:
         item.pinned_by.remove(info.context.request.user)

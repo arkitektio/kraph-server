@@ -86,9 +86,9 @@ def create_entity_category(
             
     if input.pin is not None:
         if input.pin:
-            vocab.pinned_by.add(info.context.user)
+            vocab.pinned_by.add(info.context.request.user)
         else:
-            vocab.pinned_by.remove(info.context.user)
+            vocab.pinned_by.remove(info.context.request.user)
 
     return vocab
 
