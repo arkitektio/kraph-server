@@ -136,25 +136,30 @@ class Query:
     
     
     @strawberry.django.field(permission_classes=[IsAuthenticated])
-    def active_graph_structures_for_identifier(self, info: Info, identifier: scalars.StructureIdentifier, object: strawberry.ID) -> List[types.Structure]:
+    def knowledge_views(self, info: Info, identifier: scalars.StructureIdentifier, object: strawberry.ID) -> List[types.KnowledgeView]:
         
         # filtered StructureCategory
         structure_category = models.StructureCategory.objects.filter(identifier=identifier, graph__pinned_by=info.context.request.user)
         
-        retrieved_entities = []
+        retrieved_views = []
         
         for scat in structure_category:
-            print("scat", scat)
             try:
                 # get all structures with the same identifier
                 retrieved_entitiy = age.get_age_structure_by_object(scat, object)
-                retrieved_entities.append(retrieved_entitiy)
+                retrieved_views.append(types.KnowledgeView(
+                    _scat=scat,
+                    _structure=retrieved_entitiy,
+                ))
             except Exception as e:
-                print(f"Error retrieving structure: {e}")
+                retrieved_views.append(types.KnowledgeView(
+                    _scat=scat,
+                    _structure=None,
+                ))
         
         
         
-        return [types.entity_to_node_subtype(r) for r in retrieved_entities]
+        return retrieved_views
     
     
     @strawberry.django.field(description="The best view of the node given the current context")

@@ -1622,3 +1622,20 @@ class Table:
     graph: Graph = strawberry.field(
         description="The graph this table was queried from."
     )
+
+
+@strawberry.type
+class KnowledgeView:
+    _scat: strawberry.Private[models.StructureCategory]
+    _structure: strawberry.Private[age.RetrievedEntity]
+    
+    @strawberry.django.field()
+    def structure_category(self) -> "StructureCategory":
+        return self._scat
+    
+    @strawberry.django.field()
+    def structure(self) -> Optional["Structure"]:
+        if self._structure:
+            return Structure(_value=self._structure)
+        return None
+    
