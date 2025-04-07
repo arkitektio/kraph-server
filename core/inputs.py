@@ -41,6 +41,17 @@ def plate_children_to_str(children):
     return " ".join([child_to_str(c) for c in children])
 
 
+@strawberry.input
+class OptionInput:
+    label: str = strawberry.field(description="The label of the option")
+    value: scalars.Any = strawberry.field(
+        description="The value of the option. This can be a string, number, or boolean",
+    )
+    description: str | None = strawberry.field(
+        default=None,
+        description="A detailed description of the option",
+    )
+
 @strawberry.input(description="Input for creating a new expression")
 class VariableDefinitionInput:
     param: str = strawberry.field(description="The parameter name")
@@ -63,6 +74,10 @@ class VariableDefinitionInput:
     label: str | None = strawberry.field(
         default=None,
         description="The label/name of the role",
+    )
+    options: list[OptionInput] | None = strawberry.field(
+        default=None,
+        description="A list of options for this port (if only a few values are allowed)",
     )
 
 
@@ -154,7 +169,7 @@ class NodeMapping:
 
 
 @strawberry.input
-class VariableMapping:
+class VariableMappingInput:
     key: str
     value: scalars.Any
 

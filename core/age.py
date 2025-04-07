@@ -7,9 +7,10 @@ from dataclasses import dataclass
 from core import filters, pagination
 import typing
 from pydantic import BaseModel, Field
+import strawberry
 
 if typing.TYPE_CHECKING:
-    from core import models, filters, pagination
+    from core import models, filters, pagination, inputs
 
 
 @dataclass
@@ -131,6 +132,15 @@ class RetrievedEntity:
     @property
     def valid_from(self):
         return self.properties.get("__valid_from", None)
+    
+    @property
+    def variables(self):
+        return self.properties.get("__variables", [])
+    
+    
+    @property
+    def local_id(self):
+        return self.properties.get("__sequence", None)
     
    
     @property
@@ -750,6 +760,7 @@ def create_age_protocol_event(
     external_id: str | None = None,
     valid_from: datetime.datetime | None = None,
     valid_to: datetime.datetime | None = None,
+    variables: list["inputs.VariableMappingInput"] | None = None,
 ) -> RetrievedEntity:
 
     with graph_cursor() as cursor:
@@ -765,6 +776,7 @@ def create_age_protocol_event(
                 SET n.__created_at = %s
                 SET n.__valid_from = %s
                 SET n.__valid_to = %s
+                SET n.__variables = %s
                 RETURN n
             $$) as (n agtype);
             """,
@@ -777,6 +789,7 @@ def create_age_protocol_event(
                     datetime.datetime.now().isoformat(),
                     valid_from.isoformat() if valid_from else None,
                     valid_to.isoformat() if valid_to else None,
+                    [strawberry.asdict(variable) for variable in variables] if variables else None,
                 ),
             )
             existing = cursor.fetchone()
@@ -791,6 +804,7 @@ def create_age_protocol_event(
             SELECT * 
             FROM cypher(%s, $$
                 CREATE (n:{category.get_age_vertex_name()} {{__type: "PROTOCOL_EVENT", __category_id: %s, __category_type: %s, __label: %s, __created_at: %s, __external_id: %s, valid_from: %s, valid_to: %s}})
+                SET n.__variables = %s
                 RETURN n
             $$) as (n agtype);
             """,
@@ -803,6 +817,7 @@ def create_age_protocol_event(
                 external_id,
                 valid_from.isoformat() if valid_from else None,
                 valid_to.isoformat() if valid_to else None,
+                [json.dumps(variable) for variable in variables] if variables else None,
             ),
         )
         result = cursor.fetchone()

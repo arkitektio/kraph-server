@@ -2,7 +2,7 @@ from kante.types import Info
 from core.datalayer import get_current_datalayer
 
 import strawberry
-from core import types, models, enums, scalars, manager, inputs
+from core import types, models, enums, scalars, manager, inputs, loaders
 from core import age
 from strawberry.file_uploads import Upload
 from django.conf import settings
@@ -236,10 +236,13 @@ def update_protocol_event_category(
         ]
         
     manager.set_position_info(item, input)
+    
         
     #TODO: Check if we need to kill some events in order to update the source and target entity roles
 
     item.save()
+    
+    loaders.protocol_event_category_loader.clear(item.id)
     return item
 
 

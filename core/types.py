@@ -182,7 +182,7 @@ def relation_to_edge_subtype(
             return Description(_value=relation)
         
         
-    raise Exception(f"Unknown relation type {relation.category_type}")
+    raise Exception(f"Unknown relation type {relation.category_type} for {relation}")
 
 
 @strawberry.enum
@@ -459,6 +459,12 @@ class Node:
     )
     def external_id(self, info: Info) -> str | None:
         return self._value.external_id
+    
+    @strawberry_django.field(
+        description="The unique identifier of the entity within its graph"
+    )
+    def local_id(self, info: Info) -> str | None:
+        return self._value.local_id
 
     @strawberry_django.field()
     def relevant_queries(self, info: Info) -> List["NodeQuery"]:
@@ -514,8 +520,21 @@ class Node:
         return await loaders.graph_loader.load(self._value.graph_name)
 
     @strawberry.django.field()
-    def label(self, info: Info) -> str:
-        return self._value.kind_age_name
+    def label(self, info: Info, full: bool | None = None) -> str:
+        
+        label_string: str = ""
+        
+        if self._value.external_id:
+            label_string += f"{self._value.external_id}"
+        else:
+            if self._value.local_id:
+                label_string += f"{self._value.local_id}"
+            else:
+                label_string += f"{self._value.id}"
+        if full:
+            return self._value.kind_age_name +  label_string
+        else:
+            return label_string
 
     @strawberry.field(
         description="The unique identifier of the entity within its graph"
@@ -834,6 +853,7 @@ class Metric(Node):
         return self._value.value
 
 
+
 @strawberry.type(
     description="A Metric is a recorded data point in a graph. It always describes a structure and through the structure it can bring meaning to the measured entity. It can measure a property of an entity through a direct measurement edge, that connects the entity to the structure. It of course can relate to other structures through relation edges."
 )
@@ -862,6 +882,8 @@ class NaturalEvent(Node):
         return datetime.datetime.fromisoformat(self._value.valid_to) if self._value.valid_to else None
 
 
+
+
 @strawberry.type(
     description="A Metric is a recorded data point in a graph. It always describes a structure and through the structure it can bring meaning to the measured entity. It can measure a property of an entity through a direct measurement edge, that connects the entity to the structure. It of course can relate to other structures through relation edges."
 )
@@ -881,8 +903,8 @@ class ProtocolEvent(Node):
     @strawberry.django.field(
         description="Protocol steps where this entity was the target"
     )
-    async def variables(self) -> scalars.Any:
-        raise NotImplementedError("Not implemented yet")
+    async def variables(self) -> list["VariableMapping"]:
+       return [VariableMapping(_mapping=x) for x in self._value.variables]
 
     @strawberry.django.field(
         description="Protocol steps where this entity was the target"
@@ -1128,7 +1150,7 @@ class CategoryDefintion:
     _value = strawberry.Private[dict]
 
     @strawberry.field()
-    def tag_filters(self, info: Info) -> list[strawberry.ID] | None:
+    def tag_filters(self, info: Info) -> list[str] | None:
         return self._value.get("tag_filters", None)
 
     @strawberry.field()
@@ -1451,6 +1473,35 @@ class NaturalEventCategory(NodeCategory, BaseCategory):
     pass
 
 
+@strawberry.type 
+class VariableMapping:
+    _mapping: strawberry.Private[dict]
+    
+    @strawberry.django.field()
+    def role(self) -> str:
+        return self._mapping.get("param", None)
+    
+    @strawberry.django.field()
+    def value(self) -> str:
+        return self._mapping.get("value", None)
+    
+
+@strawberry.type
+class VariableOption:
+    _option: strawberry.Private[dict]
+    
+    @strawberry.django.field()
+    def value(self) -> str:
+        return self._option.get("value", None)
+    
+    @strawberry.django.field()
+    def label(self) -> str:
+        return self._option.get("label", None)
+    
+    @strawberry.django.field()
+    def description(self) -> str | None:
+        return self._option.get("description", None)
+
 
 @strawberry.type
 class VariableDefinition:
@@ -1487,6 +1538,14 @@ class VariableDefinition:
     @strawberry.django.field()
     def default(self) -> scalars.Any | None:
         return self._variable.get("default", None)
+    
+    
+    @strawberry.django.field()
+    def options(self) -> list[VariableOption] | None:
+        options = self._variable.get("options", None)
+        if not options:
+            return None
+        return [VariableOption(_option=i) for i in options]
 
 @strawberry_django.type(
     models.ProtocolEventCategory,

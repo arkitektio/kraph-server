@@ -21,7 +21,7 @@ class RecordProtocolEventInput:
     entity_targets: list[inputs.NodeMapping] | None = None
     reagent_sources: list[inputs.NodeMapping] | None = None
     reagent_targets: list[inputs.NodeMapping] | None = None
-    variables: list[inputs.VariableMapping] | None = None
+    variables: list[inputs.VariableMappingInput] | None = None
     valid_from: datetime.datetime | None = None
     valid_to: datetime.datetime | None = None
 
@@ -45,6 +45,7 @@ def record_protocol_event(
         external_id=input.external_id,
         valid_from=input.valid_from,
         valid_to=input.valid_to,
+        variables=input.variables,
     )
 
     necessary_inedges = []
