@@ -550,16 +550,6 @@ def create_age_entity(
     
 
     with graph_cursor() as cursor:
-        if category.sequence:
-            sequence_name = category.sequence.ps_name
-            cursor.execute(
-                f"""
-                SELECT nextval('{sequence_name}') AS seq_id;
-                """,
-            )
-            seq_id = cursor.fetchone()[0]
-        else:
-            seq_id = None
             
             
         if external_id:
@@ -589,6 +579,18 @@ def create_age_entity(
                 return vertex_ag_to_retrieved_entity(
                     category.graph.age_name, existing[0]
                 )
+                
+        
+        if category.sequence:
+            sequence_name = category.sequence.ps_name
+            cursor.execute(
+                f"""
+                SELECT nextval('{sequence_name}') AS seq_id;
+                """,
+            )
+            seq_id = cursor.fetchone()[0]
+        else:
+            seq_id = None
 
         # Create new reagent if not found
         
@@ -630,6 +632,8 @@ def create_age_reagent(
 ) -> RetrievedEntity:
 
     with graph_cursor() as cursor:
+        
+        
         if external_id:
             # Try to find existing reagent first
             cursor.execute(
@@ -657,6 +661,18 @@ def create_age_reagent(
                 return vertex_ag_to_retrieved_entity(
                     category.graph.age_name, existing[0]
                 )
+                
+        
+        if category.sequence:
+            sequence_name = category.sequence.ps_name
+            cursor.execute(
+                f"""
+                SELECT nextval('{sequence_name}') AS seq_id;
+                """,
+            )
+            seq_id = cursor.fetchone()[0]
+        else:
+            seq_id = None
 
         # Create new reagent if not found
 
@@ -665,6 +681,7 @@ def create_age_reagent(
             SELECT * 
             FROM cypher(%s, $$
                 CREATE (n:{category.get_age_vertex_name()} {{__type: "REAGENT", __category_id: %s, __category_type: %s, __label: %s, __created_at: %s, __external_id: %s}})
+                SET n.__sequence = %s
                 RETURN n
             $$) as (n agtype);
             """,
@@ -675,6 +692,7 @@ def create_age_reagent(
                 name,
                 datetime.datetime.now().isoformat(),
                 external_id,
+                seq_id,
             ),
         )
         result = cursor.fetchone()
