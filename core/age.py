@@ -1229,6 +1229,26 @@ def get_age_entity(graph_name, entity_id) -> RetrievedEntity:
         raise ValueError("No entity created or returned by the query.")
     
     
+def get_age_entity_by_category_and_external_id(category: models.EntityCategory, external_id) -> RetrievedEntity:
+
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH {{__type: "ENTITY", __category_id: %s}}
+                WHERE n.__external_id = %s
+            $$) as (n agtype);
+            """,
+            (category.graph.age_name, category.id,  external_id),
+        )
+        result = cursor.fetchone()
+        if result:
+            entity = result[0]
+            return vertex_ag_to_retrieved_entity(category.graph.age_name, entity)
+        raise ValueError("No entity created or returned by the query.")
+    
+    
 def get_entities(filters: typing.Optional["filters.EntityFilter"], pagination: typing.Optional["pagination.GraphPaginationInput"] = None) -> RetrievedEntity:
     from core import models, filters as f, pagination as p
     

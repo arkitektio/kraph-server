@@ -189,6 +189,23 @@ class Query:
     def entity_category(self, info: Info, id: ID) -> types.EntityCategory:
         return models.EntityCategory.objects.get(id=id)
 
+
+    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    def get_entity_by_category_and_external_id(
+        self, info: Info, category: ID, external_id: str
+    ) -> types.Entity:
+        
+        entity_category = models.EntityCategory.objects.get(id=category)
+        
+        return types.entity_to_node_subtype(
+            age.get_age_entity_by_category_and_external_id(entity_category, external_id)
+        )
+
+
+
+
+
+
     @strawberry.django.field(permission_classes=[IsAuthenticated])
     def metric_category(self, info: Info, id: ID) -> types.MetricCategory:
         return models.MetricCategory.objects.get(id=id)
