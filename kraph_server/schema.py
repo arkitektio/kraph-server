@@ -5,7 +5,6 @@ import strawberry
 from strawberry_django.optimizer import DjangoOptimizerExtension
 from core.datalayer import DatalayerExtension
 from strawberry import ID
-from kante.directives import upper, replace, relation
 from strawberry.permission import BasePermission
 from typing import Any, Type
 from core import types, models
@@ -17,7 +16,7 @@ from core import pagination
 from strawberry.field_extensions import InputMutationExtension
 import strawberry_django
 from koherent.strawberry.extension import KoherentExtension
-from authentikate.strawberry.permissions import IsAuthenticated
+from authentikate.strawberry.extension import AuthentikateExtension
 from core import age, scalars
 from strawberry_django.pagination import OffsetPaginationInput
 
@@ -58,7 +57,7 @@ class Query:
         protocol_step_template(id): Gets a specific protocol step template by ID
         my_active_graph(): Gets the active graph for the current user
     Note:
-        Most methods require authentication through IsAuthenticated permission class,
+        Most methods require authentication through  permission class,
         except for entity and entity_relation queries which are publicly accessible.
     """
 
@@ -135,7 +134,7 @@ class Query:
     )
     
     
-    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    @strawberry.django.field(permission_classes=[])
     def knowledge_views(self, info: Info, identifier: scalars.StructureIdentifier, object: strawberry.ID) -> List[types.KnowledgeView]:
         
         # filtered StructureCategory
@@ -175,22 +174,22 @@ class Query:
         
         return types.NodeQueryView(_query=best_query, _node_id=node_id)
 
-    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    @strawberry.django.field(permission_classes=[])
     def scatter_plot(self, info: Info, id: ID) -> types.ScatterPlot:
         return models.ScatterPlot.objects.get(id=id)
     
     
-    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    @strawberry.django.field(permission_classes=[])
     def graph_sequence(self, info: Info, id: ID) -> types.GraphSequence:
         return models.GraphSequence.objects.get(id=id)
 
 
-    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    @strawberry.django.field(permission_classes=[])
     def entity_category(self, info: Info, id: ID) -> types.EntityCategory:
         return models.EntityCategory.objects.get(id=id)
 
 
-    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    @strawberry.django.field(permission_classes=[])
     def get_entity_by_category_and_external_id(
         self, info: Info, category: ID, external_id: str
     ) -> types.Entity:
@@ -206,37 +205,37 @@ class Query:
 
 
 
-    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    @strawberry.django.field(permission_classes=[])
     def metric_category(self, info: Info, id: ID) -> types.MetricCategory:
         return models.MetricCategory.objects.get(id=id)
 
-    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    @strawberry.django.field(permission_classes=[])
     def structure_category(self, info: Info, id: ID) -> types.StructureCategory:
         return models.StructureCategory.objects.get(id=id)
 
-    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    @strawberry.django.field(permission_classes=[])
     def natural_event_category(self, info: Info, id: ID) -> types.NaturalEventCategory:
         return models.NaturalEventCategory.objects.get(id=id)
 
-    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    @strawberry.django.field(permission_classes=[])
     def protocol_event_category(
         self, info: Info, id: ID
     ) -> types.ProtocolEventCategory:
         return models.ProtocolEventCategory.objects.get(id=id)
 
-    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    @strawberry.django.field(permission_classes=[])
     def reagent_category(self, info: Info, id: ID) -> types.ReagentCategory:
         return models.ReagentCategory.objects.get(id=id)
 
-    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    @strawberry.django.field(permission_classes=[])
     def relation_category(self, info: Info, id: ID) -> types.RelationCategory:
         return models.RelationCategory.objects.get(id=id)
 
-    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    @strawberry.django.field(permission_classes=[])
     def measurement_category(self, info: Info, id: ID) -> types.MeasurementCategory:
         return models.MeasurementCategory.objects.get(id=id)
 
-    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    @strawberry.django.field(permission_classes=[])
     def node_categories(
         self,
         info: Info,
@@ -247,7 +246,7 @@ class Query:
             "This resolver is a placeholder and should be implemented by the developer"
         )
 
-    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    @strawberry.django.field(permission_classes=[])
     def edge_categories(
         self,
         info: Info,
@@ -258,11 +257,11 @@ class Query:
             "This resolver is a placeholder and should be implemented by the developer"
         )
 
-    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    @strawberry.django.field(permission_classes=[])
     def node_query(self, info: Info, id: ID) -> types.NodeQuery:
         return models.NodeQuery.objects.get(id=id)
 
-    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    @strawberry.django.field(permission_classes=[])
     def graph_query(self, info: Info, id: ID) -> types.GraphQuery:
         return models.GraphQuery.objects.get(id=id)
 
@@ -450,15 +449,15 @@ class Query:
     ) -> list[types.Participant]:
         return []
 
-    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    @strawberry.django.field(permission_classes=[])
     def graph(self, info: Info, id: ID) -> types.Graph:
         return models.Graph.objects.get(id=id)
 
-    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    @strawberry.django.field(permission_classes=[])
     def model(self, info: Info, id: ID) -> types.Model:
         return models.Model.objects.get(id=id)
 
-    @strawberry.django.field(permission_classes=[IsAuthenticated])
+    @strawberry.django.field(permission_classes=[])
     def my_active_graph(self, info: Info) -> types.Graph:
         return models.Graph.objects.filter(user=info.context.request.user).first()
 
@@ -698,10 +697,10 @@ schema = strawberry.Schema(
     query=Query,
     subscription=Subscription,
     mutation=Mutation,
-    directives=[upper, replace, relation],
     extensions=[
         DjangoOptimizerExtension,
         KoherentExtension,
+        AuthentikateExtension,
         DatalayerExtension,
     ],
     types=[

@@ -1,7 +1,6 @@
 import datetime
 import strawberry
 from core import models, enums
-from koherent.strawberry.filters import ProvenanceFilter
 from strawberry import auto
 from typing import Optional
 from strawberry_django.filters import FilterLookup
@@ -32,7 +31,7 @@ class SearchFilterMixin:
         return queryset.filter(name__contains=self.search)
 
 
-@strawberry.django.filter(models.EntityCategory)
+@strawberry_django.filter(models.EntityCategory)
 class EntityCategoryFilter:
     ids: list[strawberry.ID] | None
     id: auto
@@ -144,7 +143,7 @@ class EdgeCategoryFilter:
         return queryset.filter(graph_id=self.graph)
 
 
-@strawberry.django.filter(models.ReagentCategory)
+@strawberry_django.filter(models.ReagentCategory)
 class ReagentCategoryFilter:
     ids: list[strawberry.ID] | None
     id: auto
@@ -179,7 +178,7 @@ class ReagentCategoryFilter:
         return queryset.filter(graph_id=self.graph)
 
 
-@strawberry.django.filter(models.RelationCategory)
+@strawberry_django.filter(models.RelationCategory)
 class RelationCategoryFilter:
     ids: list[strawberry.ID] | None
     id: auto
@@ -214,7 +213,7 @@ class RelationCategoryFilter:
         return queryset.filter(graph_id=self.graph)
 
 
-@strawberry.django.filter(models.StructureCategory)
+@strawberry_django.filter(models.StructureCategory)
 class StructureCategoryFilter:
     ids: list[strawberry.ID] | None
     id: auto
@@ -256,7 +255,7 @@ class StructureCategoryFilter:
         return queryset.filter(ontology_id=self.ontology)
 
 
-@strawberry.django.filter(models.MetricCategory)
+@strawberry_django.filter(models.MetricCategory)
 class MetricCategoryFilter:
     ids: list[strawberry.ID] | None
     id: auto
@@ -290,7 +289,7 @@ class MetricCategoryFilter:
         return queryset.filter(graph_id=self.graph)
 
 
-@strawberry.django.filter(models.NaturalEventCategory)
+@strawberry_django.filter(models.NaturalEventCategory)
 class NaturalEventCategoryFilter:
     ids: list[strawberry.ID] | None
     id: auto
@@ -324,7 +323,7 @@ class NaturalEventCategoryFilter:
         return queryset.filter(graph_id=self.graph)
 
 
-@strawberry.django.filter(models.ProtocolEventCategory)
+@strawberry_django.filter(models.ProtocolEventCategory)
 class ProtocolEventCategoryFilter:
     ids: list[strawberry.ID] | None
     id: auto
@@ -358,7 +357,7 @@ class ProtocolEventCategoryFilter:
         return queryset.filter(graph_id=self.graph)
 
 
-@strawberry.django.filter(models.MeasurementCategory)
+@strawberry_django.filter(models.MeasurementCategory)
 class MeasurementCategoryFilter:
     ids: list[strawberry.ID] | None
     id: auto
@@ -391,7 +390,7 @@ class MeasurementCategoryFilter:
         return queryset.filter(ontology_id=self.ontology)
 
 
-@strawberry.django.filter(models.Graph)
+@strawberry_django.filter(models.Graph)
 class GraphFilter(IDFilterMixin, SearchFilterMixin):
     id: auto
     pinned: bool | None = None
@@ -402,7 +401,7 @@ class GraphFilter(IDFilterMixin, SearchFilterMixin):
         return queryset.filter(pinned_by=info.context.request.user)
 
 
-@strawberry.django.filter(models.CategoryTag)
+@strawberry_django.filter(models.CategoryTag)
 class TagFilter(IDFilterMixin, SearchFilterMixin):
     id: auto
     name: str | None = None
@@ -419,17 +418,17 @@ class TagFilter(IDFilterMixin, SearchFilterMixin):
         return queryset.filter(value__in=self.values)
 
 
-@strawberry.django.filter(models.GraphQuery)
+@strawberry_django.filter(models.GraphQuery)
 class GraphQueryFilter(IDFilterMixin, SearchFilterMixin):
     id: auto
 
 
-@strawberry.django.filter(models.ScatterPlot)
+@strawberry_django.filter(models.ScatterPlot)
 class ScatterPlotFilter(IDFilterMixin, SearchFilterMixin):
     id: auto
 
 
-@strawberry.django.filter(models.NodeQuery)
+@strawberry_django.filter(models.NodeQuery)
 class NodeQueryFilter(IDFilterMixin, SearchFilterMixin):
     id: auto
 
@@ -550,17 +549,17 @@ class EntityRelationFilter:
     )
 
 
-@strawberry.django.filter(models.Experiment)
+@strawberry_django.filter(models.Experiment)
 class ExperimentFilter(IDFilterMixin, SearchFilterMixin):
     id: auto
 
 
 
-@strawberry.django.filter(models.GraphSequence)
+@strawberry_django.filter(models.GraphSequence)
 class GraphSequenceFilter(IDFilterMixin, SearchFilterMixin):
     id: auto
 
-@strawberry.django.filter(models.Model)
+@strawberry_django.filter(models.Model)
 class ModelFilter(IDFilterMixin):
     id: auto
     search: str | None

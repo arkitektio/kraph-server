@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.forms import FileField
 from taggit.managers import TaggableManager
 from core import enums
-from koherent.fields import HistoryField, HistoricForeignKey
+from koherent.fields import ProvenanceField, HistoricForeignKey
 import koherent.signals
 from django_choices_field import TextChoicesField
 from core.fields import S3Field
@@ -84,7 +84,6 @@ class Experiment(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
-    history = HistoryField()
 
 
 class Graph(models.Model):
@@ -125,7 +124,7 @@ class Graph(models.Model):
         related_name="graphs",
         help_text="The experiment this entity group belongs to (if its part of an experiment)",
     )
-    history = HistoryField()
+    provenance = ProvenanceField()
     age_name = models.CharField(
         max_length=1000,
         help_text="The name of the graph class in the age graph",

@@ -42,10 +42,6 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "django.contrib.postgres",
-    "health_check",  # required
-    "health_check.db",  # stock Django health checkers
-    "corsheaders",
-    "graphene_django",
     "channels_redis",
     "guardian",
     "simple_history",
@@ -99,8 +95,12 @@ CSRF_TRUSTED_ORIGINS = conf.get(
 )
 MY_SCRIPT_NAME = conf.get("force_script_name", "")
 
+STRAWBERRY_DJANGO = {
+    "USE_DEPRECATED_FILTERS": True,
+}
+
+
 MIDDLEWARE = [
-    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -110,7 +110,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-ROOT_URLCONF = "mikro_server.urls"
+ROOT_URLCONF = "kraph_server.urls"
 
 TEMPLATES = [
     {
@@ -133,8 +133,8 @@ AUTHENTICATION_BACKENDS = (
     "guardian.backends.ObjectPermissionBackend",
 )
 
-WSGI_APPLICATION = "mikro_server.wsgi.application"
-ASGI_APPLICATION = "mikro_server.asgi.application"
+WSGI_APPLICATION = "kraph_server.wsgi.application"
+ASGI_APPLICATION = "kraph_server.asgi.application"
 
 
 # Database

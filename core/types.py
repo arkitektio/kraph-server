@@ -1,13 +1,11 @@
 from core.utils import paginate_querysets
 import strawberry
-import strawberry.django
+import strawberry_django
 from strawberry import auto
 from typing import List, Optional, Annotated, Union, cast
 import strawberry_django
 from core import models, scalars, filters, enums, loaders
 from django.contrib.auth import get_user_model
-from koherent.models import AppHistoryModel
-from authentikate.models import App as AppModel
 from kante.types import Info
 import datetime
 from asgiref.sync import sync_to_async
@@ -20,22 +18,7 @@ from strawberry import LazyType
 from core import age, pagination as p, filters as f
 from strawberry_django.pagination import OffsetPaginationInput
 from django.db.models import Q
-
-@strawberry_django.type(AppModel, description="An app.")
-class App:
-    id: auto
-    name: str
-    client_id: str
-
-
-@strawberry_django.type(get_user_model(), description="A user.")
-class User:
-    id: auto
-    sub: str
-    username: str
-    email: str
-    password: str
-
+from authentikate.strawberry.types import Client, User
 
 @strawberry.type(
     description="Temporary Credentials for a file upload that can be used by a Client (e.g. in a python datalayer)"
@@ -97,7 +80,7 @@ class Column:
     preferhidden: bool | None = None
 
 
-@strawberry.django.type(models.BigFileStore)
+@strawberry_django.type(models.BigFileStore)
 class BigFileStore:
     id: auto
     path: str
@@ -184,65 +167,7 @@ def relation_to_edge_subtype(
         
     raise Exception(f"Unknown relation type {relation.category_type} for {relation}")
 
-
-@strawberry.enum
-class HistoryKind(str, Enum):
-    CREATE = "+"
-    UPDATE = "~"
-    DELETE = "-"
-
-
-@strawberry.type()
-class ModelChange:
-    field: str
-    old_value: str | None
-    new_value: str | None
-
-
-@strawberry_django.type(AppHistoryModel, pagination=True)
-class History:
-    app: App | None
-
-    @strawberry.django.field()
-    def user(self, info: Info) -> User | None:
-        return self.history_user
-
-    @strawberry.django.field()
-    def kind(self, info: Info) -> HistoryKind:
-        return self.history_type
-
-    @strawberry.django.field()
-    def date(self, info: Info) -> datetime.datetime:
-        return self.history_date
-
-    @strawberry.django.field()
-    def during(self, info: Info) -> str | None:
-        return self.assignation_id
-
-    @strawberry.django.field()
-    def id(self, info: Info) -> strawberry.ID:
-        return self.history_id
-
-    @strawberry.django.field()
-    def effective_changes(self, info: Info) -> list[ModelChange]:
-        new_record, old_record = self, self.prev_record
-
-        changes = []
-        if old_record is None:
-            return changes
-
-        delta = new_record.diff_against(old_record)
-        for change in delta.changes:
-            changes.append(
-                ModelChange(
-                    field=change.field, old_value=change.old, new_value=change.new
-                )
-            )
-
-        return changes
-
-
-@strawberry.django.type(
+@strawberry_django.type(
     models.Graph,
     filters=filters.GraphFilter,
     pagination=True,
@@ -288,7 +213,7 @@ class Graph:
         description="The list of relation expressions defined in this ontology"
     )
 
-    @strawberry.django.field()
+    @strawberry_django.field()
     def node_categories(
         self,
         info: Info,
@@ -309,7 +234,7 @@ class Graph:
             sqs, gqs, offset=pagination.offset, limit=pagination.limit
         )
 
-    @strawberry.django.field()
+    @strawberry_django.field()
     def edge_categories(
         self,
         info: Info,
@@ -347,12 +272,12 @@ class Graph:
             for i in age.select_latest_nodes(self.age_name, pagination, filter=filters)
         ]
 
-    @strawberry.django.field()
+    @strawberry_django.field()
     def pinned(self, info: Info) -> bool:
         return info.context.request.user in self.pinned_by.all()
 
 
-@strawberry.django.type(
+@strawberry_django.type(
     models.GraphQuery,
     filters=filters.GraphQueryFilter,
     pagination=True,
@@ -369,18 +294,18 @@ class GraphQuery:
         description="The list of metric expressions defined in this ontology"
     )
 
-    @strawberry.django.field()
+    @strawberry_django.field()
     def pinned(self, info: Info) -> bool:
         return info.context.request.user in self.pinned_by.all()
 
-    @strawberry.django.field()
+    @strawberry_django.field()
     def render(self, info: Info) -> Union["Path", "Pairs", "Table"]:
         from core.renderers.graph.render import render_graph_query
 
         return render_graph_query(self)
 
 
-@strawberry.django.type(
+@strawberry_django.type(
     models.ScatterPlot,
     filters=filters.ScatterPlotFilter,
     pagination=True,
@@ -400,7 +325,7 @@ class ScatterPlot:
     created_at: datetime.datetime
 
 
-@strawberry.django.type(
+@strawberry_django.type(
     models.NodeQuery,
     filters=filters.NodeQueryFilter,
     pagination=True,
@@ -414,11 +339,11 @@ class NodeQuery:
     graph: Graph
     query: str
 
-    @strawberry.django.field()
+    @strawberry_django.field()
     def pinned(self, info: Info) -> bool:
         return info.context.request.user in self.pinned_by.all()
 
-    @strawberry.django.field()
+    @strawberry_django.field()
     def render(
         self, info: Info, node_id: strawberry.ID
     ) -> Union["Path", "Pairs", "Table"]:
@@ -491,7 +416,7 @@ class Node:
             ).annotate(pinned=Q(pinned_by=info.context.request.user)).order_by('-pinned').all()
         ]
         
-    @strawberry.django.field(description="The best view of the node given the current context")
+    @strawberry_django.field(description="The best view of the node given the current context")
     def best_view(self, info: Info ) -> NodeQueryView | None:
         from core.renderers.node.render import render_node_view
 
@@ -519,7 +444,7 @@ class Node:
     async def graph(self, info: Info) -> "Graph":
         return await loaders.graph_loader.load(self._value.graph_name)
 
-    @strawberry.django.field()
+    @strawberry_django.field()
     def label(self, info: Info, full: bool | None = None) -> str:
         
         label_string: str = ""
@@ -602,7 +527,7 @@ class Structure(Node):
     def __hash__(self):
         return self._value.id
 
-    @strawberry.django.field(
+    @strawberry_django.field(
         description="Protocol steps where this entity was the target"
     )
     async def category(self) -> "StructureCategory":
@@ -678,7 +603,7 @@ class Entity(Node):
     def __hash__(self):
         return self._value.id
 
-    @strawberry.django.field(
+    @strawberry_django.field(
         description="Protocol steps where this entity was the target"
     )
     async def category(self) -> "EntityCategory":
@@ -798,7 +723,7 @@ class Reagent(Node):
     def __hash__(self):
         return self._value.id
 
-    @strawberry.django.field(
+    @strawberry_django.field(
         description="Protocol steps where this entity was the target"
     )
     async def category(self) -> "ReagentCategory":
@@ -842,13 +767,13 @@ class Metric(Node):
     def __hash__(self):
         return self._value.id
 
-    @strawberry.django.field(
+    @strawberry_django.field(
         description="Protocol steps where this entity was the target"
     )
     async def category(self) -> "MetricCategory":
         return await loaders.metric_category_loader.load(self._value.category_id)
 
-    @strawberry.django.field(description="The value of the metric")
+    @strawberry_django.field(description="The value of the metric")
     async def value(self) -> float:
         return self._value.value
 
@@ -862,20 +787,20 @@ class NaturalEvent(Node):
     def __hash__(self):
         return self._value.id
 
-    @strawberry.django.field(
+    @strawberry_django.field(
         description="Protocol steps where this entity was the target"
     )
     async def category(self) -> "NaturalEventCategory":
         return await loaders.natural_event_category_loader.load(self._value.category_id)
         
 
-    @strawberry.django.field(
+    @strawberry_django.field(
         description="Protocol steps where this entity was the target"
     )
     async def valid_from(self) -> datetime.datetime | None:
         return datetime.datetime.fromisoformat(self._value.valid_from) if self._value.valid_from else None
 
-    @strawberry.django.field(
+    @strawberry_django.field(
         description="Protocol steps where this entity was the target"
     )
     async def valid_to(self) -> datetime.datetime | None:
@@ -892,7 +817,7 @@ class ProtocolEvent(Node):
     def __hash__(self):
         return self._value.id
 
-    @strawberry.django.field(
+    @strawberry_django.field(
         description="Protocol steps where this entity was the target"
     )
     async def category(self) -> "ProtocolEventCategory":
@@ -900,19 +825,19 @@ class ProtocolEvent(Node):
             self._value.category_id
         )
 
-    @strawberry.django.field(
+    @strawberry_django.field(
         description="Protocol steps where this entity was the target"
     )
     async def variables(self) -> list["VariableMapping"]:
        return [VariableMapping(_mapping=x) for x in self._value.variables]
 
-    @strawberry.django.field(
+    @strawberry_django.field(
         description="Protocol steps where this entity was the target"
     )
     async def valid_from(self) -> datetime.datetime | None:
         return self._value.valid_from
 
-    @strawberry.django.field(
+    @strawberry_django.field(
         description="Protocol steps where this entity was the target"
     )
     async def valid_to(self) -> datetime.datetime | None:
@@ -932,27 +857,27 @@ class Edge:
     def id(self, info: Info) -> scalars.NodeID:
         return f"{self._value.graph_name}:{self._value.id}"
 
-    @strawberry.django.field()
+    @strawberry_django.field()
     def label(self, info: Info) -> str:
         return self._value.kind_age_name
 
-    @strawberry.django.field()
+    @strawberry_django.field()
     def left_id(self, info: Info) -> str:
         return self._value.unique_left_id
 
-    @strawberry.django.field()
+    @strawberry_django.field()
     def right_id(self, info: Info) -> str:
         return self._value.unique_right_id
 
-    @strawberry.django.field()
+    @strawberry_django.field()
     def left_id(self, info: Info) -> str:
         return self._value.unique_left_id
 
-    @strawberry.django.field()
+    @strawberry_django.field()
     def right_id(self, info: Info) -> str:
         return self._value.unique_right_id
 
-    @strawberry.django.field()
+    @strawberry_django.field()
     def right(self, info: Info) -> Node:
         return entity_to_node_subtype(
             age.get_age_entity(
@@ -961,7 +886,7 @@ class Edge:
             )
         )
 
-    @strawberry.django.field()
+    @strawberry_django.field()
     def left(self, info: Info) -> Node:
         return entity_to_node_subtype(
             age.get_age_entity(
@@ -992,7 +917,7 @@ class Measurement(Edge):
     def created_at(self, info: Info) -> datetime.datetime:
         return self._value.created_at or datetime.datetime.now()
 
-    @strawberry.django.field()
+    @strawberry_django.field()
     async def category(self, info: Info) -> "MeasurementCategory":
         return await loaders.measurement_category_loader.load(self._value.category_id)
 
@@ -1022,7 +947,7 @@ class Relation(Edge):
     def created_at(self, info: Info) -> datetime.datetime:
         return self._value.created_at or datetime.datetime.now()
 
-    @strawberry.django.field()
+    @strawberry_django.field()
     async def category(self, info: Info) -> "RelationCategory":
         return await loaders.relation_category_loader.load(self._value.category_id)
 
@@ -1095,26 +1020,26 @@ class BaseCategory:
         description="The sequence of the expression within its graph"
     )
     
-    @strawberry.django.field()
+    @strawberry_django.field()
     def relevant_queries(self, info: Info) -> List["GraphQuery"]:
         return models.GraphQuery.objects.filter(
             graph=self.graph, relevant_for=self.id
         ).all()
         
-    @strawberry.django.field()
+    @strawberry_django.field()
     def relevant_node_queries(self, info: Info) -> List["NodeQuery"]:
         return models.NodeQuery.objects.filter(
             graph=self.graph, relevant_for_nodes=self.id
         ).all()
     
     
-    @strawberry.django.field()
+    @strawberry_django.field()
     def best_query(self, info: Info) -> Optional["GraphQuery"]:
         return models.GraphQuery.objects.filter(
             graph=self.graph, relevant_for=self.id
         ).first()
         
-    @strawberry.django.field()
+    @strawberry_django.field()
     def pinned(self, info: Info) -> bool:
         return info.context.request.user in self.pinned_by.all()
 
@@ -1385,7 +1310,7 @@ class EntityCategory(NodeCategory, BaseCategory):
 
     
 
-    @strawberry.field(
+    @strawberry_django.field(
         description="The unique identifier of the expression within its graph"
     )
     def instance_kind(self, info: Info) -> enums.InstanceKind:
@@ -1407,7 +1332,7 @@ class ReagentCategory(NodeCategory, BaseCategory):
 
     
 
-    @strawberry.field(
+    @strawberry_django.field(
         description="The unique identifier of the expression within its graph"
     )
     def instance_kind(self, info: Info) -> enums.InstanceKind:
@@ -1477,11 +1402,11 @@ class NaturalEventCategory(NodeCategory, BaseCategory):
 class VariableMapping:
     _mapping: strawberry.Private[dict]
     
-    @strawberry.django.field()
+    @strawberry_django.field()
     def role(self) -> str:
         return self._mapping.get("param", None)
     
-    @strawberry.django.field()
+    @strawberry_django.field()
     def value(self) -> str:
         return self._mapping.get("value", None)
     
@@ -1490,15 +1415,15 @@ class VariableMapping:
 class VariableOption:
     _option: strawberry.Private[dict]
     
-    @strawberry.django.field()
+    @strawberry_django.field()
     def value(self) -> str:
         return self._option.get("value", None)
     
-    @strawberry.django.field()
+    @strawberry_django.field()
     def label(self) -> str:
         return self._option.get("label", None)
     
-    @strawberry.django.field()
+    @strawberry_django.field()
     def description(self) -> str | None:
         return self._option.get("description", None)
 
@@ -1508,39 +1433,39 @@ class VariableDefinition:
     _variable: strawberry.Private[dict]
     _graph: strawberry.Private[str]
     
-    @strawberry.django.field()
+    @strawberry_django.field()
     def value_kind(self) -> enums.MetricKind:
         return self._variable.get("value_kind", None)
     
     
-    @strawberry.django.field()
+    @strawberry_django.field()
     def param(self) -> str:
         return self._variable.get("param", None)
     
-    @strawberry.django.field()
+    @strawberry_django.field()
     def description(self) -> str | None:
         return self._variable.get("description", None)
     
-    @strawberry.django.field()
+    @strawberry_django.field()
     def label(self) -> str | None:
         return self._variable.get("param", None)
     
-    @strawberry.django.field()
+    @strawberry_django.field()
     def optional(self) -> bool:
         optional = self._variable.get("optional", None)
         return optional if optional is not None else False
     
-    @strawberry.django.field()
+    @strawberry_django.field()
     def needs_quantity(self) -> bool:
         return self._variable.get("needs_quantity", False)
 
 
-    @strawberry.django.field()
+    @strawberry_django.field()
     def default(self) -> scalars.Any | None:
         return self._variable.get("default", None)
     
     
-    @strawberry.django.field()
+    @strawberry_django.field()
     def options(self) -> list[VariableOption] | None:
         options = self._variable.get("options", None)
         if not options:
@@ -1688,11 +1613,11 @@ class KnowledgeView:
     _scat: strawberry.Private[models.StructureCategory]
     _structure: strawberry.Private[age.RetrievedEntity]
     
-    @strawberry.django.field()
+    @strawberry_django.field()
     def structure_category(self) -> "StructureCategory":
         return self._scat
     
-    @strawberry.django.field()
+    @strawberry_django.field()
     def structure(self) -> Optional["Structure"]:
         if self._structure:
             return Structure(_value=self._structure)
