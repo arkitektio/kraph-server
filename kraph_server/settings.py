@@ -93,7 +93,7 @@ CORS_ALLOW_ALL_ORIGINS = True
 CSRF_TRUSTED_ORIGINS = conf.get(
     "csrf_trusted_origins", ["http://localhost", "https://localhost"]
 )
-MY_SCRIPT_NAME = conf.get("force_script_name", "")
+MY_SCRIPT_NAME = conf.get("my_script_name", "")
 
 STRAWBERRY_DJANGO = {
     "USE_DEPRECATED_FILTERS": True,
@@ -184,7 +184,8 @@ AUTHENTIKATE = {
         "iss": "lok",
         "kind": "rsa",
         "public_key": conf.lok.get("public_key", None),
-    }]
+    }],
+    "STATIC_TOKENS": conf.lok.get("static_tokens", {}),
 }
 
 
