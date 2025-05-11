@@ -28,7 +28,7 @@ SECRET_KEY = "django-insecure-6vh8x**%4mm0yxjbghipsalf5$wum10_satqhxg$vo9jninehx
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS: list[str] = []
+ALLOWED_HOSTS: list[str] = ["*"]
 
 
 # Application definition
@@ -90,9 +90,7 @@ CHANNEL_LAYERS = {
 CORS_ALLOW_ALL_ORIGINS = True
 
 
-CSRF_TRUSTED_ORIGINS = conf.get(
-    "csrf_trusted_origins", ["http://localhost", "https://localhost"]
-)
+CSRF_TRUSTED_ORIGINS = conf.get("csrf_trusted_origins", ["http://localhost", "https://localhost"])
 MY_SCRIPT_NAME = conf.get("my_script_name", "")
 
 STRAWBERRY_DJANGO = {
@@ -180,11 +178,13 @@ AUTH_PASSWORD_VALIDATORS = [
 
 
 AUTHENTIKATE = {
-    "ISSUERS": [{
-        "iss": "lok",
-        "kind": "rsa",
-        "public_key": conf.lok.get("public_key", None),
-    }],
+    "ISSUERS": [
+        {
+            "iss": "lok",
+            "kind": "rsa",
+            "public_key": conf.lok.get("public_key", None),
+        }
+    ],
     "STATIC_TOKENS": conf.lok.get("static_tokens", {}),
 }
 
