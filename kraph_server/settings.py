@@ -146,15 +146,7 @@ DATABASES = {
         "PASSWORD": conf.db.password,
         "HOST": conf.db.host,
         "PORT": conf.db.port,
-    },
-    "graph": {
-        "ENGINE": conf.db.engine,
-        "NAME": "mikro_graph",
-        "USER": conf.db.username,
-        "PASSWORD": conf.db.password,
-        "HOST": "age",
-        "PORT": conf.db.port,
-    },
+    }
 }
 
 
