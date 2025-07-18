@@ -110,17 +110,6 @@ class MediaStore:
         )
 
 
-@strawberry_django.type(
-    models.Experiment, filters=filters.ExperimentFilter, pagination=True
-)
-class Experiment:
-    id: auto
-    name: str
-    description: str | None
-    history: List["History"]
-    created_at: datetime.datetime
-    creator: User | None
-
 
 
 @strawberry_django.type(

@@ -10,6 +10,7 @@ import koherent.signals
 from django_choices_field import TextChoicesField
 from core.fields import S3Field
 from core.datalayer import Datalayer
+from authentikate.models import Organization
 
 # Create your models here.
 import boto3
@@ -75,19 +76,9 @@ class MediaStore(S3Store):
         self.save()
 
 
-class Experiment(models.Model):
-    name = models.CharField(max_length=1000, help_text="The name of the experiment")
-    description = models.CharField(
-        max_length=1000,
-        help_text="The description of the experiment",
-        null=True,
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-
-
 
 class Graph(models.Model):
-    """An EntityGroup is a collection of Entities.
+    """An Graph is a collection of Entities.
 
     It is used to group Entities together, for example all groups that
     are part of a specific sample, or all entities that are part of a specific
@@ -95,12 +86,12 @@ class Graph(models.Model):
     to their name.
 
     """
-
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="graphs", null=True, blank=True)
     user = models.ForeignKey(
         get_user_model(),
         on_delete=models.CASCADE,
-        related_name="entity_groups",
-        help_text="The user that this entity group belongs to",
+        related_name="graphs",
+        help_text="The user that this graph belongs to",
     )
     store = models.ForeignKey(
         MediaStore,
@@ -115,14 +106,6 @@ class Graph(models.Model):
         max_length=2000,
         help_text="The description of the entity group",
         null=True,
-    )
-    experiment = models.ForeignKey(
-        Experiment,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="graphs",
-        help_text="The experiment this entity group belongs to (if its part of an experiment)",
     )
     provenance = ProvenanceField()
     age_name = models.CharField(

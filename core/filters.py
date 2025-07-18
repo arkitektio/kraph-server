@@ -549,10 +549,6 @@ class EntityRelationFilter:
     )
 
 
-@strawberry_django.filter(models.Experiment)
-class ExperimentFilter(IDFilterMixin, SearchFilterMixin):
-    id: auto
-
 
 
 @strawberry_django.filter(models.GraphSequence)

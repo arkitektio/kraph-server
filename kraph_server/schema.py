@@ -17,8 +17,35 @@ from strawberry.field_extensions import InputMutationExtension
 import strawberry_django
 from koherent.strawberry.extension import KoherentExtension
 from authentikate.strawberry.extension import AuthentikateExtension
+from authentikate.strawberry import AuthExtension, AuthSubscribeExtension
 from core import age, scalars
 from strawberry_django.pagination import OffsetPaginationInput
+
+
+def field(permission_classes=None, **kwargs):
+    " A wrapper for field that adds default permission classes and extensions."
+    if permission_classes:
+        pass
+    else:
+        permission_classes = []
+    return strawberry_django.field(extensions=[AuthExtension()], **kwargs)
+
+
+def mutation( roles: list[str] | None = None, **kwargs) -> strawberry.mutation:
+    """ A wrapper for mutation that adds default permission classes and extensions."""
+    
+    return strawberry_django.mutation(
+        extensions=[AuthExtension(roles=roles or ["admin"])],
+        **kwargs
+    )
+    
+    
+def subscription(**kwargs) -> strawberry.subscription:
+    """ A wrapper for subscription that adds default permission classes and extensions."""
+    return strawberry.subscription(
+        extensions=[AuthSubscribeExtension()],
+        **kwargs
+    )
 
 
 @strawberry.type
@@ -61,80 +88,80 @@ class Query:
         except for entity and entity_relation queries which are publicly accessible.
     """
 
-    graphs: list[types.Graph] = strawberry_django.field(
+    graphs: list[types.Graph] = field(
         description="List of all knowledge graphs"
     )
-    graph_sequences: list[types.GraphSequence] = strawberry_django.field(
+    graph_sequences: list[types.GraphSequence] = field(
         description="List of all graph sequences"
     )
 
-    graph_queries: list[types.GraphQuery] = strawberry_django.field(
+    graph_queries: list[types.GraphQuery] = field(
         description="List of all graph queries"
     )
-    node_queries: list[types.NodeQuery] = strawberry_django.field(
+    node_queries: list[types.NodeQuery] = field(
         description="List of all node queries"
     )
 
     # Node Categories
-    entity_categories: list[types.EntityCategory] = strawberry_django.field(
+    entity_categories: list[types.EntityCategory] = field(
         description="List of all generic categories"
     )
-    structure_categories: list[types.StructureCategory] = strawberry_django.field(
+    structure_categories: list[types.StructureCategory] = field(
         description="List of all structure categories"
     )
     natural_event_categories: list[types.NaturalEventCategory] = (
-        strawberry_django.field(description="List of all natural event categories")
+        field(description="List of all natural event categories")
     )
     protocol_event_categories: list[types.ProtocolEventCategory] = (
-        strawberry_django.field(description="List of all protocol event categories")
+        field(description="List of all protocol event categories")
     )
-    metric_categories: list[types.MetricCategory] = strawberry_django.field(
+    metric_categories: list[types.MetricCategory] = field(
         description="List of all metric categories"
     )
-    reagent_categories: list[types.ReagentCategory] = strawberry_django.field(
+    reagent_categories: list[types.ReagentCategory] = field(
         description="List of all reagent categories"
     )
 
     # Edge Categories
-    relation_categories: list[types.RelationCategory] = strawberry_django.field(
+    relation_categories: list[types.RelationCategory] = field(
         description="List of all relation categories"
     )
-    measurement_categories: list[types.MeasurementCategory] = strawberry_django.field(
+    measurement_categories: list[types.MeasurementCategory] = field(
         description="List of all measurement categories"
     )
 
-    scatter_plots: list[types.ScatterPlot] = strawberry_django.field(
+    scatter_plots: list[types.ScatterPlot] = field(
         description="List of all scatter plots"
     )
 
-    structure = strawberry_django.field(
+    structure = field(
         resolver=queries.structure,
         description="Gets a specific structure e.g an image, video, or 3D model",
     )
 
-    models: list[types.Model] = strawberry_django.field(
+    models: list[types.Model] = field(
         description="List of all deep learning models (e.g. neural networks)"
     )
 
-    nodes: list[types.Entity] = strawberry_django.field(
+    nodes: list[types.Entity] = field(
         resolver=queries.nodes, description="List of all entities in the system"
     )
-    edges: list[types.Edge] = strawberry_django.field(
+    edges: list[types.Edge] = field(
         resolver=queries.edges,
         description="List of all relationships between entities",
     )
     
-    tags: list[types.Tag] = strawberry_django.field(
+    tags: list[types.Tag] = field(
         description="List of all tags in the system"
     )
     
-    render_node_query = strawberry_django.field(
+    render_node_query = field(
         resolver=queries.render_node_query,
         description="Render a node query",
     )
     
     
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def knowledge_views(self, info: Info, identifier: scalars.StructureIdentifier, object: strawberry.ID) -> List[types.KnowledgeView]:
         
         # filtered StructureCategory
@@ -161,7 +188,7 @@ class Query:
         return retrieved_views
     
     
-    @strawberry.django.field(description="The best view of the node given the current context")
+    @field(description="The best view of the node given the current context")
     def node_view(self, info: Info, query: strawberry.ID, node_id: strawberry.ID ) -> types.NodeQueryView:
         from core.renderers.node.render import render_node_view
 
@@ -174,22 +201,22 @@ class Query:
         
         return types.NodeQueryView(_query=best_query, _node_id=node_id)
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def scatter_plot(self, info: Info, id: ID) -> types.ScatterPlot:
         return models.ScatterPlot.objects.get(id=id)
     
     
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def graph_sequence(self, info: Info, id: ID) -> types.GraphSequence:
         return models.GraphSequence.objects.get(id=id)
 
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def entity_category(self, info: Info, id: ID) -> types.EntityCategory:
         return models.EntityCategory.objects.get(id=id)
 
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def get_entity_by_category_and_external_id(
         self, info: Info, category: ID, external_id: str
     ) -> types.Entity:
@@ -205,37 +232,37 @@ class Query:
 
 
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def metric_category(self, info: Info, id: ID) -> types.MetricCategory:
         return models.MetricCategory.objects.get(id=id)
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def structure_category(self, info: Info, id: ID) -> types.StructureCategory:
         return models.StructureCategory.objects.get(id=id)
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def natural_event_category(self, info: Info, id: ID) -> types.NaturalEventCategory:
         return models.NaturalEventCategory.objects.get(id=id)
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def protocol_event_category(
         self, info: Info, id: ID
     ) -> types.ProtocolEventCategory:
         return models.ProtocolEventCategory.objects.get(id=id)
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def reagent_category(self, info: Info, id: ID) -> types.ReagentCategory:
         return models.ReagentCategory.objects.get(id=id)
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def relation_category(self, info: Info, id: ID) -> types.RelationCategory:
         return models.RelationCategory.objects.get(id=id)
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def measurement_category(self, info: Info, id: ID) -> types.MeasurementCategory:
         return models.MeasurementCategory.objects.get(id=id)
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def node_categories(
         self,
         info: Info,
@@ -246,7 +273,7 @@ class Query:
             "This resolver is a placeholder and should be implemented by the developer"
         )
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def edge_categories(
         self,
         info: Info,
@@ -257,22 +284,22 @@ class Query:
             "This resolver is a placeholder and should be implemented by the developer"
         )
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def node_query(self, info: Info, id: ID) -> types.NodeQuery:
         return models.NodeQuery.objects.get(id=id)
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def graph_query(self, info: Info, id: ID) -> types.GraphQuery:
         return models.GraphQuery.objects.get(id=id)
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def node(self, info: Info, id: ID) -> types.Node:
 
         return types.entity_to_node_subtype(
             age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id))
         )
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def edge(self, info: Info, id: ID) -> types.Edge:
         return types.Edge(
             _value=age.get_age_entity_relation(
@@ -281,7 +308,7 @@ class Query:
         )
 
     # SPecial Types
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def structure(
         self,
         info: Info,
@@ -292,7 +319,7 @@ class Query:
             age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id))
         )
         
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def structure_by_identifier(
         self,
         info: Info,
@@ -305,7 +332,7 @@ class Query:
 
         return age.get_age_structure_by_object(structure, object)
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def structures(
         self,
         info: Info,
@@ -314,7 +341,7 @@ class Query:
     ) -> list[types.Structure]:
         return []
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def entity(
         self,
         info: Info,
@@ -325,7 +352,7 @@ class Query:
             age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id))
         )
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def entities(
         self,
         info: Info,
@@ -337,14 +364,14 @@ class Query:
             pagination=pagination,
         )]
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def reagent(self, info: Info, id: ID) -> types.Reagent:
 
         return types.entity_to_node_subtype(
             age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id))
         )
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def reagents(
         self,
         info: Info,
@@ -356,14 +383,14 @@ class Query:
             pagination=pagination,
         )]
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def protocol_event(self, info: Info, id: ID) -> types.ProtocolEvent:
 
         return types.entity_to_node_subtype(
             age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id))
         )
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def protocol_events(
         self,
         info: Info,
@@ -372,14 +399,14 @@ class Query:
     ) -> list[types.ProtocolEvent]:
         return []
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def natural_event(self, info: Info, id: ID) -> types.NaturalEvent:
 
         return types.entity_to_node_subtype(
             age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id))
         )
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def natural_events(
         self,
         info: Info,
@@ -388,14 +415,14 @@ class Query:
     ) -> list[types.ProtocolEvent]:
         return []
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def metric(self, info: Info, id: ID) -> types.Metric:
 
         return types.entity_to_node_subtype(
             age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id))
         )
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def metrics(
         self,
         info: Info,
@@ -404,13 +431,13 @@ class Query:
     ) -> list[types.Metric]:
         return []
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def measurement(self, info: Info, id: ID) -> types.Measurement:
         return types.relation_to_edge_subtype(
             age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id))
         )
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def measurements(
         self,
         info: Info,
@@ -419,13 +446,13 @@ class Query:
     ) -> list[types.Measurement]:
         return []
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def relation(self, info: Info, id: ID) -> types.Relation:
         return types.relation_to_edge_subtype(
             age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id))
         )
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def relations(
         self,
         info: Info,
@@ -434,13 +461,13 @@ class Query:
     ) -> list[types.Relation]:
         return []
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def participant(self, info: Info, id: ID) -> types.Participant:
         return types.relation_to_edge_subtype(
             age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id))
         )
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def participants(
         self,
         info: Info,
@@ -449,229 +476,229 @@ class Query:
     ) -> list[types.Participant]:
         return []
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def graph(self, info: Info, id: ID) -> types.Graph:
         return models.Graph.objects.get(id=id)
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def model(self, info: Info, id: ID) -> types.Model:
         return models.Model.objects.get(id=id)
 
-    @strawberry.django.field(permission_classes=[])
+    @field(permission_classes=[])
     def my_active_graph(self, info: Info) -> types.Graph:
         return models.Graph.objects.filter(user=info.context.request.user).first()
 
 
 @strawberry.type
 class Mutation:
-    create_graph = strawberry_django.mutation(
+    create_graph = mutation(
         resolver=mutations.create_graph, description="Create a new graph"
     )
-    update_graph = strawberry_django.mutation(
+    update_graph = mutation(
         resolver=mutations.update_graph, description="Update an existing graph"
     )
 
-    delete_graph = strawberry_django.mutation(
+    delete_graph = mutation(
         resolver=mutations.delete_graph, description="Delete an existing graph"
     )
 
-    pin_graph = strawberry_django.mutation(
+    pin_graph = mutation(
         resolver=mutations.pin_graph, description="Pin or unpin a graph"
     )
 
     # Create a new Metric Category (Always attached to a structure)
-    create_metric_category = strawberry_django.mutation(
+    create_metric_category = mutation(
         resolver=mutations.create_metric_category, description="Create a new expression"
     )
-    update_metric_category = strawberry_django.mutation(
+    update_metric_category = mutation(
         resolver=mutations.update_metric_category,
         description="Update an existing expression",
     )
-    delete_metric_category = strawberry_django.mutation(
+    delete_metric_category = mutation(
         resolver=mutations.delete_metric_category,
         description="Delete an existing expression",
     )
 
     # Create a new Measureement Category (Relation from a structure to an entity, ie. delineates, )
-    create_measurement_category = strawberry_django.mutation(
+    create_measurement_category = mutation(
         resolver=mutations.create_measurement_category,
         description="Create a new expression",
     )
-    update_measurement_category = strawberry_django.mutation(
+    update_measurement_category = mutation(
         resolver=mutations.update_measurement_category,
         description="Update an existing expression",
     )
-    delete_measurement_category = strawberry_django.mutation(
+    delete_measurement_category = mutation(
         resolver=mutations.delete_measurement_category,
         description="Delete an existing expression",
     )
 
     # Create a new Structure Category (Always attached to a structure)
-    create_structure_category = strawberry_django.mutation(
+    create_structure_category = mutation(
         resolver=mutations.create_structure_category,
         description="Create a new expression",
     )
-    update_structure_category = strawberry_django.mutation(
+    update_structure_category = mutation(
         resolver=mutations.update_structure_category,
         description="Update an existing expression",
     )
-    delete_structure_category = strawberry_django.mutation(
+    delete_structure_category = mutation(
         resolver=mutations.delete_structure_category,
         description="Delete an existing expression",
     )
 
     # Create a new Relation Category (Entity to Entity Relations)
-    create_relation_category = strawberry_django.mutation(
+    create_relation_category = mutation(
         resolver=mutations.create_relation_category,
         description="Create a new expression",
     )
-    update_relation_category = strawberry_django.mutation(
+    update_relation_category = mutation(
         resolver=mutations.update_relation_category,
         description="Update an existing expression",
     )
-    delete_relation_category = strawberry_django.mutation(
+    delete_relation_category = mutation(
         resolver=mutations.delete_relation_category,
         description="Delete an existing expression",
     )
 
     # Create a new Entity Category (a cell, an organelle, a structure, etc)
-    create_entity_category = strawberry_django.mutation(
+    create_entity_category = mutation(
         resolver=mutations.create_entity_category, description="Create a new expression"
     )
-    update_entity_category = strawberry_django.mutation(
+    update_entity_category = mutation(
         resolver=mutations.update_entity_category,
         description="Update an existing expression",
     )
-    delete_entity_category = strawberry_django.mutation(
+    delete_entity_category = mutation(
         resolver=mutations.delete_entity_category,
         description="Delete an existing expression",
     )
 
     # Create a new Reagent Category (4% PFA, 1% BSA, etc)
-    create_reagent_category = strawberry_django.mutation(
+    create_reagent_category = mutation(
         resolver=mutations.create_reagent_category,
         description="Create a new expression",
     )
-    update_reagent_category = strawberry_django.mutation(
+    update_reagent_category = mutation(
         resolver=mutations.update_reagent_category,
         description="Update an existing expression",
     )
-    delete_reagent_category = strawberry_django.mutation(
+    delete_reagent_category = mutation(
         resolver=mutations.delete_reagent_category,
         description="Delete an existing expression",
     )
 
     # Natural Event Categories (external events that were measured)
-    create_natural_event_category = strawberry_django.mutation(
+    create_natural_event_category = mutation(
         resolver=mutations.create_natural_event_category,
         description="Create a new natural event category",
     )
-    update_natural_event_category = strawberry_django.mutation(
+    update_natural_event_category = mutation(
         resolver=mutations.update_natural_event_category,
         description="Update an existing natural event category",
     )
-    delete_natural_event_category = strawberry_django.mutation(
+    delete_natural_event_category = mutation(
         resolver=mutations.delete_natural_event_category,
         description="Delete an existing natural event category",
     )
 
     # Protocol Event Categories (external events that are forced upon a participant)
-    create_protocol_event_category = strawberry_django.mutation(
+    create_protocol_event_category = mutation(
         resolver=mutations.create_protocol_event_category,
         description="Create a new protocol event category",
     )
-    update_protocol_event_category = strawberry_django.mutation(
+    update_protocol_event_category = mutation(
         resolver=mutations.update_protocol_event_category,
         description="Update an existing protocol event category",
     )
-    delete_protocol_event_category = strawberry_django.mutation(
+    delete_protocol_event_category = mutation(
         resolver=mutations.delete_protocol_event_category,
         description="Delete an existing protocol event category",
     )
 
     # Scatter Plot
-    create_scatter_plot = strawberry_django.mutation(
+    create_scatter_plot = mutation(
         resolver=mutations.create_scatter_plot, description="Create a new scatter plot"
     )
-    delete_scatter_plot = strawberry_django.mutation(
+    delete_scatter_plot = mutation(
         resolver=mutations.delete_scatter_plot,
         description="Delete an existing scatter plot",
     )
 
-    record_natural_event = strawberry_django.mutation(
+    record_natural_event = mutation(
         resolver=mutations.record_natural_event,
         description="Record a new natural event",
     )
 
-    record_protocol_event = strawberry_django.mutation(
+    record_protocol_event = mutation(
         resolver=mutations.record_protocol_event,
         description="Record a new protocol event",
     )
 
-    create_toldyouso = strawberry_django.mutation(
+    create_toldyouso = mutation(
         resolver=mutations.create_toldyouso,
         description="Create a new 'told you so' supporting structure",
     )
-    delete_toldyouso = strawberry_django.mutation(
+    delete_toldyouso = mutation(
         resolver=mutations.delete_toldyouso,
         description="Delete a 'told you so' supporting structure",
     )
 
-    create_measurement = strawberry_django.mutation(
+    create_measurement = mutation(
         resolver=mutations.create_measurement,
         description="Create a new measurement edge",
     )
 
-    create_relation = strawberry_django.mutation(
+    create_relation = mutation(
         resolver=mutations.create_relation,
         description="Create a new relation between entities",
     )
 
-    create_metric = strawberry_django.mutation(
+    create_metric = mutation(
         resolver=mutations.create_metric,
         description="Create a new metric for an entity",
     )
 
-    create_structure = strawberry_django.mutation(
+    create_structure = mutation(
         resolver=mutations.create_structure,
         description="Create a new structure",
     )
 
-    create_model = strawberry_django.mutation(
+    create_model = mutation(
         resolver=mutations.create_model, description="Create a new model"
     )
 
-    request_upload = strawberry_django.mutation(
+    request_upload = mutation(
         resolver=mutations.request_upload, description="Request a new file upload"
     )
 
-    create_entity = strawberry_django.mutation(
+    create_entity = mutation(
         resolver=mutations.create_entity, description="Create a new entity"
     )
-    delete_entity = strawberry_django.mutation(
+    delete_entity = mutation(
         resolver=mutations.delete_entity, description="Delete an existing entity"
     )
 
-    create_reagent = strawberry_django.mutation(
+    create_reagent = mutation(
         resolver=mutations.create_reagent, description="Create a new entity"
     )
-    delete_reagent = strawberry_django.mutation(
+    delete_reagent = mutation(
         resolver=mutations.delete_reagent, description="Delete an existing entity"
     )
 
-    create_graph_query = strawberry_django.mutation(
+    create_graph_query = mutation(
         resolver=mutations.create_graph_query, description="Create a new graph query"
     )
 
-    pin_graph_query = strawberry_django.mutation(
+    pin_graph_query = mutation(
         resolver=mutations.pin_graph_query, description="Pin or unpin a graph query"
     )
 
-    create_node_query = strawberry_django.mutation(
+    create_node_query = mutation(
         resolver=mutations.create_node_query, description="Create a new node query"
     )
 
-    pin_node_query = strawberry_django.mutation(
+    pin_node_query = mutation(
         resolver=mutations.pin_node_query, description="Pin or unpin a node query"
     )
 
