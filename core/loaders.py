@@ -146,6 +146,20 @@ async def load_relation_categories(ids):
     return gotten
 
 
+async def load_structure_relation_categories(ids):
+    gotten = []
+    for i in ids:
+
+        gotten.append(
+            await models.StructureRelationCategory.objects.aget(
+                id=i,
+            )
+        )
+
+    return gotten
+
+
+
 async def load_generic_cateogries(age_names):
     """
     Asynchronously loads linked expressions based on the provided age names.
@@ -357,6 +371,7 @@ metric_category_loader = DataLoader(load_fn=load_metric_categories)
 protocol_event_category_loader = DataLoader(load_fn=load_protocol_event_categories)
 expression_loader = DataLoader(load_fn=load_expressions)
 relation_category_loader = DataLoader(load_fn=load_relation_categories)
+structure_relation_category_loader = DataLoader(load_fn=load_structure_relation_categories)
 protocolstep_template_loader = DataLoader(load_fn=load_protocolstep_templates)
 measurement_category_loader = DataLoader(load_fn=load_measurement_categories)
 step_category_loader = DataLoader(load_fn=load_step_category)

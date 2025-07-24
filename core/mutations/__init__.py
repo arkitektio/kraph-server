@@ -23,6 +23,8 @@ from .measurement import *
 from .toldyouso import *
 from .reagent_category import *
 from .reagent import *
+from .structure_relation_category import *
+from .structure_relation import *
 
 __all__ = [
     "create_channel",

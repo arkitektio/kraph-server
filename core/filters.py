@@ -5,7 +5,7 @@ from strawberry import auto
 from typing import Optional
 from strawberry_django.filters import FilterLookup
 import strawberry_django
-
+from django.db.models import Q
 print("Test")
 
 
@@ -186,6 +186,80 @@ class RelationCategoryFilter:
     graph: strawberry.ID | None
     ontology: strawberry.ID | None
     pinned: bool | None
+
+    def filter_pinned(self, queryset, info):
+        if self.pinned is None:
+            return queryset
+        return queryset.filter(pinned_by=info.context.request.user)
+
+    def filter_ids(self, queryset, info):
+        if self.ids is None:
+            return queryset
+        return queryset.filter(id__in=self.ids)
+
+    def filter_search(self, queryset, info):
+        if self.search is None:
+            return queryset
+        return queryset.filter(label__contains=self.search)
+
+    def filter_kind(self, queryset, info):
+        if self.kind is None:
+            return queryset
+        return queryset.filter(kind=self.kind)
+
+    def filter_graph(self, queryset, info):
+        if self.graph is None:
+            return queryset
+        return queryset.filter(graph_id=self.graph)
+    
+    
+
+    
+    
+    
+    
+@strawberry_django.filter(models.StructureRelationCategory)
+class StructureRelationCategoryFilter:
+    ids: list[strawberry.ID] | None
+    id: auto
+    search: str | None
+    graph: strawberry.ID | None
+    ontology: strawberry.ID | None
+    pinned: bool | None
+    source_identifier: str | None = None
+    target_identifier: str | None = None
+    
+    
+    def filter_source_identifier(self, queryset, info):
+        if self.source_identifier is None:
+            return queryset
+        
+        
+        category = models.StructureCategory.objects.get(
+            identifier=self.source_identifier
+        )
+        
+        
+        
+        return queryset.filter(
+                Q(source_definition__category_filters__contains=category.id) |
+                Q(source_definition__tag_filters__contains=list(category.tags.values_list("value", flat=True)))
+            ).distinct()
+
+        
+        
+    def filter_target_identifier(self, queryset, info):
+        if self.target_identifier is None:
+            return queryset
+        
+        
+        category = models.StructureCategory.objects.get(
+            identifier=self.target_identifier
+        )
+        return queryset.filter(
+                Q(target_definition__category_filters__contains=category.id) |
+                Q(target_definition__tag_filters__contains=list(category.tags.values_list("value", flat=True)))
+            ).distinct()
 
     def filter_pinned(self, queryset, info):
         if self.pinned is None:

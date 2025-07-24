@@ -1679,6 +1679,44 @@ def create_age_relation(category: "models.RelationCategory", left_id, right_id):
                 )
 
             raise ValueError("No entity created or returned by the query.")
+        
+        
+def create_age_structure_relation(category: "models.StructureRelationCategory", left_id, right_id):
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (a) WHERE id(a) = %s
+                MATCH (b) WHERE id(b) = %s
+                CREATE (a)-[r:{category.get_age_edge_name()} {{__type: "STRUCTURE_RELATION", __category_type: %s, __category_id: %s}}]->(b)
+                RETURN r
+            $$) as (r agtype);
+            """,
+            (category.graph.age_name, int(left_id), int(right_id), category.get_age_type_name(), category.id ),
+        )
+        result = cursor.fetchone()
+        if result:
+            return edge_ag_to_retrieved_relation(category.graph.age_name, result[0])
+        else:
+            existence_query = """
+                SELECT count(*)
+                FROM cypher(%s, $$
+                    MATCH (a), (b)
+                    WHERE id(a) = %s AND id(b) = %s
+                    RETURN count(*)
+                $$) as (count agtype);
+            """
+
+            cursor.execute(existence_query, (category.graph.age_name, int(left_id), int(right_id)))
+            node_count = cursor.fetchone()[0]
+
+            if node_count < 2:
+                raise ValueError(
+                    f"One or both of the nodes do not exist. {left_id}, {right_id}, {category.graph.age_name}"
+                )
+
+            raise ValueError("No entity created or returned by the query.")
 
 
 def to_entity_id(id):

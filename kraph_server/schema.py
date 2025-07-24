@@ -129,6 +129,9 @@ class Query:
     measurement_categories: list[types.MeasurementCategory] = field(
         description="List of all measurement categories"
     )
+    structure_relation_categories: list[types.StructureRelationCategory] = (
+        field(description="List of all structure relation categories")
+    )
 
     scatter_plots: list[types.ScatterPlot] = field(
         description="List of all scatter plots"
@@ -228,7 +231,9 @@ class Query:
         )
 
 
-
+    @field(permission_classes=[])
+    def structure_relation_category(self, info: Info, id: ID) -> types.StructureRelationCategory:
+        return models.StructureRelationCategory.objects.get(id=id)
 
 
 
@@ -560,6 +565,21 @@ class Mutation:
         resolver=mutations.delete_relation_category,
         description="Delete an existing expression",
     )
+    
+    # Create a new Relation Category (Entity to Entity Relations)
+    create_structure_relation_category = mutation(
+        resolver=mutations.create_structure_relation_category,
+        description="Create a new expression",
+    )
+    update_structure_relation_category = mutation(
+        resolver=mutations.update_structure_relation_category,
+        description="Update an existing expression",
+    )
+    delete_structure_relation_category = mutation(
+        resolver=mutations.delete_structure_relation_category,
+        description="Delete an existing expression",
+    )
+
 
     # Create a new Entity Category (a cell, an organelle, a structure, etc)
     create_entity_category = mutation(
@@ -651,6 +671,11 @@ class Mutation:
 
     create_relation = mutation(
         resolver=mutations.create_relation,
+        description="Create a new relation between entities",
+    )
+    
+    create_structure_relation = mutation(
+        resolver=mutations.create_structure_relation,
         description="Create a new relation between entities",
     )
 

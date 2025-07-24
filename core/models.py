@@ -134,6 +134,10 @@ class Graph(models.Model):
     @property
     def relation_categories(self):
         return RelationCategory.objects.filter(graph=self)
+    
+    @property
+    def structure_relation_categories(self):
+        return StructureRelationCategory.objects.filter(graph=self)
 
     @property
     def measurement_categories(self):
@@ -723,6 +727,25 @@ class RelationCategory(EdgeCategory):
 
     class Meta:
         default_related_name = "relation_categories"
+        
+        
+class StructureRelationCategory(EdgeCategory):
+    """A Relation class is a class that describes a relation between two entities without a value"""
+
+    label = models.CharField(
+        max_length=1000,
+        help_text="How this step acts in the protocol (e.g. as which reagent)",
+        null=True,
+    )
+
+    def get_age_edge_name(self):
+        return "Relation"
+
+    def get_age_type_name(self):
+        return self.age_name
+
+    class Meta:
+        default_related_name = "structure_relation_categories"
 
 
 class GraphQuery(models.Model):

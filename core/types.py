@@ -152,6 +152,8 @@ def relation_to_edge_subtype(
             return Participant(_value=relation)
         case "DESCRIPTION":
             return Description(_value=relation)
+        case "STRUCTURE_RELATION":
+            return StructureRelation(_value=relation)
         
         
     raise Exception(f"Unknown relation type {relation.category_type} for {relation}")
@@ -200,6 +202,9 @@ class Graph:
     )
     relation_categories: List["RelationCategory"] = strawberry_django.field(
         description="The list of relation expressions defined in this ontology"
+    )
+    structure_relation_categories: List["StructureRelationCategory"] = strawberry_django.field(
+        description="The list of structure relation expressions defined in this ontology"
     )
 
     @strawberry_django.field()
@@ -939,6 +944,37 @@ class Relation(Edge):
     @strawberry_django.field()
     async def category(self, info: Info) -> "RelationCategory":
         return await loaders.relation_category_loader.load(self._value.category_id)
+    
+    
+@strawberry.type(
+    description="""A relation is an edge between two entities. It is a directed edge, that connects two entities and established a relationship
+                 that is not a measurement between them. I.e. when they are an subjective assertion about the entities.
+                 
+                 
+                 
+                 """
+)
+class StructureRelation(Edge):
+
+    def __hash__(self):
+        return self._value.id
+
+    @strawberry.field(description="Timestamp from when this entity is valid")
+    def valid_from(self, info: Info) -> datetime.datetime:
+        return self._value.valid_from
+
+    @strawberry.field(description="Timestamp until when this entity is valid")
+    def valid_to(self, info: Info) -> datetime.datetime:
+        return self._value.valid_to
+
+    @strawberry.field(description="When this entity was created")
+    def created_at(self, info: Info) -> datetime.datetime:
+        return self._value.created_at or datetime.datetime.now()
+
+    @strawberry_django.field()
+    async def category(self, info: Info) -> "StructureRelationCategory":
+        return await loaders.structure_relation_category_loader.load(self._value.category_id)
+
 
 
 @strawberry.type(
@@ -1524,6 +1560,31 @@ class RelationCategory(EdgeCategory, BaseCategory):
         return EntityCategoryDefinition(_value=self.target_definition, _graph=self.graph.id)
 
 
+
+@strawberry_django.type(
+    models.StructureRelationCategory, filters=filters.StructureRelationCategoryFilter, pagination=True
+)
+class StructureRelationCategory(EdgeCategory, BaseCategory):
+    """A RelationExpression is a class that describes the relationship between two entities."""
+
+    label: str = strawberry.field(description="The label of the expression")
+
+    @strawberry_django.field(
+        description="The unique identifier of the expression within its graph"
+    )
+    def source_definition(self, info: Info) -> StructureCategoryDefinition:
+        return StructureCategoryDefinition(_value=self.source_definition, _graph=self.graph.id)
+
+    @strawberry_django.field()
+    def target_definition(self, info: Info) -> StructureCategoryDefinition:
+        return StructureCategoryDefinition(_value=self.target_definition, _graph=self.graph.id)
+
+
+
+
+
+
+
 @strawberry_django.type(
     models.MeasurementCategory,
     filters=filters.MeasurementCategoryFilter,
@@ -1573,8 +1634,8 @@ class Path:
     description="A paired structure two entities and the relation between them."
 )
 class Pair:
-    left: Node = strawberry.field(description="The left entity.")
-    right: Node = strawberry.field(description="The right entity.")
+    source: Node = strawberry.field(description="The left entity.")
+    target: Node = strawberry.field(description="The right entity.")
     edge: Edge = strawberry.field(description="The relation between the two entities.")
 
 
