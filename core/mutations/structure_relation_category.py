@@ -11,11 +11,11 @@ from django.conf import settings
 @strawberry.input(description="Input for creating a new expression")
 class StructureRelationCategoryInput(inputs.CategoryInput):
     label: str = strawberry.field(description="The label/name of the expression")
-    source_definition: inputs.CategoryDefinitionInput = strawberry.field(
+    source_definition: inputs.StructureCategoryDefinitionInput = strawberry.field(
         default=None,
         description="The source definition for this expression",
     )
-    target_definition: inputs.CategoryDefinitionInput = strawberry.field(
+    target_definition: inputs.StructureCategoryDefinitionInput = strawberry.field(
         default=None,
         description="The target definition for this expression",
     )
@@ -36,6 +36,50 @@ class DeleteStructureRelationCategoryInput:
     )
 
 
+
+def validate_structure_category_definition(
+    definition: inputs.StructureCategoryDefinitionInput, graph: models.Graph) -> None:
+    
+    if definition.category_filters:
+        categories = models.StructureCategory.objects.filter(
+            id__in=definition.category_filters,
+        )
+        if not categories.exists():
+            raise ValueError(
+                "Category filters must be valid category IDs"
+            )
+        assert len(categories) == len(definition.category_filters), (
+            "Category filters must be valid category IDs"
+        )
+        
+    if definition.identifier_filters:
+        identifiers = models.StructureCategory.objects.filter(
+            identifier__in=definition.identifier_filters, graph=models.Graph.objects.get(id=graph.id)
+        )
+        if not identifiers.exists():
+            raise ValueError(
+                "Identifier filters must be valid identifier IDs"
+            )
+        assert len(identifiers) == len(definition.identifier_filters), (
+            "Identifier filters must be valid identifier IDs"
+        )
+        
+    if definition.tag_filters:
+        tags = models.CategoryTag.objects.filter(
+            value__in=definition.tag_filters,
+        )
+        if not tags.exists():
+            raise ValueError(
+                "Tag filters must be valid tag values"
+            )
+        assert len(tags) == len(definition.tag_filters), (
+            "Tag filters must be valid tag values"
+        )
+        
+    return strawberry.asdict(definition)
+    
+    
+
 def create_structure_relation_category(
     info: Info,
     input: StructureRelationCategoryInput,
@@ -55,6 +99,11 @@ def create_structure_relation_category(
         )
     else:
         media_store = None
+        
+        
+        
+        
+        
 
     vocab, created = models.StructureRelationCategory.objects.update_or_create(
         graph=graph,
@@ -64,8 +113,8 @@ def create_structure_relation_category(
             purl=input.purl,
             store=media_store,
             label=input.label,
-            source_definition=strawberry.asdict(input.source_definition),
-            target_definition=strawberry.asdict(input.target_definition),
+            source_definition=validate_structure_category_definition(input.source_definition, graph),
+            target_definition=validate_structure_category_definition(input.target_definition, graph),
         ),
     )
 

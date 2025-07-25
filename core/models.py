@@ -147,6 +147,7 @@ class Graph(models.Model):
     def metric_categories(self):
         return MetricCategory.objects.filter(graph=self)
     
+    
     @property
     def protocol_event_categories(self):
         return ProtocolEventCategory.objects.filter(graph=self)

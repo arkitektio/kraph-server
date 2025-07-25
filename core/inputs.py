@@ -99,6 +99,29 @@ class CategoryDefinitionInput:
         default=None,
         description="The default creation of entity or reagent to use for this port if a reagent is not provided",
     )
+    
+@strawberry.input(description="Input for creating a new expression")
+class StructureCategoryDefinitionInput:
+    category_filters: list[strawberry.ID] | None = strawberry.field(
+        default=None,
+        description="A list of classes to filter the entities",
+    )
+    identifier_filters: list[scalars.StructureIdentifier] | None = strawberry.field(
+        default=None,
+        description="A list of StructureIdentifier to filter the entities",
+    )
+    tag_filters: list[str] | None = strawberry.field(
+        default=None,
+        description="A list of tags to filter the entities by",
+    )
+    default_use_active: strawberry.ID | None = strawberry.field(
+        default=None,
+        description="The default ACTIVE reagent to use for this port if a reagent is not provided",
+    )
+    default_use_new: strawberry.ID | None = strawberry.field(
+        default=None,
+        description="The default creation of entity or reagent to use for this port if a reagent is not provided",
+    )
 
 
 @strawberry.input(description="Input for creating a new expression")

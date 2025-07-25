@@ -206,7 +206,7 @@ class Graph:
     structure_relation_categories: List["StructureRelationCategory"] = strawberry_django.field(
         description="The list of structure relation expressions defined in this ontology"
     )
-
+    
     @strawberry_django.field()
     def node_categories(
         self,
@@ -1162,6 +1162,11 @@ class StructureCategoryDefinition(CategoryDefintion):
             querysets = querysets.exclude(category__id=i)
 
         return querysets.all()
+    
+    @strawberry.field()
+    def identifier_filters(self, info: Info) -> list[scalars.StructureIdentifier] | None:
+        return self._value.get("identifier_filters", None)
+
 
 
 @strawberry.type()
