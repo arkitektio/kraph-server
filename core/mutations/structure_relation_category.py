@@ -19,79 +19,63 @@ class StructureRelationCategoryInput(inputs.CategoryInput):
         default=None,
         description="The target definition for this expression",
     )
-    
 
 
 @strawberry.input(description="Input for updating an existing expression")
 class UpdateStructureRelationCategoryInput(inputs.UpdateCategoryInput):
-    label: str | None = strawberry.field(
-        default=None, description="New label for the expression"
-    )
+    label: str | None = strawberry.field(default=None, description="New label for the expression")
 
 
 @strawberry.input(description="Input for deleting an expression")
 class DeleteStructureRelationCategoryInput:
-    id: strawberry.ID = strawberry.field(
-        description="The ID of the expression to delete"
-    )
+    id: strawberry.ID = strawberry.field(description="The ID of the expression to delete")
 
 
-
-def validate_structure_category_definition(
-    definition: inputs.StructureCategoryDefinitionInput, graph: models.Graph) -> None:
-    
+def validate_structure_category_definition(definition: inputs.StructureCategoryDefinitionInput, graph: models.Graph) -> None:
     if definition.category_filters:
         categories = models.StructureCategory.objects.filter(
             id__in=definition.category_filters,
         )
         if not categories.exists():
-            raise ValueError(
-                "Category filters must be valid category IDs"
-            )
-        assert len(categories) == len(definition.category_filters), (
-            "Category filters must be valid category IDs"
-        )
-        
+            raise ValueError("Category filters must be valid category IDs")
+        assert len(categories) == len(definition.category_filters), "Category filters must be valid category IDs"
+
     if definition.identifier_filters:
-        identifiers = models.StructureCategory.objects.filter(
-            identifier__in=definition.identifier_filters, graph=models.Graph.objects.get(id=graph.id)
-        )
-        if not identifiers.exists():
-            raise ValueError(
-                "Identifier filters must be valid identifier IDs"
-            )
-        assert len(identifiers) == len(definition.identifier_filters), (
-            "Identifier filters must be valid identifier IDs"
-        )
-        
+        for identifier in definition.identifier_filters:
+            if not isinstance(identifier, str):
+                raise ValueError("Identifier filters must be a list of identifier IDs")
+
+            stc = models.StructureCategory.objects.get_or_create(
+                graph=graph,
+                age_name=manager.build_structure_age_name(identifier),
+                defaults=dict(
+                    identifier=identifier,
+                    description=f"Identifier filter for {identifier}",
+                    purl=None,
+                    store=None,
+                ),
+            )[0]
+
     if definition.tag_filters:
         tags = models.CategoryTag.objects.filter(
             value__in=definition.tag_filters,
         )
         if not tags.exists():
-            raise ValueError(
-                "Tag filters must be valid tag values"
-            )
-        assert len(tags) == len(definition.tag_filters), (
-            "Tag filters must be valid tag values"
-        )
-        
+            raise ValueError("Tag filters must be valid tag values")
+        assert len(tags) == len(definition.tag_filters), "Tag filters must be valid tag values"
+
     return strawberry.asdict(definition)
-    
-    
+
 
 def create_structure_relation_category(
     info: Info,
     input: StructureRelationCategoryInput,
 ) -> types.StructureRelationCategory:
-
     graph = models.Graph.objects.get(
         id=input.graph,
     )
     if input.color:
-        assert (
-            len(input.color) == 3 or len(input.color) == 4
-        ), "Color must be a list of 3 or 4 values RGBA"
+        assert len(input.color) == 3 or len(input.color) == 4, "Color must be a list of 3 or 4 values RGBA"
 
     if input.image:
         media_store = models.MediaStore.objects.get(
@@ -99,11 +83,6 @@ def create_structure_relation_category(
         )
     else:
         media_store = None
-        
-        
-        
-        
-        
 
     vocab, created = models.StructureRelationCategory.objects.update_or_create(
         graph=graph,
@@ -135,15 +114,12 @@ def create_structure_relation_category(
 
     return vocab
 
-def update_structure_relation_category(
-    info: Info, input: UpdateStructureRelationCategoryInput
-) -> types.StructureRelationCategory:
+
+def update_structure_relation_category(info: Info, input: UpdateStructureRelationCategoryInput) -> types.StructureRelationCategory:
     item = models.StructureRelationCategory.objects.get(id=input.id)
 
     if input.color:
-        assert (
-            len(input.color) == 3 or len(input.color) == 4
-        ), "Color must be a list of 3 or 4 values RGBA"
+        assert len(input.color) == 3 or len(input.color) == 4, "Color must be a list of 3 or 4 values RGBA"
 
     if input.image:
         media_store = models.MediaStore.objects.get(

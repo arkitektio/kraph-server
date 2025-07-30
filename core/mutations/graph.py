@@ -7,15 +7,9 @@ from contextlib import contextmanager
 
 @strawberry.input(description="Input type for creating a new ontology")
 class GraphInput:
-    name: str = strawberry.field(
-        description="The name of the ontology (will be converted to snake_case)"
-    )
-    description: str | None = strawberry.field(
-        default=None, description="An optional description of the ontology"
-    )
-    image: strawberry.ID | None = strawberry.field(
-        default=None, description="An optional ID reference to an associated image"
-    )
+    name: str = strawberry.field(description="The name of the ontology (will be converted to snake_case)")
+    description: str | None = strawberry.field(default=None, description="An optional description of the ontology")
+    image: strawberry.ID | None = strawberry.field(default=None, description="An optional ID reference to an associated image")
     pin: bool | None = strawberry.field(
         default=None,
         description="Whether this ontology should be pinned or not",
@@ -25,21 +19,11 @@ class GraphInput:
 @strawberry.input(description="Input type for creating a new ontology node")
 class GraphNodeInput:
     id: str = strawberry.field(description="The AGE_NAME of the ontology")
-    position_x: float | None = strawberry.field(
-        default=None, description="An optional x position for the ontology node"
-    )
-    position_y: float | None = strawberry.field(
-        default=None, description="An optional y position for the ontology node"
-    )
-    height: float | None = strawberry.field(
-        default=None, description="An optional height for the ontology node"
-    )
-    width: float | None = strawberry.field(
-        default=None, description="An optional width for the ontology node"
-    )
-    color: list[int] | None = strawberry.field(
-        default=None, description="An optional RGBA color for the ontology node"
-    )
+    position_x: float | None = strawberry.field(default=None, description="An optional x position for the ontology node")
+    position_y: float | None = strawberry.field(default=None, description="An optional y position for the ontology node")
+    height: float | None = strawberry.field(default=None, description="An optional height for the ontology node")
+    width: float | None = strawberry.field(default=None, description="An optional width for the ontology node")
+    color: list[int] | None = strawberry.field(default=None, description="An optional RGBA color for the ontology node")
 
 
 @strawberry.input(description="Input type for updating an existing ontology")
@@ -53,15 +37,9 @@ class UpdateGraphInput:
         default=None,
         description="A new PURL for the ontology (will be converted to snake_case)",
     )
-    description: str | None = strawberry.field(
-        default=None, description="New description for the ontology"
-    )
-    image: strawberry.ID | None = strawberry.field(
-        default=None, description="New ID reference to an associated image"
-    )
-    nodes: list[GraphNodeInput] | None = strawberry.field(
-        default=None, description="New nodes for the ontology"
-    )
+    description: str | None = strawberry.field(default=None, description="New description for the ontology")
+    image: strawberry.ID | None = strawberry.field(default=None, description="New ID reference to an associated image")
+    nodes: list[GraphNodeInput] | None = strawberry.field(default=None, description="New nodes for the ontology")
     pin: bool | None = strawberry.field(
         default=None,
         description="Whether this ontology should be pinned or not",
@@ -81,7 +59,6 @@ def create_graph(
     info: Info,
     input: GraphInput,
 ) -> types.Graph:
-
     assert input.name, "Graph name is required"
     assert input.name != "", "Graph name cannot be empty"
     assert len(input.name) < 100, "Graph name cannot be longer than 100 characters"
@@ -103,18 +80,13 @@ def create_graph(
             name=input.name,
         ),
     )
-    
-    
 
     age.create_age_graph(item.age_name)
-    
-     
-    if input.pin is not None:
-        if input.pin:
-            item.pinned_by.add(info.context.request.user)
-        else:
-            item.pinned_by.remove(info.context.request.user)
 
+    if input.pin is not False:
+        item.pinned_by.add(info.context.request.user)
+    else:
+        item.pinned_by.remove(info.context.request.user)
 
     return item
 
@@ -136,9 +108,7 @@ def update_graph(info: Info, input: UpdateGraphInput) -> types.Graph:
     item.save()
 
     if input.nodes:
-        
         for i in input.nodes:
-            
             x = models.NodeCategory.objects.get(
                 id=i.id,
             )
@@ -152,16 +122,14 @@ def update_graph(info: Info, input: UpdateGraphInput) -> types.Graph:
                 x.width = i.width
             if i.color:
                 x.color = i.color
-                
+
             x.save()
-    
-    
+
     if input.pin is not None:
         if input.pin:
             item.pinned_by.add(info.context.request.user)
         else:
             item.pinned_by.remove(info.context.request.user)
-
 
     return item
 
@@ -171,9 +139,9 @@ def delete_graph(
     input: DeleteGraphInput,
 ) -> strawberry.ID:
     item = models.Graph.objects.get(id=input.id)
-    
+
     age.delete_age_graph(item.age_name)
-    
+
     item.delete()
 
     return input.id

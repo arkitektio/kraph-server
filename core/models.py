@@ -19,9 +19,7 @@ from django.conf import settings
 
 
 class S3Store(models.Model):
-    path = S3Field(
-        null=True, blank=True, help_text="The stodre of the image", unique=True
-    )
+    path = S3Field(null=True, blank=True, help_text="The stodre of the image", unique=True)
     key = models.CharField(max_length=1000)
     bucket = models.CharField(max_length=1000)
     populated = models.BooleanField(default=False)
@@ -52,10 +50,7 @@ class BigFileStore(S3Store):
 
 
 class MediaStore(S3Store):
-
-    def get_presigned_url(
-        self, info, datalayer: Datalayer, host: str | None = None
-    ) -> str:
+    def get_presigned_url(self, info, datalayer: Datalayer, host: str | None = None) -> str:
         s3 = datalayer.s3
         url: str = s3.generate_presigned_url(
             ClientMethod="get_object",
@@ -76,7 +71,6 @@ class MediaStore(S3Store):
         self.save()
 
 
-
 class Graph(models.Model):
     """An Graph is a collection of Entities.
 
@@ -86,6 +80,7 @@ class Graph(models.Model):
     to their name.
 
     """
+
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="graphs", null=True, blank=True)
     user = models.ForeignKey(
         get_user_model(),
@@ -134,7 +129,7 @@ class Graph(models.Model):
     @property
     def relation_categories(self):
         return RelationCategory.objects.filter(graph=self)
-    
+
     @property
     def structure_relation_categories(self):
         return StructureRelationCategory.objects.filter(graph=self)
@@ -142,24 +137,22 @@ class Graph(models.Model):
     @property
     def measurement_categories(self):
         return MeasurementCategory.objects.filter(graph=self)
-    
+
     @property
     def metric_categories(self):
         return MetricCategory.objects.filter(graph=self)
-    
-    
+
     @property
     def protocol_event_categories(self):
         return ProtocolEventCategory.objects.filter(graph=self)
-    
+
     @property
     def natural_event_categories(self):
         return NaturalEventCategory.objects.filter(graph=self)
-    
+
     @property
     def reagent_categories(self):
         return ReagentCategory.objects.filter(graph=self)
-
 
 
 def random_color():
@@ -167,10 +160,9 @@ def random_color():
     return tuple(random.choice(levels) for _ in range(3))
 
 
-
-
 class GraphSequence(models.Model):
     """A node index for a category"""
+
     graph = models.ForeignKey(
         Graph,
         on_delete=models.CASCADE,
@@ -193,12 +185,8 @@ class GraphSequence(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    min_value = models.IntegerField(
-        default=0
-    )
-    start_value = models.IntegerField(
-        default=0
-    )
+    min_value = models.IntegerField(default=0)
+    start_value = models.IntegerField(default=0)
     max_value = models.IntegerField(
         null=True,
         blank=True,
@@ -212,17 +200,14 @@ class GraphSequence(models.Model):
         default=1,
         help_text="The step size of the sequence (e.g. 1,2,3,4,5,6)",
     )
-    
+
     class Meta:
         unique_together = ("graph", "index")
         default_related_name = "graph_sequences"
-        
+
     @property
     def ps_name(self):
         return f"{self.graph.age_name}{self.index}"
-    
-
-
 
 
 class CategoryTag(models.Model):
@@ -348,8 +333,6 @@ class EdgeCategory(Category):
         help_text="Filters for the left side of the metric (e.g. which tags the left side should have)",
         null=True,
     )
-    
-    
 
     def get_age_edge_name(self):
         raise NotImplementedError("Not implemented needs to be implemented")
@@ -697,7 +680,6 @@ class MeasurementCategory(EdgeCategory):
         max_length=1000,
         help_text="The label of the entity class",
     )
-    
 
     def get_age_edge_name(self):
         return "Measurement"
@@ -707,8 +689,6 @@ class MeasurementCategory(EdgeCategory):
 
     class Meta:
         default_related_name = "measurement_categories"
-        
-        
 
 
 class RelationCategory(EdgeCategory):
@@ -728,8 +708,8 @@ class RelationCategory(EdgeCategory):
 
     class Meta:
         default_related_name = "relation_categories"
-        
-        
+
+
 class StructureRelationCategory(EdgeCategory):
     """A Relation class is a class that describes a relation between two entities without a value"""
 
@@ -756,12 +736,8 @@ class GraphQuery(models.Model):
         related_name="graph_queries",
         help_text="The graph this query belongs to",
     )
-    query = models.CharField(
-        max_length=7000, help_text="The query that is used to materialize the graph"
-    )
-    name = models.CharField(
-        max_length=1000, help_text="The name of the materialized graph"
-    )
+    query = models.CharField(max_length=7000, help_text="The query that is used to materialize the graph")
+    name = models.CharField(max_length=1000, help_text="The name of the materialized graph")
     description = models.CharField(
         max_length=1000,
         help_text="The description of the materialized graph",
@@ -801,12 +777,8 @@ class NodeQuery(models.Model):
         related_name="node_queries",
         help_text="The graph this query belongs to",
     )
-    query = models.CharField(
-        max_length=7000, help_text="The query that is used to materialize the graph"
-    )
-    name = models.CharField(
-        max_length=1000, help_text="The name of the materialized graph"
-    )
+    query = models.CharField(max_length=7000, help_text="The query that is used to materialize the graph")
+    name = models.CharField(max_length=1000, help_text="The name of the materialized graph")
     description = models.CharField(
         max_length=1000,
         help_text="The description of the materialized graph",
@@ -840,7 +812,6 @@ class NodeQuery(models.Model):
 
     @classmethod
     def active_for_user_and_graph(self, user, graph):
-
         return self.objects.filter(graph=graph, pinned_by=user).first()
 
 
@@ -900,29 +871,17 @@ class ScatterPlot(models.Model):
         max_length=1000,
         help_text="The column that assigns the row_id (could be an edge, a node, etc.)",
     )
-    x_column = models.CharField(
-        max_length=1000, help_text="The column that assigns the x value", null=True
-    )
-    x_id_column = models.CharField(
-        max_length=1000, help_text="The column that assigns the x_id value", null=True
-    )
-    y_column = models.CharField(
-        max_length=1000, help_text="The column that assigns the y value", null=True
-    )
+    x_column = models.CharField(max_length=1000, help_text="The column that assigns the x value", null=True)
+    x_id_column = models.CharField(max_length=1000, help_text="The column that assigns the x_id value", null=True)
+    y_column = models.CharField(max_length=1000, help_text="The column that assigns the y value", null=True)
     y_id_column = models.CharField(
         max_length=1000,
         help_text="The column that assigns an ID to the y value",
         null=True,
     )
-    color_column = models.CharField(
-        max_length=1000, help_text="The column that assigns the color value", null=True
-    )
-    size_column = models.CharField(
-        max_length=1000, help_text="The column that assigns the size value", null=True
-    )
-    shape_column = models.CharField(
-        max_length=1000, help_text="The column that assigns the shape value", null=True
-    )
+    color_column = models.CharField(max_length=1000, help_text="The column that assigns the color value", null=True)
+    size_column = models.CharField(max_length=1000, help_text="The column that assigns the size value", null=True)
+    shape_column = models.CharField(max_length=1000, help_text="The column that assigns the shape value", null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     creator = models.ForeignKey(
         get_user_model(),
@@ -952,3 +911,7 @@ class Model(models.Model):
         related_name="models",
         help_text="The store of the model",
     )
+
+
+# Needs to be here
+from core import signals
