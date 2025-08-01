@@ -403,6 +403,13 @@ class MeasurementCategoryFilter:
     id: auto
     search: str | None
     graph: strawberry.ID | None
+    source_identifier: str | None = None
+
+    def filter_source_identifier(self, queryset, info):
+        if self.source_identifier is None:
+            return queryset
+
+        return queryset.filter(Q(source_definition__identifier_filters__contains=self.source_identifier)).distinct()
 
     def filter_ids(self, queryset, info):
         if self.ids is None:

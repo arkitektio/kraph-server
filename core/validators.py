@@ -6,32 +6,39 @@ def validate_structure_definition(
 ) -> None:
     
     
-    validated = []
-    
-    for i in structure_definition.category_filters:
-        try:
-            if i.startswith("@"):
-                validated.append(models.StructureCategory.objects.get_or_create(
-                    graph=graph,age_name=manager.build_structure_age_name(i),
-                    defaults=dict(
-                        description="",
-                        purl="",
-                        store=None,
-                        identifier=i,
-                    ),
-                )[0].id)
-            else:   
-                validated.append(models.StructureCategory.objects.get(
-                    id=i,
-                ).id)
-        except models.StructureCategory.DoesNotExist:
-            raise ValueError(f"StructureCategory with id {i} does not exist. This is an invalid structure definition.")
-        
-    
-    thedicted = strawberry.asdict(structure_definition)
-    thedicted["category_filters"] = validated
-    
-    return thedicted    
+    if structure_definition.category_filters:
+        categories = models.StructureCategory.objects.filter(
+            id__in=structure_definition.category_filters,
+        )
+        if not categories.exists():
+            raise ValueError("Category filters must be valid category IDs")
+        assert len(categories) == len(structure_definition.category_filters), "Category filters must be valid category IDs"
+
+    if structure_definition.identifier_filters:
+        for identifier in structure_definition.identifier_filters:
+            if not isinstance(identifier, str):
+                raise ValueError("Identifier filters must be a list of identifier IDs")
+
+            stc = models.StructureCategory.objects.get_or_create(
+                graph=graph,
+                age_name=manager.build_structure_age_name(identifier),
+                defaults=dict(
+                    identifier=identifier,
+                    description=f"Identifier filter for {identifier}",
+                    purl=None,
+                    store=None,
+                ),
+            )[0]
+
+    if structure_definition.tag_filters:
+        tags = models.CategoryTag.objects.filter(
+            value__in=structure_definition.tag_filters,
+        )
+        if not tags.exists():
+            raise ValueError("Tag filters must be valid tag values")
+        assert len(tags) == len(structure_definition.tag_filters), "Tag filters must be valid tag values"
+
+    return strawberry.asdict(structure_definition)
 
 
 def validate_entity_definition(
@@ -50,7 +57,5 @@ def validate_entity_definition(
             raise ValueError(f"EntityCategory with id {i} does not exist. This is an invalid entitiy definition.")
         
     
-    thedicted = strawberry.asdict(entity_definition)
-    thedicted["category_filters"] = validated
     
-    return thedicted
+    return strawberry.asdict(entity_definition)

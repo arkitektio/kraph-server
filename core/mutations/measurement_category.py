@@ -11,7 +11,7 @@ from django.conf import settings
 @strawberry.input(description="Input for creating a new expression")
 class MeasurementCategoryInput(inputs.CategoryInput):
     label: str = strawberry.field(description="The label/name of the expression")
-    structure_definition: inputs.CategoryDefinitionInput = strawberry.field(
+    structure_definition: inputs.StructureCategoryDefinitionInput = strawberry.field(
         default=None,
         description="The source definition for this expression",
     )
