@@ -23,7 +23,7 @@ from strawberry_django.pagination import OffsetPaginationInput
 
 
 def field(permission_classes=None, **kwargs):
-    " A wrapper for field that adds default permission classes and extensions."
+    "A wrapper for field that adds default permission classes and extensions."
     if permission_classes:
         pass
     else:
@@ -31,21 +31,15 @@ def field(permission_classes=None, **kwargs):
     return strawberry_django.field(extensions=[AuthExtension()], **kwargs)
 
 
-def mutation( roles: list[str] | None = None, **kwargs) -> strawberry.mutation:
-    """ A wrapper for mutation that adds default permission classes and extensions."""
-    
-    return strawberry_django.mutation(
-        extensions=[AuthExtension(roles=roles or ["admin"])],
-        **kwargs
-    )
-    
-    
+def mutation(roles: list[str] | None = None, **kwargs) -> strawberry.mutation:
+    """A wrapper for mutation that adds default permission classes and extensions."""
+
+    return strawberry_django.mutation(extensions=[AuthExtension(roles=roles or ["admin"])], **kwargs)
+
+
 def subscription(**kwargs) -> strawberry.subscription:
-    """ A wrapper for subscription that adds default permission classes and extensions."""
-    return strawberry.subscription(
-        extensions=[AuthSubscribeExtension()],
-        **kwargs
-    )
+    """A wrapper for subscription that adds default permission classes and extensions."""
+    return strawberry.subscription(extensions=[AuthSubscribeExtension()], **kwargs)
 
 
 @strawberry.type
@@ -88,154 +82,106 @@ class Query:
         except for entity and entity_relation queries which are publicly accessible.
     """
 
-    graphs: list[types.Graph] = field(
-        description="List of all knowledge graphs"
-    )
-    graph_sequences: list[types.GraphSequence] = field(
-        description="List of all graph sequences"
-    )
+    graphs: list[types.Graph] = field(description="List of all knowledge graphs")
+    graph_sequences: list[types.GraphSequence] = field(description="List of all graph sequences")
 
-    graph_queries: list[types.GraphQuery] = field(
-        description="List of all graph queries"
-    )
-    node_queries: list[types.NodeQuery] = field(
-        description="List of all node queries"
-    )
+    graph_queries: list[types.GraphQuery] = field(description="List of all graph queries")
+    node_queries: list[types.NodeQuery] = field(description="List of all node queries")
 
     # Node Categories
-    entity_categories: list[types.EntityCategory] = field(
-        description="List of all generic categories"
-    )
-    structure_categories: list[types.StructureCategory] = field(
-        description="List of all structure categories"
-    )
-    natural_event_categories: list[types.NaturalEventCategory] = (
-        field(description="List of all natural event categories")
-    )
-    protocol_event_categories: list[types.ProtocolEventCategory] = (
-        field(description="List of all protocol event categories")
-    )
-    metric_categories: list[types.MetricCategory] = field(
-        description="List of all metric categories"
-    )
-    reagent_categories: list[types.ReagentCategory] = field(
-        description="List of all reagent categories"
-    )
+    entity_categories: list[types.EntityCategory] = field(description="List of all generic categories")
+    structure_categories: list[types.StructureCategory] = field(description="List of all structure categories")
+    natural_event_categories: list[types.NaturalEventCategory] = field(description="List of all natural event categories")
+    protocol_event_categories: list[types.ProtocolEventCategory] = field(description="List of all protocol event categories")
+    metric_categories: list[types.MetricCategory] = field(description="List of all metric categories")
+    reagent_categories: list[types.ReagentCategory] = field(description="List of all reagent categories")
 
     # Edge Categories
-    relation_categories: list[types.RelationCategory] = field(
-        description="List of all relation categories"
-    )
-    measurement_categories: list[types.MeasurementCategory] = field(
-        description="List of all measurement categories"
-    )
-    structure_relation_categories: list[types.StructureRelationCategory] = (
-        field(description="List of all structure relation categories")
-    )
+    relation_categories: list[types.RelationCategory] = field(description="List of all relation categories")
+    measurement_categories: list[types.MeasurementCategory] = field(description="List of all measurement categories")
+    structure_relation_categories: list[types.StructureRelationCategory] = field(description="List of all structure relation categories")
 
-    scatter_plots: list[types.ScatterPlot] = field(
-        description="List of all scatter plots"
-    )
+    scatter_plots: list[types.ScatterPlot] = field(description="List of all scatter plots")
 
     structure = field(
         resolver=queries.structure,
         description="Gets a specific structure e.g an image, video, or 3D model",
     )
 
-    models: list[types.Model] = field(
-        description="List of all deep learning models (e.g. neural networks)"
-    )
+    models: list[types.Model] = field(description="List of all deep learning models (e.g. neural networks)")
 
-    nodes: list[types.Entity] = field(
-        resolver=queries.nodes, description="List of all entities in the system"
-    )
+    nodes: list[types.Entity] = field(resolver=queries.nodes, description="List of all entities in the system")
     edges: list[types.Edge] = field(
         resolver=queries.edges,
         description="List of all relationships between entities",
     )
-    
-    tags: list[types.Tag] = field(
-        description="List of all tags in the system"
-    )
-    
+
+    tags: list[types.Tag] = field(description="List of all tags in the system")
+
     render_node_query = field(
         resolver=queries.render_node_query,
         description="Render a node query",
     )
-    
-    
+
     @field(permission_classes=[])
     def knowledge_views(self, info: Info, identifier: scalars.StructureIdentifier, object: strawberry.ID) -> List[types.KnowledgeView]:
-        
         # filtered StructureCategory
         structure_category = models.StructureCategory.objects.filter(identifier=identifier, graph__pinned_by=info.context.request.user)
-        
+
         retrieved_views = []
-        
+
         for scat in structure_category:
             try:
                 # get all structures with the same identifier
                 retrieved_entitiy = age.get_age_structure_by_object(scat, object)
-                retrieved_views.append(types.KnowledgeView(
-                    _scat=scat,
-                    _structure=retrieved_entitiy,
-                ))
+                retrieved_views.append(
+                    types.KnowledgeView(
+                        _scat=scat,
+                        _structure=retrieved_entitiy,
+                    )
+                )
             except Exception as e:
-                retrieved_views.append(types.KnowledgeView(
-                    _scat=scat,
-                    _structure=None,
-                ))
-        
-        
-        
+                retrieved_views.append(
+                    types.KnowledgeView(
+                        _scat=scat,
+                        _structure=None,
+                    )
+                )
+
         return retrieved_views
-    
-    
+
     @field(description="The best view of the node given the current context")
-    def node_view(self, info: Info, query: strawberry.ID, node_id: strawberry.ID ) -> types.NodeQueryView:
+    def node_view(self, info: Info, query: strawberry.ID, node_id: strawberry.ID) -> types.NodeQueryView:
         from core.renderers.node.render import render_node_view
 
-        
         best_query = models.NodeQuery.objects.get(id=query)
-        
+
         if not best_query:
             return None
-        
-        
+
         return types.NodeQueryView(_query=best_query, _node_id=node_id)
 
     @field(permission_classes=[])
     def scatter_plot(self, info: Info, id: ID) -> types.ScatterPlot:
         return models.ScatterPlot.objects.get(id=id)
-    
-    
+
     @field(permission_classes=[])
     def graph_sequence(self, info: Info, id: ID) -> types.GraphSequence:
         return models.GraphSequence.objects.get(id=id)
-
 
     @field(permission_classes=[])
     def entity_category(self, info: Info, id: ID) -> types.EntityCategory:
         return models.EntityCategory.objects.get(id=id)
 
-
     @field(permission_classes=[])
-    def get_entity_by_category_and_external_id(
-        self, info: Info, category: ID, external_id: str
-    ) -> types.Entity:
-        
+    def get_entity_by_category_and_external_id(self, info: Info, category: ID, external_id: str) -> types.Entity:
         entity_category = models.EntityCategory.objects.get(id=category)
-        
-        return types.entity_to_node_subtype(
-            age.get_age_entity_by_category_and_external_id(entity_category, external_id)
-        )
 
+        return types.entity_to_node_subtype(age.get_age_entity_by_category_and_external_id(entity_category, external_id))
 
     @field(permission_classes=[])
     def structure_relation_category(self, info: Info, id: ID) -> types.StructureRelationCategory:
         return models.StructureRelationCategory.objects.get(id=id)
-
-
 
     @field(permission_classes=[])
     def metric_category(self, info: Info, id: ID) -> types.MetricCategory:
@@ -250,9 +196,7 @@ class Query:
         return models.NaturalEventCategory.objects.get(id=id)
 
     @field(permission_classes=[])
-    def protocol_event_category(
-        self, info: Info, id: ID
-    ) -> types.ProtocolEventCategory:
+    def protocol_event_category(self, info: Info, id: ID) -> types.ProtocolEventCategory:
         return models.ProtocolEventCategory.objects.get(id=id)
 
     @field(permission_classes=[])
@@ -274,9 +218,7 @@ class Query:
         input: OffsetPaginationInput | None = None,
         filters: filters.NodeCategoryFilter | None = None,
     ) -> list[types.NodeCategory]:
-        raise NotImplementedError(
-            "This resolver is a placeholder and should be implemented by the developer"
-        )
+        raise NotImplementedError("This resolver is a placeholder and should be implemented by the developer")
 
     @field(permission_classes=[])
     def edge_categories(
@@ -285,9 +227,7 @@ class Query:
         input: OffsetPaginationInput | None = None,
         filters: filters.NodeCategoryFilter | None = None,
     ) -> list[types.EdgeCategory]:
-        raise NotImplementedError(
-            "This resolver is a placeholder and should be implemented by the developer"
-        )
+        raise NotImplementedError("This resolver is a placeholder and should be implemented by the developer")
 
     @field(permission_classes=[])
     def node_query(self, info: Info, id: ID) -> types.NodeQuery:
@@ -299,18 +239,11 @@ class Query:
 
     @field(permission_classes=[])
     def node(self, info: Info, id: ID) -> types.Node:
-
-        return types.entity_to_node_subtype(
-            age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id))
-        )
+        return types.entity_to_node_subtype(age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id)))
 
     @field(permission_classes=[])
     def edge(self, info: Info, id: ID) -> types.Edge:
-        return types.Edge(
-            _value=age.get_age_entity_relation(
-                age.to_graph_id(id), age.to_entity_id(id)
-            )
-        )
+        return types.Edge(_value=age.get_age_entity_relation(age.to_graph_id(id), age.to_entity_id(id)))
 
     # SPecial Types
     @field(permission_classes=[])
@@ -319,11 +252,8 @@ class Query:
         info: Info,
         id: ID,
     ) -> types.Structure:
+        return types.entity_to_node_subtype(age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id)))
 
-        return types.entity_to_node_subtype(
-            age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id))
-        )
-        
     @field(permission_classes=[])
     def structure_by_identifier(
         self,
@@ -332,7 +262,6 @@ class Query:
         identifier: scalars.StructureIdentifier,
         object: strawberry.ID,
     ) -> types.Structure:
-        
         structure = models.StructureCategory.objects.get_or_create(identifier=identifier, graph_id=graph)
 
         return age.get_age_structure_by_object(structure, object)
@@ -352,10 +281,7 @@ class Query:
         info: Info,
         id: ID,
     ) -> types.Entity:
-
-        return types.entity_to_node_subtype(
-            age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id))
-        )
+        return types.entity_to_node_subtype(age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id)))
 
     @field(permission_classes=[])
     def entities(
@@ -364,17 +290,17 @@ class Query:
         filters: filters.EntityFilter | None = None,
         pagination: pagination.GraphPaginationInput | None = None,
     ) -> list[types.Entity]:
-        return [types.entity_to_node_subtype(i) for i in age.get_entities(
-            filters=filters,
-            pagination=pagination,
-        )]
+        return [
+            types.entity_to_node_subtype(i)
+            for i in age.get_entities(
+                filters=filters,
+                pagination=pagination,
+            )
+        ]
 
     @field(permission_classes=[])
     def reagent(self, info: Info, id: ID) -> types.Reagent:
-
-        return types.entity_to_node_subtype(
-            age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id))
-        )
+        return types.entity_to_node_subtype(age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id)))
 
     @field(permission_classes=[])
     def reagents(
@@ -383,17 +309,17 @@ class Query:
         filters: filters.ReagentFilter | None = None,
         pagination: pagination.GraphPaginationInput | None = None,
     ) -> list[types.Reagent]:
-        return [types.entity_to_node_subtype(i) for i in age.get_reagents(
-            filters=filters,
-            pagination=pagination,
-        )]
+        return [
+            types.entity_to_node_subtype(i)
+            for i in age.get_reagents(
+                filters=filters,
+                pagination=pagination,
+            )
+        ]
 
     @field(permission_classes=[])
     def protocol_event(self, info: Info, id: ID) -> types.ProtocolEvent:
-
-        return types.entity_to_node_subtype(
-            age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id))
-        )
+        return types.entity_to_node_subtype(age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id)))
 
     @field(permission_classes=[])
     def protocol_events(
@@ -406,10 +332,7 @@ class Query:
 
     @field(permission_classes=[])
     def natural_event(self, info: Info, id: ID) -> types.NaturalEvent:
-
-        return types.entity_to_node_subtype(
-            age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id))
-        )
+        return types.entity_to_node_subtype(age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id)))
 
     @field(permission_classes=[])
     def natural_events(
@@ -422,10 +345,7 @@ class Query:
 
     @field(permission_classes=[])
     def metric(self, info: Info, id: ID) -> types.Metric:
-
-        return types.entity_to_node_subtype(
-            age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id))
-        )
+        return types.entity_to_node_subtype(age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id)))
 
     @field(permission_classes=[])
     def metrics(
@@ -438,9 +358,7 @@ class Query:
 
     @field(permission_classes=[])
     def measurement(self, info: Info, id: ID) -> types.Measurement:
-        return types.relation_to_edge_subtype(
-            age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id))
-        )
+        return types.relation_to_edge_subtype(age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id)))
 
     @field(permission_classes=[])
     def measurements(
@@ -453,9 +371,7 @@ class Query:
 
     @field(permission_classes=[])
     def relation(self, info: Info, id: ID) -> types.Relation:
-        return types.relation_to_edge_subtype(
-            age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id))
-        )
+        return types.relation_to_edge_subtype(age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id)))
 
     @field(permission_classes=[])
     def relations(
@@ -468,9 +384,7 @@ class Query:
 
     @field(permission_classes=[])
     def participant(self, info: Info, id: ID) -> types.Participant:
-        return types.relation_to_edge_subtype(
-            age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id))
-        )
+        return types.relation_to_edge_subtype(age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id)))
 
     @field(permission_classes=[])
     def participants(
@@ -496,25 +410,15 @@ class Query:
 
 @strawberry.type
 class Mutation:
-    create_graph = mutation(
-        resolver=mutations.create_graph, description="Create a new graph"
-    )
-    update_graph = mutation(
-        resolver=mutations.update_graph, description="Update an existing graph"
-    )
+    create_graph = mutation(resolver=mutations.create_graph, description="Create a new graph")
+    update_graph = mutation(resolver=mutations.update_graph, description="Update an existing graph")
 
-    delete_graph = mutation(
-        resolver=mutations.delete_graph, description="Delete an existing graph"
-    )
+    delete_graph = mutation(resolver=mutations.delete_graph, description="Delete an existing graph")
 
-    pin_graph = mutation(
-        resolver=mutations.pin_graph, description="Pin or unpin a graph"
-    )
+    pin_graph = mutation(resolver=mutations.pin_graph, description="Pin or unpin a graph")
 
     # Create a new Metric Category (Always attached to a structure)
-    create_metric_category = mutation(
-        resolver=mutations.create_metric_category, description="Create a new expression"
-    )
+    create_metric_category = mutation(resolver=mutations.create_metric_category, description="Create a new expression")
     update_metric_category = mutation(
         resolver=mutations.update_metric_category,
         description="Update an existing expression",
@@ -565,7 +469,7 @@ class Mutation:
         resolver=mutations.delete_relation_category,
         description="Delete an existing expression",
     )
-    
+
     # Create a new Relation Category (Entity to Entity Relations)
     create_structure_relation_category = mutation(
         resolver=mutations.create_structure_relation_category,
@@ -580,11 +484,8 @@ class Mutation:
         description="Delete an existing expression",
     )
 
-
     # Create a new Entity Category (a cell, an organelle, a structure, etc)
-    create_entity_category = mutation(
-        resolver=mutations.create_entity_category, description="Create a new expression"
-    )
+    create_entity_category = mutation(resolver=mutations.create_entity_category, description="Create a new expression")
     update_entity_category = mutation(
         resolver=mutations.update_entity_category,
         description="Update an existing expression",
@@ -592,6 +493,11 @@ class Mutation:
     delete_entity_category = mutation(
         resolver=mutations.delete_entity_category,
         description="Delete an existing expression",
+    )
+
+    create_structure_metric = mutation(
+        resolver=mutations.create_structure_metric,
+        description="Create a new structure metric",
     )
 
     # Create a new Reagent Category (4% PFA, 1% BSA, etc)
@@ -637,9 +543,7 @@ class Mutation:
     )
 
     # Scatter Plot
-    create_scatter_plot = mutation(
-        resolver=mutations.create_scatter_plot, description="Create a new scatter plot"
-    )
+    create_scatter_plot = mutation(resolver=mutations.create_scatter_plot, description="Create a new scatter plot")
     delete_scatter_plot = mutation(
         resolver=mutations.delete_scatter_plot,
         description="Delete an existing scatter plot",
@@ -673,7 +577,7 @@ class Mutation:
         resolver=mutations.create_relation,
         description="Create a new relation between entities",
     )
-    
+
     create_structure_relation = mutation(
         resolver=mutations.create_structure_relation,
         description="Create a new relation between entities",
@@ -689,60 +593,35 @@ class Mutation:
         description="Create a new structure",
     )
 
-    create_model = mutation(
-        resolver=mutations.create_model, description="Create a new model"
-    )
+    create_model = mutation(resolver=mutations.create_model, description="Create a new model")
 
-    request_upload = mutation(
-        resolver=mutations.request_upload, description="Request a new file upload"
-    )
+    request_upload = mutation(resolver=mutations.request_upload, description="Request a new file upload")
 
-    create_entity = mutation(
-        resolver=mutations.create_entity, description="Create a new entity"
-    )
-    delete_entity = mutation(
-        resolver=mutations.delete_entity, description="Delete an existing entity"
-    )
+    create_entity = mutation(resolver=mutations.create_entity, description="Create a new entity")
+    delete_entity = mutation(resolver=mutations.delete_entity, description="Delete an existing entity")
 
-    create_reagent = mutation(
-        resolver=mutations.create_reagent, description="Create a new entity"
-    )
-    delete_reagent = mutation(
-        resolver=mutations.delete_reagent, description="Delete an existing entity"
-    )
+    create_reagent = mutation(resolver=mutations.create_reagent, description="Create a new entity")
+    delete_reagent = mutation(resolver=mutations.delete_reagent, description="Delete an existing entity")
 
-    create_graph_query = mutation(
-        resolver=mutations.create_graph_query, description="Create a new graph query"
-    )
+    create_graph_query = mutation(resolver=mutations.create_graph_query, description="Create a new graph query")
 
-    pin_graph_query = mutation(
-        resolver=mutations.pin_graph_query, description="Pin or unpin a graph query"
-    )
+    pin_graph_query = mutation(resolver=mutations.pin_graph_query, description="Pin or unpin a graph query")
 
-    create_node_query = mutation(
-        resolver=mutations.create_node_query, description="Create a new node query"
-    )
+    create_node_query = mutation(resolver=mutations.create_node_query, description="Create a new node query")
 
-    pin_node_query = mutation(
-        resolver=mutations.pin_node_query, description="Pin or unpin a node query"
-    )
+    pin_node_query = mutation(resolver=mutations.pin_node_query, description="Pin or unpin a node query")
 
 
 @strawberry.type
 class Subscription:
-
     @strawberry.subscription
     async def history_events(
         self,
         info: Info,
-        user: Annotated[
-            str, strawberry.argument(description="The user to get history events for")
-        ],
+        user: Annotated[str, strawberry.argument(description="The user to get history events for")],
     ) -> AsyncGenerator[types.Entity, None]:
         """Join and subscribe to message sent to the given rooms."""
-        raise NotImplementedError(
-            "This resolver is a placeholder and should be implemented by the developer"
-        )
+        raise NotImplementedError("This resolver is a placeholder and should be implemented by the developer")
 
 
 schema = strawberry.Schema(

@@ -9,10 +9,8 @@ import re
 @strawberry.input
 class StructureInput:
     structure: scalars.StructureString
-    graph: strawberry.ID 
-    context: inputs.ContextInput | None = strawberry.field(
-        default=None, description="The context of the measurement"
-    )
+    graph: strawberry.ID
+    context: inputs.ContextInput | None = strawberry.field(default=None, description="The context of the measurement")
 
 
 @strawberry.input
@@ -21,13 +19,10 @@ class DeleteStructureInput:
 
 
 # re for the scalar string in format "@{exernal_name}/{scalar_name_without_spaces_and_only_alphanumber_with_underscores_and_hypens}"
-scalar_string_re = re.compile(
-    r"@(?P<external_name>[a-zA-Z0-9_]+)/(?P<scalar_name>[a-zA-Z0-9_]+):(?P<entity_id>[a-zA-Z0-9_]+)"
-)
+scalar_string_re = re.compile(r"@(?P<external_name>[a-zA-Z0-9_]+)/(?P<scalar_name>[a-zA-Z0-9_]+):(?P<entity_id>[a-zA-Z0-9_]+)")
 
 
-def scalar_string_to_graph_name(scalar_string: str) -> str:
-
+def scalar_string_to_graph_name(scalar_string: str) -> tuple[str, str, str]:
     assert "@" in scalar_string, f"Invalid scalar string: {scalar_string}"
     assert "/" in scalar_string, f"Invalid scalar string: {scalar_string}"
     assert ":" in scalar_string, f"Invalid scalar string: {scalar_string}"
@@ -55,7 +50,6 @@ def create_structure(
     info: Info,
     input: StructureInput,
 ) -> types.Structure:
-
     graph = models.Graph.objects.get(id=input.graph)
 
     age_name, identifier, object_id = scalar_string_to_graph_name(input.structure)
@@ -73,7 +67,6 @@ def create_structure(
         object_id,
     )
 
-
     return types.Structure(_value=structure)
 
 
@@ -81,5 +74,4 @@ def delete_structure(
     info: Info,
     input: DeleteStructureInput,
 ) -> strawberry.ID:
-
     raise NotImplementedError("Not implemented yet")

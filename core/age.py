@@ -132,21 +132,19 @@ class RetrievedEntity:
     @property
     def valid_from(self):
         return self.properties.get("__valid_from", None)
-    
+
     @property
     def variables(self):
         return self.properties.get("__variables", [])
-    
-    
+
     @property
     def local_id(self):
         return self.properties.get("__sequence", None)
-    
-   
+
     @property
     def value(self):
         return self.properties.get("__value", None)
-    
+
     @property
     def external_id(self):
         return self.properties.get("__external_id", None)
@@ -154,9 +152,7 @@ class RetrievedEntity:
     @property
     def category_type(
         self,
-    ) -> typing.Literal[
-        "ENTITY", "STRUCTURE", "NATURAL_EVENT", "PROTOCOL_EVENT", "REAGENT", "METRIC"
-    ]:
+    ) -> typing.Literal["ENTITY", "STRUCTURE", "NATURAL_EVENT", "PROTOCOL_EVENT", "REAGENT", "METRIC"]:
         return self.properties.get("__type", None)
 
     @property
@@ -195,11 +191,7 @@ class RetrievedEntity:
         return f"{self.graph_name}:{self.id}"
 
     def retrieve_properties(self):
-        return {
-            key: value
-            for key, value in self.properties.items()
-            if key != "id" and key != "labels"
-        }
+        return {key: value for key, value in self.properties.items() if key != "id" and key != "labels"}
 
 
 @dataclass
@@ -242,16 +234,14 @@ class RetrievedRelation:
     @property
     def valid_to(self):
         return self.properties.get("__valid_to", None)
-    
+
     @property
     def role(self):
         return self.properties.get("role", None)
-    
-    
+
     @property
     def quantity(self):
         return self.properties.get("quantity", None)
-    
 
     @property
     def valid_relative_from(self):
@@ -275,13 +265,7 @@ class RetrievedRelation:
 
     def retrieve_metrics(self) -> list["RetrievedRelationMetric"]:
         try:
-            return [
-                RetrievedRelationMetric(
-                    kind_age_name=key, value=value, graph_name=self.graph_name
-                )
-                for key, value in self.properties.items()
-                if key != "id" and key != "labels"
-            ]
+            return [RetrievedRelationMetric(kind_age_name=key, value=value, graph_name=self.graph_name) for key, value in self.properties.items() if key != "id" and key != "labels"]
         except Exception as e:
             raise ValueError(f"Error retrieving metrics {e} {self.properties}")
 
@@ -291,7 +275,7 @@ def graph_cursor():
     with connections["default"].cursor() as cursor:
         cursor.execute("LOAD 'age';")
         cursor.execute('SET search_path = ag_catalog, "$user", public')
-        
+
         print(f"Creating new graph cursor. Use this to support AGE queries.")
         yield cursor
         print(f"Closing graph cursor.")
@@ -299,9 +283,7 @@ def graph_cursor():
 
 def create_age_graph(name: str):
     with graph_cursor() as cursor:
-        cursor.execute(
-            "SELECT EXISTS(SELECT 1 FROM ag_catalog.ag_graph WHERE name = %s);", [name]
-        )
+        cursor.execute("SELECT EXISTS(SELECT 1 FROM ag_catalog.ag_graph WHERE name = %s);", [name])
         exists = cursor.fetchone()[0]
         if exists:
             return exists
@@ -531,9 +513,7 @@ def get_neighbors_and_edges(graph_name, node_id):
                 nodes.append(vertex_ag_to_retrieved_entity(graph_name, neighbour))
 
             if relationship:
-                relation_ships.append(
-                    edge_ag_to_retrieved_relation(graph_name, relationship)
-                )
+                relation_ships.append(edge_ag_to_retrieved_relation(graph_name, relationship))
 
         print(nodes, relation_ships)
         return nodes, relation_ships
@@ -544,14 +524,7 @@ def create_age_entity(
     name: str | None = None,
     external_id: str | None = None,
 ) -> RetrievedEntity:
-    
-    
-        
-    
-
     with graph_cursor() as cursor:
-            
-            
         if external_id:
             # Try to find existing reagent first
             cursor.execute(
@@ -576,11 +549,8 @@ def create_age_entity(
             )
             existing = cursor.fetchone()
             if existing:
-                return vertex_ag_to_retrieved_entity(
-                    category.graph.age_name, existing[0]
-                )
-                
-        
+                return vertex_ag_to_retrieved_entity(category.graph.age_name, existing[0])
+
         if category.sequence:
             sequence_name = category.sequence.ps_name
             cursor.execute(
@@ -593,7 +563,7 @@ def create_age_entity(
             seq_id = None
 
         # Create new reagent if not found
-        
+
         create_query = f"""
         SELECT * 
         FROM cypher(%s, $$
@@ -601,7 +571,6 @@ def create_age_entity(
             SET n.__sequence = %s
             RETURN n
         $$) as (n agtype);"""
-
 
         print("create query", create_query)
 
@@ -630,10 +599,7 @@ def create_age_reagent(
     name: str | None = None,
     external_id: str | None = None,
 ) -> RetrievedEntity:
-
     with graph_cursor() as cursor:
-        
-        
         if external_id:
             # Try to find existing reagent first
             cursor.execute(
@@ -658,11 +624,8 @@ def create_age_reagent(
             )
             existing = cursor.fetchone()
             if existing:
-                return vertex_ag_to_retrieved_entity(
-                    category.graph.age_name, existing[0]
-                )
-                
-        
+                return vertex_ag_to_retrieved_entity(category.graph.age_name, existing[0])
+
         if category.sequence:
             sequence_name = category.sequence.ps_name
             cursor.execute(
@@ -704,7 +667,6 @@ def create_age_reagent(
 
 
 def get_active_reagent_for_reagent_category(category: "models.ReagentCategory"):
-
     # get the active reagent for the category
     with graph_cursor() as cursor:
         cursor.execute(
@@ -726,10 +688,7 @@ def get_active_reagent_for_reagent_category(category: "models.ReagentCategory"):
             raise ValueError("No entity created or returned by the query.")
 
 
-def set_as_active_reagent_for_category(
-    category: "models.ReagentCategory", entity_id: str
-) -> RetrievedEntity:
-
+def set_as_active_reagent_for_category(category: "models.ReagentCategory", entity_id: str) -> RetrievedEntity:
     # unsert old active
     with graph_cursor() as cursor:
         cursor.execute(
@@ -780,7 +739,6 @@ def create_age_protocol_event(
     valid_to: datetime.datetime | None = None,
     variables: list["inputs.VariableMappingInput"] | None = None,
 ) -> RetrievedEntity:
-
     with graph_cursor() as cursor:
         if external_id:
             # Try to find existing reagent first
@@ -812,9 +770,7 @@ def create_age_protocol_event(
             )
             existing = cursor.fetchone()
             if existing:
-                return vertex_ag_to_retrieved_entity(
-                    category.graph.age_name, existing[0]
-                )
+                return vertex_ag_to_retrieved_entity(category.graph.age_name, existing[0])
 
         # Create new reagent if not found
         cursor.execute(
@@ -845,6 +801,7 @@ def create_age_protocol_event(
         else:
             raise ValueError("No entity created or returned by the query.")
 
+
 def create_age_natural_event(
     category: "models.NaturalEventCategory",
     name: str | None = None,
@@ -852,14 +809,12 @@ def create_age_natural_event(
     valid_from: datetime.datetime | None = None,
     valid_to: datetime.datetime | None = None,
 ) -> RetrievedEntity:
-    
     if category.sequence:
         select_sequence = f"SELECT nextval({category.sequence.ps_name}) AS next_id"
         sequence_setting = "SET n.__sequence = next_id"
     else:
         select_sequence = ""
         sequence_setting = ""
-        
 
     with graph_cursor() as cursor:
         if external_id:
@@ -892,9 +847,7 @@ def create_age_natural_event(
             )
             existing = cursor.fetchone()
             if existing:
-                return vertex_ag_to_retrieved_entity(
-                    category.graph.age_name, existing[0]
-                )
+                return vertex_ag_to_retrieved_entity(category.graph.age_name, existing[0])
 
         # Create new reagent if not found
         cursor.execute(
@@ -929,7 +882,6 @@ def create_age_event_in_edge(
     event_entity: RetrievedEntity,
     edge: ProtocolInEdge,
 ):
-
     # Create the edge between the entity and the event
     with graph_cursor() as cursor:
         cursor.execute(
@@ -955,9 +907,7 @@ def create_age_event_in_edge(
             new_edge = result[0]
             return edge_ag_to_retrieved_relation(event_entity.graph_name, new_edge)
         else:
-            raise ValueError(
-                f"No entity created or returned by the query. To created {event_entity} {edge}"
-            )
+            raise ValueError(f"No entity created or returned by the query. To created {event_entity} {edge}")
 
 
 def create_age_event_out_edge(
@@ -965,7 +915,6 @@ def create_age_event_out_edge(
     event_entity: RetrievedEntity,
     edge: ProtocolOutEdge,
 ):
-
     # Create the edge between the entity and the event
     with graph_cursor() as cursor:
         cursor.execute(
@@ -991,9 +940,7 @@ def create_age_event_out_edge(
             new_edge = result[0]
             return edge_ag_to_retrieved_relation(event_entity.graph_name, new_edge)
         else:
-            raise ValueError(
-                f"No entity created or returned by the query. To created {event_entity} {edge}"
-            )
+            raise ValueError(f"No entity created or returned by the query. To created {event_entity} {edge}")
 
 
 def get_random_node(graph_name):
@@ -1023,7 +970,6 @@ def create_age_structure(
     category: "models.StructureCategory",
     object: str = None,
 ) -> RetrievedEntity:
-
     with graph_cursor() as cursor:
         cursor.execute(
             f"""
@@ -1044,7 +990,6 @@ def create_age_structure(
                 datetime.datetime.now().isoformat(),
                 category.identifier,
             ),
-            
         )
         result = cursor.fetchone()
         if result:
@@ -1161,7 +1106,7 @@ def create_measurement(
                 created_by,
             ),
         )
-        
+
         result = cursor.fetchone()
         if result:
             measurement = result[0]
@@ -1178,7 +1123,6 @@ def create_age_metric(
     created_by: str = None,
 ):
     with graph_cursor() as cursor:
-
         if isinstance(value, list):
             value = json.dumps(value)
 
@@ -1186,7 +1130,7 @@ def create_age_metric(
             f"""SELECT * FROM cypher(%s, $$
                 MATCH (a) WHERE id(a) = %s
                 CREATE (b: {metric_category.get_age_vertex_name()} {{__type: "METRIC", __category_type: %s, __category_id: %s, __value: %s, __created_at: %s, __created_by: %s, __created_through: %s}})
-                CREATE (b)-[r:DESCRIBES]->(a)
+                CREATE (b)-[r:DESCRIBES {{__type: "DESCRIPTION"}}]->(a)
                 RETURN b
             $$) AS (r agtype);
             """,
@@ -1210,7 +1154,6 @@ def create_age_metric(
 
 
 def get_age_entity(graph_name, entity_id) -> RetrievedEntity:
-
     with graph_cursor() as cursor:
         cursor.execute(
             f"""
@@ -1227,10 +1170,9 @@ def get_age_entity(graph_name, entity_id) -> RetrievedEntity:
             entity = result[0]
             return vertex_ag_to_retrieved_entity(graph_name, entity)
         raise ValueError("No entity created or returned by the query.")
-    
-    
-def get_age_entity_by_category_and_external_id(category: models.EntityCategory, external_id) -> RetrievedEntity:
 
+
+def get_age_entity_by_category_and_external_id(category: models.EntityCategory, external_id) -> RetrievedEntity:
     with graph_cursor() as cursor:
         cursor.execute(
             f"""
@@ -1240,49 +1182,43 @@ def get_age_entity_by_category_and_external_id(category: models.EntityCategory, 
                 WHERE n.__external_id = %s
             $$) as (n agtype);
             """,
-            (category.graph.age_name, category.id,  external_id),
+            (category.graph.age_name, category.id, external_id),
         )
         result = cursor.fetchone()
         if result:
             entity = result[0]
             return vertex_ag_to_retrieved_entity(category.graph.age_name, entity)
         raise ValueError("No entity created or returned by the query.")
-    
-    
+
+
 def get_entities(filters: typing.Optional["filters.EntityFilter"], pagination: typing.Optional["pagination.GraphPaginationInput"] = None) -> RetrievedEntity:
     from core import models, filters as f, pagination as p
-    
+
     if not filters:
         filters = f.EntityFilter()
-    
+
     if not pagination:
         pagination = p.GraphPaginationInput()
-    
+
     base_qs = models.EntityCategory.objects
-    
+
     match_statements = []
-    
+
     print(filters)
-    
+
     if filters.graph:
-        base_qs = base_qs.filter(
-            graph_id=filters.graph
-        )
-    
+        base_qs = base_qs.filter(graph_id=filters.graph)
+
     if filters.tags:
-        base_qs = base_qs.filter(
-            tags__value__in=filters.tags
-        )
-    
+        base_qs = base_qs.filter(tags__value__in=filters.tags)
+
     if filters.categories:
-        base_qs = base_qs.filter(
-            id__in=filters.categories
-        )
-        
+        base_qs = base_qs.filter(id__in=filters.categories)
+
     categories = base_qs.all()
     if categories.count() == 0:
         raise ValueError(f"No categories found for {filters.categories} and {filters.tags}")
-    
+
     if not filters.graph:
         graph_name = categories[0].graph.age_name
         for category in categories:
@@ -1290,57 +1226,38 @@ def get_entities(filters: typing.Optional["filters.EntityFilter"], pagination: t
                 raise ValueError("All categories must belong to the same graph.")
     else:
         graph_name = models.Graph.objects.get(id=filters.graph).age_name
-        
-    
+
     query_params = [
         graph_name,
     ]
-    
-    match_statements.append(
-        f"n.__category_id IN {[cat.id for cat in categories]}"
-    )
-    
-    
+
+    match_statements.append(f"n.__category_id IN {[cat.id for cat in categories]}")
+
     if filters.external_ids:
-        match_statements.append(
-            f"n.__external_id IN [{', '.join(map(str, filters.external_ids))}]"
-        )
-        
+        match_statements.append(f"n.__external_id IN [{', '.join(map(str, filters.external_ids))}]")
+
     if filters.search:
-        match_statements.append(
-            f"n.__label ILIKE '%{filters.search}%'"
-        )
-        
+        match_statements.append(f"n.__label ILIKE '%{filters.search}%'")
+
     if filters.created_after:
-        match_statements.append(
-            f"n.__created_at > '{filters.created_after.isoformat()}'"
-        )
-        
+        match_statements.append(f"n.__created_at > '{filters.created_after.isoformat()}'")
+
     if filters.created_before:
-        match_statements.append(
-            f"n.__created_at < '{filters.created_before.isoformat()}'"
-        )
-        
+        match_statements.append(f"n.__created_at < '{filters.created_before.isoformat()}'")
+
     if filters.ids:
         graph_names = [to_graph_id(i) for i in filters.ids]
         assert set(graph_names) == {graph_name}, "All ids must belong to the same graph."
-        
-        
-        match_statements.append(
-            f"id(n) IN {[int(to_entity_id(i)) for i in filters.ids]}"
-        )
-        
+
+        match_statements.append(f"id(n) IN {[int(to_entity_id(i)) for i in filters.ids]}")
+
     if filters.active:
-        match_statements.append(
-            f"n.__active = true"
-        )
-        
-    
+        match_statements.append(f"n.__active = true")
 
     FINAL_MATCH = " AND ".join(match_statements)
     print("Final match", FINAL_MATCH)
     print("Graphname", graph_name)
-        
+
     final_query = f"""
             SELECT *
             FROM cypher(%s, $$
@@ -1348,10 +1265,8 @@ def get_entities(filters: typing.Optional["filters.EntityFilter"], pagination: t
                 RETURN n
             $$) as (n agtype);
     """
-    
-    
+
     print("Final query", final_query, query_params)
-    
 
     with graph_cursor() as cursor:
         cursor.execute(
@@ -1361,48 +1276,40 @@ def get_entities(filters: typing.Optional["filters.EntityFilter"], pagination: t
         result = cursor.fetchall()
         print("Retrieved this result", result)
         if result:
-            return [
-                vertex_ag_to_retrieved_entity(graph_name, metric[0]) for metric in result
-            ]
+            return [vertex_ag_to_retrieved_entity(graph_name, metric[0]) for metric in result]
         else:
             return []
 
 
 def get_reagents(filters: typing.Optional["filters.ReagentFilter"], pagination: typing.Optional["pagination.GraphPaginationInput"] = None) -> RetrievedEntity:
     from core import models, filters as f, pagination as p
-    
+
     if not filters:
         filters = f.ReagentFilter()
-    
+
     if not pagination:
         pagination = p.GraphPaginationInput()
-    
+
     base_qs = models.ReagentCategory.objects
-    
+
     match_statements = []
-    
+
     print(filters)
-    
+
     if filters.graph:
-        base_qs = base_qs.filter(
-            graph_id=filters.graph
-        )
-    
+        base_qs = base_qs.filter(graph_id=filters.graph)
+
     if filters.tags:
-        base_qs = base_qs.filter(
-            tags__value__in=filters.tags
-        )
-    
+        base_qs = base_qs.filter(tags__value__in=filters.tags)
+
     if filters.categories:
-        base_qs = base_qs.filter(
-            id__in=filters.categories
-        )
-        
+        base_qs = base_qs.filter(id__in=filters.categories)
+
     categories = base_qs.all()
-    
+
     if categories.count() == 0:
         raise ValueError(f"No categories found for {filters.categories} and {filters.tags}")
-    
+
     if not filters.graph:
         graph_name = categories[0].graph.age_name
         for category in categories:
@@ -1410,57 +1317,38 @@ def get_reagents(filters: typing.Optional["filters.ReagentFilter"], pagination: 
                 raise ValueError("All categories must belong to the same graph.")
     else:
         graph_name = models.Graph.objects.get(id=filters.graph).age_name
-        
-    
+
     query_params = [
         graph_name,
     ]
-    
-    match_statements.append(
-        f"n.__category_id IN {[cat.id for cat in categories]}"
-    )
-    
-    
+
+    match_statements.append(f"n.__category_id IN {[cat.id for cat in categories]}")
+
     if filters.external_ids:
-        match_statements.append(
-            f"n.__external_id IN [{', '.join(map(str, filters.external_ids))}]"
-        )
-        
+        match_statements.append(f"n.__external_id IN [{', '.join(map(str, filters.external_ids))}]")
+
     if filters.search:
-        match_statements.append(
-            f"n.__label ILIKE '%{filters.search}%'"
-        )
-        
+        match_statements.append(f"n.__label ILIKE '%{filters.search}%'")
+
     if filters.created_after:
-        match_statements.append(
-            f"n.__created_at > '{filters.created_after.isoformat()}'"
-        )
-        
+        match_statements.append(f"n.__created_at > '{filters.created_after.isoformat()}'")
+
     if filters.created_before:
-        match_statements.append(
-            f"n.__created_at < '{filters.created_before.isoformat()}'"
-        )
-        
+        match_statements.append(f"n.__created_at < '{filters.created_before.isoformat()}'")
+
     if filters.ids:
         graph_names = [to_graph_id(i) for i in filters.ids]
         assert set(graph_names) == {graph_name}, "All ids must belong to the same graph."
-        
-        
-        match_statements.append(
-            f"id(n) IN {[int(to_entity_id(i)) for i in filters.ids]}"
-        )
-        
+
+        match_statements.append(f"id(n) IN {[int(to_entity_id(i)) for i in filters.ids]}")
+
     if filters.active:
-        match_statements.append(
-            f"n.__active = true"
-        )
-        
-    
+        match_statements.append(f"n.__active = true")
 
     FINAL_MATCH = " AND ".join(match_statements)
     print("Final match", FINAL_MATCH)
     print("Graphname", graph_name)
-        
+
     final_query = f"""
             SELECT *
             FROM cypher(%s, $$
@@ -1468,10 +1356,8 @@ def get_reagents(filters: typing.Optional["filters.ReagentFilter"], pagination: 
                 RETURN n
             $$) as (n agtype);
     """
-    
-    
+
     print("Final query", final_query, query_params)
-    
 
     with graph_cursor() as cursor:
         cursor.execute(
@@ -1481,9 +1367,7 @@ def get_reagents(filters: typing.Optional["filters.ReagentFilter"], pagination: 
         result = cursor.fetchall()
         print("Retrieved this result", result)
         if result:
-            return [
-                vertex_ag_to_retrieved_entity(graph_name, metric[0]) for metric in result
-            ]
+            return [vertex_ag_to_retrieved_entity(graph_name, metric[0]) for metric in result]
         else:
             return []
 
@@ -1504,15 +1388,12 @@ def select_measurements_for_structure(graph_name, structure_id, categories: list
         )
         result = cursor.fetchall()
         if result:
-            return [
-                edge_ag_to_retrieved_relation(graph_name, measurement[0]) for measurement in result
-            ]
+            return [edge_ag_to_retrieved_relation(graph_name, measurement[0]) for measurement in result]
         else:
             return []
 
 
 def get_age_structure(graph_name, structure_identifier) -> RetrievedEntity:
-
     with graph_cursor() as cursor:
         cursor.execute(
             f"""
@@ -1530,10 +1411,9 @@ def get_age_structure(graph_name, structure_identifier) -> RetrievedEntity:
             entity = result[0]
             return vertex_ag_to_retrieved_entity(graph_name, entity)
         raise ValueError("No entity created or returned by the query.")
-    
-    
-def get_age_structure_by_object(structure: "models.StructureCategory", object: str) -> RetrievedEntity:
 
+
+def get_age_structure_by_object(structure: "models.StructureCategory", object: str) -> RetrievedEntity:
     with graph_cursor() as cursor:
         cursor.execute(
             f"""
@@ -1555,7 +1435,6 @@ def get_age_structure_by_object(structure: "models.StructureCategory", object: s
 
 
 def get_age_entity_relation(graph_name, edge_id) -> RetrievedRelation:
-
     with graph_cursor() as cursor:
         cursor.execute(
             f"""
@@ -1591,9 +1470,7 @@ def get_age_metrics(graph_name, node_id):
         result = cursor.fetchall()
         print("Retrieved this result", result)
         if result:
-            return [
-                edge_ag_to_retrieved_metric(graph_name, metric[0]) for metric in result
-            ]
+            return [edge_ag_to_retrieved_metric(graph_name, metric[0]) for metric in result]
         else:
             return []
 
@@ -1655,7 +1532,7 @@ def create_age_relation(category: "models.RelationCategory", left_id, right_id):
                 RETURN r
             $$) as (r agtype);
             """,
-            (category.graph.age_name, int(left_id), int(right_id), category.get_age_type_name(), category.id ),
+            (category.graph.age_name, int(left_id), int(right_id), category.get_age_type_name(), category.id),
         )
         result = cursor.fetchone()
         if result:
@@ -1674,13 +1551,11 @@ def create_age_relation(category: "models.RelationCategory", left_id, right_id):
             node_count = cursor.fetchone()[0]
 
             if node_count < 2:
-                raise ValueError(
-                    f"One or both of the nodes do not exist. {left_id}, {right_id}, {category.graph.age_name}"
-                )
+                raise ValueError(f"One or both of the nodes do not exist. {left_id}, {right_id}, {category.graph.age_name}")
 
             raise ValueError("No entity created or returned by the query.")
-        
-        
+
+
 def create_age_structure_relation(category: "models.StructureRelationCategory", left_id, right_id):
     with graph_cursor() as cursor:
         cursor.execute(
@@ -1693,7 +1568,7 @@ def create_age_structure_relation(category: "models.StructureRelationCategory", 
                 RETURN r
             $$) as (r agtype);
             """,
-            (category.graph.age_name, int(left_id), int(right_id), category.get_age_type_name(), category.id ),
+            (category.graph.age_name, int(left_id), int(right_id), category.get_age_type_name(), category.id),
         )
         result = cursor.fetchone()
         if result:
@@ -1712,9 +1587,7 @@ def create_age_structure_relation(category: "models.StructureRelationCategory", 
             node_count = cursor.fetchone()[0]
 
             if node_count < 2:
-                raise ValueError(
-                    f"One or both of the nodes do not exist. {left_id}, {right_id}, {category.graph.age_name}"
-                )
+                raise ValueError(f"One or both of the nodes do not exist. {left_id}, {right_id}, {category.graph.age_name}")
 
             raise ValueError("No entity created or returned by the query.")
 
@@ -1733,25 +1606,19 @@ def select_all_entities(
     filter: filters.EntityFilter,
 ):
     with graph_cursor() as cursor:
-
         WHERE = ""
 
         and_clauses = []
 
         if filter:
-
             if filter.ids:
-                and_clauses.append(
-                    f'id(n) IN [ {", ".join([to_entity_id(id) for id in filter.ids])}]'
-                )
+                and_clauses.append(f"id(n) IN [ {', '.join([to_entity_id(id) for id in filter.ids])}]")
 
             if filter.search:
                 and_clauses.append(f'n.Label STARTS WITH "{filter.search}"')
 
             if filter.linked_expression:
-                expression = models.LinkedExpression.objects.get(
-                    id=filter.linked_expression
-                )
+                expression = models.LinkedExpression.objects.get(id=filter.linked_expression)
                 and_clauses.append(f'label(n) = "{expression.age_name}"')
 
             if and_clauses:
@@ -1787,7 +1654,6 @@ def select_latest_nodes(
     pagination: pagination.GraphPaginationInput,
     filter: filters.EntityFilter,
 ):
-
     with graph_cursor() as cursor:
         cursor.execute(
             f"""
@@ -1818,51 +1684,39 @@ def select_paired_entities(
     right_filter: filters.EntityFilter | None = None,
 ):
     with graph_cursor() as cursor:
-
         WHERE = ""
 
         and_clauses = []
 
         if left_filter:
-
             if left_filter.ids:
-                and_clauses.append(
-                    f'id(n) IN [ {", ".join([to_entity_id(id) for id in filter.ids])}]'
-                )
+                and_clauses.append(f"id(n) IN [ {', '.join([to_entity_id(id) for id in filter.ids])}]")
 
             if left_filter.search:
                 and_clauses.append(f'n.Label STARTS WITH "{filter.search}"')
 
             if left_filter.linked_expression:
-                expression = models.LinkedExpression.objects.get(
-                    id=filter.linked_expression
-                )
+                expression = models.LinkedExpression.objects.get(id=filter.linked_expression)
                 and_clauses.append(f'label(n) = "{expression.age_name}"')
 
             if and_clauses:
                 WHERE = "WHERE " + " AND ".join(and_clauses)
 
         if right_filter:
-
             if right_filter.ids:
-                and_clauses.append(
-                    f'id(m) IN [ {", ".join([to_entity_id(id) for id in filter.ids])}]'
-                )
+                and_clauses.append(f"id(m) IN [ {', '.join([to_entity_id(id) for id in filter.ids])}]")
 
             if right_filter.search:
                 and_clauses.append(f'm.Label STARTS WITH "{filter.search}"')
 
             if right_filter.linked_expression:
-                expression = models.LinkedExpression.objects.get(
-                    id=filter.linked_expression
-                )
+                expression = models.LinkedExpression.objects.get(id=filter.linked_expression)
                 and_clauses.append(f'label(m) = "{expression.age_name}"')
 
             if and_clauses:
                 WHERE = "WHERE " + " AND ".join(and_clauses)
 
         if relation_filter:
-
             if relation_filter.left_id:
                 and_clauses.append(f"id(n) = {to_entity_id(relation_filter.left_id)}")
 
@@ -1873,17 +1727,13 @@ def select_paired_entities(
                 and_clauses.append(f"id(n) <> id(m)")
 
             if relation_filter.ids:
-                and_clauses.append(
-                    f'id(e) IN [ {", ".join([to_entity_id(id) for id in relation_filter.ids])}]'
-                )
+                and_clauses.append(f"id(e) IN [ {', '.join([to_entity_id(id) for id in relation_filter.ids])}]")
 
             if relation_filter.search:
                 and_clauses.append(f'e.Label STARTS WITH "{relation_filter.search}"')
 
             if relation_filter.linked_expression:
-                expression = models.LinkedExpression.objects.get(
-                    id=relation_filter.linked_expression
-                )
+                expression = models.LinkedExpression.objects.get(id=relation_filter.linked_expression)
                 and_clauses.append(f'label(e) = "{expression.age_name}"')
 
         cursor.execute(
@@ -1905,13 +1755,7 @@ def select_paired_entities(
 
         for result in cursor.fetchall():
             print(result)
-            yield vertex_ag_to_retrieved_entity(
-                graph_name, result[0]
-            ), vertex_ag_to_retrieved_entity(
-                graph_name, result[1]
-            ), edge_ag_to_retrieved_relation(
-                graph_name, result[2]
-            )
+            yield vertex_ag_to_retrieved_entity(graph_name, result[0]), vertex_ag_to_retrieved_entity(graph_name, result[1]), edge_ag_to_retrieved_relation(graph_name, result[2])
 
 
 def select_all_relations(
@@ -1920,13 +1764,11 @@ def select_all_relations(
     filter: filters.EntityRelationFilter,
 ):
     with graph_cursor() as cursor:
-
         WHERE = ""
 
         and_clauses = []
 
         if filter:
-
             if filter.left_id:
                 and_clauses.append(f"id(a) = {to_entity_id(filter.left_id)}")
 
@@ -1937,17 +1779,13 @@ def select_all_relations(
                 and_clauses.append(f"id(a) <> id(b)")
 
             if filter.ids:
-                and_clauses.append(
-                    f'id(e) IN [ {", ".join([to_entity_id(id) for id in filter.ids])}]'
-                )
+                and_clauses.append(f"id(e) IN [ {', '.join([to_entity_id(id) for id in filter.ids])}]")
 
             if filter.search:
                 and_clauses.append(f'e.Label STARTS WITH "{filter.search}"')
 
             if filter.linked_expression:
-                expression = models.LinkedExpression.objects.get(
-                    id=filter.linked_expression
-                )
+                expression = models.LinkedExpression.objects.get(id=filter.linked_expression)
                 and_clauses.append(f'label(e) = "{expression.age_name}"')
 
             if and_clauses:
@@ -1956,7 +1794,6 @@ def select_all_relations(
         print(WHERE)
 
         try:
-
             cursor.execute(
                 f"""
                 SELECT * 
@@ -2060,10 +1897,7 @@ def get_left_relations(graph_name, entity_id):
             )
 
 
-
-def create_age_sequence(
-    sequence: "models.GraphSequence"
-) -> RetrievedEntity:
+def create_age_sequence(sequence: "models.GraphSequence") -> RetrievedEntity:
     with graph_cursor() as cursor:
         cursor.execute(
             f"""

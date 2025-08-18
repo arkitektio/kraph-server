@@ -15,17 +15,13 @@ class MetricCategoryInput(inputs.CategoryInput, inputs.NodeCategoryInput):
         description="The structure category for this expression",
     )
     label: str = strawberry.field(description="The label/name of the expression")
-    kind: enums.MetricKind = strawberry.field(
-        default=None, description="The type of metric data this expression represents"
-    )
+    kind: enums.MetricKind = strawberry.field(default=None, description="The type of metric data this expression represents")
 
 
 @strawberry.input(description="Input for updating an existing expression")
 class UpdateMetricCategoryInput(inputs.UpdateCategoryInput, inputs.NodeCategoryInput):
-    kind: enums.MetricKind | None = strawberry.field(
-        default=None, description="The type of metric data this expression represents"
-    )
-    structure_definition: inputs.CategoryDefinitionInput | None= strawberry.field(
+    kind: enums.MetricKind | None = strawberry.field(default=None, description="The type of metric data this expression represents")
+    structure_definition: inputs.StructureCategoryDefinitionInput | None = strawberry.field(
         default=None,
         description="The structure category for this expression",
     )
@@ -33,16 +29,13 @@ class UpdateMetricCategoryInput(inputs.UpdateCategoryInput, inputs.NodeCategoryI
 
 @strawberry.input(description="Input for deleting an expression")
 class DeleteMetricCategoryInput:
-    id: strawberry.ID = strawberry.field(
-        description="The ID of the expression to delete"
-    )
+    id: strawberry.ID = strawberry.field(description="The ID of the expression to delete")
 
 
 def create_metric_category(
     info: Info,
     input: MetricCategoryInput,
 ) -> types.MetricCategory:
-    
     graph = models.Graph.objects.get(
         id=input.graph,
     )
@@ -54,9 +47,7 @@ def create_metric_category(
             description=input.description,
             purl=input.purl,
             metric_kind=input.kind,
-            structure_definition=validators.validate_structure_definition(
-                input.structure_definition, graph
-            ) if input.structure_definition else None,
+            structure_definition=validators.validate_structure_definition(input.structure_definition, graph) if input.structure_definition else None,
             label=input.label,
         ),
     )
@@ -64,7 +55,7 @@ def create_metric_category(
     age.create_age_metric_kind(metric_category)
     manager.set_age_sequence(metric_category, input.sequence, auto_create=input.auto_create_sequence)
     manager.set_position_info(metric_category, input)
-    
+
     if input.tags:
         metric_category.tags.clear()
         for tag in input.tags:
@@ -74,15 +65,11 @@ def create_metric_category(
     return metric_category
 
 
-def update_metric_category(
-    info: Info, input: UpdateMetricCategoryInput
-) -> types.MetricCategory:
+def update_metric_category(info: Info, input: UpdateMetricCategoryInput) -> types.MetricCategory:
     item = models.MetricCategory.objects.get(id=input.id)
 
     if input.color:
-        assert (
-            len(input.color) == 3 or len(input.color) == 4
-        ), "Color must be a list of 3 or 4 values RGBA"
+        assert len(input.color) == 3 or len(input.color) == 4, "Color must be a list of 3 or 4 values RGBA"
 
     if input.image:
         media_store = models.MediaStore.objects.get(
@@ -96,13 +83,10 @@ def update_metric_category(
     item.purl = input.purl if input.purl else item.purl
     item.color = input.color if input.color else item.color
     item.store = media_store if media_store else item.store
-    
+
     if input.structure_definition:
-        item.structure_definition = validators.validate_structure_definition(
-            input.structure_definition, item.graph
-        )
-    
-    
+        item.structure_definition = validators.validate_structure_definition(input.structure_definition, item.graph)
+
     manager.set_position_info(item, input)
 
     item.save()
