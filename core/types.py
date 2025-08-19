@@ -73,6 +73,7 @@ class Column:
     searchable: bool | None = None
     idfor: list[strawberry.ID] | None = None
     preferhidden: bool | None = None
+    identifier: str | None = None
 
 
 @strawberry_django.type(models.BigFileStore)
