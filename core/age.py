@@ -738,6 +738,7 @@ def create_age_protocol_event(
     valid_from: datetime.datetime | None = None,
     valid_to: datetime.datetime | None = None,
     variables: list["inputs.VariableMappingInput"] | None = None,
+    user: str | None = None,
 ) -> RetrievedEntity:
     with graph_cursor() as cursor:
         if external_id:
@@ -753,6 +754,7 @@ def create_age_protocol_event(
                 SET n.__valid_from = %s
                 SET n.__valid_to = %s
                 SET n.__variables = %s
+                SET n.__performed_by = %s
                 RETURN n
             $$) as (n agtype);
             """,
@@ -766,6 +768,7 @@ def create_age_protocol_event(
                     valid_from.isoformat() if valid_from else None,
                     valid_to.isoformat() if valid_to else None,
                     [strawberry.asdict(variable) for variable in variables] if variables else None,
+                    user,
                 ),
             )
             existing = cursor.fetchone()
@@ -779,6 +782,7 @@ def create_age_protocol_event(
             FROM cypher(%s, $$
                 CREATE (n:{category.get_age_vertex_name()} {{__type: "PROTOCOL_EVENT", __category_id: %s, __category_type: %s, __label: %s, __created_at: %s, __external_id: %s, valid_from: %s, valid_to: %s}})
                 SET n.__variables = %s
+                SET n.__performed_by = %s
                 RETURN n
             $$) as (n agtype);
             """,
@@ -792,6 +796,7 @@ def create_age_protocol_event(
                 valid_from.isoformat() if valid_from else None,
                 valid_to.isoformat() if valid_to else None,
                 [json.dumps(variable) for variable in variables] if variables else None,
+                user,
             ),
         )
         result = cursor.fetchone()
@@ -1237,7 +1242,7 @@ def get_entities(filters: typing.Optional["filters.EntityFilter"], pagination: t
         match_statements.append(f"n.__external_id IN [{', '.join(map(str, filters.external_ids))}]")
 
     if filters.search:
-        match_statements.append(f"n.__label ILIKE '%{filters.search}%'")
+        match_statements.append(f"n.__label CONTAINS '{filters.search}' OR n.__description CONTAINS '{filters.search}' OR n.__external_id CONTAINS '{filters.search}'")
 
     if filters.created_after:
         match_statements.append(f"n.__created_at > '{filters.created_after.isoformat()}'")

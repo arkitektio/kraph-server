@@ -11,6 +11,7 @@ import uuid
 import datetime
 import re
 from dataclasses import dataclass
+from authentikate.models import User
 
 
 @strawberry.input
@@ -24,6 +25,7 @@ class RecordProtocolEventInput:
     variables: list[inputs.VariableMappingInput] | None = None
     valid_from: datetime.datetime | None = None
     valid_to: datetime.datetime | None = None
+    performed_by: strawberry.ID | None = None
 
 
 @strawberry.input
@@ -35,18 +37,16 @@ def record_protocol_event(
     info: Info,
     input: RecordProtocolEventInput,
 ) -> types.ProtocolEvent:
-
     protocol_event = models.ProtocolEventCategory.objects.get(id=input.category)
 
     # TODO: VALIDATE EVERYTHING
 
-    protocol_event_entity = age.create_age_protocol_event(
-        protocol_event,
-        external_id=input.external_id,
-        valid_from=input.valid_from,
-        valid_to=input.valid_to,
-        variables=input.variables,
-    )
+    user = info.context.request.user
+    if input.performed_by:
+        # Validate the performed_by user
+        user = User.objects.get(sub=input.performed_by)
+
+    protocol_event_entity = age.create_age_protocol_event(protocol_event, external_id=input.external_id, valid_from=input.valid_from, valid_to=input.valid_to, variables=input.variables, user=user.id)
 
     necessary_inedges = []
     necessary_outedges = []

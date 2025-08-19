@@ -52,6 +52,7 @@ class OptionInput:
         description="A detailed description of the option",
     )
 
+
 @strawberry.input(description="Input for creating a new expression")
 class VariableDefinitionInput:
     param: str = strawberry.field(description="The parameter name")
@@ -99,7 +100,8 @@ class CategoryDefinitionInput:
         default=None,
         description="The default creation of entity or reagent to use for this port if a reagent is not provided",
     )
-    
+
+
 @strawberry.input(description="Input for creating a new expression")
 class StructureCategoryDefinitionInput:
     category_filters: list[strawberry.ID] | None = strawberry.field(
@@ -154,6 +156,10 @@ class ReagentRoleDefinitionInput:
         default=False,
         description="Whether this port allows multiple entities or not",
     )
+    create_category: strawberry.ID | None = strawberry.field(
+        default=None,
+        description="The ID of the category to create a new reagent for if it doesn't exist",
+    )
 
 
 @strawberry.input(description="Input for creating a new expression")
@@ -181,6 +187,10 @@ class EntityRoleDefinitionInput:
     allow_multiple: bool | None = strawberry.field(
         default=False,
         description="Whether this port allows multiple entities or not",
+    )
+    create_category: strawberry.ID | None = strawberry.field(
+        default=None,
+        description="The ID of the category to create an entity for if it doesn't exist",
     )
 
 
@@ -226,6 +236,7 @@ class ColumnInput:
     searchable: bool | None = None
     idfor: list[strawberry.ID] | None = None
     preferhidden: bool | None = None
+    identifier: str | None = None
 
 
 @strawberry.input()
@@ -233,24 +244,12 @@ class CategoryInput:
     graph: strawberry.ID = strawberry.field(
         description="The ID of the graph this expression belongs to. If not provided, uses default ontology",
     )
-    description: str | None = strawberry.field(
-        default=None, description="A detailed description of the expression"
-    )
-    purl: str | None = strawberry.field(
-        default=None, description="Permanent URL identifier for the expression"
-    )
-    color: list[int] | None = strawberry.field(
-        default=None, description="RGBA color values as list of 3 or 4 integers"
-    )
-    image: strawberry.ID | None = strawberry.field(
-        default=None, description="An optional image associated with this expression"
-    )
-    tags: list[str] | None = strawberry.field(
-        default=None, description="A list of tags associated with this expression"
-    )
-    pin: bool | None = strawberry.field(
-        default=None, description="Whether this expression should be pinned or not"
-    )
+    description: str | None = strawberry.field(default=None, description="A detailed description of the expression")
+    purl: str | None = strawberry.field(default=None, description="Permanent URL identifier for the expression")
+    color: list[int] | None = strawberry.field(default=None, description="RGBA color values as list of 3 or 4 integers")
+    image: strawberry.ID | None = strawberry.field(default=None, description="An optional image associated with this expression")
+    tags: list[str] | None = strawberry.field(default=None, description="A list of tags associated with this expression")
+    pin: bool | None = strawberry.field(default=None, description="Whether this expression should be pinned or not")
     sequence: strawberry.ID | None = strawberry.field(
         default=None,
         description="The ID of the sequence this category will get internal_ids from",
@@ -259,47 +258,22 @@ class CategoryInput:
         default=False,
         description="Whether to create a sequence if it does not exist",
     )
-    
-    
+
+
 @strawberry.input()
 class NodeCategoryInput:
-    position_x: float | None = strawberry.field(
-        default=None, description="An optional x position for the ontology node"
-    )
-    position_y: float | None = strawberry.field(
-        default=None, description="An optional y position for the ontology node"
-    )
-    height: float | None = strawberry.field(
-        default=None, description="An optional height for the ontology node"
-    )
-    width: float | None = strawberry.field(
-        default=None, description="An optional width for the ontology node"
-    )
-    color: list[int] | None = strawberry.field(
-        default=None, description="An optional RGBA color for the ontology node"
-    )
-    
-    
-
+    position_x: float | None = strawberry.field(default=None, description="An optional x position for the ontology node")
+    position_y: float | None = strawberry.field(default=None, description="An optional y position for the ontology node")
+    height: float | None = strawberry.field(default=None, description="An optional height for the ontology node")
+    width: float | None = strawberry.field(default=None, description="An optional width for the ontology node")
+    color: list[int] | None = strawberry.field(default=None, description="An optional RGBA color for the ontology node")
 
 
 @strawberry.input()
 class UpdateCategoryInput:
-    description: str | None = strawberry.field(
-        default=None, description="A detailed description of the expression"
-    )
-    purl: str | None = strawberry.field(
-        default=None, description="Permanent URL identifier for the expression"
-    )
-    color: list[int] | None = strawberry.field(
-        default=None, description="RGBA color values as list of 3 or 4 integers"
-    )
-    image: strawberry.ID | None = strawberry.field(
-        default=None, description="An optional image associated with this expression"
-    )
-    tags: list[str] | None = strawberry.field(
-        default=None, description="A list of tags associated with this expression"
-    )
-    pin: bool | None = strawberry.field(
-        default=None, description="Whether this expression should be pinned or not"
-    )
+    description: str | None = strawberry.field(default=None, description="A detailed description of the expression")
+    purl: str | None = strawberry.field(default=None, description="Permanent URL identifier for the expression")
+    color: list[int] | None = strawberry.field(default=None, description="RGBA color values as list of 3 or 4 integers")
+    image: strawberry.ID | None = strawberry.field(default=None, description="An optional image associated with this expression")
+    tags: list[str] | None = strawberry.field(default=None, description="A list of tags associated with this expression")
+    pin: bool | None = strawberry.field(default=None, description="Whether this expression should be pinned or not")

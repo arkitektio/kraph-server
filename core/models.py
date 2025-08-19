@@ -363,7 +363,7 @@ class StructureCategory(NodeCategory):
     )
 
     def get_age_vertex_name(self):
-        return "Structure"
+        return self.age_name
 
     def get_age_type_name(self):
         return self.identifier
@@ -409,7 +409,7 @@ class NaturalEventCategory(NodeCategory):
         return role
 
     def get_age_vertex_name(self):
-        return "NaturalEvent"
+        return self.age_name
 
     def get_age_type_name(self):
         return self.age_name
@@ -473,7 +473,7 @@ class ProtocolEventCategory(NodeCategory):
         return role
 
     def get_age_vertex_name(self):
-        return "ProtocolEvent"
+        return self.age_name
 
     def get_age_type_name(self):
         return self.age_name
@@ -548,7 +548,7 @@ class EntityCategory(NodeCategory):
     )
 
     def get_age_vertex_name(self):
-        return "Entity"
+        return self.age_name
 
     def get_age_type_name(self):
         return self.age_name
@@ -613,7 +613,7 @@ class ReagentCategory(NodeCategory):
     )
 
     def get_age_vertex_name(self):
-        return "Reagent"
+        return self.age_name
 
     def get_age_type_name(self):
         return self.age_name
@@ -658,7 +658,7 @@ class MetricCategory(NodeCategory):
     )
 
     def get_age_vertex_name(self):
-        return "Metric"
+        return self.age_name
 
     def get_age_type_name(self):
         return self.age_name
@@ -682,7 +682,7 @@ class MeasurementCategory(EdgeCategory):
     )
 
     def get_age_edge_name(self):
-        return "Measurement"
+        return self.age_name
 
     def get_age_type_name(self):
         return self.age_name
@@ -701,7 +701,7 @@ class RelationCategory(EdgeCategory):
     )
 
     def get_age_edge_name(self):
-        return "Relation"
+        return self.age_name
 
     def get_age_type_name(self):
         return self.age_name
@@ -720,7 +720,7 @@ class StructureRelationCategory(EdgeCategory):
     )
 
     def get_age_edge_name(self):
-        return "Relation"
+        return self.age_name
 
     def get_age_type_name(self):
         return self.age_name

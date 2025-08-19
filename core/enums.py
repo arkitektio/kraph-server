@@ -104,6 +104,8 @@ class ColumnKind(str, Enum):
     NODE = "NODE"
     VALUE = "VALUE"
     EDGE = "EDGE"
+    STRUCTURE = "STRUCTURE"
+    USER = "USER"
 
 
 @strawberry.enum
@@ -123,7 +125,7 @@ class NodeCategoryKind(str, Enum):
     METRIC = "METRIC"
     NATURAL_EVENT = "NATURAL_EVENT"
     PROTOCOL_EVENT = "PROTOCOL_EVENT"
-    
+
 
 @strawberry.enum
 class EdgeCategoryKind(str, Enum):
