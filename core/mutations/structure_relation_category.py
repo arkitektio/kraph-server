@@ -50,9 +50,6 @@ def validate_structure_category_definition(definition: inputs.StructureCategoryD
                 age_name=manager.build_structure_age_name(identifier),
                 defaults=dict(
                     identifier=identifier,
-                    description=f"Identifier filter for {identifier}",
-                    purl=None,
-                    store=None,
                 ),
             )[0]
 

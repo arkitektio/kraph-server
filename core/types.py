@@ -681,16 +681,16 @@ class Measurement(Edge):
         return self._value.id
 
     @strawberry.field(description="Timestamp from when this entity is valid")
-    def valid_from(self, info: Info) -> datetime.datetime:
-        return datetime.datetime.fromisoformat(self._value.valid_from)
+    def valid_from(self, info: Info) -> datetime.datetime | None:
+        return datetime.datetime.fromisoformat(self._value.valid_from) if self._value.valid_from else None
 
     @strawberry.field(description="Timestamp until when this entity is valid")
-    def valid_to(self, info: Info) -> datetime.datetime:
-        return datetime.datetime.fromisoformat(self._value.valid_to)
+    def valid_to(self, info: Info) -> datetime.datetime | None:
+        return datetime.datetime.fromisoformat(self._value.valid_to) if self._value.valid_to else None
 
     @strawberry.field(description="When this entity was created")
     def created_at(self, info: Info) -> datetime.datetime:
-        return self._value.created_at or datetime.datetime.now()
+        return self._value.created_at 
 
     @strawberry_django.field()
     async def category(self, info: Info) -> "MeasurementCategory":

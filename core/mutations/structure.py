@@ -55,12 +55,14 @@ def create_structure(
     age_name, identifier, object_id = scalar_string_to_graph_name(input.structure)
 
     category, created = models.StructureCategory.objects.get_or_create(
-        age_name=manager.build_structure_age_name(identifier),
         graph=graph,
+        age_name=manager.build_structure_age_name(identifier),
         defaults=dict(
             identifier=identifier,
         ),
     )
+    
+    age.create_age_structure_kind(category)
 
     structure = age.create_age_structure(
         category,

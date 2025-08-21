@@ -18,7 +18,7 @@ import strawberry_django
 from koherent.strawberry.extension import KoherentExtension
 from authentikate.strawberry.extension import AuthentikateExtension
 from authentikate.strawberry import AuthExtension, AuthSubscribeExtension
-from core import age, scalars
+from core import age, scalars, manager
 from strawberry_django.pagination import OffsetPaginationInput
 
 
@@ -218,7 +218,7 @@ class Query:
         input: OffsetPaginationInput | None = None,
         filters: filters.NodeCategoryFilter | None = None,
     ) -> list[types.NodeCategory]:
-        raise NotImplementedError("This resolver is a placeholder and should be implemented by the developer")
+        raise NotImplementedError("This resolver is a dplaceholder and should be implemented by the developer")
 
     @field(permission_classes=[])
     def edge_categories(
@@ -262,9 +262,9 @@ class Query:
         identifier: scalars.StructureIdentifier,
         object: strawberry.ID,
     ) -> types.Structure:
-        structure = models.StructureCategory.objects.get_or_create(identifier=identifier, graph_id=graph)
+        structure = models.StructureCategory.objects.get(age_name=manager.build_structure_age_name(identifier), graph_id=graph)
 
-        return age.get_age_structure_by_object(structure, object)
+        return types.entity_to_node_subtype(age.get_age_structure_by_object(structure, object))
 
     @field(permission_classes=[])
     def structures(

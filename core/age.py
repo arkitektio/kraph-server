@@ -976,6 +976,35 @@ def create_age_structure(
     object: str = None,
 ) -> RetrievedEntity:
     with graph_cursor() as cursor:
+        try:
+            cursor.execute(
+                f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (s: {category.get_age_vertex_name()} {{__type: "STRUCTURE", __category_type: %s, __category_id: %s}})
+                WHERE s.__object = %s
+                SET s.__created_at = %s
+                SET s.__identifier = %s
+                RETURN s
+            $$) as (s agtype);
+            """,
+                (
+                    category.graph.age_name,
+                    category.get_age_type_name(),
+                    category.id,
+                    object,
+                    datetime.datetime.now().isoformat(),
+                    category.identifier,
+                ),
+            )
+            existing = cursor.fetchone()
+            if existing:
+                return vertex_ag_to_retrieved_entity(category.graph.age_name, existing[0])
+        except Exception as e:
+            print(f"Error finding existing structure: {e}")
+        
+        
+        
         cursor.execute(
             f"""
             SELECT * 
