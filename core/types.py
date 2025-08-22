@@ -129,7 +129,7 @@ def entity_to_node_subtype(
 
 def relation_to_edge_subtype(
     relation: age.RetrievedRelation,
-) -> Union["Measurement", "Relation", "Participant", "Description"]:
+) -> Union["Measurement", "Relation", "Participant", "Description", "StructureRelation"]:
     match relation.category_type:
         case "MEASUREMENT":
             return Measurement(_value=relation)
@@ -690,7 +690,7 @@ class Measurement(Edge):
 
     @strawberry.field(description="When this entity was created")
     def created_at(self, info: Info) -> datetime.datetime:
-        return self._value.created_at 
+        return self._value.created_at
 
     @strawberry_django.field()
     async def category(self, info: Info) -> "MeasurementCategory":
@@ -831,9 +831,6 @@ class NodeCategory:
     height: float | None = strawberry.field(description="The height of the node in the graph")
     width: float | None = strawberry.field(description="The width of the node in the graph")
     color: list[float] | None = strawberry.field(description="The color of the node in the graph")
-    
-    
-   
 
     pass
 
@@ -882,7 +879,6 @@ class EntityCategoryDefinition(CategoryDefintion):
             querysets = querysets.exclude(category__id=i)
 
         return querysets.all()
-    
 
 
 @strawberry.type()
@@ -911,7 +907,6 @@ class StructureCategoryDefinition(CategoryDefintion):
     @strawberry.field()
     def identifier_filters(self, info: Info) -> list[scalars.StructureIdentifier] | None:
         return self._value.get("identifier_filters", None)
-  
 
 
 @strawberry.type()
@@ -936,8 +931,6 @@ class ReagentCategoryDefinition(CategoryDefintion):
             querysets = querysets.exclude(category__id=i)
 
         return querysets.all()
-    
-    
 
 
 @strawberry.type()
@@ -1076,7 +1069,6 @@ class EntityCategory(NodeCategory, BaseCategory):
     def instance_kind(self, info: Info) -> enums.InstanceKind:
         return self.instance_kind if self.instance_kind else enums.InstanceKind.ENTITY
 
-    
     @strawberry_django.field()
     def latest(self, info: Info, limit: int | None = 5) -> List[Entity]:
         return [entity_to_node_subtype(i) for i in age.select_latest_entities(self.graph.age_name, self.id, limit=limit or 5)]
@@ -1094,7 +1086,6 @@ class ReagentCategory(NodeCategory, BaseCategory):
     def instance_kind(self, info: Info) -> enums.InstanceKind:
         return self.instance_kind if self.instance_kind else enums.InstanceKind.ENTITY
 
-    
     @strawberry_django.field()
     def latest(self, info: Info, limit: int | None = 5) -> List[Reagent]:
         return [entity_to_node_subtype(i) for i in age.select_latest_entities(self.graph.age_name, self.id, limit=limit or 5)]

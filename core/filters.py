@@ -601,5 +601,10 @@ class RelationFilter(EdgeFilter):
 
 
 @strawberry.input(description="Filter for entity relations in the graph")
+class StructureRelationFilter(EdgeFilter):
+    kind: strawberry.ID | None = strawberry.field(default=None, description="Filter by relation kind")
+
+
+@strawberry.input(description="Filter for entity relations in the graph")
 class MeasurementFilter(EdgeFilter):
     kind: strawberry.ID | None = strawberry.field(default=None, description="Filter by relation kind")

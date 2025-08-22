@@ -383,6 +383,19 @@ class Query:
         return []
 
     @field(permission_classes=[])
+    def structure_relation(self, info: Info, id: ID) -> types.StructureRelation:
+        return types.relation_to_edge_subtype(age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id)))
+
+    @field(permission_classes=[])
+    def structure_relations(
+        self,
+        info: Info,
+        filters: filters.StructureRelationFilter | None = None,
+        pagination: pagination.GraphPaginationInput | None = None,
+    ) -> list[types.StructureRelation]:
+        return []
+
+    @field(permission_classes=[])
     def participant(self, info: Info, id: ID) -> types.Participant:
         return types.relation_to_edge_subtype(age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id)))
 
