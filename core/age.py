@@ -481,6 +481,38 @@ def edge_ag_to_retrieved_metric(graph_name, edge):
         kind_age_name=parsed_relationship["label"],
         properties=parsed_relationship["properties"],
     )
+    
+    
+def select_latest_entities(graph_name, category_id, limit=5):
+    with graph_cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (n)
+                WHERE n.__category_id = %s
+                RETURN n
+                ORDER BY n.__created_at DESC
+                LIMIT %s
+            $$) as (n agtype);
+            """,
+            [graph_name, category_id, limit],
+        )
+
+        results = cursor.fetchall()
+        print("Thre results", results)
+
+        nodes: list[RetrievedEntity] = []
+
+        for result in results:
+            print(result)
+            entity = result[0]
+            if entity:
+                nodes.append(vertex_ag_to_retrieved_entity(graph_name, entity))
+
+        print(nodes)
+        return nodes
+    
 
 
 def get_neighbors_and_edges(graph_name, node_id):
