@@ -1251,7 +1251,9 @@ class RelationCategory(EdgeCategory, BaseCategory):
 class StructureRelationCategory(EdgeCategory, BaseCategory):
     """A RelationExpression is a class that describes the relationship between two entities."""
 
-    label: str = strawberry.field(description="The label of the expression")
+    @strawberry.field(description="The label of the expression")
+    def label(self) -> str:
+        return self.age_name
 
     @strawberry_django.field(description="The unique identifier of the expression within its graph")
     def source_definition(self, info: Info) -> StructureCategoryDefinition:

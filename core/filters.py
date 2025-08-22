@@ -277,7 +277,7 @@ class StructureCategoryFilter:
     def filter_search(self, queryset, info):
         if self.search is None:
             return queryset
-        return queryset.filter(label__contains=self.search)
+        return queryset.filter(identifier__contains=self.search)
 
     def filter_kind(self, queryset, info):
         if self.kind is None:
