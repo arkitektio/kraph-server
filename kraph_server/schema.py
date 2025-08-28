@@ -606,6 +606,8 @@ class Mutation:
         description="Create a new structure",
     )
 
+    create_tag = mutation(resolver=mutations.create_tag, description="Create a new tag")
+
     create_model = mutation(resolver=mutations.create_model, description="Create a new model")
 
     request_upload = mutation(resolver=mutations.request_upload, description="Request a new file upload")

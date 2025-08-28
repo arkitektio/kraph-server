@@ -454,10 +454,15 @@ class TagFilter(IDFilterMixin, SearchFilterMixin):
     name: str | None = None
     values: list[str] | None = None
 
+    def filter_search(self, queryset, info):
+        if self.search is None:
+            return queryset
+        return queryset.filter(value__contains=self.search)
+
     def filter_name(self, queryset, info):
         if self.name is None:
             return queryset
-        return queryset.filter(name__contains=self.name)
+        return queryset.filter(value__contains=self.name)
 
     def filter_values(self, queryset, info):
         if self.values is None:

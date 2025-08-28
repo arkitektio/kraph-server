@@ -1,18 +1,14 @@
 import pytest
 import boto3
 import moto
-from moto import mock_s3
+from moto import mock_aws
 import os
 
 import pytest
-from core.models import Image, Dataset
 from django.contrib.auth import get_user_model
-from authentikate.models import App
-from kraph_server.schema import schema
-from guardian.shortcuts import get_perms
-from asgiref.sync import sync_to_async
-from kante.context import ChannelsContext, EnhancendChannelsHTTPRequest
-
+from kabinet_server.schema import schema
+from authentikate.models import Client, Organization, User
+from kante.context import HttpContext, UniversalRequest
 
 @pytest.fixture(scope="function")
 def aws_credentials():
@@ -26,7 +22,7 @@ def aws_credentials():
 
 @pytest.fixture(scope="function")
 def s3(aws_credentials):
-    with mock_s3():
+    with mock_aws():
         yield boto3.client("s3", region_name="us-east-1")
 
 
@@ -41,21 +37,18 @@ def create_bucket2(s3):
 
 
 @pytest.fixture
-@pytest.mark.asyncio
 def authenticated_context(db):
-    user = get_user_model().objects.create(username="fart", password="123456789")
+    user = User.objects.create(username="fart", password="123456789", sub="1")
+    client = Client.objects.create(client_id="oinsoins")
+    org = Organization.objects.create(slug="test-organization")
 
-    app = App.objects.create(client_id="oinsoins")
-
-    return (
-        ChannelsContext(
-            request=EnhancendChannelsHTTPRequest(
-                user=user,
-                app=app,
-                body="",
-                scopes=["openid"],
-                consumer=None,
+    return HttpContext(
+            request=UniversalRequest(
+                _extensions={"token": "test"},
+                _client=client,  # type: ignore
+                _user=user, # type: ignore
+                _organization=org, #type: ignore
             ),
-            response=None,
-        ),
-    )
+            headers={"Authorization": "Bearer test"},
+            type="http"
+        )

@@ -15,27 +15,21 @@ class ReagentCategoryInput(inputs.CategoryInput, inputs.NodeCategoryInput):
 
 @strawberry.input(description="Input for updating an existing generic category")
 class UpdateReagentCategoryInput(inputs.UpdateCategoryInput, inputs.NodeCategoryInput):
-    id: strawberry.ID = strawberry.field(
-        description="The ID of the expression to update"
-    )
+    id: strawberry.ID = strawberry.field(description="The ID of the expression to update")
+    label: str | None = strawberry.field(default=None, description="The label/name of the expression")
 
 
 @strawberry.input(description="Input for deleting a generic category")
 class DeleteReagentCategoryInput:
-    id: strawberry.ID = strawberry.field(
-        description="The ID of the expression to delete"
-    )
+    id: strawberry.ID = strawberry.field(description="The ID of the expression to delete")
 
 
 def create_reagent_category(
     info: Info,
     input: ReagentCategoryInput,
 ) -> types.ReagentCategory:
-
     if input.color:
-        assert (
-            len(input.color) == 3 or len(input.color) == 4
-        ), "Color must be a list of 3 or 4 values RGBA"
+        assert len(input.color) == 3 or len(input.color) == 4, "Color must be a list of 3 or 4 values RGBA"
 
     if input.image:
         media_store = models.MediaStore.objects.get(
@@ -58,13 +52,13 @@ def create_reagent_category(
 
     age.create_age_reagent_kind(vocab)
     manager.set_age_sequence(vocab, input.sequence, auto_create=input.auto_create_sequence)
-    
+
     if input.tags:
         vocab.tags.clear()
         for tag in input.tags:
             tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag)
             vocab.tags.add(tag_obj)
-            
+
     if input.pin is not None:
         if input.pin:
             vocab.pinned_by.add(info.context.user)
@@ -75,15 +69,11 @@ def create_reagent_category(
     return vocab
 
 
-def update_reagent_category(
-    info: Info, input: UpdateReagentCategoryInput
-) -> types.ReagentCategory:
+def update_reagent_category(info: Info, input: UpdateReagentCategoryInput) -> types.ReagentCategory:
     item = models.ReagentCategory.objects.get(id=input.id)
 
     if input.color:
-        assert (
-            len(input.color) == 3 or len(input.color) == 4
-        ), "Color must be a list of 3 or 4 values RGBA"
+        assert len(input.color) == 3 or len(input.color) == 4, "Color must be a list of 3 or 4 values RGBA"
 
     if input.image:
         media_store = models.MediaStore.objects.get(
@@ -98,19 +88,18 @@ def update_reagent_category(
     item.color = input.color if input.color else item.color
     item.store = media_store if media_store else item.store
 
-    
     if input.tags:
         item.tags.clear()
         for tag in input.tags:
             tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag)
             item.tags.add(tag_obj)
-            
+
     if input.pin is not None:
         if input.pin:
             item.pinned_by.add(info.context.request.user)
         else:
             item.pinned_by.remove(info.context.request.user)
-            
+
     manager.set_position_info(item, input)
     item.save()
     return item

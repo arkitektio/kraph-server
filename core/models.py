@@ -213,10 +213,22 @@ class GraphSequence(models.Model):
 class CategoryTag(models.Model):
     """A tag for a category"""
 
+    graph = models.ForeignKey(
+        "Graph",
+        on_delete=models.CASCADE,
+        related_name="category_tags",
+        help_text="The graph this tag belongs to",
+    )
+
     value = models.CharField(
         max_length=1000,
         unique=True,
         help_text="The value of the tag",
+    )
+    name = models.CharField(
+        max_length=1000,
+        help_text="The name of the tag",
+        null=True,
     )
     description = models.CharField(
         max_length=1000,
