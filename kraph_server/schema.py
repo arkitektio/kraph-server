@@ -601,6 +601,11 @@ class Mutation:
         description="Create a new metric for an entity",
     )
 
+    update_entity = mutation(
+        resolver=mutations.update_entity,
+        description="Update an existing entity",
+    )
+
     create_structure = mutation(
         resolver=mutations.create_structure,
         description="Create a new structure",

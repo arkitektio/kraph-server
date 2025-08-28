@@ -481,8 +481,8 @@ def edge_ag_to_retrieved_metric(graph_name, edge):
         kind_age_name=parsed_relationship["label"],
         properties=parsed_relationship["properties"],
     )
-    
-    
+
+
 def select_latest_entities(graph_name, category_id, limit=5):
     with graph_cursor() as cursor:
         cursor.execute(
@@ -512,7 +512,6 @@ def select_latest_entities(graph_name, category_id, limit=5):
 
         print(nodes)
         return nodes
-    
 
 
 def get_neighbors_and_edges(graph_name, node_id):
@@ -624,6 +623,29 @@ def create_age_entity(
             return vertex_ag_to_retrieved_entity(category.graph.age_name, entity)
         else:
             raise ValueError("No entity created or returned by the query.")
+
+
+def update_entity(graph: str, id: str, external_id: str | None):
+    with graph_cursor() as cursor:
+        # Try to find existing reagent first
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (n)
+                WHERE id(n) = %s
+                SET n.__external_id = %s
+                RETURN n
+            $$) as (n agtype);
+            """,
+            (graph, id, external_id),
+        )
+        result = cursor.fetchone()
+        if result:
+            entity = result[0]
+            return vertex_ag_to_retrieved_entity(graph, entity)
+        else:
+            raise ValueError("No entity updated or returned by the query.")
 
 
 def create_age_reagent(
@@ -1034,9 +1056,7 @@ def create_age_structure(
                 return vertex_ag_to_retrieved_entity(category.graph.age_name, existing[0])
         except Exception as e:
             print(f"Error finding existing structure: {e}")
-        
-        
-        
+
         cursor.execute(
             f"""
             SELECT * 
@@ -1659,7 +1679,7 @@ def create_age_structure_relation(category: "models.StructureRelationCategory", 
 
 
 def to_entity_id(id):
-    return id.split(":")[1]
+    return int(id.split(":")[1])
 
 
 def to_graph_id(id):
