@@ -624,6 +624,7 @@ class Mutation:
     delete_reagent = mutation(resolver=mutations.delete_reagent, description="Delete an existing entity")
 
     create_graph_query = mutation(resolver=mutations.create_graph_query, description="Create a new graph query")
+    update_graph_query = mutation(resolver=mutations.update_graph_query, description="Update an existing graph query")
 
     pin_graph_query = mutation(resolver=mutations.pin_graph_query, description="Pin or unpin a graph query")
 

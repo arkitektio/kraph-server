@@ -252,6 +252,14 @@ class GraphQuery:
 
         return render_graph_query(self)
 
+    @strawberry_django.field()
+    def columns(self, info) -> list[Column]:
+        return [Column(**c) for c in self.columns]
+
+    @strawberry_django.field()
+    def relevant_for(self, info) -> list["BaseCategory"]:
+        return [BaseCategory(**c) for c in self.relevant_for]
+
 
 @strawberry_django.type(
     models.ScatterPlot,
@@ -364,10 +372,10 @@ class Node:
     def label(self, info: Info, full: bool | None = None) -> str:
         label_string: str = ""
 
-        if self._value.external_id:
+        if self._value.external_id is not None:
             label_string += f"{self._value.external_id}"
         else:
-            if self._value.local_id:
+            if self._value.local_id is not None:
                 label_string += f"{self._value.local_id}"
             else:
                 label_string += f"{self._value.id}"

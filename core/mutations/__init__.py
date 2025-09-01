@@ -32,6 +32,7 @@ __all__ = [
     "pin_channel",
     "delete_channel",
     "ensure_channel",
+    "update_graph_query",
     "from_array_like",
     "delete_image",
     "request_access",
