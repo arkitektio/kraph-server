@@ -184,6 +184,38 @@ class RelationCategoryFilter:
     graph: strawberry.ID | None
     ontology: strawberry.ID | None
     pinned: bool | None
+    source_entity: strawberry.ID | None
+    target_entity: strawberry.ID | None
+
+    def filter_source_entity(self, queryset, info):
+        from core import age
+
+        if self.source_entity is None:
+            return queryset
+
+        entity_id = age.to_entity_id(self.source_entity)
+        graph_id = age.to_graph_id(self.source_entity)
+
+        entity = age.get_age_entity(graph_id, entity_id)
+
+        category = models.EntityCategory.objects.get(id=entity.category_id)
+
+        return queryset.filter(graph__age_name=graph_id).filter(source_definition__category_filters__contains=str(entity.category_id))
+
+    def filter_target_entity(self, queryset, info):
+        from core import age
+
+        if self.target_entity is None:
+            return queryset
+
+        entity_id = age.to_entity_id(self.target_entity)
+        graph_id = age.to_graph_id(self.target_entity)
+
+        print("hallo")
+        entity = age.get_age_entity(graph_id, entity_id)
+        category = models.EntityCategory.objects.get(id=entity.category_id)
+
+        return queryset.filter(graph__age_name=graph_id).filter(target_definition__category_filters__contains=str(entity.category_id))
 
     def filter_pinned(self, queryset, info):
         if self.pinned is None:

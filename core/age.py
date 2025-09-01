@@ -625,7 +625,7 @@ def create_age_entity(
             raise ValueError("No entity created or returned by the query.")
 
 
-def update_entity(graph: str, id: str, external_id: str | None):
+def update_entity(graph: str, id: int, external_id: str | None = None, tags: list[str] | None = None):
     with graph_cursor() as cursor:
         # Try to find existing reagent first
         cursor.execute(

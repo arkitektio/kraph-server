@@ -38,13 +38,14 @@ class UpdateEntityInput:
         default=None,
         description="An optional external ID for the entity (will upsert if exists)",
     )
+    tags: list[str] | None = strawberry.field(default=None, description="Optional tags for the entity")
 
 
 def update_entity(
     info: Info,
     input: UpdateEntityInput,
 ) -> types.Entity:
-    entity = age.update_entity(age.to_graph_id(input.id), age.to_entity_id(input.id), input.external_id)
+    entity = age.update_entity(age.to_graph_id(input.id), age.to_entity_id(input.id), external_id=input.external_id, tags=input.tags)
     return types.Entity(_value=entity)
 
 

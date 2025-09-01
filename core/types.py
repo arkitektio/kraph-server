@@ -411,6 +411,10 @@ class Node:
 
         return [Edge(_value=x) for x in age.select_all_relations(self._value.graph_name, pagination, filter)]
 
+    @strawberry_django.field(description="The tags associated with this entity. Currently not implemented   ")
+    def tags(self, info: Info) -> list["Tag"] | None:
+        return []
+
 
 @strawberry.type(description="A Structure is a recorded data point in a graph. It can measure a property of an entity through a direct measurement edge, that connects the entity to the structure. It of course can relate to other structures through relation edges.")
 class Structure(Node):
