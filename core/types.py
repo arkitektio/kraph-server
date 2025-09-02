@@ -247,7 +247,7 @@ class GraphQuery:
         return info.context.request.user in self.pinned_by.all()
 
     @strawberry_django.field()
-    def render(self, info: Info) -> Union["Path", "Pairs", "Table"]:
+    def render(self, info: Info) -> Union["Path", "Pairs", "Table", "NodeList"]:
         from core.renderers.graph.render import render_graph_query
 
         return render_graph_query(self)
@@ -550,6 +550,18 @@ class Entity(Node):
 
         return playable_roles
 
+    @strawberry_django.field(description="Measurements that this entity is involved in")
+    def measured_by(self) -> list["Measurement"]:
+        return [Measurement(_value=edge) for edge in age.select_measurements_for_entity(self._value.graph_name, int(self._value.id))]
+
+    @strawberry_django.field(description="Measurements that this entity is involved in")
+    def subjected_to(self) -> list["Participant"]:
+        return [Participant(_value=edge) for edge in age.select_source_participation_for_entity(self._value.graph_name, int(self._value.id))]
+
+    @strawberry_django.field(description="Measurements that this entity is involved in")
+    def targeted_by(self) -> list["Participant"]:
+        return [Participant(_value=edge) for edge in age.select_target_participation_for_entity(self._value.graph_name, int(self._value.id))]
+
 
 @strawberry.type(description="A Entity is a recorded data point in a graph. It can measure a property of an entity through a direct measurement edge, that connects the entity to the structure. It of course can relate to other structures through relation edges.")
 class Reagent(Node):
@@ -679,6 +691,24 @@ class Edge:
 
     @strawberry_django.field()
     def left(self, info: Info) -> Node:
+        return entity_to_node_subtype(
+            age.get_age_entity(
+                age.to_graph_id(self._value.unique_left_id),
+                age.to_entity_id((self._value.unique_left_id)),
+            )
+        )
+
+    @strawberry_django.field()
+    def target(self, info: Info) -> Node:
+        return entity_to_node_subtype(
+            age.get_age_entity(
+                age.to_graph_id(self._value.unique_right_id),
+                age.to_entity_id((self._value.unique_right_id)),
+            )
+        )
+
+    @strawberry_django.field()
+    def source(self, info: Info) -> Node:
         return entity_to_node_subtype(
             age.get_age_entity(
                 age.to_graph_id(self._value.unique_left_id),
@@ -1328,6 +1358,12 @@ class Pair:
 class Pairs:
     pairs: list[Pair] = strawberry.field(description="The paired entities.")
     graph: Graph = strawberry.field(description="The graph this table was queried from.")
+
+
+@strawberry.type(description="A column in a table.")
+class NodeList:
+    nodes: list[Node] = strawberry.field(description="The nodes in the list.")
+    graph: Graph = strawberry.field(description="The graph this list was queried from.")
 
 
 @strawberry.type(description="A collection of paired entities.")

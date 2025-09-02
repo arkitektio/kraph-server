@@ -1479,6 +1479,69 @@ def select_measurements_for_structure(graph_name, structure_id, categories: list
             return []
 
 
+def select_measurements_for_entity(graph_name, entity_id):
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (n)<-[r]-(m)
+                WHERE r.__type = "MEASUREMENT"
+                AND id(n) = %s 
+                RETURN r
+            $$) as (r agtype);
+            """,
+            (graph_name, entity_id),
+        )
+        result = cursor.fetchall()
+        if result:
+            return [edge_ag_to_retrieved_relation(graph_name, measurement[0]) for measurement in result]
+        else:
+            return []
+
+
+def select_target_participation_for_entity(graph_name, entity_id):
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (n)<-[r]-(m)
+                WHERE r.__type = "PARTICIPANT"
+                AND id(n) = %s 
+                RETURN r
+            $$) as (r agtype);
+            """,
+            (graph_name, entity_id),
+        )
+        result = cursor.fetchall()
+        if result:
+            return [edge_ag_to_retrieved_relation(graph_name, participation[0]) for participation in result]
+        else:
+            return []
+
+
+def select_source_participation_for_entity(graph_name, entity_id):
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (n)-[r]->(m)
+                WHERE r.__type = "PARTICIPANT"
+                AND id(n) = %s 
+                RETURN r
+            $$) as (r agtype);
+            """,
+            (graph_name, entity_id),
+        )
+        result = cursor.fetchall()
+        if result:
+            return [edge_ag_to_retrieved_relation(graph_name, participation[0]) for participation in result]
+        else:
+            return []
+
+
 def get_age_structure(graph_name, structure_identifier) -> RetrievedEntity:
     with graph_cursor() as cursor:
         cursor.execute(
