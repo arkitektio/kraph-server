@@ -6,7 +6,7 @@ import os
 
 import pytest
 from django.contrib.auth import get_user_model
-from kabinet_server.schema import schema
+from kraph_server.schema import schema
 from authentikate.models import Client, Organization, User
 from kante.context import HttpContext, UniversalRequest
 

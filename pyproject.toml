@@ -32,14 +32,18 @@ dependencies = [
 [dependency-groups]
 dev = [
     "django-stubs>=5.2.0",
+    "moto>=5.1.11",
     "mypy>=1.15.0",
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.1.0",
+    "pytest-django>=4.11.1",
 ]
 
 [tool.django-stubs]
-django_settings_module = "rekuest.settings"
+django_settings_module = "kraph_server.settings"
 
 [tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "rekuest.settings"
+DJANGO_SETTINGS_MODULE = "kraph_server.settings_test"
 
 
 [tool.ruff]
