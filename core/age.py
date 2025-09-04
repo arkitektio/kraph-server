@@ -132,6 +132,14 @@ class RetrievedEntity:
     @property
     def valid_from(self):
         return self.properties.get("__valid_from", None)
+    
+    @property
+    def pinned_by(self):
+        return self.properties.get("__pinned_by", [])
+    
+    @property
+    def tags(self):
+        return self.properties.get("__tags", None)
 
     @property
     def variables(self):
@@ -625,7 +633,7 @@ def create_age_entity(
             raise ValueError("No entity created or returned by the query.")
 
 
-def update_entity(graph: str, id: int, external_id: str | None = None, tags: list[str] | None = None):
+def update_entity(graph: str, id: int, external_id: str | None = None, tags: list[str] | None = None, pinned_by: list[str] | None = None) -> RetrievedEntity:
     with graph_cursor() as cursor:
         # Try to find existing reagent first
         cursor.execute(
@@ -635,10 +643,12 @@ def update_entity(graph: str, id: int, external_id: str | None = None, tags: lis
                 MATCH (n)
                 WHERE id(n) = %s
                 SET n.__external_id = %s
+                SET n.__tags = %s
+                SET n.__pinned_by = %s
                 RETURN n
             $$) as (n agtype);
             """,
-            (graph, id, external_id),
+            (graph, id, external_id, tags, pinned_by),
         )
         result = cursor.fetchone()
         if result:
@@ -1584,6 +1594,26 @@ def get_age_structure_by_object(structure: "models.StructureCategory", object: s
 
 
 def get_age_entity_relation(graph_name, edge_id) -> RetrievedRelation:
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (a)-[e]->(b) 
+                WHERE id(e) = %s
+                RETURN e
+            $$) as (e agtype);
+            """,
+            (graph_name, int(edge_id)),
+        )
+        result = cursor.fetchone()
+        if result:
+            relation = result[0]
+            return edge_ag_to_retrieved_relation(graph_name, relation)
+        raise ValueError("No entityrelation found by the query.")
+
+
+def get_age_edge(graph_name, edge_id) -> RetrievedRelation:
     with graph_cursor() as cursor:
         cursor.execute(
             f"""

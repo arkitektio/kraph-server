@@ -345,6 +345,11 @@ class EdgeCategory(Category):
         help_text="Filters for the left side of the metric (e.g. which tags the left side should have)",
         null=True,
     )
+    reverse_label = models.CharField(
+        max_length=1000,
+        help_text="The reverse label of the edge class",
+        null=True,
+    )
 
     def get_age_edge_name(self):
         raise NotImplementedError("Not implemented needs to be implemented")

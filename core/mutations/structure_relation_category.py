@@ -24,6 +24,7 @@ class StructureRelationCategoryInput(inputs.CategoryInput):
 @strawberry.input(description="Input for updating an existing expression")
 class UpdateStructureRelationCategoryInput(inputs.UpdateCategoryInput):
     label: str | None = strawberry.field(default=None, description="New label for the expression")
+    id: strawberry.ID = strawberry.field(description="The ID of the expression to update")
 
 
 @strawberry.input(description="Input for deleting an expression")

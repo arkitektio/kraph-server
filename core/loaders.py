@@ -1,5 +1,6 @@
 from strawberry.dataloader import DataLoader
 from core import models
+from django.contrib.auth import get_user_model
 
 
 async def load_expressions(age_names):
@@ -62,6 +63,21 @@ async def load_metric_categories(ids):
         )
 
     return gotten
+
+
+async def load_users(ids):
+
+    gotten = []
+    for i in ids:
+
+        gotten.append(
+            await get_user_model().objects.aget(
+                id=i,
+            )
+        )
+
+    return gotten
+
 
 
 async def load_entity_categories(ids):
@@ -376,6 +392,6 @@ protocolstep_template_loader = DataLoader(load_fn=load_protocolstep_templates)
 measurement_category_loader = DataLoader(load_fn=load_measurement_categories)
 step_category_loader = DataLoader(load_fn=load_step_category)
 graph_loader = DataLoader(load_fn=graph_loader_func)
-
+user_loader = DataLoader(load_fn=load_users)
 metric_key_loader = DataLoader(load_fn=metric_key_loader)
 node_view_loader = DataLoader(load_fn=node_view_loaders)

@@ -12,6 +12,7 @@ class EntityInput:
         default=None,
         description="An optional external ID for the entity (will upsert if exists)",
     )
+    pinned: bool | None = strawberry.field(default=None, description="Whether the entity should be pinned")
 
 
 @strawberry.input
@@ -39,13 +40,17 @@ class UpdateEntityInput:
         description="An optional external ID for the entity (will upsert if exists)",
     )
     tags: list[str] | None = strawberry.field(default=None, description="Optional tags for the entity")
+    pinned: bool | None = strawberry.field(default=None, description="Whether the entity should be pinned by this user")
 
 
 def update_entity(
     info: Info,
     input: UpdateEntityInput,
 ) -> types.Entity:
-    entity = age.update_entity(age.to_graph_id(input.id), age.to_entity_id(input.id), external_id=input.external_id, tags=input.tags)
+    
+    
+    
+    entity = age.update_entity(age.to_graph_id(input.id), age.to_entity_id(input.id), external_id=input.external_id, tags=input.tags, pinned_by=[ str(info.context.request.user.id) ] if input.pinned else None)
     return types.Entity(_value=entity)
 
 

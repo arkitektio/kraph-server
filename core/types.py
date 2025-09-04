@@ -332,6 +332,31 @@ class Node:
 
     def __hash__(self):
         return self._value.id
+    
+    @strawberry_django.field(description="The unique identifier of the entity within its graph")
+    def pinned(self, info: Info) -> bool:
+        if not self._value.pinned_by:
+            return False
+        
+        if not info.context.request.user.is_authenticated:
+            return False
+        
+        if not hasattr(info.context.request.user, "id"):
+            return False
+        
+        if str(info.context.request.user.id) not in self._value.pinned_by:
+            return False
+        
+        return True
+    
+    @strawberry_django.field(description="The unique identifier of the entity within its graph")
+    def pinned_by(self, info: Info) -> list[User]:
+        return loaders.user_loader.load_many(self._value.pinned_by) if self._value.pinned_by else []
+    
+    @strawberry_django.field(description="The unique identifier of the entity within its graph")
+    def tags(self, info: Info) -> list[str]:
+        return self._value.tags if self._value.tags else []
+    
 
     @strawberry_django.field(description="The unique identifier of the entity within its graph")
     def external_id(self, info: Info) -> str | None:
@@ -664,6 +689,10 @@ class Edge:
     def label(self, info: Info) -> str:
         return self._value.kind_age_name
 
+    @strawberry.field(description="The unique identifier of the entity within its graph")
+    def reverse_label(self, info: Info) -> str:
+        return self._value.kind_age_name + "_REVERSE"
+
     @strawberry_django.field()
     def left_id(self, info: Info) -> str:
         return self._value.unique_left_id
@@ -781,15 +810,15 @@ class StructureRelation(Edge):
         return self._value.id
 
     @strawberry.field(description="Timestamp from when this entity is valid")
-    def valid_from(self, info: Info) -> datetime.datetime:
+    def valid_from(self, info: Info) -> datetime.datetime | None:
         return self._value.valid_from
 
     @strawberry.field(description="Timestamp until when this entity is valid")
-    def valid_to(self, info: Info) -> datetime.datetime:
+    def valid_to(self, info: Info) -> datetime.datetime | None:
         return self._value.valid_to
 
     @strawberry.field(description="When this entity was created")
-    def created_at(self, info: Info) -> datetime.datetime:
+    def created_at(self, info: Info) -> datetime.datetime | None:
         return self._value.created_at or datetime.datetime.now()
 
     @strawberry_django.field()
@@ -921,6 +950,12 @@ class EntityCategoryDefinition(CategoryDefintion):
             querysets = querysets.exclude(category__id=i)
 
         return querysets.all()
+    
+    @strawberry_django.field()
+    async def default_use_new(self, info) -> Optional["EntityCategory"]:
+        """ The default entity category to use when creating a new entity with this role definition."""
+        cat_def = self._value.get("default_use_new", None)
+        return await loaders.entity_category_loader.load(cat_def) if cat_def else None
 
 
 @strawberry.type()
@@ -1322,7 +1357,7 @@ class MeasurementCategory(EdgeCategory, BaseCategory):
 
     @strawberry_django.field(description="The unique identifier of the expression within its graph")
     def source_definition(self, info: Info) -> StructureCategoryDefinition:
-        return EntityCategoryDefinition(_value=self.source_definition, _graph=self.graph.id)
+        return StructureCategoryDefinition(_value=self.source_definition, _graph=self.graph.id)
 
     @strawberry_django.field()
     def target_definition(self, info: Info) -> EntityCategoryDefinition:

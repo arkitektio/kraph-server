@@ -15,7 +15,7 @@ class MeasurementCategoryInput(inputs.CategoryInput):
         default=None,
         description="The source definition for this expression",
     )
-    entity_definition: inputs.CategoryDefinitionInput = strawberry.field(
+    entity_definition: inputs.EntityCategoryDefinitionInput = strawberry.field(
         default=None,
         description="The target definition for this expression",
     )

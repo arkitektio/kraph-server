@@ -384,7 +384,7 @@ class Query:
 
     @field(permission_classes=[])
     def structure_relation(self, info: Info, id: ID) -> types.StructureRelation:
-        return types.relation_to_edge_subtype(age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id)))
+        return types.relation_to_edge_subtype(age.get_age_edge(age.to_graph_id(id), age.to_entity_id(id)))
 
     @field(permission_classes=[])
     def structure_relations(
