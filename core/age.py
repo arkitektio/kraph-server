@@ -70,6 +70,7 @@ class RetrievedNodeMetric:
 
     @property
     def valid_from(self):
+        """The valid from date of the metric if it exists"""
         return self.properties.get("__valid_from", None)
 
     @property
@@ -114,12 +115,17 @@ class RetrievedEntity:
     cached_relations: list["RetrievedRelation"] | None = None
 
     def retrieve_relations(self) -> "RetrievedRelation":
+        """Retrieve all relations for this entity from the age database
+
+        This includes both left and right relations."""
         return self.cached_relations or get_age_relations(self.graph_name, self.id)
 
     def retrieve_right_relations(self) -> "RetrievedRelation":
+        """Retrieve all right relations for this entity from the age database"""
         return get_right_relations(self.graph_name, self.id)
 
     def retrieve_left_relations(self) -> "RetrievedRelation":
+        """ " Retrieve all left relations for this entity from the age database"""
         return get_left_relations(self.graph_name, self.id)
 
     def retrieve_metrics(self) -> list["RetrievedNodeMetric"]:
@@ -132,11 +138,11 @@ class RetrievedEntity:
     @property
     def valid_from(self):
         return self.properties.get("__valid_from", None)
-    
+
     @property
     def pinned_by(self):
         return self.properties.get("__pinned_by", [])
-    
+
     @property
     def tags(self):
         return self.properties.get("__tags", None)
@@ -2004,10 +2010,11 @@ def select_all_relations(
             return []
 
 
-def get_age_relations(graph_name, entity_id):
+def get_age_relations(graph_name: str, entity_id: int) -> typing.Iterable[RetrievedRelation]:
+    """Get all relations for an entity"""
     with graph_cursor() as cursor:
         cursor.execute(
-            f"""
+            """
             SELECT * 
             FROM cypher(%s, $$
                 MATCH (a)-[r]-(b) WHERE id(a) = %s
@@ -2028,7 +2035,7 @@ def get_age_relations(graph_name, entity_id):
             )
 
 
-def get_right_relations(graph_name, entity_id):
+def get_right_relations(graph_name: str, entity_id: int):
     with graph_cursor() as cursor:
         cursor.execute(
             f"""

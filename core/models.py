@@ -335,14 +335,16 @@ class NodeCategory(Category):
 
 
 class EdgeCategory(Category):
+    """An Edge class is a class that describes an edge in the graph which represents a relationship between two nodes."""
+
     source_definition = models.JSONField(
         default=dict,
-        help_text="Filters for the right side of the metric (e.g. which tags the right side should have)",
+        help_text="Filters for the right side of the edge (e.g. which tags the right side should have)",
         null=True,
     )
     target_definition = models.JSONField(
         default=dict,
-        help_text="Filters for the left side of the metric (e.g. which tags the left side should have)",
+        help_text="Filters for the left side of the edge (e.g. which tags the left side should have)",
         null=True,
     )
     reverse_label = models.CharField(
@@ -351,10 +353,12 @@ class EdgeCategory(Category):
         null=True,
     )
 
-    def get_age_edge_name(self):
+    def get_age_edge_name(self) -> str:
+        """Should return the name of the edge in the age graph"""
         raise NotImplementedError("Not implemented needs to be implemented")
 
-    def get_age_type_name(self):
+    def get_age_type_name(self) -> str:
+        """Should return the type name of the edge in the age graph"""
         raise NotImplementedError("Not implemented needs to be implemented")
 
 
