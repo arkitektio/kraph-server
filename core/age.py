@@ -71,19 +71,19 @@ class RetrievedNodeMetric:
     @property
     def valid_from(self):
         """The valid from date of the metric if it exists"""
-        return self.properties.get("__valid_from", None)
+        return self.properties.get("valid_from", None)
 
     @property
     def valid_to(self):
-        return self.properties.get("__valid_to", None)
+        return self.properties.get("valid_to", None)
 
     @property
     def valid_relative_from(self):
-        return self.properties.get("__valid_relative_from", None)
+        return self.properties.get("valid_relative_from", None)
 
     @property
     def valid_relative_to(self):
-        return self.properties.get("__valid_relative_to", None)
+        return self.properties.get("valid_relative_to", None)
 
     @property
     def unique_id(self):
@@ -95,7 +95,7 @@ class RetrievedNodeMetric:
 
     @property
     def assignation_id(self):
-        return self.properties.get("__created_through", None)
+        return self.properties.get("created_through", None)
 
     @property
     def measured_structure(self) -> LinkedStructure:
@@ -133,72 +133,75 @@ class RetrievedEntity:
 
     @property
     def label(self):
-        return self.properties.get("__label", self.kind_age_name + " - " + str(self.id))
+        return self.properties.get("label", self.kind_age_name + " - " + str(self.id))
 
     @property
     def valid_from(self):
-        return self.properties.get("__valid_from", None)
+        return self.properties.get("valid_from", None)
 
     @property
     def pinned_by(self):
-        return self.properties.get("__pinned_by", [])
+        return self.properties.get("pinned_by", [])
 
     @property
     def tags(self):
-        return self.properties.get("__tags", None)
+        return self.properties.get("tags", None)
 
     @property
     def variables(self):
-        return self.properties.get("__variables", [])
+        return [{"role": key[len("variable_"):], "value": value} for key, value in self.properties.items() if key.startswith("variable_")]
+    
+        
+        
 
     @property
     def local_id(self):
-        return self.properties.get("__sequence", None)
+        return self.properties.get("sequence", None)
 
     @property
     def value(self):
-        return self.properties.get("__value", None)
+        return self.properties.get("value", None)
 
     @property
     def external_id(self):
-        return self.properties.get("__external_id", None)
+        return self.properties.get("external_id", None)
 
     @property
     def category_type(
         self,
     ) -> typing.Literal["ENTITY", "STRUCTURE", "NATURAL_EVENT", "PROTOCOL_EVENT", "REAGENT", "METRIC"]:
-        return self.properties.get("__type", None)
+        return self.properties.get("type", None)
 
     @property
     def category_id(self) -> str:
-        return self.properties["__category_id"]
+        return self.properties["category_id"]
 
     @property
     def valid_to(self):
-        return self.properties.get("__valid_to", None)
+        return self.properties.get("valid_to", None)
 
     @property
     def created_at(self):
-        created_at = self.properties.get("__created_at", None)
+        created_at = self.properties.get("created_at", None)
         if created_at:
             return datetime.datetime.fromisoformat(created_at)
         return None
 
     @property
     def valid_relative_from(self):
-        return self.properties.get("__valid_relative_from", None)
+        return self.properties.get("valid_relative_from", None)
 
     @property
     def valid_relative_to(self):
-        return self.properties.get("__valid_relative_to", None)
+        return self.properties.get("valid_relative_to", None)
 
     @property
     def object(self):
-        return self.properties.get("__object", None)
+        return self.properties.get("object", None)
 
     @property
     def identifier(self):
-        return self.properties.get("__identifier", None)
+        return self.properties.get("identifier", None)
 
     @property
     def unique_id(self):
@@ -227,11 +230,11 @@ class RetrievedRelation:
     def category_type(
         self,
     ) -> typing.Literal["MEASUREMENT", "RELATION", "PARTICIPANT", "DESCRIPTION"]:
-        return self.properties.get("__type", None)
+        return self.properties.get("type", None)
 
     @property
     def category_id(self) -> str:
-        return self.properties.get("__category_id", None)
+        return self.properties.get("category_id", None)
 
     @property
     def value(self):
@@ -239,15 +242,15 @@ class RetrievedRelation:
 
     @property
     def label(self):
-        return self.properties.get("__label", self.kind_age_name + " - " + str(self.id))
+        return self.properties.get("label", self.kind_age_name + " - " + str(self.id))
 
     @property
     def valid_from(self):
-        return self.properties.get("__valid_from", None)
+        return self.properties.get("valid_from", None)
 
     @property
     def valid_to(self):
-        return self.properties.get("__valid_to", None)
+        return self.properties.get("valid_to", None)
 
     @property
     def role(self):
@@ -259,11 +262,11 @@ class RetrievedRelation:
 
     @property
     def valid_relative_from(self):
-        return self.properties.get("__valid_relative_from", None)
+        return self.properties.get("valid_relative_from", None)
 
     @property
     def valid_relative_to(self):
-        return self.properties.get("__valid_relative_to", None)
+        return self.properties.get("valid_relative_to", None)
 
     @property
     def unique_left_id(self):
@@ -426,7 +429,7 @@ def create_age_reagent_kind(category: "models.ReagentCategory"):
     with graph_cursor() as cursor:
         try:
             cursor.execute(
-                "SELECT create_vlabel(%s, Reagent);",
+                "SELECT create_vlabel(%s, %s);",
                 (category.graph.age_name, category.get_age_vertex_name()),
             )
             print(cursor.fetchone())
@@ -504,9 +507,9 @@ def select_latest_entities(graph_name, category_id, limit=5):
             SELECT * 
             FROM cypher(%s, $$
                 MATCH (n)
-                WHERE n.__category_id = %s
+                WHERE n.category_id = %s
                 RETURN n
-                ORDER BY n.__created_at DESC
+                ORDER BY n.created_at DESC
                 LIMIT %s
             $$) as (n agtype);
             """,
@@ -576,10 +579,10 @@ def create_age_entity(
                 f"""
             SELECT * 
             FROM cypher(%s, $$
-                MATCH (n:{category.get_age_vertex_name()} {{__type: "ENTITY", __category_id: %s, __category_type: %s}}) 
-                WHERE n.__external_id = %s
-                SET n.__label = %s
-                SET n.__created_at = %s
+                MATCH (n:{category.get_age_vertex_name()} {{type: "ENTITY", category_id: %s, category_type: %s}}) 
+                WHERE n.external_id = %s
+                SET n.label = %s
+                SET n.created_at = %s
                 RETURN n
             $$) as (n agtype);
             """,
@@ -612,8 +615,8 @@ def create_age_entity(
         create_query = f"""
         SELECT * 
         FROM cypher(%s, $$
-            CREATE (n:{category.get_age_vertex_name()} {{__type: "ENTITY", __category_id: %s,  __category_type: %s, __label: %s, __created_at: %s, __external_id: %s}})
-            SET n.__sequence = %s
+            CREATE (n:{category.get_age_vertex_name()} {{type: "ENTITY", category_id: %s,  category_type: %s, label: %s, created_at: %s, external_id: %s}})
+            SET n.sequence = %s
             RETURN n
         $$) as (n agtype);"""
 
@@ -648,9 +651,9 @@ def update_entity(graph: str, id: int, external_id: str | None = None, tags: lis
             FROM cypher(%s, $$
                 MATCH (n)
                 WHERE id(n) = %s
-                SET n.__external_id = %s
-                SET n.__tags = %s
-                SET n.__pinned_by = %s
+                SET n.external_id = %s
+                SET n.tags = %s
+                SET n.pinned_by = %s
                 RETURN n
             $$) as (n agtype);
             """,
@@ -676,10 +679,10 @@ def create_age_reagent(
                 f"""
             SELECT * 
             FROM cypher(%s, $$
-                MATCH (n:{category.get_age_vertex_name()} {{__type: "REAGENT", __category_id: %s, __category_type: %s}}) 
-                WHERE n.__external_id = %s
-                SET n.__label = %s
-                SET n.__created_at = %s
+                MATCH (n:{category.get_age_vertex_name()} {{type: "REAGENT", category_id: %s, category_type: %s}}) 
+                WHERE n.external_id = %s
+                SET n.label = %s
+                SET n.created_at = %s
                 RETURN n
             $$) as (n agtype);
             """,
@@ -713,8 +716,8 @@ def create_age_reagent(
             f"""
             SELECT * 
             FROM cypher(%s, $$
-                CREATE (n:{category.get_age_vertex_name()} {{__type: "REAGENT", __category_id: %s, __category_type: %s, __label: %s, __created_at: %s, __external_id: %s}})
-                SET n.__sequence = %s
+                CREATE (n:{category.get_age_vertex_name()} {{type: "REAGENT", category_id: %s, category_type: %s, label: %s, created_at: %s, external_id: %s}})
+                SET n.sequence = %s
                 RETURN n
             $$) as (n agtype);
             """,
@@ -743,8 +746,8 @@ def get_active_reagent_for_reagent_category(category: "models.ReagentCategory"):
             f"""
             SELECT * 
             FROM cypher(%s, $$
-                MATCH (n:{category.get_age_vertex_name()} {{__type: "REAGENT", __category_id: %s, __category_type: %s}}) 
-                WHERE n.__active = true
+                MATCH (n:{category.get_age_vertex_name()} {{type: "REAGENT", category_id: %s, category_type: %s}}) 
+                WHERE n.active = true
                 RETURN n
             $$) as (n agtype);
             """,
@@ -765,9 +768,9 @@ def set_as_active_reagent_for_category(category: "models.ReagentCategory", entit
             f"""
             SELECT * 
             FROM cypher(%s, $$
-                MATCH (n:{category.get_age_vertex_name()} {{__type: "REAGENT", __category_id: %s, __category_type: %s}}) 
-                WHERE n.__active = true
-                SET n.__active = false
+                MATCH (n:{category.get_age_vertex_name()} {{type: "REAGENT", category_id: %s, category_type: %s}}) 
+                WHERE n.active = true
+                SET n.active = false
                 RETURN n
             $$) as (n agtype);
             """,
@@ -780,9 +783,9 @@ def set_as_active_reagent_for_category(category: "models.ReagentCategory", entit
             f"""
             SELECT * 
             FROM cypher(%s, $$
-                MATCH (n:{category.get_age_vertex_name()} {{__type: "REAGENT", __category_id: %s, __category_type: %s}}) 
+                MATCH (n:{category.get_age_vertex_name()} {{type: "REAGENT", category_id: %s, category_type: %s}}) 
                 WHERE id(n) = %s
-                SET n.__active = true
+                SET n.active = true
                 RETURN n
             $$) as (n agtype);
             """,
@@ -810,6 +813,17 @@ def create_age_protocol_event(
     variables: list["inputs.VariableMappingInput"] | None = None,
     user: str | None = None,
 ) -> RetrievedEntity:
+    
+    build_variable_setters = ""
+    
+    if variables:
+        for i, variable in enumerate(variables):
+            build_variable_setters += f"SET n.variable_{variable.key} = %s\n"
+        
+    
+    
+    
+    
     with graph_cursor() as cursor:
         if external_id:
             # Try to find existing reagent first
@@ -817,19 +831,19 @@ def create_age_protocol_event(
                 f"""
             SELECT * 
             FROM cypher(%s, $$
-                MATCH (n:{category.get_age_vertex_name()} {{__type: "PROTOCOL_EVENT", __category_id: %s, __category_type: %s}}) 
-                WHERE n.__external_id = %s
-                SET n.__label = %s
-                SET n.__created_at = %s
-                SET n.__valid_from = %s
-                SET n.__valid_to = %s
-                SET n.__variables = %s
-                SET n.__performed_by = %s
+                MATCH (n:{category.get_age_vertex_name()} {{type: "PROTOCOL_EVENT", category_id: %s, category_type: %s}}) 
+                WHERE n.external_id = %s
+                SET n.label = %s
+                SET n.created_at = %s
+                SET n.valid_from = %s
+                SET n.valid_to = %s
+                SET n.performed_by = %s
+                {build_variable_setters}
                 RETURN n
             $$) as (n agtype);
             """,
-                (
-                    category.graph.age_name,
+                tuple(
+                    [category.graph.age_name,
                     category.id,
                     category.get_age_type_name(),
                     external_id,
@@ -837,8 +851,7 @@ def create_age_protocol_event(
                     datetime.datetime.now().isoformat(),
                     valid_from.isoformat() if valid_from else None,
                     valid_to.isoformat() if valid_to else None,
-                    [strawberry.asdict(variable) for variable in variables] if variables else None,
-                    user,
+                    user]+[variable.value for variable in variables]
                 ),
             )
             existing = cursor.fetchone()
@@ -850,14 +863,14 @@ def create_age_protocol_event(
             f"""
             SELECT * 
             FROM cypher(%s, $$
-                CREATE (n:{category.get_age_vertex_name()} {{__type: "PROTOCOL_EVENT", __category_id: %s, __category_type: %s, __label: %s, __created_at: %s, __external_id: %s, valid_from: %s, valid_to: %s}})
-                SET n.__variables = %s
-                SET n.__performed_by = %s
+                CREATE (n:{category.get_age_vertex_name()} {{type: "PROTOCOL_EVENT", category_id: %s, category_type: %s, label: %s, created_at: %s, external_id: %s, valid_from: %s, valid_to: %s}})
+                SET n.performed_by = %s
+                {build_variable_setters}
                 RETURN n
             $$) as (n agtype);
             """,
-            (
-                category.graph.age_name,
+            tuple(
+                [ category.graph.age_name,
                 category.id,
                 category.get_age_type_name(),
                 name,
@@ -865,8 +878,8 @@ def create_age_protocol_event(
                 external_id,
                 valid_from.isoformat() if valid_from else None,
                 valid_to.isoformat() if valid_to else None,
-                [json.dumps(variable) for variable in variables] if variables else None,
-                user,
+                user] + [variable.value for variable in variables]
+                
             ),
         )
         result = cursor.fetchone()
@@ -886,7 +899,7 @@ def create_age_natural_event(
 ) -> RetrievedEntity:
     if category.sequence:
         select_sequence = f"SELECT nextval({category.sequence.ps_name}) AS next_id"
-        sequence_setting = "SET n.__sequence = next_id"
+        sequence_setting = "SET n.sequence = next_id"
     else:
         select_sequence = ""
         sequence_setting = ""
@@ -899,12 +912,12 @@ def create_age_natural_event(
             SELECT * 
             {select_sequence}
             FROM cypher(%s, $$
-                MATCH (n:{category.get_age_vertex_name()} {{__type: "NATURAL_EVENT", __category_id: %s, __category_type: %s}}) 
-                WHERE n.__external_id = %s
-                SET n.__label = %s
-                SET n.__created_at = %s
-                SET n.__valid_from = %s
-                SET n.__valid_to = %s
+                MATCH (n:{category.get_age_vertex_name()} {{type: "NATURAL_EVENT", category_id: %s, category_type: %s}}) 
+                WHERE n.external_id = %s
+                SET n.label = %s
+                SET n.created_at = %s
+                SET n.valid_from = %s
+                SET n.valid_to = %s
                 {sequence_setting}
                 RETURN n
             $$) as (n agtype);
@@ -929,7 +942,7 @@ def create_age_natural_event(
             f"""
             SELECT * 
             FROM cypher(%s, $$
-                CREATE (n:{category.get_age_vertex_name()} {{__type: "NATURAL_EVENT", __category_id: %s, __category_type: %s, __label: %s, __created_at: %s, __external_id: %s, valid_from: %s, valid_to: %s}})
+                CREATE (n:{category.get_age_vertex_name()} {{type: "NATURAL_EVENT", category_id: %s, category_type: %s, label: %s, created_at: %s, external_id: %s, valid_from: %s, valid_to: %s}})
                 RETURN n
             $$) as (n agtype);
             """,
@@ -965,7 +978,7 @@ def create_age_event_in_edge(
             FROM cypher(%s, $$
                 MATCH (a) WHERE id(a) = %s
                 MATCH (b) WHERE id(b) = %s
-                CREATE (a)-[r: {category.get_inrole_vertex_name(edge.role)} {{quantity: %s, role: %s, __type: "PARTICIPANT"}}]->(b)
+                CREATE (a)-[r: {category.get_inrole_vertex_name(edge.role)} {{quantity: %s, role: %s, type: "PARTICIPANT"}}]->(b)
                 RETURN r
             $$) as (r agtype);
             """,
@@ -998,7 +1011,7 @@ def create_age_event_out_edge(
             FROM cypher(%s, $$
                 MATCH (a) WHERE id(a) = %s
                 MATCH (b) WHERE id(b) = %s
-                CREATE (a)-[r: {category.get_outrole_vertex_name(edge.role)} {{quantity: %s, role: %s, __type: "PARTICIPANT"}}]->(b)
+                CREATE (a)-[r: {category.get_outrole_vertex_name(edge.role)} {{quantity: %s, role: %s, type: "PARTICIPANT"}}]->(b)
                 RETURN r
             $$) as (r agtype);
             """,
@@ -1051,10 +1064,10 @@ def create_age_structure(
                 f"""
             SELECT * 
             FROM cypher(%s, $$
-                MATCH (s: {category.get_age_vertex_name()} {{__type: "STRUCTURE", __category_type: %s, __category_id: %s}})
-                WHERE s.__object = %s
-                SET s.__created_at = %s
-                SET s.__identifier = %s
+                MATCH (s: {category.get_age_vertex_name()} {{type: "STRUCTURE", category_type: %s, category_id: %s}})
+                WHERE s.object = %s
+                SET s.created_at = %s
+                SET s.identifier = %s
                 RETURN s
             $$) as (s agtype);
             """,
@@ -1077,10 +1090,10 @@ def create_age_structure(
             f"""
             SELECT * 
             FROM cypher(%s, $$
-                CREATE (s: {category.get_age_vertex_name()} {{__type: "STRUCTURE", __category_type: %s, __category_id: %s}})
-                SET s.__object = %s
-                SET s.__created_at = %s
-                SET s.__identifier = %s
+                CREATE (s: {category.get_age_vertex_name()} {{type: "STRUCTURE", category_type: %s, category_id: %s}})
+                SET s.object = %s
+                SET s.created_at = %s
+                SET s.identifier = %s
                 RETURN s
             $$) as (s agtype);
             """,
@@ -1101,59 +1114,6 @@ def create_age_structure(
         else:
             raise ValueError("No entity created or returned by the query.")
 
-
-def associate_structure(
-    graph_name: str,
-    structure_identifier: str,
-    structure_id: str,
-    entity_id: str,
-    valid_from: datetime.datetime = None,
-    valid_to: datetime.datetime = None,
-    assignation_id: str = None,
-    created_by: str = None,
-):
-    """Associate a structure to an entity
-
-    Associate a structure to an entity in the graph database.
-    Creates the second link in the measurment path
-
-    (metric: Metric) -> [describes] -> (Structure) -> [measures] -> (Entity)
-                                                        ++++++
-
-    Parameters:
-        graph_name (str): The name of the graph.
-        structure_identifier (str): The identifier of the structure. Think "@mikro/image"
-        structure_id (str): The ID of the structure. Think "566"
-        entity_id (str): The ID of the entity (bioentity). Think "566"
-        valid_from (datetime.datetime): The date from which the association is valid.
-        valid_to (datetime.datetime): The date until which the association is valid.
-        assignation_id (str): The ID of the assignation (based on the rekuest ID, if applicable).
-        created_by (str): The ID of the user who created the association.
-
-    """
-    with graph_cursor() as cursor:
-        cursor.execute(
-            f"""SELECT * FROM cypher(%s, $$
-                MATCH (a: Structure) WHERE a.identifier = %s AND a.object = %s
-                MATCH (b) WHERE id(b) = %s
-                CREATE (a)-[r:MEASURES]->(b)
-                SET r.__valid_from = %s, r.__valid_to = %s, r.__created_at = %s, r.__created_through = %s, r.__created_by = %s
-                
-                RETURN r
-            $$) AS (r agtype);
-            """,
-            (
-                graph_name,
-                structure_identifier,
-                structure_id,
-                entity_id,
-                valid_from.isoformat() if valid_from else None,
-                valid_to.isoformat() if valid_to else None,
-                datetime.datetime.now().isoformat(),
-                assignation_id,
-                created_by,
-            ),
-        )
 
 
 def create_measurement(
@@ -1190,8 +1150,8 @@ def create_measurement(
             f"""SELECT * FROM cypher(%s, $$
                 MATCH (a) WHERE id(a) = %s
                 MATCH (b) WHERE id(b) = %s
-                CREATE (a)-[r: {category.get_age_edge_name()} {{__type: "MEASUREMENT", __category_type: %s, __category_id: %s}}]->(b)
-                SET r.__valid_from = %s, r.__valid_to = %s, r.__created_at = %s, r.__created_through = %s, r.__created_by = %s
+                CREATE (a)-[r: {category.get_age_edge_name()} {{type: "MEASUREMENT", category_type: %s, category_id: %s}}]->(b)
+                SET r.valid_from = %s, r.valid_to = %s, r.created_at = %s, r.created_through = %s, r.created_by = %s
                 RETURN r
             $$) AS (r agtype);
             """,
@@ -1231,8 +1191,8 @@ def create_age_metric(
         cursor.execute(
             f"""SELECT * FROM cypher(%s, $$
                 MATCH (a) WHERE id(a) = %s
-                CREATE (b: {metric_category.get_age_vertex_name()} {{__type: "METRIC", __category_type: %s, __category_id: %s, __value: %s, __created_at: %s, __created_by: %s, __created_through: %s}})
-                CREATE (b)-[r:DESCRIBES {{__type: "DESCRIPTION"}}]->(a)
+                CREATE (b: {metric_category.get_age_vertex_name()} {{type: "METRIC", category_type: %s, category_id: %s, value: %s, created_at: %s, created_by: %s, created_through: %s}})
+                CREATE (b)-[r:DESCRIBES {{type: "DESCRIPTION"}}]->(a)
                 RETURN b
             $$) AS (r agtype);
             """,
@@ -1280,8 +1240,8 @@ def get_age_entity_by_category_and_external_id(category: models.EntityCategory, 
             f"""
             SELECT * 
             FROM cypher(%s, $$
-                MATCH {{__type: "ENTITY", __category_id: %s}}
-                WHERE n.__external_id = %s
+                MATCH {{type: "ENTITY", category_id: %s}}
+                WHERE n.external_id = %s
             $$) as (n agtype);
             """,
             (category.graph.age_name, category.id, external_id),
@@ -1333,19 +1293,19 @@ def get_entities(filters: typing.Optional["filters.EntityFilter"], pagination: t
         graph_name,
     ]
 
-    match_statements.append(f"n.__category_id IN {[cat.id for cat in categories]}")
+    match_statements.append(f"n.category_id IN {[cat.id for cat in categories]}")
 
     if filters.external_ids:
-        match_statements.append(f"n.__external_id IN [{', '.join(map(str, filters.external_ids))}]")
+        match_statements.append(f"n.external_id IN [{', '.join(map(str, filters.external_ids))}]")
 
     if filters.search:
-        match_statements.append(f"n.__label CONTAINS '{filters.search}' OR n.__description CONTAINS '{filters.search}' OR n.__external_id CONTAINS '{filters.search}'")
+        match_statements.append(f"n.label CONTAINS '{filters.search}' OR n.description CONTAINS '{filters.search}' OR n.external_id CONTAINS '{filters.search}'")
 
     if filters.created_after:
-        match_statements.append(f"n.__created_at > '{filters.created_after.isoformat()}'")
+        match_statements.append(f"n.created_at > '{filters.created_after.isoformat()}'")
 
     if filters.created_before:
-        match_statements.append(f"n.__created_at < '{filters.created_before.isoformat()}'")
+        match_statements.append(f"n.created_at < '{filters.created_before.isoformat()}'")
 
     if filters.ids:
         graph_names = [to_graph_id(i) for i in filters.ids]
@@ -1354,7 +1314,7 @@ def get_entities(filters: typing.Optional["filters.EntityFilter"], pagination: t
         match_statements.append(f"id(n) IN {[int(to_entity_id(i)) for i in filters.ids]}")
 
     if filters.active:
-        match_statements.append(f"n.__active = true")
+        match_statements.append(f"n.active = true")
 
     FINAL_MATCH = " AND ".join(match_statements)
     print("Final match", FINAL_MATCH)
@@ -1424,19 +1384,19 @@ def get_reagents(filters: typing.Optional["filters.ReagentFilter"], pagination: 
         graph_name,
     ]
 
-    match_statements.append(f"n.__category_id IN {[cat.id for cat in categories]}")
+    match_statements.append(f"n.category_id IN {[cat.id for cat in categories]}")
 
     if filters.external_ids:
-        match_statements.append(f"n.__external_id IN [{', '.join(map(str, filters.external_ids))}]")
+        match_statements.append(f"n.external_id IN [{', '.join(map(str, filters.external_ids))}]")
 
     if filters.search:
-        match_statements.append(f"n.__label ILIKE '%{filters.search}%'")
+        match_statements.append(f"n.label ILIKE '%{filters.search}%'")
 
     if filters.created_after:
-        match_statements.append(f"n.__created_at > '{filters.created_after.isoformat()}'")
+        match_statements.append(f"n.created_at > '{filters.created_after.isoformat()}'")
 
     if filters.created_before:
-        match_statements.append(f"n.__created_at < '{filters.created_before.isoformat()}'")
+        match_statements.append(f"n.created_at < '{filters.created_before.isoformat()}'")
 
     if filters.ids:
         graph_names = [to_graph_id(i) for i in filters.ids]
@@ -1445,7 +1405,7 @@ def get_reagents(filters: typing.Optional["filters.ReagentFilter"], pagination: 
         match_statements.append(f"id(n) IN {[int(to_entity_id(i)) for i in filters.ids]}")
 
     if filters.active:
-        match_statements.append(f"n.__active = true")
+        match_statements.append(f"n.active = true")
 
     FINAL_MATCH = " AND ".join(match_statements)
     print("Final match", FINAL_MATCH)
@@ -1482,7 +1442,7 @@ def select_measurements_for_structure(graph_name, structure_id, categories: list
             FROM cypher(%s, $$
                 MATCH (n)-[r]->(m)
                 WHERE id(n) = %s 
-                AND r.__category_id IN {[cat.id for cat in categories]}
+                AND r.category_id IN {[cat.id for cat in categories]}
                 RETURN r
             $$) as (r agtype);
             """,
@@ -1502,7 +1462,7 @@ def select_measurements_for_entity(graph_name, entity_id):
             SELECT * 
             FROM cypher(%s, $$
                 MATCH (n)<-[r]-(m)
-                WHERE r.__type = "MEASUREMENT"
+                WHERE r.type = "MEASUREMENT"
                 AND id(n) = %s 
                 RETURN r
             $$) as (r agtype);
@@ -1523,7 +1483,7 @@ def select_target_participation_for_entity(graph_name, entity_id):
             SELECT * 
             FROM cypher(%s, $$
                 MATCH (n)<-[r]-(m)
-                WHERE r.__type = "PARTICIPANT"
+                WHERE r.type = "PARTICIPANT"
                 AND id(n) = %s 
                 RETURN r
             $$) as (r agtype);
@@ -1544,7 +1504,7 @@ def select_source_participation_for_entity(graph_name, entity_id):
             SELECT * 
             FROM cypher(%s, $$
                 MATCH (n)-[r]->(m)
-                WHERE r.__type = "PARTICIPANT"
+                WHERE r.type = "PARTICIPANT"
                 AND id(n) = %s 
                 RETURN r
             $$) as (r agtype);
@@ -1565,7 +1525,7 @@ def get_age_structure(graph_name, structure_identifier) -> RetrievedEntity:
             SELECT * 
             FROM cypher(%s, $$
                 MATCH (n)
-                WHERE n.__structure = %s
+                WHERE n.structure = %s
                 RETURN n
             $$) as (n agtype);
             """,
@@ -1585,8 +1545,8 @@ def get_age_structure_by_object(structure: "models.StructureCategory", object: s
             SELECT * 
             FROM cypher(%s, $$
                 MATCH (n)
-                WHERE n.__object = %s
-                AND n.__category_id = %s
+                WHERE n.object = %s
+                AND n.category_id = %s
                 RETURN n
             $$) as (n agtype);
             """,
@@ -1660,49 +1620,6 @@ def get_age_metrics(graph_name, node_id):
             return []
 
 
-def create_age_relation_metric(graph_name, metric_name, edge_id, value):
-    # We need to add temporal support
-    # __valid_from = timestamp or None (None means it is valid from the beginning)
-    # __valid_to = timestamp or None (None means it is still valid)
-    # __created_through = assignation_id
-    # __created_by = user_id
-    # metric_one = value
-    # metric_two = value
-
-    with graph_cursor() as cursor:
-        cursor.execute(
-            f"""SELECT * FROM cypher(%s, $$
-                MATCH ()-[r]-() WHERE id(r) = %s
-                SET r.{metric_name} = %s
-                RETURN r
-            $$) AS (r agtype)
-            """,
-            (graph_name, int(edge_id), value),
-        )
-        result = cursor.fetchone()
-
-        if result:
-            edge = result[0]
-            return edge_ag_to_retrieved_relation(graph_name, edge)
-
-        else:
-            existence_query = """
-                SELECT count(*)
-                FROM cypher(%s, $$
-                    MATCH ()-[r]-()
-                    WHERE id(r) = %s
-                    RETURN count(*)
-                $$) as (count agtype);
-            """
-
-            cursor.execute(existence_query, (graph_name, int(edge_id)))
-
-            edge_count = cursor.fetchone()[0]
-
-            if edge_count < 1:
-                raise ValueError(f"Edge does not exist. {edge_id}")
-
-            raise ValueError("No entity created or returned by the query.")
 
 
 def create_age_relation(category: "models.RelationCategory", left_id, right_id):
@@ -1713,7 +1630,7 @@ def create_age_relation(category: "models.RelationCategory", left_id, right_id):
             FROM cypher(%s, $$
                 MATCH (a) WHERE id(a) = %s
                 MATCH (b) WHERE id(b) = %s
-                CREATE (a)-[r:{category.get_age_edge_name()} {{__type: "RELATION", __category_type: %s, __category_id: %s}}]->(b)
+                CREATE (a)-[r:{category.get_age_edge_name()} {{type: "RELATION", category_type: %s, category_id: %s}}]->(b)
                 RETURN r
             $$) as (r agtype);
             """,
@@ -1749,7 +1666,7 @@ def create_age_structure_relation(category: "models.StructureRelationCategory", 
             FROM cypher(%s, $$
                 MATCH (a) WHERE id(a) = %s
                 MATCH (b) WHERE id(b) = %s
-                CREATE (a)-[r:{category.get_age_edge_name()} {{__type: "STRUCTURE_RELATION", __category_type: %s, __category_id: %s}}]->(b)
+                CREATE (a)-[r:{category.get_age_edge_name()} {{type: "STRUCTURE_RELATION", category_type: %s, category_id: %s}}]->(b)
                 RETURN r
             $$) as (r agtype);
             """,
@@ -1846,7 +1763,7 @@ def select_latest_nodes(
             FROM cypher(%s, $$
                 MATCH (n)
                 RETURN n
-                ORDER BY n.__created_at DESC
+                ORDER BY n.created_at DESC
                 SKIP %s
                 LIMIT %s
             $$) as (n agtype);

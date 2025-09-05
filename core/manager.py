@@ -32,8 +32,8 @@ def build_entity_age_name(label: str) -> str:
     return clean_string(label.replace(" ", "_").replace("-", "_")).lower()
 
 
-def build_metric_age_name(label: str) -> str:
-    return clean_string(label.replace(" ", "_").replace("-", "_")).lower()
+def build_metric_age_name(label: str, structure_category: str) -> str:
+    return clean_string((structure_category + "_" + label).replace(" ", "_").replace("-", "_")).lower()
 
 
 def build_structure_age_name(identifier: str) -> str:

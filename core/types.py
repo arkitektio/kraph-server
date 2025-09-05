@@ -156,6 +156,7 @@ class Graph:
     name: str
     description: str | None
     age_name: str
+    store: Optional[MediaStore] = strawberry_django.field(description="The media store that contains the image for this graph")
     node_queries: List["NodeQuery"] = strawberry_django.field(description="The list of metric expressions defined in this ontology")
     graph_queries: List["GraphQuery"] = strawberry_django.field(description="The list of metric expressions defined in this ontology")
 
@@ -626,8 +627,8 @@ class Metric(Node):
         return await loaders.metric_category_loader.load(self._value.category_id)
 
     @strawberry_django.field(description="The value of the metric")
-    async def value(self) -> float:
-        return self._value.value
+    async def value(self) -> str:
+        return str(self._value.value)
 
 
 @strawberry.type(
@@ -1179,10 +1180,7 @@ class MetricCategory(NodeCategory, BaseCategory):
 
     label: str = strawberry.field(description="The label of the expression")
     metric_kind: enums.MetricKind = strawberry.field(description="The kind of metric this expression represents")
-
-    @strawberry_django.field(description="The unique identifier of the expression within its graph")
-    def structure_definition(self, info: Info) -> StructureCategoryDefinition:
-        return StructureCategoryDefinition(_value=self.structure_definition, _graph=self.graph.id)
+    structure_category: StructureCategory = strawberry_django.field(description="The structure that this metric measures")
 
     pass
 
@@ -1215,7 +1213,7 @@ class VariableMapping:
 
     @strawberry_django.field()
     def role(self) -> str:
-        return self._mapping.get("param", None)
+        return self._mapping.get("role", None)
 
     @strawberry_django.field()
     def value(self) -> str:

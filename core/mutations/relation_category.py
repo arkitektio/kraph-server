@@ -11,11 +11,11 @@ from django.conf import settings
 @strawberry.input(description="Input for creating a new expression")
 class RelationCategoryInput(inputs.CategoryInput):
     label: str = strawberry.field(description="The label/name of the expression")
-    source_definition: inputs.CategoryDefinitionInput = strawberry.field(
+    source_definition: inputs.EntityCategoryDefinitionInput = strawberry.field(
         default=None,
         description="The source definition for this expression",
     )
-    target_definition: inputs.CategoryDefinitionInput = strawberry.field(
+    target_definition: inputs.EntityCategoryDefinitionInput = strawberry.field(
         default=None,
         description="The target definition for this expression",
     )
@@ -81,7 +81,7 @@ def create_relation_category(
     if input.tags:
         vocab.tags.clear()
         for tag in input.tags:
-            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag)
+            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag, graph=graph)
             vocab.tags.add(tag_obj)
 
     return vocab

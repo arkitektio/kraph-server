@@ -179,7 +179,7 @@ class ReagentRoleDefinitionInput:
         default=False,
         description="Whether this port is optional or not",
     )
-    category_definition: CategoryDefinitionInput = strawberry.field(
+    category_definition: ReagentCategoryDefinitionInput = strawberry.field(
         description="The category definition for this expression",
     )
     description: str | None = strawberry.field(
@@ -211,7 +211,7 @@ class EntityRoleDefinitionInput:
         default=False,
         description="Whether this port is optional or not",
     )
-    category_definition: CategoryDefinitionInput = strawberry.field(
+    category_definition: EntityCategoryDefinitionInput = strawberry.field(
         description="The category definition for this expression",
     )
     description: str | None = strawberry.field(

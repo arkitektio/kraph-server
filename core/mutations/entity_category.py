@@ -81,7 +81,7 @@ def create_entity_category(
     if input.tags:
         vocab.tags.clear()
         for tag in input.tags:
-            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag)
+            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag, graph_id=input.graph)
             vocab.tags.add(tag_obj)
             
     if input.pin is not None:
@@ -120,7 +120,7 @@ def update_entity_category(
     if input.tags:
         item.tags.clear()
         for tag in input.tags:
-            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag)
+            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag, graph=item.graph.id)
             item.tags.add(tag_obj)
             
     if input.pin is not None:

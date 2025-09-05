@@ -110,7 +110,7 @@ def create_structure_category(
     if input.tags:
         vocab.tags.clear()
         for tag in input.tags:
-            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag)
+            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag, graph=graph)
             vocab.tags.add(tag_obj)
             
     
@@ -151,7 +151,7 @@ def update_structure_category(
     if input.tags:
         item.tags.clear()
         for tag in input.tags:
-            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag)
+            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag, graph=item.graph)
             item.tags.add(tag_obj)
             
     

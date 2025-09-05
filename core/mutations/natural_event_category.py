@@ -108,7 +108,7 @@ def create_natural_event_category(
     if input.tags:
         protocol_event.tags.clear()
         for tag in input.tags:
-            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag)
+            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag, graph=protocol_event.graph)
             protocol_event.tags.add(tag_obj)
 
     age.create_age_natural_event_kind(

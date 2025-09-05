@@ -10,9 +10,13 @@ from django.conf import settings
 
 @strawberry.input(description="Input for creating a new expression")
 class MetricCategoryInput(inputs.CategoryInput, inputs.NodeCategoryInput):
-    structure_definition: inputs.CategoryDefinitionInput = strawberry.field(
+    structure_category: strawberry.ID | None = strawberry.field(
         default=None,
-        description="The structure category for this expression",
+        description="The structure category that this metric describes"
+    )
+    structure_identifier: scalars.StructureIdentifier | None  = strawberry.field(
+        description="The structure identifier within the structure category",
+        default=None,
     )
     label: str = strawberry.field(description="The label/name of the expression")
     kind: enums.MetricKind = strawberry.field(default=None, description="The type of metric data this expression represents")
@@ -39,15 +43,29 @@ def create_metric_category(
     graph = models.Graph.objects.get(
         id=input.graph,
     )
+    
+    if input.structure_category is None and input.structure_identifier is None:
+        raise ValueError("Either structure_category or structure_identifier must be provided")
+    
+    if input.structure_category:
+        x = models.StructureCategory.objects.get(id=input.structure_category),
+    else:
+        x = models.StructureCategory.objects.get_or_create(
+            graph=graph,
+            age_name=manager.build_structure_age_name(input.structure_identifier),
+            defaults=dict(
+                identifier=input.structure_identifier,
+            ),
+        )[0]
 
     metric_category, created = models.MetricCategory.objects.update_or_create(
         graph=graph,
-        age_name=manager.build_metric_age_name(input.label),
+        age_name=manager.build_metric_age_name(input.label, x.age_name),
         defaults=dict(
             description=input.description,
             purl=input.purl,
             metric_kind=input.kind,
-            structure_definition=validators.validate_structure_definition(input.structure_definition, graph) if input.structure_definition else None,
+            structure_category=x,
             label=input.label,
         ),
     )
@@ -59,7 +77,7 @@ def create_metric_category(
     if input.tags:
         metric_category.tags.clear()
         for tag in input.tags:
-            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag)
+            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag, graph=graph)
             metric_category.tags.add(tag_obj)
 
     return metric_category
@@ -84,8 +102,6 @@ def update_metric_category(info: Info, input: UpdateMetricCategoryInput) -> type
     item.color = input.color if input.color else item.color
     item.store = media_store if media_store else item.store
 
-    if input.structure_definition:
-        item.structure_definition = validators.validate_structure_definition(input.structure_definition, item.graph)
 
     manager.set_position_info(item, input)
 

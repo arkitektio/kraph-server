@@ -222,7 +222,6 @@ class CategoryTag(models.Model):
 
     value = models.CharField(
         max_length=1000,
-        unique=True,
         help_text="The value of the tag",
     )
     name = models.CharField(
@@ -237,6 +236,11 @@ class CategoryTag(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    
+    
+    class Meta:
+        unique_together = ("graph", "value")
+        default_related_name = "category_tags"
 
 
 class Category(models.Model):
@@ -672,11 +676,32 @@ class MetricCategory(NodeCategory):
         max_length=1000,
         help_text="The label of the entity class",
     )
-    structure_definition = models.JSONField(
-        default=dict,
-        help_text="Filters for the right side of the metric (e.g. which tags the right side should have)",
-        null=True,
+    structure_category = models.ForeignKey(
+        StructureCategory,
+        on_delete=models.CASCADE,
+        related_name="metric_categories",
+        help_text="The structure category that this metric describes",
     )
+    
+    
+    
+    def validate_input(self, value):
+        if self.metric_kind == enums.MeasurementKindChoices.INT:
+            try:
+                return int(value)
+            except ValueError:
+                raise ValueError(f"Value {value} is not an integer")
+        elif self.metric_kind == enums.MeasurementKindChoices.FLOAT:
+            try:
+                return float(value)
+            except ValueError:
+                raise ValueError(f"Value {value} is not a float")
+        elif self.metric_kind == enums.MeasurementKindChoices.BOOLEAN:
+            if value not in [True, False, "true", "false", "True", "False", 1, 0, "1", "0"]:
+                raise ValueError(f"Value {value} is not a boolean")
+            return value in [True, "true", "True", 1, "1"]
+        # STRING and CATEGORICAL do not need validation
+        return value
 
     def get_age_vertex_name(self):
         return self.age_name

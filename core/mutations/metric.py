@@ -40,7 +40,7 @@ def create_metric(
     value = age.create_age_metric(
         metric_category,
         structure_id=structure_id,
-        value=input.value,
+        value=metric_category.validate_input(input.value),
         assignation_id=None,
         created_by=info.context.request.user.id,
     )
@@ -93,7 +93,7 @@ def create_structure_metric(info: Info, input: StructureMetricInput) -> types.Me
     value = age.create_age_metric(
         metric_category,
         structure_id=structure.id,
-        value=input.value,
+        value=metric_category.validate_input(input.value),
         assignation_id=None,
         created_by=info.context.request.user.id,
     )

@@ -107,7 +107,7 @@ def create_structure_relation_category(
     if input.tags:
         vocab.tags.clear()
         for tag in input.tags:
-            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag)
+            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag, graph=graph)
             vocab.tags.add(tag_obj)
 
     return vocab

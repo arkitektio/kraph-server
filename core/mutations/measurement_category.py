@@ -99,7 +99,7 @@ def create_measurement_category(
     if input.tags:
         vocab.tags.clear()
         for tag in input.tags:
-            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag)
+            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag, graph=graph)
             vocab.tags.add(tag_obj)
 
     return vocab
@@ -127,6 +127,12 @@ def update_measurement_category(
     item.purl = input.purl if input.purl else item.purl
     item.color = input.color if input.color else item.color
     item.store = media_store if media_store else item.store
+    
+    if input.tags:
+        item.tags.clear()
+        for tag in input.tags:
+            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag, graph=item.graph)
+            item.tags.add(tag_obj)
 
     item.save()
     return item
