@@ -3,7 +3,7 @@ import strawberry
 from core import types, models, age, enums, scalars, manager
 from django.db import connections
 from contextlib import contextmanager
-
+from django.db.models import Q
 
 @strawberry.input(description="Input type for creating a new ontology")
 class GraphInput:
@@ -48,6 +48,10 @@ class UpdateGraphInput:
 
 @strawberry.input(description="Input type for deleting an ontology")
 class DeleteGraphInput:
+    id: strawberry.ID = strawberry.field(description="The ID of the ontology to delete")
+
+@strawberry.input(description="Input type for deleting an ontology")
+class MaterializeGraphInput:
     id: strawberry.ID = strawberry.field(description="The ID of the ontology to delete")
 
 
@@ -145,6 +149,146 @@ def delete_graph(
     item.delete()
 
     return input.id
+
+
+
+
+
+def materialize_graph(
+    info: Info,
+    input: MaterializeGraphInput,
+) -> types.Graph:
+    graph = models.Graph.objects.get(id=input.id)
+    
+    
+    for mcat in graph.measurement_categories.all():
+        
+        source_tags = models.CategoryTag.objects.filter(
+            value__in=mcat.source_definition.get("tag_filters", [])
+        )
+        
+        target_tags = models.CategoryTag.objects.filter(
+            value__in=mcat.target_definition.get("tag_filters", [])
+        )
+        
+        
+        all_sources = models.StructureCategory.objects.filter(
+            graph=graph
+        ).filter(
+            Q(tags__in=source_tags) |
+            Q(identifier__in=mcat.source_definition.get("identifier_filters", [])) 
+        ).distinct()
+        
+        all_targets = models.EntityCategory.objects.filter(
+            graph=graph
+        ).filter(
+            Q(tags__in=target_tags) |
+            Q(id__in=mcat.target_definition.get("category_filters", [])) 
+        ).distinct()
+        
+        for source in all_sources:
+            for target in all_targets:
+                print("Creating materialized edge", source, target, mcat)
+                models.MaterializedEdge.objects.get_or_create(
+                    graph=graph,
+                    source=source,
+                    target=target,
+                    relation=mcat,
+                )
+        
+    for mcat in graph.structure_relation_categories.all():
+        
+        source_tags = models.CategoryTag.objects.filter(
+            value__in=mcat.source_definition.get("tag_filters", [])
+        )
+        
+        target_tags = models.CategoryTag.objects.filter(
+            value__in=mcat.target_definition.get("tag_filters", [])
+        )
+        
+        
+        all_sources = models.StructureCategory.objects.filter(
+            graph=graph
+        ).filter(
+            Q(tags__in=source_tags) |
+            Q(identifier__in=mcat.source_definition.get("identifier_filters", [])) 
+        ).distinct()
+        
+        all_targets = models.StructureCategory.objects.filter(
+            graph=graph
+        ).filter(
+            Q(tags__in=target_tags) |
+            Q(identifier__in=mcat.source_definition.get("identifier_filters", [])) 
+        ).distinct()
+        
+        for source in all_sources:
+            for target in all_targets:
+                print("Creating materialized edge", source, target, mcat)
+                models.MaterializedEdge.objects.get_or_create(
+                    graph=graph,
+                    source=source,
+                    target=target,
+                    relation=mcat,
+                )
+        
+        
+    for mcat in graph.relation_categories.all():
+        
+        source_tags = models.CategoryTag.objects.filter(
+            value__in=mcat.source_definition.get("tag_filters", [])
+        )
+        
+        target_tags = models.CategoryTag.objects.filter(
+            value__in=mcat.target_definition.get("tag_filters", [])
+        )
+        
+        
+        all_sources = models.EntityCategory.objects.filter(
+            graph=graph
+        ).filter(
+            Q(tags__in=source_tags) |
+            Q(id__in=mcat.source_definition.get("category_filters", []) or []) 
+        ).distinct()
+        
+        all_targets = models.EntityCategory.objects.filter(
+            graph=graph
+        ).filter(
+            Q(tags__in=target_tags) |
+            Q(id__in=mcat.target_definition.get("category_filters", []) or []) 
+        ).distinct()
+        
+        for source in all_sources:
+            for target in all_targets:
+                print("Creating materialized edge", source, target, mcat)
+                models.MaterializedEdge.objects.get_or_create(
+                    graph=graph,
+                    source=source,
+                    target=target,
+                    relation=mcat,
+                )
+            
+        
+        
+        
+        
+        
+        
+        
+    
+
+
+    return graph
+
+
+
+
+
+
+
+
+
+
+
 
 
 @strawberry.input(description="Input type for pinning an ontology")

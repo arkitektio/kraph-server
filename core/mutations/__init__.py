@@ -26,6 +26,7 @@ from .reagent import *
 from .structure_relation_category import *
 from .structure_relation import *
 from .tag import create_tag
+from .graph import materialize_graph
 
 __all__ = [
     "create_channel",

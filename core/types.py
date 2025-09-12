@@ -146,6 +146,17 @@ def relation_to_edge_subtype(
 
 
 @strawberry_django.type(
+    models.MaterializedEdge,
+    description="A materialized edge between two entities in a graph.",
+)
+class MaterializedEdge:
+    id: auto
+    graph: "Graph"
+    source: "BaseCategory"
+    target: "BaseCategory"
+    relation: "BaseCategory"
+
+@strawberry_django.type(
     models.Graph,
     filters=filters.GraphFilter,
     pagination=True,
@@ -172,7 +183,13 @@ class Graph:
     measurement_categories: List["MeasurementCategory"] = strawberry_django.field(description="The list of measurement exprdessions defined in this ontology")
     relation_categories: List["RelationCategory"] = strawberry_django.field(description="The list of relation expressions defined in this ontology")
     structure_relation_categories: List["StructureRelationCategory"] = strawberry_django.field(description="The list of structure relation expressions defined in this ontology")
-
+    
+    
+    @strawberry_django.field()
+    def materialized_edges(self, info: Info) -> List["MaterializedEdge"]:
+        return list(models.MaterializedEdge.objects.filter(graph=self))
+    
+    
     @strawberry_django.field()
     def node_categories(
         self,

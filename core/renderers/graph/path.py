@@ -60,5 +60,10 @@ def path(graph_query: models.GraphQuery) -> types.Path:
             nodes, edges = parse_age_path(tgraph.age_name, result[0])
             all_nodes.extend(nodes)
             all_edges.extend(edges)
+            
+        if not all_nodes:
+            raise ValueError("No nodes found in the path query result")
+        if not all_edges:
+            raise ValueError("No edges found in the path query result")
 
     return types.Path(nodes=all_nodes, edges=all_edges)

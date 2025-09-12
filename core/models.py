@@ -160,6 +160,10 @@ def random_color():
     return tuple(random.choice(levels) for _ in range(3))
 
 
+
+
+
+
 class GraphSequence(models.Model):
     """A node index for a category"""
 
@@ -934,6 +938,33 @@ class ScatterPlot(models.Model):
         on_delete=models.CASCADE,
         related_name="scatter_plots",
         help_text="The user that created the scatter plot",
+    )
+    
+    
+class MaterializedEdge(models.Model):
+    graph = models.ForeignKey(
+        Graph,
+        on_delete=models.CASCADE,
+        related_name="materialized_edges",
+        help_text="The graph this edge belongs to",
+    )
+    source = models.ForeignKey(
+        Category,
+        on_delete=models.CASCADE,
+        related_name="materialized_edges_as_source",
+        help_text="The source category of the edge",
+    )
+    target = models.ForeignKey(
+        Category,
+        on_delete=models.CASCADE,
+        related_name="materialized_edges_as_target",
+        help_text="The target category of the edge",
+    )
+    relation = models.ForeignKey(
+        Category,
+        on_delete=models.CASCADE,
+        related_name="materialized_edges_as_relation",
+        help_text="The relation category of the edge",
     )
 
 

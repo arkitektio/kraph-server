@@ -425,6 +425,7 @@ class Query:
 class Mutation:
     create_graph = mutation(resolver=mutations.create_graph, description="Create a new graph")
     update_graph = mutation(resolver=mutations.update_graph, description="Update an existing graph")
+    materialize_graph = mutation(resolver=mutations.materialize_graph, description="Materialize a graph ")
 
     delete_graph = mutation(resolver=mutations.delete_graph, description="Delete an existing graph")
 
