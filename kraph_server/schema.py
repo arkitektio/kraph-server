@@ -34,7 +34,7 @@ def field(permission_classes=None, **kwargs):
 def mutation(roles: list[str] | None = None, **kwargs) -> strawberry.mutation:
     """A wrapper for mutation that adds default permission classes and extensions."""
 
-    return strawberry_django.mutation(extensions=[AuthExtension(roles=roles or ["admin"])], **kwargs)
+    return strawberry_django.mutation(extensions=[AuthExtension(roles=roles)], **kwargs)
 
 
 def subscription(**kwargs) -> strawberry.subscription:
