@@ -149,10 +149,7 @@ class RetrievedEntity:
 
     @property
     def variables(self):
-        return [{"role": key[len("variable_"):], "value": value} for key, value in self.properties.items() if key.startswith("variable_")]
-    
-        
-        
+        return [{"role": key[len("variable_") :], "value": value} for key, value in self.properties.items() if key.startswith("variable_")]
 
     @property
     def local_id(self):
@@ -813,17 +810,12 @@ def create_age_protocol_event(
     variables: list["inputs.VariableMappingInput"] | None = None,
     user: str | None = None,
 ) -> RetrievedEntity:
-    
     build_variable_setters = ""
-    
+
     if variables:
         for i, variable in enumerate(variables):
             build_variable_setters += f"SET n.variable_{variable.key} = %s\n"
-        
-    
-    
-    
-    
+
     with graph_cursor() as cursor:
         if external_id:
             # Try to find existing reagent first
@@ -842,17 +834,7 @@ def create_age_protocol_event(
                 RETURN n
             $$) as (n agtype);
             """,
-                tuple(
-                    [category.graph.age_name,
-                    category.id,
-                    category.get_age_type_name(),
-                    external_id,
-                    name,
-                    datetime.datetime.now().isoformat(),
-                    valid_from.isoformat() if valid_from else None,
-                    valid_to.isoformat() if valid_to else None,
-                    user]+[variable.value for variable in variables]
-                ),
+                tuple([category.graph.age_name, category.id, category.get_age_type_name(), external_id, name, datetime.datetime.now().isoformat(), valid_from.isoformat() if valid_from else None, valid_to.isoformat() if valid_to else None, user] + [variable.value for variable in variables]),
             )
             existing = cursor.fetchone()
             if existing:
@@ -869,18 +851,7 @@ def create_age_protocol_event(
                 RETURN n
             $$) as (n agtype);
             """,
-            tuple(
-                [ category.graph.age_name,
-                category.id,
-                category.get_age_type_name(),
-                name,
-                datetime.datetime.now().isoformat(),
-                external_id,
-                valid_from.isoformat() if valid_from else None,
-                valid_to.isoformat() if valid_to else None,
-                user] + [variable.value for variable in variables]
-                
-            ),
+            tuple([category.graph.age_name, category.id, category.get_age_type_name(), name, datetime.datetime.now().isoformat(), external_id, valid_from.isoformat() if valid_from else None, valid_to.isoformat() if valid_to else None, user] + [variable.value for variable in variables]),
         )
         result = cursor.fetchone()
         if result:
@@ -1115,7 +1086,6 @@ def create_age_structure(
             raise ValueError("No entity created or returned by the query.")
 
 
-
 def create_measurement(
     category: "models.MeasurementCategory",
     structure_id: str,
@@ -1210,7 +1180,7 @@ def create_age_metric(
         result = cursor.fetchone()
         if result:
             entity = result[0]
-            return vertex_ag_to_retrieved_entity(metric_category.age_name, entity)
+            return vertex_ag_to_retrieved_entity(metric_category.graph.age_name, entity)
         else:
             raise ValueError("No entity created or returned by the query.")
 
@@ -1618,8 +1588,6 @@ def get_age_metrics(graph_name, node_id):
             return [edge_ag_to_retrieved_metric(graph_name, metric[0]) for metric in result]
         else:
             return []
-
-
 
 
 def create_age_relation(category: "models.RelationCategory", left_id, right_id):
