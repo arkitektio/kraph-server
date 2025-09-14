@@ -15,7 +15,7 @@ from kante.types import Info
 from core.renderers.utils import parse_age_path
 
 
-def path(graph_query: models.GraphQuery) -> types.Path:
+def path(graph_query: models.GraphQuery, check_exists: bool = True) -> types.Path:
     """
     Query the knowledge graph for information about a given entity.
 
@@ -56,14 +56,14 @@ def path(graph_query: models.GraphQuery) -> types.Path:
         # Convert AGTYPE (JSON string) to Python dict
 
         for result in all_results:
-
             nodes, edges = parse_age_path(tgraph.age_name, result[0])
             all_nodes.extend(nodes)
             all_edges.extend(edges)
-            
-        if not all_nodes:
-            raise ValueError("No nodes found in the path query result")
-        if not all_edges:
-            raise ValueError("No edges found in the path query result")
+
+        if check_exists:
+            if not all_nodes:
+                raise ValueError("No nodes found in the path query result")
+            if not all_edges:
+                raise ValueError("No edges found in the path query result")
 
     return types.Path(nodes=all_nodes, edges=all_edges)

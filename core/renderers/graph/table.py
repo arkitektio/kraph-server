@@ -22,7 +22,7 @@ def input_to_columns(columns: list[inputs.ColumnInput]) -> list[types.Column]:
     return [types.Column(**strawberry.asdict(column)) for column in columns]
 
 
-def table(graph_query: models.GraphQuery) -> types.Table:
+def table(graph_query: models.GraphQuery, check_exists: bool = True) -> types.Table:
     """
     Query the knowledge graph for information about a given entity.
 
@@ -64,5 +64,9 @@ def table(graph_query: models.GraphQuery) -> types.Table:
 
         for result in all_results:
             rows.append(result)
+
+        if check_exists:
+            if not rows:
+                raise ValueError("No rows found in the table query result")
 
     return types.Table(rows=rows, columns=input_to_columns(columns), graph=tgraph)

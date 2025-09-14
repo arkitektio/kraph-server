@@ -4,9 +4,7 @@ from kante.types import Info
 from typing import Annotated
 
 
-def node_list(
-    graph_query: models.GraphQuery,
-) -> types.NodeList:
+def node_list(graph_query: models.GraphQuery, check_exists: bool = True) -> types.NodeList:
     tgraph = graph_query.graph
     query = graph_query.query
 
@@ -43,5 +41,8 @@ def node_list(
 
         for result in all_results:
             nodes.append(types.entity_to_node_subtype(age.vertex_ag_to_retrieved_entity(tgraph.age_name, result[0])))
+        if check_exists:
+            if not nodes:
+                raise ValueError("No nodes found in the query result")
 
     return types.NodeList(nodes=nodes, graph=tgraph)

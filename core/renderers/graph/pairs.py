@@ -4,13 +4,10 @@ from kante.types import Info
 from typing import Annotated
 
 
-def pairs(
-    graph_query: models.GraphQuery,
-) -> types.Pairs:
-
+def pairs(graph_query: models.GraphQuery, check_exists: bool = True) -> types.Pairs:
     tgraph = graph_query.graph
     query = graph_query.query
-    
+
     all_nodes = []
     all_edges = []
 
@@ -28,9 +25,8 @@ def pairs(
     """
 
     print(real_query)
-    
+
     pairs = []
-    
 
     with age.graph_cursor() as cursor:
         cursor.execute(
@@ -44,16 +40,16 @@ def pairs(
         # Convert AGTYPE (JSON string) to Python dict
 
         for result in all_results:
-            pairs.append(types.Pair(
-                source=types.entity_to_node_subtype(age.vertex_ag_to_retrieved_entity(tgraph.age_name, result[0])),
-                edge=types.entity_to_node_subtype(age.edge_ag_to_retrieved_relation(tgraph.age_name, result[1])),
-                target=types.entity_to_node_subtype(age.vertex_ag_to_retrieved_entity(tgraph.age_name, result[2])),
-                
-            ))
+            pairs.append(
+                types.Pair(
+                    source=types.entity_to_node_subtype(age.vertex_ag_to_retrieved_entity(tgraph.age_name, result[0])),
+                    edge=types.entity_to_node_subtype(age.edge_ag_to_retrieved_relation(tgraph.age_name, result[1])),
+                    target=types.entity_to_node_subtype(age.vertex_ag_to_retrieved_entity(tgraph.age_name, result[2])),
+                )
+            )
 
-
+        if check_exists:
+            if not pairs:
+                raise ValueError("No pairs found in the query result")
 
     return types.Pairs(pairs=pairs, graph=tgraph)
-    
-    
-

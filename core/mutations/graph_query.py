@@ -28,6 +28,10 @@ class GraphQueryInput:
         default=None,
         description="Whether to pin this expression for the current user",
     )
+    check_exists: bool = strawberry.field(
+        default=True,
+        description="If true, will check that the query can be rendered. If false, will skip this check.",
+    )
 
 
 @strawberry.input(description="Input for updating an existing expression")
@@ -36,6 +40,10 @@ class UpdateGraphQueryInput(GraphQueryInput):
     pin: bool | None = strawberry.field(
         default=None,
         description="Whether to pin this expression for the current user",
+    )
+    check_exists: bool = strawberry.field(
+        default=True,
+        description="If true, will check that the query can be rendered. If false, will skip this check.",
     )
 
 
@@ -60,7 +68,7 @@ def create_graph_query(
     )
 
     try:
-        render.render_graph_query(graph_query)
+        render.render_graph_query(graph_query, check_exists=input.check_exists)
     except Exception as e:
         graph_query.delete()
         raise Exception(f"Failed to render graph query: {e}")
@@ -89,7 +97,7 @@ def update_graph_query(info: Info, input: UpdateGraphQueryInput) -> types.GraphQ
     item.columns = [strawberry.asdict(c) for c in input.columns] if input.columns else []
 
     try:
-        render.render_graph_query(item)
+        render.render_graph_query(item, check_exists=input.check_exists)
     except Exception as e:
         raise Exception(f"Failed to render graph query: {e}")
 

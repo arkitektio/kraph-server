@@ -19,14 +19,14 @@ from .pairs import pairs
 from .node_list import node_list
 
 
-def render_graph_query(graph_query: models.GraphQuery):
+def render_graph_query(graph_query: models.GraphQuery, check_exists: bool = False) -> types.Path | types.Table | types.Pairs | types.NodeList:
     if graph_query.kind == enums.ViewKind.PATH:
-        return path(graph_query)
+        return path(graph_query, check_exists=check_exists)
     if graph_query.kind == enums.ViewKind.TABLE:
-        return table(graph_query)
+        return table(graph_query, check_exists=check_exists)
     if graph_query.kind == enums.ViewKind.PAIRS:
-        return pairs(graph_query)
+        return pairs(graph_query, check_exists=check_exists)
     if graph_query.kind == enums.ViewKind.NODE_LIST:
-        return node_list(graph_query)
+        return node_list(graph_query, check_exists=check_exists)
 
     raise ValueError("Unknown view kind")
