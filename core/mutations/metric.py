@@ -74,8 +74,8 @@ def create_structure_metric(info: Info, input: StructureMetricInput) -> types.Me
 
     metric_category, _ = models.MetricCategory.objects.get_or_create(
         graph_id=input.graph,
-        age_name=manager.build_metric_age_name(input.label),
-        structure_definition={"identifier_filters": [identifier]},
+        age_name=manager.build_metric_age_name(input.label, structure_category.age_name),
+        structure_category=structure_category,
         defaults=dict(
             metric_kind=input.metric_kind,
             label=input.label,
