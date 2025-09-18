@@ -146,8 +146,11 @@ def delete_graph(
 ) -> strawberry.ID:
     item = models.Graph.objects.get(id=input.id)
 
-    age.delete_age_graph(item.age_name)
-
+    try:
+        age.delete_age_graph(item.age_name)
+    except Exception as e:
+        print("Error deleting AGE graph:", e)
+        
     item.delete()
 
     return input.id
