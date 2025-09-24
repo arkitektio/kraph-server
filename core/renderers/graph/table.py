@@ -5,6 +5,7 @@ from core.age import (
     RetrievedRelation,
     vertex_ag_to_retrieved_entity,
 )
+from core.renderers.graph.parser import render_cypher_template
 import strawberry
 from core import models, types, inputs
 import re
@@ -41,11 +42,13 @@ def table(graph_query: models.GraphQuery, check_exists: bool = True) -> types.Ta
     columns = graph_query.input_columns
     print(tgraph.age_name)
 
+    rendered_query, params = render_cypher_template(graph_query.query)
+
     # First set the timeout
     real_query = f"""
     SELECT *
     FROM cypher(%s, $$
-        {query}
+        {rendered_query}
     $$) as ({columns_to_age_string(columns)});
     """
 

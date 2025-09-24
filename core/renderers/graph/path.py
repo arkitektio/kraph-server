@@ -13,6 +13,7 @@ import re
 import json
 from kante.types import Info
 from core.renderers.utils import parse_age_path
+from .parser import render_cypher_template
 
 
 def path(graph_query: models.GraphQuery, check_exists: bool = True) -> types.Path:
@@ -34,11 +35,14 @@ def path(graph_query: models.GraphQuery, check_exists: bool = True) -> types.Pat
     tgraph = graph_query.graph
     query = graph_query.query
 
+    rendered_query, params = render_cypher_template(graph_query.query)
+    print(rendered_query)
+
     # First set the timeout
     real_query = f"""
     SELECT *
     FROM cypher(%s, $$
-        {query}
+        {rendered_query}
     $$) as (path agtype);
     """
 

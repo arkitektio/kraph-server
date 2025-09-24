@@ -2,6 +2,7 @@ from core import models, types, enums, filters as f, pagination as p, age
 import strawberry
 from kante.types import Info
 from typing import Annotated
+from .parser import render_cypher_template
 
 
 def pairs(graph_query: models.GraphQuery, check_exists: bool = True) -> types.Pairs:
@@ -16,11 +17,13 @@ def pairs(graph_query: models.GraphQuery, check_exists: bool = True) -> types.Pa
     tgraph = graph_query.graph
     query = graph_query.query
 
+    rendered_query, params = render_cypher_template(graph_query.query)
+
     # First set the timeout
     real_query = f"""
     SELECT *
     FROM cypher(%s, $$
-        {query}
+        {rendered_query}
     $$) as (n agtype, r agtype, m agtype);
     """
 
