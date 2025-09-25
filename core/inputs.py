@@ -100,8 +100,8 @@ class CategoryDefinitionInput:
         default=None,
         description="The default creation of entity or reagent to use for this port if a reagent is not provided",
     )
-    
-    
+
+
 @strawberry.input(description="Input for creating a new expression")
 class EntityCategoryDefinitionInput:
     category_filters: list[strawberry.ID] | None = strawberry.field(
@@ -116,9 +116,8 @@ class EntityCategoryDefinitionInput:
         default=None,
         description="The default creation of entity or reagent to use for this port if a reagent is not provided",
     )
-    
-    
-    
+
+
 @strawberry.input(description="Input for creating a new expression")
 class ReagentCategoryDefinitionInput:
     category_filters: list[strawberry.ID] | None = strawberry.field(
@@ -137,7 +136,6 @@ class ReagentCategoryDefinitionInput:
         default=None,
         description="The default creation of entity or reagent to use for this port if a reagent is not provided",
     )
-    
 
 
 @strawberry.input(description="Input for creating a new expression")
@@ -315,3 +313,22 @@ class UpdateCategoryInput:
     image: strawberry.ID | None = strawberry.field(default=None, description="An optional image associated with this expression")
     tags: list[str] | None = strawberry.field(default=None, description="A list of tags associated with this expression")
     pin: bool | None = strawberry.field(default=None, description="Whether this expression should be pinned or not")
+
+
+@strawberry.input
+class GraphQueryFilters:
+    search: Optional[str] = None
+    limit: Optional[int] = None
+    offset: Optional[int] = None
+
+
+@strawberry.input
+class GraphQueryPagination:
+    limit: Optional[int] = None
+    offset: Optional[int] = None
+
+
+@strawberry.input
+class GraphQueryOrder:
+    field: str
+    direction: str  # "asc" or "desc"

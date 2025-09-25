@@ -123,6 +123,11 @@ class Query:
         description="Render a node query",
     )
 
+    render_graph_query = field(
+        resolver=queries.render_graph_query,
+        description="Render a graph query",
+    )
+
     @field(permission_classes=[])
     def knowledge_views(self, info: Info, identifier: scalars.StructureIdentifier, object: strawberry.ID) -> List[types.KnowledgeView]:
         # filtered StructureCategory

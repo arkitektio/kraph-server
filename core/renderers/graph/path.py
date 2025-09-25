@@ -6,7 +6,7 @@ from core.age import (
     vertex_ag_to_retrieved_entity,
 )
 import strawberry
-from core import models, types
+from core import models, types, inputs
 import re
 import json
 import re
@@ -16,7 +16,7 @@ from core.renderers.utils import parse_age_path
 from .parser import render_cypher_template
 
 
-def path(graph_query: models.GraphQuery, check_exists: bool = True) -> types.Path:
+def path(graph_query: models.GraphQuery, check_exists: bool = True, filters: inputs.GraphQueryFilters | None = None, pagination: inputs.GraphQueryPagination | None = None, order: inputs.GraphQueryOrder | None = None) -> types.Path:
     """
     Query the knowledge graph for information about a given entity.
 

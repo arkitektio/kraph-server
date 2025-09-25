@@ -1,11 +1,11 @@
-from core import models, types, enums, filters as f, pagination as p, age
+from core import models, types, enums, filters as f, pagination as p, age, inputs
 import strawberry
 from kante.types import Info
 from typing import Annotated
 from .parser import render_cypher_template
 
 
-def pairs(graph_query: models.GraphQuery, check_exists: bool = True) -> types.Pairs:
+def pairs(graph_query: models.GraphQuery, check_exists: bool = True, filters: inputs.GraphQueryFilters | None = None, pagination: inputs.GraphQueryPagination | None = None, order: inputs.GraphQueryOrder | None = None) -> types.Pairs:
     tgraph = graph_query.graph
     query = graph_query.query
 
