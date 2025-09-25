@@ -6,16 +6,17 @@ from core.age import (
     vertex_ag_to_retrieved_entity,
 )
 import strawberry
-from core import models, types, age
+from core import models, types, age, inputs
 import re
 import json
 import re
 import json
 from kante.types import Info
 from core.renderers.utils import parse_age_path
+from .parser import render_node_cypher_template
 
 
-def path(node_query: models.NodeQuery, node_id: str) -> types.Path:
+def path(node_query: models.NodeQuery, node_id: str, filters: inputs.NodeQueryFilters | None = None , pagination: inputs.NodeQueryPagination | None = None, order: inputs.NodeQueryOrder | None = None) -> types.Path:
     """
     Query the knowledge graph for information about a given entity.
 
@@ -35,12 +36,14 @@ def path(node_query: models.NodeQuery, node_id: str) -> types.Path:
     query = node_query.query
     print(tgraph.age_name)
     node = node_id
+    
+    rendered_query, params = render_node_cypher_template(node_query.query, filters=filters)
 
     # First set the timeout
     real_query = f"""
     SELECT *
     FROM cypher(%s, $$
-        {query}
+        {rendered_query}
     $$) as (path agtype);
     """
 

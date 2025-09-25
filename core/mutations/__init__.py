@@ -108,4 +108,5 @@ __all__ = [
     "create_file_view",
     "create_roi_view",
     "create_derived_view",
+    "update_node_query"
 ]

@@ -133,3 +133,35 @@ def pin_node_query(
 
     item.save()
     return item
+
+
+def update_node_query(info: Info, input: UpdateNodeQueryInput) -> types.NodeQuery:
+    item = models.NodeQuery.objects.get(id=input.id)
+
+    item.name = input.name
+    item.query = input.query
+    item.description = input.description
+    item.kind = input.kind
+    item.columns = [strawberry.asdict(c) for c in input.columns] if input.columns else []
+
+    
+    if input.test_against:
+        
+        render.render_node_view(item, input.test_against)
+   
+
+    if input.relevant_for:
+        
+        item.relevant_for.clear()
+        for category in input.relevant_for:
+            category_obj = models.Category.objects.get(id=category)
+            item.relevant_for.add(category_obj)
+
+    if input.pin is not None:
+        if input.pin:
+            item.pinned_by.add(info.context.request.user)
+        else:
+            item.pinned_by.remove(info.context.request.user)
+
+    item.save()
+    return item

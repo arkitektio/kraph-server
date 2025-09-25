@@ -14,4 +14,4 @@ def render_graph_query(
 ) -> Union[types.Pairs, types.Path, types.Table, types.NodeList]:
     query = models.GraphQuery.objects.get(id=id)
 
-    return render_graph_query_raw(info, query, filters=filters, pagination=pagination, order=order)
+    return render_graph_query_raw(query, filters=filters, pagination=pagination, order=order)

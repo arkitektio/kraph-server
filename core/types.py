@@ -4,7 +4,7 @@ import strawberry_django
 from strawberry import auto
 from typing import List, Optional, Annotated, Union, cast
 import strawberry_django
-from core import models, scalars, filters, enums, loaders
+from core import models, scalars, filters, enums, loaders, inputs, pagination
 from django.contrib.auth import get_user_model
 from kante.types import Info
 import datetime
@@ -265,10 +265,10 @@ class GraphQuery:
         return info.context.request.user in self.pinned_by.all()
 
     @strawberry_django.field()
-    def render(self, info: Info) -> Union["Path", "Pairs", "Table", "NodeList"]:
+    def render(self, info: Info, filters: inputs.GraphQueryFilters | None = None, pagination: inputs.GraphQueryPagination | None = None, order: inputs.GraphQueryOrder | None = None ) -> Union["Path", "Pairs", "Table", "NodeList"]:
         from core.renderers.graph.render import render_graph_query
 
-        return render_graph_query(self)
+        return render_graph_query(self, filters=filters, pagination=pagination, order=order)
 
     @strawberry_django.field()
     def columns(self, info) -> list[Column]:
@@ -312,6 +312,14 @@ class NodeQuery:
     kind: enums.ViewKind
     graph: Graph
     query: str
+   
+    @strawberry_django.field()
+    def columns(self, info) -> list[Column]:
+        return [Column(**c) for c in self.columns] if self.columns else []
+
+    @strawberry_django.field()
+    def relevant_for(self, info) -> list["BaseCategory"]:
+        return [BaseCategory(**c) for c in self.relevant_for]
 
     @strawberry_django.field()
     def pinned(self, info: Info) -> bool:
@@ -334,7 +342,7 @@ class NodeQueryView:
         return self._query
 
     @strawberry_django.field()
-    def render(self, info: Info) -> Union["Path", "Pairs", "Table"]:
+    def render(self, info: Info,) -> Union["Path", "Pairs", "Table"]:
         from core.renderers.node.render import render_node_view
 
         return render_node_view(self._query, self._node_id)
@@ -495,9 +503,12 @@ class Structure(Node):
 
         return [Measurement(_value=x) for x in age.select_measurements_for_structure(self._value.graph_name, self._value.id, categories=measurement_categories)]
 
-    @strawberry.field(description="The expression that defines this entity's type")
-    def metrics(self) -> List["Metric"]:
-        return []
+    @strawberry_django.field(description="The expression that defines this entity's type")
+    def metrics(self, pagination: pagination.GraphPaginationInput | None = None) -> List["Metric"]:
+        
+        return [Metric(_value=x) for x in age.select_related_structure_metrics(self._value.graph_name, self._value.id, pagination=pagination)]
+        
+        
 
     @strawberry.field(description="The unique identifier of the entity within its graph")
     def measures(self, info: Info) -> List["Entity"]:
@@ -678,6 +689,14 @@ class ProtocolEvent(Node):
     @strawberry_django.field(description="Protocol steps where this entity was the target")
     async def category(self) -> "ProtocolEventCategory":
         return await loaders.protocol_event_category_loader.load(self._value.category_id)
+    
+    @strawberry_django.field(description="Protocol steps where this entity was the target")
+    def source_participants(self) -> list["Participant"]:
+        return [Participant(_value=x) for x in self._value.retrieve_left_relations()]
+    
+    @strawberry_django.field(description="Protocol steps where this entity was the target")
+    def target_participants(self) -> list["Participant"]:
+        return [Participant(_value=x) for x in self._value.retrieve_right_relations()]
 
     @strawberry_django.field(description="Protocol steps where this entity was the target")
     async def variables(self) -> list["VariableMapping"]:
@@ -852,11 +871,11 @@ class Participant(Edge):
     def __hash__(self):
         return self._value.id
 
-    @strawberry.field(description="Timestamp from when this entity is valid")
+    @strawberry_django.field(description="Timestamp from when this entity is valid")
     def quantity(self, info: Info) -> float | None:
         return self._value.quantity
 
-    @strawberry.field(description="Timestamp from when this entity is valid")
+    @strawberry_django.field(description="Timestamp from when this entity is valid")
     def role(self, info: Info) -> str:
         return self._value.role
 

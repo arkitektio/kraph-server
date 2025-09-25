@@ -42,7 +42,7 @@ def table(graph_query: models.GraphQuery, check_exists: bool = True, filters: in
     columns = graph_query.input_columns
     print(tgraph.age_name)
 
-    rendered_query, params = render_cypher_template(graph_query.query)
+    rendered_query, params = render_cypher_template(graph_query.query, filters=filters, pagination=pagination, order=order)
 
     # First set the timeout
     real_query = f"""

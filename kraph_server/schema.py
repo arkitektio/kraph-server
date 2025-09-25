@@ -637,7 +637,7 @@ class Mutation:
     create_node_query = mutation(resolver=mutations.create_node_query, description="Create a new node query")
 
     pin_node_query = mutation(resolver=mutations.pin_node_query, description="Pin or unpin a node query")
-
+    update_node_query = mutation(resolver=mutations.update_node_query, description="Update a new node query")
 
 @strawberry.type
 class Subscription:

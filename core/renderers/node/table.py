@@ -23,7 +23,7 @@ def input_to_columns(columns: list[inputs.ColumnInput]) -> list[types.Column]:
     return [types.Column(**strawberry.asdict(column)) for column in columns]
 
 
-def table(node_query: models.NodeQuery, node_id: str) -> types.Table:
+def table(node_query: models.NodeQuery, node_id: str, filters: inputs.NodeQueryFilters | None = None , pagination: inputs.NodeQueryPagination | None = None, order: inputs.NodeQueryOrder | None = None) -> types.Table:
     """
     Query the knowledge graph for information about a given entity.
 

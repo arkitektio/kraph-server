@@ -4,6 +4,7 @@ from typing import List, Optional
 from strawberry import ID
 import strawberry
 import pydantic
+import datetime
 
 
 @strawberry.input
@@ -318,8 +319,8 @@ class UpdateCategoryInput:
 @strawberry.input
 class GraphQueryFilters:
     search: Optional[str] = None
-    limit: Optional[int] = None
-    offset: Optional[int] = None
+    valid_from: Optional[datetime.datetime] = None
+    valid_to: Optional[datetime.datetime] = None
 
 
 @strawberry.input
@@ -330,5 +331,24 @@ class GraphQueryPagination:
 
 @strawberry.input
 class GraphQueryOrder:
-    field: str
-    direction: str  # "asc" or "desc"
+    field:  Optional[str] = None
+    direction:  Optional[str] = None
+
+
+@strawberry.input
+class NodeQueryFilters:
+    search: Optional[str] = None
+    valid_from: Optional[datetime.datetime] = None
+    valid_to: Optional[datetime.datetime] = None
+
+
+@strawberry.input
+class NodeQueryPagination:
+    limit: Optional[int] = None
+    offset: Optional[int] = None
+
+
+@strawberry.input
+class NodeQueryOrder:
+    field:  Optional[str] = None
+    direction:  Optional[str] = None

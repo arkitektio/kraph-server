@@ -505,6 +505,18 @@ class TagFilter(IDFilterMixin, SearchFilterMixin):
 @strawberry_django.filter(models.GraphQuery)
 class GraphQueryFilter(IDFilterMixin, SearchFilterMixin):
     id: auto
+    pinned: bool | None = None
+    kind: enums.ViewKind | None = None
+
+    def filter_pinned(self, queryset, info):
+        if self.pinned is None:
+            return queryset
+        return queryset.filter(pinned_by=info.context.request.user)
+    
+    def filter_kind(self, queryset, info):
+        if self.kind is None:
+            return queryset
+        return queryset.filter(kind=self.kind)
 
 
 @strawberry_django.filter(models.ScatterPlot)

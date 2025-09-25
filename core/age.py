@@ -6,6 +6,7 @@ from core import models
 from dataclasses import dataclass
 from core import filters, pagination
 import typing
+from core.pagination import GraphPaginationInput
 from pydantic import BaseModel, Field
 import strawberry
 
@@ -137,7 +138,10 @@ class RetrievedEntity:
 
     @property
     def valid_from(self):
-        return self.properties.get("valid_from", None)
+        valid_from = self.properties.get("valid_from", None)
+        if valid_from:
+            return datetime.datetime.fromisoformat(valid_from)
+        return None
 
     @property
     def pinned_by(self):
@@ -175,7 +179,10 @@ class RetrievedEntity:
 
     @property
     def valid_to(self):
-        return self.properties.get("valid_to", None)
+        valid_to = self.properties.get("valid_to", None)
+        if valid_to:
+            return datetime.datetime.fromisoformat(valid_to)
+        return None
 
     @property
     def created_at(self):
@@ -1826,6 +1833,40 @@ def select_paired_entities(
         for result in cursor.fetchall():
             print(result)
             yield vertex_ag_to_retrieved_entity(graph_name, result[0]), vertex_ag_to_retrieved_entity(graph_name, result[1]), edge_ag_to_retrieved_relation(graph_name, result[2])
+
+
+def select_related_structure_metrics(
+    graph_name,
+    node_id,
+    pagination: pagination.GraphPaginationInput | None = None,
+    filters: filters.MetricFilter | None = None,
+):
+    with graph_cursor() as cursor:
+        WHERE = "WHERE id(n)= %s"
+        
+        if not pagination:
+            pagination = GraphPaginationInput()
+
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (n) <- [:DESCRIBES] - (m)
+                {WHERE}
+                RETURN m
+                SKIP %s
+                LIMIT %s
+            $$) as (m agtype);
+            """,
+            [graph_name, int(node_id), pagination.offset or 0, pagination.limit or 200],
+        )
+
+        if cursor.rowcount == 0:
+            return []
+
+        for result in cursor.fetchall():
+            yield vertex_ag_to_retrieved_entity(graph_name, result[0])
+
 
 
 def select_all_relations(

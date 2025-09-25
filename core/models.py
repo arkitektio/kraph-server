@@ -840,7 +840,7 @@ class NodeQuery(models.Model):
     )
     columns = models.JSONField(
         help_text="The columns (if ViewKind is Table)",
-        default=None,
+        default=list,
         null=True,
     )
     pinned_by = models.ManyToManyField(

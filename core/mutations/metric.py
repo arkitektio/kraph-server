@@ -43,6 +43,7 @@ def create_metric(
         value=metric_category.validate_input(input.value),
         assignation_id=None,
         created_by=info.context.request.user.id,
+        
     )
 
     return types.Metric(_value=value)

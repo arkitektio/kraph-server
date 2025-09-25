@@ -33,7 +33,7 @@ def _strip_dollar_in_jinja_tags(template: str) -> str:
 
 
 @pass_context
-def search_where(ctx: dict[str, Any], node: str = "n", field: str = "external_id") -> str:
+def search_where(ctx: dict[str, Any], field: str = "external_id", param: str = "$search") -> str:
     """
     Emit a Cypher WHERE clause if `search` is present in the template context.
 
@@ -46,9 +46,32 @@ def search_where(ctx: dict[str, Any], node: str = "n", field: str = "external_id
         A Cypher WHERE clause string if `search` is set, else "".
     """
     search_val: Any = ctx.get("search")
-    if search_val is not None:
-        return f'WHERE {node}.{field} CONTAINS "{search_val}"'
+    if search_val is not None and search_val is not "":
+        return f'AND n.{field} CONTAINS "{search_val}"'
     return ""
+
+
+@pass_context
+def node_valid(ctx: dict[str, Any], node: str = "n") -> str:
+    """
+    Emit a Cypher WHERE clause if `search` is present in the template context.
+
+    Args:
+        ctx:    Jinja2 Context object (passed automatically by Jinja).
+        field:  The node property to compare (default: "external_id").
+        param:  The Cypher parameter placeholder (default: "$search").
+
+    Returns:
+        A Cypher WHERE clause string if `search` is set, else "".
+    """
+    valid_from: Any = ctx.get("valid_from")
+    valid_to: Any = ctx.get("valid_to")
+    if valid_from is not None and valid_from is not "":
+        return f'AND {node}.valid_from <= "{valid_from}"'
+    if valid_to is not None and valid_to is not "":
+        return f'AND {node}.valid_to >= "{valid_to}"'
+    return ""
+
 
 
 @pass_context
@@ -91,36 +114,12 @@ def defaults(ctx: dict[str, Any], max: int = 100) -> str:
     return ""
 
 
-@pass_context
-def paginate(ctx: dict[str, Any], max: int = 100) -> str:
-    """
-    Emit a Cypher WHERE clause if `search` is present in the template context.
-
-    Args:
-        ctx:    Jinja2 Context object (passed automatically by Jinja).
-        field:  The node property to compare (default: "external_id").
-        param:  The Cypher parameter placeholder (default: "$search").
-
-    Returns:
-        A Cypher WHERE clause string if `search` is set, else "".
-    """
-    limit_vale: Any = ctx.get("limit")
-    offset_vale: Any = ctx.get("offset")
-
-    clauses = []
-    if offset_vale is not None and offset_vale > 0:
-        clauses.append(f"SKIP {offset_vale}")
-    if limit_vale is not None:
-        clauses.append(f"LIMIT {limit_vale}")
-    return "\n".join(clauses)
-
-
 # ---------- main API ----------
-def render_cypher_template(
+def render_node_cypher_template(
     template_str: str,
-    filters: inputs.GraphQueryFilters | None = None,
-    pagination: inputs.GraphQueryPagination | None = None,
-    order: inputs.GraphQueryOrder | None = None,
+    filters: inputs.NodeQueryFilters | None = None,
+    pagination: inputs.NodeQueryPagination | None = None,
+    order: inputs.NodeQueryOrder | None = None
 ) -> Tuple[str, Dict[str, Any]]:
     """
     Render a Jinja2 Cypher template that may use {% if $search %} etc.
@@ -135,13 +134,15 @@ def render_cypher_template(
     
     
     if not filters:
-        filters = inputs.GraphQueryFilters()
-    
-    if not pagination:
-        pagination = inputs.GraphQueryPagination()
+        filters = inputs.NodeQueryFilters()
         
     if not order:
-        order = inputs.GraphQueryOrder()
+        order  = inputs.NodeQueryOrder()
+        
+    if not pagination:
+        pagination = inputs.NodeQueryPagination()
+    
+    
 
     # Step 2: render with Jinja2 (strict: undefined -> error)
     env = Environment(
@@ -151,35 +152,41 @@ def render_cypher_template(
         trim_blocks=True,
         lstrip_blocks=True,
     )
-    
 
     env.globals["search_where"] = search_where
     env.globals["apply_limit"] = apply_limit
     env.globals["defaults"] = defaults
-    env.globals["paginate"] = paginate
+    env.globals["node_valid"] = node_valid
 
     # Everything the template can reference:
     context = {
         # your convenience vars
         "search": filters.search,
+        "sort": order.direction,
         "limit": pagination.limit,
         "offset": pagination.offset,
+        "valid_from": filters.valid_from,
+        "valid_to": filters.valid_to,
         # helper: truthy helper if you like: {% if search %}
         # add more helpers/globals if needed
     }
+    
+    print(pre)
 
     tpl = env.from_string(pre)
     rendered = tpl.render(**context)
 
-    
-    print("------")
-    print(rendered)
-    print("------")
     # Step 3: validate AFTER rendering
     _validate_no_mutations(rendered)
 
     # Step 4: build params for the DB (e.g., $search)
     params: Dict[str, Any] = {}
+    if filters.search is not None:
+        params["search"] = filters.search
+
+    # Optional: cap/normalize LIMIT in the final text (if template forgot)
+    if pagination.limit and not re.search(r"\bLIMIT\b", rendered, re.I):
+        rendered = f"{rendered.rstrip()}\nLIMIT {int(pagination.limit)}"
 
     return rendered, params
 
@@ -189,12 +196,4 @@ def _validate_no_mutations(cypher_text: str) -> None:
         raise ValueError("Rendered query appears to contain mutating clauses; rejected.")
 
 
-def _validate_sort(sort: Optional[Dict[str, str]]) -> None:
-    if not sort:
-        return
-    field = sort.get("field")
-    direction = (sort.get("dir") or "ASC").upper()
-    if field not in ALLOWED_SORT_FIELDS:
-        raise ValueError(f"Sort field not allowed: {field!r}")
-    if direction not in ALLOWED_SORT_DIRS:
-        raise ValueError(f"Sort direction must be one of {sorted(ALLOWED_SORT_DIRS)}")
+

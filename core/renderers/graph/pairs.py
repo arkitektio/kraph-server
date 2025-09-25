@@ -17,7 +17,7 @@ def pairs(graph_query: models.GraphQuery, check_exists: bool = True, filters: in
     tgraph = graph_query.graph
     query = graph_query.query
 
-    rendered_query, params = render_cypher_template(graph_query.query)
+    rendered_query, params = render_cypher_template(graph_query.query, filters=filters, pagination=pagination, order=order)
 
     # First set the timeout
     real_query = f"""
