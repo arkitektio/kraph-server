@@ -90,6 +90,27 @@ def defaults(ctx: dict[str, Any], max: int = 100) -> str:
         return f"LIMIT {limit_vale}"
     return ""
 
+@pass_context
+def node_valid(ctx: dict[str, Any], node: str = "n") -> str:
+    """
+    Emit a Cypher WHERE clause if `search` is present in the template context.
+
+    Args:
+        ctx:    Jinja2 Context object (passed automatically by Jinja).
+        field:  The node property to compare (default: "external_id").
+        param:  The Cypher parameter placeholder (default: "$search").
+
+    Returns:
+        A Cypher WHERE clause string if `search` is set, else "".
+    """
+    valid_from: Any = ctx.get("valid_from")
+    valid_to: Any = ctx.get("valid_to")
+    if valid_from is not None and valid_from is not "":
+        return f'AND {node}.valid_from >= "{valid_from}"'
+    if valid_to is not None and valid_to is not "":
+        return f'AND {node}.valid_to <= "{valid_to}"'
+    return ""
+
 
 @pass_context
 def paginate(ctx: dict[str, Any], max: int = 100) -> str:
@@ -157,6 +178,8 @@ def render_cypher_template(
     env.globals["apply_limit"] = apply_limit
     env.globals["defaults"] = defaults
     env.globals["paginate"] = paginate
+    env.globals["node_valid"] = node_valid
+
 
     # Everything the template can reference:
     context = {
@@ -164,6 +187,8 @@ def render_cypher_template(
         "search": filters.search,
         "limit": pagination.limit,
         "offset": pagination.offset,
+        "valid_from": filters.valid_from,
+        "valid_to": filters.valid_to,
         # helper: truthy helper if you like: {% if search %}
         # add more helpers/globals if needed
     }

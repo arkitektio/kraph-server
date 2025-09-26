@@ -2,7 +2,24 @@ from itertools import chain
 import strawberry
 from typing import Optional, List, Any
 import re
+from django.utils import timezone
 
+def get_now_epoch_millis() -> int:
+    now = timezone.now()                     # always UTC if USE_TZ=True
+    epoch_ms = int(now.timestamp() * 1000)   # ms since epoch, UTC
+    return epoch_ms
+
+
+def translate_to_epoch_millis(dt: Optional[timezone.datetime]) -> Optional[int]:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return int(dt.timestamp() * 1000)
+
+
+def from_epoch_millis(epoch_millis: int) -> timezone.datetime:
+    return timezone.datetime.fromtimestamp(epoch_millis / 1000, tz=timezone.utc)
 
 # Factor out pagination logic into a separate function
 def paginate_querysets(

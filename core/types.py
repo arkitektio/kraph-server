@@ -19,7 +19,7 @@ from core import age, pagination as p, filters as f
 from strawberry_django.pagination import OffsetPaginationInput
 from django.db.models import Q
 from authentikate.strawberry.types import Client, User
-
+import kante
 
 @strawberry.type(description="Temporary Credentials for a file upload that can be used by a Client (e.g. in a python datalayer)")
 class Credentials:
@@ -147,14 +147,24 @@ def relation_to_edge_subtype(
 
 @strawberry_django.type(
     models.MaterializedEdge,
+    filters=filters.MaterializedEdgeFilter,
+    pagination=True,
     description="A materialized edge between two entities in a graph.",
 )
 class MaterializedEdge:
     id: auto
     graph: "Graph"
-    source: "BaseCategory"
-    target: "BaseCategory"
-    relation: "BaseCategory"
+    source: "NodeCategory"
+    target: "NodeCategory"
+    relation: "EdgeCategory"
+    
+    @strawberry_django.field()
+    def label(self, info: Info) -> str:
+        return f"{self.source.label} -[{self.relation.label}]-> {self.target.label}"
+    
+    
+    
+    
 
 @strawberry_django.type(
     models.Graph,
@@ -912,6 +922,7 @@ class BaseCategory:
     kind: enums.ExpressionKind = strawberry.field(description="The kind of expression")
     tags: list["Tag"] = strawberry.field(description="The tags that are associated with the expression")
     purl: str | None = strawberry.field(description="The unique identifier of the expression within its graph")
+    label: str = strawberry.field(description="A human readable label for the expression")
     sequence: GraphSequence | None = strawberry.field(description="The sequence of the expression within its graph")
 
     @strawberry_django.field()
@@ -939,6 +950,8 @@ class NodeCategory:
     height: float | None = strawberry.field(description="The height of the node in the graph")
     width: float | None = strawberry.field(description="The width of the node in the graph")
     color: list[float] | None = strawberry.field(description="The color of the node in the graph")
+    label: str = strawberry.field(description="A human readable label for the expression")
+    description: str | None = strawberry.field(description="A description of the expression.")
 
     pass
 
@@ -1170,6 +1183,8 @@ class EntityRoleDefinition:
 @strawberry.interface()
 class EdgeCategory:
     id: strawberry.ID = strawberry.field(description="The unique identifier of the expression within its graph")
+    label: str = strawberry.field(description="A human readable label for the expression")
+    description: str | None = strawberry.field(description="A description of the expression.")
     """ A EdgeExpression is a class that describes the relationship between two entities."""
 
 

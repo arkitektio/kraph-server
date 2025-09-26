@@ -59,6 +59,7 @@ def create_structure(
         age_name=manager.build_structure_age_name(identifier),
         defaults=dict(
             identifier=identifier,
+            label=identifier,
         ),
     )
     

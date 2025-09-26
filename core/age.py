@@ -7,17 +7,12 @@ from dataclasses import dataclass
 from core import filters, pagination
 import typing
 from core.pagination import GraphPaginationInput
+from core.utils import get_now_epoch_millis, translate_to_epoch_millis, from_epoch_millis
 from pydantic import BaseModel, Field
 import strawberry
 
 if typing.TYPE_CHECKING:
     from core import models, filters, pagination, inputs
-
-
-@dataclass
-class LinkedStructure:
-    identifier: str
-    object: str
 
 
 class ProtocolInEdge(BaseModel):
@@ -32,79 +27,6 @@ class ProtocolOutEdge(BaseModel):
     quantity: float | None = None
 
 
-@dataclass
-class RetrievedRelationMetric:
-    """Retrieved Class from age
-
-    This is a dataclass that represents a metric that is retrieved from the age database.
-    It is used to represent a metric that is attached to a relation in the age database.
-
-    Relation ship metrics are stored as properties of the relationship in the age database.
-    This diffs fro node metrics which are stored as "relations" of the node onto itself.
-
-    """
-
-    graph_name: str
-    kind_age_name: str
-    value: str
-
-
-@dataclass
-class RetrievedNodeMetric:
-    """Retrieved Class from age
-
-    This is a dataclass that represents a NODE metric that is retrieved from the age database.
-    Node Metrics are stored as relations of the node onto itself. This allows for the addition
-    of temporal information and other metadata directly to the metric.
-
-
-    """
-
-    graph_name: str
-    id: int
-    kind_age_name: str
-    properties: dict[str, str] | None
-
-    @property
-    def unique_id(self):
-        return f"{self.graph_name}:{self.id}"
-
-    @property
-    def valid_from(self):
-        """The valid from date of the metric if it exists"""
-        return self.properties.get("valid_from", None)
-
-    @property
-    def valid_to(self):
-        return self.properties.get("valid_to", None)
-
-    @property
-    def valid_relative_from(self):
-        return self.properties.get("valid_relative_from", None)
-
-    @property
-    def valid_relative_to(self):
-        return self.properties.get("valid_relative_to", None)
-
-    @property
-    def unique_id(self):
-        return f"{self.graph_name}:{self.id}"
-
-    @property
-    def value(self):
-        return self.properties.get("value", None)
-
-    @property
-    def assignation_id(self):
-        return self.properties.get("created_through", None)
-
-    @property
-    def measured_structure(self) -> LinkedStructure:
-        raw_structure = self.properties.get("__structure", None)
-        if raw_structure:
-            return LinkedStructure(**raw_structure)
-        return None
-
 
 @dataclass
 class RetrievedEntity:
@@ -112,7 +34,6 @@ class RetrievedEntity:
     id: int
     kind_age_name: str | None
     properties: dict[str, str] | None
-    cached_metrics: list[RetrievedNodeMetric] | None = None
     cached_relations: list["RetrievedRelation"] | None = None
 
     def retrieve_relations(self) -> "RetrievedRelation":
@@ -129,8 +50,6 @@ class RetrievedEntity:
         """ " Retrieve all left relations for this entity from the age database"""
         return get_left_relations(self.graph_name, self.id)
 
-    def retrieve_metrics(self) -> list["RetrievedNodeMetric"]:
-        return self.cached_metrics or get_age_metrics(self.graph_name, self.id)
 
     @property
     def label(self):
@@ -140,7 +59,7 @@ class RetrievedEntity:
     def valid_from(self):
         valid_from = self.properties.get("valid_from", None)
         if valid_from:
-            return datetime.datetime.fromisoformat(valid_from)
+            return from_epoch_millis(valid_from)
         return None
 
     @property
@@ -181,14 +100,14 @@ class RetrievedEntity:
     def valid_to(self):
         valid_to = self.properties.get("valid_to", None)
         if valid_to:
-            return datetime.datetime.fromisoformat(valid_to)
+            return from_epoch_millis(valid_to)
         return None
 
     @property
     def created_at(self):
         created_at = self.properties.get("created_at", None)
         if created_at:
-            return datetime.datetime.fromisoformat(created_at)
+            return from_epoch_millis(created_at)
         return None
 
     @property
@@ -283,12 +202,6 @@ class RetrievedRelation:
     @property
     def unique_id(self):
         return f"{self.graph_name}:{self.id}"
-
-    def retrieve_metrics(self) -> list["RetrievedRelationMetric"]:
-        try:
-            return [RetrievedRelationMetric(kind_age_name=key, value=value, graph_name=self.graph_name) for key, value in self.properties.items() if key != "id" and key != "labels"]
-        except Exception as e:
-            raise ValueError(f"Error retrieving metrics {e} {self.properties}")
 
 
 @contextmanager
@@ -906,7 +819,7 @@ def create_age_natural_event(
                     category.get_age_type_name(),
                     external_id,
                     name,
-                    datetime.datetime.now().isoformat(),
+                    get_now_epoch_millis(),
                     valid_from.isoformat() if valid_from else None,
                     valid_to.isoformat() if valid_to else None,
                 ),
@@ -1040,21 +953,21 @@ def create_age_structure(
         try:
             cursor.execute(
                 f"""
-            SELECT * 
-            FROM cypher(%s, $$
-                MATCH (s: {category.get_age_vertex_name()} {{type: "STRUCTURE", category_type: %s, category_id: %s}})
-                WHERE s.object = %s
-                SET s.created_at = %s
-                SET s.identifier = %s
-                RETURN s
-            $$) as (s agtype);
-            """,
+                SELECT *
+                FROM cypher(%s, $$
+                    MATCH (s:{category.get_age_vertex_name()} {{type: "STRUCTURE", category_type: %s, category_id: %s}})
+                    WHERE s.object = %s
+                    SET s.created_at = %s
+                        s.identifier = %s
+                    RETURN s
+                $$) AS (s agtype);
+                """,
                 (
                     category.graph.age_name,
                     category.get_age_type_name(),
                     category.id,
                     object,
-                    datetime.datetime.now().isoformat(),
+                    get_now_epoch_millis(),
                     category.identifier,
                 ),
             )
@@ -1070,8 +983,8 @@ def create_age_structure(
             FROM cypher(%s, $$
                 CREATE (s: {category.get_age_vertex_name()} {{type: "STRUCTURE", category_type: %s, category_id: %s}})
                 SET s.object = %s
-                SET s.created_at = %s
-                SET s.identifier = %s
+                SET s.created_at = %s,
+                    s.identifier = %s
                 RETURN s
             $$) as (s agtype);
             """,
@@ -1080,7 +993,7 @@ def create_age_structure(
                 category.get_age_type_name(),
                 category.id,
                 object,
-                datetime.datetime.now().isoformat(),
+                get_now_epoch_millis(),
                 category.identifier,
             ),
         )

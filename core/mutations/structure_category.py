@@ -104,6 +104,7 @@ def create_structure_category(
             purl=input.purl,
             store=media_store,
             identifier=identifier,
+            label=identifier.replace("_", " ").title(),
         ),
     )
     
@@ -146,6 +147,7 @@ def update_structure_category(
     item.purl = input.purl if input.purl else item.purl
     item.color = input.color if input.color else item.color
     item.store = media_store if media_store else item.store
+    item.label = input.label if input.label else item.label
     
     
     if input.tags:

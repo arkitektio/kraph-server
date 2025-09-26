@@ -84,6 +84,8 @@ def create_graph(
             store=media_store,
             user=info.context.request.user,
             name=input.name,
+            organization=info.context.request.organization,
+            membership=info.context.request.membership,
         ),
     )
 

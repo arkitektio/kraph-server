@@ -84,6 +84,7 @@ class Query:
 
     graphs: list[types.Graph] = field(description="List of all knowledge graphs")
     graph_sequences: list[types.GraphSequence] = field(description="List of all graph sequences")
+    materialized_edges: list[types.MaterializedEdge] = field(description="List of all materialized edges")
 
     graph_queries: list[types.GraphQuery] = field(description="List of all graph queries")
     node_queries: list[types.NodeQuery] = field(description="List of all node queries")
@@ -154,6 +155,11 @@ class Query:
                 )
 
         return retrieved_views
+    
+    
+    @field(permission_classes=[])
+    def materialized_edge(self, info: Info, id: ID) -> types.MaterializedEdge:
+        return models.MaterializedEdge.objects.get(id=id)
 
     @field(description="The best view of the node given the current context")
     def node_view(self, info: Info, query: strawberry.ID, node_id: strawberry.ID) -> types.NodeQueryView:

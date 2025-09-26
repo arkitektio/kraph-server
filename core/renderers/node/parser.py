@@ -67,9 +67,9 @@ def node_valid(ctx: dict[str, Any], node: str = "n") -> str:
     valid_from: Any = ctx.get("valid_from")
     valid_to: Any = ctx.get("valid_to")
     if valid_from is not None and valid_from is not "":
-        return f'AND {node}.valid_from <= "{valid_from}"'
+        return f'AND {node}.valid_from >= date("{valid_from}")'
     if valid_to is not None and valid_to is not "":
-        return f'AND {node}.valid_to >= "{valid_to}"'
+        return f'AND {node}.valid_to <= date("{valid_to}")'
     return ""
 
 

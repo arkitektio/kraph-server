@@ -10,8 +10,8 @@ import koherent.signals
 from django_choices_field import TextChoicesField
 from core.fields import S3Field
 from core.datalayer import Datalayer
-from authentikate.models import Organization
-
+from authentikate.models import Organization, Membership
+from polymorphic.models import PolymorphicModel
 # Create your models here.
 import boto3
 import json
@@ -77,11 +77,11 @@ class Graph(models.Model):
     It is used to group Entities together, for example all groups that
     are part of a specific sample, or all entities that are part of a specific
     experiment. Within an entity group, entities are unique according
-    to their name.
+    to their name.s
 
     """
-
-    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="graphs", null=True, blank=True)
+    membership = models.ForeignKey(Membership, on_delete=models.CASCADE, related_name="graphs")
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="graphs")
     user = models.ForeignKey(
         get_user_model(),
         on_delete=models.CASCADE,
@@ -247,7 +247,7 @@ class CategoryTag(models.Model):
         default_related_name = "category_tags"
 
 
-class Category(models.Model):
+class Category(PolymorphicModel):
     graph = models.ForeignKey(
         "Graph",
         on_delete=models.CASCADE,
@@ -302,6 +302,11 @@ class Category(models.Model):
         get_user_model(),
         related_name="pinned_categories",
         help_text="The users that have this query active",
+    )   
+    label = models.CharField(
+        max_length=1000,
+        help_text="The label of the node class",
+        null=True,
     )
 
     class Meta:
@@ -425,10 +430,6 @@ class NaturalEventCategory(NodeCategory):
         default=list,
         help_text="The categories or expressions that an of this class can target to (target edges)",
     )
-    label = models.CharField(
-        max_length=1000,
-        help_text="The label of the natural event class",
-    )
     plate_children = models.JSONField(null=True, blank=True)
 
     def get_inrole_vertex_name(self, role):
@@ -490,10 +491,6 @@ class ProtocolEventCategory(NodeCategory):
         help_text="The variables of a instance this protocol event will needs (properties on the node)",
     )
     plate_children = models.JSONField(null=True, blank=True)
-    label = models.CharField(
-        max_length=1000,
-        help_text="The label of the natural event class",
-    )
 
     def get_inrole_vertex_name(self, role):
         return role
@@ -571,10 +568,6 @@ class EntityCategory(NodeCategory):
         null=True,
         blank=True,
     )
-    label = models.CharField(
-        max_length=1000,
-        help_text="The label of the entity class",
-    )
 
     def get_age_vertex_name(self):
         return self.age_name
@@ -636,11 +629,6 @@ class ReagentCategory(NodeCategory):
         null=True,
         blank=True,
     )
-    label = models.CharField(
-        max_length=1000,
-        help_text="The label of the entity class",
-    )
-
     def get_age_vertex_name(self):
         return self.age_name
 
@@ -675,10 +663,6 @@ class MetricCategory(NodeCategory):
         help_text="The data type (if a metric)",
         null=True,
         blank=True,
-    )
-    label = models.CharField(
-        max_length=1000,
-        help_text="The label of the entity class",
     )
     structure_category = models.ForeignKey(
         StructureCategory,
@@ -726,10 +710,6 @@ class MeasurementCategory(EdgeCategory):
         null=True,
         blank=True,
     )
-    label = models.CharField(
-        max_length=1000,
-        help_text="The label of the entity class",
-    )
 
     def get_age_edge_name(self):
         return self.age_name
@@ -744,12 +724,13 @@ class MeasurementCategory(EdgeCategory):
 class RelationCategory(EdgeCategory):
     """A Relation class is a class that describes a relation between two entities without a value"""
 
-    label = models.CharField(
+    reverse_description = models.CharField(
         max_length=1000,
-        help_text="How this step acts in the protocol (e.g. as which reagent)",
+        help_text="The description of category",
         null=True,
     )
-
+    
+    
     def get_age_edge_name(self):
         return self.age_name
 
@@ -763,11 +744,12 @@ class RelationCategory(EdgeCategory):
 class StructureRelationCategory(EdgeCategory):
     """A Relation class is a class that describes a relation between two entities without a value"""
 
-    label = models.CharField(
+    reverse_description = models.CharField(
         max_length=1000,
-        help_text="How this step acts in the protocol (e.g. as which reagent)",
+        help_text="The description of category",
         null=True,
     )
+    
 
     def get_age_edge_name(self):
         return self.age_name
