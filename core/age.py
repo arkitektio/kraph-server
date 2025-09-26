@@ -957,7 +957,7 @@ def create_age_structure(
                 FROM cypher(%s, $$
                     MATCH (s:{category.get_age_vertex_name()} {{type: "STRUCTURE", category_type: %s, category_id: %s}})
                     WHERE s.object = %s
-                    SET s.created_at = %s
+                    SET s.created_at = %s,
                         s.identifier = %s
                     RETURN s
                 $$) AS (s agtype);
