@@ -155,8 +155,7 @@ class Query:
                 )
 
         return retrieved_views
-    
-    
+
     @field(permission_classes=[])
     def materialized_edge(self, info: Info, id: ID) -> types.MaterializedEdge:
         return models.MaterializedEdge.objects.get(id=id)
@@ -584,6 +583,20 @@ class Mutation:
         description="Record a new protocol event",
     )
 
+    # Node and Edge Mutations
+    delete_node = mutation(
+        resolver=mutations.delete_node,
+        description="Delete an existing node",
+    )
+    detach_delete_node = mutation(
+        resolver=mutations.detach_delete_node,
+        description="Detach and delete an existing node (will delete all connected edges as well)",
+    )
+    delete_edge = mutation(
+        resolver=mutations.delete_edge,
+        description="Delete an existing edge",
+    )
+
     create_toldyouso = mutation(
         resolver=mutations.create_toldyouso,
         description="Create a new 'told you so' supporting structure",
@@ -644,6 +657,7 @@ class Mutation:
 
     pin_node_query = mutation(resolver=mutations.pin_node_query, description="Pin or unpin a node query")
     update_node_query = mutation(resolver=mutations.update_node_query, description="Update a new node query")
+
 
 @strawberry.type
 class Subscription:

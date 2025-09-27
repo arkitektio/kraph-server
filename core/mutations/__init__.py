@@ -27,6 +27,8 @@ from .structure_relation_category import *
 from .structure_relation import *
 from .tag import create_tag
 from .graph import materialize_graph
+from .node import delete_node, detach_delete_node
+from .edge import delete_edge
 
 __all__ = [
     "create_channel",
@@ -34,6 +36,8 @@ __all__ = [
     "delete_channel",
     "ensure_channel",
     "update_graph_query",
+    "delete_node",
+    "delete_edge",
     "from_array_like",
     "delete_image",
     "request_access",
@@ -108,5 +112,5 @@ __all__ = [
     "create_file_view",
     "create_roi_view",
     "create_derived_view",
-    "update_node_query"
+    "update_node_query",
 ]

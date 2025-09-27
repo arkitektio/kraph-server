@@ -1,6 +1,7 @@
 from contextlib import contextmanager, asynccontextmanager
 import datetime
 import json
+from unicodedata import category
 from django.db import connections
 from core import models
 from dataclasses import dataclass
@@ -27,7 +28,6 @@ class ProtocolOutEdge(BaseModel):
     quantity: float | None = None
 
 
-
 @dataclass
 class RetrievedEntity:
     graph_name: str
@@ -49,7 +49,6 @@ class RetrievedEntity:
     def retrieve_left_relations(self) -> "RetrievedRelation":
         """ " Retrieve all left relations for this entity from the age database"""
         return get_left_relations(self.graph_name, self.id)
-
 
     @property
     def label(self):
@@ -1010,11 +1009,11 @@ def create_measurement(
     category: "models.MeasurementCategory",
     structure_id: str,
     entity_id: str,
-    valid_from: datetime.datetime = None,
-    valid_to: datetime.datetime = None,
-    assignation_id: str = None,
-    created_by: str = None,
-    created_at: datetime.datetime = None,
+    valid_from: datetime.datetime | None = None,
+    valid_to: datetime.datetime | None = None,
+    assignation_id: str | None = None,
+    created_by: str | None = None,
+    created_at: datetime.datetime | None = None,
 ):
     """Associate a structure to an entity
 
@@ -1067,12 +1066,102 @@ def create_measurement(
             raise ValueError("No measurement created or returned by the query.")
 
 
+def delete_edge(
+    graph_name: str,
+    edge_id: int,
+):
+    """
+    Delete an edge by its ID.
+
+    Parameters:
+        graph_name (str): The name of the graph.
+        edge_id (int): The ID of the edge to delete.
+
+    Returns:
+        None
+    """
+
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""SELECT * FROM cypher(%s, $$
+                MATCH (a)-[r]->(b)
+                WHERE id(r) = %s
+                DELETE r
+            $$) AS (r agtype);
+            """,
+            (graph_name, int(edge_id)),
+        )
+
+        result = cursor.fetchone()
+        return None
+
+
+def delete_node(
+    graph_name: str,
+    node_id: int,
+):
+    """
+    Delete an edge by its ID.
+
+    Parameters:
+        graph_name (str): The name of the graph.
+        edge_id (int): The ID of the edge to delete.
+
+    Returns:
+        None
+    """
+
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""SELECT * FROM cypher(%s, $$
+                MATCH (a)
+                WHERE id(a) = %s
+                DELETE a
+            $$) AS (r agtype);
+            """,
+            (graph_name, int(node_id)),
+        )
+
+        result = cursor.fetchone()
+        return None
+
+
+def detach_delete_node(
+    graph_name: str,
+    node_id: int,
+):
+    """
+    Delete an edge by its ID.
+
+    Parameters:
+        graph_name (str): The name of the graph.
+        edge_id (int): The ID of the edge to delete.
+
+    Returns:
+        None
+    """
+
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""SELECT * FROM cypher(%s, $$
+                MATCH (a)
+                WHERE id(a) = %s
+                DETACH DELETE a
+            $$) AS (r agtype);
+            """,
+            (graph_name, int(node_id)),
+        )
+
+        result = cursor.fetchone()
+        return None
+
+
 def create_age_metric(
     metric_category: "models.MetricCategory",
     structure_id: str,
     value,
-    assignation_id: str = None,
-    created_by: str = None,
+    assignation_id: str | None = None,
+    created_by: str | None = None,
 ):
     with graph_cursor() as cursor:
         if isinstance(value, list):
@@ -1756,7 +1845,7 @@ def select_related_structure_metrics(
 ):
     with graph_cursor() as cursor:
         WHERE = "WHERE id(n)= %s"
-        
+
         if not pagination:
             pagination = GraphPaginationInput()
 
@@ -1779,7 +1868,6 @@ def select_related_structure_metrics(
 
         for result in cursor.fetchall():
             yield vertex_ag_to_retrieved_entity(graph_name, result[0])
-
 
 
 def select_all_relations(

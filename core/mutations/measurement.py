@@ -14,13 +14,11 @@ import re
 @strawberry.input
 class MeasurementInput:
     category: strawberry.ID
-    structure: scalars.NodeID 
+    structure: scalars.NodeID
     entity: scalars.NodeID
     valid_from: datetime.datetime | None = None
     valid_to: datetime.datetime | None = None
-    context: inputs.ContextInput | None = strawberry.field(
-        default=None, description="The context of the measurement"
-    )
+    context: inputs.ContextInput | None = strawberry.field(default=None, description="The context of the measurement")
 
 
 @strawberry.input
@@ -32,16 +30,14 @@ def create_measurement(
     info: Info,
     input: MeasurementInput,
 ) -> types.Measurement:
-
     input_kind = models.MeasurementCategory.objects.get(id=input.category)
 
     entity_graph_name = node_id_to_graph_name(input.entity)
     entity_id = node_id_to_graph_id(input.entity)
 
-    
     structure_graph_name = node_id_to_graph_name(input.structure)
     structure_id = node_id_to_graph_id(input.structure)
-    
+
     # Assert that the graph name is the same as the input kind
     assert entity_graph_name == structure_graph_name, f"Graph names do not match {entity_graph_name} != {structure_graph_name}"
 
@@ -63,5 +59,8 @@ def delete_measurement(
     info: Info,
     input: DeleteMeasurementInput,
 ) -> strawberry.ID:
-    raise NotImplementedError("Not implemented yet")
+    local_id = age.to_entity_id(input.id)
+    graph_name = age.to_graph_id(input.id)
+
+    measurement = age.delete_measurement(graph_name, measurement_id=input.id)
     return input.id

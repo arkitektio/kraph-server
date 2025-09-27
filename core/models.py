@@ -12,6 +12,7 @@ from core.fields import S3Field
 from core.datalayer import Datalayer
 from authentikate.models import Organization, Membership
 from polymorphic.models import PolymorphicModel
+
 # Create your models here.
 import boto3
 import json
@@ -80,6 +81,15 @@ class Graph(models.Model):
     to their name.s
 
     """
+
+    node_deletion_allowed = models.BooleanField(
+        default=True,
+        help_text="If node deletion is allowed in this graph",
+    )
+    edge_deletion_allowed = models.BooleanField(
+        default=True,
+        help_text="If node deletion is allowed in this graph",
+    )
     membership = models.ForeignKey(Membership, on_delete=models.CASCADE, related_name="graphs")
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="graphs")
     user = models.ForeignKey(
@@ -160,10 +170,6 @@ def random_color():
     return tuple(random.choice(levels) for _ in range(3))
 
 
-
-
-
-
 class GraphSequence(models.Model):
     """A node index for a category"""
 
@@ -240,8 +246,7 @@ class CategoryTag(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
-    
+
     class Meta:
         unique_together = ("graph", "value")
         default_related_name = "category_tags"
@@ -302,7 +307,7 @@ class Category(PolymorphicModel):
         get_user_model(),
         related_name="pinned_categories",
         help_text="The users that have this query active",
-    )   
+    )
     label = models.CharField(
         max_length=1000,
         help_text="The label of the node class",
@@ -629,6 +634,7 @@ class ReagentCategory(NodeCategory):
         null=True,
         blank=True,
     )
+
     def get_age_vertex_name(self):
         return self.age_name
 
@@ -670,9 +676,7 @@ class MetricCategory(NodeCategory):
         related_name="metric_categories",
         help_text="The structure category that this metric describes",
     )
-    
-    
-    
+
     def validate_input(self, value):
         if self.metric_kind == enums.MeasurementKindChoices.INT:
             try:
@@ -729,8 +733,7 @@ class RelationCategory(EdgeCategory):
         help_text="The description of category",
         null=True,
     )
-    
-    
+
     def get_age_edge_name(self):
         return self.age_name
 
@@ -749,7 +752,6 @@ class StructureRelationCategory(EdgeCategory):
         help_text="The description of category",
         null=True,
     )
-    
 
     def get_age_edge_name(self):
         return self.age_name
@@ -921,8 +923,8 @@ class ScatterPlot(models.Model):
         related_name="scatter_plots",
         help_text="The user that created the scatter plot",
     )
-    
-    
+
+
 class MaterializedEdge(models.Model):
     graph = models.ForeignKey(
         Graph,
