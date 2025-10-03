@@ -1,6 +1,6 @@
 import string
 from core import models, enums, age, inputs
-
+from authentikate.models import Organization
 
 def rebuild_graph(graph: models.Graph):
     for item in graph.entity_categories.all():
@@ -24,8 +24,10 @@ def clean_relation_string(text: str) -> str:
     return "".join(c for c in text if c in string.ascii_letters + "_")
 
 
-def build_graph_age_name(label: str) -> str:
-    return clean_string(label.replace(" ", "_").replace("-", "_")).lower()
+def build_graph_age_name(label: str, organization: Organization) -> str:
+    age_name =  clean_string(label.replace(" ", "_").replace("-", "_")).lower()
+    clean_slug = clean_string(organization.slug.replace(" ", "_").replace("-", "_")).lower()
+    return f"{clean_slug}_{age_name}"
 
 
 def build_entity_age_name(label: str) -> str:

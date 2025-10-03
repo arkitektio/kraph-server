@@ -123,6 +123,19 @@ class Graph(models.Model):
         related_name="pinned_graphs",
         help_text="The users that have this query active",
     )
+    
+    
+    
+    @classmethod
+    def create_age_name(cls, name: str, organization: Organization) -> str:
+        base_name = "".join(e for e in name if e.isalnum()).lower()
+        org_slug =  "".join(e for e in organization.slug if e.isalnum()).lower()
+        age_name = f"{base_name}_{org_slug}"
+        counter = 1
+        while cls.objects.filter(age_name=age_name, organization=organization).exists():
+            age_name = f"{base_name}_{org_slug}_{counter}"
+            counter += 1
+        return age_name
 
     @classmethod
     def get_active(cls, user):

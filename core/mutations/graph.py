@@ -78,7 +78,7 @@ def create_graph(
         media_store = None
 
     item, _ = models.Graph.objects.update_or_create(
-        age_name=manager.build_graph_age_name(input.name),
+        age_name=manager.build_graph_age_name(input.name, info.context.request.organization),
         defaults=dict(
             description=input.description or "",
             store=media_store,

@@ -21,6 +21,19 @@ from django.db.models import Q
 from authentikate.strawberry.types import Client, User
 import kante
 
+
+
+
+def build_prescoped_queryset(info, queryset, field="organization"):
+    print(info)
+    if info.variable_values.get("filters", {}).get("scope") is None:
+        queryset = queryset.filter(**{field: info.context.request.organization})
+        return queryset
+    
+    else:
+        raise Exception("Custom scopes not implemented yet")
+
+
 @strawberry.type(description="Temporary Credentials for a file upload that can be used by a Client (e.g. in a python datalayer)")
 class Credentials:
     """Temporary Credentials for a a file upload."""
@@ -253,6 +266,11 @@ class Graph:
     @strawberry_django.field()
     def pinned(self, info: Info) -> bool:
         return info.context.request.user in self.pinned_by.all()
+    
+    
+    @classmethod
+    def get_queryset(cls, queryset, info: Info):
+        return build_prescoped_queryset(info, queryset, field="organization")
 
 
 @strawberry_django.type(
