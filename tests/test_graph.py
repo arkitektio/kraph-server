@@ -16,6 +16,7 @@ async def test_graph(db, authenticated_context: HttpContext):
         description="This is a test model",
         user=authenticated_context.request.user,
         organization=authenticated_context.request.organization,
+        membership=authenticated_context.request.membership,
     )
 
     query = """
