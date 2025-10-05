@@ -129,6 +129,12 @@ class Query:
         description="Render a graph query",
     )
 
+    # stats
+    graph_stats: types.GraphStats = field(
+        resolver=types.GraphStatsResolver,
+        description="Stats about knowledge graphs",
+    )
+
     @field(permission_classes=[])
     def knowledge_views(self, info: Info, identifier: scalars.StructureIdentifier, object: strawberry.ID) -> List[types.KnowledgeView]:
         # filtered StructureCategory

@@ -20,8 +20,7 @@ from strawberry_django.pagination import OffsetPaginationInput
 from django.db.models import Q
 from authentikate.strawberry.types import Client, User
 import kante
-
-
+from .type_gen import create_stats_type
 
 
 def build_prescoped_queryset(info, queryset, field="organization"):
@@ -29,9 +28,16 @@ def build_prescoped_queryset(info, queryset, field="organization"):
     if info.variable_values.get("filters", {}).get("scope") is None:
         queryset = queryset.filter(**{field: info.context.request.organization})
         return queryset
-    
+
     else:
         raise Exception("Custom scopes not implemented yet")
+
+
+def build_prescoper(field="organization"):
+    def prescoper(queryset, info):
+        return build_prescoped_queryset(info, queryset, field=field)
+
+    return prescoper
 
 
 @strawberry.type(description="Temporary Credentials for a file upload that can be used by a Client (e.g. in a python datalayer)")
@@ -170,14 +176,11 @@ class MaterializedEdge:
     source: "NodeCategory"
     target: "NodeCategory"
     relation: "EdgeCategory"
-    
+
     @strawberry_django.field()
     def label(self, info: Info) -> str:
         return f"{self.source.label} -[{self.relation.label}]-> {self.target.label}"
-    
-    
-    
-    
+
 
 @strawberry_django.type(
     models.Graph,
@@ -206,13 +209,11 @@ class Graph:
     measurement_categories: List["MeasurementCategory"] = strawberry_django.field(description="The list of measurement exprdessions defined in this ontology")
     relation_categories: List["RelationCategory"] = strawberry_django.field(description="The list of relation expressions defined in this ontology")
     structure_relation_categories: List["StructureRelationCategory"] = strawberry_django.field(description="The list of structure relation expressions defined in this ontology")
-    
-    
+
     @strawberry_django.field()
     def materialized_edges(self, info: Info) -> List["MaterializedEdge"]:
         return list(models.MaterializedEdge.objects.filter(graph=self))
-    
-    
+
     @strawberry_django.field()
     def node_categories(
         self,
@@ -266,11 +267,21 @@ class Graph:
     @strawberry_django.field()
     def pinned(self, info: Info) -> bool:
         return info.context.request.user in self.pinned_by.all()
-    
-    
+
     @classmethod
     def get_queryset(cls, queryset, info: Info):
         return build_prescoped_queryset(info, queryset, field="organization")
+
+
+GraphStats, GraphStatsResolver = create_stats_type(
+    model=models.Graph,
+    filters=filters.GraphFilter,
+    allowed_fields={
+        "created_at": "created_at",
+    },
+    allowed_datetime_fields={"created_at": "created_at"},
+    prescope=build_prescoper(field="organization"),
+)
 
 
 @strawberry_django.type(
@@ -293,7 +304,7 @@ class GraphQuery:
         return info.context.request.user in self.pinned_by.all()
 
     @strawberry_django.field()
-    def render(self, info: Info, filters: inputs.GraphQueryFilters | None = None, pagination: inputs.GraphQueryPagination | None = None, order: inputs.GraphQueryOrder | None = None ) -> Union["Path", "Pairs", "Table", "NodeList"]:
+    def render(self, info: Info, filters: inputs.GraphQueryFilters | None = None, pagination: inputs.GraphQueryPagination | None = None, order: inputs.GraphQueryOrder | None = None) -> Union["Path", "Pairs", "Table", "NodeList"]:
         from core.renderers.graph.render import render_graph_query
 
         return render_graph_query(self, filters=filters, pagination=pagination, order=order)
@@ -340,7 +351,7 @@ class NodeQuery:
     kind: enums.ViewKind
     graph: Graph
     query: str
-   
+
     @strawberry_django.field()
     def columns(self, info) -> list[Column]:
         return [Column(**c) for c in self.columns] if self.columns else []
@@ -370,7 +381,10 @@ class NodeQueryView:
         return self._query
 
     @strawberry_django.field()
-    def render(self, info: Info,) -> Union["Path", "Pairs", "Table"]:
+    def render(
+        self,
+        info: Info,
+    ) -> Union["Path", "Pairs", "Table"]:
         from core.renderers.node.render import render_node_view
 
         return render_node_view(self._query, self._node_id)
@@ -386,31 +400,30 @@ class Node:
 
     def __hash__(self):
         return self._value.id
-    
+
     @strawberry_django.field(description="The unique identifier of the entity within its graph")
     def pinned(self, info: Info) -> bool:
         if not self._value.pinned_by:
             return False
-        
+
         if not info.context.request.user.is_authenticated:
             return False
-        
+
         if not hasattr(info.context.request.user, "id"):
             return False
-        
+
         if str(info.context.request.user.id) not in self._value.pinned_by:
             return False
-        
+
         return True
-    
+
     @strawberry_django.field(description="The unique identifier of the entity within its graph")
     def pinned_by(self, info: Info) -> list[User]:
         return loaders.user_loader.load_many(self._value.pinned_by) if self._value.pinned_by else []
-    
+
     @strawberry_django.field(description="The unique identifier of the entity within its graph")
     def tags(self, info: Info) -> list[str]:
         return self._value.tags if self._value.tags else []
-    
 
     @strawberry_django.field(description="The unique identifier of the entity within its graph")
     def external_id(self, info: Info) -> str | None:
@@ -533,10 +546,7 @@ class Structure(Node):
 
     @strawberry_django.field(description="The expression that defines this entity's type")
     def metrics(self, pagination: pagination.GraphPaginationInput | None = None) -> List["Metric"]:
-        
         return [Metric(_value=x) for x in age.select_related_structure_metrics(self._value.graph_name, self._value.id, pagination=pagination)]
-        
-        
 
     @strawberry.field(description="The unique identifier of the entity within its graph")
     def measures(self, info: Info) -> List["Entity"]:
@@ -717,11 +727,11 @@ class ProtocolEvent(Node):
     @strawberry_django.field(description="Protocol steps where this entity was the target")
     async def category(self) -> "ProtocolEventCategory":
         return await loaders.protocol_event_category_loader.load(self._value.category_id)
-    
+
     @strawberry_django.field(description="Protocol steps where this entity was the target")
     def source_participants(self) -> list["Participant"]:
         return [Participant(_value=x) for x in self._value.retrieve_left_relations()]
-    
+
     @strawberry_django.field(description="Protocol steps where this entity was the target")
     def target_participants(self) -> list["Participant"]:
         return [Participant(_value=x) for x in self._value.retrieve_right_relations()]
@@ -1018,10 +1028,10 @@ class EntityCategoryDefinition(CategoryDefintion):
             querysets = querysets.exclude(category__id=i)
 
         return querysets.all()
-    
+
     @strawberry_django.field()
     async def default_use_new(self, info) -> Optional["EntityCategory"]:
-        """ The default entity category to use when creating a new entity with this role definition."""
+        """The default entity category to use when creating a new entity with this role definition."""
         cat_def = self._value.get("default_use_new", None)
         return await loaders.entity_category_loader.load(cat_def) if cat_def else None
 
