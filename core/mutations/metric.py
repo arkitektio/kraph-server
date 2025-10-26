@@ -10,7 +10,7 @@ from core import types, models, age, inputs, scalars, enums, manager
 import uuid
 import datetime
 import re
-
+from koherent.vars import get_current_assignation_id
 
 @strawberry.input
 class MetricInput:
@@ -95,8 +95,10 @@ def create_structure_metric(info: Info, input: StructureMetricInput) -> types.Me
         metric_category,
         structure_id=structure.id,
         value=metric_category.validate_input(input.value),
-        assignation_id=None,
-        created_by=info.context.request.user.id,
+        assignation_id=get_current_assignation_id(),
+        created_by=info.context.request.user.sub,
+        created_app=info.context.request.client.client_id if info.context.request.client else None,
+        
     )
 
     return types.entity_to_node_subtype(value)

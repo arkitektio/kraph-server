@@ -695,6 +695,18 @@ class Metric(Node):
     @strawberry_django.field(description="The value of the metric")
     async def value(self) -> str:
         return str(self._value.value)
+    
+    @strawberry_django.field(description="The unit of the metric")
+    async def created_by(self) -> str | None:
+        return str(self._value.created_by) if self._value.created_by else None
+
+    @strawberry_django.field(description="The unit of the metric")
+    async def created_app(self) -> str | None:
+        return str(self._value.created_app) if self._value.created_app else None
+
+    @strawberry_django.field(description="The unit of the metric")
+    async def created_through(self) -> str | None:
+        return str(self._value.created_through) if self._value.created_through else None
 
 
 @strawberry.type(

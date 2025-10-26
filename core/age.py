@@ -61,6 +61,19 @@ class RetrievedEntity:
             return from_epoch_millis(valid_from)
         return None
 
+
+    @property
+    def created_by(self):
+        return self.properties.get("created_by", None)
+
+    @property
+    def created_app(self):
+        return self.properties.get("created_app", None)
+    
+    @property 
+    def created_through(self):
+        return self.properties.get("created_through", None)
+
     @property
     def pinned_by(self):
         return self.properties.get("pinned_by", [])
@@ -1162,6 +1175,7 @@ def create_age_metric(
     value,
     assignation_id: str | None = None,
     created_by: str | None = None,
+    created_app: str | None = None,
 ):
     with graph_cursor() as cursor:
         if isinstance(value, list):
@@ -1170,7 +1184,7 @@ def create_age_metric(
         cursor.execute(
             f"""SELECT * FROM cypher(%s, $$
                 MATCH (a) WHERE id(a) = %s
-                CREATE (b: {metric_category.get_age_vertex_name()} {{type: "METRIC", category_type: %s, category_id: %s, value: %s, created_at: %s, created_by: %s, created_through: %s}})
+                CREATE (b: {metric_category.get_age_vertex_name()} {{type: "METRIC", category_type: %s, category_id: %s, value: %s, created_at: %s, created_by: %s, created_through: %s, created_app: %s}})
                 CREATE (b)-[r:DESCRIBES {{type: "DESCRIPTION"}}]->(a)
                 RETURN b
             $$) AS (r agtype);
@@ -1184,6 +1198,7 @@ def create_age_metric(
                 datetime.datetime.now().isoformat(),
                 created_by,
                 assignation_id,
+                created_app,
             ),
         )
         result = cursor.fetchone()
@@ -1853,7 +1868,7 @@ def select_related_structure_metrics(
             f"""
             SELECT * 
             FROM cypher(%s, $$
-                MATCH (n) <- [:DESCRIBES] - (m)
+                MATCH (n) <-[:DESCRIBES]- (m)
                 {WHERE}
                 RETURN m
                 SKIP %s
@@ -1863,8 +1878,6 @@ def select_related_structure_metrics(
             [graph_name, int(node_id), pagination.offset or 0, pagination.limit or 200],
         )
 
-        if cursor.rowcount == 0:
-            return []
 
         for result in cursor.fetchall():
             yield vertex_ag_to_retrieved_entity(graph_name, result[0])

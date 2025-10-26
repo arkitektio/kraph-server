@@ -123,13 +123,11 @@ class Graph(models.Model):
         related_name="pinned_graphs",
         help_text="The users that have this query active",
     )
-    
-    
-    
+
     @classmethod
     def create_age_name(cls, name: str, organization: Organization) -> str:
         base_name = "".join(e for e in name if e.isalnum()).lower()
-        org_slug =  "".join(e for e in organization.slug if e.isalnum()).lower()
+        org_slug = "".join(e for e in organization.slug if e.isalnum()).lower()
         age_name = f"{base_name}_{org_slug}"
         counter = 1
         while cls.objects.filter(age_name=age_name, organization=organization).exists():
@@ -326,10 +324,46 @@ class Category(PolymorphicModel):
         help_text="The label of the node class",
         null=True,
     )
+    ports = models.JSONField(
+        help_text="The ports of the node class ssin the graph (if a node)",
+        default=list,
+        null=True,
+    )
 
     class Meta:
         default_related_name = "categories"
         unique_together = ("graph", "age_name")
+
+
+class Descriptor(models.Model):
+    """A descriptor for a category"""
+
+    category = models.ForeignKey(
+        Category,
+        on_delete=models.CASCADE,
+        related_name="descriptors",
+        help_text="The category this descriptor belongs to",
+    )
+
+    name = models.CharField(
+        max_length=1000,
+        help_text="The name of the descriptor",
+    )
+    description = models.CharField(
+        max_length=1000,
+        help_text="The description of the descriptor",
+        null=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    value = models.CharField(
+        max_length=1000,
+        help_text="The value of the descriptor",
+    )
+
+    class Meta:
+        unique_together = ("category", "name")
+        default_related_name = "descriptors"
 
 
 class NodeCategory(Category):

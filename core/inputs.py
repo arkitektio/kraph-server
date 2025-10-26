@@ -5,6 +5,7 @@ from strawberry import ID
 import strawberry
 import pydantic
 import datetime
+from rekuest_core.inputs.types import PortInput
 
 
 @strawberry.input
@@ -295,6 +296,10 @@ class CategoryInput:
         default=False,
         description="Whether to create a sequence if it does not exist",
     )
+    ports: list[PortInput] | None = strawberry.field(
+        default=None,
+        description="A list of ports for this category",
+    )
 
 
 @strawberry.input()
@@ -331,8 +336,8 @@ class GraphQueryPagination:
 
 @strawberry.input
 class GraphQueryOrder:
-    field:  Optional[str] = None
-    direction:  Optional[str] = None
+    field: Optional[str] = None
+    direction: Optional[str] = None
 
 
 @strawberry.input
@@ -350,5 +355,5 @@ class NodeQueryPagination:
 
 @strawberry.input
 class NodeQueryOrder:
-    field:  Optional[str] = None
-    direction:  Optional[str] = None
+    field: Optional[str] = None
+    direction: Optional[str] = None
