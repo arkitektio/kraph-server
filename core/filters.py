@@ -507,83 +507,75 @@ class GraphQueryFilter(IDFilterMixin, SearchFilterMixin):
     id: auto
     pinned: bool | None = None
     kind: enums.ViewKind | None = None
+    graph: strawberry.ID | None = None
+
+    def filter_graph(self, queryset, info):
+        if self.graph is None:
+            return queryset
+        return queryset.filter(graph_id=self.graph)
 
     def filter_pinned(self, queryset, info):
         if self.pinned is None:
             return queryset
         return queryset.filter(pinned_by=info.context.request.user)
-    
+
     def filter_kind(self, queryset, info):
         if self.kind is None:
             return queryset
         return queryset.filter(kind=self.kind)
 
 
-
-
-
 @strawberry_django.filter(models.MaterializedEdge, description="Input for creating a new expression")
 class MaterializedEdgeFilter(IDFilterMixin):
     source: strawberry.ID | None
-    source_identifier: str | None 
-    target: strawberry.ID | None 
-    target_identifier: str | None 
-    relation: strawberry.ID | None 
+    source_identifier: str | None
+    target: strawberry.ID | None
+    target_identifier: str | None
+    relation: strawberry.ID | None
     search: str | None
     pinned_graph: bool | None
-    
-    
+
     def filter_search(self, queryset, info):
         if self.search is None or self.search == "":
             return queryset
         return queryset.filter(relation__label__contains=self.search)
-    
-    
+
     def filter_pinned_graph(self, queryset, info):
         if self.pinned_graph is None:
             return queryset
         return queryset.filter(source__graph__pinned_by=info.context.request.user)
-    
+
     def filter_source(self, queryset, info):
         if self.source is None:
             return queryset
         return queryset.filter(source_id=self.source)
-    
+
     def filter_target(self, queryset, info):
         if self.target is None:
             return queryset
         return queryset.filter(target_id=self.target)
-    
-    
+
     def filter_source_identifier(self, queryset, info):
         if self.source_identifier is None:
             return queryset
-        
+
         try:
             category = models.StructureCategory.objects.get(identifier=self.source_identifier)
         except models.StructureCategory.DoesNotExist:
             return queryset.none()
-        
-        
+
         return queryset.filter(source=category)
-    
-    
+
     def filter_target_identifier(self, queryset, info):
         if self.target_identifier is None:
             return queryset
 
-        try: 
+        try:
             category = models.StructureCategory.objects.get(identifier=self.target_identifier)
         except models.StructureCategory.DoesNotExist:
             return queryset.none()
-        
-        
+
         return queryset.filter(target=category)
-                                          
-
-
-
-
 
 
 @strawberry_django.filter(models.ScatterPlot)
@@ -724,7 +716,3 @@ class StructureRelationFilter(EdgeFilter):
 @strawberry.input(description="Filter for entity relations in the graph")
 class MeasurementFilter(EdgeFilter):
     kind: strawberry.ID | None = strawberry.field(default=None, description="Filter by relation kind")
-
-
-
-                                          

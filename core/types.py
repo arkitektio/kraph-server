@@ -695,7 +695,7 @@ class Metric(Node):
     @strawberry_django.field(description="The value of the metric")
     async def value(self) -> str:
         return str(self._value.value)
-    
+
     @strawberry_django.field(description="The unit of the metric")
     async def created_by(self) -> str | None:
         return str(self._value.created_by) if self._value.created_by else None
@@ -1487,6 +1487,12 @@ class Pairs:
 @strawberry.type(description="A column in a table.")
 class NodeList:
     nodes: list[Node] = strawberry.field(description="The nodes in the list.")
+    graph: Graph = strawberry.field(description="The graph this list was queried from.")
+
+
+@strawberry.type(description="A column in a table.")
+class MetricTable:
+    metrics: list[list["Metric"]] = strawberry.field(description="The metrics in the table.")
     graph: Graph = strawberry.field(description="The graph this list was queried from.")
 
 
