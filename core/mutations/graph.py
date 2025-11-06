@@ -152,6 +152,24 @@ def delete_graph(
         age.delete_age_graph(item.age_name)
     except Exception as e:
         print("Error deleting AGE graph:", e)
+    
+    # Explicitly delete polymorphic categories to avoid cascade issues
+    # Delete in order: first edges, then nodes
+    try:
+        # Delete edge categories first
+        models.MeasurementCategory.objects.filter(graph=item).delete()
+        models.RelationCategory.objects.filter(graph=item).delete()
+        models.StructureRelationCategory.objects.filter(graph=item).delete()
+        
+        # Then delete node categories
+        models.MetricCategory.objects.filter(graph=item).delete()
+        models.EntityCategory.objects.filter(graph=item).delete()
+        models.ReagentCategory.objects.filter(graph=item).delete()
+        models.StructureCategory.objects.filter(graph=item).delete()
+        models.ProtocolEventCategory.objects.filter(graph=item).delete()
+        models.NaturalEventCategory.objects.filter(graph=item).delete()
+    except Exception as e:
+        print("Error deleting categories:", e)
         
     item.delete()
 

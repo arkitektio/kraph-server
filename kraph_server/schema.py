@@ -578,6 +578,7 @@ class Mutation:
         resolver=mutations.delete_scatter_plot,
         description="Delete an existing scatter plot",
     )
+    upload_scatter_plot = mutation(resolver=mutations.update_scatter_plot, description="Update a new scatter plot")
 
     record_natural_event = mutation(
         resolver=mutations.record_natural_event,
@@ -656,6 +657,7 @@ class Mutation:
 
     create_graph_query = mutation(resolver=mutations.create_graph_query, description="Create a new graph query")
     update_graph_query = mutation(resolver=mutations.update_graph_query, description="Update an existing graph query")
+    delete_graph_query = mutation(resolver=mutations.delete_graph_query, description="Delete graph query")
 
     pin_graph_query = mutation(resolver=mutations.pin_graph_query, description="Pin or unpin a graph query")
 
