@@ -581,6 +581,12 @@ class MaterializedEdgeFilter(IDFilterMixin):
 @strawberry_django.filter(models.ScatterPlot)
 class ScatterPlotFilter(IDFilterMixin, SearchFilterMixin):
     id: auto
+    graph: strawberry.ID | None
+
+    def filter_graph(self, queryset, info):
+        if self.graph is None:
+            return queryset
+        return queryset.filter(query__graph_id=self.graph)
 
 
 @strawberry_django.filter(models.NodeQuery)

@@ -325,7 +325,7 @@ class GraphQuery:
     description="A scatter plot of a table graph, that contains entities and relations.",
 )
 class ScatterPlot:
-    graph: GraphQuery
+    query: GraphQuery
     id: auto
     name: str
     description: str | None
