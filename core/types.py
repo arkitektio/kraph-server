@@ -284,6 +284,32 @@ GraphStats, GraphStatsResolver = create_stats_type(
 )
 
 
+@strawberry.type
+class WhereClause:
+    path: strawberry.ID = strawberry.field(description="The path ID to apply the where clause to")
+    node: strawberry.ID | None = strawberry.field(default=None, description="The node ID to apply the where clause to")
+    property: str = strawberry.field(description="The property name to apply the where clause to")
+    operator: enums.WhereOperator = strawberry.field(description="The operator to use for filtering")
+    value: scalars.CypherLiteral = strawberry.field(description="The value to compare against")
+
+
+@strawberry.type
+class ReturnStatement:
+    path: strawberry.ID = strawberry.field(description="The path ID to return")
+    node: strawberry.ID | None = strawberry.field(default=None, description="The node ID to return")
+    property: str | None = strawberry.field(default=None, description="The property name to return")
+
+
+@strawberry.type
+class MatchPath:
+    nodes: list[strawberry.ID] = strawberry.field(description="List of node IDs to match")
+    relations: list[strawberry.ID] = strawberry.field(description="List of relation IDs to match")
+    optional: bool = strawberry.field(default=False, description="Whether the path match is optional")
+    title: str | None = strawberry.field(default=None, description="Title for the matched path")
+    color: list[float] | None = strawberry.field(default=None, description="Color for the matched path as RGB values")
+    relation_directions: list[bool] | None = strawberry.field(default=None, description="List of relation directions for the matched path")
+
+
 @strawberry_django.type(
     models.GraphQuery,
     filters=filters.GraphQueryFilter,
@@ -312,6 +338,18 @@ class GraphQuery:
     @strawberry_django.field()
     def columns(self, info) -> list[Column]:
         return [Column(**c) for c in self.columns]
+
+    @strawberry_django.field()
+    def matches(self, info) -> list[MatchPath]:
+        return [MatchPath(**c) for c in self.matches]
+
+    @strawberry_django.field()
+    def returns(self, info) -> list[ReturnStatement]:
+        return [ReturnStatement(**c) for c in self.returns]
+
+    @strawberry_django.field()
+    def wheres(self, info) -> list[WhereClause]:
+        return [WhereClause(**c) for c in self.wheres]
 
     @strawberry_django.field()
     def relevant_for(self, info) -> list["BaseCategory"]:

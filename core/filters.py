@@ -508,6 +508,12 @@ class GraphQueryFilter(IDFilterMixin, SearchFilterMixin):
     pinned: bool | None = None
     kind: enums.ViewKind | None = None
     graph: strawberry.ID | None = None
+    relevant_for: strawberry.ID | None = None
+
+    def filter_relevant_for(self, queryset, info):
+        if self.relevant_for is None:
+            return queryset
+        return queryset.filter(relevant_for=self.relevant_for)
 
     def filter_graph(self, queryset, info):
         if self.graph is None:

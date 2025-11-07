@@ -4,8 +4,7 @@ import strawberry
 
 ArrayLike = strawberry.scalar(
     NewType("ArrayLike", str),
-    description="The `ArrayLike` scalar type represents a reference to a store "
-    "previously created by the user n a datalayer",
+    description="The `ArrayLike` scalar type represents a reference to a store previously created by the user n a datalayer",
     serialize=lambda v: v,
     parse_value=lambda v: v,
 )
@@ -32,10 +31,17 @@ Cypher = strawberry.scalar(
     parse_value=lambda v: v,
 )
 
+CypherLiteral = strawberry.scalar(
+    NewType("CypherLiteral", str),
+    description="The `Cypher` scalar type represents a cypher query",
+    serialize=lambda v: v,
+    parse_value=lambda v: v,
+)
+
+
 FileLike = strawberry.scalar(
     NewType("FileLike", str),
-    description="The `FileLike` scalar type represents a reference to a big file"
-    " storage previously created by the user n a datalayer",
+    description="The `FileLike` scalar type represents a reference to a big file storage previously created by the user n a datalayer",
     serialize=lambda v: v,
     parse_value=lambda v: v,
 )
@@ -50,8 +56,7 @@ RemoteUpload = strawberry.scalar(
 
 ParquetLike = strawberry.scalar(
     NewType("ParquetLike", str),
-    description="The `ParquetLike` scalar type represents a reference to a parquet"
-    " objected stored previously created by the user on a datalayer",
+    description="The `ParquetLike` scalar type represents a reference to a parquet objected stored previously created by the user on a datalayer",
     serialize=lambda v: v,
     parse_value=lambda v: v,
 )
@@ -66,8 +71,7 @@ Matrix = strawberry.scalar(
 
 MikroStore = strawberry.scalar(
     NewType("MikroStore", str),
-    description="The `MikroStore` scalar type represents a matrix values "
-    "as specified by",
+    description="The `MikroStore` scalar type represents a matrix values as specified by",
     serialize=lambda v: v,
     parse_value=lambda v: v,
 )
@@ -81,16 +85,14 @@ Milliseconds = strawberry.scalar(
 
 Micrometers = strawberry.scalar(
     NewType("Micrometers", float),
-    description="The `Micrometers` scalar type represents a matrix values"
-    "as specified by",
+    description="The `Micrometers` scalar type represents a matrix valuesas specified by",
     serialize=lambda v: v,
     parse_value=lambda v: v,
 )
 
 Microliters = strawberry.scalar(
     NewType("Microliters", float),
-    description="The `Microliters` scalar type represnts a volume of liquid"
-    "as specified by",
+    description="The `Microliters` scalar type represnts a volume of liquidas specified by",
     serialize=lambda v: v,
     parse_value=lambda v: v,
 )
@@ -105,8 +107,7 @@ Micrograms = strawberry.scalar(
 
 FourByFourMatrix = strawberry.scalar(
     NewType("FourByFourMatrix", object),
-    description="The `FourByFourMatrix` scalar type represents a matrix"
-    " values as specified by",
+    description="The `FourByFourMatrix` scalar type represents a matrix values as specified by",
     serialize=lambda v: v,
     parse_value=lambda v: v,
 )
@@ -191,4 +192,3 @@ NodeID = strawberry.scalar(
     serialize=lambda v: v,
     parse_value=lambda v: v,
 )
-

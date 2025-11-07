@@ -843,6 +843,21 @@ class GraphQuery(models.Model):
         related_name="relevant_graph_queries",
         help_text="The expression that this query should be mostly used for",
     )
+    returns = models.JSONField(
+        help_text="The returns of the query",
+        default=list,
+        null=True,
+    )
+    matches = models.JSONField(
+        help_text="The matches of the query",
+        default=list,
+        null=True,
+    )
+    wheres = models.JSONField(
+        help_text="The wheres of the query",
+        default=list,
+        null=True,
+    )
 
     @property
     def input_columns(self):

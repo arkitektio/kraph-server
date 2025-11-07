@@ -10,13 +10,42 @@ from core.renderers.graph import render
 
 
 @strawberry.input(description="Input for creating a new expression")
+class MatchPathInput:
+    nodes: list[strawberry.ID] = strawberry.field(description="List of node IDs to match")
+    relations: list[strawberry.ID] = strawberry.field(description="List of node IDs representing the path")
+    optional: bool = strawberry.field(default=False, description="Whether the path match is optional")
+    title: str | None = strawberry.field(default=None, description="Title for the matched path")
+    color: list[float] | None = strawberry.field(default=None, description="Color for the matched path as RGB values")
+    relation_directions: list[bool] | None = strawberry.field(
+        default=None,
+        description="List of booleans indicating the direction of each relationship in the path (True for outgoing, False for incoming)",
+    )
+
+
+@strawberry.input(description="Input for updating an existing expression")
+class WhereClauseInput:
+    path: strawberry.ID = strawberry.field(description="The path ID to apply the where clause to")
+    node: strawberry.ID | None = strawberry.field(default=None, description="The node ID to apply the where clause to")
+    property: str = strawberry.field(description="The property name to filter on")
+    operator: enums.WhereOperator = strawberry.field(description="The operator to use for filtering")
+    value: scalars.CypherLiteral = strawberry.field(description="The value to compare against")
+
+
+@strawberry.input
+class ReturnInput:
+    path: strawberry.ID = strawberry.field(description="The path ID to return")
+    node: strawberry.ID | None = strawberry.field(default=None, description="The node ID to return")
+    property: str | None = strawberry.field(default=None, description="The property name to return")
+
+
+@strawberry.input(description="Input for creating a new expression")
 class GraphQueryInput:
     graph: strawberry.ID = strawberry.field(
         default=None,
         description="The ID of the ontology this expression belongs to. If not provided, uses default ontology",
     )
     name: str = strawberry.field(description="The label/name of the expression")
-    query: scalars.Cypher = strawberry.field(description="The label/name of the expression")
+    query: scalars.Cypher = strawberry.field(default=None, description="The label/name of the expression")
     description: str | None = strawberry.field(default=None, description="A detailed description of the expression")
     kind: enums.ViewKind = strawberry.field(default=None, description="The kind/type of this expression")
     columns: list[inputs.ColumnInput] | None = strawberry.field(default=None, description="The columns (if ViewKind is Table)")
@@ -31,6 +60,18 @@ class GraphQueryInput:
     check_exists: bool = strawberry.field(
         default=True,
         description="If true, will check that the query can be rendered. If false, will skip this check.",
+    )
+    matches: list[MatchPathInput] | None = strawberry.field(
+        default=None,
+        description="List of paths to match in the query",
+    )
+    wheres: list[WhereClauseInput] | None = strawberry.field(
+        default=None,
+        description="List of where clauses to apply to the query",
+    )
+    returns: list[ReturnInput] | None = strawberry.field(
+        default=None,
+        description="List of return statements for the query",
     )
 
 
@@ -84,6 +125,15 @@ def create_graph_query(
         else:
             graph_query.pinned_by.remove(info.context.request.user)
 
+    if input.matches is not None:
+        graph_query.matches = [strawberry.asdict(m) for m in input.matches]
+
+    if input.wheres is not None:
+        graph_query.wheres = [strawberry.asdict(w) for w in input.wheres]
+
+    if input.returns is not None:
+        graph_query.returns = [strawberry.asdict(r) for r in input.returns]
+
     return graph_query
 
 
@@ -112,6 +162,15 @@ def update_graph_query(info: Info, input: UpdateGraphQueryInput) -> types.GraphQ
             item.pinned_by.add(info.context.request.user)
         else:
             item.pinned_by.remove(info.context.request.user)
+
+    if input.matches is not None:
+        item.matches = [strawberry.asdict(m) for m in input.matches]
+
+    if input.wheres is not None:
+        item.wheres = [strawberry.asdict(w) for w in input.wheres]
+
+    if input.returns is not None:
+        item.returns = [strawberry.asdict(r) for r in input.returns]
 
     item.save()
     return item
