@@ -566,22 +566,22 @@ class MaterializedEdgeFilter(IDFilterMixin):
             return queryset
 
         try:
-            category = models.StructureCategory.objects.get(identifier=self.source_identifier)
+            categories = models.StructureCategory.objects.filter(identifier=self.source_identifier)
         except models.StructureCategory.DoesNotExist:
             return queryset.none()
 
-        return queryset.filter(source=category)
+        return queryset.filter(source__in=categories)
 
     def filter_target_identifier(self, queryset, info):
         if self.target_identifier is None:
             return queryset
 
         try:
-            category = models.StructureCategory.objects.get(identifier=self.target_identifier)
+            categories = models.StructureCategory.objects.filter(identifier=self.target_identifier)
         except models.StructureCategory.DoesNotExist:
             return queryset.none()
 
-        return queryset.filter(target=category)
+        return queryset.filter(target__in=categories)
 
 
 @strawberry_django.filter(models.ScatterPlot)
