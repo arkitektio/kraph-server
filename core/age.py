@@ -194,7 +194,7 @@ class RetrievedRelation:
     @property
     def category_type(
         self,
-    ) -> typing.Literal["MEASUREMENT", "RELATION", "PARTICIPANT", "DESCRIPTION"]:
+    ) -> typing.Literal["MEASUREMENT", "RELATION", "PARTICIPANT", "DESCRIPTION", "EDITED"]:
         return self.properties.get("type", None)
 
     @property
@@ -1882,12 +1882,7 @@ def select_paired_entities(
             yield vertex_ag_to_retrieved_entity(graph_name, result[0]), vertex_ag_to_retrieved_entity(graph_name, result[1]), edge_ag_to_retrieved_relation(graph_name, result[2])
 
 
-def set_entity_variable(
-    graph_name: str,
-    node_id: int,
-    variable_name: str,
-    variable_value: typing.Union[str, int, float, bool],
-) -> RetrievedEntity:
+def set_entity_variable(graph_name: str, node_id: int, variable_name: str, variable_value: typing.Union[str, int, float, bool], created_by: str | None = None) -> RetrievedEntity:
     with graph_cursor() as cursor:
         cursor.execute(
             f"""
@@ -1902,6 +1897,21 @@ def set_entity_variable(
         )
         result = cursor.fetchone()
         if result:
+            # Always create an edit event for provenance logging
+            cursor.execute(
+                f"""
+                SELECT * 
+                FROM cypher(%s, $$
+                    MATCH (a) WHERE id(a) = %s
+                    CREATE (b:EditEvent {{type: "EDIT_EVENT", created_by: %s, new_value: %s, variable_name: %s, created_at: %s}})
+                    CREATE (a)-[r:EDITED {{type: "EDITED"}}]->(b)
+                    RETURN r
+                $$) as (r agtype);
+                """,
+                (graph_name, int(node_id), created_by, str(variable_value), variable_name, datetime.datetime.now().isoformat()),
+            )
+            print(cursor.fetchone())
+
             entity = result[0]
             return vertex_ag_to_retrieved_entity(graph_name, entity)
         else:

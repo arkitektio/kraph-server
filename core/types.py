@@ -131,7 +131,7 @@ class GraphSequence:
 
 def entity_to_node_subtype(
     entity: age.RetrievedEntity,
-) -> Union["Structure", "Entity", "Metric", "NaturalEvent", "ProtocolEvent", "Reagent"]:
+) -> Union["Structure", "Entity", "Metric", "NaturalEvent", "ProtocolEvent", "Reagent", "EditEvent"]:
     match entity.category_type:
         case "STRUCTURE":
             return Structure(_value=entity)
@@ -145,11 +145,13 @@ def entity_to_node_subtype(
             return NaturalEvent(_value=entity)
         case "PROTOCOL_EVENT":
             return ProtocolEvent(_value=entity)
+        case "EDIT_EVENT":
+            return EditEvent(_value=entity)
 
 
 def relation_to_edge_subtype(
     relation: age.RetrievedRelation,
-) -> Union["Measurement", "Relation", "Participant", "Description", "StructureRelation"]:
+) -> Union["Measurement", "Relation", "Participant", "Description", "StructureRelation", "Edited"]:
     match relation.category_type:
         case "MEASUREMENT":
             return Measurement(_value=relation)
@@ -161,6 +163,8 @@ def relation_to_edge_subtype(
             return Description(_value=relation)
         case "STRUCTURE_RELATION":
             return StructureRelation(_value=relation)
+        case "EDITED":
+            return Edited(_value=relation)
 
     raise Exception(f"Unknown relation type {relation.category_type} for {relation}")
 
@@ -792,6 +796,18 @@ class NaturalEvent(Node):
 @strawberry.type(
     description="A Metric is a recorded data point in a graph. It always describes a structure and through the structure it can bring meaning to the measured entity. It can measure a property of an entity through a direct measurement edge, that connects the entity to the structure. It of course can relate to other structures through relation edges."
 )
+class EditEvent(Node):
+    def __hash__(self):
+        return self._value.id
+
+    @strawberry_django.field(description="Protocol steps where this entity was the target")
+    async def param(self) -> str:
+        return "my_chosen_param"
+
+
+@strawberry.type(
+    description="A Metric is a recorded data point in a graph. It always describes a structure and through the structure it can bring meaning to the measured entity. It can measure a property of an entity through a direct measurement edge, that connects the entity to the structure. It of course can relate to other structures through relation edges."
+)
 class ProtocolEvent(Node):
     def __hash__(self):
         return self._value.id
@@ -988,6 +1004,15 @@ class Participant(Edge):
     @strawberry_django.field(description="Timestamp from when this entity is valid")
     def role(self, info: Info) -> str:
         return self._value.role
+
+
+@strawberry.type(
+    description="""A participant edge maps bioentitiy to an event (valid from is not necessary)
+                 """
+)
+class Edited(Edge):
+    def __hash__(self):
+        return self._value.id
 
 
 @strawberry.type(

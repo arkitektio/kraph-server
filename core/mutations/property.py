@@ -24,11 +24,14 @@ def set_node_property(
     info: Info,
     input: SetNodePropertyInput,
 ) -> types.Node:
+    user_id = str(info.context.request.user.id) if info.context.request.user and hasattr(info.context.request.user, "id") else None
+
     retrieved_entity = age.set_entity_variable(
         node_id_to_graph_name(input.entity),
         node_id_to_graph_id(input.entity),
         input.variable,
         input.value,
+        created_by=user_id,
     )
 
     return types.entity_to_node_subtype(retrieved_entity)

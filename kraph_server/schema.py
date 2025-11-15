@@ -697,7 +697,9 @@ schema = strawberry.Schema(
     types=[
         types.Entity,
         types.Edge,
+        types.Edited,
         types.Node,
+        types.EditEvent,
         types.Structure,
         types.Metric,
         types.ProtocolEvent,

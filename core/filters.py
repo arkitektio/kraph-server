@@ -1,6 +1,6 @@
 import datetime
 import strawberry
-from core import models, enums
+from core import models, enums, scalars
 from strawberry import auto
 from typing import Optional
 from strawberry_django.filters import FilterLookup
@@ -626,6 +626,13 @@ class ReagentFilter:
     active: bool | None = strawberry.field(default=None, description="Filter by active status")
 
 
+@strawberry.input
+class PropertyMatch:
+    key: str = strawberry.field(description="The property matching")
+    operator: enums.WhereOperator = strawberry.field(description="The operator to use")
+    value: scalars.Any = strawberry.field(description="THe value to filter agains")
+
+
 @strawberry.input(description="Filter for entities in the graph")
 class NodeFilter:
     graph: strawberry.ID | None = strawberry.field(default=None, description="Filter by graph ID")
@@ -635,6 +642,7 @@ class NodeFilter:
     identifier: str | None = strawberry.field(default=None, description="Filter by structure identifier")
     object: strawberry.ID | None = strawberry.field(default=None, description="Filter by associated object ID")
     search: str | None = strawberry.field(default=None, description="Search entities by text")
+    property_matches: list[PropertyMatch] | None = strawberry.field(default=None, description="Property matches that should or should not hold true")
 
 
 @strawberry.input(description="Filter for entity relations in the graph")
@@ -672,6 +680,7 @@ class NodeFilter:
     ids: list[strawberry.ID] | None = strawberry.field(default=None, description="Filter by list of relation IDs")
     linked_expression: strawberry.ID | None = strawberry.field(default=None, description="Filter by linked expression ID")
     search: str | None = strawberry.field(default=None, description="Search relations by text")
+    property_matches: list[PropertyMatch] | None = strawberry.field(default=None, description="Property matches that should or should not hold true")
 
 
 @strawberry.input(description="Filter for entity relations in the graph")
