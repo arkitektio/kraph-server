@@ -461,6 +461,10 @@ class Node:
     async def properties(self) -> scalars.Any:
         return self._value.retrieve_properties()
 
+    @strawberry_django.field(description="Property List")
+    async def property_list(self) -> List[Property]:
+        return [Property(_value=v) for v in self._value.get_all_properties()]
+
     @strawberry_django.field(description="The variables")
     async def property(self, key: str) -> Property:
         return Property(_value=self._value.get_variable(key))

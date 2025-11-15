@@ -54,6 +54,9 @@ class RetrievedVariable:
     key: str
 
 
+RESERVED_KEYWORDS = ["sequence", "type", "category_id", "created_at", "id", "labels", "category_type"]
+
+
 @dataclass
 class RetrievedEntity:
     graph_name: str
@@ -107,10 +110,17 @@ class RetrievedEntity:
     def tags(self):
         return self.properties.get("tags", None)
 
+    @property
+    def cleaned_properties(self):
+        return {key: value for key, value in self.properties.items() if key not in RESERVED_KEYWORDS}
+
     def get_variable(self, key) -> RetrievedVariable:
-        value = self.properties.get("key", None)
+        value = self.cleaned_properties.get(key, None)
 
         return RetrievedVariable(value=value, key=key, log=[])
+
+    def get_all_properties(self) -> list[RetrievedVariable]:
+        return [RetrievedVariable(value=value, key=key, log=[]) for key, value in self.cleaned_properties.items()]
 
     @property
     def variables(self):
@@ -173,7 +183,7 @@ class RetrievedEntity:
         return f"{self.graph_name}:{self.id}"
 
     def retrieve_properties(self):
-        return {key: value for key, value in self.properties.items() if key != "id" and key != "labels"}
+        return {key: value for key, value in self.cleaned_properties.items() if key != "id" and key != "labels"}
 
 
 @dataclass
