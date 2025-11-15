@@ -11,6 +11,9 @@ from core.pagination import GraphPaginationInput
 from core.utils import get_now_epoch_millis, translate_to_epoch_millis, from_epoch_millis
 from pydantic import BaseModel, Field
 import strawberry
+from enum import Enum
+from typing import Any
+
 
 if typing.TYPE_CHECKING:
     from core import models, filters, pagination, inputs
@@ -26,6 +29,29 @@ class ProtocolOutEdge(BaseModel):
     target: int
     role: str
     quantity: float | None = None
+
+
+class ProvenanceAction(str, Enum):
+    UPDATE = "UPDATE"
+    DELETE = "DELETE"
+    CREATE = "CREATE"
+
+
+@dataclass
+class ProvenanceLog:
+    action: ProvenanceAction
+    user: str
+    client: str
+    assignation: str
+    before_value: str
+    after_value: str
+
+
+@dataclass
+class RetrievedVariable:
+    log: list[ProvenanceLog]
+    value: Any
+    key: str
 
 
 @dataclass
@@ -61,7 +87,6 @@ class RetrievedEntity:
             return from_epoch_millis(valid_from)
         return None
 
-
     @property
     def created_by(self):
         return self.properties.get("created_by", None)
@@ -69,8 +94,8 @@ class RetrievedEntity:
     @property
     def created_app(self):
         return self.properties.get("created_app", None)
-    
-    @property 
+
+    @property
     def created_through(self):
         return self.properties.get("created_through", None)
 
@@ -81,6 +106,11 @@ class RetrievedEntity:
     @property
     def tags(self):
         return self.properties.get("tags", None)
+
+    def get_variable(self, key) -> RetrievedVariable:
+        value = self.properties.get("key", None)
+
+        return RetrievedVariable(value=value, key=key, log=[])
 
     @property
     def variables(self):
@@ -1852,6 +1882,32 @@ def select_paired_entities(
             yield vertex_ag_to_retrieved_entity(graph_name, result[0]), vertex_ag_to_retrieved_entity(graph_name, result[1]), edge_ag_to_retrieved_relation(graph_name, result[2])
 
 
+def set_entity_variable(
+    graph_name: str,
+    node_id: int,
+    variable_name: str,
+    variable_value: typing.Union[str, int, float, bool],
+) -> RetrievedEntity:
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (n) WHERE id(n) = %s
+                SET n.{variable_name} = %s
+                RETURN n
+            $$) as (n agtype);
+            """,
+            (graph_name, int(node_id), variable_value),
+        )
+        result = cursor.fetchone()
+        if result:
+            entity = result[0]
+            return vertex_ag_to_retrieved_entity(graph_name, entity)
+        else:
+            raise ValueError("No entity created or returned by the query.")
+
+
 def select_related_structure_metrics(
     graph_name,
     node_id,
@@ -1877,7 +1933,6 @@ def select_related_structure_metrics(
             """,
             [graph_name, int(node_id), pagination.offset or 0, pagination.limit or 200],
         )
-
 
         for result in cursor.fetchall():
             yield vertex_ag_to_retrieved_entity(graph_name, result[0])

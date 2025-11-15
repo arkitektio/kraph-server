@@ -1,9 +1,12 @@
 from kante.types import Info
 import strawberry
-from core import types, models, age, enums, scalars, manager
+from core import types, models, age, enums, scalars, manager, inputs
 from django.db import connections
 from contextlib import contextmanager
 from django.db.models import Q
+from .entity_category import entity_category_creator
+from .natural_event_category import natural_event_category_creator
+from .protocol_event_category import protocol_event_category_creator
 
 
 @strawberry.input(description="Input type for creating a new ontology")
@@ -14,6 +17,10 @@ class GraphInput:
     pin: bool | None = strawberry.field(
         default=None,
         description="Whether this ontology should be pinned or not",
+    )
+    schema: inputs.SchemaInput | None = strawberry.field(
+        default=None,
+        description="An optional schema defining the categories in the ontology",
     )
 
 
@@ -96,6 +103,69 @@ def create_graph(
     else:
         item.pinned_by.remove(info.context.request.user)
 
+    if input.schema:
+        for e in input.schema.entity_schemas:
+            entity_category_creator(
+                info=info,
+                graph_id=item.id,
+                label=e.label,
+                description=e.description,
+                purl=e.purl,
+                color=e.color,
+                image_id=e.image,
+                variable_definitions=[strawberry.asdict(x) for x in e.variable_definitions] if e.variable_definitions else None,
+                tags=e.tags,
+                pin=e.pin,
+                sequence=e.sequence,
+                auto_create_sequence=e.auto_create_sequence or False,
+                position_x=e.position_x,
+                position_y=e.position_y,
+                height=e.height,
+                width=e.width,
+            )
+
+        if input.schema.natural_event_schemas:
+            for e in input.schema.natural_event_schemas:
+                print("hallo")
+                natural_event_category_creator(
+                    info=info,
+                    graph_id=item.id,
+                    label=e.label,
+                    description=e.description,
+                    purl=e.purl,
+                    image_id=e.image,
+                    source_entity_roles=[strawberry.asdict(v) for v in e.source_entity_roles] if e.source_entity_roles else None,
+                    target_entity_roles=[strawberry.asdict(v) for v in e.target_entity_roles] if e.target_entity_roles else None,
+                    tags=e.tags,
+                    position_x=e.position_x,
+                    position_y=e.position_y,
+                    height=e.height,
+                    width=e.width,
+                )
+
+        if input.schema.protocol_event_schemas:
+            for e in input.schema.protocol_event_schemas:
+                protocol_event_category_creator(
+                    info=info,
+                    graph_id=item.id,
+                    label=e.label,
+                    description=e.description,
+                    purl=e.purl,
+                    source_entity_roles=[strawberry.asdict(v) for v in e.source_entity_roles] if e.source_entity_roles else None,
+                    target_entity_roles=[strawberry.asdict(v) for v in e.target_entity_roles] if e.target_entity_roles else None,
+                    source_reagent_roles=[strawberry.asdict(v) for v in e.source_reagent_roles] if e.source_reagent_roles else None,
+                    target_reagent_roles=[strawberry.asdict(v) for v in e.target_reagent_roles] if e.target_reagent_roles else None,
+                    variable_definitions=[strawberry.asdict(v) for v in e.variable_definitions] if e.variable_definitions else None,
+                    plate_children=None,
+                    tags=e.tags,
+                    sequence=e.sequence,
+                    auto_create_sequence=e.auto_create_sequence or False,
+                    position_x=e.position_x,
+                    position_y=e.position_y,
+                    height=e.height,
+                    width=e.width,
+                )
+
     return item
 
 
@@ -152,7 +222,7 @@ def delete_graph(
         age.delete_age_graph(item.age_name)
     except Exception as e:
         print("Error deleting AGE graph:", e)
-    
+
     # Explicitly delete polymorphic categories to avoid cascade issues
     # Delete in order: first edges, then nodes
     try:
@@ -160,7 +230,7 @@ def delete_graph(
         models.MeasurementCategory.objects.filter(graph=item).delete()
         models.RelationCategory.objects.filter(graph=item).delete()
         models.StructureRelationCategory.objects.filter(graph=item).delete()
-        
+
         # Then delete node categories
         models.MetricCategory.objects.filter(graph=item).delete()
         models.EntityCategory.objects.filter(graph=item).delete()
@@ -170,7 +240,7 @@ def delete_graph(
         models.NaturalEventCategory.objects.filter(graph=item).delete()
     except Exception as e:
         print("Error deleting categories:", e)
-        
+
     item.delete()
 
     return input.id

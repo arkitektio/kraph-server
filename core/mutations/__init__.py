@@ -29,6 +29,7 @@ from .tag import create_tag
 from .graph import materialize_graph
 from .node import delete_node, detach_delete_node
 from .edge import delete_edge
+from .property import set_node_property
 
 __all__ = [
     "create_channel",
@@ -59,6 +60,7 @@ __all__ = [
     "delete_stage",
     "create_rgb_view",
     "pin_stage",
+    "set_node_property",
     "update_image",
     "create_fluorophore",
     "delete_fluorophore",

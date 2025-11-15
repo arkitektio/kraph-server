@@ -9,32 +9,20 @@ from django.conf import settings
 import re
 
 # re for the scalar string in format "@{exernal_name}/{scalar_name_without_spaces_and_only_alphanumber_with_underscores_and_hypens}"
-scalar_string_re = re.compile(
-    r"@(?P<external_name>[a-zA-Z0-9_]+)/(?P<scalar_name>[a-zA-Z0-9_]+)"
-)
+scalar_string_re = re.compile(r"@(?P<external_name>[a-zA-Z0-9_]+)/(?P<scalar_name>[a-zA-Z0-9_]+)")
 
 
 @strawberry.input(description="Input for creating a new expression")
 class StructureCategoryInput(inputs.CategoryInput):
-    identifier: scalars.StructureIdentifier = strawberry.field(
-        description="The label/name of the expression"
-    )
-    description: str | None = strawberry.field(
-        default=None, description="A detailed description of the expression"
-    )
-    purl: str | None = strawberry.field(
-        default=None, description="Permanent URL identifier for the expression"
-    )
-    color: list[int] | None = strawberry.field(
-        default=None, description="RGBA color values as list of 3 or 4 integers"
-    )
-    image: scalars.RemoteUpload | None = strawberry.field(
-        default=None, description="An optional image associated with this expression"
-    )
+    graph: strawberry.ID = strawberry.field(description="The ID of the graph")
+    identifier: scalars.StructureIdentifier = strawberry.field(description="The label/name of the expression")
+    description: str | None = strawberry.field(default=None, description="A detailed description of the expression")
+    purl: str | None = strawberry.field(default=None, description="Permanent URL identifier for the expression")
+    color: list[int] | None = strawberry.field(default=None, description="RGBA color values as list of 3 or 4 integers")
+    image: scalars.RemoteUpload | None = strawberry.field(default=None, description="An optional image associated with this expression")
 
 
 def scalar_identifier_to_graph_name(scalar_string: str) -> str:
-
     assert "@" in scalar_string, f"Invalid scalar string: {scalar_string}"
     assert "/" in scalar_string, f"Invalid scalar string: {scalar_string}"
     assert ":" not in scalar_string, f"Invalid scalar string: {scalar_string}"
@@ -57,66 +45,56 @@ def scalar_identifier_to_graph_name(scalar_string: str) -> str:
 
 @strawberry.input(description="Input for updating an existing expression")
 class UpdateStructureCategoryInput(inputs.UpdateCategoryInput):
-    id: strawberry.ID = strawberry.field(
-        description="The ID of the expression to update"
-    )
-    identifier: str | None = strawberry.field(
-        default=None,
-        description="The label/name of the expression"
-    )
+    id: strawberry.ID = strawberry.field(description="The ID of the expression to update")
+    identifier: str | None = strawberry.field(default=None, description="The label/name of the expression")
 
 
 @strawberry.input(description="Input for deleting an expression")
 class DeleteStructureCategoryInput:
-    id: strawberry.ID = strawberry.field(
-        description="The ID of the expression to delete"
-    )
+    id: strawberry.ID = strawberry.field(description="The ID of the expression to delete")
 
 
-def create_structure_category(
+def structure_category_creator(
     info: Info,
-    input: StructureCategoryInput,
+    graph_id: str,
+    identifier: str,
+    description: str | None = None,
+    purl: str | None = None,
+    color: list[int] | None = None,
+    image_id: str | None = None,
+    tags: list[str] | None = None,
+    pin: bool | None = None,
 ) -> types.StructureCategory:
+    """Core creator function for structure categories."""
+    graph = models.Graph.objects.get(id=graph_id)
 
-    graph = models.Graph.objects.get(
-        id=input.graph,
-    )
+    if color:
+        assert len(color) == 3 or len(color) == 4, "Color must be a list of 3 or 4 values RGBA"
 
-    if input.color:
-        assert (
-            len(input.color) == 3 or len(input.color) == 4
-        ), "Color must be a list of 3 or 4 values RGBA"
-
-    if input.image:
-        media_store = models.MediaStore.objects.get(
-            id=input.image,
-        )
-    else:
-        media_store = None
-
-    age_name, identifier = scalar_identifier_to_graph_name(input.identifier)
+    media_store = None
+    if image_id:
+        media_store = models.MediaStore.objects.get(id=image_id)
 
     vocab, _ = models.StructureCategory.objects.update_or_create(
         graph=graph,
         age_name=manager.build_structure_age_name(identifier),
         defaults=dict(
-            description=input.description,
-            purl=input.purl,
+            description=description,
+            purl=purl,
             store=media_store,
             identifier=identifier,
             label=identifier.replace("_", " ").title(),
         ),
     )
-    
-    if input.tags:
+
+    if tags:
         vocab.tags.clear()
-        for tag in input.tags:
+        for tag in tags:
             tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag, graph=graph)
             vocab.tags.add(tag_obj)
-            
-    
-    if input.pin is not None:
-        if input.pin:
+
+    if pin is not None:
+        if pin:
             vocab.pinned_by.add(info.context.user)
         else:
             vocab.pinned_by.remove(info.context.user)
@@ -126,15 +104,31 @@ def create_structure_category(
     return vocab
 
 
-def update_structure_category(
-    info: Info, input: UpdateStructureCategoryInput
+def create_structure_category(
+    info: Info,
+    input: StructureCategoryInput,
 ) -> types.StructureCategory:
+    """GraphQL mutation wrapper for creating structure categories."""
+    age_name, identifier = scalar_identifier_to_graph_name(input.identifier)
+
+    return structure_category_creator(
+        info=info,
+        graph_id=input.graph,
+        identifier=identifier,
+        description=input.description,
+        purl=input.purl,
+        color=input.color,
+        image_id=input.image,
+        tags=input.tags,
+        pin=input.pin,
+    )
+
+
+def update_structure_category(info: Info, input: UpdateStructureCategoryInput) -> types.StructureCategory:
     item = models.StructureCategory.objects.get(id=input.id)
 
     if input.color:
-        assert (
-            len(input.color) == 3 or len(input.color) == 4
-        ), "Color must be a list of 3 or 4 values RGBA"
+        assert len(input.color) == 3 or len(input.color) == 4, "Color must be a list of 3 or 4 values RGBA"
 
     if input.image:
         media_store = models.MediaStore.objects.get(
@@ -148,16 +142,13 @@ def update_structure_category(
     item.color = input.color if input.color else item.color
     item.store = media_store if media_store else item.store
     item.label = input.label if input.label else item.label
-    
-    
+
     if input.tags:
         item.tags.clear()
         for tag in input.tags:
             tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag, graph=item.graph)
             item.tags.add(tag_obj)
-            
-    
-    
+
     if input.pin is not None:
         if input.pin:
             item.pinned_by.add(info.context.request.user)

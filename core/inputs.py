@@ -278,10 +278,14 @@ class ColumnInput:
 
 
 @strawberry.input()
-class CategoryInput:
+class WithGraphInput:
     graph: strawberry.ID = strawberry.field(
         description="The ID of the graph this expression belongs to. If not provided, uses default ontology",
     )
+
+
+@strawberry.input()
+class CategoryInput:
     description: str | None = strawberry.field(default=None, description="A detailed description of the expression")
     purl: str | None = strawberry.field(default=None, description="Permanent URL identifier for the expression")
     color: list[int] | None = strawberry.field(default=None, description="RGBA color values as list of 3 or 4 integers")
@@ -296,9 +300,9 @@ class CategoryInput:
         default=False,
         description="Whether to create a sequence if it does not exist",
     )
-    ports: list[PortInput] | None = strawberry.field(
+    variable_definitions: list[VariableDefinitionInput] | None = strawberry.field(
         default=None,
-        description="A list of ports for this category",
+        description="A list of variable definitions for this category",
     )
 
 
@@ -357,3 +361,77 @@ class NodeQueryPagination:
 class NodeQueryOrder:
     field: Optional[str] = None
     direction: Optional[str] = None
+
+
+@strawberry.input(description="Input for creating a new expression")
+class EntityCategorySchemaInput(CategoryInput, NodeCategoryInput):
+    label: str = strawberry.field(description="The label/name of the expression")
+
+
+@strawberry.input(description="Input for creating a new expression")
+class EntityCategoryInput(EntityCategorySchemaInput, WithGraphInput):
+    label: str = strawberry.field(description="The label/name of the expression")
+
+
+@strawberry.input(description="Input for creating a new expression")
+class MeasurementCategorySchemaInput(CategoryInput):
+    label: str = strawberry.field(description="The label/name of the expression")
+    structure_definition: StructureCategoryDefinitionInput = strawberry.field(
+        default=None,
+        description="The source definition for this expression",
+    )
+    entity_definition: EntityCategoryDefinitionInput = strawberry.field(
+        default=None,
+        description="The target definition for this expression",
+    )
+
+
+@strawberry.input(description="Input for creating a new expression")
+class MeasurementCategoryInput(MeasurementCategorySchemaInput, WithGraphInput):
+    pass
+
+
+@strawberry.input(description="Input for creating a new natural event category")
+class NaturalEventCategorySchemaInput(CategoryInput, NodeCategoryInput):
+    label: str = strawberry.field(description="The label/name of the expression")
+    source_entity_roles: list[EntityRoleDefinitionInput] | None = strawberry.field(
+        default=None,
+        description="The source definitions for this expression",
+    )
+    target_entity_roles: list[EntityRoleDefinitionInput] | None = strawberry.field(
+        default=None,
+        description="The target definitions for this expression",
+    )
+
+
+@strawberry.input(description="Input for creating a new protocol event category")
+class ProtocolEventCategorySchemaInput(CategoryInput, NodeCategoryInput):
+    label: str = strawberry.field(description="The label/name of the expression")
+    source_entity_roles: list[EntityRoleDefinitionInput] | None = strawberry.field(
+        default=None,
+        description="The source entity roles for this expression",
+    )
+    target_entity_roles: list[EntityRoleDefinitionInput] | None = strawberry.field(
+        default=None,
+        description="The target entity roles for this expression",
+    )
+    source_reagent_roles: list[ReagentRoleDefinitionInput] | None = strawberry.field(
+        default=None,
+        description="The source reagent roles for this expression",
+    )
+    target_reagent_roles: list[ReagentRoleDefinitionInput] | None = strawberry.field(
+        default=None,
+        description="The target reagent roles for this expression",
+    )
+    variable_definitions: list[VariableDefinitionInput] | None = strawberry.field(
+        default=None,
+        description="The variable definitions for this expression",
+    )
+
+
+@strawberry.input(description="An ontology/graph")
+class SchemaInput:
+    entity_schemas: list[EntityCategorySchemaInput] = strawberry.field(description="List of entity categories in the ontology")
+    measurement_schemas: list[MeasurementCategorySchemaInput] = strawberry.field(description="List of measurement categories in the ontology")
+    natural_event_schemas: list[NaturalEventCategorySchemaInput] | None = strawberry.field(default=None, description="List of natural event categories in the ontology")
+    protocol_event_schemas: list[ProtocolEventCategorySchemaInput] | None = strawberry.field(default=None, description="List of protocol event categories in the ontology")

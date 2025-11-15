@@ -10,6 +10,7 @@ from django.conf import settings
 
 @strawberry.input(description="Input for creating a new expression")
 class StructureRelationCategoryInput(inputs.CategoryInput):
+    graph: strawberry.ID = strawberry.field(description="The ID of the graph")
     label: str = strawberry.field(description="The label/name of the expression")
     source_definition: inputs.StructureCategoryDefinitionInput = strawberry.field(
         default=None,
@@ -65,52 +66,76 @@ def validate_structure_category_definition(definition: inputs.StructureCategoryD
     return strawberry.asdict(definition)
 
 
-def create_structure_relation_category(
+def structure_relation_category_creator(
     info: Info,
-    input: StructureRelationCategoryInput,
+    graph_id: str,
+    label: str,
+    source_definition: dict,
+    target_definition: dict,
+    description: str | None = None,
+    purl: str | None = None,
+    color: list[int] | None = None,
+    image_id: str | None = None,
+    tags: list[str] | None = None,
+    sequence: str | None = None,
+    auto_create_sequence: bool = False,
 ) -> types.StructureRelationCategory:
-    graph = models.Graph.objects.get(
-        id=input.graph,
-    )
-    if input.color:
-        assert len(input.color) == 3 or len(input.color) == 4, "Color must be a list of 3 or 4 values RGBA"
+    """Core creator function for structure relation categories."""
+    graph = models.Graph.objects.get(id=graph_id)
 
-    if input.image:
-        media_store = models.MediaStore.objects.get(
-            id=input.image,
-        )
-    else:
-        media_store = None
+    if color:
+        assert len(color) == 3 or len(color) == 4, "Color must be a list of 3 or 4 values RGBA"
+
+    media_store = None
+    if image_id:
+        media_store = models.MediaStore.objects.get(id=image_id)
 
     vocab, created = models.StructureRelationCategory.objects.update_or_create(
         graph=graph,
-        age_name=manager.build_relation_age_name(input.label),
+        age_name=manager.build_relation_age_name(label),
         defaults=dict(
-            description=input.description,
-            purl=input.purl,
+            description=description,
+            purl=purl,
             store=media_store,
-            label=input.label,
-            source_definition=validate_structure_category_definition(input.source_definition, graph),
-            target_definition=validate_structure_category_definition(input.target_definition, graph),
+            label=label,
+            source_definition=source_definition,
+            target_definition=target_definition,
         ),
     )
 
-    age.create_age_relation_kind(
-        vocab,
-    )
-    manager.set_age_sequence(
-        vocab,
-        input.sequence,
-        auto_create=input.auto_create_sequence,
-    )
+    age.create_age_relation_kind(vocab)
+    manager.set_age_sequence(vocab, sequence, auto_create=auto_create_sequence)
 
-    if input.tags:
+    if tags:
         vocab.tags.clear()
-        for tag in input.tags:
+        for tag in tags:
             tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag, graph=graph)
             vocab.tags.add(tag_obj)
 
     return vocab
+
+
+def create_structure_relation_category(
+    info: Info,
+    input: StructureRelationCategoryInput,
+) -> types.StructureRelationCategory:
+    """GraphQL mutation wrapper for creating structure relation categories."""
+    graph = models.Graph.objects.get(id=input.graph)
+
+    return structure_relation_category_creator(
+        info=info,
+        graph_id=input.graph,
+        label=input.label,
+        source_definition=validate_structure_category_definition(input.source_definition, graph),
+        target_definition=validate_structure_category_definition(input.target_definition, graph),
+        description=input.description,
+        purl=input.purl,
+        color=input.color,
+        image_id=input.image,
+        tags=input.tags,
+        sequence=input.sequence,
+        auto_create_sequence=input.auto_create_sequence or False,
+    )
 
 
 def update_structure_relation_category(info: Info, input: UpdateStructureRelationCategoryInput) -> types.StructureRelationCategory:

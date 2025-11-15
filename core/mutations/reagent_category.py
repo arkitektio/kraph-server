@@ -10,6 +10,7 @@ from django.conf import settings
 
 @strawberry.input(description="Input for creating a new expression")
 class ReagentCategoryInput(inputs.CategoryInput, inputs.NodeCategoryInput):
+    graph: strawberry.ID = strawberry.field(description="The ID of the graph")
     label: str = strawberry.field(description="The label/name of the expression")
 
 
@@ -24,49 +25,94 @@ class DeleteReagentCategoryInput:
     id: strawberry.ID = strawberry.field(description="The ID of the expression to delete")
 
 
-def create_reagent_category(
+def reagent_category_creator(
     info: Info,
-    input: ReagentCategoryInput,
+    graph_id: str,
+    label: str,
+    description: str | None = None,
+    purl: str | None = None,
+    color: list[int] | None = None,
+    image_id: str | None = None,
+    tags: list[str] | None = None,
+    pin: bool | None = None,
+    sequence: str | None = None,
+    auto_create_sequence: bool = False,
+    position_x: float | None = None,
+    position_y: float | None = None,
+    height: float | None = None,
+    width: float | None = None,
 ) -> types.ReagentCategory:
-    if input.color:
-        assert len(input.color) == 3 or len(input.color) == 4, "Color must be a list of 3 or 4 values RGBA"
+    """Core creator function for reagent categories."""
+    if color:
+        assert len(color) == 3 or len(color) == 4, "Color must be a list of 3 or 4 values RGBA"
 
-    if input.image:
-        media_store = models.MediaStore.objects.get(
-            id=input.image,
-        )
-    else:
-        media_store = None
+    media_store = None
+    if image_id:
+        media_store = models.MediaStore.objects.get(id=image_id)
 
     vocab, created = models.ReagentCategory.objects.update_or_create(
-        graph_id=input.graph,
-        age_name=manager.build_reagent_age_name(input.label),
+        graph_id=graph_id,
+        age_name=manager.build_reagent_age_name(label),
         defaults=dict(
-            description=input.description,
-            purl=input.purl,
+            description=description,
+            purl=purl,
             store=media_store,
-            label=input.label,
+            label=label,
             instance_kind=enums.InstanceKind.ENTITY,
         ),
     )
 
     age.create_age_reagent_kind(vocab)
-    manager.set_age_sequence(vocab, input.sequence, auto_create=input.auto_create_sequence)
+    manager.set_age_sequence(vocab, sequence, auto_create=auto_create_sequence)
 
-    if input.tags:
+    if tags:
         vocab.tags.clear()
-        for tag in input.tags:
+        for tag in tags:
             tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag, graph=vocab.graph)
             vocab.tags.add(tag_obj)
 
-    if input.pin is not None:
-        if input.pin:
+    if pin is not None:
+        if pin:
             vocab.pinned_by.add(info.context.user)
         else:
             vocab.pinned_by.remove(info.context.user)
 
-    manager.set_position_info(vocab, input)
+    if position_x is not None:
+        vocab.position_x = position_x
+    if position_y is not None:
+        vocab.position_y = position_y
+    if height is not None:
+        vocab.height = height
+    if width is not None:
+        vocab.width = width
+    if any([position_x is not None, position_y is not None, height is not None, width is not None]):
+        vocab.save()
+
     return vocab
+
+
+def create_reagent_category(
+    info: Info,
+    input: ReagentCategoryInput,
+) -> types.ReagentCategory:
+    """GraphQL mutation wrapper for creating reagent categories."""
+    return reagent_category_creator(
+        info=info,
+        graph_id=input.graph,
+        label=input.label,
+        description=input.description,
+        purl=input.purl,
+        color=input.color,
+        image_id=input.image,
+        tags=input.tags,
+        pin=input.pin,
+        sequence=input.sequence,
+        auto_create_sequence=input.auto_create_sequence or False,
+        position_x=input.position_x,
+        position_y=input.position_y,
+        height=input.height,
+        width=input.width,
+    )
 
 
 def update_reagent_category(info: Info, input: UpdateReagentCategoryInput) -> types.ReagentCategory:

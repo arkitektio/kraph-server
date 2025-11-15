@@ -49,6 +49,10 @@ class GraphQueryInput:
     description: str | None = strawberry.field(default=None, description="A detailed description of the expression")
     kind: enums.ViewKind = strawberry.field(default=None, description="The kind/type of this expression")
     columns: list[inputs.ColumnInput] | None = strawberry.field(default=None, description="The columns (if ViewKind is Table)")
+    node_category: strawberry.ID | None = strawberry.field(
+        default=None,
+        description="An optional node category to associate with this query (if its a node-list)",
+    )
     relevant_for: list[strawberry.ID] | None = strawberry.field(
         default=None,
         description="A list of categories where this query is releveant and should be shown",
@@ -114,6 +118,14 @@ def create_graph_query(
         graph_query.delete()
         raise Exception(f"Failed to render graph query: {e}")
 
+    if input.kind == enums.ViewKind.NODE_LIST:
+        if input.node_category:
+            node_category = models.NodeCategory.objects.get(id=input.node_category)
+            graph_query.node_category = node_category
+        else:
+            graph_query.delete()
+            raise ValueError("node_category must be provided when kind is NODE_LIST")
+
     if input.relevant_for:
         for category in input.relevant_for:
             category_obj = models.Category.objects.get(id=category)
@@ -133,6 +145,8 @@ def create_graph_query(
 
     if input.returns is not None:
         graph_query.returns = [strawberry.asdict(r) for r in input.returns]
+
+    graph_query.save()
 
     return graph_query
 

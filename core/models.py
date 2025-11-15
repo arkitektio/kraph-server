@@ -620,6 +620,7 @@ class EntityCategory(NodeCategory):
         null=True,
         blank=True,
     )
+    variable_definitions = models.JSONField(default=list, help_text="The variable definitions of this")
 
     def get_age_vertex_name(self):
         return self.age_name
@@ -832,6 +833,14 @@ class GraphQuery(models.Model):
         help_text="The columns (if ViewKind is Table)",
         default=None,
         null=True,
+    )
+    node_category = models.ForeignKey(
+        NodeCategory,
+        default=None,
+        null=True,
+        on_delete=models.CASCADE,
+        related_name="graph_queries",
+        help_text="The category this query is associated if its a node_list",
     )
     pinned_by = models.ManyToManyField(
         get_user_model(),

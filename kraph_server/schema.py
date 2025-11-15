@@ -447,6 +447,11 @@ class Mutation:
 
     pin_graph = mutation(resolver=mutations.pin_graph, description="Pin or unpin a graph")
 
+    set_node_property = mutation(
+        resolver=mutations.set_node_property,
+        description="Set a property on a node",
+    )
+
     # Create a new Metric Category (Always attached to a structure)
     create_metric_category = mutation(resolver=mutations.create_metric_category, description="Create a new expression")
     update_metric_category = mutation(

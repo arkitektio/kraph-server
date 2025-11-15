@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from core.utils import paginate_querysets
 import strawberry
 import strawberry_django
@@ -605,6 +606,19 @@ class PlayableEntityRoleInProtocolEvent:
         return await loaders.protocol_event_category_loader.load(self._category)
 
 
+@strawberry.type(description="The Variables of the Node")
+class Variable:
+    _value: strawberry.Private[age.RetrievedVariable]
+
+    @strawberry_django.field(description="THe value of the variable")
+    async def value(self) -> scalars.Any:
+        return self._value.value
+
+    @strawberry_django.field(description="The key of the variable")
+    async def key(self) -> str:
+        return self._value.key
+
+
 @strawberry.type(description="A Entity is a recorded data point in a graph. It can measure a property of an entity through a direct measurement edge, that connects the entity to the structure. It of course can relate to other structures through relation edges.")
 class Entity(Node):
     def __hash__(self):
@@ -613,6 +627,14 @@ class Entity(Node):
     @strawberry_django.field(description="Protocol steps where this entity was the target")
     async def category(self) -> "EntityCategory":
         return await loaders.entity_category_loader.load(self._value.category_id)
+
+    @strawberry_django.field(description="The map of for Node")
+    async def properties(self) -> scalars.Any:
+        return self._value.variables
+
+    @strawberry_django.field(description="The variables")
+    async def property(self, key: str) -> Variable:
+        return Variable(_value=self._value.get_variable(key))
 
     @strawberry_django.field(description="Subjectable to")
     def subjectable_to(self) -> List["PlayableEntityRoleInProtocolEvent"]:
@@ -1178,7 +1200,7 @@ class ReagentRoleDefinition:
         return optional
 
     @strawberry_django.field()
-    def needsQuantity(self, info: Info) -> bool:
+    def needs_quantity(self, info: Info) -> bool:
         optional = self._value.get("needs_quantity", None)
         if optional is None:
             return False
@@ -1271,6 +1293,10 @@ class EntityCategory(NodeCategory, BaseCategory):
     """A GenericExpression is a class that describes the relationship between two entities."""
 
     label: str = strawberry.field(description="The label of the expression")
+
+    @strawberry_django.field(description="The defined variables")
+    def variable_definitions(self, info) -> list["VariableDefinition"]:
+        return [VariableDefinition(_variable=i, _graph=self.graph.id) for i in self.variable_definitions] if self.variable_definitions else []
 
     @strawberry_django.field(description="The unique identifier of the expression within its graph")
     def instance_kind(self, info: Info) -> enums.InstanceKind:
@@ -1526,6 +1552,7 @@ class Pairs:
 class NodeList:
     nodes: list[Node] = strawberry.field(description="The nodes in the list.")
     graph: Graph = strawberry.field(description="The graph this list was queried from.")
+    category: NodeCategory = strawberry.field(description="The category of nodes in this list.")
 
 
 @strawberry.type(description="A column in a table.")

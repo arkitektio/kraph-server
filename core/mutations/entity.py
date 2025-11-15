@@ -1,6 +1,6 @@
 from kante.types import Info
 import strawberry
-from core import types, models, age
+from core import types, models, age, scalars
 import uuid
 
 
@@ -13,6 +13,10 @@ class EntityInput:
         description="An optional external ID for the entity (will upsert if exists)",
     )
     pinned: bool | None = strawberry.field(default=None, description="Whether the entity should be pinned")
+    variables: scalars.MetricMap | None = strawberry.field(
+        default=None,
+        description="Optional variables to set on the entity upon creation",
+    )
 
 
 @strawberry.input
@@ -47,10 +51,7 @@ def update_entity(
     info: Info,
     input: UpdateEntityInput,
 ) -> types.Entity:
-    
-    
-    
-    entity = age.update_entity(age.to_graph_id(input.id), age.to_entity_id(input.id), external_id=input.external_id, tags=input.tags, pinned_by=[ str(info.context.request.user.id) ] if input.pinned else None)
+    entity = age.update_entity(age.to_graph_id(input.id), age.to_entity_id(input.id), external_id=input.external_id, tags=input.tags, pinned_by=[str(info.context.request.user.id)] if input.pinned else None)
     return types.Entity(_value=entity)
 
 
