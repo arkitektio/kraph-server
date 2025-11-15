@@ -391,6 +391,7 @@ class NodeCategory(Category):
         help_text="The width of the  node class in the graph (if a node)",
         null=True,
     )
+    property_definitions = models.JSONField(default=list, help_text="The property definitions of this")
 
     def get_age_vertex_name(self):
         raise NotImplementedError("Not implemented needs to be implemented")
@@ -620,7 +621,6 @@ class EntityCategory(NodeCategory):
         null=True,
         blank=True,
     )
-    variable_definitions = models.JSONField(default=list, help_text="The variable definitions of this")
 
     def get_age_vertex_name(self):
         return self.age_name

@@ -68,6 +68,7 @@ def natural_event_category_creator(
     description: str | None = None,
     purl: str | None = None,
     image_id: str | None = None,
+    property_definitions: list | None = None,
     source_entity_roles: list[dict] | None = None,
     target_entity_roles: list[dict] | None = None,
     tags: list[str] | None = None,
@@ -87,14 +88,15 @@ def natural_event_category_creator(
     all_roles = source_role_names + target_role_names
     assert len(all_roles) == len(set(all_roles)), "Roles must be unique"
 
-    protocol_event, created = models.NaturalEventCategory.objects.update_or_create(
+    vocab, created = models.NaturalEventCategory.objects.update_or_create(
         graph_id=graph_id,
-        age_name=manager.build_measurement_age_name(label),
+        age_name=manager.build_natural_event_age_name(label),
         defaults=dict(
             description=description,
             purl=purl,
             store=media_store,
             label=label,
+            property_definitions=property_definitions or [],
             source_entity_roles=source_entity_roles or [],
             target_entity_roles=target_entity_roles or [],
         ),
@@ -134,6 +136,7 @@ def create_natural_event_category(
         description=input.description,
         purl=input.purl,
         image_id=input.image,
+        property_definitions=[strawberry.asdict(x) for x in input.property_definitions] if input.property_definitions else None,
         source_entity_roles=[strawberry.asdict(v) for v in input.source_entity_roles] if input.source_entity_roles else None,
         target_entity_roles=[strawberry.asdict(v) for v in input.target_entity_roles] if input.target_entity_roles else None,
         tags=input.tags,

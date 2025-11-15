@@ -26,7 +26,7 @@ def set_node_property(
 ) -> types.Node:
     retrieved_entity = age.set_entity_variable(
         node_id_to_graph_name(input.entity),
-        node_id_to_graph_id(input.variable),
+        node_id_to_graph_id(input.entity),
         input.variable,
         input.value,
     )

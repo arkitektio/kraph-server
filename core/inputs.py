@@ -84,6 +84,34 @@ class VariableDefinitionInput:
     )
 
 
+@strawberry.input(description="Input for defining a property on a node category")
+class PropertyDefinitionInput:
+    key: str = strawberry.field(description="The property key/name")
+    value_kind: enums.MetricKind = strawberry.field(
+        description="The type of data this property stores",
+    )
+    optional: bool | None = strawberry.field(
+        default=False,
+        description="Whether this property is optional or not",
+    )
+    default: scalars.Any | None = strawberry.field(
+        default=None,
+        description="The default value for this property",
+    )
+    description: str | None = strawberry.field(
+        default=None,
+        description="A detailed description of the property",
+    )
+    label: str | None = strawberry.field(
+        default=None,
+        description="The label/name of the property",
+    )
+    options: list[OptionInput] | None = strawberry.field(
+        default=None,
+        description="A list of options for this property (if only a few values are allowed)",
+    )
+
+
 @strawberry.input(description="Input for creating a new expression")
 class CategoryDefinitionInput:
     category_filters: list[strawberry.ID] | None = strawberry.field(
@@ -300,10 +328,6 @@ class CategoryInput:
         default=False,
         description="Whether to create a sequence if it does not exist",
     )
-    variable_definitions: list[VariableDefinitionInput] | None = strawberry.field(
-        default=None,
-        description="A list of variable definitions for this category",
-    )
 
 
 @strawberry.input()
@@ -313,6 +337,10 @@ class NodeCategoryInput:
     height: float | None = strawberry.field(default=None, description="An optional height for the ontology node")
     width: float | None = strawberry.field(default=None, description="An optional width for the ontology node")
     color: list[int] | None = strawberry.field(default=None, description="An optional RGBA color for the ontology node")
+    property_definitions: list[PropertyDefinitionInput] | None = strawberry.field(
+        default=None,
+        description="A list of property definitions for this node category",
+    )
 
 
 @strawberry.input()

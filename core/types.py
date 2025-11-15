@@ -433,12 +433,33 @@ class NodeQueryView:
         return self._node_id
 
 
+@strawberry.type(description="The Variables of the Node")
+class Property:
+    _value: strawberry.Private[age.RetrievedVariable]
+
+    @strawberry_django.field(description="THe value of the variable")
+    async def value(self) -> scalars.Any:
+        return self._value.value
+
+    @strawberry_django.field(description="The key of the variable")
+    async def key(self) -> str:
+        return self._value.key
+
+
 @strawberry.interface
 class Node:
     _value: strawberry.Private[age.RetrievedEntity]
 
     def __hash__(self):
         return self._value.id
+
+    @strawberry_django.field(description="The map of for Node")
+    async def properties(self) -> scalars.Any:
+        return self._value.retrieve_properties()
+
+    @strawberry_django.field(description="The variables")
+    async def property(self, key: str) -> Property:
+        return Property(_value=self._value.get_variable(key))
 
     @strawberry_django.field(description="The unique identifier of the entity within its graph")
     def pinned(self, info: Info) -> bool:
@@ -606,19 +627,6 @@ class PlayableEntityRoleInProtocolEvent:
         return await loaders.protocol_event_category_loader.load(self._category)
 
 
-@strawberry.type(description="The Variables of the Node")
-class Variable:
-    _value: strawberry.Private[age.RetrievedVariable]
-
-    @strawberry_django.field(description="THe value of the variable")
-    async def value(self) -> scalars.Any:
-        return self._value.value
-
-    @strawberry_django.field(description="The key of the variable")
-    async def key(self) -> str:
-        return self._value.key
-
-
 @strawberry.type(description="A Entity is a recorded data point in a graph. It can measure a property of an entity through a direct measurement edge, that connects the entity to the structure. It of course can relate to other structures through relation edges.")
 class Entity(Node):
     def __hash__(self):
@@ -627,14 +635,6 @@ class Entity(Node):
     @strawberry_django.field(description="Protocol steps where this entity was the target")
     async def category(self) -> "EntityCategory":
         return await loaders.entity_category_loader.load(self._value.category_id)
-
-    @strawberry_django.field(description="The map of for Node")
-    async def properties(self) -> scalars.Any:
-        return self._value.variables
-
-    @strawberry_django.field(description="The variables")
-    async def property(self, key: str) -> Variable:
-        return Variable(_value=self._value.get_variable(key))
 
     @strawberry_django.field(description="Subjectable to")
     def subjectable_to(self) -> List["PlayableEntityRoleInProtocolEvent"]:
@@ -1053,7 +1053,9 @@ class NodeCategory:
     label: str = strawberry.field(description="A human readable label for the expression")
     description: str | None = strawberry.field(description="A description of the expression.")
 
-    pass
+    @strawberry_django.field(description="The defined properties")
+    def property_definitions(self, info) -> list["PropertyDefinition"]:
+        return [PropertyDefinition(_property=i) for i in self.property_definitions] if self.property_definitions else []
 
 
 @strawberry.interface()
@@ -1294,10 +1296,6 @@ class EntityCategory(NodeCategory, BaseCategory):
 
     label: str = strawberry.field(description="The label of the expression")
 
-    @strawberry_django.field(description="The defined variables")
-    def variable_definitions(self, info) -> list["VariableDefinition"]:
-        return [VariableDefinition(_variable=i, _graph=self.graph.id) for i in self.variable_definitions] if self.variable_definitions else []
-
     @strawberry_django.field(description="The unique identifier of the expression within its graph")
     def instance_kind(self, info: Info) -> enums.InstanceKind:
         return self.instance_kind if self.instance_kind else enums.InstanceKind.ENTITY
@@ -1315,6 +1313,10 @@ class ReagentCategory(NodeCategory, BaseCategory):
 
     label: str = strawberry.field(description="The label of the expression")
 
+    @strawberry_django.field(description="The defined properties")
+    def property_definitions(self, info) -> list["PropertyDefinition"]:
+        return [PropertyDefinition(_property=i) for i in self.property_definitions] if self.property_definitions else []
+
     @strawberry_django.field(description="The unique identifier of the expression within its graph")
     def instance_kind(self, info: Info) -> enums.InstanceKind:
         return self.instance_kind if self.instance_kind else enums.InstanceKind.ENTITY
@@ -1328,6 +1330,10 @@ class ReagentCategory(NodeCategory, BaseCategory):
 class StructureCategory(NodeCategory, BaseCategory):
     identifier: str = strawberry.field(description="The structure that this class represents")
 
+    @strawberry_django.field(description="The defined properties")
+    def property_definitions(self, info) -> list["PropertyDefinition"]:
+        return [PropertyDefinition(_property=i) for i in self.property_definitions] if self.property_definitions else []
+
 
 @strawberry_django.type(models.MetricCategory, filters=filters.MetricCategoryFilter, pagination=True)
 class MetricCategory(NodeCategory, BaseCategory):
@@ -1336,6 +1342,10 @@ class MetricCategory(NodeCategory, BaseCategory):
     label: str = strawberry.field(description="The label of the expression")
     metric_kind: enums.MetricKind = strawberry.field(description="The kind of metric this expression represents")
     structure_category: StructureCategory = strawberry_django.field(description="The structure that this metric measures")
+
+    @strawberry_django.field(description="The defined properties")
+    def property_definitions(self, info) -> list["PropertyDefinition"]:
+        return [PropertyDefinition(_property=i) for i in self.property_definitions] if self.property_definitions else []
 
     pass
 
@@ -1358,6 +1368,10 @@ class NaturalEventCategory(NodeCategory, BaseCategory):
     @strawberry_django.field(description="The unique identifier of the expression within its graph")
     def target_entity_roles(self, info: Info) -> List[EntityRoleDefinition]:
         return [EntityRoleDefinition(_value=i, _graph=self.graph.id) for i in self.target_entity_roles]
+
+    @strawberry_django.field(description="The defined properties")
+    def property_definitions(self, info) -> list["PropertyDefinition"]:
+        return [PropertyDefinition(_property=i) for i in self.property_definitions] if self.property_definitions else []
 
     pass
 
@@ -1414,21 +1428,47 @@ class VariableDefinition:
         return self._variable.get("param", None)
 
     @strawberry_django.field()
-    def optional(self) -> bool:
-        optional = self._variable.get("optional", None)
-        return optional if optional is not None else False
-
-    @strawberry_django.field()
-    def needs_quantity(self) -> bool:
-        return self._variable.get("needs_quantity", False)
-
-    @strawberry_django.field()
     def default(self) -> scalars.Any | None:
         return self._variable.get("default", None)
 
     @strawberry_django.field()
+    def optional(self) -> bool:
+        optional = self._variable.get("optional", None)
+        return optional if optional is not None else False
+
+
+@strawberry.type
+class PropertyDefinition:
+    _property: strawberry.Private[dict]
+
+    @strawberry_django.field()
+    def value_kind(self) -> enums.MetricKind:
+        return self._property.get("value_kind", None)
+
+    @strawberry_django.field()
+    def key(self) -> str:
+        return self._property.get("key", None)
+
+    @strawberry_django.field()
+    def description(self) -> str | None:
+        return self._property.get("description", None)
+
+    @strawberry_django.field()
+    def label(self) -> str | None:
+        return self._property.get("label", None)
+
+    @strawberry_django.field()
+    def optional(self) -> bool:
+        optional = self._property.get("optional", None)
+        return optional if optional is not None else False
+
+    @strawberry_django.field()
+    def default(self) -> scalars.Any | None:
+        return self._property.get("default", None)
+
+    @strawberry_django.field()
     def options(self) -> list[VariableOption] | None:
-        options = self._variable.get("options", None)
+        options = self._property.get("options", None)
         if not options:
             return None
         return [VariableOption(_option=i) for i in options]
@@ -1464,6 +1504,10 @@ class ProtocolEventCategory(NodeCategory, BaseCategory):
     @strawberry_django.field()
     def variable_definitions(self, info: Info) -> List[VariableDefinition]:
         return [VariableDefinition(_variable=i, _graph=self.graph.id) for i in self.variable_definitions]
+
+    @strawberry_django.field(description="The defined properties")
+    def property_definitions(self, info) -> list["PropertyDefinition"]:
+        return [PropertyDefinition(_property=i) for i in self.property_definitions] if self.property_definitions else []
 
 
 @strawberry_django.type(models.RelationCategory, filters=filters.RelationCategoryFilter, pagination=True)

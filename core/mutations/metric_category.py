@@ -43,6 +43,7 @@ def metric_category_creator(
     description: str | None = None,
     purl: str | None = None,
     metric_kind: enums.MetricKind | None = None,
+    property_definitions: list | None = None,
     tags: list[str] | None = None,
     sequence: str | None = None,
     auto_create_sequence: bool = False,
@@ -77,6 +78,7 @@ def metric_category_creator(
             metric_kind=metric_kind,
             structure_category=x,
             label=label,
+            property_definitions=property_definitions or [],
         ),
     )
 
@@ -117,6 +119,7 @@ def create_metric_category(
         description=input.description,
         purl=input.purl,
         metric_kind=input.kind,
+        property_definitions=[strawberry.asdict(x) for x in input.property_definitions] if input.property_definitions else None,
         tags=input.tags,
         sequence=input.sequence,
         auto_create_sequence=input.auto_create_sequence or False,

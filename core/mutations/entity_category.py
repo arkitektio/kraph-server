@@ -31,7 +31,7 @@ def entity_category_creator(
     purl: str | None = None,
     color: list[int] | None = None,
     image_id: str | None = None,
-    variable_definitions: list | None = None,
+    property_definitions: list | None = None,
     tags: list[str] | None = None,
     pin: bool | None = None,
     sequence: str | None = None,
@@ -58,7 +58,7 @@ def entity_category_creator(
             store=media_store,
             label=label,
             instance_kind=enums.InstanceKind.ENTITY,
-            variable_definitions=variable_definitions or [],
+            property_definitions=property_definitions or [],
         ),
     )
 
@@ -104,7 +104,7 @@ def create_entity_category(
         purl=input.purl,
         color=input.color,
         image_id=input.image,
-        variable_definitions=[strawberry.asdict(x) for x in input.variable_definitions] if input.variable_definitions else None,
+        property_definitions=[strawberry.asdict(x) for x in input.property_definitions] if input.property_definitions else None,
         tags=input.tags,
         pin=input.pin,
         sequence=input.sequence,

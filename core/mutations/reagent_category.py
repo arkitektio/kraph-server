@@ -33,6 +33,7 @@ def reagent_category_creator(
     purl: str | None = None,
     color: list[int] | None = None,
     image_id: str | None = None,
+    property_definitions: list | None = None,
     tags: list[str] | None = None,
     pin: bool | None = None,
     sequence: str | None = None,
@@ -59,6 +60,7 @@ def reagent_category_creator(
             store=media_store,
             label=label,
             instance_kind=enums.InstanceKind.ENTITY,
+            property_definitions=property_definitions or [],
         ),
     )
 
@@ -104,6 +106,7 @@ def create_reagent_category(
         purl=input.purl,
         color=input.color,
         image_id=input.image,
+        property_definitions=[strawberry.asdict(x) for x in input.property_definitions] if input.property_definitions else None,
         tags=input.tags,
         pin=input.pin,
         sequence=input.sequence,

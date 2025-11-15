@@ -13,7 +13,7 @@ scalar_string_re = re.compile(r"@(?P<external_name>[a-zA-Z0-9_]+)/(?P<scalar_nam
 
 
 @strawberry.input(description="Input for creating a new expression")
-class StructureCategoryInput(inputs.CategoryInput):
+class StructureCategoryInput(inputs.CategoryInput, inputs.NodeCategoryInput):
     graph: strawberry.ID = strawberry.field(description="The ID of the graph")
     identifier: scalars.StructureIdentifier = strawberry.field(description="The label/name of the expression")
     description: str | None = strawberry.field(default=None, description="A detailed description of the expression")
@@ -62,6 +62,7 @@ def structure_category_creator(
     purl: str | None = None,
     color: list[int] | None = None,
     image_id: str | None = None,
+    property_definitions: list | None = None,
     tags: list[str] | None = None,
     pin: bool | None = None,
 ) -> types.StructureCategory:
@@ -119,6 +120,7 @@ def create_structure_category(
         purl=input.purl,
         color=input.color,
         image_id=input.image,
+        property_definitions=[strawberry.asdict(x) for x in input.property_definitions] if input.property_definitions else None,
         tags=input.tags,
         pin=input.pin,
     )
