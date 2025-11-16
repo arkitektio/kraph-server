@@ -124,6 +124,9 @@ class Query:
         description="Render a node query",
     )
 
+    entity_nodes = field(resolver=queries.entity_nodes, description="All entity nodes for the category")
+    entity_category_stats = field(resolver=queries.entity_category_stats, description="Statistics for entity category including count")
+
     render_graph_query = field(
         resolver=queries.render_graph_query,
         description="Render a graph query",

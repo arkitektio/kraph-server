@@ -1629,6 +1629,17 @@ class NodeList:
 
 
 @strawberry.type(description="A column in a table.")
+class EntityNodeList:
+    entities: list[Entity] = strawberry.field(description="The nodes in the list.")
+    category: EntityCategory = strawberry.field(description="The category of nodes in this list.")
+
+
+@strawberry.type(description="Category state")
+class EntityCategoryStats:
+    count: int = strawberry.field(description="The count of elements in the list")
+
+
+@strawberry.type(description="A column in a table.")
 class MetricTable:
     metrics: list[list["Metric"]] = strawberry.field(description="The metrics in the table.")
     graph: Graph = strawberry.field(description="The graph this list was queried from.")

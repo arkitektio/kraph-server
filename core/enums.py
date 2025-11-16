@@ -149,3 +149,9 @@ class WhereOperator(str, Enum):
     CONTAINS = "CONTAINS"
     STARTS_WITH = "STARTS_WITH"
     ENDS_WITH = "ENDS_WITH"
+
+
+@strawberry.enum
+class OrderDirection(str, Enum):
+    ASC = "ASC"
+    DESC = "DESC"

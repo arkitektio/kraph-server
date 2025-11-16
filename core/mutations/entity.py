@@ -17,6 +17,10 @@ class EntityInput:
         default=None,
         description="Optional variables to set on the entity upon creation",
     )
+    properties: scalars.MetricMap | None = strawberry.field(
+        default=None,
+        description="Optional properties to set on the entity upon creation. Properties will be validated and serialized according to their definitions.",
+    )
 
 
 @strawberry.input
@@ -30,9 +34,17 @@ def create_entity(
 ) -> types.Entity:
     entity_category = models.EntityCategory.objects.get(id=input.entity_category)
 
-    id = age.create_age_entity(entity_category, name=input.name, external_id=input.external_id)
+    user_id = str(info.context.request.user.id) if info.context.request.user and hasattr(info.context.request.user, "id") else None
 
-    return types.Entity(_value=id)
+    entity = age.create_age_entity(
+        category=entity_category,
+        name=input.name,
+        external_id=input.external_id,
+        properties=input.properties,
+        created_by=user_id,
+    )
+
+    return types.Entity(_value=entity)
 
 
 @strawberry.input(description="Input type for creating a new entity")

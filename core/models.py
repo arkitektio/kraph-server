@@ -399,6 +399,16 @@ class NodeCategory(Category):
     def get_age_type_name(self):
         raise NotImplementedError("Not implemented needs to be implemented")
 
+    @property
+    def defined_properties(self):
+        from .inputs import PropertyDefinitionInput
+
+        return [PropertyDefinitionInput(**p) for p in self.property_definitions] if self.property_definitions else []
+
+    @property
+    def property_map(self):
+        return {prodf.key: prodf for prodf in self.defined_properties}
+
 
 class EdgeCategory(Category):
     """An Edge class is a class that describes an edge in the graph which represents a relationship between two nodes."""

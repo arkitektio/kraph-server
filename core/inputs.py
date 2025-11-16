@@ -110,6 +110,7 @@ class PropertyDefinitionInput:
         default=None,
         description="A list of options for this property (if only a few values are allowed)",
     )
+    searchable: bool | None = strawberry.field(default=None, description="WHere or not this is searchable")
 
 
 @strawberry.input(description="Input for creating a new expression")
@@ -355,6 +356,13 @@ class UpdateCategoryInput:
 
 @strawberry.input
 class GraphQueryFilters:
+    search: Optional[str] = None
+    valid_from: Optional[datetime.datetime] = None
+    valid_to: Optional[datetime.datetime] = None
+
+
+@strawberry.input
+class CategoryNodesFilter:
     search: Optional[str] = None
     valid_from: Optional[datetime.datetime] = None
     valid_to: Optional[datetime.datetime] = None

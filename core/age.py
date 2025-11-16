@@ -5,7 +5,7 @@ from unicodedata import category
 from django.db import connections
 from core import models
 from dataclasses import dataclass
-from core import filters, pagination
+from core import filters, pagination, inputs, enums
 import typing
 from core.pagination import GraphPaginationInput
 from core.utils import get_now_epoch_millis, translate_to_epoch_millis, from_epoch_millis
@@ -13,6 +13,12 @@ from pydantic import BaseModel, Field
 import strawberry
 from enum import Enum
 from typing import Any
+from psycopg import sql
+
+
+def escape(property, cursor):
+    escaped = sql.Literal(property).as_string(cursor)
+    return escaped
 
 
 if typing.TYPE_CHECKING:
@@ -536,14 +542,264 @@ def get_neighbors_and_edges(graph_name, node_id):
         return nodes, relation_ships
 
 
+def build_where_clause(filters: typing.Optional["filters.CategoryNodesFilter"], property_defs: dict, variable: str = "n") -> str:
+    """Build a Cypher WHERE clause from filters.
+
+    Args:
+        filters: The filter object containing filter criteria
+        property_defs: Dictionary mapping property keys to their definitions
+        variable: The Cypher variable name to use (default: "n")
+
+    Returns:
+        A complete WHERE clause string, or empty string if no filters
+    """
+    where_clauses = []
+
+    if filters:
+        # Filter by IDs
+        if filters.ids:
+            entity_ids = [int(to_entity_id(entity_id)) for entity_id in filters.ids]
+            where_clauses.append(f"id({variable}) IN [{', '.join(map(str, entity_ids))}]")
+
+        # Filter by search text - search across all searchable properties
+        if filters.search:
+            # Debounce: require minimum 2 characters for search to reduce query load
+            if len(filters.search) >= 2:
+                search_clauses = []
+                # Always include label in search
+                search_clauses.append(f"{variable}.label CONTAINS '{filters.search}'")
+
+                # Add searchable properties
+                for key, prop_def in property_defs.items():
+                    if prop_def.searchable:
+                        search_clauses.append(f"{variable}.{key} CONTAINS '{filters.search}'")
+
+                if len(search_clauses) > 1:
+                    where_clauses.append(f"({' OR '.join(search_clauses)})")
+                else:
+                    where_clauses.append(search_clauses[0])
+
+        # Filter by property matches
+        if filters.property_matches:
+            from core import enums
+
+            for prop_match in filters.property_matches:
+                key = prop_match.key
+                operator = prop_match.operator
+                value = prop_match.value
+
+                # Get property definition for this key
+                prop_def = property_defs.get(key)
+                if not prop_def:
+                    raise ValueError(f"Property '{key}' not found in category definition")
+
+                value_kind = prop_def.value_kind
+
+                # Check if property has options and validate
+                options = prop_def.options
+                if options:
+                    valid_values = [opt.value for opt in options]
+                    if value not in valid_values:
+                        raise ValueError(f"Value '{value}' not in allowed options for property '{key}': {valid_values}")
+
+                # Coerce value based on metric kind
+                coerced_value = value
+                if value_kind == enums.MetricKind.INT.value:
+                    coerced_value = int(value)
+                elif value_kind == enums.MetricKind.FLOAT.value:
+                    coerced_value = float(value)
+                elif value_kind == enums.MetricKind.BOOLEAN.value:
+                    coerced_value = bool(value)
+                elif value_kind == "STRING" or value_kind == "CATEGORY":
+                    coerced_value = str(value)
+                elif value_kind == "DATETIME":
+                    # Keep as string for Cypher datetime comparison
+                    coerced_value = str(value)
+
+                # Build the WHERE clause based on operator
+                if operator == enums.WhereOperator.EQUALS:
+                    if isinstance(coerced_value, (int, float, bool)):
+                        where_clauses.append(f"{variable}.{key} = {coerced_value}")
+                    else:
+                        where_clauses.append(f"{variable}.{key} = '{coerced_value}'")
+                elif operator == enums.WhereOperator.NOT_EQUALS:
+                    if isinstance(coerced_value, (int, float, bool)):
+                        where_clauses.append(f"{variable}.{key} <> {coerced_value}")
+                    else:
+                        where_clauses.append(f"{variable}.{key} <> '{coerced_value}'")
+                elif operator == enums.WhereOperator.GREATER_THAN:
+                    if isinstance(coerced_value, (int, float)):
+                        where_clauses.append(f"{variable}.{key} > {coerced_value}")
+                    else:
+                        where_clauses.append(f"{variable}.{key} > '{coerced_value}'")
+                elif operator == enums.WhereOperator.LESS_THAN:
+                    if isinstance(coerced_value, (int, float)):
+                        where_clauses.append(f"{variable}.{key} < {coerced_value}")
+                    else:
+                        where_clauses.append(f"{variable}.{key} < '{coerced_value}'")
+                elif operator == enums.WhereOperator.GREATER_THAN_OR_EQUAL:
+                    if isinstance(coerced_value, (int, float)):
+                        where_clauses.append(f"{variable}.{key} >= {coerced_value}")
+                    else:
+                        where_clauses.append(f"{variable}.{key} >= '{coerced_value}'")
+                elif operator == enums.WhereOperator.LESS_THAN_OR_EQUAL:
+                    if isinstance(coerced_value, (int, float)):
+                        where_clauses.append(f"{variable}.{key} <= {coerced_value}")
+                    else:
+                        where_clauses.append(f"{variable}.{key} <= '{coerced_value}'")
+                elif operator == enums.WhereOperator.CONTAINS:
+                    where_clauses.append(f"{variable}.{key} CONTAINS '{coerced_value}'")
+                elif operator == enums.WhereOperator.STARTS_WITH:
+                    where_clauses.append(f"{variable}.{key} STARTS WITH '{coerced_value}'")
+                elif operator == enums.WhereOperator.ENDS_WITH:
+                    where_clauses.append(f"{variable}.{key} ENDS WITH '{coerced_value}'")
+
+    if where_clauses:
+        return "WHERE " + " AND ".join(where_clauses)
+    return ""
+
+
+def build_order_clause(order: typing.Optional["filters.CategoryNodesOrder"], variable: str = "n") -> str:
+    """Build a Cypher ORDER BY clause from order specification.
+
+    Args:
+        order: The order object containing ordering criteria
+        variable: The Cypher variable name to use (default: "n")
+
+    Returns:
+        A complete ORDER BY clause string, or empty string if no ordering
+    """
+    if not order or not order.property_order:
+        return ""
+
+    order_parts = []
+    for prop_order in order.property_order:
+        key = prop_order.key
+        direction = prop_order.direction.value  # ASC or DESC
+        order_parts.append(f"{variable}.{key} {direction}")
+
+    if order_parts:
+        return "ORDER BY " + ", ".join(order_parts)
+    return ""
+
+
+def build_pagination_clause(pagination: typing.Optional["pagination.GraphPaginationInput"]) -> str:
+    """Build a Cypher SKIP/LIMIT clause from pagination specification.
+
+    Args:
+        pagination: The pagination object containing offset and limit
+
+    Returns:
+        A complete SKIP/LIMIT clause string, or empty string if no pagination
+    """
+    if not pagination:
+        return ""
+
+    skip = pagination.offset if pagination.offset is not None else 0
+    limit = pagination.limit if pagination.limit is not None else 200
+    return f"SKIP {skip} LIMIT {limit}"
+
+
+def get_category_nodes(category_node: models.NodeCategory, filters: filters.CategoryNodesFilter | None = None, order: filters.CategoryNodesOrder | None = None, pagination: pagination.GraphPaginationInput | None = None):
+    graph_name = category_node.graph.age_name
+
+    # Build property definition lookup
+    property_defs = category_node.property_map
+
+    # Build query clauses using helper functions
+    where_clause = build_where_clause(filters, property_defs, variable="n")
+    order_clause = build_order_clause(order, variable="n")
+    pagination_clause = build_pagination_clause(pagination)
+
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (n:{category_node.get_age_vertex_name()})
+                {where_clause}
+                RETURN n
+                {order_clause}
+                {pagination_clause}
+            $$) as (n agtype);
+            """,
+            [graph_name],
+        )
+
+        results = cursor.fetchall()
+
+        nodes: list[RetrievedEntity] = []
+
+        for result in results:
+            node = result[0]  # Edge connecting the nodes
+
+            nodes.append(vertex_ag_to_retrieved_entity(graph_name, node))
+
+        return nodes
+
+
+def get_category_stats(category_node: models.NodeCategory, filters: filters.CategoryNodesFilter | None = None, order: filters.CategoryNodesOrder | None = None, pagination: pagination.GraphPaginationInput | None = None):
+    graph_name = category_node.graph.age_name
+
+    # Build property definition lookup
+    property_defs = category_node.property_map
+
+    # Build query clauses using helper functions
+    where_clause = build_where_clause(filters, property_defs, variable="n")
+
+    with graph_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (n:{category_node.get_age_vertex_name()})
+                {where_clause}
+                RETURN count(n) as c
+            $$) as (c agtype);
+            """,
+            [graph_name],
+        )
+
+        result = cursor.fetchone()
+        if result:
+            count_value = int(result[0])
+            return {"count": count_value}
+
+        return {"count": 0}
+
+
+def get_entity_category_stats(entity_category: models.EntityCategory, filters: filters.CategoryNodesFilter | None = None, order: filters.CategoryNodesOrder | None = None, pagination: pagination.GraphPaginationInput | None = None):
+    """Get statistics for an entity category including count of entities."""
+    return get_category_stats(entity_category, filters=filters, order=order, pagination=pagination)
+
+
 def create_age_entity(
     category: "models.EntityCategory",
     name: str | None = None,
     external_id: str | None = None,
+    properties: dict[str, typing.Union[str, int, float, bool]] | None = None,
+    created_by: str | None = None,
 ) -> RetrievedEntity:
+    # Validate and convert properties if provided
+    validated_properties = {}
+    if properties:
+        property_map = category.property_map
+        for prop_key in properties.keys():
+            if prop_key not in property_map:
+                raise ValueError(f"Property {prop_key} is not defined on this entity category")
+
+        for prop_key, prop_value in properties.items():
+            prodf = property_map[prop_key]
+            validated_properties[prop_key] = _validate_and_convert_property_value(prodf, prop_value)
+
     with graph_cursor() as cursor:
+        set_statements = []
+        for prop_key, validated_value in validated_properties.items():
+            prodf = property_map[prop_key]
+            set_statements.append(f"SET n.{prop_key} = {escape(validated_value, cursor)}")
+
         if external_id:
-            # Try to find existing reagent first
+            # Try to find existing entity first
             cursor.execute(
                 f"""
             SELECT * 
@@ -552,6 +808,7 @@ def create_age_entity(
                 WHERE n.external_id = %s
                 SET n.label = %s
                 SET n.created_at = %s
+                {"".join(set_statements) if set_statements else ""}
                 RETURN n
             $$) as (n agtype);
             """,
@@ -566,7 +823,9 @@ def create_age_entity(
             )
             existing = cursor.fetchone()
             if existing:
-                return vertex_ag_to_retrieved_entity(category.graph.age_name, existing[0])
+                entity_id = vertex_ag_to_retrieved_entity(category.graph.age_name, existing[0])
+                # If properties provided for existing entity, update them
+                return entity_id
 
         if category.sequence:
             sequence_name = category.sequence.ps_name
@@ -579,13 +838,12 @@ def create_age_entity(
         else:
             seq_id = None
 
-        # Create new reagent if not found
-
         create_query = f"""
         SELECT * 
         FROM cypher(%s, $$
             CREATE (n:{category.get_age_vertex_name()} {{type: "ENTITY", category_id: %s,  category_type: %s, label: %s, created_at: %s, external_id: %s}})
             SET n.sequence = %s
+            {set_statements and "".join(set_statements) or ""}
             RETURN n
         $$) as (n agtype);"""
 
@@ -606,7 +864,26 @@ def create_age_entity(
         result = cursor.fetchone()
         if result:
             entity = result[0]
-            return vertex_ag_to_retrieved_entity(category.graph.age_name, entity)
+            retrieved_entity = vertex_ag_to_retrieved_entity(category.graph.age_name, entity)
+
+            # Create edit events for properties if they were set
+            if validated_properties:
+                for prop_key, validated_value in validated_properties.items():
+                    cursor.execute(
+                        f"""
+                        SELECT * 
+                        FROM cypher(%s, $$
+                            MATCH (a) WHERE id(a) = %s
+                            CREATE (b:EditEvent {{type: "EDIT_EVENT", created_by: %s, new_value: %s, variable_name: %s, created_at: %s}})
+                            CREATE (a)-[r:EDITED {{type: "EDITED"}}]->(b)
+                            RETURN r
+                        $$) as (r agtype);
+                        """,
+                        (category.graph.age_name, int(retrieved_entity.id), created_by, str(validated_value), prop_key, datetime.datetime.now().isoformat()),
+                    )
+                    cursor.fetchone()
+
+            return retrieved_entity
         else:
             raise ValueError("No entity created or returned by the query.")
 
@@ -1892,18 +2169,78 @@ def select_paired_entities(
             yield vertex_ag_to_retrieved_entity(graph_name, result[0]), vertex_ag_to_retrieved_entity(graph_name, result[1]), edge_ag_to_retrieved_relation(graph_name, result[2])
 
 
+def get_node_category(node: RetrievedEntity) -> models.NodeCategory:
+    """Get the category object based on type and validate it's in the correct graph."""
+    category_model_map = {"ENTITY": models.EntityCategory, "REAGENT": models.ReagentCategory, "METRIC": models.MetricCategory, "PROTOCOL_EVENT": models.ProtocolEventCategory, "NATURAL_EVENT": models.NaturalEventCategory, "STRUCTURE": models.StructureCategory}
+
+    model_class = category_model_map.get(node.category_type)
+    if not model_class:
+        raise ValueError(f"Unknown model category {node.category_type}")
+
+    category = model_class.objects.get(id=node.category_id)
+
+    return category
+
+
+def _validate_and_convert_property_value(prodf: inputs.PropertyDefinitionInput, variable_value: typing.Union[str, int, float, bool]) -> typing.Union[str, int, float, bool]:
+    """Validate and convert a property value according to its definition."""
+    value_kind = prodf.value_kind
+
+    if value_kind == "INT":
+        try:
+            return int(variable_value)
+        except (ValueError, TypeError):
+            raise ValueError(f"Property '{prodf.key}' expects an integer value, but got '{variable_value}'")
+
+    elif value_kind == "FLOAT":
+        try:
+            return float(variable_value)
+        except (ValueError, TypeError):
+            raise ValueError(f"Property '{prodf.key}' expects a float value, but got '{variable_value}'")
+
+    elif value_kind == "BOOLEAN":
+        if variable_value not in [True, False, "true", "false", "True", "False", 1, 0, "1", "0"]:
+            raise ValueError(f"Property '{prodf.key}' expects a boolean value, but got '{variable_value}'")
+        return variable_value in [True, "true", "True", 1, "1"]
+
+    elif value_kind == enums.MetricKind.DATETIME.value:
+        x = datetime.datetime.fromisoformat(str(variable_value))
+        return x.timestamp()
+    elif value_kind == enums.MetricKind.STRING.value:
+        x = str(variable_value)
+        return x
+    # STRING and CATEGORICAL do not need conversion
+
+    else:
+        raise ValueError(f"Unkown value error: {value_kind}")
+
+
 def set_entity_variable(graph_name: str, node_id: int, variable_name: str, variable_value: typing.Union[str, int, float, bool], created_by: str | None = None) -> RetrievedEntity:
+    # Get the node to check its category and validate the property
+    node = get_age_entity(graph_name, node_id)
+
+    category = get_node_category(node)
+
+    category.defined_properties
+
+    try:
+        prodf = category.property_map[variable_name]
+    except KeyError:
+        raise ValueError(f"Property {variable_name} is not defined on this node")
+
+    variable_value = _validate_and_convert_property_value(prodf, variable_value)
+
     with graph_cursor() as cursor:
         cursor.execute(
             f"""
             SELECT * 
             FROM cypher(%s, $$
                 MATCH (n) WHERE id(n) = %s
-                SET n.{variable_name} = %s
+                SET n.{prodf.key} = {escape(variable_value, cursor)}
                 RETURN n
             $$) as (n agtype);
             """,
-            (graph_name, int(node_id), variable_value),
+            (graph_name, int(node_id)),
         )
         result = cursor.fetchone()
         if result:
@@ -1926,6 +2263,82 @@ def set_entity_variable(graph_name: str, node_id: int, variable_name: str, varia
             return vertex_ag_to_retrieved_entity(graph_name, entity)
         else:
             raise ValueError("No entity created or returned by the query.")
+
+
+def set_entity_properties(graph_name: str, node_id: int, properties: dict[str, typing.Union[str, int, float, bool]], category: "models.EntityCategory", created_by: str | None = None) -> RetrievedEntity:
+    """
+    Set multiple properties on an entity, validating and converting each according to its definition.
+
+    Args:
+        graph_name: The name of the graph containing the entity
+        node_id: The ID of the entity node
+        properties: Dictionary mapping property keys to their values
+        category: The EntityCategory containing property definitions
+        created_by: Optional user ID for provenance tracking
+
+    Returns:
+        The updated RetrievedEntity
+
+    Raises:
+        ValueError: If any property is not defined on the category or has an invalid value
+    """
+    property_map = category.property_map
+
+    # Validate all properties exist before making any changes
+    for prop_key in properties.keys():
+        if prop_key not in property_map:
+            raise ValueError(f"Property {prop_key} is not defined on this entity category")
+
+    # Validate and convert all values
+    validated_properties = {}
+    for prop_key, prop_value in properties.items():
+        prodf = property_map[prop_key]
+        validated_properties[prop_key] = _validate_and_convert_property_value(prodf, prop_value)
+
+    # Set all properties in a single transaction
+    with graph_cursor() as cursor:
+        # Build SET clauses for all properties
+        set_clauses = []
+        for prop_key, validated_value in validated_properties.items():
+            prodf = property_map[prop_key]
+            set_clauses.append(f"SET n.{prodf.key} = {escape(validated_value, cursor)}")
+
+        set_statement = "\n                ".join(set_clauses)
+
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (n) WHERE id(n) = %s
+                {set_statement}
+                RETURN n
+            $$) as (n agtype);
+            """,
+            (graph_name, int(node_id)),
+        )
+        result = cursor.fetchone()
+
+        if result:
+            # Create edit events for provenance logging
+            for prop_key, validated_value in validated_properties.items():
+                cursor.execute(
+                    f"""
+                    SELECT * 
+                    FROM cypher(%s, $$
+                        MATCH (a) WHERE id(a) = %s
+                        CREATE (b:EditEvent {{type: "EDIT_EVENT", created_by: %s, new_value: %s, variable_name: %s, created_at: %s}})
+                        CREATE (a)-[r:EDITED {{type: "EDITED"}}]->(b)
+                        RETURN r
+                    $$) as (r agtype);
+                    """,
+                    (graph_name, int(node_id), created_by, str(validated_value), prop_key, datetime.datetime.now().isoformat()),
+                )
+                cursor.fetchone()
+
+            entity = result[0]
+            return vertex_ag_to_retrieved_entity(graph_name, entity)
+        else:
+            raise ValueError("No entity updated or returned by the query.")
 
 
 def select_related_structure_metrics(

@@ -633,16 +633,22 @@ class PropertyMatch:
     value: scalars.Any = strawberry.field(description="THe value to filter agains")
 
 
+@strawberry.input
+class PropertyOrder:
+    key: str = strawberry.field(description="THe property")
+    direction: enums.OrderDirection = strawberry.field(description="The order direction")
+
+
 @strawberry.input(description="Filter for entities in the graph")
-class NodeFilter:
-    graph: strawberry.ID | None = strawberry.field(default=None, description="Filter by graph ID")
-    category: strawberry.ID | None = strawberry.field(default=None, description="Filter by entity kind")
+class CategoryNodesFilter:
     ids: list[strawberry.ID] | None = strawberry.field(default=None, description="Filter by list of entity IDs")
-    linked_expression: strawberry.ID | None = strawberry.field(default=None, description="Filter by linked expression ID")
-    identifier: str | None = strawberry.field(default=None, description="Filter by structure identifier")
-    object: strawberry.ID | None = strawberry.field(default=None, description="Filter by associated object ID")
     search: str | None = strawberry.field(default=None, description="Search entities by text")
     property_matches: list[PropertyMatch] | None = strawberry.field(default=None, description="Property matches that should or should not hold true")
+
+
+@strawberry.input(description="Filter for entities in the graph")
+class CategoryNodesOrder:
+    property_order: list[PropertyOrder] | None = strawberry.field(default=None, description="Property matches that should or should not hold true")
 
 
 @strawberry.input(description="Filter for entity relations in the graph")
