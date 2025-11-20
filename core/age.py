@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from core import filters, pagination, inputs, enums
 import typing
 from core.pagination import GraphPaginationInput
-from core.utils import get_now_epoch_millis, translate_to_epoch_millis, from_epoch_millis
+from core.utils import datetime_to_epoch_millis, get_now_epoch_millis, translate_to_epoch_millis, from_epoch_millis
 from pydantic import BaseModel, Field
 import strawberry
 from enum import Enum
@@ -152,7 +152,7 @@ class RetrievedEntity:
 
     @property
     def category_id(self) -> str:
-        return self.properties["category_id"]
+        return self.properties.get("category_id", None)
 
     @property
     def valid_to(self):
@@ -216,6 +216,18 @@ class RetrievedRelation:
     @property
     def category_id(self) -> str:
         return self.properties.get("category_id", None)
+
+    @property
+    def change_type(self) -> str | None:
+        return self.properties.get("change_type", None)
+
+    @property
+    def previous_value(self) -> str | None:
+        return self.properties.get("previous_value", None)
+
+    @property
+    def new_value(self) -> str | None:
+        return self.properties.get("new_value", None)
 
     @property
     def value(self):
@@ -782,6 +794,9 @@ def create_age_entity(
 ) -> RetrievedEntity:
     # Validate and convert properties if provided
     validated_properties = {}
+
+    time_stamp_now = get_now_epoch_millis()
+
     if properties:
         property_map = category.property_map
         for prop_key in properties.keys():
@@ -818,7 +833,7 @@ def create_age_entity(
                     category.get_age_type_name(),
                     external_id,
                     name,
-                    datetime.datetime.now().isoformat(),
+                    time_stamp_now,
                 ),
             )
             existing = cursor.fetchone()
@@ -856,7 +871,7 @@ def create_age_entity(
                 category.id,
                 category.get_age_type_name(),
                 name,
-                datetime.datetime.now().isoformat(),
+                time_stamp_now,
                 external_id,
                 seq_id,
             ),
@@ -866,22 +881,21 @@ def create_age_entity(
             entity = result[0]
             retrieved_entity = vertex_ag_to_retrieved_entity(category.graph.age_name, entity)
 
-            # Create edit events for properties if they were set
-            if validated_properties:
-                for prop_key, validated_value in validated_properties.items():
-                    cursor.execute(
-                        f"""
-                        SELECT * 
-                        FROM cypher(%s, $$
-                            MATCH (a) WHERE id(a) = %s
-                            CREATE (b:EditEvent {{type: "EDIT_EVENT", created_by: %s, new_value: %s, variable_name: %s, created_at: %s}})
-                            CREATE (a)-[r:EDITED {{type: "EDITED"}}]->(b)
-                            RETURN r
-                        $$) as (r agtype);
-                        """,
-                        (category.graph.age_name, int(retrieved_entity.id), created_by, str(validated_value), prop_key, datetime.datetime.now().isoformat()),
-                    )
-                    cursor.fetchone()
+            timestamp_now = get_now_epoch_millis()
+
+            cursor.execute(
+                f"""
+                SELECT * 
+                FROM cypher(%s, $$
+                    MATCH (a) WHERE id(a) = %s
+                    CREATE (b:EditEvent {{type: "EDIT_EVENT", created_by: %s, new_value: %s, variable_name: %s, created_at: %s}})
+                    CREATE (a)<-[r:EDITED {{type: "EDITED", change_type: "CREATE"}}]-(b)
+                    RETURN r
+                $$) as (r agtype);
+                """,
+                (category.graph.age_name, int(retrieved_entity.id), created_by, str(validated_value), prop_key, timestamp_now),
+            )
+            cursor.fetchone()
 
             return retrieved_entity
         else:
@@ -918,6 +932,8 @@ def create_age_reagent(
     name: str | None = None,
     external_id: str | None = None,
 ) -> RetrievedEntity:
+    timestamp_now = get_now_epoch_millis()
+
     with graph_cursor() as cursor:
         if external_id:
             # Try to find existing reagent first
@@ -932,14 +948,7 @@ def create_age_reagent(
                 RETURN n
             $$) as (n agtype);
             """,
-                (
-                    category.graph.age_name,
-                    category.id,
-                    category.get_age_type_name(),
-                    external_id,
-                    name,
-                    datetime.datetime.now().isoformat(),
-                ),
+                (category.graph.age_name, category.id, category.get_age_type_name(), external_id, name, timestamp_now),
             )
             existing = cursor.fetchone()
             if existing:
@@ -972,7 +981,7 @@ def create_age_reagent(
                 category.id,
                 category.get_age_type_name(),
                 name,
-                datetime.datetime.now().isoformat(),
+                timestamp_now,
                 external_id,
                 seq_id,
             ),
@@ -1065,6 +1074,8 @@ def create_age_protocol_event(
         for i, variable in enumerate(variables):
             build_variable_setters += f"SET n.variable_{variable.key} = %s\n"
 
+    timestamp_now = get_now_epoch_millis()
+
     with graph_cursor() as cursor:
         if external_id:
             # Try to find existing reagent first
@@ -1083,7 +1094,7 @@ def create_age_protocol_event(
                 RETURN n
             $$) as (n agtype);
             """,
-                tuple([category.graph.age_name, category.id, category.get_age_type_name(), external_id, name, datetime.datetime.now().isoformat(), valid_from.isoformat() if valid_from else None, valid_to.isoformat() if valid_to else None, user] + [variable.value for variable in variables]),
+                tuple([category.graph.age_name, category.id, category.get_age_type_name(), external_id, name, timestamp_now, datetime_to_epoch_millis(valid_from) if valid_from else None, datetime_to_epoch_millis(valid_to) if valid_to else None, user] + [variable.value for variable in variables]),
             )
             existing = cursor.fetchone()
             if existing:
@@ -1100,7 +1111,7 @@ def create_age_protocol_event(
                 RETURN n
             $$) as (n agtype);
             """,
-            tuple([category.graph.age_name, category.id, category.get_age_type_name(), name, datetime.datetime.now().isoformat(), external_id, valid_from.isoformat() if valid_from else None, valid_to.isoformat() if valid_to else None, user] + [variable.value for variable in variables]),
+            tuple([category.graph.age_name, category.id, category.get_age_type_name(), name, timestamp_now, external_id, datetime_to_epoch_millis(valid_from) if valid_from else None, datetime_to_epoch_millis(valid_to) if valid_to else None, user] + [variable.value for variable in variables]),
         )
         result = cursor.fetchone()
         if result:
@@ -1380,9 +1391,9 @@ def create_measurement(
                 entity_id,
                 category.get_age_type_name(),
                 category.id,
-                valid_from.isoformat() if valid_from else None,
-                valid_to.isoformat() if valid_to else None,
-                created_at.isoformat() if created_at else None,
+                datetime_to_epoch_millis(valid_from) if valid_from else None,
+                datetime_to_epoch_millis(valid_to) if valid_to else None,
+                datetime_to_epoch_millis(created_at) if created_at else get_now_epoch_millis(),
                 assignation_id,
                 created_by,
             ),
@@ -1494,6 +1505,8 @@ def create_age_metric(
     created_by: str | None = None,
     created_app: str | None = None,
 ):
+    timestamp_now = get_now_epoch_millis()
+
     with graph_cursor() as cursor:
         if isinstance(value, list):
             value = json.dumps(value)
@@ -1512,7 +1525,7 @@ def create_age_metric(
                 metric_category.get_age_type_name(),
                 metric_category.id,
                 value,
-                datetime.datetime.now().isoformat(),
+                timestamp_now,
                 created_by,
                 assignation_id,
                 created_app,
@@ -2231,6 +2244,21 @@ def set_entity_variable(graph_name: str, node_id: int, variable_name: str, varia
     variable_value = _validate_and_convert_property_value(prodf, variable_value)
 
     with graph_cursor() as cursor:
+        # Get the current value before updating
+        cursor.execute(
+            f"""
+            SELECT * 
+            FROM cypher(%s, $$
+                MATCH (n) WHERE id(n) = %s
+                RETURN n.{prodf.key}
+            $$) as (previous_value agtype);
+            """,
+            (graph_name, int(node_id)),
+        )
+        previous_result = cursor.fetchone()
+        previous_value = previous_result[0] if previous_result else None
+
+        # Now update the property
         cursor.execute(
             f"""
             SELECT * 
@@ -2244,18 +2272,20 @@ def set_entity_variable(graph_name: str, node_id: int, variable_name: str, varia
         )
         result = cursor.fetchone()
         if result:
-            # Always create an edit event for provenance logging
+            # Create an edit event with previous value, new value, and timestamp
+            timestamp = datetime.datetime.now().timestamp()
+
             cursor.execute(
                 f"""
                 SELECT * 
                 FROM cypher(%s, $$
                     MATCH (a) WHERE id(a) = %s
                     CREATE (b:EditEvent {{type: "EDIT_EVENT", created_by: %s, new_value: %s, variable_name: %s, created_at: %s}})
-                    CREATE (a)-[r:EDITED {{type: "EDITED"}}]->(b)
+                    CREATE (a)<-[r:EDITED {{type: "EDITED", previous_value: %s, new_value: %s, timestamp: %s, change_type: "UPDATE"}}]-(b)
                     RETURN r
                 $$) as (r agtype);
                 """,
-                (graph_name, int(node_id), created_by, str(variable_value), variable_name, datetime.datetime.now().isoformat()),
+                (graph_name, int(node_id), created_by, str(variable_value), variable_name, timestamp, str(previous_value) if previous_value else None, str(variable_value), timestamp),
             )
             print(cursor.fetchone())
 

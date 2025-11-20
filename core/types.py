@@ -505,17 +505,26 @@ class Node:
     def relevant_queries(self, info: Info) -> List["NodeQuery"]:
         from core.renderers.node.render import render_node_view
 
+        if not self._value.category_id:
+            return []
+
         return [q for q in models.NodeQuery.objects.filter(graph__age_name=self._value.graph_name, relevant_for_nodes=self._value.category_id).all()]
 
     @strawberry_django.field()
     def views(self, info: Info) -> List["NodeQueryView"]:
         from core.renderers.node.render import render_node_view
 
+        if not self._value.category_id:
+            return []
+
         return [q for q in models.NodeQuery.objects.filter(graph__age_name=self._value.graph_name, relevant_for_nodes=self._value.category_id).annotate(pinned=Q(pinned_by=info.context.request.user)).order_by("-pinned").all()]
 
     @strawberry_django.field(description="The best view of the node given the current context")
     def best_view(self, info: Info) -> NodeQueryView | None:
         from core.renderers.node.render import render_node_view
+
+        if not self._value.category_id:
+            return None
 
         best_query = models.NodeQuery.objects.filter(graph__age_name=self._value.graph_name, relevant_for_nodes=self._value.category_id).annotate(pinned=Q(pinned_by=info.context.request.user)).order_by("pinned").first()
 
@@ -805,8 +814,16 @@ class EditEvent(Node):
         return self._value.id
 
     @strawberry_django.field(description="Protocol steps where this entity was the target")
-    async def param(self) -> str:
-        return "my_chosen_param"
+    async def editor(self) -> str:
+        return await loaders.user_loader.load(self._value.created_by)
+
+    @strawberry_django.field(description="Protocol steps where this entity was the target")
+    async def timestamp(self) -> datetime.datetime:
+        return self._value.created_at
+
+    @strawberry_django.field(description="Protocol steps where this entity was the target")
+    def edited(self) -> list["Edited"]:
+        return [Edited(_value=edge) for edge in self._value.retrieve_right_relations() if edge.category_type == "EDITED"]
 
 
 @strawberry.type(
@@ -1017,6 +1034,18 @@ class Participant(Edge):
 class Edited(Edge):
     def __hash__(self):
         return self._value.id
+
+    @strawberry_django.field(description="Protocol steps where this entity was the target")
+    async def change_type(self) -> str:
+        return self._value.change_type
+
+    @strawberry_django.field(description="Protocol steps where this entity was the target")
+    async def previous_value(self) -> scalars.Any | None:
+        return self._value.previous_value
+
+    @strawberry_django.field(description="Protocol steps where this entity was the target")
+    async def new_value(self) -> scalars.Any | None:
+        return self._value.new_value
 
 
 @strawberry.type(

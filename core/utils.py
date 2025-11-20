@@ -11,6 +11,12 @@ def get_now_epoch_millis() -> int:
     return epoch_ms
 
 
+def datetime_to_epoch_millis(dt: timezone.datetime) -> int:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return int(dt.timestamp() * 1000)
+
+
 def translate_to_epoch_millis(dt: Optional[timezone.datetime]) -> Optional[int]:
     if dt is None:
         return None
@@ -20,7 +26,7 @@ def translate_to_epoch_millis(dt: Optional[timezone.datetime]) -> Optional[int]:
 
 
 def from_epoch_millis(epoch_millis: int) -> timezone.datetime:
-    return timezone.datetime.fromtimestamp(epoch_millis / 1000, tz=timezone.utc)
+    return timezone.datetime.fromtimestamp(epoch_millis / 1000, tz=timezone.get_current_timezone())
 
 
 # Factor out pagination logic into a separate function

@@ -341,6 +341,19 @@ class Query:
         return types.entity_to_node_subtype(age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id)))
 
     @field(permission_classes=[])
+    def edit_event(self, info: Info, id: ID) -> types.EditEvent:
+        return types.entity_to_node_subtype(age.get_age_entity(age.to_graph_id(id), age.to_entity_id(id)))
+
+    @field(permission_classes=[])
+    def edit_events(
+        self,
+        info: Info,
+        filters: filters.EditEventFilter | None = None,
+        pagination: pagination.GraphPaginationInput | None = None,
+    ) -> list[types.EditEvent]:
+        return []
+
+    @field(permission_classes=[])
     def protocol_events(
         self,
         info: Info,

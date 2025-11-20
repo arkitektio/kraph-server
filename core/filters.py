@@ -721,6 +721,11 @@ class ProtocolEventFilter(NodeFilter):
 
 
 @strawberry.input(description="Filter for entity relations in the graph")
+class EditEventFilter(NodeFilter):
+    kind: strawberry.ID | None = strawberry.field(default=None, description="Filter by relation kind")
+
+
+@strawberry.input(description="Filter for entity relations in the graph")
 class NaturalEventFilter(NodeFilter):
     kind: strawberry.ID | None = strawberry.field(default=None, description="Filter by relation kind")
 
