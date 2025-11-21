@@ -2,6 +2,7 @@ import string
 from core import models, enums, age, inputs
 from authentikate.models import Organization
 
+
 def rebuild_graph(graph: models.Graph):
     for item in graph.entity_categories.all():
         age.create_age_entity_kind(graph.age_name, item.age_name)
@@ -16,6 +17,11 @@ def rebuild_graph(graph: models.Graph):
         age.create_age_structure_kind(graph.age_name, item.age_name)
 
 
+def add_descriptors_to_category(category: models.Category, descriptors: list[inputs.DescriptorInput]):
+    for descriptor in descriptors:
+        descriptor_obj, _ = models.Descriptor.objects.update_or_create(key=descriptor.key, defaults={"description": descriptor.description, "value": descriptor.value}, category=category)
+
+
 def clean_string(text: str) -> str:
     return "".join(c for c in text if c in string.ascii_letters + "_")
 
@@ -25,7 +31,7 @@ def clean_relation_string(text: str) -> str:
 
 
 def build_graph_age_name(label: str, organization: Organization) -> str:
-    age_name =  clean_string(label.replace(" ", "_").replace("-", "_")).lower()
+    age_name = clean_string(label.replace(" ", "_").replace("-", "_")).lower()
     clean_slug = clean_string(organization.slug.replace(" ", "_").replace("-", "_")).lower()
     return f"{clean_slug}_{age_name}"
 

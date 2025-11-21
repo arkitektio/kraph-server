@@ -203,6 +203,20 @@ class Query:
         raise Exception("Must provide either id or graph and label")
 
     @field(permission_classes=[])
+    def edge_category(
+        self,
+        info: Info,
+        id: Optional[ID] = None,
+        graph: Optional[ID] = None,
+        label: Optional[str] = None,
+    ) -> types.EdgeCategory:
+        if id:
+            return models.EdgeCategory.objects.get(id=id)
+        if graph and label:
+            return models.EdgeCategory.objects.get(graph_id=graph, age_name=manager.build_relation_age_name(label))
+        raise Exception("Must provide either id or graph and label")
+
+    @field(permission_classes=[])
     def get_entity_by_category_and_external_id(self, info: Info, category: ID, external_id: str) -> types.Entity:
         entity_category = models.EntityCategory.objects.get(id=category)
 
@@ -476,6 +490,11 @@ class Mutation:
     set_node_property = mutation(
         resolver=mutations.set_node_property,
         description="Set a property on a node",
+    )
+
+    import_graph = mutation(
+        resolver=mutations.import_graph,
+        description="Import a graph with nodes and relations",
     )
 
     # Create a new Metric Category (Always attached to a structure)

@@ -230,6 +230,10 @@ class RetrievedRelation:
         return self.properties.get("new_value", None)
 
     @property
+    def property_name(self) -> str | None:
+        return self.properties.get("property_name", None)
+
+    @property
     def value(self):
         return self.properties.get("value", None)
 
@@ -786,7 +790,7 @@ def get_entity_category_stats(entity_category: models.EntityCategory, filters: f
 
 
 def create_age_entity(
-    category: "models.EntityCategory",
+    category: models.NodeCategory,
     name: str | None = None,
     external_id: str | None = None,
     properties: dict[str, typing.Union[str, int, float, bool]] | None = None,
@@ -819,7 +823,7 @@ def create_age_entity(
                 f"""
             SELECT * 
             FROM cypher(%s, $$
-                MATCH (n:{category.get_age_vertex_name()} {{type: "ENTITY", category_id: %s, category_type: %s}}) 
+                MATCH (n:{category.get_age_vertex_name()} {{type: "{category.get_age_type_name()}", category_id: %s, category_type: %s}}) 
                 WHERE n.external_id = %s
                 SET n.label = %s
                 SET n.created_at = %s
@@ -856,7 +860,7 @@ def create_age_entity(
         create_query = f"""
         SELECT * 
         FROM cypher(%s, $$
-            CREATE (n:{category.get_age_vertex_name()} {{type: "ENTITY", category_id: %s,  category_type: %s, label: %s, created_at: %s, external_id: %s}})
+            CREATE (n:{category.get_age_vertex_name()} {{type: "{category.get_age_type_name()}", category_id: %s,  category_type: %s, label: %s, created_at: %s, external_id: %s}})
             SET n.sequence = %s
             {set_statements and "".join(set_statements) or ""}
             RETURN n
@@ -2234,7 +2238,7 @@ def set_entity_variable(graph_name: str, node_id: int, variable_name: str, varia
 
     category = get_node_category(node)
 
-    category.defined_properties
+    timestamp = get_now_epoch_millis()
 
     try:
         prodf = category.property_map[variable_name]
@@ -2273,19 +2277,18 @@ def set_entity_variable(graph_name: str, node_id: int, variable_name: str, varia
         result = cursor.fetchone()
         if result:
             # Create an edit event with previous value, new value, and timestamp
-            timestamp = datetime.datetime.now().timestamp()
 
             cursor.execute(
                 f"""
                 SELECT * 
                 FROM cypher(%s, $$
                     MATCH (a) WHERE id(a) = %s
-                    CREATE (b:EditEvent {{type: "EDIT_EVENT", created_by: %s, new_value: %s, variable_name: %s, created_at: %s}})
-                    CREATE (a)<-[r:EDITED {{type: "EDITED", previous_value: %s, new_value: %s, timestamp: %s, change_type: "UPDATE"}}]-(b)
+                    CREATE (b:EditEvent {{type: "EDIT_EVENT", created_by: %s, created_at: %s}})
+                    CREATE (a)<-[r:EDITED {{type: "EDITED", previous_value: %s, new_value: %s, timestamp: %s, change_type: "UPDATE", property_name: %s}}]-(b)
                     RETURN r
                 $$) as (r agtype);
                 """,
-                (graph_name, int(node_id), created_by, str(variable_value), variable_name, timestamp, str(previous_value) if previous_value else None, str(variable_value), timestamp),
+                (graph_name, int(node_id), created_by, timestamp, str(previous_value) if previous_value else None, str(variable_value), timestamp, variable_name),
             )
             print(cursor.fetchone())
 

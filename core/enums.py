@@ -152,6 +152,14 @@ class WhereOperator(str, Enum):
 
 
 @strawberry.enum
+class ChangeKind(str, Enum):
+    CREATE = "CREATE"
+    UPDATE = "UPDATE"
+    DELETE = "DELETE"
+    IMPORT = "IMPORT"
+
+
+@strawberry.enum
 class OrderDirection(str, Enum):
     ASC = "ASC"
     DESC = "DESC"

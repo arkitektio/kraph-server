@@ -314,6 +314,13 @@ class WithGraphInput:
 
 
 @strawberry.input()
+class DescriptorInput:
+    key: str = strawberry.field(description="A world unique key of the descriptor")
+    value: str | None = strawberry.field(default=None, description="An optional value for the descriptor")
+    description: str | None = strawberry.field(default=None, description="A detailed description of the descriptor")
+
+
+@strawberry.input()
 class CategoryInput:
     description: str | None = strawberry.field(default=None, description="A detailed description of the expression")
     purl: str | None = strawberry.field(default=None, description="Permanent URL identifier for the expression")
@@ -328,6 +335,10 @@ class CategoryInput:
     auto_create_sequence: bool | None = strawberry.field(
         default=False,
         description="Whether to create a sequence if it does not exist",
+    )
+    descriptors: list[DescriptorInput] | None = strawberry.field(
+        default=None,
+        description="A list of descriptor IDs to associate with this category",
     )
 
 
@@ -465,9 +476,31 @@ class ProtocolEventCategorySchemaInput(CategoryInput, NodeCategoryInput):
     )
 
 
+@strawberry.input(description="Input for creating a new protocol event category")
+class SchemaDefinitionInput:
+    tags: list[str] | None = strawberry.field(default=None, description="A list of tags associated with this expression")
+    labels: list[str] | None = strawberry.field(default=None, description="A list of labels associated with this expression")
+
+
+@strawberry.input(description="Input for creating a new protocol event category")
+class RelationCategorySchemaInput(CategoryInput):
+    label: str = strawberry.field(description="The label/name of the expression")
+    source_definition: SchemaDefinitionInput = strawberry.field(
+        description="The source definition for this expression",
+    )
+    target_definition: SchemaDefinitionInput = strawberry.field(
+        description="The target definition for this expression",
+    )
+    property_definitions: list[PropertyDefinitionInput] | None = strawberry.field(
+        default=None,
+        description="A list of property definitions for this relation category",
+    )
+
+
 @strawberry.input(description="An ontology/graph")
 class SchemaInput:
     entity_schemas: list[EntityCategorySchemaInput] = strawberry.field(description="List of entity categories in the ontology")
     measurement_schemas: list[MeasurementCategorySchemaInput] = strawberry.field(description="List of measurement categories in the ontology")
     natural_event_schemas: list[NaturalEventCategorySchemaInput] | None = strawberry.field(default=None, description="List of natural event categories in the ontology")
     protocol_event_schemas: list[ProtocolEventCategorySchemaInput] | None = strawberry.field(default=None, description="List of protocol event categories in the ontology")
+    relation_schemas: list[RelationCategorySchemaInput] | None = strawberry.field(default=None, description="List of relation categories in the ontology")

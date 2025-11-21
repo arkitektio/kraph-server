@@ -32,6 +32,7 @@ def entity_category_creator(
     color: list[int] | None = None,
     image_id: str | None = None,
     property_definitions: list | None = None,
+    descriptors: list[inputs.DescriptorInput] | None = None,
     tags: list[str] | None = None,
     pin: bool | None = None,
     sequence: str | None = None,
@@ -61,6 +62,12 @@ def entity_category_creator(
             property_definitions=property_definitions or [],
         ),
     )
+
+    if descriptors:
+        vocab.descriptors.clear()
+        for descriptor in descriptors:
+            descriptor_obj, _ = models.Descriptor.objects.get_or_create(key=descriptor.key, defaults={"description": descriptor.description})
+            vocab.descriptors.add(descriptor_obj)
 
     if position_x is not None:
         vocab.position_x = position_x

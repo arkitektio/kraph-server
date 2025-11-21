@@ -822,7 +822,7 @@ class EditEvent(Node):
         return self._value.id
 
     @strawberry_django.field(description="Protocol steps where this entity was the target")
-    async def editor(self) -> str:
+    async def editor(self) -> "User":
         return await loaders.user_loader.load(self._value.created_by)
 
     @strawberry_django.field(description="Protocol steps where this entity was the target")
@@ -1044,8 +1044,12 @@ class Edited(Edge):
         return self._value.id
 
     @strawberry_django.field(description="Protocol steps where this entity was the target")
-    async def change_type(self) -> str:
+    async def change_kind(self) -> enums.ChangeKind:
         return self._value.change_type
+
+    @strawberry_django.field(description="Protocol steps where this entity was the target")
+    async def property_name(self) -> str | None:
+        return self._value.property_name
 
     @strawberry_django.field(description="Protocol steps where this entity was the target")
     async def previous_value(self) -> scalars.Any | None:
@@ -1678,7 +1682,6 @@ class Pairs:
 class NodeList:
     nodes: list[Node] = strawberry.field(description="The nodes in the list.")
     graph: Graph = strawberry.field(description="The graph this list was queried from.")
-    category: NodeCategory = strawberry.field(description="The category of nodes in this list.")
 
 
 @strawberry.type(description="A column in a table.")

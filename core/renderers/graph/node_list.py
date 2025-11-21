@@ -48,4 +48,4 @@ def node_list(graph_query: models.GraphQuery, check_exists: bool = True, filters
             if not nodes:
                 raise ValueError("No nodes found in the query result")
 
-    return types.NodeList(nodes=nodes, graph=tgraph, category=graph_query.node_category)
+    return types.NodeList(nodes=nodes, graph=tgraph)

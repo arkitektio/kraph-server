@@ -1,4 +1,5 @@
 from kante.types import Info
+from .relation_category import relation_category_creator
 import strawberry
 from core import types, models, age, enums, scalars, manager, inputs
 from django.db import connections
@@ -103,9 +104,12 @@ def create_graph(
     else:
         item.pinned_by.remove(info.context.request.user)
 
+    label_category_map = {}
+    label_relation_map = {}
+
     if input.schema:
         for e in input.schema.entity_schemas:
-            entity_category_creator(
+            cat = entity_category_creator(
                 info=info,
                 graph_id=item.id,
                 label=e.label,
@@ -123,11 +127,12 @@ def create_graph(
                 height=e.height,
                 width=e.width,
             )
+            label_category_map[e.label] = cat
+            manager.add_descriptors_to_category(category=cat, descriptors=e.descriptors or [])
 
         if input.schema.natural_event_schemas:
             for e in input.schema.natural_event_schemas:
-                print("hallo")
-                natural_event_category_creator(
+                cat = natural_event_category_creator(
                     info=info,
                     graph_id=item.id,
                     label=e.label,
@@ -143,10 +148,12 @@ def create_graph(
                     height=e.height,
                     width=e.width,
                 )
+                label_category_map[e.label] = cat
+                manager.add_descriptors_to_category(category=cat, descriptors=e.descriptors or [])
 
         if input.schema.protocol_event_schemas:
             for e in input.schema.protocol_event_schemas:
-                protocol_event_category_creator(
+                cat = protocol_event_category_creator(
                     info=info,
                     graph_id=item.id,
                     label=e.label,
@@ -167,6 +174,37 @@ def create_graph(
                     height=e.height,
                     width=e.width,
                 )
+                label_category_map[e.label] = cat
+                manager.add_descriptors_to_category(category=cat, descriptors=e.descriptors or [])
+
+        if input.schema.relation_schemas:
+            for e in input.schema.relation_schemas:
+                source_defintion = inputs.EntityCategoryDefinitionInput(
+                    category_filters=[label_category_map[label].id for label in e.source_definition.labels] if e.source_definition.labels else None,
+                    tag_filters=e.source_definition.tags,
+                )
+
+                target_defintion = inputs.EntityCategoryDefinitionInput(
+                    category_filters=[label_category_map[label].id for label in e.target_definition.labels] if e.target_definition.labels else None,
+                    tag_filters=e.target_definition.tags,
+                )
+
+                cat = relation_category_creator(
+                    info=info,
+                    graph_id=item.id,
+                    label=e.label,
+                    source_definition=strawberry.asdict(source_defintion),
+                    target_definition=strawberry.asdict(target_defintion),
+                    description=e.description,
+                    purl=e.purl,
+                    color=e.color,
+                    image_id=e.image,
+                    tags=e.tags,
+                    sequence=e.sequence,
+                    auto_create_sequence=e.auto_create_sequence or False,
+                )
+
+                label_relation_map[e.label] = cat
 
     return item
 

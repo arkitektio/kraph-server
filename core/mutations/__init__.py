@@ -30,6 +30,7 @@ from .graph import materialize_graph
 from .node import delete_node, detach_delete_node
 from .edge import delete_edge
 from .property import set_node_property
+from .import_graph import import_graph
 
 __all__ = [
     "create_channel",
@@ -54,6 +55,7 @@ __all__ = [
     "create_timepoint_view",
     "create_affine_transformation_view",
     "create_dataset",
+    "import_graph",
     "delete_dataset",
     "pin_dataset",
     "create_stage",

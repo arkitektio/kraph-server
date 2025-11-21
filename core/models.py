@@ -345,7 +345,7 @@ class Descriptor(models.Model):
         help_text="The category this descriptor belongs to",
     )
 
-    name = models.CharField(
+    key = models.CharField(
         max_length=1000,
         help_text="The name of the descriptor",
     )
@@ -362,7 +362,7 @@ class Descriptor(models.Model):
     )
 
     class Meta:
-        unique_together = ("category", "name")
+        unique_together = ("category", "key")
         default_related_name = "descriptors"
 
 
@@ -463,7 +463,7 @@ class StructureCategory(NodeCategory):
         return self.age_name
 
     def get_age_type_name(self):
-        return self.identifier
+        return "STRUCTURE"
 
     class Meta:
         default_related_name = "structure_categories"
@@ -505,7 +505,7 @@ class NaturalEventCategory(NodeCategory):
         return self.age_name
 
     def get_age_type_name(self):
-        return self.age_name
+        return "NATURAL_EVENT"
 
     @property
     def collected_in_role_vertex_name(self):
@@ -565,7 +565,7 @@ class ProtocolEventCategory(NodeCategory):
         return self.age_name
 
     def get_age_type_name(self):
-        return self.age_name
+        return "PROTOCOL_EVENT"
 
     @property
     def collected_in_role_vertex_name(self):
@@ -636,7 +636,7 @@ class EntityCategory(NodeCategory):
         return self.age_name
 
     def get_age_type_name(self):
-        return self.age_name
+        return "ENTITY"
 
     class Meta:
         default_related_name = "entity_categories"
@@ -697,7 +697,7 @@ class ReagentCategory(NodeCategory):
         return self.age_name
 
     def get_age_type_name(self):
-        return self.age_name
+        return "REAGENT"
 
     class Meta:
         default_related_name = "reagent_categories"
@@ -757,7 +757,7 @@ class MetricCategory(NodeCategory):
         return self.age_name
 
     def get_age_type_name(self):
-        return self.age_name
+        return "METRIC"
 
     class Meta:
         default_related_name = "metric_categories"
@@ -777,7 +777,7 @@ class MeasurementCategory(EdgeCategory):
         return self.age_name
 
     def get_age_type_name(self):
-        return self.age_name
+        return "MEASUREMENT"
 
     class Meta:
         default_related_name = "measurement_categories"
@@ -796,7 +796,7 @@ class RelationCategory(EdgeCategory):
         return self.age_name
 
     def get_age_type_name(self):
-        return self.age_name
+        return "RELATION"
 
     class Meta:
         default_related_name = "relation_categories"
@@ -815,7 +815,7 @@ class StructureRelationCategory(EdgeCategory):
         return self.age_name
 
     def get_age_type_name(self):
-        return self.age_name
+        return "STRUCTURE_RELATION"
 
     class Meta:
         default_related_name = "structure_relation_categories"
