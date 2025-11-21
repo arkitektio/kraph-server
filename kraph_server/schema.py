@@ -1,6 +1,6 @@
 from itertools import chain
 from kante.types import Info
-from typing import Annotated, AsyncGenerator, List
+from typing import Annotated, AsyncGenerator, List, Optional
 import strawberry
 from strawberry_django.optimizer import DjangoOptimizerExtension
 from core.datalayer import DatalayerExtension
@@ -189,8 +189,18 @@ class Query:
         return models.GraphSequence.objects.get(id=id)
 
     @field(permission_classes=[])
-    def entity_category(self, info: Info, id: ID) -> types.EntityCategory:
-        return models.EntityCategory.objects.get(id=id)
+    def entity_category(
+        self,
+        info: Info,
+        id: Optional[ID] = None,
+        graph: Optional[ID] = None,
+        label: Optional[str] = None,
+    ) -> types.EntityCategory:
+        if id:
+            return models.EntityCategory.objects.get(id=id)
+        if graph and label:
+            return models.EntityCategory.objects.get(graph_id=graph, age_name=manager.build_entity_age_name(label))
+        raise Exception("Must provide either id or graph and label")
 
     @field(permission_classes=[])
     def get_entity_by_category_and_external_id(self, info: Info, category: ID, external_id: str) -> types.Entity:

@@ -888,12 +888,12 @@ def create_age_entity(
                 SELECT * 
                 FROM cypher(%s, $$
                     MATCH (a) WHERE id(a) = %s
-                    CREATE (b:EditEvent {{type: "EDIT_EVENT", created_by: %s, new_value: %s, variable_name: %s, created_at: %s}})
+                    CREATE (b:EditEvent {{type: "EDIT_EVENT", created_by: %s, created_at: %s}})
                     CREATE (a)<-[r:EDITED {{type: "EDITED", change_type: "CREATE"}}]-(b)
                     RETURN r
                 $$) as (r agtype);
                 """,
-                (category.graph.age_name, int(retrieved_entity.id), created_by, str(validated_value), prop_key, timestamp_now),
+                (category.graph.age_name, int(retrieved_entity.id), created_by, timestamp_now),
             )
             cursor.fetchone()
 

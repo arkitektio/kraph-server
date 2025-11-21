@@ -12,7 +12,7 @@ def entity_nodes(
     pagination: inputs.GraphQueryPagination | None = None,
     order: f.CategoryNodesOrder | None = None,
 ) -> list[types.Entity]:
-    node_category = models.EntityCategory.objects.get(id=id)
+    node_category = models.NodeCategory.objects.get(id=id)
 
     all_items = age.get_category_nodes(node_category, filters=filters, order=order, pagination=pagination)
 
@@ -26,8 +26,8 @@ def entity_category_stats(
     pagination: inputs.GraphQueryPagination | None = None,
     order: f.CategoryNodesOrder | None = None,
 ) -> types.EntityCategoryStats:
-    entity_category = models.EntityCategory.objects.get(id=id)
+    node_category = models.NodeCategory.objects.get(id=id)
 
-    stats = age.get_entity_category_stats(entity_category, filters=filters, order=order, pagination=pagination)
+    stats = age.get_entity_category_stats(node_category, filters=filters, order=order, pagination=pagination)
 
     return types.EntityCategoryStats(**stats)

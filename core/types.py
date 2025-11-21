@@ -731,6 +731,10 @@ class Entity(Node):
     def targeted_by(self) -> list["Participant"]:
         return [Participant(_value=edge) for edge in age.select_target_participation_for_entity(self._value.graph_name, int(self._value.id))]
 
+    @strawberry_django.field(description="Protocol steps where this entity was the target")
+    def edited_in(self) -> list["Edited"]:
+        return [Edited(_value=edge) for edge in self._value.retrieve_left_relations() if edge.category_type == "EDITED"]
+
 
 @strawberry.type(description="A Entity is a recorded data point in a graph. It can measure a property of an entity through a direct measurement edge, that connects the entity to the structure. It of course can relate to other structures through relation edges.")
 class Reagent(Node):
@@ -756,6 +760,10 @@ class Reagent(Node):
 
         # Using the contains lookup for JSON fields
         return models.ProtocolEventCategory.objects.filter(target_reagent_roles__contains=[{"category_definition": {"category_filters": [category_id_str]}}])
+
+    @strawberry_django.field(description="Protocol steps where this entity was the target")
+    def edited_in(self) -> list["Edited"]:
+        return [Edited(_value=edge) for edge in self._value.retrieve_left_relations() if edge.category_type == "EDITED"]
 
 
 @strawberry.type(
@@ -1047,6 +1055,15 @@ class Edited(Edge):
     async def new_value(self) -> scalars.Any | None:
         return self._value.new_value
 
+    @strawberry_django.field()
+    def event(self, info: Info) -> "EditEvent":
+        return EditEvent(
+            _value=age.get_age_entity(
+                age.to_graph_id(self._value.unique_left_id),
+                age.to_entity_id((self._value.unique_left_id)),
+            )
+        )
+
 
 @strawberry.type(
     description="""A participant edge maps bioentitiy to an event (valid from is not necessary)
@@ -1108,12 +1125,19 @@ class NodeCategory:
     height: float | None = strawberry.field(description="The height of the node in the graph")
     width: float | None = strawberry.field(description="The width of the node in the graph")
     color: list[float] | None = strawberry.field(description="The color of the node in the graph")
-    label: str = strawberry.field(description="A human readable label for the expression")
     description: str | None = strawberry.field(description="A description of the expression.")
 
     @strawberry_django.field(description="The defined properties")
     def property_definitions(self, info) -> list["PropertyDefinition"]:
         return [PropertyDefinition(_property=i) for i in self.property_definitions] if self.property_definitions else []
+
+    @strawberry_django.field(description="The label")
+    def label(self, info) -> str:
+        label = getattr(self, "label", None)
+        if label:
+            return label
+        else:
+            return self.age_name
 
 
 @strawberry.interface()
