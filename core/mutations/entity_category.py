@@ -150,9 +150,9 @@ def update_entity_category(info: Info, input: UpdateEntityCategoryInput) -> type
 
     if input.pin is not None:
         if input.pin:
-            item.pinned_by.add(info.context.user)
+            item.pinned_by.add(info.context.request.user)
         else:
-            item.pinned_by.remove(info.context.user)
+            item.pinned_by.remove(info.context.request.user)
 
     item.save()
     return item
