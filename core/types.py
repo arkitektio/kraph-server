@@ -538,20 +538,17 @@ class Node:
         return await loaders.graph_loader.load(self._value.graph_name)
 
     @strawberry_django.field()
-    def label(self, info: Info, full: bool | None = None) -> str:
+    async def label(self, info: Info, full: bool | None = None) -> str:
+        if self._value.category_type not in ["ENTITY", "STRUCTURE"]:
+            return str(self._value.id)
+
         label_string: str = ""
 
-        if self._value.external_id is not None:
-            label_string += f"{self._value.external_id}"
-        else:
-            if self._value.local_id is not None:
-                label_string += f"{self._value.local_id}"
-            else:
-                label_string += f"{self._value.id}"
-        if full:
-            return self._value.kind_age_name + label_string
-        else:
-            return label_string
+        load_label_templaters = await loaders.label_loader_templaters.load(self._value.category_id)
+
+        for templater in load_label_templaters:
+            label_string += str(self._value.get_property(templater))
+        return label_string
 
     @strawberry.field(description="The unique identifier of the entity within its graph")
     def id(self, info: Info) -> scalars.NodeID:

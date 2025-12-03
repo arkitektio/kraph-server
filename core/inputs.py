@@ -111,6 +111,10 @@ class PropertyDefinitionInput:
         description="A list of options for this property (if only a few values are allowed)",
     )
     searchable: bool | None = strawberry.field(default=None, description="WHere or not this is searchable")
+    use_as_label: bool | None = strawberry.field(
+        default=None,
+        description="Whether to use this property as a label when displaying nodes of this category",
+    )
 
 
 @strawberry.input(description="Input for creating a new expression")

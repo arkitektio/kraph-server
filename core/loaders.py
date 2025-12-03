@@ -15,6 +15,29 @@ async def load_reagent_categories(ids):
     return gotten
 
 
+async def load_label_templaters(ids):
+    gotten: list[models.NodeCategory] = []
+    for i in ids:
+        gotten.append(
+            await models.NodeCategory.objects.aget(
+                id=i,
+            )
+        )
+
+    templaters = []
+
+    for cat in gotten:
+        node_templater = []
+
+        for i in cat.defined_properties:
+            if i.use_as_label:
+                node_templater.append(i.key)
+
+        templaters.append(node_templater)
+
+    return templaters
+
+
 async def load_metric_categories(ids):
     gotten = []
     for i in ids:
@@ -177,3 +200,4 @@ structure_relation_category_loader = DataLoader(load_fn=load_structure_relation_
 measurement_category_loader = DataLoader(load_fn=load_measurement_categories)
 graph_loader = DataLoader(load_fn=graph_loader_func)
 user_loader = DataLoader(load_fn=load_users)
+label_loader_templaters = DataLoader(load_fn=load_label_templaters)

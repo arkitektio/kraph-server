@@ -14,6 +14,7 @@ import strawberry
 from enum import Enum
 from typing import Any
 from psycopg import sql
+import re
 
 
 def escape(property, cursor):
@@ -190,6 +191,9 @@ class RetrievedEntity:
 
     def retrieve_properties(self):
         return {key: value for key, value in self.cleaned_properties.items() if key != "id" and key != "labels"}
+
+    def get_property(self, key) -> str | None:
+        return self.cleaned_properties.get(key, None)
 
 
 @dataclass
@@ -558,6 +562,20 @@ def get_neighbors_and_edges(graph_name, node_id):
         return nodes, relation_ships
 
 
+def build_safe_search_pattern(search: str) -> str | None:
+    if not search:
+        return None
+
+    # 1. ESCAPE: Turns "c++" into "c\+\+" to prevent regex errors
+    safe_input = re.escape(search)
+
+    # 2. WRAP: Add Case-Insensitive flag (?i) and wildcards .*
+    # This creates the logic: "Contains this text, ignoring case"
+    search_pattern = f"(?i).*{safe_input}.*"
+
+    return search_pattern
+
+
 def build_where_clause(filters: typing.Optional["filters.CategoryNodesFilter"], property_defs: dict, variable: str = "n") -> str:
     """Build a Cypher WHERE clause from filters.
 
@@ -588,7 +606,10 @@ def build_where_clause(filters: typing.Optional["filters.CategoryNodesFilter"], 
                 # Add searchable properties
                 for key, prop_def in property_defs.items():
                     if prop_def.searchable:
-                        search_clauses.append(f"{variable}.{key} CONTAINS '{filters.search}'")
+                        if prop_def.value_kind == "STRING":
+                            search_clauses.append(f"{variable}.{key} =~ '{build_safe_search_pattern(filters.search)}'")
+                        else:
+                            search_clauses.append(f"{variable}.{key} CONTAINS '{filters.search}'")
 
                 if len(search_clauses) > 1:
                     where_clauses.append(f"({' OR '.join(search_clauses)})")

@@ -3,6 +3,7 @@ import strawberry
 from typing import Optional, List, Any
 import re
 from django.utils import timezone
+from datetime import datetime, timezone as datetimezone
 
 
 def get_now_epoch_millis() -> int:
@@ -13,7 +14,7 @@ def get_now_epoch_millis() -> int:
 
 def datetime_to_epoch_millis(dt: timezone.datetime) -> int:
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=datetimezone.utc)
     return int(dt.timestamp() * 1000)
 
 
@@ -21,7 +22,7 @@ def translate_to_epoch_millis(dt: Optional[timezone.datetime]) -> Optional[int]:
     if dt is None:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=datetimezone.utc)
     return int(dt.timestamp() * 1000)
 
 
