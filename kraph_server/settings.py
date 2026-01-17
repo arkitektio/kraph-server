@@ -174,15 +174,16 @@ AUTH_PASSWORD_VALIDATORS = [
 
 AUTHENTIKATE = {
     "ISSUERS": [
+        *conf.get("authentikate", []),
         {
             "iss": "lok",
+            "kid": "lok-key-1",
             "kind": "rsa",
             "public_key": conf.lok.get("public_key", None),
-        }
+        },
     ],
     "STATIC_TOKENS": conf.lok.get("static_tokens", {}),
 }
-
 
 # Internationalization
 # https://docs.djangoproject.com/en/4.2/topics/i18n/
