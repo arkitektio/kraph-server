@@ -725,50 +725,74 @@ class GraphController:
             "sl_id": shadow_graph_id
         }
         
-        create_edge_res = self.engine.execute(
+        # Note: AGE doesn't allow creating relationships TO relationships,
+        # so we connect the assertion to the ShadowLink instead.
+        # The ShadowLink already has (Assertion)-[:GENERATED]->(ShadowLink)
+        create_shadow_links = self.engine.execute(
             self.graph,
             f"""
             MATCH (source) WHERE source.id = $src
             MATCH (target) WHERE target.id = $tgt
-            MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
             MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
-            
-            CREATE (source)-[r:{relation_name}]->(target)
-            CREATE (a)-[:{vocab.GENERATED}]->(r)
+            MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
+
             
             // Connect Shadow Link to nodes for traversability
-            CREATE (sl)-[:{vocab.REIFIES}]->(source)
-            CREATE (sl)-[:{vocab.REIFIES}]->(target)
+            CREATE (sl)-[:{vocab.REIFIES_AS_SOURCE}]->(source)
+            CREATE (sl)-[:{vocab.REIFIES_AS_TARGET}]->(target)
             
-            RETURN id(r) as edge_id
+            RETURN id(sl) as shadow_id
             """,
             edge_params
         )
         
-        if not create_edge_res:
+        if not create_shadow_links:
              raise ValueError(f"Could not create relation. Source {payload.source_id} or Target {payload.target_id} not found.")
              
-        edge_graph_id = create_edge_res[0]['edge_id']
+        shadow_link_id = create_shadow_links[0]['shadow_id']
 
         # --- Step 5: Recalculate Relation Properties ---
         # Rolls up values from the ShadowLink evidence onto the Edge itself
-        self._recalculate_relation(edge_graph_id, relation_name, shadow_graph_id, effective_schema)
+        edge_id = self._recalculate_relation(shadow_link_id, relation_name, effective_schema)
+        
+        if edge_id is None:
+            raise ValueError(f"Failed to create relation edge for {relation_name}")
 
         return EntityCreationResult(
             ref_id=payload.ref_id, 
             db_id=f"{payload.source_id}->{payload.target_id}", 
-            graph_id=edge_graph_id
+            graph_id=edge_id
         )
 
-    def _recalculate_relation(self, edge_id: int, relation_label: str, shadow_link_id: int, schema: GraphDefinitionModel):
+    def _recalculate_relation(self, shadow_link_id: int, relation_label: str, schema: GraphDefinitionModel) -> Optional[int]:
         """
         Updates Edge properties based on measurements connected via the ShadowLink.
+        
+        A relation can only exist once per direction between source and target.
+        This method uses MERGE to ensure uniqueness.
+        
+        Returns:
+            The edge ID of the created/updated relation edge
         """
         rel_def = schema.extensions.relations.get(relation_label)
         if not rel_def or not rel_def.materialization:
-            return
+            # No materialization config - just create the edge without properties
+            # Still store the shadow link id for provenance tracking
+            result = self.engine.execute(
+                self.graph,
+                f"""
+                MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
+                MATCH (sl)-[:{vocab.REIFIES_AS_SOURCE}]->(source)
+                MATCH (sl)-[:{vocab.REIFIES_AS_TARGET}]->(target)
+                MERGE (source)-[r:{relation_label}]->(target)
+                SET r.__shadow_link_id = $sl_id
+                RETURN id(r) as edge_id
+                """,
+                {"sl_id": shadow_link_id}
+            )
+            return result[0]['edge_id'] if result else None
 
-        updates = {}
+        updates = {"__shadow_link_id": shadow_link_id}
         
         for prop_name, prop_def in rel_def.materialization.properties.items():
             
@@ -785,7 +809,7 @@ class GraphController:
                 target_var = "m" if rule.aggregation == "COUNT" else "m.value"
                 
                 query = f"""
-                    MATCH (sl:ShadowLink) WHERE id(sl) = $sl_id
+                    MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
                     MATCH (sl)<-[:{vocab.INFORMS}]-(s)
                     MATCH (m:{vocab.Measurement})-[:{vocab.DESCRIBES}]->(s)
                     WHERE m.key = $key
@@ -800,17 +824,263 @@ class GraphController:
                 
                 if result and result[0]['val'] is not None:
                     updates[prop_name] = result[0]['val']
-
+        
+        # Use MERGE to ensure the relation exists only once per direction
+        # Then SET the aggregated properties
         if updates:
             set_clause = ", ".join([f"r.{k} = $u_{k}" for k in updates.keys()])
             update_params = {f"u_{k}": v for k, v in updates.items()}
-            update_params["eid"] = edge_id
+            update_params["sl_id"] = shadow_link_id
             
-            self.engine.execute(
+            result = self.engine.execute(
                 self.graph,
                 f"""
-                MATCH ()-[r:{relation_label}]->() WHERE id(r) = $eid
+                MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
+                MATCH (sl)-[:{vocab.REIFIES_AS_SOURCE}]->(source)
+                MATCH (sl)-[:{vocab.REIFIES_AS_TARGET}]->(target)
+                MERGE (source)-[r:{relation_label}]->(target)
                 SET {set_clause}
+                RETURN id(r) as edge_id
                 """,
                 update_params
             )
+            return result[0]['edge_id'] if result else None
+        else:
+            # No properties to set, just ensure the edge exists
+            result = self.engine.execute(
+                self.graph,
+                f"""
+                MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
+                MATCH (sl)-[:{vocab.REIFIES_AS_SOURCE}]->(source)
+                MATCH (sl)-[:{vocab.REIFIES_AS_TARGET}]->(target)
+                MERGE (source)-[r:{relation_label}]->(target)
+                RETURN id(r) as edge_id
+                """,
+                {"sl_id": shadow_link_id}
+            )
+            return result[0]['edge_id'] if result else None
+        
+
+    # ===================================================================
+    # Relation Query Methods
+    # ===================================================================
+    
+    def get_relation_by_id(self, edge_id: int) -> Optional[RetrievedEdge]:
+        """
+        Get a relation edge by its graph ID.
+        
+        Args:
+            edge_id: The AGE edge ID
+            
+        Returns:
+            RetrievedEdge or None if not found
+        """
+        result = self.engine.execute(
+            self.graph,
+            """
+            MATCH ()-[r]->() WHERE id(r) = $eid
+            RETURN r, type(r) as label, id(r) as id, 
+                   startNode(r) as start_node, endNode(r) as end_node
+            """,
+            {"eid": edge_id}
+        )
+        
+        if not result:
+            return None
+        
+        row = result[0]
+        edge_data = row['r'] if isinstance(row['r'], dict) else {}
+        
+        return RetrievedEdge(
+            graph_name=self.age_name,
+            id=edge_id,
+            label=row.get('label', 'UNKNOWN'),
+            left_id=_extract_id(row['start_node']) if row.get('start_node') else 0,
+            right_id=_extract_id(row['end_node']) if row.get('end_node') else 0,
+            properties=_extract_props(edge_data) if isinstance(edge_data, dict) else {},
+        )
+    
+    def get_shadow_link(self, link_ref_id: str) -> Optional[RetrievedNode]:
+        """
+        Get a ShadowLink node by its ref_id.
+        
+        Args:
+            link_ref_id: The reference ID of the shadow link
+            
+        Returns:
+            RetrievedNode or None if not found
+        """
+        result = self.engine.execute(
+            self.graph,
+            f"""
+            MATCH (sl:{vocab.ShadowLink} {{id: $link_id}})
+            RETURN sl, id(sl) as graph_id
+            """,
+            {"link_id": link_ref_id}
+        )
+        
+        if not result:
+            return None
+        
+        row = result[0]
+        return RetrievedNode(
+            graph_name=self.age_name,
+            id=row['graph_id'],
+            label=vocab.ShadowLink,
+            properties=_extract_props(row['sl']),
+        )
+    
+    def get_informing_structures_for_link(self, link_ref_id: str) -> List[RetrievedStructure]:
+        """
+        Get all structures that INFORM a ShadowLink.
+        
+        Args:
+            link_ref_id: The reference ID of the shadow link
+            
+        Returns:
+            List of RetrievedStructure that inform the link
+        """
+        result = self.engine.execute(
+            self.graph,
+            f"""
+            MATCH (sl:{vocab.ShadowLink} {{id: $link_id}})
+            MATCH (s)-[:{vocab.INFORMS}]->(sl)
+            RETURN s, labels(s)[0] as label, id(s) as graph_id
+            """,
+            {"link_id": link_ref_id}
+        )
+        
+        structures = []
+        for row in result:
+            structures.append(RetrievedStructure(
+                graph_name=self.age_name,
+                id=row['graph_id'],
+                label=row.get('label', 'Structure'),
+                properties=_extract_props(row['s']),
+            ))
+        return structures
+    
+    def get_reified_as_source_entities(self, link_ref_id: str) -> List[RetrievedEntity]:
+        """
+        Get all entities that a ShadowLink REIFIES (the source and target of the relation).
+        
+        Args:
+            link_ref_id: The reference ID of the shadow link
+            
+        Returns:
+            List of RetrievedEntity that are reified by the link
+        """
+        result = self.engine.execute(
+            self.graph,
+            f"""
+            MATCH (sl:{vocab.ShadowLink} {{id: $link_id}})
+            MATCH (sl)-[:{vocab.REIFIES_AS_SOURCE}]->(e)
+            RETURN e, labels(e)[0] as label, id(e) as graph_id
+            """,
+            {"link_id": link_ref_id}
+        )
+        
+        entities = []
+        for row in result:
+            entities.append(RetrievedEntity(
+                graph_name=self.age_name,
+                id=row['graph_id'],
+                label=row.get('label', 'Entity'),
+                properties=_extract_props(row['e']),
+            ))
+        return entities
+    
+    
+    def get_reified_as_target_entities(self, link_ref_id: str) -> List[RetrievedEntity]:
+        """
+        Get all entities that a ShadowLink REIFIES (the source and target of the relation).
+        
+        Args:
+            link_ref_id: The reference ID of the shadow link
+            
+        Returns:
+            List of RetrievedEntity that are reified by the link
+        """
+        result = self.engine.execute(
+            self.graph,
+            f"""
+            MATCH (sl:{vocab.ShadowLink} {{id: $link_id}})
+            MATCH (sl)-[:{vocab.REIFIES_AS_TARGET}]->(e)
+            RETURN e, labels(e)[0] as label, id(e) as graph_id
+            """,
+            {"link_id": link_ref_id}
+        )
+        
+        entities = []
+        for row in result:
+            entities.append(RetrievedEntity(
+                graph_name=self.age_name,
+                id=row['graph_id'],
+                label=row.get('label', 'Entity'),
+                properties=_extract_props(row['e']),
+            ))
+        return entities
+    
+    def get_reified_entities(self, link_ref_id: str) -> List[RetrievedEntity]:
+        """
+        Get all entities that a ShadowLink reifies (both source and target).
+        
+        Args:
+            link_ref_id: The reference ID of the shadow link
+            
+        Returns:
+            List of RetrievedEntity containing both source and target
+        """
+        source_entities = self.get_reified_as_source_entities(link_ref_id)
+        target_entities = self.get_reified_as_target_entities(link_ref_id)
+        return source_entities + target_entities
+    
+    def get_assertion_for_relation(self, edge_id: int) -> Optional[RetrievedAssertion]:
+        """
+        Get the Assertion that generated a relation edge.
+        
+        The assertion is connected via the ShadowLink:
+        (Assertion)-[:GENERATED]->(ShadowLink) and the edge stores __shadow_link_id.
+        
+        Args:
+            edge_id: The AGE edge ID
+            
+        Returns:
+            RetrievedAssertion or None if not found
+        """
+        # First, get the shadow_link_id stored on the edge
+        edge_result = self.engine.execute(
+            self.graph,
+            f"""
+            MATCH ()-[r]->() WHERE id(r) = $eid
+            RETURN r.__shadow_link_id as sl_id
+            """,
+            {"eid": edge_id}
+        )
+        
+        if not edge_result or not edge_result[0].get('sl_id'):
+            return None
+        
+        shadow_link_id = edge_result[0]['sl_id']
+        
+        # Now get the assertion that GENERATED the ShadowLink
+        result = self.engine.execute(
+            self.graph,
+            f"""
+            MATCH (a:{vocab.Assertion})-[:{vocab.GENERATED}]->(sl:{vocab.ShadowLink})
+            WHERE id(sl) = $sl_id
+            RETURN a, id(a) as graph_id
+            """,
+            {"sl_id": shadow_link_id}
+        )
+        
+        if not result:
+            return None
+        
+        row = result[0]
+        return RetrievedAssertion(
+            graph_name=self.age_name,
+            id=row['graph_id'],
+            label=vocab.Assertion,
+            properties=_extract_props(row['a']),
+        )

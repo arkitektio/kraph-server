@@ -10,7 +10,8 @@ GENERATED = "GENERATED"  # Relationship indicating that an Assertion generated a
 
 
 # Relation
-REIFIES = "REEIFIES"  # Relationship indicating that a Relation reifies a StructureRelation
+REIFIES_AS_SOURCE = "REIFIES_AS_SOURCE"  # Relationship indicating that a Relation reifies a StructureRelation as source
+REIFIES_AS_TARGET = "REIFIES_AS_TARGET"  # Relationship indicating that a Relation reifies a StructureRelation as target
 
 ShadowLink = "ShadowLink"  # A link representing a shadow relationship between nodes
 
