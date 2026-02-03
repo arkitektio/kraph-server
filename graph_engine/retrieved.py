@@ -98,13 +98,23 @@ class RetrievedNode:
     # === Core ID Properties ===
     
     @property
-    def global_id(self) -> str:
+    def unique_id(self) -> str:
         """Global unique identifier: 'graph_name:id'"""
         return f"{self.graph_name}:{self.id}"
     
     @property
+    def global_id(self) -> str:
+        """Alias for unique_id."""
+        return self.unique_id
+    
+    @property
     def local_id(self) -> int:
         """Local AGE graph ID."""
+        return self.id
+    
+    @property
+    def graph_id(self) -> int:
+        """Alias for local_id - the AGE graph ID."""
         return self.id
     
     # === Type Discrimination ===
@@ -114,6 +124,23 @@ class RetrievedNode:
         """Get the category ID (for linking to Django model)."""
         return self.properties.get("category_id")
     
+    @property
+    def node_type(self) -> NodeType:
+        """Get the node type for discrimination.
+        
+        First checks properties['type'], then falls back to label mapping.
+        """
+        # Check for explicit type in properties
+        if "type" in self.properties:
+            return self.properties["type"]
+        # Fall back to label-based mapping
+        return VocabNodeTypeMap.get(self.label, "ENTITY")
+    
+    @property
+    def category_type(self) -> NodeType:
+        """Alias for node_type - the type for discrimination."""
+        return self.node_type
+    
     # === Entity Properties (when node_type == 'ENTITY') ===
     
     @property
@@ -121,23 +148,24 @@ class RetrievedNode:
         """The entity kind (label on category)."""
         return self.label
     
-    
     @property
-    def node_type(self) -> NodeType:
-        """Get the node type for discrimination."""
-        return VocabNodeTypeMap.get(self.label, "ENTITY")
+    def external_id(self) -> Optional[str]:
+        """External ID if set (from properties)."""
+        return self.properties.get("external_id")
     
     
     # === Versioning Properties ===
     @property
-    def schema_version(self) -> str:
+    def schema_version(self) -> Optional[str]:
         """Schema version used to derive this node's properties."""
-        return self.properties.get("schema_version", "1.0.0")
+        # Check both prefixed and non-prefixed keys
+        return self.properties.get("__schema_version") or self.properties.get("schema_version")
     
     @property
     def last_derived(self) -> Optional[int]:
         """Timestamp (unix ms) when properties were last derived."""
-        val = self.properties.get("last_derived")
+        # Check both prefixed and non-prefixed keys
+        val = self.properties.get("__last_derived") or self.properties.get("last_derived")
         if val is None:
             return None
         return int(val) if isinstance(val, (int, float, str)) else None
@@ -211,6 +239,10 @@ class RetrievedNode:
         """Get a single property value by key."""
         return self.cleaned_properties.get(key, default)
     
+    def get_all_variables(self) -> List['RetrievedVariable']:
+        """Get all user-facing properties as RetrievedVariable objects."""
+        return [RetrievedVariable(key=k, value=v) for k, v in self.cleaned_properties.items()]
+    
     @property
     def cleaned_properties(self) -> Dict[str, Any]:
         """
@@ -273,6 +305,11 @@ class RetrievedEdge:
         return self.unique_id
     
     @property
+    def graph_id(self) -> int:
+        """Alias for id - the AGE graph ID."""
+        return self.id
+    
+    @property
     def global_left_id(self) -> str:
         """Global ID of source node."""
         return f"{self.graph_name}:{self.left_id}"
@@ -281,6 +318,16 @@ class RetrievedEdge:
     def global_right_id(self) -> str:
         """Global ID of target node."""
         return f"{self.graph_name}:{self.right_id}"
+    
+    @property
+    def unique_left_id(self) -> str:
+        """Alias for global_left_id."""
+        return self.global_left_id
+    
+    @property
+    def unique_right_id(self) -> str:
+        """Alias for global_right_id."""
+        return self.global_right_id
     
     # === Type Discrimination ===
     
@@ -292,11 +339,65 @@ class RetrievedEdge:
         """
         return self.label
     
+    @property
+    def edge_type(self) -> Optional[str]:
+        """Get the edge type from properties."""
+        return self.properties.get("type")
+    
     
     @property
     def category_id(self) -> Optional[str]:
         """Get the category ID (for linking to Django model)."""
         return self.properties.get("category_id")
+    
+    # === Measurement Properties (when edge_type == 'MEASUREMENT') ===
+    
+    @property
+    def key(self) -> Optional[str]:
+        """The measurement key/name."""
+        return self.properties.get("key")
+    
+    @property
+    def value(self) -> Any:
+        """The measurement value."""
+        return self.properties.get("value")
+    
+    @property
+    def unit(self) -> Optional[str]:
+        """The measurement unit (if any)."""
+        return self.properties.get("unit")
+    
+    @property
+    def confidence(self) -> Optional[float]:
+        """The measurement confidence (if any)."""
+        return self.properties.get("confidence")
+    
+    @property
+    def confidence_type(self) -> Optional[str]:
+        """The type of confidence measure (if any)."""
+        return self.properties.get("confidence_type")
+    
+    @property
+    def timestamp(self) -> Optional[int]:
+        """The timestamp of the measurement (unix ms, if any)."""
+        return self.properties.get("timestamp")
+    
+    # === Assertion Properties (when edge_type == 'ASSERTION') ===
+    
+    @property
+    def subject(self) -> Optional[str]:
+        """The subject who made the assertion."""
+        return self.properties.get("subject")
+    
+    @property
+    def app_id(self) -> Optional[str]:
+        """The application ID that created the assertion."""
+        return self.properties.get("app_id")
+    
+    @property
+    def action_name(self) -> Optional[str]:
+        """The name of the action that created the assertion."""
+        return self.properties.get("action_name")
     
     
     
@@ -353,10 +454,72 @@ class RetrievedEdge:
             return False
         return self.graph_name == other.graph_name and self.id == other.id
 
+# ==========================================
+# Specialized Retrieved Node Types, for type discrimination
+# ==========================================
+
+
+
+@dataclass
+class RetrievedEntity(RetrievedNode):
+    """A retrieved Entity node from the AGE graph."""
+    
+    @property
+    def entity_id(self) -> Optional[str]:
+        """The entity's logical UUID (stored in properties['id'])."""
+        return self.properties.get("id")
+
+@dataclass
+class RetrievedStructure(RetrievedNode):
+    """A retrieved Structure node from the AGE graph."""
+    pass
+
+@dataclass
+class RetrievedMeasurement(RetrievedNode):
+    """A retrieved Measurement node from the AGE graph."""
+    
+    # === Measurement-Specific Properties ===
+    
+    @property
+    def key(self) -> str:
+        """The measurement key/name."""
+        return self.properties.get("key", "")
+    
+    @property
+    def value(self) -> Any:
+        """The measurement value."""
+        return self.properties.get("value")
+    
+    @property
+    def unit(self) -> Optional[str]:
+        """The measurement unit (if any)."""
+        return self.properties.get("unit")
+    
+    @property
+    def confidence(self) -> Optional[float]:
+        """The measurement confidence (if any)."""
+        return self.properties.get("confidence")
+    
+    @property
+    def confidence_type(self) -> Optional[str]:
+        """The type of confidence measure (if any)."""
+        return self.properties.get("confidence_type")
+    
+    @property
+    def timestamp(self) -> Optional[str]:
+        """The timestamp of the measurement (if any)."""
+        return self.properties.get("timestamp")
+
+@dataclass
+class RetrievedAssertion(RetrievedNode):
+    """A retrieved Assertion node from the AGE graph."""
+    pass
+
 
 # ==========================================
 # Factory Functions for Creating from AGE Data
 # ==========================================
+
 
 def node_from_age_result(
     graph_name: str,

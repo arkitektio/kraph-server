@@ -84,8 +84,8 @@ class DerivationRule(BaseModel):
     """
     Configuration for how to calculate a value if derivation != LATEST.
     """
-    source_node: Optional[str] = Field(None, description="The label of the the describing structure to read from.")
-    key: Optional[str] = Field(None, description="The property key on the source node.")
+    source_node: Optional[str] = Field(..., description="The label of the the describing structure to read from.")
+    key: Optional[str] = Field(..., description="The property key on the source node.")
     aggregation: Optional[AggregationFunction] = None
     
     
@@ -145,12 +145,22 @@ class PropertyDefinition(BaseModel):
 
 
 
-
 class NodeDefinition(BaseModel):
     description: Optional[str] = None
-    allowed_parents: List[str] = [] # e.g. AIS can only belong to Cell
+
+
+class EntityDefinition(NodeDefinition):
     properties: Dict[str, PropertyDefinition] = {}
 
+
+class StructureDefinition(NodeDefinition):
+    """
+    Definition of a Structure (physical observation).
+    """
+    pass
+    
+    
+    
 # --- 3. Edge Definitions (Relation Materialization) ---
 
 class EvidenceRequirement(BaseModel):
@@ -193,8 +203,8 @@ class EventDefinition(BaseModel):
 # --- 5. The Root Schema ---
 
 class GraphExtensions(BaseModel):
-    structures: Dict[str, NodeDefinition] = Field(default_factory=dict, description="Physical observations (ROIs).")
-    entities: Dict[str, NodeDefinition] = Field(default_factory=dict, description="Logical aggregations (Cells).")
+    structures: Dict[str, StructureDefinition] = Field(default_factory=dict, description="Physical observations (ROIs).")
+    entities: Dict[str, EntityDefinition] = Field(default_factory=dict, description="Logical aggregations (Cells).")
     relations: Dict[str, RelationDefinition] = Field(default_factory=dict, description="Edges between nodes.")
     events: Dict[str, EventDefinition] = Field(default_factory=dict, description="Spatio-temporal transitions.")
 
@@ -274,30 +284,7 @@ class GraphExtensions(BaseModel):
                         f"source_node '{source_node}' which does not exist."
                     )
                 
-                # Check if source has the property
-                if source_key not in source_def.properties:
-                    raise ValueError(
-                        f"Property '{prop_name}' on '{container_name}' references "
-                        f"key '{source_key}' on '{source_node}', but that property does not exist."
-                    )
                 
-                # Validate type compatibility
-                source_prop = source_def.properties[source_key]
-                source_type = source_prop.type
-                
-                allowed_types = AGGREGATION_SOURCE_TYPES.get(aggregation)
-                if allowed_types is not None and source_type not in allowed_types:
-                    allowed_str = ", ".join(t.value for t in allowed_types)
-                    raise ValueError(
-                        f"Property '{prop_name}' on '{container_name}' uses '{aggregation.value}' "
-                        f"on source property '{source_node}.{source_key}' of type '{source_type.value}'. "
-                        f"'{aggregation.value}' requires one of: [{allowed_str}]."
-                    )
-        
-        # Validate all structures
-        for struct_name, struct_def in self.structures.items():
-            for prop_name, prop_def in struct_def.properties.items():
-                validate_property_rollup(f"structure:{struct_name}", prop_name, prop_def)
         
         # Validate all entities
         for entity_name, entity_def in self.entities.items():

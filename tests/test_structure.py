@@ -258,12 +258,12 @@ def test_get_structure_not_found(graph_controller: GraphController):
     """
     Test that get_structure returns None for non-existent structure.
     """
-    result = graph_controller.get_structure(
-        identifier="@mikro/roi",
-        object=_uid("non_existent_structure")
-    )
+    with pytest.raises(ValueError, match="Structure not found"):
+        result = graph_controller.get_structure(
+            identifier="@mikro/roi",
+            object=_uid("non_existent_structure")
+        )
     
-    assert result is None
 
 
 def test_add_measurement_minimal(graph_controller: GraphController):

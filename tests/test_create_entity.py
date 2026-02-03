@@ -273,7 +273,7 @@ def test_create_entity_evidence_links_to_entity(graph_controller: GraphControlle
         structure_object="roi_link_test_001"
     )
     assert len(informed_entities) == 1
-    assert informed_entities[0].id == result.db_id
+    assert informed_entities[0].entity_id == result.db_id
 
 
 def test_create_entity_assertion_links_to_measurements(graph_controller: GraphController):

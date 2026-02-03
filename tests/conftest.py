@@ -117,35 +117,18 @@ def bio_graph_schema():
             
             # --- 1. STRUCTURES ---
             structures={
-                "ROI": models.NodeDefinition(
+                "ROI": models.StructureDefinition(
                     description="Region of Interest",
-                    properties={
-                        "vector_length": models.PropertyDefinition(
-                            type=models.PropertyType.FLOAT, 
-                            unit="um"
-                        ),
-                        "centroid": models.PropertyDefinition(
-                            type=models.PropertyType.POINT_3D
-                        ),
-                        "valid_time": models.PropertyDefinition(
-                            type=models.PropertyType.DATETIME
-                        )
-                    }
                 ),
-                "ToldYouSo": models.NodeDefinition(
+                "ToldYouSo": models.StructureDefinition(
                     description="Evidence structure for assertions",
-                    properties={
-                        "name": models.PropertyDefinition(type=models.PropertyType.STRING),
-                    }
                 )
             },
 
             # --- 2. ENTITIES ---
             entities={
-                "AIS": models.NodeDefinition(
-                    allowed_parents=["Cell"],
+                "AIS": models.EntityDefinition(
                     properties={
-                        "id": models.PropertyDefinition(type=models.PropertyType.STRING),
                         "avg_length": models.PropertyDefinition(
                             type=models.PropertyType.FLOAT,
                             derivation=models.DerivationType.ROLLUP,
@@ -166,10 +149,8 @@ def bio_graph_schema():
                         )
                     }
                 ),
-                "Soma": models.NodeDefinition(
-                    allowed_parents=["Cell"],
+                "Soma": models.EntityDefinition(
                     properties={
-                        "id": models.PropertyDefinition(type=models.PropertyType.STRING),
                         "centroid": models.PropertyDefinition(
                             type=models.PropertyType.POINT_3D,
                             derivation=models.DerivationType.LATEST,
@@ -180,13 +161,14 @@ def bio_graph_schema():
                         )
                     }
                 ),
-                "Cell": models.NodeDefinition(
+                "Cell": models.EntityDefinition(
                     properties={
                         "id": models.PropertyDefinition(type=models.PropertyType.STRING),
                         "mitosis_count": models.PropertyDefinition(
                             type=models.PropertyType.INTEGER,
                             derivation=models.DerivationType.ROLLUP,
                             rule=models.DerivationRule(
+                                key=None,
                                 source_node="Mitosis",
                                 relationship="INPUT_TO",
                                 aggregation=models.AggregationFunction.COUNT
@@ -219,13 +201,13 @@ def bio_graph_schema():
                             models.EvidenceRequirement(key="proximity", unit="um")
                         ],
                         properties={
-                            "confidence": models.PropertyDefinition(
+                            "distance": models.PropertyDefinition(
                                 type=models.PropertyType.FLOAT,
                                 derivation=models.DerivationType.ROLLUP,
                                 rule=models.DerivationRule(
-                                    path="(:TemporalLink)<-[:INFORMS]-(:Measurement)",
-                                    key="vector_alignment",
-                                    aggregation=models.AggregationFunction.MAX
+                                    source_node="ROI",
+                                    key="centroid",
+                                    aggregation=models.AggregationFunction.EUCLIDEAN_RANGE
                                 )
                             )
                         }
@@ -247,6 +229,7 @@ def bio_graph_schema():
                             type=models.PropertyType.INTEGER,
                             derivation=models.DerivationType.ROLLUP,
                             rule=models.DerivationRule(
+                                key=None,
                                 source_node="Cell",
                                 aggregation=models.AggregationFunction.COUNT
                             )
@@ -283,7 +266,7 @@ def minimal_schema():
         system_version="1.0",
         extensions=models.GraphExtensions(
             entities={
-                "Person": models.NodeDefinition(
+                "Person": models.EntityDefinition(
                     description="A person",
                     properties={
                         "name": models.PropertyDefinition(type=models.PropertyType.STRING),

@@ -1,10 +1,19 @@
 import json
 import time
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from graph_engine.base_models import GraphDefinitionModel
 from graph_engine.input_models import EntityCreationPayload, EntityCreationResult, MeasurementInput, ProvenanceContext
 from graph_engine.engine.protocol import CypherEngine, GraphProtocol
-from graph_engine import output_models as outputs
+from graph_engine.retrieved import (
+    RetrievedNode,
+    RetrievedEdge,
+    RetrievedEntity,
+    RetrievedStructure,
+    RetrievedMeasurement,
+    RetrievedAssertion,
+    node_from_age_result,
+    edge_from_age_result,
+)
 from graph_engine import vocab
 from graph_engine.rollup import build_property_query
 
@@ -200,11 +209,11 @@ class GraphController:
         self, 
         id: str, 
         schema: Optional[GraphDefinitionModel] = None
-    ) -> outputs.EntityResponse:
+    ) -> RetrievedEntity:
         """
         Retrieves an Entity by ID.
-        Dynamically detects the 'kind' from the Node Labels and hydrates 
-        the response using the matching Schema Definition.
+        Dynamically detects the 'kind' from the Node Labels and returns
+        a RetrievedEntity with the raw graph data.
         """
         effective_schema = schema or self.graph.definition
         
@@ -233,70 +242,34 @@ class GraphController:
         # 2. Detect Kind from Labels
         # We look for a label that exists in our Schema Entities
         detected_kind = None
-        entity_def = None
         
-        # Priority: Check Entities first, then Structures (if you want to fetch structures too)
+        # Priority: Check Entities first
         possible_kinds = effective_schema.extensions.entities.keys()
         
         for label in labels:
             if label in possible_kinds:
                 detected_kind = label
-                entity_def = effective_schema.extensions.entities[label]
                 break
         
         if not detected_kind:
-            # Fallback: Just return what we have without rich metadata
+            # Fallback: Just return what we have
             detected_kind = labels[0] if labels else "Unknown"
-
-        # 3. Filter System Properties
-        system_keys = {"__schema_version", "__last_derived"}
-        clean_props = {k: v for k, v in node_props.items() if k not in system_keys and k != "id"}
-        
-        # 4. Hydrate Rich Properties
-        rich_props = []
-        
-        if entity_def:
-            for key, val in clean_props.items():
-                # Look up definition in the detected schema
-                schema_prop = entity_def.properties.get(key)
-                
-                rich_p = outputs.RichProperty(
-                    key=key,
-                    value=val,
-                    unit=schema_prop.unit if schema_prop else None,
-                    description=schema_prop.description if schema_prop else None,
-                    derivation_mode=schema_prop.derivation if schema_prop else "MANUAL"
-                )
-                rich_props.append(rich_p)
-        else:
-            # No schema found for this label, return basic props
-            for key, val in clean_props.items():
-                rich_props.append(outputs.RichProperty(key=key, value=val, derivation_mode="UNKNOWN"))
 
         # Extract graph_id from raw node
         graph_id = _extract_id(raw_node)
         
-        # Extract versioning metadata
-        schema_version = node_props.get("__schema_version", "unknown")
-        last_derived = node_props.get("__last_derived", 0)
-        
-        return outputs.EntityResponse(
-            graph_id=graph_id,
-            global_id=f"{self.age_name}:{graph_id}",
+        return RetrievedEntity(
+            graph_name=self.age_name,
+            id=graph_id,
             label=detected_kind,
-            schema_version=schema_version,
-            last_derived=last_derived,
-            id=node_props.get("id"),  # The string id property
-            kind=detected_kind,
-            properties=clean_props,
-            rich_properties=rich_props,
+            properties=node_props,
         )
     
     def get_structure(
         self,
         identifier: str,
         object: str,
-    ) -> Optional[outputs.StructureResponse]:
+    ) -> RetrievedStructure:
         """
         Retrieves a Structure by identifier and object.
         """
@@ -309,25 +282,26 @@ class GraphController:
         result = self.engine.execute(self.graph, query, {"obj": object})
         
         if not result:
-            return None
+            raise ValueError(f"Structure not found with identifier {identifier} and object {object}")
             
         raw = result[0]['s']
-        labels = result[0]['lbls']
         props = _extract_props(raw)
         graph_id = _extract_id(raw)
         
-        return outputs.StructureResponse(
-            graph_id=graph_id,
-            global_id=f"{self.age_name}:{graph_id}",
-            identifier=identifier,
-            object=props.get("object"),
+        # Add identifier to properties for access
+        props['identifier'] = identifier
+        
+        return RetrievedStructure(
+            graph_name=self.age_name,
+            id=graph_id,
             label=structure_label,
+            properties=props,
         )
     
     def get_informing_structures(
         self,
         entity_id: str,
-    ) -> list[outputs.StructureResponse]:
+    ) -> List[RetrievedStructure]:
         """
         Gets all structures that INFORM a given entity.
         """
@@ -352,12 +326,14 @@ class GraphController:
                 "unknown"
             )
             
-            structures.append(outputs.StructureResponse(
-                graph_id=graph_id,
-                global_id=f"{self.age_name}:{graph_id}",
-                identifier=identifier,
-                object=props["object"],
+            # Add identifier to properties for access
+            props['identifier'] = identifier
+            
+            structures.append(RetrievedStructure(
+                graph_name=self.age_name,
+                id=graph_id,
                 label=label,
+                properties=props,
             ))
         
         return structures
@@ -366,7 +342,7 @@ class GraphController:
         self,
         identifier: str,
         structure_object: str,
-    ) -> list[outputs.EntityResponse]:
+    ) -> List[RetrievedEntity]:
         """
         Gets all entities that are informed by a given structure.
         """
@@ -391,16 +367,11 @@ class GraphController:
                 labels[0] if labels else "Unknown"
             )
             
-            entities.append(outputs.EntityResponse(
-                graph_id=graph_id,
-                global_id=f"{self.age_name}:{graph_id}",
+            entities.append(RetrievedEntity(
+                graph_name=self.age_name,
+                id=graph_id,
                 label=kind,
-                schema_version=props.get("__schema_version", "unknown"),
-                last_derived=props.get("__last_derived", 0),
-                id=props.get("id"),
-                kind=kind,
-                properties={k: v for k, v in props.items() if not k.startswith("__")},
-                rich_properties=[],
+                properties=props,
             ))
         
         return entities
@@ -409,7 +380,7 @@ class GraphController:
         self,
         identifier: str,
         structure_object: str,
-    ) -> list[outputs.MeasurementResponse]:
+    ) -> List[RetrievedMeasurement]:
         """
         Gets all measurements that describe a given structure.
         """
@@ -427,16 +398,11 @@ class GraphController:
             props = _extract_props(raw)
             graph_id = _extract_id(raw)
             
-            measurements.append(outputs.MeasurementResponse(
-                graph_id=graph_id,
-                global_id=f"{self.age_name}:{graph_id}",
+            measurements.append(RetrievedMeasurement(
+                graph_name=self.age_name,
+                id=graph_id,
                 label=vocab.Measurement,
-                key=props.get("key"),
-                value=props.get("value"),
-                unit=props.get("unit"),
-                confidence=props.get("confidence"),
-                confidence_type=props.get("confidence_type"),
-                timestamp=props.get("timestamp"),
+                properties=props,
             ))
         
         return measurements
@@ -444,7 +410,7 @@ class GraphController:
     def get_assertion_for_entity(
         self,
         entity_id: str,
-    ) -> Optional[outputs.AssertionResponse]:
+    ) -> Optional[RetrievedAssertion]:
         """
         Gets the assertion that generated a given entity.
         """
@@ -462,21 +428,17 @@ class GraphController:
         graph_id = result[0]['aid']
         props = _extract_props(raw)
         
-        return outputs.AssertionResponse(
-            graph_id=graph_id,
-            global_id=f"{self.age_name}:{graph_id}",
+        return RetrievedAssertion(
+            graph_name=self.age_name,
+            id=graph_id,
             label=vocab.Assertion,
-            subject=props.get("subject"),
-            app_id=props.get("app_id"),
-            action_id=props.get("action_id"),
-            action_name=props.get("action_name"),
-            action_args=props.get("action_args"),
+            properties=props,
         )
     
     def get_measurements_for_assertion(
         self,
         assertion_id: int,
-    ) -> list[outputs.MeasurementResponse]:
+    ) -> List[RetrievedMeasurement]:
         """
         Gets all measurements asserted by a given assertion.
         """
@@ -493,16 +455,11 @@ class GraphController:
             props = _extract_props(raw)
             graph_id = _extract_id(raw)
             
-            measurements.append(outputs.MeasurementResponse(
-                graph_id=graph_id,
-                global_id=f"{self.age_name}:{graph_id}",
+            measurements.append(RetrievedMeasurement(
+                graph_name=self.age_name,
+                id=graph_id,
                 label=vocab.Measurement,
-                key=props.get("key"),
-                value=props.get("value"),
-                unit=props.get("unit"),
-                confidence=props.get("confidence"),
-                confidence_type=props.get("confidence_type"),
-                timestamp=props.get("timestamp"),
+                properties=props,
             ))
         
         return measurements
@@ -511,7 +468,7 @@ class GraphController:
         self,
         identifier: str,
         object: str,
-    ) -> outputs.StructureResponse:
+    ) -> RetrievedStructure:
         """
         Create a new structure node.
         
@@ -520,7 +477,7 @@ class GraphController:
             object: Unique ID of the object this structure references
             
         Returns:
-            StructureResponse with the created structure info
+            RetrievedStructure with the created structure info
         """
         structure_label = IDENTIFIER_MAP.get(identifier, "Structure")
         
@@ -533,12 +490,11 @@ class GraphController:
         
         graph_id = result[0]['graph_id']
         
-        return outputs.StructureResponse(
-            graph_id=graph_id,
-            global_id=f"{self.age_name}:{graph_id}",
-            identifier=identifier,
-            object=object,
+        return RetrievedStructure(
+            graph_name=self.age_name,
+            id=graph_id,
             label=structure_label,
+            properties={"object": object, "identifier": identifier},
         )
 
     def add_measurement(
@@ -547,7 +503,7 @@ class GraphController:
         structure_object: str,
         measurement: 'MeasurementInput',
         provenance: 'ProvenanceContext',
-    ) -> outputs.MeasurementResponse:
+    ) -> RetrievedMeasurement:
         """
         Add a measurement to an existing structure.
         
@@ -558,7 +514,7 @@ class GraphController:
             provenance: Provenance context for this measurement
             
         Returns:
-            MeasurementResponse with the created measurement info
+            RetrievedMeasurement with the created measurement info
         """
         structure_label = IDENTIFIER_MAP.get(structure_identifier, "Structure")
         
@@ -603,16 +559,14 @@ class GraphController:
         result = self.engine.execute(self.graph, meas_query, meas_params)
         graph_id = result[0]['mid']
         
-        return outputs.MeasurementResponse(
-            graph_id=graph_id,
-            global_id=f"{self.age_name}:{graph_id}",
+        # Build properties dict from measurement input
+        meas_props = measurement.model_dump(exclude_none=True)
+        
+        return RetrievedMeasurement(
+            graph_name=self.age_name,
+            id=graph_id,
             label=vocab.Measurement,
-            key=measurement.key,
-            value=measurement.value,
-            unit=measurement.unit,
-            confidence=measurement.confidence,
-            confidence_type=measurement.confidence_type,
-            timestamp=measurement.timestamp,
+            properties=meas_props,
         )
 
     def link_structure_to_entity(
@@ -622,7 +576,7 @@ class GraphController:
         entity_id: str,
         recalculate: bool = True,
         schema: Optional[GraphDefinitionModel] = None,
-    ) -> outputs.EntityResponse:
+    ) -> RetrievedEntity:
         """
         Link an existing structure to an existing entity.
         
@@ -638,7 +592,7 @@ class GraphController:
             schema: Optional schema to use for recalculation
             
         Returns:
-            EntityResponse with the updated entity info
+            RetrievedEntity with the updated entity info
         """
         effective_schema = schema or self.graph.definition
         structure_label = IDENTIFIER_MAP.get(structure_identifier, "Structure")
@@ -659,7 +613,7 @@ class GraphController:
         
         # Recalculate entity properties if requested
         if recalculate:
-            self._recalculate_entity(entity.graph_id, entity.kind, effective_schema)
+            self._recalculate_entity(entity.local_id, entity.kind, effective_schema)
         
         # Return the updated entity
         return self.get_entity(entity_id, schema=effective_schema)
