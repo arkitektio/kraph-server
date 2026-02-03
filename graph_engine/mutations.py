@@ -23,7 +23,6 @@ from .types import (
     GraphMutationPayload,
 )
 from .controller import GraphController
-from .migration import MigrationController
 
 
 def _convert_to_pydantic(input: GraphMutationPayloadInput, info: Info) -> GraphMutationPayload:
@@ -183,55 +182,3 @@ def perform_graph_mutation(
     # Step 3: Convert result to Strawberry type
     return _result_to_type(result)
 
-
-def run_graph_migration(
-    info: Info,
-    input: RunMigrationInput,
-) -> MigrationResultType:
-    """
-    Run a migration query on the graph.
-    
-    Safety features:
-    - Automatically injects LIMIT clause if missing
-    - Runs within a transaction with timeout
-    - Supports dry run mode
-    
-    Example usage:
-    ```graphql
-    mutation {
-        runGraphMigration(input: {
-            graphId: "my_graph"
-            cypherQuery: "MATCH (n:Person) WHERE n.status = 'old' SET n.status = 'archived'"
-            dryRun: true
-        }) {
-            status
-            affectedCount
-            safeQuery
-        }
-    }
-    ```
-    """
-    controller = MigrationController()
-    
-    try:
-        result = controller.run_migration(
-            graph_id=str(input.graph_id),
-            cypher_query=input.cypher_query,
-            dry_run=input.dry_run,
-        )
-        
-        return MigrationResultType(
-            status=result.get("status", "unknown"),
-            affected_count=result.get("affected_count"),
-            query=result.get("query"),
-            original_query=result.get("original_query"),
-            safe_query=result.get("safe_query"),
-        )
-    except Exception as e:
-        return MigrationResultType(
-            status="error",
-            affected_count=None,
-            query=None,
-            original_query=input.cypher_query,
-            safe_query=None,
-        )

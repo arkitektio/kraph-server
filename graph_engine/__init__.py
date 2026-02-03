@@ -34,6 +34,24 @@ def get_mutations():
     from .mutations import perform_graph_mutation, run_graph_migration
     return perform_graph_mutation, run_graph_migration
 
+def get_rollup_utils():
+    from .rollup import (
+        build_property_query,
+        build_rollup_query,
+        build_rollup_aggregation_query,
+        build_rollup_latest_query,
+        build_rollup_range_query,
+        RollupQuery,
+    )
+    return {
+        "build_property_query": build_property_query,
+        "build_rollup_query": build_rollup_query,
+        "build_rollup_aggregation_query": build_rollup_aggregation_query,
+        "build_rollup_latest_query": build_rollup_latest_query,
+        "build_rollup_range_query": build_rollup_range_query,
+        "RollupQuery": RollupQuery,
+    }
+
 __all__ = [
     # Types
     "GraphOperation",
@@ -47,5 +65,7 @@ __all__ = [
     # Lazy loaders
     "get_controller",
     "get_migration_controller",
-    "get_schema_migration",    "get_mutations",
+    "get_schema_migration",
+    "get_mutations",
+    "get_rollup_utils",
 ]

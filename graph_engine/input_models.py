@@ -66,12 +66,11 @@ def create_max_confidence_measurement(key: str, value: Any, unit: Optional[str] 
 
 class StructureReference(BaseModel):
     identifier: str = Field(..., description="Schema identifier, e.g. '@mikro/roi'")
-    id: str = Field(..., description="The unique ID of the structure")
-    properties: Dict[str, Any] = Field(default_factory=dict)
+    object: str = Field(..., description="The unique ID of the object this structure references")
     measurements: List[MeasurementInput] = []
 
-def create_told_you_so(measurements: List[MeasurementInput], id: str) -> StructureReference:
-    return StructureReference(identifier="told_you_so", id=id, measurements=measurements)
+def create_told_you_so(measurements: List[MeasurementInput], object: str) -> StructureReference:
+    return StructureReference(identifier="told_you_so", object=object, measurements=measurements)
 
 class ProvenanceContext(BaseModel):
     subject: str = Field(..., description="User ID")
@@ -91,3 +90,25 @@ class EntityCreationResult(BaseModel):
     db_id: str
     graph_id: Any
     status: str = "CREATED"
+
+
+class StructureCreationPayload(BaseModel):
+    """Payload for creating a structure."""
+    identifier: str = Field(..., description="Schema identifier, e.g. '@mikro/roi'")
+    object: str = Field(..., description="The unique ID of the object this structure references")
+
+
+class StructureCreationResult(BaseModel):
+    """Result of structure creation."""
+    id: str
+    identifier: str
+    label: str
+    status: str = "CREATED"
+
+
+class AddMeasurementPayload(BaseModel):
+    """Payload for adding a measurement to a structure."""
+    structure_identifier: str = Field(..., description="Schema identifier of the structure")
+    structure_id: str = Field(..., description="The unique ID of the structure")
+    measurement: MeasurementInput
+    provenance: ProvenanceContext

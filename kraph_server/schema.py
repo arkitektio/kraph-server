@@ -22,7 +22,7 @@ from core import age, scalars, manager
 from strawberry_django.pagination import OffsetPaginationInput
 
 # Import graph engine components directly to avoid circular imports
-from graph_engine.mutations import perform_graph_mutation, run_graph_migration
+from graph_engine.mutations import perform_graph_mutation
 from graph_engine.inputs import (
     GraphMutationPayloadInput,
     RunMigrationInput,
@@ -729,10 +729,6 @@ class Mutation:
     perform_graph_mutation: GraphMutationResultType = mutation(
         resolver=perform_graph_mutation,
         description="Perform a batch graph mutation atomically with provenance tracking"
-    )
-    run_graph_migration: MigrationResultType = mutation(
-        resolver=run_graph_migration,
-        description="Run a migration query on the graph with safety checks"
     )
 
 

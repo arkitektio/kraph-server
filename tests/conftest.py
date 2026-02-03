@@ -100,8 +100,9 @@ def authenticated_context(db, backend_stack):
     )
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def mock_engine():
+    """Create a fresh mock engine for each test."""
     return MockCypherEngine()
 
 
@@ -130,6 +131,12 @@ def bio_graph_schema():
                             type=models.PropertyType.DATETIME
                         )
                     }
+                ),
+                "ToldYouSo": models.NodeDefinition(
+                    description="Evidence structure for assertions",
+                    properties={
+                        "name": models.PropertyDefinition(type=models.PropertyType.STRING),
+                    }
                 )
             },
 
@@ -148,13 +155,14 @@ def bio_graph_schema():
                                 aggregation=models.AggregationFunction.MEAN
                             )
                         ),
-                        "name": models.PropertyDefinition(type=models.PropertyType.STRING,
-                                derivation=models.DerivationType.ROLLUP,
-                                rule=models.DerivationRule(
-                                    source_node="ToldYouSo",
-                                    key="name",
-                                    aggregation=models.AggregationFunction.MEAN
-                                )
+                        "name": models.PropertyDefinition(
+                            type=models.PropertyType.STRING,
+                            derivation=models.DerivationType.ROLLUP,
+                            rule=models.DerivationRule(
+                                source_node="ToldYouSo",
+                                key="name",
+                                aggregation=models.AggregationFunction.LATEST
+                            )
                         )
                     }
                 ),
@@ -235,14 +243,12 @@ def bio_graph_schema():
                     inputs=["Cell"],
                     outputs=["Cell", "Cell"],
                     properties={
-                        "duration": models.PropertyDefinition(
-                            type=models.PropertyType.FLOAT,
+                        "cell_count": models.PropertyDefinition(
+                            type=models.PropertyType.INTEGER,
                             derivation=models.DerivationType.ROLLUP,
                             rule=models.DerivationRule(
-                                relationships=["INPUT_TO", "OUTPUT_TO"],
                                 source_node="Cell",
-                                key="valid_time",
-                                aggregation=models.AggregationFunction.RANGE
+                                aggregation=models.AggregationFunction.COUNT
                             )
                         )
                     }
@@ -264,7 +270,7 @@ def mock_graph_controller(mock_engine, test_graph):
     return GraphController(engine=mock_engine, graph=test_graph)
 
 @pytest.fixture(scope="function")
-def graph_controller(age_engine, test_graph):
+def graph_controller(transactional_db, age_engine, test_graph):
     """Create a graph controller with AGE engine and test graph."""
     return GraphController(engine=age_engine, graph=test_graph)
 
@@ -291,13 +297,14 @@ def minimal_schema():
 
 
 @pytest.fixture(scope="function")
-def age_engine(db, backend_stack, test_graph: GraphProtocol) -> Generator[AgeEngine, None, None]:
+def age_engine(transactional_db, backend_stack, test_graph: GraphProtocol) -> Generator[AgeEngine, None, None]:
     """
-    Create an AGE engine with a fresh test graph.
+    Create an AGE engine with the test graph.
     
-    Creates the graph, runs the test, then drops the graph.
+    Uses transactional_db to maintain database state across the fixture.
+    The graph is created once and reused.
     """
-    from django.db import connections
+    from django.db import connections, connection
     
     # Ensure the AGE extension is created first
     with connections["default"].cursor() as cursor:
@@ -305,18 +312,15 @@ def age_engine(db, backend_stack, test_graph: GraphProtocol) -> Generator[AgeEng
     
     engine = AgeEngine()
     
-    # Create the graph
+    # Create the graph if it doesn't exist
     try:
         engine.execute_raw(f"SELECT * FROM ag_catalog.create_graph('{test_graph.age_name}')")
     except Exception as e:
-        # Graph might already exist
+        # Graph already exists - that's fine
         if "already exists" not in str(e):
             raise
     
     yield engine
     
-    # Clean up: drop the graph
-    try:
-        engine.execute_raw(f"SELECT * FROM ag_catalog.drop_graph('{test_graph.age_name}', true)")
-    except Exception:
-        pass  # Ignore cleanup errors
+    # Don't drop the graph between tests - just leave it
+    # This avoids the type cache invalidation issue

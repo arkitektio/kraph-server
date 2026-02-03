@@ -31,6 +31,53 @@ class PropertyType(str, Enum):
     DATETIME = "datetime"
     POINT_3D = "point_3d"
 
+
+# --- Type compatibility mappings for aggregations ---
+
+# Aggregations that require numeric source types
+NUMERIC_AGGREGATIONS = {
+    AggregationFunction.MEAN,
+    AggregationFunction.SUM,
+    AggregationFunction.MIN,
+    AggregationFunction.MAX,
+}
+
+# Aggregations that work with any type
+ANY_TYPE_AGGREGATIONS = {
+    AggregationFunction.COUNT,
+    AggregationFunction.LATEST,
+}
+
+# Property types considered numeric
+NUMERIC_TYPES = {
+    PropertyType.FLOAT,
+    PropertyType.INTEGER,
+}
+
+# Map aggregation -> required source types (None means any type allowed)
+AGGREGATION_SOURCE_TYPES: Dict[AggregationFunction, Optional[set]] = {
+    AggregationFunction.MEAN: NUMERIC_TYPES,
+    AggregationFunction.SUM: NUMERIC_TYPES,
+    AggregationFunction.MIN: NUMERIC_TYPES | {PropertyType.DATETIME},
+    AggregationFunction.MAX: NUMERIC_TYPES | {PropertyType.DATETIME},
+    AggregationFunction.COUNT: None,  # Any type
+    AggregationFunction.LATEST: None,  # Any type
+    AggregationFunction.RANGE: NUMERIC_TYPES | {PropertyType.DATETIME},
+    AggregationFunction.EUCLIDEAN_RANGE: {PropertyType.POINT_3D},
+}
+
+# Map aggregation -> result type (None means same as source)
+AGGREGATION_RESULT_TYPES: Dict[AggregationFunction, Optional[PropertyType]] = {
+    AggregationFunction.MEAN: PropertyType.FLOAT,  # Mean always produces float
+    AggregationFunction.SUM: None,  # Same as source (int->int, float->float)
+    AggregationFunction.MIN: None,  # Same as source
+    AggregationFunction.MAX: None,  # Same as source
+    AggregationFunction.COUNT: PropertyType.INTEGER,  # Count produces integer
+    AggregationFunction.LATEST: None,  # Same as source
+    AggregationFunction.RANGE: PropertyType.FLOAT,  # Range produces float (for datetime too)
+    AggregationFunction.EUCLIDEAN_RANGE: PropertyType.FLOAT,  # Distance is float
+}
+
 # --- 1. Property & Derivation Rules ---
 
 class DerivationRule(BaseModel):
@@ -66,6 +113,32 @@ class PropertyDefinition(BaseModel):
         """If using ROLLUP, a rule definition is mandatory."""
         if self.derivation == DerivationType.ROLLUP and not self.rule:
             raise ValueError(f"Property with derivation 'ROLLUP' must have a 'rule' configuration.")
+        return self
+    
+    @model_validator(mode='after')
+    def validate_aggregation_result_type(self):
+        """
+        Validate that the property type is compatible with the aggregation result.
+        
+        For example:
+        - MEAN always produces FLOAT, so property type must be FLOAT
+        - COUNT always produces INTEGER, so property type must be INTEGER
+        - EUCLIDEAN_RANGE produces FLOAT (distance)
+        """
+        if self.derivation != DerivationType.ROLLUP or not self.rule or not self.rule.aggregation:
+            return self
+        
+        aggregation = self.rule.aggregation
+        expected_result_type = AGGREGATION_RESULT_TYPES.get(aggregation)
+        
+        # If aggregation has a fixed result type, check compatibility
+        if expected_result_type is not None and self.type != expected_result_type:
+            raise ValueError(
+                f"Aggregation '{aggregation.value}' produces type '{expected_result_type.value}', "
+                f"but property is defined as '{self.type.value}'. "
+                f"Change property type to '{expected_result_type.value}'."
+            )
+        
         return self
 
 # --- 2. Node Definitions ---
@@ -142,6 +215,106 @@ class GraphExtensions(BaseModel):
             for t in targets:
                 if t not in all_nodes:
                     raise ValueError(f"Relation '{name}' defines target '{t}' which is not a defined Structure or Entity.")
+        return self
+    
+    @model_validator(mode='after')
+    def validate_rollup_source_types(self):
+        """
+        Validate that ROLLUP derivations reference valid source nodes/properties
+        and that the source property type is compatible with the aggregation function.
+        """
+        # Collect all node definitions (structures, entities, events)
+        all_node_defs: Dict[str, NodeDefinition] = {}
+        all_node_defs.update(self.structures)
+        all_node_defs.update(self.entities)
+        
+        # Also include events (they have properties too)
+        event_defs: Dict[str, EventDefinition] = dict(self.events)
+        
+        def validate_property_rollup(
+            container_name: str,
+            prop_name: str,
+            prop_def: PropertyDefinition,
+        ) -> None:
+            """Validate a single property's rollup configuration."""
+            if prop_def.derivation != DerivationType.ROLLUP or not prop_def.rule:
+                return
+            
+            rule = prop_def.rule
+            aggregation = rule.aggregation
+            
+            if not aggregation:
+                raise ValueError(
+                    f"Property '{prop_name}' on '{container_name}' has ROLLUP derivation "
+                    f"but no aggregation function specified."
+                )
+            
+            # COUNT doesn't require a source key
+            if aggregation == AggregationFunction.COUNT:
+                return
+            
+            source_node = rule.source_node
+            source_key = rule.key
+            
+            # For non-COUNT aggregations, we need a key to aggregate
+            if not source_key:
+                raise ValueError(
+                    f"Property '{prop_name}' on '{container_name}' uses '{aggregation.value}' "
+                    f"aggregation but no source 'key' is specified."
+                )
+            
+            # If source_node is specified, validate it exists and has the property
+            if source_node:
+                # Check in structures, entities, and events
+                source_def = all_node_defs.get(source_node) or event_defs.get(source_node)
+                
+                if source_def is None:
+                    raise ValueError(
+                        f"Property '{prop_name}' on '{container_name}' references "
+                        f"source_node '{source_node}' which does not exist."
+                    )
+                
+                # Check if source has the property
+                if source_key not in source_def.properties:
+                    raise ValueError(
+                        f"Property '{prop_name}' on '{container_name}' references "
+                        f"key '{source_key}' on '{source_node}', but that property does not exist."
+                    )
+                
+                # Validate type compatibility
+                source_prop = source_def.properties[source_key]
+                source_type = source_prop.type
+                
+                allowed_types = AGGREGATION_SOURCE_TYPES.get(aggregation)
+                if allowed_types is not None and source_type not in allowed_types:
+                    allowed_str = ", ".join(t.value for t in allowed_types)
+                    raise ValueError(
+                        f"Property '{prop_name}' on '{container_name}' uses '{aggregation.value}' "
+                        f"on source property '{source_node}.{source_key}' of type '{source_type.value}'. "
+                        f"'{aggregation.value}' requires one of: [{allowed_str}]."
+                    )
+        
+        # Validate all structures
+        for struct_name, struct_def in self.structures.items():
+            for prop_name, prop_def in struct_def.properties.items():
+                validate_property_rollup(f"structure:{struct_name}", prop_name, prop_def)
+        
+        # Validate all entities
+        for entity_name, entity_def in self.entities.items():
+            for prop_name, prop_def in entity_def.properties.items():
+                validate_property_rollup(f"entity:{entity_name}", prop_name, prop_def)
+        
+        # Validate all events
+        for event_name, event_def in self.events.items():
+            for prop_name, prop_def in event_def.properties.items():
+                validate_property_rollup(f"event:{event_name}", prop_name, prop_def)
+        
+        # Validate materialized relation properties
+        for rel_name, rel_def in self.relations.items():
+            if rel_def.materialization:
+                for prop_name, prop_def in rel_def.materialization.properties.items():
+                    validate_property_rollup(f"relation:{rel_name}", prop_name, prop_def)
+        
         return self
 
 class GraphDefinitionModel(BaseModel):
