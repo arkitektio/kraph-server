@@ -1,3 +1,4 @@
+import time
 import pytest
 import boto3
 import moto
@@ -13,7 +14,7 @@ from authentikate.models import Client, Organization, User, Membership
 from guardian.shortcuts import get_perms
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext, UniversalRequest
-
+from dokker import local, HealthCheck
 
 @pytest.fixture(scope="function")
 def aws_credentials():
@@ -41,8 +42,33 @@ def create_bucket2(s3):
     s3.create_bucket(Bucket="cabanana")
 
 
+@pytest.fixture(scope="session")
+def backend_stack():
+    docker_compose_path = os.path.join(
+        os.path.dirname(__file__), "integration", "docker-compose.yaml")
+    
+    
+    
+    
+    
+    with local(docker_compose_path) as e:
+        e.inspect()
+        
+        e.down()
+        e.pull()
+        
+        
+        e.up()
+        
+        
+        time.sleep(2)
+        
+        yield
+    
+
+
 @pytest.fixture(scope="function")
-def authenticated_context(db):
+def authenticated_context(db, backend_stack):
     user, _ = User.objects.get_or_create(
         username="fart", password="123456789", sub="1")
     client, _ = Client.objects.get_or_create(client_id="oinsoins")

@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.12, <4"
 
 [[package]]
@@ -513,6 +513,21 @@ wheels = [
 ]
 
 [[package]]
+name = "dokker"
+version = "2.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "certifi" },
+    { name = "koil" },
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f9/cc/396acef6a85fa9d19f3193ceed890fce08e4ecb4880c5675395fcce560b6/dokker-2.3.0.tar.gz", hash = "sha256:a08d427c9db5a5266ffa91a8f6ebcf39fbc534ea971a1da0d4f0e160cc7a2103", size = 16448, upload-time = "2025-07-24T10:19:15.546Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/55/56/5678ae614a78b17bd736adbba4373b27cc3eb7d9fb7d98d070361f4c1d16/dokker-2.3.0-py3-none-any.whl", hash = "sha256:307ef20ebaf5a3014f32b503e629957b112b1466888bdf8ae05a39dcb523cc00", size = 21725, upload-time = "2025-07-24T10:19:14.351Z" },
+]
+
+[[package]]
 name = "duckdb"
 version = "1.2.2"
 source = { registry = "https://pypi.org/simple" }
@@ -648,6 +663,15 @@ wheels = [
 ]
 
 [[package]]
+name = "janus"
+version = "1.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d8/1f/5100f13bc13e24a041f60757b097b3c7c31cf8a08c1c1ef1f1caa2516f22/janus-1.2.0.tar.gz", hash = "sha256:c03475c3e10e042f2a08d31a7a894df2a2a95845ff794b7265e7e9c10a425e5d", size = 21534, upload-time = "2024-12-12T23:59:54.797Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d0/d6/6b3ac4df8d0e928521fe7d49cff8f3274b5012975ec0bdbb968ae50531aa/janus-1.2.0-py3-none-any.whl", hash = "sha256:3fa91456c00caed4905821a911e95c69d41306e463ea8da72c76c7a096abc698", size = 11674, upload-time = "2024-12-12T23:59:52.327Z" },
+]
+
+[[package]]
 name = "jinja2"
 version = "3.1.6"
 source = { registry = "https://pypi.org/simple" }
@@ -731,6 +755,19 @@ wheels = [
 ]
 
 [[package]]
+name = "koil"
+version = "2.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "janus" },
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/db/7b/43511de00b9bd8e422f673f2ebe81dbcdd683f3670c1d9841bc2e0c133d5/koil-2.4.0.tar.gz", hash = "sha256:cef7932634781ea061f0894db2dff2daa082685d3d1c26342c124912e55adaec", size = 15770, upload-time = "2026-01-28T12:28:44.157Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/df/98/47cfb051bd4fca9cefcf4acaf96697e4bea46de2a31f89280f4ec8be517a/koil-2.4.0-py3-none-any.whl", hash = "sha256:cdb1ee1f89657bd34765770d9573201173f503472bce59d5b0384c7d87d96db1", size = 19324, upload-time = "2026-01-28T12:28:43.253Z" },
+]
+
+[[package]]
 name = "kraph-server"
 version = "0.1.0"
 source = { virtual = "." }
@@ -762,6 +799,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "django-stubs" },
+    { name = "dokker" },
     { name = "moto" },
     { name = "mypy" },
     { name = "pytest" },
@@ -798,6 +836,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "django-stubs", specifier = ">=5.2.0" },
+    { name = "dokker", specifier = ">=2.3.0" },
     { name = "moto", specifier = ">=5.1.11" },
     { name = "mypy", specifier = ">=1.15.0" },
     { name = "pytest", specifier = ">=8.4.2" },

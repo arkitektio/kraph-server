@@ -1,5 +1,5 @@
 from .settings import *  # noqa
 from .settings import DATABASES, AUTHENTIKATE
 
-DATABASES["default"] = {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}
+DATABASES["default"] = { **DATABASES["default"], "NAME": "testdb", "PORT": 5555, "HOST": "localhost", "USER": "test", "PASSWORD": "test"}
 AUTHENTIKATE = {**AUTHENTIKATE, "STATIC_TOKENS": {"test": {"sub": "1"}}}

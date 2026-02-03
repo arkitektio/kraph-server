@@ -1,0 +1,23 @@
+
+services:
+   db:
+      image: jhnnsrs/daten:dev
+      environment:
+         POSTGRES_MULTIPLE_DATABASES: testdb
+         POSTGRES_PASSWORD: test
+         POSTGRES_USER: test
+      labels:
+         - fakts.service=live.arkitekt.postgres
+      ports:
+        - 5555:5432
+   redis:
+      environment:
+         REDIS_HOST: redis
+         REDIS_PORT: 6379
+      image: redis
+      ports:
+         - 6666:6379
+
+volumes:
+   chroma_data:
+   data:
