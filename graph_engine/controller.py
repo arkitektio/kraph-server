@@ -1,7 +1,7 @@
 import json
 import time
 from typing import Optional, Dict, Any
-from graph_engine.base_models import GraphDefinitionModel, DerivationType, AggregationFunction
+from graph_engine.base_models import GraphDefinitionModel
 from graph_engine.input_models import EntityCreationPayload, EntityCreationResult, MeasurementInput, ProvenanceContext
 from graph_engine.engine.protocol import CypherEngine, GraphProtocol
 from graph_engine import output_models as outputs
@@ -356,7 +356,7 @@ class GraphController:
                 graph_id=graph_id,
                 global_id=f"{self.age_name}:{graph_id}",
                 identifier=identifier,
-                object=props.get("object"),
+                object=props["object"],
                 label=label,
             ))
         
