@@ -20,12 +20,29 @@ from .types import (
     Measurement,
     Assertion,
     NaturalEvent,
+    Metric,
+    Reagent,
+    ProtocolEvent,
+    Relation,
+    StructureRelation,
     # Rich Property Type
     RichProperty,
+    Property,
     # Aggregate Types
     EntityConnection,
     StructureConnection,
     MeasurementConnection,
+    NodeConnection,
+    EdgeConnection,
+    # Base Interfaces
+    Node,
+    VersionedNode,
+    Edge,
+    # Type Matching Functions
+    node_to_subtype,
+    edge_to_subtype,
+    NodeSubtype,
+    EdgeSubtype,
 )
 
 from .inputs import (
@@ -51,10 +68,28 @@ __all__ = [
     "Measurement",
     "Assertion",
     "NaturalEvent",
+    "Metric",
+    "Reagent",
+    "ProtocolEvent",
+    "Relation",
+    "StructureRelation",
     "RichProperty",
+    "Property",
+    # Connections
     "EntityConnection",
     "StructureConnection", 
     "MeasurementConnection",
+    "NodeConnection",
+    "EdgeConnection",
+    # Base Interfaces
+    "Node",
+    "VersionedNode",
+    "Edge",
+    # Type Matching
+    "node_to_subtype",
+    "edge_to_subtype",
+    "NodeSubtype",
+    "EdgeSubtype",
     # Inputs (Pydantic-validated)
     "MeasurementInputType",
     "StructureReferenceInputType",

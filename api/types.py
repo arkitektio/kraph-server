@@ -3,15 +3,38 @@ GraphQL Types for the API.
 
 These types represent the output/response types for graph entities,
 structures, measurements, and related objects.
+
+This module follows the pattern from core/types.py where:
+1. Strawberry types use `strawberry.Private` to hold underlying data
+2. Type matching functions convert retrieved data to appropriate subtypes
+3. Fields access the private _value for their data
 """
 import strawberry
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Union, TYPE_CHECKING
+from strawberry.types import Info
+from datetime import datetime
+
 from .scalars import AnyScalar, UnixMilliseconds, StructureIdentifier, GlobalID
+from graph_engine.retrieved import RetrievedNode, RetrievedEdge, RetrievedVariable
 
 
 # ===========================================
-# CORE NODE TYPES
+# PROPERTY TYPE
 # ===========================================
+
+@strawberry.type(description="A property/variable from a node")
+class Property:
+    """A single property with key and value from a graph node."""
+    _value: strawberry.Private[RetrievedVariable]
+    
+    @strawberry.field(description="The property key/name")
+    def key(self) -> str:
+        return self._value.key
+    
+    @strawberry.field(description="The property value")
+    def value(self) -> AnyScalar:
+        return self._value.value
+
 
 @strawberry.type(description="A rich property with metadata from schema and graph")
 class RichProperty:
@@ -25,19 +48,79 @@ class RichProperty:
     last_updated: Optional[UnixMilliseconds] = strawberry.field(default=None, description="Last update timestamp")
 
 
+# ===========================================
+# BASE NODE INTERFACE
+# ===========================================
+
 @strawberry.interface(description="Base interface for all graph nodes")
 class Node:
-    """Base interface that all graph nodes implement."""
-    graph_id: int = strawberry.field(description="Local AGE graph ID")
-    global_id: GlobalID = strawberry.field(description="Global identifier in format 'graph_name:graph_id'")
-    label: str = strawberry.field(description="The AGE graph label")
+    """
+    Base interface that all graph nodes implement.
+    Uses strawberry.Private to hold the underlying RetrievedNode data.
+    """
+    _value: strawberry.Private[RetrievedNode]
+    
+    def __hash__(self):
+        return hash(self._value)
+    
+    @strawberry.field(description="Local AGE graph ID")
+    def graph_id(self) -> int:
+        return self._value.id
+    
+    @strawberry.field(description="Global identifier in format 'graph_name:graph_id'")
+    def global_id(self) -> GlobalID:
+        return self._value.global_id
+    
+    @strawberry.field(description="The AGE graph label")
+    def label(self) -> str:
+        return self._value.label
+    
+    @strawberry.field(description="Composite ID for node lookup")
+    def id(self) -> str:
+        return self._value.unique_id
+    
+    @strawberry.field(description="Dictionary of all user properties")
+    def properties(self) -> AnyScalar:
+        return self._value.cleaned_properties
+    
+    @strawberry.field(description="List of all properties as Property objects")
+    def property_list(self) -> List[Property]:
+        return [Property(_value=v) for v in self._value.get_all_variables()]
+    
+    @strawberry.field(description="Get a specific property by key")
+    def property(self, key: str) -> Optional[Property]:
+        var = self._value.get_variable(key)
+        return Property(_value=var) if var else None
+    
+    @strawberry.field(description="External ID if set")
+    def external_id(self) -> Optional[str]:
+        return self._value.external_id
+    
+    @strawberry.field(description="Local ID if set")
+    def local_id(self) -> Optional[str]:
+        return self._value.local_id
+    
+    @strawberry.field(description="Tags associated with this node")
+    def tags(self) -> List[str]:
+        return self._value.tags
 
+
+# ===========================================
+# VERSIONED NODE INTERFACE
+# ===========================================
 
 @strawberry.interface(description="Interface for versioned nodes with schema tracking")
-class Versioned:
+class VersionedNode(Node):
     """Interface for nodes that track schema version and derivation time."""
-    schema_version: str = strawberry.field(description="Schema version used to derive properties")
-    last_derived: UnixMilliseconds = strawberry.field(description="Timestamp when properties were last derived")
+    _value: strawberry.Private[RetrievedNode]
+    
+    @strawberry.field(description="Schema version used to derive properties")
+    def schema_version(self) -> str:
+        return self._value.schema_version
+    
+    @strawberry.field(description="Timestamp when properties were last derived (unix ms)")
+    def last_derived(self) -> Optional[UnixMilliseconds]:
+        return self._value.last_derived
 
 
 # ===========================================
@@ -45,59 +128,28 @@ class Versioned:
 # ===========================================
 
 @strawberry.type(description="An entity in the knowledge graph with derived properties")
-class Entity(Versioned, Node):
+class Entity(VersionedNode):
     """
     An entity represents a domain object (e.g. AIS, Cell, Soma) with properties
     derived from supporting evidence structures.
     """
-    graph_id: int = strawberry.field(description="Local AGE graph ID")
-    global_id: GlobalID = strawberry.field(description="Global identifier in format 'graph_name:graph_id'")
-    label: str = strawberry.field(description="The AGE graph label (entity kind)")
-    schema_version: str = strawberry.field(description="Schema version used to derive properties")
-    last_derived: UnixMilliseconds = strawberry.field(description="Timestamp when properties were last derived")
+    _value: strawberry.Private[RetrievedNode]
     
-    id: str = strawberry.field(description="User-facing UUID for this entity")
-    kind: str = strawberry.field(description="The entity type/kind (e.g. 'AIS', 'Cell')")
+    @strawberry.field(description="The entity type/kind (e.g. 'AIS', 'Cell')")
+    def kind(self) -> str:
+        return self._value.kind or self._value.label
     
-    # Properties access
-    properties: AnyScalar = strawberry.field(description="Dictionary of all derived properties")
-    rich_properties: List[RichProperty] = strawberry.field(
-        default_factory=list,
-        description="List of properties with full metadata"
-    )
+    @strawberry.field(description="Category ID linking to EntityCategory model")
+    def category_id(self) -> Optional[str]:
+        return self._value.category_id
     
-    @strawberry.field(description="Get a specific property by key")
-    def property(self, key: str) -> Optional[AnyScalar]:
-        """Get a specific property value by key."""
-        if isinstance(self.properties, dict):
-            return self.properties.get(key)
-        return None
+    @strawberry.field(description="When this entity became valid")
+    def valid_from(self) -> Optional[datetime]:
+        return self._value.valid_from
     
-    @strawberry.field(description="Get a rich property by key")
-    def rich_property(self, key: str) -> Optional[RichProperty]:
-        """Get a specific rich property by key."""
-        for rp in self.rich_properties:
-            if rp.key == key:
-                return rp
-        return None
-
-
-@strawberry.type(description="A natural event in the knowledge graph")
-class NaturalEvent:
-    """
-    A natural event represents a biological/natural occurrence (e.g. Mitosis)
-    with properties derived from supporting evidence.
-    """
-    graph_id: int = strawberry.field(description="Local AGE graph ID")
-    global_id: GlobalID = strawberry.field(description="Global identifier")
-    label: str = strawberry.field(description="The AGE graph label")
-    schema_version: str = strawberry.field(description="Schema version")
-    last_derived: UnixMilliseconds = strawberry.field(description="Last derivation timestamp")
-    
-    id: str = strawberry.field(description="User-facing UUID")
-    kind: str = strawberry.field(description="The event type")
-    properties: AnyScalar = strawberry.field(description="Derived properties")
-    rich_properties: List[RichProperty] = strawberry.field(default_factory=list)
+    @strawberry.field(description="When this entity stopped being valid")
+    def valid_to(self) -> Optional[datetime]:
+        return self._value.valid_to
 
 
 # ===========================================
@@ -105,17 +157,137 @@ class NaturalEvent:
 # ===========================================
 
 @strawberry.type(description="A structure that provides evidence for entities")
-class Structure:
+class Structure(Node):
     """
     A structure represents an evidence source (e.g. ROI, Image) that
     can have measurements attached and inform entities.
     """
-    graph_id: int = strawberry.field(description="Local AGE graph ID")
-    global_id: GlobalID = strawberry.field(description="Global identifier")
-    label: str = strawberry.field(description="The AGE graph label (e.g. 'ROI', 'ToldYouSo')")
+    _value: strawberry.Private[RetrievedNode]
     
-    identifier: StructureIdentifier = strawberry.field(description="Schema identifier (e.g. '@mikro/roi')")
-    object: str = strawberry.field(description="External object ID this structure references")
+    @strawberry.field(description="Schema identifier (e.g. '@mikro/roi')")
+    def identifier(self) -> StructureIdentifier:
+        return self._value.identifier or ""
+    
+    @strawberry.field(description="External object ID this structure references")
+    def object(self) -> str:
+        return self._value.object or ""
+    
+    @strawberry.field(description="Category ID linking to StructureCategory model")
+    def category_id(self) -> Optional[str]:
+        return self._value.category_id
+
+
+# ===========================================
+# NATURAL EVENT TYPE
+# ===========================================
+
+@strawberry.type(description="A natural event in the knowledge graph")
+class NaturalEvent(VersionedNode):
+    """
+    A natural event represents a biological/natural occurrence (e.g. Mitosis)
+    with properties derived from supporting evidence.
+    """
+    _value: strawberry.Private[RetrievedNode]
+    
+    @strawberry.field(description="The event type/kind")
+    def kind(self) -> str:
+        return self._value.kind or self._value.label
+    
+    @strawberry.field(description="Category ID linking to NaturalEventCategory model")
+    def category_id(self) -> Optional[str]:
+        return self._value.category_id
+
+
+# ===========================================
+# METRIC TYPE
+# ===========================================
+
+@strawberry.type(description="A metric node representing computed values")
+class Metric(Node):
+    """
+    A metric represents a computed or aggregated value in the graph.
+    """
+    _value: strawberry.Private[RetrievedNode]
+    
+    @strawberry.field(description="Category ID linking to MetricCategory model")
+    def category_id(self) -> Optional[str]:
+        return self._value.category_id
+
+
+# ===========================================
+# REAGENT TYPE
+# ===========================================
+
+@strawberry.type(description="A reagent node in the graph")
+class Reagent(Node):
+    """
+    A reagent represents a chemical or biological agent used in experiments.
+    """
+    _value: strawberry.Private[RetrievedNode]
+    
+    @strawberry.field(description="Category ID linking to ReagentCategory model")
+    def category_id(self) -> Optional[str]:
+        return self._value.category_id
+
+
+# ===========================================
+# PROTOCOL EVENT TYPE
+# ===========================================
+
+@strawberry.type(description="A protocol event in the graph")
+class ProtocolEvent(VersionedNode):
+    """
+    A protocol event represents a step in an experimental protocol.
+    """
+    _value: strawberry.Private[RetrievedNode]
+    
+    @strawberry.field(description="The event type/kind")
+    def kind(self) -> str:
+        return self._value.kind or self._value.label
+    
+    @strawberry.field(description="Category ID linking to ProtocolEventCategory model")
+    def category_id(self) -> Optional[str]:
+        return self._value.category_id
+
+
+# ===========================================
+# BASE EDGE INTERFACE
+# ===========================================
+
+@strawberry.interface(description="Base interface for all graph edges")
+class Edge:
+    """
+    Base interface that all graph edges implement.
+    Uses strawberry.Private to hold the underlying RetrievedEdge data.
+    """
+    _value: strawberry.Private[RetrievedEdge]
+    
+    def __hash__(self):
+        return hash(self._value)
+    
+    @strawberry.field(description="Local AGE graph ID")
+    def graph_id(self) -> int:
+        return self._value.id
+    
+    @strawberry.field(description="Global identifier in format 'graph_name:graph_id'")
+    def global_id(self) -> GlobalID:
+        return self._value.global_id
+    
+    @strawberry.field(description="Composite ID for edge lookup")
+    def id(self) -> str:
+        return self._value.unique_id
+    
+    @strawberry.field(description="The edge label/type")
+    def label(self) -> str:
+        return self._value.label
+    
+    @strawberry.field(description="Global ID of the source/left node")
+    def left_id(self) -> str:
+        return self._value.unique_left_id
+    
+    @strawberry.field(description="Global ID of the target/right node")
+    def right_id(self) -> str:
+        return self._value.unique_right_id
 
 
 # ===========================================
@@ -123,21 +295,48 @@ class Structure:
 # ===========================================
 
 @strawberry.type(description="A measurement attached to a structure")
-class Measurement:
+class Measurement(Edge):
     """
-    A measurement represents a data point attached to a structure,
+    A measurement represents a data point from a structure to an entity,
     which contributes to entity property derivation.
     """
-    graph_id: int = strawberry.field(description="Local AGE graph ID")
-    global_id: GlobalID = strawberry.field(description="Global identifier")
-    label: str = strawberry.field(description="The AGE graph label ('Measurement')")
+    _value: strawberry.Private[RetrievedEdge]
     
-    key: str = strawberry.field(description="The measurement key/property name")
-    value: AnyScalar = strawberry.field(description="The measurement value")
-    unit: Optional[str] = strawberry.field(default=None, description="Unit of measurement")
-    confidence: Optional[float] = strawberry.field(default=None, description="Confidence score (0-1)")
-    confidence_type: Optional[str] = strawberry.field(default=None, description="Type of confidence")
-    timestamp: Optional[UnixMilliseconds] = strawberry.field(default=None, description="Measurement timestamp")
+    @strawberry.field(description="The measurement key/property name")
+    def key(self) -> str:
+        return self._value.key or ""
+    
+    @strawberry.field(description="The measurement value")
+    def value(self) -> AnyScalar:
+        return self._value.value
+    
+    @strawberry.field(description="Unit of measurement")
+    def unit(self) -> Optional[str]:
+        return self._value.unit
+    
+    @strawberry.field(description="Confidence score (0-1)")
+    def confidence(self) -> Optional[float]:
+        return self._value.confidence
+    
+    @strawberry.field(description="Type of confidence measure")
+    def confidence_type(self) -> Optional[str]:
+        return self._value.confidence_type
+    
+    @strawberry.field(description="Measurement timestamp (unix ms)")
+    def timestamp(self) -> Optional[UnixMilliseconds]:
+        return self._value.timestamp
+    
+    @strawberry.field(description="When this measurement became valid")
+    def valid_from(self) -> Optional[datetime]:
+        return self._value.valid_from
+    
+    @strawberry.field(description="When this measurement stopped being valid")
+    def valid_to(self) -> Optional[datetime]:
+        return self._value.valid_to
+    
+    @strawberry.field(description="Category ID linking to MeasurementCategory model")
+    def category_id(self) -> Optional[str]:
+        return self._value.category_id
 
 
 # ===========================================
@@ -145,20 +344,175 @@ class Measurement:
 # ===========================================
 
 @strawberry.type(description="An assertion representing provenance information")
-class Assertion:
+class Assertion(Edge):
     """
     An assertion records who made what claims about the graph and when.
     It links to the measurements it asserted.
     """
-    graph_id: int = strawberry.field(description="Local AGE graph ID")
-    global_id: GlobalID = strawberry.field(description="Global identifier")
-    label: str = strawberry.field(description="The AGE graph label ('Assertion')")
+    _value: strawberry.Private[RetrievedEdge]
     
-    subject: Optional[str] = strawberry.field(default=None, description="User/subject who made the assertion")
-    app_id: Optional[str] = strawberry.field(default=None, description="Application that made the assertion")
-    action_id: Optional[str] = strawberry.field(default=None, description="Action identifier")
-    action_name: Optional[str] = strawberry.field(default=None, description="Human-readable action name")
-    action_args: Optional[AnyScalar] = strawberry.field(default=None, description="Action arguments as JSON")
+    @strawberry.field(description="User/subject who made the assertion")
+    def subject(self) -> Optional[str]:
+        return self._value.subject
+    
+    @strawberry.field(description="Application that made the assertion")
+    def app_id(self) -> Optional[str]:
+        return self._value.app_id
+    
+    @strawberry.field(description="Action identifier")
+    def action_id(self) -> Optional[str]:
+        return self._value.action_id
+    
+    @strawberry.field(description="Human-readable action name")
+    def action_name(self) -> Optional[str]:
+        return self._value.action_name
+    
+    @strawberry.field(description="Action arguments as JSON")
+    def action_args(self) -> Optional[AnyScalar]:
+        return self._value.action_args
+    
+    @strawberry.field(description="When this assertion was created")
+    def created_at(self) -> Optional[datetime]:
+        return self._value.created_at
+
+
+# ===========================================
+# RELATION TYPE
+# ===========================================
+
+@strawberry.type(description="A relation edge between two entities")
+class Relation(Edge):
+    """
+    A relation is an edge between two entities that establishes a
+    non-measurement relationship (e.g., parent-child, part-of).
+    """
+    _value: strawberry.Private[RetrievedEdge]
+    
+    @strawberry.field(description="When this relation became valid")
+    def valid_from(self) -> Optional[datetime]:
+        return self._value.valid_from
+    
+    @strawberry.field(description="When this relation stopped being valid")
+    def valid_to(self) -> Optional[datetime]:
+        return self._value.valid_to
+    
+    @strawberry.field(description="When this relation was created")
+    def created_at(self) -> Optional[datetime]:
+        return self._value.created_at
+    
+    @strawberry.field(description="Category ID linking to RelationCategory model")
+    def category_id(self) -> Optional[str]:
+        return self._value.category_id
+
+
+# ===========================================
+# STRUCTURE RELATION TYPE
+# ===========================================
+
+@strawberry.type(description="A relation edge between two structures")
+class StructureRelation(Edge):
+    """
+    A structure relation connects two structures (e.g., containment, adjacency).
+    """
+    _value: strawberry.Private[RetrievedEdge]
+    
+    @strawberry.field(description="When this relation was created")
+    def created_at(self) -> Optional[datetime]:
+        return self._value.created_at
+    
+    @strawberry.field(description="Category ID linking to StructureRelationCategory model")
+    def category_id(self) -> Optional[str]:
+        return self._value.category_id
+
+
+# ===========================================
+# TYPE MATCHING FUNCTIONS
+# ===========================================
+
+# Union type for all node subtypes
+NodeSubtype = Union[Entity, Structure, NaturalEvent, Metric, Reagent, ProtocolEvent]
+
+# Union type for all edge subtypes
+EdgeSubtype = Union[Measurement, Assertion, Relation, StructureRelation]
+
+
+def node_to_subtype(node: RetrievedNode) -> NodeSubtype:
+    """
+    Convert a RetrievedNode to the appropriate Strawberry type based on its node_type.
+    
+    This matches the pattern from core/types.py's entity_to_node_subtype function.
+    
+    Args:
+        node: The retrieved node from AGE
+        
+    Returns:
+        The appropriate Strawberry type instance (Entity, Structure, etc.)
+        
+    Raises:
+        ValueError: If the node type is unknown
+    """
+    match node.node_type:
+        case "ENTITY":
+            return Entity(_value=node)
+        case "STRUCTURE":
+            return Structure(_value=node)
+        case "NATURAL_EVENT":
+            return NaturalEvent(_value=node)
+        case "METRIC":
+            return Metric(_value=node)
+        case "REAGENT":
+            return Reagent(_value=node)
+        case "PROTOCOL_EVENT":
+            return ProtocolEvent(_value=node)
+        case None:
+            # Default based on label if type property not set
+            label = node.label.upper()
+            if label == "ENTITY":
+                return Entity(_value=node)
+            elif label == "STRUCTURE":
+                return Structure(_value=node)
+            else:
+                # Default to Entity for unknown types
+                return Entity(_value=node)
+        case _:
+            raise ValueError(f"Unknown node type: {node.node_type}")
+
+
+def edge_to_subtype(edge: RetrievedEdge) -> EdgeSubtype:
+    """
+    Convert a RetrievedEdge to the appropriate Strawberry type based on its edge_type.
+    
+    This matches the pattern from core/types.py's relation_to_edge_subtype function.
+    
+    Args:
+        edge: The retrieved edge from AGE
+        
+    Returns:
+        The appropriate Strawberry type instance (Measurement, Assertion, etc.)
+        
+    Raises:
+        ValueError: If the edge type is unknown
+    """
+    match edge.edge_type:
+        case "MEASUREMENT":
+            return Measurement(_value=edge)
+        case "ASSERTION":
+            return Assertion(_value=edge)
+        case "RELATION":
+            return Relation(_value=edge)
+        case "STRUCTURE_RELATION":
+            return StructureRelation(_value=edge)
+        case None:
+            # Default based on label if type property not set
+            label = edge.label.upper()
+            if "MEASURE" in label:
+                return Measurement(_value=edge)
+            elif "ASSERT" in label:
+                return Assertion(_value=edge)
+            else:
+                return Relation(_value=edge)
+        case _:
+            raise ValueError(f"Unknown edge type: {edge.edge_type}")
 
 
 # ===========================================
@@ -219,89 +573,147 @@ class MeasurementConnection:
     page_info: PageInfo = strawberry.field(description="Pagination info")
 
 
+@strawberry.type(description="A paginated list of nodes (mixed types)")
+class NodeConnection:
+    """Paginated node results of mixed types."""
+    items: List[NodeSubtype] = strawberry.field(description="List of nodes")
+    page_info: PageInfo = strawberry.field(description="Pagination info")
+
+
+@strawberry.type(description="A paginated list of edges (mixed types)")
+class EdgeConnection:
+    """Paginated edge results of mixed types."""
+    items: List[EdgeSubtype] = strawberry.field(description="List of edges")
+    page_info: PageInfo = strawberry.field(description="Pagination info")
+
+
 # ===========================================
-# CONVERTERS (from Pydantic to Strawberry)
+# CONVERTERS (from Pydantic to Strawberry via Retrieved)
 # ===========================================
 
 def entity_from_response(response) -> Entity:
-    """Convert EntityResponse Pydantic model to Strawberry Entity type."""
+    """
+    Convert EntityResponse Pydantic model to Strawberry Entity type.
+    Creates a RetrievedNode as the intermediary.
+    """
     from graph_engine.output_models import EntityResponse
     if not isinstance(response, EntityResponse):
         raise TypeError(f"Expected EntityResponse, got {type(response)}")
     
-    rich_props = [
-        RichProperty(
-            key=rp.key,
-            value=rp.value,
-            unit=rp.unit,
-            description=rp.description,
-            derivation_mode=rp.derivation_mode,
-            confidence=rp.confidence,
-            last_updated=rp.last_updated,
-        )
-        for rp in response.rich_properties
-    ]
+    # Build properties dict from response
+    props = {
+        "type": "ENTITY",
+        "kind": response.kind,
+        "external_id": response.id,
+        "schema_version": response.schema_version,
+        "last_derived": response.last_derived,
+        **response.properties,
+    }
     
-    return Entity(
-        graph_id=response.graph_id,
-        global_id=response.global_id,
+    # Parse global_id to get graph_name and graph_id
+    parts = response.global_id.split(":")
+    graph_name = parts[0] if len(parts) > 1 else "default"
+    
+    node = RetrievedNode(
+        graph_name=graph_name,
+        id=response.graph_id,
         label=response.label,
-        schema_version=response.schema_version,
-        last_derived=response.last_derived,
-        id=response.id,
-        kind=response.kind,
-        properties=response.properties,
-        rich_properties=rich_props,
+        properties=props,
     )
+    
+    return Entity(_value=node)
 
 
 def structure_from_response(response) -> Structure:
-    """Convert StructureResponse Pydantic model to Strawberry Structure type."""
+    """
+    Convert StructureResponse Pydantic model to Strawberry Structure type.
+    Creates a RetrievedNode as the intermediary.
+    """
     from graph_engine.output_models import StructureResponse
     if not isinstance(response, StructureResponse):
         raise TypeError(f"Expected StructureResponse, got {type(response)}")
     
-    return Structure(
-        graph_id=response.graph_id,
-        global_id=response.global_id,
+    props = {
+        "type": "STRUCTURE",
+        "identifier": response.identifier,
+        "object": response.object,
+    }
+    
+    parts = response.global_id.split(":")
+    graph_name = parts[0] if len(parts) > 1 else "default"
+    
+    node = RetrievedNode(
+        graph_name=graph_name,
+        id=response.graph_id,
         label=response.label,
-        identifier=response.identifier,
-        object=response.object,
+        properties=props,
     )
+    
+    return Structure(_value=node)
 
 
 def measurement_from_response(response) -> Measurement:
-    """Convert MeasurementResponse Pydantic model to Strawberry Measurement type."""
+    """
+    Convert MeasurementResponse Pydantic model to Strawberry Measurement type.
+    Creates a RetrievedEdge as the intermediary.
+    """
     from graph_engine.output_models import MeasurementResponse
     if not isinstance(response, MeasurementResponse):
         raise TypeError(f"Expected MeasurementResponse, got {type(response)}")
     
-    return Measurement(
-        graph_id=response.graph_id,
-        global_id=response.global_id,
+    props = {
+        "type": "MEASUREMENT",
+        "key": response.key,
+        "value": response.value,
+        "unit": response.unit,
+        "confidence": response.confidence,
+        "confidence_type": response.confidence_type,
+        "timestamp": response.timestamp,
+    }
+    
+    parts = response.global_id.split(":")
+    graph_name = parts[0] if len(parts) > 1 else "default"
+    
+    edge = RetrievedEdge(
+        graph_name=graph_name,
+        id=response.graph_id,
         label=response.label,
-        key=response.key,
-        value=response.value,
-        unit=response.unit,
-        confidence=response.confidence,
-        confidence_type=response.confidence_type,
-        timestamp=response.timestamp,
+        left_id=0,  # Not available from response
+        right_id=0,  # Not available from response
+        properties=props,
     )
+    
+    return Measurement(_value=edge)
 
 
 def assertion_from_response(response) -> Assertion:
-    """Convert AssertionResponse Pydantic model to Strawberry Assertion type."""
+    """
+    Convert AssertionResponse Pydantic model to Strawberry Assertion type.
+    Creates a RetrievedEdge as the intermediary.
+    """
     from graph_engine.output_models import AssertionResponse
     if not isinstance(response, AssertionResponse):
         raise TypeError(f"Expected AssertionResponse, got {type(response)}")
     
-    return Assertion(
-        graph_id=response.graph_id,
-        global_id=response.global_id,
+    props = {
+        "type": "ASSERTION",
+        "subject": response.subject,
+        "app_id": response.app_id,
+        "action_id": response.action_id,
+        "action_name": response.action_name,
+        "action_args": response.action_args,
+    }
+    
+    parts = response.global_id.split(":")
+    graph_name = parts[0] if len(parts) > 1 else "default"
+    
+    edge = RetrievedEdge(
+        graph_name=graph_name,
+        id=response.graph_id,
         label=response.label,
-        subject=response.subject,
-        app_id=response.app_id,
-        action_id=response.action_id,
-        action_name=response.action_name,
-        action_args=response.action_args,
+        left_id=0,
+        right_id=0,
+        properties=props,
     )
+    
+    return Assertion(_value=edge)

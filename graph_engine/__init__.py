@@ -32,6 +32,24 @@ def get_rollup_utils():
         "RollupQuery": RollupQuery,
     }
 
+
+def get_retrieved_types():
+    from .retrieved import (
+        RetrievedNode,
+        RetrievedEdge,
+        RetrievedVariable,
+        node_from_age_result,
+        edge_from_age_result,
+    )
+    return {
+        "RetrievedNode": RetrievedNode,
+        "RetrievedEdge": RetrievedEdge,
+        "RetrievedVariable": RetrievedVariable,
+        "node_from_age_result": node_from_age_result,
+        "edge_from_age_result": edge_from_age_result,
+    }
+
+
 __all__ = [
     # Types
     "GraphOperation",
@@ -48,4 +66,5 @@ __all__ = [
     "get_schema_migration",
     "get_mutations",
     "get_rollup_utils",
+    "get_retrieved_types",
 ]
