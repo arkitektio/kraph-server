@@ -83,7 +83,6 @@ class ProvenanceContext(BaseModel):
 class EntityCreationPayload(BaseModel):
     ref_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     kind: str
-    properties: Dict[str, Any] = Field(default_factory=dict)
     supporting_evidence: List[StructureReference] = []
     provenance: ProvenanceContext
 

@@ -129,6 +129,7 @@ class NodeResultType:
 
 @strawberry.type(description="Result of a single edge operation")
 class EdgeResultType:
+    ref_id: Optional[str] = None
     db_id: str = strawberry.field(description="The database ID of the created edge")
     from_id: str
     to_id: str

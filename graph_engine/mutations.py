@@ -4,8 +4,6 @@ Graph Engine Mutations
 Strawberry GraphQL mutations for the graph engine.
 All inputs are converted to Pydantic models before processing.
 """
-import strawberry
-from typing import Optional
 from kante.types import Info
 from pydantic import ValidationError
 
@@ -25,6 +23,7 @@ from .types import (
     GraphMutationPayload,
 )
 from .controller import GraphController
+from .migration import MigrationController
 
 
 def _convert_to_pydantic(input: GraphMutationPayloadInput, info: Info) -> GraphMutationPayload:

@@ -1,13 +1,15 @@
 import time
+from typing import Generator
 import pytest
 import boto3
-import moto
 from moto import mock_aws
 import os
 
 import pytest
 from django.contrib.auth import get_user_model
 from graph_engine.controller import GraphController
+from graph_engine.engine.age_engine import AgeEngine
+from graph_engine.engine.protocol import GraphProtocol
 from graph_engine.engine.testing.mock_cypher_engine import MockCypherEngine
 from kraph_server.schema import schema
 from guardian.shortcuts import get_perms
@@ -98,15 +100,12 @@ def authenticated_context(db, backend_stack):
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def mock_engine():
     return MockCypherEngine()
 
-@pytest.fixture
-def graph_controller(mock_engine):
-    return GraphController(engine=mock_engine)
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def bio_graph_schema():
     """
     Fixture defined using EXPLICIT Pydantic Model constructors.
@@ -145,7 +144,6 @@ def bio_graph_schema():
                             derivation=models.DerivationType.ROLLUP,
                             rule=models.DerivationRule(
                                 source_node="ROI",
-                                relationship="DEFINES",
                                 key="vector_length",
                                 aggregation=models.AggregationFunction.MEAN
                             )
@@ -154,7 +152,6 @@ def bio_graph_schema():
                                 derivation=models.DerivationType.ROLLUP,
                                 rule=models.DerivationRule(
                                     source_node="ToldYouSo",
-                                    relationship="DEFINES",
                                     key="name",
                                     aggregation=models.AggregationFunction.MEAN
                                 )
@@ -253,3 +250,73 @@ def bio_graph_schema():
             }
         )
     )
+
+@pytest.fixture(scope="session")
+def test_graph(bio_graph_schema):
+    """Create a test graph with the bio schema."""
+    from graph_engine.engine.protocol import SimpleGraph
+    return SimpleGraph(age_name="test_graph", definition=bio_graph_schema)
+
+
+@pytest.fixture
+def mock_graph_controller(mock_engine, test_graph):
+    """Create a graph controller with mock engine and test graph."""
+    return GraphController(engine=mock_engine, graph=test_graph)
+
+@pytest.fixture(scope="function")
+def graph_controller(age_engine, test_graph):
+    """Create a graph controller with AGE engine and test graph."""
+    return GraphController(engine=age_engine, graph=test_graph)
+
+
+
+@pytest.fixture(scope="function")
+def minimal_schema():
+    """A minimal schema for testing."""
+    return models.GraphDefinitionModel(
+        system_version="1.0",
+        extensions=models.GraphExtensions(
+            entities={
+                "Person": models.NodeDefinition(
+                    description="A person",
+                    properties={
+                        "name": models.PropertyDefinition(type=models.PropertyType.STRING),
+                        "age": models.PropertyDefinition(type=models.PropertyType.INTEGER),
+                    }
+                )
+            }
+        )
+    )
+
+
+
+@pytest.fixture(scope="function")
+def age_engine(db, backend_stack, test_graph: GraphProtocol) -> Generator[AgeEngine, None, None]:
+    """
+    Create an AGE engine with a fresh test graph.
+    
+    Creates the graph, runs the test, then drops the graph.
+    """
+    from django.db import connections
+    
+    # Ensure the AGE extension is created first
+    with connections["default"].cursor() as cursor:
+        cursor.execute("CREATE EXTENSION IF NOT EXISTS age;")
+    
+    engine = AgeEngine()
+    
+    # Create the graph
+    try:
+        engine.execute_raw(f"SELECT * FROM ag_catalog.create_graph('{test_graph.age_name}')")
+    except Exception as e:
+        # Graph might already exist
+        if "already exists" not in str(e):
+            raise
+    
+    yield engine
+    
+    # Clean up: drop the graph
+    try:
+        engine.execute_raw(f"SELECT * FROM ag_catalog.drop_graph('{test_graph.age_name}', true)")
+    except Exception:
+        pass  # Ignore cleanup errors

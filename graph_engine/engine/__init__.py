@@ -6,22 +6,17 @@ This module provides protocols and implementations for executing Cypher queries.
 
 from .protocol import (
     CypherEngine,
-    GraphContext,
-    SimpleGraphContext,
-    GraphWithDefinition,
-    GraphContextWithDefinition,
+    GraphProtocol,
+    SimpleGraph,
 )
-from .age_engine import AgeEngine, AgeEngineFactory, graph_cursor
+from .age_engine import AgeEngine, graph_cursor
 
 __all__ = [
     # Protocols
     "CypherEngine",
-    "GraphContext",
-    "SimpleGraphContext",
-    "GraphWithDefinition",
-    "GraphContextWithDefinition",
+    "GraphProtocol",
+    "SimpleGraph",
     # Implementations
     "AgeEngine",
-    "AgeEngineFactory",
     "graph_cursor",
 ]

@@ -3,24 +3,19 @@ Apache AGE Cypher Engine
 
 A real implementation of CypherEngine that executes queries against Apache AGE.
 """
-from contextlib import contextmanager
-from typing import Any, Dict, List, Optional
-from django.db import connections
-from psycopg import sql
 import json
 import re
+from contextlib import contextmanager
+from typing import Any, Dict, Generator, List, Optional
 
-from .protocol import CypherEngine, GraphContext
+from django.db import connections
+from psycopg import sql
 
-
-def escape_value(value: Any, cursor) -> str:
-    """Escape a value for safe use in Cypher queries."""
-    escaped = sql.Literal(value).as_string(cursor)
-    return escaped
+from .protocol import CypherEngine, GraphProtocol
 
 
 @contextmanager
-def graph_cursor(connection_name: str = "default"):
+def graph_cursor(connection_name: str = "default") -> Generator:
     """
     Create a cursor configured for Apache AGE queries.
     
@@ -41,12 +36,12 @@ class AgeEngine:
     Real Apache AGE engine that executes Cypher queries against PostgreSQL.
     
     This engine wraps Cypher queries in the appropriate `cypher()` function
-    call that AGE requires.
+    call that AGE requires. It takes a GraphProtocol on each execute call
+    to determine which graph to query.
     """
     
     def __init__(
         self,
-        graph_name: str,
         connection_name: str = "default",
         statement_timeout_ms: Optional[int] = None,
     ):
@@ -54,22 +49,26 @@ class AgeEngine:
         Initialize the AGE engine.
         
         Args:
-            graph_name: The Apache AGE graph name to query against
             connection_name: The Django database connection to use
             statement_timeout_ms: Optional timeout for queries
         """
-        self.graph_name = graph_name
         self.connection_name = connection_name
         self.statement_timeout_ms = statement_timeout_ms
     
-    def execute(self, query: str, params: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
+    def execute(
+        self, 
+        graph: GraphProtocol,
+        query: str, 
+        params: Dict[str, Any] | None = None,
+    ) -> List[Dict[str, Any]]:
         """
-        Execute a Cypher query against the Apache AGE graph.
+        Execute a Cypher query against the specified graph.
         
         The query should be written in standard Cypher syntax.
         Parameters can use $param_name notation and will be substituted safely.
         
         Args:
+            graph: The graph protocol providing age_name and definition
             query: The Cypher query string
             params: Optional dictionary of parameters
             
@@ -77,6 +76,9 @@ class AgeEngine:
             List of dictionaries representing rows of results
         """
         params = params or {}
+        graph_name = graph.age_name
+        
+        print(f"Executing Cypher on graph '{graph_name}': {query} with params {params}")
         
         with graph_cursor(self.connection_name) as cursor:
             # Set statement timeout if configured
@@ -97,7 +99,7 @@ class AgeEngine:
             
             # Wrap in AGE cypher() function
             age_query = f"""
-                SELECT * FROM cypher('{self.graph_name}', $$
+                SELECT * FROM cypher('{graph_name}', $$
                     {processed_query}
                 $$) as ({column_spec});
             """
@@ -142,7 +144,20 @@ class AgeEngine:
             except Exception:
                 return []
     
-    def _substitute_params(self, query: str, params: Dict[str, Any], cursor) -> str:
+    def create_graph(self, graph_name: str) -> None:
+        """Create an AGE graph if it doesn't exist."""
+        try:
+            self.execute_raw(f"SELECT * FROM ag_catalog.create_graph('{graph_name}')")
+        except Exception as e:
+            if "already exists" not in str(e):
+                raise
+    
+    def drop_graph(self, graph_name: str, cascade: bool = True) -> None:
+        """Drop an AGE graph."""
+        cascade_str = "true" if cascade else "false"
+        self.execute_raw(f"SELECT * FROM ag_catalog.drop_graph('{graph_name}', {cascade_str})")
+    
+    def _substitute_params(self, query: str, params: Dict[str, Any], cursor: Any) -> str:
         """
         Substitute $param placeholders with escaped values.
         
@@ -151,7 +166,12 @@ class AgeEngine:
         """
         result = query
         
-        for key, value in params.items():
+        # Sort by key length descending to replace longer keys first
+        # This prevents $confidence from matching inside $confidence_type
+        sorted_keys = sorted(params.keys(), key=len, reverse=True)
+        
+        for key in sorted_keys:
+            value = params[key]
             placeholder = f"${key}"
             if placeholder in result:
                 escaped = self._escape_for_cypher(value, cursor)
@@ -159,7 +179,7 @@ class AgeEngine:
         
         return result
     
-    def _escape_for_cypher(self, value: Any, cursor) -> str:
+    def _escape_for_cypher(self, value: Any, cursor: Any) -> str:
         """Escape a value for safe use in Cypher."""
         if value is None:
             return "null"
@@ -233,7 +253,6 @@ class AgeEngine:
                 result.append(alias_match.group(1))
             else:
                 # Use the last identifier as the name
-                # e.g., "n.name" -> "name", "id(n)" -> could be "id" but safer to use full
                 simple_match = re.match(r'^(\w+)$', col.strip())
                 if simple_match:
                     result.append(simple_match.group(1))
@@ -276,55 +295,3 @@ class AgeEngine:
         
         # Return as-is if not JSON
         return cleaned
-
-
-class AgeEngineFactory:
-    """
-    Factory for creating AgeEngine instances from graph contexts.
-    """
-    
-    @staticmethod
-    def from_context(
-        context: GraphContext,
-        connection_name: str = "default",
-        statement_timeout_ms: Optional[int] = None,
-    ) -> AgeEngine:
-        """
-        Create an AgeEngine from a GraphContext.
-        
-        Args:
-            context: The graph context providing the age_name
-            connection_name: The Django database connection
-            statement_timeout_ms: Optional query timeout
-            
-        Returns:
-            Configured AgeEngine instance
-        """
-        return AgeEngine(
-            graph_name=context.age_name,
-            connection_name=connection_name,
-            statement_timeout_ms=statement_timeout_ms,
-        )
-    
-    @staticmethod
-    def from_graph_name(
-        graph_name: str,
-        connection_name: str = "default",
-        statement_timeout_ms: Optional[int] = None,
-    ) -> AgeEngine:
-        """
-        Create an AgeEngine directly from a graph name.
-        
-        Args:
-            graph_name: The Apache AGE graph name
-            connection_name: The Django database connection
-            statement_timeout_ms: Optional query timeout
-            
-        Returns:
-            Configured AgeEngine instance
-        """
-        return AgeEngine(
-            graph_name=graph_name,
-            connection_name=connection_name,
-            statement_timeout_ms=statement_timeout_ms,
-        )

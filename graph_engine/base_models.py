@@ -37,15 +37,10 @@ class DerivationRule(BaseModel):
     """
     Configuration for how to calculate a value if derivation != LATEST.
     """
-    source_node: Optional[str] = Field(None, description="The label of the child/neighbor node to read from.")
-    relationship: Optional[str] = Field(None, description="The edge label connecting to the source.")
-    relationships: Optional[List[str]] = Field(None, description="List of edges (for events with inputs AND outputs).")
-    
+    source_node: Optional[str] = Field(None, description="The label of the the describing structure to read from.")
     key: Optional[str] = Field(None, description="The property key on the source node.")
     aggregation: Optional[AggregationFunction] = None
     
-    # For complex lookups (e.g. edge materialization paths)
-    path: Optional[str] = None
     
     
     
@@ -62,11 +57,9 @@ class PropertyDefinition(BaseModel):
     type: PropertyType
     unit: Optional[str] = None
     description: Optional[str] = None
-    
     # Logic
     derivation: DerivationType = DerivationType.LATEST
     rule: Optional[DerivationRule] = None
-    priority_tools: List[str] = [] # Tools that override standard calculations
 
     @model_validator(mode='after')
     def validate_rule_presence(self):

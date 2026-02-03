@@ -8,61 +8,27 @@ from django.test import override_settings
 
 from graph_engine.engine import (
     AgeEngine, 
-    AgeEngineFactory, 
-    SimpleGraphContext,
+    SimpleGraph,
+    GraphProtocol,
     graph_cursor,
 )
-from graph_engine.base_models import GraphDefinitionModel, EntityDefinitionModel
+from graph_engine.base_models import GraphDefinitionModel, GraphExtensions, NodeDefinition, PropertyDefinition, PropertyType
 from graph_engine.controller import GraphController
 from graph_engine.input_models import (
     EntityCreationPayload,
-    ProvenanceInput,
-    EvidenceInput,
+    ProvenanceContext,
     MeasurementInput,
 )
-
-
-@pytest.fixture(scope="function")
-def test_graph_name():
-    """Generate a unique graph name for each test."""
-    import uuid
-    return f"test_graph_{uuid.uuid4().hex[:8]}"
-
-
-@pytest.fixture(scope="function")
-def age_engine(db, backend_stack, test_graph_name):
-    """
-    Create an AGE engine with a fresh test graph.
-    
-    Creates the graph, runs the test, then drops the graph.
-    """
-    engine = AgeEngine(graph_name=test_graph_name)
-    
-    # Create the graph
-    try:
-        engine.execute_raw(f"SELECT * FROM ag_catalog.create_graph('{test_graph_name}')")
-    except Exception as e:
-        # Graph might already exist
-        if "already exists" not in str(e):
-            raise
-    
-    yield engine
-    
-    # Clean up: drop the graph
-    try:
-        engine.execute_raw(f"SELECT * FROM ag_catalog.drop_graph('{test_graph_name}', true)")
-    except Exception:
-        pass  # Ignore cleanup errors
-
 
 class TestAgeEngineBasic:
     """Basic tests for AgeEngine functionality."""
     
     @pytest.mark.django_db(transaction=True)
-    def test_create_and_query_node(self, age_engine):
+    def test_create_and_query_node(self, age_engine, test_graph):
         """Test creating and querying a simple node."""
         # Create a node
         result = age_engine.execute(
+            test_graph,
             "CREATE (n:Person {name: $name, age: $age}) RETURN n.name as name, n.age as age",
             {"name": "Alice", "age": 30}
         )
@@ -72,9 +38,10 @@ class TestAgeEngineBasic:
         assert result[0]["age"] == 30
     
     @pytest.mark.django_db(transaction=True)
-    def test_create_and_query_with_id(self, age_engine):
+    def test_create_and_query_with_id(self, age_engine, test_graph):
         """Test creating a node and retrieving its id."""
         result = age_engine.execute(
+            test_graph,
             "CREATE (n:Person {name: $name}) RETURN id(n) as id, n.name as name",
             {"name": "Bob"}
         )
@@ -84,15 +51,17 @@ class TestAgeEngineBasic:
         assert result[0]["name"] == "Bob"
     
     @pytest.mark.django_db(transaction=True)
-    def test_match_query(self, age_engine):
+    def test_match_query(self, age_engine, test_graph):
         """Test MATCH queries."""
         # Create nodes
         age_engine.execute(
+            test_graph,
             "CREATE (a:Person {name: 'Alice'}), (b:Person {name: 'Bob'})"
         )
         
         # Match all persons
         result = age_engine.execute(
+            test_graph,
             "MATCH (p:Person) RETURN p.name as name ORDER BY p.name"
         )
         
@@ -101,15 +70,18 @@ class TestAgeEngineBasic:
         assert result[1]["name"] == "Bob"
     
     @pytest.mark.django_db(transaction=True)
-    def test_create_relationship(self, age_engine):
+    def test_create_relationship(self, age_engine, test_graph):
         """Test creating relationships between nodes."""
         # Create nodes and relationship
-        result = age_engine.execute("""
+        result = age_engine.execute(
+            test_graph,
+            """
             CREATE (a:Person {name: 'Alice'})
             CREATE (b:Person {name: 'Bob'})
             CREATE (a)-[r:KNOWS {since: 2020}]->(b)
             RETURN a.name as from_name, b.name as to_name, r.since as since
-        """)
+            """
+        )
         
         assert len(result) == 1
         assert result[0]["from_name"] == "Alice"
@@ -117,27 +89,32 @@ class TestAgeEngineBasic:
         assert result[0]["since"] == 2020
     
     @pytest.mark.django_db(transaction=True)
-    def test_match_relationship(self, age_engine):
+    def test_match_relationship(self, age_engine, test_graph):
         """Test matching relationships."""
         # Create nodes and relationship
-        age_engine.execute("""
-            CREATE (a:Person {name: 'Alice'})-[:KNOWS]->(b:Person {name: 'Bob'})
-        """)
+        age_engine.execute(
+            test_graph,
+            "CREATE (a:Person {name: 'Alice'})-[:KNOWS]->(b:Person {name: 'Bob'})"
+        )
         
         # Match the relationship
-        result = age_engine.execute("""
+        result = age_engine.execute(
+            test_graph,
+            """
             MATCH (a:Person)-[:KNOWS]->(b:Person)
             RETURN a.name as from_name, b.name as to_name
-        """)
+            """
+        )
         
         assert len(result) == 1
         assert result[0]["from_name"] == "Alice"
         assert result[0]["to_name"] == "Bob"
     
     @pytest.mark.django_db(transaction=True)
-    def test_merge_creates_if_not_exists(self, age_engine):
+    def test_merge_creates_if_not_exists(self, age_engine, test_graph):
         """Test MERGE creates node if it doesn't exist."""
         result = age_engine.execute(
+            test_graph,
             "MERGE (n:Person {name: $name}) RETURN n.name as name",
             {"name": "Charlie"}
         )
@@ -146,19 +123,21 @@ class TestAgeEngineBasic:
         assert result[0]["name"] == "Charlie"
     
     @pytest.mark.django_db(transaction=True)
-    def test_merge_reuses_existing(self, age_engine):
+    def test_merge_reuses_existing(self, age_engine, test_graph):
         """Test MERGE reuses existing node."""
         # Create first
-        age_engine.execute("CREATE (n:Person {name: 'Charlie', age: 25})")
+        age_engine.execute(test_graph, "CREATE (n:Person {name: 'Charlie', age: 25})")
         
         # Merge should find existing
         age_engine.execute(
+            test_graph,
             "MERGE (n:Person {name: $name}) SET n.age = $age",
             {"name": "Charlie", "age": 30}
         )
         
         # Verify only one node exists
         result = age_engine.execute(
+            test_graph,
             "MATCH (p:Person {name: 'Charlie'}) RETURN p.age as age"
         )
         
@@ -170,9 +149,10 @@ class TestAgeEngineParameters:
     """Tests for parameter handling in AgeEngine."""
     
     @pytest.mark.django_db(transaction=True)
-    def test_string_parameter(self, age_engine):
+    def test_string_parameter(self, age_engine, test_graph):
         """Test string parameters are escaped correctly."""
         result = age_engine.execute(
+            test_graph,
             "CREATE (n:Test {value: $val}) RETURN n.value as value",
             {"val": "It's a test with 'quotes'"}
         )
@@ -180,9 +160,10 @@ class TestAgeEngineParameters:
         assert result[0]["value"] == "It's a test with 'quotes'"
     
     @pytest.mark.django_db(transaction=True)
-    def test_integer_parameter(self, age_engine):
+    def test_integer_parameter(self, age_engine, test_graph):
         """Test integer parameters."""
         result = age_engine.execute(
+            test_graph,
             "CREATE (n:Test {value: $val}) RETURN n.value as value",
             {"val": 42}
         )
@@ -190,9 +171,10 @@ class TestAgeEngineParameters:
         assert result[0]["value"] == 42
     
     @pytest.mark.django_db(transaction=True)
-    def test_float_parameter(self, age_engine):
+    def test_float_parameter(self, age_engine, test_graph):
         """Test float parameters."""
         result = age_engine.execute(
+            test_graph,
             "CREATE (n:Test {value: $val}) RETURN n.value as value",
             {"val": 3.14}
         )
@@ -200,9 +182,10 @@ class TestAgeEngineParameters:
         assert abs(result[0]["value"] - 3.14) < 0.001
     
     @pytest.mark.django_db(transaction=True)
-    def test_boolean_parameter(self, age_engine):
+    def test_boolean_parameter(self, age_engine, test_graph):
         """Test boolean parameters."""
         result = age_engine.execute(
+            test_graph,
             "CREATE (n:Test {active: $val}) RETURN n.active as active",
             {"val": True}
         )
@@ -210,9 +193,10 @@ class TestAgeEngineParameters:
         assert result[0]["active"] == True
     
     @pytest.mark.django_db(transaction=True)
-    def test_null_parameter(self, age_engine):
+    def test_null_parameter(self, age_engine, test_graph):
         """Test null parameters."""
         result = age_engine.execute(
+            test_graph,
             "CREATE (n:Test {value: $val}) RETURN n.value as value",
             {"val": None}
         )
@@ -220,9 +204,10 @@ class TestAgeEngineParameters:
         assert result[0]["value"] is None
     
     @pytest.mark.django_db(transaction=True)
-    def test_dict_parameter(self, age_engine):
+    def test_dict_parameter(self, age_engine, test_graph):
         """Test dict parameters are converted to Cypher maps."""
         result = age_engine.execute(
+            test_graph,
             "CREATE (n:Test $props) RETURN n.name as name, n.age as age",
             {"props": {"name": "Test", "age": 10}}
         )
@@ -231,133 +216,40 @@ class TestAgeEngineParameters:
         assert result[0]["age"] == 10
 
 
-class TestAgeEngineFactory:
-    """Tests for AgeEngineFactory."""
-    
-    @pytest.mark.django_db(transaction=True)
-    def test_from_context(self, db, backend_stack, test_graph_name):
-        """Test creating engine from GraphContext."""
-        context = SimpleGraphContext(
-            age_name=test_graph_name,
-            organization_id="test-org"
-        )
-        
-        engine = AgeEngineFactory.from_context(context)
-        
-        assert engine.graph_name == test_graph_name
-        
-        # Create and drop the graph to verify connection works
-        try:
-            engine.execute_raw(f"SELECT * FROM ag_catalog.create_graph('{test_graph_name}')")
-            engine.execute_raw(f"SELECT * FROM ag_catalog.drop_graph('{test_graph_name}', true)")
-        except Exception as e:
-            # Graph might already exist in some edge cases
-            if "already exists" not in str(e):
-                raise
-    
-    @pytest.mark.django_db(transaction=True)
-    def test_from_graph_name(self, db, backend_stack, test_graph_name):
-        """Test creating engine directly from graph name."""
-        engine = AgeEngineFactory.from_graph_name(test_graph_name)
-        
-        assert engine.graph_name == test_graph_name
-
-
 class TestGraphControllerWithAgeEngine:
     """Integration tests for GraphController with real AGE engine."""
     
     @pytest.fixture
     def sample_schema(self):
         """Create a sample schema for testing."""
-        return GraphDefinitionModel.model_validate({
-            "extensions": {
-                "entities": {
-                    "Cell": {
-                        "label": "Cell",
-                        "description": "A biological cell",
-                        "properties": {
-                            "name": {
-                                "type": "string",
-                                "required": True,
-                                "description": "Cell name"
-                            },
-                            "size": {
-                                "type": "float",
-                                "required": False,
-                                "description": "Cell size in micrometers"
-                            }
+        return GraphDefinitionModel(
+            system_version="1.0",
+            extensions=GraphExtensions(
+                entities={
+                    "Cell": NodeDefinition(
+                        description="A biological cell",
+                        properties={
+                            "name": PropertyDefinition(type=PropertyType.STRING),
+                            "size": PropertyDefinition(type=PropertyType.FLOAT),
                         }
-                    }
+                    )
                 }
-            }
-        })
+            )
+        )
+    
+    @pytest.fixture
+    def sample_graph(self, test_graph_name, sample_schema):
+        """Create a sample graph with schema."""
+        return SimpleGraph(age_name=test_graph_name, definition=sample_schema)
     
     @pytest.mark.django_db(transaction=True)
-    def test_controller_with_graph_context(self, age_engine, sample_schema):
-        """Test creating a controller with graph context."""
-        # Create graph context with engine
-        class TestGraphContext:
-            def __init__(self, engine, definition, age_name, org_id):
-                self.engine = engine
-                self.definition = definition
-                self.age_name = age_name
-                self.organization_id = org_id
-        
-        context = TestGraphContext(
-            engine=age_engine,
-            definition=sample_schema,
-            age_name=age_engine.graph_name,
-            org_id="test-org"
-        )
-        
-        controller = GraphController(graph=context)
+    def test_controller_with_graph_protocol(self, age_engine, sample_graph):
+        """Test creating a controller with graph protocol."""
+        controller = GraphController(engine=age_engine, graph=sample_graph)
         
         assert controller.engine is age_engine
-        assert controller.age_name == age_engine.graph_name
-        assert controller.organization_id == "test-org"
-    
-    @pytest.mark.django_db(transaction=True)
-    def test_create_entity_with_real_engine(self, age_engine, sample_schema):
-        """Test creating an entity with the real AGE engine."""
-        controller = GraphController(engine=age_engine, schema=sample_schema)
-        
-        payload = EntityCreationPayload(
-            ref_id="test-ref-1",
-            kind="Cell",
-            properties={"name": "Neuron", "size": 15.5},
-            provenance=ProvenanceInput(
-                user="test-user",
-                action="create"
-            ),
-            supporting_evidence=[
-                EvidenceInput(
-                    id="evidence-1",
-                    identifier="default",
-                    properties={"source": "microscopy"},
-                    measurements=[
-                        MeasurementInput(
-                            key="intensity",
-                            value=0.85,
-                            unit="AU",
-                            confidence=0.95
-                        )
-                    ]
-                )
-            ]
-        )
-        
-        result = controller.create_entity(payload)
-        
-        assert result.ref_id == "test-ref-1"
-        assert result.graph_id is not None
-        
-        # Verify the entity was created in the graph
-        verify_result = age_engine.execute(
-            "MATCH (c:Cell {name: 'Neuron'}) RETURN c.name as name, c.size as size"
-        )
-        
-        assert len(verify_result) == 1
-        assert verify_result[0]["name"] == "Neuron"
+        assert controller.age_name == sample_graph.age_name
+        assert controller.definition == sample_graph.definition
 
 
 class TestGraphCursor:
@@ -378,3 +270,139 @@ class TestGraphCursor:
             cursor.execute("SHOW search_path")
             result = cursor.fetchone()
             assert "ag_catalog" in result[0]
+
+
+class TestSchemaMigration:
+    """Tests for schema migration functionality."""
+    
+    def test_generate_migration_add_entity(self):
+        """Test generating migration for adding an entity."""
+        from graph_engine.schema_migration import generate_schema_migration, MigrationAction
+        
+        old_schema = GraphDefinitionModel(
+            system_version="1.0",
+            extensions=GraphExtensions()
+        )
+        
+        new_schema = GraphDefinitionModel(
+            system_version="1.1",
+            extensions=GraphExtensions(
+                entities={
+                    "Cell": NodeDefinition(
+                        description="A cell",
+                        properties={
+                            "name": PropertyDefinition(type=PropertyType.STRING)
+                        }
+                    )
+                }
+            )
+        )
+        
+        plan = generate_schema_migration(old_schema, new_schema)
+        
+        assert plan.from_version == "1.0"
+        assert plan.to_version == "1.1"
+        assert len(plan.mutations) == 1
+        assert plan.mutations[0].action == MigrationAction.ADD_NODE_TYPE
+        assert plan.mutations[0].target == "Cell"
+    
+    def test_generate_migration_add_property(self):
+        """Test generating migration for adding a property."""
+        from graph_engine.schema_migration import generate_schema_migration, MigrationAction
+        
+        old_schema = GraphDefinitionModel(
+            system_version="1.0",
+            extensions=GraphExtensions(
+                entities={
+                    "Cell": NodeDefinition(
+                        properties={
+                            "name": PropertyDefinition(type=PropertyType.STRING)
+                        }
+                    )
+                }
+            )
+        )
+        
+        new_schema = GraphDefinitionModel(
+            system_version="1.1",
+            extensions=GraphExtensions(
+                entities={
+                    "Cell": NodeDefinition(
+                        properties={
+                            "name": PropertyDefinition(type=PropertyType.STRING),
+                            "size": PropertyDefinition(type=PropertyType.FLOAT)
+                        }
+                    )
+                }
+            )
+        )
+        
+        plan = generate_schema_migration(old_schema, new_schema)
+        
+        assert len(plan.mutations) == 1
+        assert plan.mutations[0].action == MigrationAction.ADD_PROPERTY
+        assert plan.mutations[0].target == "Cell"
+        assert plan.mutations[0].property_name == "size"
+        assert "SET n.size" in plan.mutations[0].cypher_query
+    
+    def test_generate_migration_remove_property(self):
+        """Test generating migration for removing a property."""
+        from graph_engine.schema_migration import generate_schema_migration, MigrationAction
+        
+        old_schema = GraphDefinitionModel(
+            system_version="1.0",
+            extensions=GraphExtensions(
+                entities={
+                    "Cell": NodeDefinition(
+                        properties={
+                            "name": PropertyDefinition(type=PropertyType.STRING),
+                            "old_field": PropertyDefinition(type=PropertyType.STRING)
+                        }
+                    )
+                }
+            )
+        )
+        
+        new_schema = GraphDefinitionModel(
+            system_version="1.1",
+            extensions=GraphExtensions(
+                entities={
+                    "Cell": NodeDefinition(
+                        properties={
+                            "name": PropertyDefinition(type=PropertyType.STRING)
+                        }
+                    )
+                }
+            )
+        )
+        
+        plan = generate_schema_migration(old_schema, new_schema)
+        
+        assert plan.has_breaking_changes
+        assert len(plan.mutations) == 1
+        assert plan.mutations[0].action == MigrationAction.REMOVE_PROPERTY
+        assert plan.mutations[0].property_name == "old_field"
+    
+    def test_generate_migration_from_none(self):
+        """Test generating migration from scratch (None schema)."""
+        from graph_engine.schema_migration import generate_schema_migration, MigrationAction
+        
+        new_schema = GraphDefinitionModel(
+            system_version="1.0",
+            extensions=GraphExtensions(
+                entities={
+                    "Cell": NodeDefinition(
+                        properties={
+                            "name": PropertyDefinition(type=PropertyType.STRING)
+                        }
+                    )
+                }
+            )
+        )
+        
+        plan = generate_schema_migration(None, new_schema)
+        
+        assert plan.from_version == "0.0.0"
+        assert plan.to_version == "1.0"
+        assert len(plan.mutations) == 1
+        assert plan.mutations[0].action == MigrationAction.ADD_NODE_TYPE
