@@ -9,6 +9,11 @@ ASSERTED = "ASSERTED" # Relationship indicating that an Assertion supports a Mea
 GENERATED = "GENERATED"  # Relationship indicating that an Assertion generated a  Measurement / Observation
 
 
+# Relation
+REIFIES = "REEIFIES"  # Relationship indicating that a Relation reifies a StructureRelation
+
+ShadowLink = "ShadowLink"  # A link representing a shadow relationship between nodes
+
 Measurement = "Measurement"
 Structure = "Structure"
 

@@ -84,6 +84,26 @@ class EntityCreationPayload(BaseModel):
     kind: str
     supporting_evidence: List[StructureReference] = []
     provenance: ProvenanceContext
+    
+    
+    
+# ... [Previous imports & models: MeasurementInput, StructureReference, ProvenanceContext] ...
+
+class RelationCreationPayload(BaseModel):
+    """
+    Payload to create a relationship backed by evidence.
+    """
+    ref_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    kind: str = Field(..., description="The relationship label (e.g. 'CONNECTED_TO')")
+    
+    source_id: str = Field(..., description="The ID of the source entity")
+    target_id: str = Field(..., description="The ID of the target entity")
+    
+    # Evidence is used to calculate properties on the edge (e.g. confidence)
+    supporting_evidence: List[StructureReference] = []
+    provenance: ProvenanceContext
+    
+    
 
 class EntityCreationResult(BaseModel):
     ref_id: str
