@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     "django_probes",
     "taggit",
     "core",
+    "graph_engine",
     "health_check",  # required for health checks
     "health_check.db",  # stock Django health checkers
 ]
