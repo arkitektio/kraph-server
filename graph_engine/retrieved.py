@@ -6,7 +6,7 @@ for type discrimination and property access. They follow the same pattern
 as core/age.py's RetrievedEntity and RetrievedRelation.
 """
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional
 from datetime import datetime
 from graph_engine import vocab
 

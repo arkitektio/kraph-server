@@ -1,5 +1,5 @@
 import re
-from typing import Any, Dict, Tuple, Optional
+from typing import Any, Dict, Tuple
 from core import inputs
 from jinja2 import Environment, BaseLoader, StrictUndefined, pass_context
 
@@ -46,7 +46,7 @@ def search_where(ctx: dict[str, Any], field: str = "external_id", param: str = "
         A Cypher WHERE clause string if `search` is set, else "".
     """
     search_val: Any = ctx.get("search")
-    if search_val is not None and search_val is not "":
+    if search_val is not None and search_val != "":
         return f'AND n.{field} CONTAINS "{search_val}"'
     return ""
 
@@ -66,9 +66,9 @@ def node_valid(ctx: dict[str, Any], node: str = "n") -> str:
     """
     valid_from: Any = ctx.get("valid_from")
     valid_to: Any = ctx.get("valid_to")
-    if valid_from is not None and valid_from is not "":
+    if valid_from is not None and valid_from != "":
         return f'AND {node}.valid_from >= date("{valid_from}")'
-    if valid_to is not None and valid_to is not "":
+    if valid_to is not None and valid_to != "":
         return f'AND {node}.valid_to <= date("{valid_to}")'
     return ""
 

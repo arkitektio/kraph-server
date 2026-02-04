@@ -1,9 +1,6 @@
 from kante.types import Info
 import strawberry
-from core import types, models, age, inputs, scalars, enums
-import uuid
-import datetime
-import re
+from core import models, age
 
 
 @strawberry.input

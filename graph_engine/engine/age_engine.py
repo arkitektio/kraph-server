@@ -9,9 +9,8 @@ from contextlib import contextmanager
 from typing import Any, Dict, Generator, List, Optional
 
 from django.db import connections
-from psycopg import sql
 
-from .protocol import CypherEngine, GraphProtocol
+from .protocol import GraphProtocol
 
 
 @contextmanager

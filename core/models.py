@@ -1,12 +1,9 @@
 import random
-import uuid
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.forms import FileField
-from taggit.managers import TaggableManager
 from core import enums
-from koherent.fields import ProvenanceField, HistoricForeignKey
-import koherent.signals
+from koherent.fields import ProvenanceField
 from django_choices_field import TextChoicesField
 from core.fields import S3Field
 from core.datalayer import Datalayer
@@ -14,8 +11,6 @@ from authentikate.models import Organization, Membership
 from polymorphic.models import PolymorphicModel
 
 # Create your models here.
-import boto3
-import json
 from django.conf import settings
 
 
@@ -1158,4 +1153,3 @@ class Model(models.Model):
 
 
 # Needs to be here
-from core import signals

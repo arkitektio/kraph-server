@@ -1,26 +1,16 @@
-from dataclasses import dataclass
 from core.utils import paginate_querysets
 import strawberry
 import strawberry_django
 from strawberry import auto
-from typing import List, Optional, Annotated, Union, cast
-import strawberry_django
+from typing import List, Optional, Union, cast
 from core import models, scalars, filters, enums, loaders, inputs, pagination
-from django.contrib.auth import get_user_model
 from kante.types import Info
 import datetime
-from asgiref.sync import sync_to_async
-from itertools import chain
-from enum import Enum
 from core.datalayer import get_current_datalayer
-from strawberry.experimental import pydantic
-from typing import Union
-from strawberry import LazyType
 from core import age, pagination as p, filters as f
 from strawberry_django.pagination import OffsetPaginationInput
 from django.db.models import Q
-from authentikate.strawberry.types import Client, User
-import kante
+from authentikate.strawberry.types import User
 from .type_gen import create_stats_type
 
 
@@ -503,7 +493,6 @@ class Node:
 
     @strawberry_django.field()
     def relevant_queries(self, info: Info) -> List["NodeQuery"]:
-        from core.renderers.node.render import render_node_view
 
         if not self._value.category_id:
             return []
@@ -512,7 +501,6 @@ class Node:
 
     @strawberry_django.field()
     def views(self, info: Info) -> List["NodeQueryView"]:
-        from core.renderers.node.render import render_node_view
 
         if not self._value.category_id:
             return []
@@ -521,7 +509,6 @@ class Node:
 
     @strawberry_django.field(description="The best view of the node given the current context")
     def best_view(self, info: Info) -> NodeQueryView | None:
-        from core.renderers.node.render import render_node_view
 
         if not self._value.category_id:
             return None

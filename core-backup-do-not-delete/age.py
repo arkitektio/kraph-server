@@ -1,16 +1,14 @@
-from contextlib import contextmanager, asynccontextmanager
+from contextlib import contextmanager
 import datetime
 import json
-from unicodedata import category
 from django.db import connections
 from core import models
 from dataclasses import dataclass
 from core import filters, pagination, inputs, enums
 import typing
 from core.pagination import GraphPaginationInput
-from core.utils import datetime_to_epoch_millis, get_now_epoch_millis, translate_to_epoch_millis, from_epoch_millis
-from pydantic import BaseModel, Field
-import strawberry
+from core.utils import datetime_to_epoch_millis, get_now_epoch_millis, from_epoch_millis
+from pydantic import BaseModel
 from enum import Enum
 from typing import Any
 from psycopg import sql
@@ -288,9 +286,9 @@ def graph_cursor():
         cursor.execute("LOAD 'age';")
         cursor.execute('SET search_path = ag_catalog, "$user", public')
 
-        print(f"Creating new graph cursor. Use this to support AGE queries.")
+        print("Creating new graph cursor. Use this to support AGE queries.")
         yield cursor
-        print(f"Closing graph cursor.")
+        print("Closing graph cursor.")
 
 
 def create_age_graph(name: str):
@@ -909,12 +907,12 @@ def create_age_entity(
             timestamp_now = get_now_epoch_millis()
 
             cursor.execute(
-                f"""
+                """
                 SELECT * 
                 FROM cypher(%s, $$
                     MATCH (a) WHERE id(a) = %s
-                    CREATE (b:EditEvent {{type: "EDIT_EVENT", created_by: %s, created_at: %s}})
-                    CREATE (a)<-[r:EDITED {{type: "EDITED", change_type: "CREATE"}}]-(b)
+                    CREATE (b:EditEvent {type: "EDIT_EVENT", created_by: %s, created_at: %s})
+                    CREATE (a)<-[r:EDITED {type: "EDITED", change_type: "CREATE"}]-(b)
                     RETURN r
                 $$) as (r agtype);
                 """,
@@ -931,7 +929,7 @@ def update_entity(graph: str, id: int, external_id: str | None = None, tags: lis
     with graph_cursor() as cursor:
         # Try to find existing reagent first
         cursor.execute(
-            f"""
+            """
             SELECT * 
             FROM cypher(%s, $$
                 MATCH (n)
@@ -1290,7 +1288,7 @@ def create_age_event_out_edge(
 def get_random_node(graph_name):
     with graph_cursor() as cursor:
         cursor.execute(
-            f"""
+            """
             SELECT * 
             FROM cypher(%s, $$
                 MATCH (n)
@@ -1449,7 +1447,7 @@ def delete_edge(
 
     with graph_cursor() as cursor:
         cursor.execute(
-            f"""SELECT * FROM cypher(%s, $$
+            """SELECT * FROM cypher(%s, $$
                 MATCH (a)-[r]->(b)
                 WHERE id(r) = %s
                 DELETE r
@@ -1479,7 +1477,7 @@ def delete_node(
 
     with graph_cursor() as cursor:
         cursor.execute(
-            f"""SELECT * FROM cypher(%s, $$
+            """SELECT * FROM cypher(%s, $$
                 MATCH (a)
                 WHERE id(a) = %s
                 DELETE a
@@ -1509,7 +1507,7 @@ def detach_delete_node(
 
     with graph_cursor() as cursor:
         cursor.execute(
-            f"""SELECT * FROM cypher(%s, $$
+            """SELECT * FROM cypher(%s, $$
                 MATCH (a)
                 WHERE id(a) = %s
                 DETACH DELETE a
@@ -1567,7 +1565,7 @@ def create_age_metric(
 def get_age_entity(graph_name, entity_id) -> RetrievedEntity:
     with graph_cursor() as cursor:
         cursor.execute(
-            f"""
+            """
             SELECT * 
             FROM cypher(%s, $$
                 MATCH (n) WHERE id(n) = %s
@@ -1586,10 +1584,10 @@ def get_age_entity(graph_name, entity_id) -> RetrievedEntity:
 def get_age_entity_by_category_and_external_id(category: models.EntityCategory, external_id) -> RetrievedEntity:
     with graph_cursor() as cursor:
         cursor.execute(
-            f"""
+            """
             SELECT * 
             FROM cypher(%s, $$
-                MATCH {{type: "ENTITY", category_id: %s}}
+                MATCH {type: "ENTITY", category_id: %s}
                 WHERE n.external_id = %s
             $$) as (n agtype);
             """,
@@ -1663,7 +1661,7 @@ def get_entities(filters: typing.Optional["filters.EntityFilter"], pagination: t
         match_statements.append(f"id(n) IN {[int(to_entity_id(i)) for i in filters.ids]}")
 
     if filters.active:
-        match_statements.append(f"n.active = true")
+        match_statements.append("n.active = true")
 
     FINAL_MATCH = " AND ".join(match_statements)
     print("Final match", FINAL_MATCH)
@@ -1754,7 +1752,7 @@ def get_reagents(filters: typing.Optional["filters.ReagentFilter"], pagination: 
         match_statements.append(f"id(n) IN {[int(to_entity_id(i)) for i in filters.ids]}")
 
     if filters.active:
-        match_statements.append(f"n.active = true")
+        match_statements.append("n.active = true")
 
     FINAL_MATCH = " AND ".join(match_statements)
     print("Final match", FINAL_MATCH)
@@ -1807,7 +1805,7 @@ def select_measurements_for_structure(graph_name, structure_id, categories: list
 def select_measurements_for_entity(graph_name, entity_id):
     with graph_cursor() as cursor:
         cursor.execute(
-            f"""
+            """
             SELECT * 
             FROM cypher(%s, $$
                 MATCH (n)<-[r]-(m)
@@ -1828,7 +1826,7 @@ def select_measurements_for_entity(graph_name, entity_id):
 def select_target_participation_for_entity(graph_name, entity_id):
     with graph_cursor() as cursor:
         cursor.execute(
-            f"""
+            """
             SELECT * 
             FROM cypher(%s, $$
                 MATCH (n)<-[r]-(m)
@@ -1849,7 +1847,7 @@ def select_target_participation_for_entity(graph_name, entity_id):
 def select_source_participation_for_entity(graph_name, entity_id):
     with graph_cursor() as cursor:
         cursor.execute(
-            f"""
+            """
             SELECT * 
             FROM cypher(%s, $$
                 MATCH (n)-[r]->(m)
@@ -1870,7 +1868,7 @@ def select_source_participation_for_entity(graph_name, entity_id):
 def get_age_structure(graph_name, structure_identifier) -> RetrievedEntity:
     with graph_cursor() as cursor:
         cursor.execute(
-            f"""
+            """
             SELECT * 
             FROM cypher(%s, $$
                 MATCH (n)
@@ -1890,7 +1888,7 @@ def get_age_structure(graph_name, structure_identifier) -> RetrievedEntity:
 def get_age_structure_by_object(structure: "models.StructureCategory", object: str) -> RetrievedEntity:
     with graph_cursor() as cursor:
         cursor.execute(
-            f"""
+            """
             SELECT * 
             FROM cypher(%s, $$
                 MATCH (n)
@@ -1911,7 +1909,7 @@ def get_age_structure_by_object(structure: "models.StructureCategory", object: s
 def get_age_entity_relation(graph_name, edge_id) -> RetrievedRelation:
     with graph_cursor() as cursor:
         cursor.execute(
-            f"""
+            """
             SELECT * 
             FROM cypher(%s, $$
                 MATCH (a)-[e]->(b) 
@@ -1931,7 +1929,7 @@ def get_age_entity_relation(graph_name, edge_id) -> RetrievedRelation:
 def get_age_edge(graph_name, edge_id) -> RetrievedRelation:
     with graph_cursor() as cursor:
         cursor.execute(
-            f"""
+            """
             SELECT * 
             FROM cypher(%s, $$
                 MATCH (a)-[e]->(b) 
@@ -1951,7 +1949,7 @@ def get_age_edge(graph_name, edge_id) -> RetrievedRelation:
 def get_age_metrics(graph_name, node_id):
     with graph_cursor() as cursor:
         cursor.execute(
-            f"""
+            """
             SELECT * 
             FROM cypher(%s, $$
                     MATCH (a)-[r]->(a)
@@ -2105,7 +2103,7 @@ def select_latest_nodes(
 ):
     with graph_cursor() as cursor:
         cursor.execute(
-            f"""
+            """
             SELECT *
             FROM cypher(%s, $$
                 MATCH (n)
@@ -2173,7 +2171,7 @@ def select_paired_entities(
                 and_clauses.append(f"id(m) = {to_entity_id(relation_filter.right_id)}")
 
             if not relation_filter.with_self:
-                and_clauses.append(f"id(n) <> id(m)")
+                and_clauses.append("id(n) <> id(m)")
 
             if relation_filter.ids:
                 and_clauses.append(f"id(e) IN [ {', '.join([to_entity_id(id) for id in relation_filter.ids])}]")
@@ -2300,12 +2298,12 @@ def set_entity_variable(graph_name: str, node_id: int, variable_name: str, varia
             # Create an edit event with previous value, new value, and timestamp
 
             cursor.execute(
-                f"""
+                """
                 SELECT * 
                 FROM cypher(%s, $$
                     MATCH (a) WHERE id(a) = %s
-                    CREATE (b:EditEvent {{type: "EDIT_EVENT", created_by: %s, created_at: %s}})
-                    CREATE (a)<-[r:EDITED {{type: "EDITED", previous_value: %s, new_value: %s, timestamp: %s, change_type: "UPDATE", property_name: %s}}]-(b)
+                    CREATE (b:EditEvent {type: "EDIT_EVENT", created_by: %s, created_at: %s})
+                    CREATE (a)<-[r:EDITED {type: "EDITED", previous_value: %s, new_value: %s, timestamp: %s, change_type: "UPDATE", property_name: %s}]-(b)
                     RETURN r
                 $$) as (r agtype);
                 """,
@@ -2376,12 +2374,12 @@ def set_entity_properties(graph_name: str, node_id: int, properties: dict[str, t
             # Create edit events for provenance logging
             for prop_key, validated_value in validated_properties.items():
                 cursor.execute(
-                    f"""
+                    """
                     SELECT * 
                     FROM cypher(%s, $$
                         MATCH (a) WHERE id(a) = %s
-                        CREATE (b:EditEvent {{type: "EDIT_EVENT", created_by: %s, new_value: %s, variable_name: %s, created_at: %s}})
-                        CREATE (a)-[r:EDITED {{type: "EDITED"}}]->(b)
+                        CREATE (b:EditEvent {type: "EDIT_EVENT", created_by: %s, new_value: %s, variable_name: %s, created_at: %s})
+                        CREATE (a)-[r:EDITED {type: "EDITED"}]->(b)
                         RETURN r
                     $$) as (r agtype);
                     """,
@@ -2443,7 +2441,7 @@ def select_all_relations(
                 and_clauses.append(f"id(b) = {to_entity_id(filter.right_id)}")
 
             if not filter.with_self:
-                and_clauses.append(f"id(a) <> id(b)")
+                and_clauses.append("id(a) <> id(b)")
 
             if filter.ids:
                 and_clauses.append(f"id(e) IN [ {', '.join([to_entity_id(id) for id in filter.ids])}]")
@@ -2520,7 +2518,7 @@ def get_age_relations(graph_name: str, entity_id: int) -> typing.Iterable[Retrie
 def get_right_relations(graph_name: str, entity_id: int):
     with graph_cursor() as cursor:
         cursor.execute(
-            f"""
+            """
             SELECT * 
             FROM cypher(%s, $$
                 MATCH (a)-[r]->(b) WHERE id(a) = %s
@@ -2544,7 +2542,7 @@ def get_right_relations(graph_name: str, entity_id: int):
 def get_left_relations(graph_name, entity_id):
     with graph_cursor() as cursor:
         cursor.execute(
-            f"""
+            """
             SELECT * 
             FROM cypher(%s, $$
                 MATCH (a)<-[r]-(b) WHERE id(a) = %s

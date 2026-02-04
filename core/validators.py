@@ -1,4 +1,4 @@
-from core import models, enums, inputs, manager
+from core import models, inputs, manager
 import strawberry 
 
 def validate_structure_definition(

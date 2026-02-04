@@ -2,7 +2,6 @@ from contextvars import ContextVar
 from functools import cached_property
 import boto3
 from django.conf import settings
-import dataclasses
 from strawberry.extensions import SchemaExtension
 
 datalayer: ContextVar = ContextVar("datalayer", default=None)

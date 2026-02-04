@@ -1,12 +1,10 @@
-from django.db.models.signals import post_save, pre_delete
+from django.db.models.signals import post_save
 from django.dispatch import receiver
 from core import models
 
 
 @receiver(post_save, sender=models.StructureCategory)
 def create_structure_query(sender, instance, created, **kwargs):
-    from core.renderers.graph import render
-    from core.renderers.node.render import render_node_view
 
     if created:
         node_query = models.NodeQuery.objects.create(

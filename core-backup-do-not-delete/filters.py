@@ -2,8 +2,6 @@ import datetime
 import strawberry
 from core import models, enums, scalars
 from strawberry import auto
-from typing import Optional
-from strawberry_django.filters import FilterLookup
 import strawberry_django
 from django.db.models import Q
 

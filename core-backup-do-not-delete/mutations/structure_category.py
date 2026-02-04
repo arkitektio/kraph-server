@@ -1,11 +1,8 @@
 from kante.types import Info
-from core.datalayer import get_current_datalayer
 
 import strawberry
-from core import types, models, enums, scalars, manager, inputs
+from core import types, models, scalars, manager, inputs
 from core import age
-from strawberry.file_uploads import Upload
-from django.conf import settings
 import re
 
 # re for the scalar string in format "@{exernal_name}/{scalar_name_without_spaces_and_only_alphanumber_with_underscores_and_hypens}"

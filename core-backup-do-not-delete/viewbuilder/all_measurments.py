@@ -1,4 +1,4 @@
-from core import models, enums
+from core import models
 
 
 def all_informed_measurements_view_builder(structure: models.StructureCategory):

@@ -5,7 +5,7 @@ This module provides functions to generate Cypher queries for computing
 derived properties from measurements on connected structures.
 """
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any
 
 from graph_engine.base_models import (
     AggregationFunction,

@@ -1,6 +1,6 @@
 from kante.types import Info
 import strawberry
-from core import types, models, age, scalars
+from core import types, models, scalars
 
 
 @strawberry.input(description="Input type for creating a new model")

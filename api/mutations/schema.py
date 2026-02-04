@@ -1,7 +1,7 @@
 """
 Schema mutation resolvers for managing graph schema versions.
 """
-from typing import Dict, Any, List
+from typing import List
 from kante.types import Info
 from pydantic import ValidationError
 
@@ -169,7 +169,6 @@ def set_schema(
         raise ValueError(f"Invalid schema: {'; '.join(error_msgs)}")
     
     # Get the graph from the database
-    from core.models import Graph
     try:
         graph = Graph.objects.get(id=input.graph_id)
     except Graph.DoesNotExist:

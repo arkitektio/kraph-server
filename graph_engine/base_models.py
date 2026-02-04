@@ -1,6 +1,6 @@
 from enum import Enum
 from typing import List, Dict, Optional, Union, Literal
-from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict, computed_field
+from pydantic import BaseModel, Field, model_validator, ConfigDict
 from functools import cached_property
 
 # --- Enums for Strict Typing ---
@@ -116,7 +116,7 @@ class PropertyDefinition(BaseModel):
     def validate_rule_presence(self):
         """If using ROLLUP, a rule definition is mandatory."""
         if self.derivation == DerivationType.ROLLUP and not self.rule:
-            raise ValueError(f"Property with derivation 'ROLLUP' must have a 'rule' configuration.")
+            raise ValueError("Property with derivation 'ROLLUP' must have a 'rule' configuration.")
         return self
     
     @model_validator(mode='after')

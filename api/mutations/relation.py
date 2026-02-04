@@ -5,7 +5,7 @@ from kante.types import Info
 
 from api.types import Relation, RelationCreationResult
 from api.inputs import RelationCreationInput
-from api.context import get_controller_for_node_id, get_provenance_from_context
+from api.context import get_controller_for_node_id
 from graph_engine.input_models import RelationCreationPayload
 
 

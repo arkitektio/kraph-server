@@ -1,15 +1,8 @@
 from kante.types import Info
-from core.utils import (
-    node_id_to_graph_id,
-    node_id_to_graph_name,
-    scalar_string_to_graph_name,
-)
 from .utils import get_nessessary_inedges, get_nessessary_outedges
 import strawberry
-from core import types, models, age, inputs, scalars, enums, inputs
-import uuid
+from core import types, models, age, inputs
 import datetime
-import re
 
 
 @strawberry.input

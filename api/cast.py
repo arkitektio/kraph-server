@@ -1,6 +1,6 @@
 from typing import Union
 from graph_engine.retrieved import RetrievedNode
-from api.types import Node, Entity, Structure, Measurement, Assertion
+from api.types import Entity, Structure, Measurement, Assertion
 
 def cast_retrieve_to_graphql_type(retrieved: RetrievedNode) -> Union[Entity, Structure, Measurement, Assertion]:
     """Cast a RetrievedBase object to its corresponding GraphQL type name."""

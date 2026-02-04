@@ -1,11 +1,9 @@
 from kante.types import Info
 import strawberry
 
-from core import types, models, scalars
+from core import types, models
 from core.datalayer import get_current_datalayer
-import json
 from django.conf import settings
-from django.contrib.auth import get_user_model
 
 
 @strawberry.input()

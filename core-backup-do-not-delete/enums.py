@@ -1,11 +1,7 @@
 from django.db.models import TextChoices
 import strawberry
 from enum import Enum
-import strawberry
-from enum import Enum
 
-import strawberry
-from enum import Enum
 
 
 class MeasurementKindChoices(TextChoices):

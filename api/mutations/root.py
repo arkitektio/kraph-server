@@ -3,13 +3,11 @@ Root Mutation type for the API.
 
 Assembles all mutation resolvers into the root Mutation type.
 """
-import strawberry
 from kante.types import Info
 
 from api.types import (
     Entity, Structure, Measurement, EntityCreationResult, 
-    LinkStructureResult, RelationCreationResult, Relation,
-    SchemaValidationResult, SetSchemaResult,
+    LinkStructureResult, RelationCreationResult, SchemaValidationResult, SetSchemaResult,
 )
 from api.inputs import (
     EntityCreationInput,

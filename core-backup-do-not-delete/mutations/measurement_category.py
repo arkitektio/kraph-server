@@ -1,11 +1,8 @@
 from kante.types import Info
-from core.datalayer import get_current_datalayer
 
 import strawberry
-from core import types, models, enums, scalars, manager, inputs, validators
+from core import types, models, manager, inputs, validators
 from core import age
-from strawberry.file_uploads import Upload
-from django.conf import settings
 
 
 @strawberry.input(description="Input for updating an existing expression")

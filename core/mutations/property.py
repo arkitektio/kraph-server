@@ -1,7 +1,7 @@
 from kante.types import Info
 from core.utils import node_id_to_graph_id, node_id_to_graph_name
 import strawberry
-from core import types, models, age, inputs, scalars
+from core import types, age, scalars
 
 
 @strawberry.input(description="Input type for creating a relation between two entities")

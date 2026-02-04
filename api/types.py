@@ -10,8 +10,7 @@ This module follows the pattern from core/types.py where:
 3. Fields access the private _value for their data
 """
 import strawberry
-from typing import Optional, List, Any, Union, TYPE_CHECKING
-from strawberry.types import Info
+from typing import Optional, List, Union
 from datetime import datetime
 
 from .scalars import AnyScalar, UnixMilliseconds, StructureIdentifier, GlobalID

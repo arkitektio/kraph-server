@@ -386,7 +386,7 @@ class GraphController:
         """
         effective_schema = self.graph.definition
         
-        query = f"""
+        query = """
             MATCH (n) WHERE n.id = $id
             RETURN n, labels(n) as lbls
         """
@@ -450,7 +450,7 @@ class GraphController:
         
         # 1. Fetch Node AND its Labels
         # We search strictly by the unique 'id' property.
-        query = f"""
+        query = """
             MATCH (n) WHERE n.id = $id
             RETURN n, labels(n) as lbls
         """

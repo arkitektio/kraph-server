@@ -2,13 +2,10 @@ from kante.types import Info
 from core.utils import (
     node_id_to_graph_id,
     node_id_to_graph_name,
-    scalar_string_to_graph_name,
 )
 import strawberry
-from core import types, models, age, inputs, scalars, enums
-import uuid
+from core import types, models, age, inputs, scalars
 import datetime
-import re
 
 
 @strawberry.input

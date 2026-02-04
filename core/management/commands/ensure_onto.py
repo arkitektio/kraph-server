@@ -1,8 +1,5 @@
 from django.core.management.base import BaseCommand
-from django.conf import settings
-from core import models, builders, base_models
-import json
-import omegaconf
+from core import models
 
 
 class Command(BaseCommand):

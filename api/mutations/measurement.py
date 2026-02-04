@@ -6,7 +6,6 @@ from kante.types import Info
 from api.types import Measurement, measurement_from_response
 from api.inputs import AddMeasurementInput
 from api.context import get_controller_for_node_id, get_provenance_from_context
-from graph_engine import input_models
 
 
 def add_measurement(

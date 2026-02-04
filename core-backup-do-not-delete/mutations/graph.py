@@ -1,9 +1,7 @@
 from kante.types import Info
 from .relation_category import relation_category_creator
 import strawberry
-from core import types, models, age, enums, scalars, manager, inputs
-from django.db import connections
-from contextlib import contextmanager
+from core import types, models, age, manager, inputs
 from django.db.models import Q
 from .entity_category import entity_category_creator
 from .natural_event_category import natural_event_category_creator

@@ -1,19 +1,14 @@
-from itertools import chain
 from kante.types import Info
 from typing import Annotated, AsyncGenerator, List, Optional
 import strawberry
 from strawberry_django.optimizer import DjangoOptimizerExtension
 from core.datalayer import DatalayerExtension
 from strawberry import ID
-from strawberry.permission import BasePermission
-from typing import Any, Type
 from core import types, models
 from core import mutations
 from core import filters
 from core import queries
-from core import subscriptions
 from core import pagination
-from strawberry.field_extensions import InputMutationExtension
 import strawberry_django
 from koherent.strawberry.extension import KoherentExtension
 from authentikate.strawberry.extension import AuthentikateExtension
@@ -21,12 +16,6 @@ from authentikate.strawberry import AuthExtension, AuthSubscribeExtension
 from core import age, scalars, manager
 from strawberry_django.pagination import OffsetPaginationInput
 
-from graph_engine.inputs import (
-    GraphMutationPayloadInput,
-    RunMigrationInput,
-    GraphMutationResultType,
-    MigrationResultType,
-)
 
 
 def field(permission_classes=None, **kwargs):
@@ -162,7 +151,7 @@ class Query:
                         _structure=retrieved_entitiy,
                     )
                 )
-            except Exception as e:
+            except Exception:
                 retrieved_views.append(
                     types.KnowledgeView(
                         _scat=scat,
@@ -178,7 +167,6 @@ class Query:
 
     @field(description="The best view of the node given the current context")
     def node_view(self, info: Info, query: strawberry.ID, node_id: strawberry.ID) -> types.NodeQueryView:
-        from core.renderers.node.render import render_node_view
 
         best_query = models.NodeQuery.objects.get(id=query)
 

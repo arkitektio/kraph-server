@@ -7,7 +7,7 @@ import strawberry
 from typing import AsyncGenerator
 from kante.types import Info
 
-from api.types import Entity, entity_from_response
+from api.types import Entity
 
 
 @strawberry.type(description="Graph Engine Subscriptions")

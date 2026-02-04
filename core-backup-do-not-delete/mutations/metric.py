@@ -7,9 +7,6 @@ from core.utils import (
 from core.mutations.structure import scalar_string_to_graph_name
 import strawberry
 from core import types, models, age, inputs, scalars, enums, manager
-import uuid
-import datetime
-import re
 from koherent.vars import get_current_assignation_id
 
 @strawberry.input
