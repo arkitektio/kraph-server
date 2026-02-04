@@ -266,6 +266,16 @@ class GraphSchema(models.Model):
         """Parse the stored JSON into a GraphDefinitionModel."""
         from graph_engine.base_models import GraphDefinitionModel
         return GraphDefinitionModel.model_validate(self.definition)
+    
+    @property
+    def schema(self):
+        """
+        Get the schema definition as a Pydantic GraphDefinitionModel.
+        
+        Returns:
+            GraphDefinitionModel: The parsed and validated schema definition
+        """
+        return self.get_definition_model()
 
 
 def random_color():

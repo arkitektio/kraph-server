@@ -12,8 +12,10 @@ def test_fixture_integrity(bio_graph_schema):
     """
     assert bio_graph_schema.system_version == "1.0"
     
-    # Check Structure
-    assert "ROI" in bio_graph_schema.extensions.structures_map
+    # Check that structures are now resolved via IDENTIFIER_MAP, not schema
+    # The IDENTIFIER_MAP should contain ROI and ToldYouSo
+    assert models.get_label_for_identifier("@mikro/roi") == "ROI"
+    assert models.get_label_for_identifier("told_you_so") == "ToldYouSo"
     
     # Check Rollup Logic
     ais = bio_graph_schema.extensions.entities_map["AIS"]

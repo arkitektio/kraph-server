@@ -188,6 +188,57 @@ class MaterializedEdge:
 
 
 @strawberry_django.type(
+    models.GraphSchema,
+    description="A versioned schema definition for a graph.",
+)
+class GraphSchema:
+    """A versioned schema that defines the structure and validation rules for a graph."""
+    id: auto
+    version: str = strawberry_django.field(description="Semantic version of this schema (e.g., '1.0.0')")
+    index: int = strawberry_django.field(description="Sequential index of this schema version")
+    is_active: bool = strawberry_django.field(description="Whether this is the currently active schema")
+    created_at: datetime.datetime = strawberry_django.field(description="When this schema was created")
+    description: Optional[str] = strawberry_django.field(description="Description of changes in this schema version")
+    definition: scalars.Any = strawberry_django.field(description="The full GraphDefinitionModel as JSON")
+    created_by: Optional[User] = strawberry_django.field(description="User who created this schema")
+    
+    @strawberry_django.field(description="The graph this schema belongs to")
+    def graph(self) -> "Graph":
+        return cast(models.GraphSchema, self).graph
+
+
+# Import GraphSchemaDefinition from graph_engine.models for the type
+from graph_engine.models import GraphSchemaDefinition as GraphSchemaDefinitionModel
+
+
+@strawberry_django.type(
+    GraphSchemaDefinitionModel,
+    description="A user-defined schema for graph validation with node/edge labels and property rules.",
+)
+class GraphSchemaDefinition:
+    """Schema definition containing node labels, required properties, and validation rules."""
+    id: auto
+    name: str = strawberry_django.field(description="Human-readable name for this schema version")
+    schema_json: scalars.Any = strawberry_django.field(description="The schema definition containing node labels, properties, and validation rules")
+    version: int = strawberry_django.field(description="Schema version for evolution tracking")
+    is_active: bool = strawberry_django.field(description="Whether this schema version is currently active")
+    created_at: datetime.datetime = strawberry_django.field(description="When this schema was created")
+    updated_at: datetime.datetime = strawberry_django.field(description="When this schema was last updated")
+    
+    @strawberry_django.field(description="The graph this schema applies to")
+    def graph(self) -> "Graph":
+        return cast(GraphSchemaDefinitionModel, self).graph
+    
+    @strawberry_django.field(description="Valid node labels defined in this schema")
+    def valid_node_labels(self) -> List[str]:
+        return cast(GraphSchemaDefinitionModel, self).get_valid_node_labels()
+    
+    @strawberry_django.field(description="Valid edge labels defined in this schema")
+    def valid_edge_labels(self) -> List[str]:
+        return cast(GraphSchemaDefinitionModel, self).get_valid_edge_labels()
+
+
+@strawberry_django.type(
     models.Graph,
     filters=filters.GraphFilter,
     pagination=True,
@@ -214,6 +265,18 @@ class Graph:
     measurement_categories: List["MeasurementCategory"] = strawberry_django.field(description="The list of measurement exprdessions defined in this ontology")
     relation_categories: List["RelationCategory"] = strawberry_django.field(description="The list of relation expressions defined in this ontology")
     structure_relation_categories: List["StructureRelationCategory"] = strawberry_django.field(description="The list of structure relation expressions defined in this ontology")
+
+    # Schemas
+    schemas: List["GraphSchema"] = strawberry_django.field(description="All schema versions for this graph")
+    schema_definitions: List["GraphSchemaDefinition"] = strawberry_django.field(description="All schema definitions for validation")
+
+    @strawberry_django.field(description="The currently active schema for this graph")
+    def active_schema(self) -> Optional["GraphSchema"]:
+        return cast(models.Graph, self).active_schema
+    
+    @strawberry_django.field(description="The currently active schema definition for validation")
+    def active_schema_definition(self) -> Optional["GraphSchemaDefinition"]:
+        return cast(models.Graph, self).schema_definitions.filter(is_active=True).first()
 
     @strawberry_django.field()
     def materialized_edges(self, info: Info) -> List["MaterializedEdge"]:

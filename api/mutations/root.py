@@ -27,13 +27,13 @@ from . import structure as structure_mutations
 from . import measurement as measurement_mutations
 from . import relation as relation_mutations
 from . import schema as schema_mutations
+import kante
 
-
-@strawberry.type(description="Graph Engine Mutations")
+@kante.type(description="Graph Engine Mutations")
 class Mutation:
     """Root mutation type for the graph engine API."""
 
-    @strawberry.mutation(description="Create a new entity with supporting evidence")
+    @kante.django_mutation(description="Create a new entity with supporting evidence")
     def create_entity(
         self,
         info: Info,
@@ -48,7 +48,7 @@ class Mutation:
         """
         return entity_mutations.create_entity(info, input)
 
-    @strawberry.mutation(description="Recalculate entity properties from its evidence")
+    @kante.django_mutation(description="Recalculate entity properties from its evidence")
     def recalculate_entity(
         self,
         info: Info,
@@ -62,7 +62,7 @@ class Mutation:
         """
         return entity_mutations.recalculate_entity(info, input)
 
-    @strawberry.mutation(description="Create a new standalone structure")
+    @kante.django_mutation(description="Create a new standalone structure")
     def create_structure(
         self,
         info: Info,
@@ -76,7 +76,7 @@ class Mutation:
         """
         return structure_mutations.create_structure(info, input)
 
-    @strawberry.mutation(description="Add a measurement to a structure")
+    @kante.django_mutation(description="Add a measurement to a structure")
     def add_measurement(
         self,
         info: Info,
@@ -89,7 +89,7 @@ class Mutation:
         """
         return measurement_mutations.add_measurement(info, input)
 
-    @strawberry.mutation(description="Link an existing structure to an entity")
+    @kante.django_mutation(description="Link an existing structure to an entity")
     def link_structure_to_entity(
         self,
         info: Info,
@@ -106,7 +106,7 @@ class Mutation:
         """
         return structure_mutations.link_structure_to_entity(info, input)
 
-    @strawberry.mutation(description="Create a new relation between two entities")
+    @kante.django_mutation(description="Create a new relation between two entities")
     def create_relation(
         self,
         info: Info,
@@ -130,7 +130,7 @@ class Mutation:
     # SCHEMA MUTATIONS
     # ===========================================
 
-    @strawberry.mutation(description="Validate a schema definition without saving")
+    @kante.django_mutation(description="Validate a schema definition without saving")
     def validate_schema(
         self,
         info: Info,
@@ -144,7 +144,7 @@ class Mutation:
         """
         return schema_mutations.validate_schema(info, input)
 
-    @strawberry.mutation(description="Create and optionally activate a new schema version")
+    @kante.django_mutation(description="Create and optionally activate a new schema version")
     def set_schema(
         self,
         info: Info,
@@ -159,7 +159,7 @@ class Mutation:
         """
         return schema_mutations.set_schema(info, input)
 
-    @strawberry.mutation(description="Activate an existing schema version")
+    @kante.django_mutation(description="Activate an existing schema version")
     def activate_schema(
         self,
         info: Info,

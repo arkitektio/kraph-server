@@ -11,6 +11,7 @@ from authentikate.strawberry.extension import AuthentikateExtension
 from .queries import Query
 from .mutations import Mutation
 from .subscriptions import Subscription
+from .extensions.cypher import CypherEngineExtension
 import kante
 from graph_engine.engine.age_engine import AgeEngine, CypherEngine
 
@@ -29,6 +30,7 @@ def create_schema(
         max_depth: Maximum query depth (default 10)
         debug: Enable debug mode
         include_subscriptions: Whether to include subscriptions (default True)
+        cypher_engine: The CypherEngine instance to use for graph operations
         
     Returns:
         Configured Kante schema
@@ -37,6 +39,10 @@ def create_schema(
         QueryDepthLimiter(max_depth=max_depth),
         AuthentikateExtension(),
     ]
+    
+    # Add CypherEngineExtension if an engine is provided
+    if cypher_engine is not None:
+        extensions.append(CypherEngineExtension(engine=cypher_engine))
     
     if include_subscriptions:
         return kante.Schema(

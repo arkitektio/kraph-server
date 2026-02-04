@@ -231,12 +231,6 @@ class EntityDefinitionInput(BaseModel):
     properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Property definitions")
 
 
-class StructureDefinitionInput(BaseModel):
-    """Input for a structure definition."""
-    key: str = Field(..., description="Structure type name/key")
-    description: Optional[str] = Field(None, description="Description of this structure type")
-
-
 class EvidenceRequirementInput(BaseModel):
     """Input for evidence requirements on a materialized relation."""
     key: str = Field(..., description="Property key expected on the evidence")
@@ -277,16 +271,25 @@ class EventDefinitionInput(BaseModel):
 
 
 class GraphExtensionsInput(BaseModel):
-    """Input for graph extensions (the main schema content)."""
-    structures: List[StructureDefinitionInput] = Field(default_factory=list, description="Structure definitions")
+    """
+    Input for graph extensions (the main schema content).
+    
+    Note: Structures are no longer defined in the schema. They are
+    dynamically resolved via get_label_for_identifier() from the
+    IDENTIFIER_MAP in graph_engine.base_models.
+    """
     entities: List[EntityDefinitionInput] = Field(default_factory=list, description="Entity definitions")
     relations: List[RelationDefinitionInput] = Field(default_factory=list, description="Relation definitions")
     events: List[EventDefinitionInput] = Field(default_factory=list, description="Event definitions")
     
     @model_validator(mode='after')
     def validate_relation_references(self):
-        """Validate that relations reference existing entity/structure types."""
-        all_nodes = {s.key for s in self.structures} | {e.key for e in self.entities}
+        """Validate that relations reference existing entity types or structure labels."""
+        from graph_engine.base_models import IDENTIFIER_MAP
+        
+        # Structure labels from IDENTIFIER_MAP are valid
+        structure_labels = set(IDENTIFIER_MAP.values())
+        all_nodes = structure_labels | {e.key for e in self.entities}
         
         for rel in self.relations:
             sources = [rel.source] if isinstance(rel.source, str) else rel.source

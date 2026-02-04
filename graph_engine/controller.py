@@ -1,7 +1,11 @@
 import json
 import time
 from typing import Optional, Dict, Any, List
-from graph_engine.base_models import GraphDefinitionModel
+from graph_engine.base_models import (
+    GraphDefinitionModel,
+    get_label_for_identifier,
+    get_identifier_for_label,
+)
 from graph_engine.input_models import (
     EntityCreationResult,
     MeasurementInput,
@@ -19,12 +23,6 @@ from graph_engine.retrieved import (
 )
 from graph_engine import vocab
 from graph_engine.rollup import build_property_query
-
-IDENTIFIER_MAP = {
-    "@mikro/roi": "ROI",
-    "told_you_so": "ToldYouSo",
-    "default": "Structure"
-}
 
 
 def _extract_props(raw_node: Any) -> Dict[str, Any]:
@@ -117,7 +115,7 @@ class GraphController:
             evidence_object = evidence.get("object")
             evidence_measurements = evidence.get("measurements", [])
             
-            structure_graph_label = IDENTIFIER_MAP.get(evidence_identifier, "Structure")
+            structure_graph_label = get_label_for_identifier(evidence_identifier)
             
             # Auto-Create Structure (MERGE) - using 'object' as the external ID
             self.engine.execute(
@@ -169,7 +167,7 @@ class GraphController:
         for evidence in supporting_evidence:
             evidence_identifier = evidence.get("identifier", "Structure")
             evidence_object = evidence.get("object")
-            g_label = IDENTIFIER_MAP.get(evidence_identifier, "Structure")
+            g_label = get_label_for_identifier(evidence_identifier)
             self.engine.execute(
                 self.graph,
                 f"""
@@ -512,7 +510,7 @@ class GraphController:
         """
         Retrieves a Structure by identifier and object.
         """
-        structure_label = IDENTIFIER_MAP.get(identifier, "Structure")
+        structure_label = get_label_for_identifier(identifier)
         
         query = f"""
             MATCH (s:{structure_label} {{object: $obj}})
@@ -560,10 +558,7 @@ class GraphController:
             
             # Reverse lookup identifier from label
             label = labels[0] if labels else "Structure"
-            identifier = next(
-                (k for k, v in IDENTIFIER_MAP.items() if v == label),
-                "unknown"
-            )
+            identifier = get_identifier_for_label(label) or "unknown"
             
             # Add identifier to properties for access
             props['identifier'] = identifier
@@ -585,7 +580,7 @@ class GraphController:
         """
         Gets all entities that are informed by a given structure.
         """
-        structure_label = IDENTIFIER_MAP.get(identifier, "Structure")
+        structure_label = get_label_for_identifier(identifier)
         
         query = f"""
             MATCH (s:{structure_label} {{object: $obj}})-[:{vocab.INFORMS}]->(e)
@@ -623,7 +618,7 @@ class GraphController:
         """
         Gets all measurements that describe a given structure.
         """
-        structure_label = IDENTIFIER_MAP.get(identifier, "Structure")
+        structure_label = get_label_for_identifier(identifier)
         
         query = f"""
             MATCH (m:{vocab.Measurement})-[:{vocab.DESCRIBES}]->(s:{structure_label} {{object: $obj}})
@@ -718,7 +713,7 @@ class GraphController:
         Returns:
             RetrievedStructure with the created structure info
         """
-        structure_label = IDENTIFIER_MAP.get(identifier, "Structure")
+        structure_label = get_label_for_identifier(identifier)
         
         # MERGE to create or match existing, return the graph id
         result = self.engine.execute(
@@ -755,7 +750,7 @@ class GraphController:
         Returns:
             RetrievedMeasurement with the created measurement info
         """
-        structure_label = IDENTIFIER_MAP.get(structure_identifier, "Structure")
+        structure_label = get_label_for_identifier(structure_identifier)
         
         # First ensure structure exists
         self.engine.execute(
@@ -834,7 +829,7 @@ class GraphController:
             RetrievedEntity with the updated entity info
         """
         effective_schema = schema or self.graph.definition
-        structure_label = IDENTIFIER_MAP.get(structure_identifier, "Structure")
+        structure_label = get_label_for_identifier(structure_identifier)
         
         # First, get the entity to find its graph_id and kind
         entity = self.get_entity(entity_id, schema=effective_schema)
@@ -915,7 +910,7 @@ class GraphController:
 
         # Process Evidence attached to the Shadow Link
         for evidence in payload.supporting_evidence:
-            structure_graph_label = IDENTIFIER_MAP.get(evidence.identifier, "Structure")
+            structure_graph_label = get_label_for_identifier(evidence.identifier)
             
             # Auto-Create Structure
             self.engine.execute(

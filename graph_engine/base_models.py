@@ -164,13 +164,6 @@ class EntityDefinition(NodeDefinition):
     def properties_map(self) -> Dict[str, PropertyDefinition]:
         """Cached dict lookup for properties by key."""
         return {p.key: p for p in self.properties}
-
-
-class StructureDefinition(NodeDefinition):
-    """
-    Definition of a Structure (physical observation).
-    """
-    pass
     
     
     
@@ -189,7 +182,6 @@ class MaterializationConfig(BaseModel):
     Rules for turning a TemporalLink (Evidence) into an Edge (Relation).
     """
     model_config = ConfigDict(frozen=True)
-    
     backing_link_type: str = Field(..., description="The internal label for the Evidence Node (e.g. 'link_ais_soma').")
     desired_evidence: List[EvidenceRequirement] = Field(default_factory=list, description="Measurements expected on the backing link.")
     properties: List[PropertyDefinition] = Field(default_factory=list, description="Properties to derive on the relation")
@@ -238,26 +230,64 @@ class EventDefinition(BaseModel):
 
 # --- 5. The Root Schema ---
 
+# --- Identifier to Label Mapping ---
+
+# Maps external identifiers to internal graph labels for structures
+IDENTIFIER_MAP: Dict[str, str] = {
+    "@mikro/roi": "ROI",
+    "told_you_so": "ToldYouSo",
+    "default": "Structure"
+}
+
+
+def get_label_for_identifier(identifier: str) -> str:
+    """
+    Get the graph label for a given external identifier.
+    
+    Uses the IDENTIFIER_MAP to translate external identifiers (like '@mikro/roi')
+    to internal graph labels (like 'ROI').
+    
+    Args:
+        identifier: The external identifier (e.g., '@mikro/roi', 'told_you_so')
+        
+    Returns:
+        The corresponding graph label, or 'Structure' as default fallback
+    """
+    return IDENTIFIER_MAP.get(identifier, IDENTIFIER_MAP.get("default", "Structure"))
+
+
+def get_identifier_for_label(label: str) -> Optional[str]:
+    """
+    Get the external identifier for a given graph label.
+    
+    Reverse lookup in the IDENTIFIER_MAP.
+    
+    Args:
+        label: The internal graph label (e.g., 'ROI', 'ToldYouSo')
+        
+    Returns:
+        The corresponding external identifier, or None if not found
+    """
+    return next((k for k, v in IDENTIFIER_MAP.items() if v == label), None)
+
+
 class GraphExtensions(BaseModel):
     """
     Container for all type definitions in the graph schema.
     
     Uses lists with keyed items for easy GraphQL input serialization.
     Provides cached dict properties for efficient runtime access.
+    
+    Note: Structures are no longer defined in the schema. Instead, use
+    get_label_for_identifier() to map external identifiers to graph labels.
     """
     model_config = ConfigDict(frozen=True)
     
-    structures: List[StructureDefinition] = Field(default_factory=list, description="Physical observations (ROIs).")
     entities: List[EntityDefinition] = Field(default_factory=list, description="Logical aggregations (Cells).")
     relations: List[RelationDefinition] = Field(default_factory=list, description="Edges between nodes.")
     events: List[EventDefinition] = Field(default_factory=list, description="Spatio-temporal transitions.")
     
     # --- Cached Dict Properties for Performance ---
-    
-    @cached_property
-    def structures_map(self) -> Dict[str, StructureDefinition]:
-        """Cached dict lookup for structures by key."""
-        return {s.key: s for s in self.structures}
     
     @cached_property
     def entities_map(self) -> Dict[str, EntityDefinition]:
@@ -285,7 +315,6 @@ class GraphExtensions(BaseModel):
                     raise ValueError(f"Duplicate {category} key: '{key}'")
                 seen.add(key)
         
-        check_duplicates(self.structures, "structure")
         check_duplicates(self.entities, "entity")
         check_duplicates(self.relations, "relation")
         check_duplicates(self.events, "event")
@@ -295,8 +324,11 @@ class GraphExtensions(BaseModel):
     def validate_references(self):
         """
         Cross-check that relations refer to existing Node Types.
+        Structure labels from IDENTIFIER_MAP are also valid.
         """
-        all_nodes = set(s.key for s in self.structures) | set(e.key for e in self.entities)
+        # Include both entity keys and structure labels from IDENTIFIER_MAP
+        structure_labels = set(IDENTIFIER_MAP.values())
+        all_nodes = structure_labels | set(e.key for e in self.entities)
         
         for rel in self.relations:
             sources = [rel.source] if isinstance(rel.source, str) else rel.source
@@ -317,12 +349,15 @@ class GraphExtensions(BaseModel):
         and that the source property type is compatible with the aggregation function.
         """
         # Collect all node definitions using the cached maps
+        # Note: Structures are not in the schema, they come from IDENTIFIER_MAP
         all_node_defs: Dict[str, NodeDefinition] = {}
-        all_node_defs.update(self.structures_map)
         all_node_defs.update(self.entities_map)
         
         # Also include events (they have properties too)
         event_defs: Dict[str, EventDefinition] = self.events_map
+        
+        # Structure labels from IDENTIFIER_MAP are valid source_node references
+        valid_structure_labels = set(IDENTIFIER_MAP.values())
         
         def validate_property_rollup(
             container_name: str,
@@ -355,12 +390,13 @@ class GraphExtensions(BaseModel):
                     f"aggregation but no source 'key' is specified."
                 )
             
-            # If source_node is specified, validate it exists and has the property
+            # If source_node is specified, validate it exists
             if source_node:
-                # Check in structures, entities, and events
+                # Check in entities, events, OR structure labels from IDENTIFIER_MAP
                 source_def = all_node_defs.get(source_node) or event_defs.get(source_node)
+                is_valid_structure = source_node in valid_structure_labels
                 
-                if source_def is None:
+                if source_def is None and not is_valid_structure:
                     raise ValueError(
                         f"Property '{prop_def.key}' on '{container_name}' references "
                         f"source_node '{source_node}' which does not exist."

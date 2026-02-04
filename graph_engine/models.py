@@ -137,33 +137,3 @@ class GraphSchemaDefinition(models.Model):
         
         return errors
 
-
-# Example schema_json structure:
-# {
-#     "nodes": {
-#         "Person": {
-#             "required_properties": ["name"],
-#             "properties": {
-#                 "name": {"type": "string", "pattern": "^[A-Za-z ]+$"},
-#                 "age": {"type": "number"},
-#                 "status": {"type": "string", "enum": ["active", "inactive"]}
-#             }
-#         },
-#         "Organization": {
-#             "required_properties": ["name", "identifier"],
-#             "properties": {
-#                 "name": {"type": "string"},
-#                 "identifier": {"type": "string", "pattern": "^ORG-[0-9]+$"}
-#             }
-#         }
-#     },
-#     "edges": {
-#         "WORKS_FOR": {
-#             "required_properties": [],
-#             "properties": {
-#                 "since": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
-#                 "role": {"type": "string"}
-#             }
-#         }
-#     }
-# }

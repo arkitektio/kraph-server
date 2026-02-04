@@ -524,7 +524,7 @@ class EntityCreationResult:
     """Result returned after successfully creating an entity."""
     ref_id: str = strawberry.field(description="The reference ID (external UUID)")
     db_id: str = strawberry.field(description="The database ID")
-    graph_id: int = strawberry.field(description="The AGE graph ID")
+    graph_id: str = strawberry.field(description="The AGE graph ID (as string for 64-bit support)")
     status: str = strawberry.field(default="CREATED", description="Creation status")
     
     entity: Optional[Entity] = strawberry.field(default=None, description="The created entity")
@@ -535,7 +535,7 @@ class RelationCreationResult:
     """Result returned after successfully creating a relation between entities."""
     ref_id: str = strawberry.field(description="The reference ID (external UUID)")
     db_id: str = strawberry.field(description="The database ID (source->target)")
-    graph_id: int = strawberry.field(description="The AGE graph ID of the edge")
+    graph_id: str = strawberry.field(description="The AGE graph ID of the edge (as string for 64-bit support)")
     status: str = strawberry.field(default="CREATED", description="Creation status")
     
     relation: Optional[Relation] = strawberry.field(default=None, description="The created relation edge")
@@ -647,35 +647,41 @@ class EdgeConnection:
 
 def entity_from_response(response) -> Entity:
     """
-    Convert EntityResponse Pydantic model to Strawberry Entity type.
+    Convert EntityResponse Pydantic model or RetrievedEntity to Strawberry Entity type.
     Creates a RetrievedNode as the intermediary.
     """
     from graph_engine.output_models import EntityResponse
-    if not isinstance(response, EntityResponse):
-        raise TypeError(f"Expected EntityResponse, got {type(response)}")
+    from graph_engine.retrieved import RetrievedEntity
     
-    # Build properties dict from response
-    props = {
-        "type": "ENTITY",
-        "kind": response.kind,
-        "external_id": response.id,
-        "schema_version": response.schema_version,
-        "last_derived": response.last_derived,
-        **response.properties,
-    }
+    if isinstance(response, RetrievedEntity):
+        # RetrievedEntity is already a RetrievedNode subclass, use it directly
+        return Entity(_value=response)
     
-    # Parse global_id to get graph_name and graph_id
-    parts = response.global_id.split(":")
-    graph_name = parts[0] if len(parts) > 1 else "default"
+    if isinstance(response, EntityResponse):
+        # Build properties dict from response
+        props = {
+            "type": "ENTITY",
+            "kind": response.kind,
+            "external_id": response.id,
+            "schema_version": response.schema_version,
+            "last_derived": response.last_derived,
+            **response.properties,
+        }
+        
+        # Parse global_id to get graph_name and graph_id
+        parts = response.global_id.split(":")
+        graph_name = parts[0] if len(parts) > 1 else "default"
+        
+        node = RetrievedNode(
+            graph_name=graph_name,
+            id=response.graph_id,
+            label=response.label,
+            properties=props,
+        )
+        
+        return Entity(_value=node)
     
-    node = RetrievedNode(
-        graph_name=graph_name,
-        id=response.graph_id,
-        label=response.label,
-        properties=props,
-    )
-    
-    return Entity(_value=node)
+    raise TypeError(f"Expected EntityResponse or RetrievedEntity, got {type(response)}")
 
 
 def structure_from_response(response) -> Structure:

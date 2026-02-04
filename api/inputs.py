@@ -159,13 +159,6 @@ class EntityDefinitionInput:
     properties: Optional[List[PropertyDefinitionInput]] = strawberry.field(default_factory=list)
 
 
-@pydantic.input(model=input_models.StructureDefinitionInput)
-class StructureDefinitionInput:
-    """Definition of a structure type in the graph schema."""
-    key: strawberry.auto
-    description: strawberry.auto
-
-
 @pydantic.input(model=input_models.EvidenceRequirementInput)
 class EvidenceRequirementInput:
     """Evidence requirement for relation materialization."""
@@ -211,8 +204,13 @@ class EventDefinitionInput:
 
 @pydantic.input(model=input_models.GraphExtensionsInput)
 class GraphExtensionsInput:
-    """The graph extensions containing all type definitions."""
-    structures: Optional[List[StructureDefinitionInput]] = strawberry.field(default_factory=list)
+    """
+    The graph extensions containing all type definitions.
+    
+    Note: Structures are no longer defined in the schema. They are
+    dynamically resolved via get_label_for_identifier() from the
+    IDENTIFIER_MAP in graph_engine.base_models.
+    """
     entities: Optional[List[EntityDefinitionInput]] = strawberry.field(default_factory=list)
     relations: Optional[List[RelationDefinitionInput]] = strawberry.field(default_factory=list)
     events: Optional[List[EventDefinitionInput]] = strawberry.field(default_factory=list)

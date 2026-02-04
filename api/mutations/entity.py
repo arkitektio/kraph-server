@@ -6,6 +6,7 @@ from kante.types import Info
 
 from api.types import Entity, EntityCreationResult, entity_from_response
 from api.inputs import EntityCreationInput, RecalculateEntityInput
+from api.context import get_controller_for_graph_id
 from graph_engine.controller import GraphController
 from graph_engine.engine.age_engine import AgeEngine
 from graph_engine.engine.protocol import SimpleGraph
@@ -33,7 +34,7 @@ def create_entity(
     import uuid
     
     # Get controller for the specified graph (includes provenance from context)
-    controller = get_controller_for_graph(input.graph_id)
+    controller = get_controller_for_graph_id(input.graph_id, info)
     
     # Generate ref_id if not provided
     entity_ref_id = input.ref_id or str(uuid.uuid4())
@@ -66,10 +67,14 @@ def create_entity(
     entity_response = controller.get_entity(id=result.db_id)
     entity = entity_from_response(entity_response)
     
+    # Create composite db_id in format {graph_id}-{entity_uuid}
+    # This allows get_controller_for_node_id to extract the graph ID
+    composite_db_id = f"{input.graph_id}-{result.db_id}"
+    
     return EntityCreationResult(
         ref_id=result.ref_id,
-        db_id=result.db_id,
-        graph_id=result.graph_id,
+        db_id=composite_db_id,
+        graph_id=str(result.graph_id),
         status=result.status,
         entity=entity,
     )
@@ -92,7 +97,7 @@ def recalculate_entity(
     Returns:
         Updated Entity with recalculated properties
     """
-    controller = get_controller_for_graph(input.graph_id)
+    controller = get_controller_for_graph_id(input.graph_id, info)
     
     # Get entity first to find its graph_id and kind
     entity = controller.get_entity(id=input.entity_id)

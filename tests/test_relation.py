@@ -48,16 +48,14 @@ def relation_schema():
     """
     Schema with a relation that has materialized properties.
     Uses simpler aggregations (MEAN, SUM) that are implemented.
+    
+    Note: Structures (ROI) are no longer defined in the schema.
+    They are dynamically resolved via get_label_for_identifier() from
+    the IDENTIFIER_MAP in graph_engine.base_models.
     """
     return models.GraphDefinitionModel(
         system_version="1.0",
         extensions=models.GraphExtensions(
-            structures=[
-                models.StructureDefinition(
-                    key="ROI",
-                    description="Region of Interest",
-                ),
-            ],
             entities=[
                 models.EntityDefinition(
                     key="Neuron",

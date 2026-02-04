@@ -59,7 +59,6 @@ def backend_stack():
         e.inspect()
         
         e.down()
-        e.pull()
         
         
         e.up()
@@ -102,24 +101,16 @@ def bio_graph_schema():
     """
     Fixture defined using EXPLICIT Pydantic Model constructors.
     Uses list-based definitions with key attributes.
+    
+    Note: Structures (ROI, ToldYouSo) are no longer defined in the schema.
+    They are dynamically resolved via get_label_for_identifier() from
+    the IDENTIFIER_MAP in graph_engine.base_models.
     """
     return models.GraphDefinitionModel(
         system_version="1.0",
         extensions=models.GraphExtensions(
-            
-            # --- 1. STRUCTURES ---
-            structures=[
-                models.StructureDefinition(
-                    key="ROI",
-                    description="Region of Interest",
-                ),
-                models.StructureDefinition(
-                    key="ToldYouSo",
-                    description="Evidence structure for assertions",
-                )
-            ],
 
-            # --- 2. ENTITIES ---
+            # --- 1. ENTITIES ---
             entities=[
                 models.EntityDefinition(
                     key="AIS",
