@@ -4,31 +4,24 @@ GraphQL Schema for the API.
 This module assembles the complete GraphQL schema from queries,
 mutations, and subscriptions.
 """
-import strawberry
 from strawberry.extensions import QueryDepthLimiter
 from typing import Optional
+from authentikate.strawberry.extension import AuthentikateExtension
 
 from .queries import Query
 from .mutations import Mutation
 from .subscriptions import Subscription
+import kante
+from graph_engine.engine.age_engine import AgeEngine, CypherEngine
 
-
-# Create the schema with subscription support
-schema = strawberry.Schema(
-    query=Query,
-    mutation=Mutation,
-    subscription=Subscription,
-    extensions=[
-        QueryDepthLimiter(max_depth=10),
-    ],
-)
 
 
 def create_schema(
     max_depth: int = 10,
     debug: bool = False,
     include_subscriptions: bool = True,
-) -> strawberry.Schema:
+    cypher_engine: Optional[CypherEngine] = None,
+) -> kante.Schema:
     """
     Create a configured GraphQL schema for the graph engine.
     
@@ -38,21 +31,22 @@ def create_schema(
         include_subscriptions: Whether to include subscriptions (default True)
         
     Returns:
-        Configured Strawberry schema
+        Configured Kante schema
     """
     extensions = [
         QueryDepthLimiter(max_depth=max_depth),
+        AuthentikateExtension(),
     ]
     
     if include_subscriptions:
-        return strawberry.Schema(
+        return kante.Schema(
             query=Query,
             mutation=Mutation,
             subscription=Subscription,
             extensions=extensions,
         )
     else:
-        return strawberry.Schema(
+        return kante.Schema(
             query=Query,
             mutation=Mutation,
             extensions=extensions,
@@ -68,3 +62,12 @@ def get_schema_sdl() -> str:
 def print_schema():
     """Print the schema SDL to stdout."""
     print(get_schema_sdl())
+
+
+# Create the schema with subscription support
+schema = create_schema(
+    max_depth=10,
+    debug=True,
+    include_subscriptions=True,
+    cypher_engine=AgeEngine(),  # You can pass a CypherEngine instance here if needed
+)

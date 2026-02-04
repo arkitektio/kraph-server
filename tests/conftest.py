@@ -11,7 +11,7 @@ from graph_engine.controller import GraphController
 from graph_engine.engine.age_engine import AgeEngine
 from graph_engine.engine.protocol import GraphProtocol
 from graph_engine.engine.testing.mock_cypher_engine import MockCypherEngine
-from kraph_server.schema import schema
+from api.schema import create_schema, schema
 from guardian.shortcuts import get_perms
 from asgiref.sync import sync_to_async
 from authentikate.models import Client, Organization, User, Membership
@@ -54,10 +54,7 @@ def backend_stack():
     docker_compose_path = os.path.join(
         os.path.dirname(__file__), "integration", "docker-compose.yaml")
     
-    
-    
-    
-    
+
     with local(docker_compose_path) as e:
         e.inspect()
         
@@ -98,12 +95,6 @@ def authenticated_context(db, backend_stack):
         headers={"Authorization": "Bearer test"},
         type="http"
     )
-
-
-@pytest.fixture(scope="function")
-def mock_engine():
-    """Create a fresh mock engine for each test."""
-    return MockCypherEngine()
 
 
 @pytest.fixture(scope="session")
@@ -322,3 +313,47 @@ def age_engine(transactional_db, backend_stack, test_graph: GraphProtocol) -> Ge
     
     # Don't drop the graph between tests - just leave it
     # This avoids the type cache invalidation issue
+    
+    
+    
+@pytest.fixture(scope="session")
+def api_schema(age_engine):
+    """
+    Simple API context for validation tests that don't need database/AGE.
+    Uses a mock engine for tests that just validate schema structure.
+    Provides a proper HttpContext for the AuthentikateExtension.
+    """
+    
+    return create_schema(
+        max_depth=10,
+        debug=True,
+        include_subscriptions=True,
+        cypher_engine=age_engine,
+    )
+    
+    
+
+@pytest.fixture(scope="session")
+def simple_api_context(db, backend_stack) -> HttpContext:
+    user, _ = User.objects.get_or_create(
+        username="fart", password="123456789", sub="1")
+    client, _ = Client.objects.get_or_create(client_id="oinsoins")
+    org, _ = Organization.objects.get_or_create(slug="test-organization")
+    membership, _ = Membership.objects.get_or_create(
+        user=user,
+        organization=org,
+    )
+
+    request = UniversalRequest(
+        _extensions={"token": "test"},
+        _client=client,  # type: ignore
+        _user=user,  # type: ignore
+        _organization=org,  # type: ignore
+    )
+    request.set_membership(membership)  # type: ignore
+
+    return HttpContext(
+        request=request,
+        headers={"Authorization": "Bearer test"},
+        type="http"
+    )

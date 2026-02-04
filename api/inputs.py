@@ -64,6 +64,7 @@ class EntityCreationInput:
     kind: strawberry.auto
     supporting_evidence: Optional[List[StructureReferenceInput]] = strawberry.field(default_factory=list)
     provenance: ProvenanceInput
+    
 
 
 @pydantic.input(model=input_models.StructureCreationPayload)

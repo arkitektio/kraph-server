@@ -85,6 +85,7 @@ class EntityCreationPayload(BaseModel):
     kind: str
     supporting_evidence: List[StructureReference] = []
     provenance: ProvenanceContext
+    graph_id: Optional[Any] = None  # This will be filled in by the controller after creation
     
     
     

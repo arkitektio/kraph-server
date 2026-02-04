@@ -41,9 +41,8 @@ def _extract_id(raw_node: Any) -> int:
 
 class GraphController:
     """ Controller for interacting with the graph database."""
-    def __init__(self, engine: CypherEngine, graph: GraphProtocol):
+    def __init__(self, engine: CypherEngine):
         self.engine = engine
-        self.graph = graph
 
     @property
     def age_name(self) -> str:
