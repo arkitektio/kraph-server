@@ -14,6 +14,28 @@ from graph_engine.controller import GraphController
 from graph_engine import input_models as inputs
 
 
+def _payload_to_kwargs(payload: inputs.EntityCreationPayload) -> dict:
+    """Helper to convert EntityCreationPayload to controller kwargs."""
+    # Convert supporting_evidence to list of dicts
+    evidence_dicts = []
+    for evidence in payload.supporting_evidence:
+        evidence_dict = {
+            'identifier': evidence.identifier,
+            'object': evidence.object,
+            'measurements': [m.model_dump() for m in evidence.measurements]
+        }
+        evidence_dicts.append(evidence_dict)
+    
+    return {
+        'kind': payload.kind,
+        'ref_id': payload.ref_id or payload.kind.lower(),  # Default ref_id if not provided
+        'action_id': payload.provenance.action_id,
+        'action_name': payload.provenance.action_name,
+        'action_args': payload.provenance.action_args,
+        'supporting_evidence': evidence_dicts,
+    }
+
+
 def _uid(prefix: str) -> str:
     """Generate a unique ID with prefix for test isolation."""
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
@@ -53,7 +75,7 @@ class TestDetachedStructureFlow:
             provenance=inputs.ProvenanceContext(subject="user1", app_id="test")
         )
         
-        result = graph_controller.create_entity(payload)
+        result = graph_controller.create_entity(**_payload_to_kwargs(payload))
         
         # Verify initial entity properties
         entity = graph_controller.get_entity(id=result.db_id)
@@ -136,7 +158,7 @@ class TestDetachedStructureFlow:
             provenance=inputs.ProvenanceContext(subject="user1", app_id="test")
         )
         
-        result = graph_controller.create_entity(payload)
+        result = graph_controller.create_entity(**_payload_to_kwargs(payload))
         
         # Verify: name is set but avg_length is not present
         entity = graph_controller.get_entity(id=result.db_id)
@@ -178,8 +200,7 @@ class TestDetachedStructureFlow:
         detached_roi = _uid("roi_multi_meas")
         
         # Create entity with initial ROI (value=100)
-        result = graph_controller.create_entity(
-            inputs.EntityCreationPayload(
+        result = graph_controller.create_entity(**_payload_to_kwargs(inputs.EntityCreationPayload(
                 kind="AIS",
                 supporting_evidence=[
                     inputs.StructureReference(
@@ -191,8 +212,7 @@ class TestDetachedStructureFlow:
                     )
                 ],
                 provenance=inputs.ProvenanceContext(subject="user1", app_id="test")
-            )
-        )
+            )))
         
         # Create detached ROI and add multiple measurements
         graph_controller.create_structure(identifier="@mikro/roi", object=detached_roi)
@@ -251,8 +271,7 @@ class TestDetachedStructureFlow:
         
         # Step 3: Create entity that references the pre-existing structure
         # Note: create_entity uses MERGE, so it will find the existing structure
-        result = graph_controller.create_entity(
-            inputs.EntityCreationPayload(
+        result = graph_controller.create_entity(**_payload_to_kwargs(inputs.EntityCreationPayload(
                 kind="AIS",
                 supporting_evidence=[
                     inputs.StructureReference(
@@ -265,8 +284,7 @@ class TestDetachedStructureFlow:
                     )
                 ],
                 provenance=inputs.ProvenanceContext(subject="user1", app_id="test")
-            )
-        )
+            )))
         
         # Verify: avg_length should be mean of pre-existing (42) and new (58) = 50
         entity = graph_controller.get_entity(id=result.db_id)
@@ -283,8 +301,7 @@ class TestDetachedStructureFlow:
         roi_2_id = _uid("roi_2")
         
         # Create entity with initial measurement (value=100)
-        result = graph_controller.create_entity(
-            inputs.EntityCreationPayload(
+        result = graph_controller.create_entity(**_payload_to_kwargs(inputs.EntityCreationPayload(
                 kind="AIS",
                 supporting_evidence=[
                     inputs.StructureReference(
@@ -296,8 +313,7 @@ class TestDetachedStructureFlow:
                     )
                 ],
                 provenance=inputs.ProvenanceContext(subject="user1", app_id="test")
-            )
-        )
+            )))
         
         initial_last_derived = graph_controller.get_entity(id=result.db_id).last_derived
         
@@ -334,8 +350,7 @@ class TestDetachedStructureFlow:
         roi_ids = [_uid(f"roi_{i}") for i in range(4)]
         
         # Create entity with first ROI (value=100)
-        result = graph_controller.create_entity(
-            inputs.EntityCreationPayload(
+        result = graph_controller.create_entity(**_payload_to_kwargs(inputs.EntityCreationPayload(
                 kind="AIS",
                 supporting_evidence=[
                     inputs.StructureReference(
@@ -347,8 +362,7 @@ class TestDetachedStructureFlow:
                     )
                 ],
                 provenance=inputs.ProvenanceContext(subject="user1", app_id="test")
-            )
-        )
+            )))
         
         # Create 3 detached structures with measurements (values: 200, 300, 400)
         provenance = inputs.ProvenanceContext(subject="user1", app_id="test")
@@ -408,8 +422,7 @@ class TestVersioningOnRecalculation:
         roi_2 = _uid("roi_version_2")
         
         # Create entity
-        result = graph_controller.create_entity(
-            inputs.EntityCreationPayload(
+        result = graph_controller.create_entity(**_payload_to_kwargs(inputs.EntityCreationPayload(
                 kind="AIS",
                 supporting_evidence=[
                     inputs.StructureReference(
@@ -421,8 +434,7 @@ class TestVersioningOnRecalculation:
                     )
                 ],
                 provenance=inputs.ProvenanceContext(subject="user1", app_id="test")
-            )
-        )
+            )))
         
         entity = graph_controller.get_entity(id=result.db_id)
         assert entity.schema_version == "1.0"  # From bio_graph_schema fixture
@@ -461,8 +473,7 @@ class TestVersioningOnRecalculation:
         roi_2 = _uid("roi_norecalc_2")
         
         # Create entity
-        result = graph_controller.create_entity(
-            inputs.EntityCreationPayload(
+        result = graph_controller.create_entity(**_payload_to_kwargs(inputs.EntityCreationPayload(
                 kind="AIS",
                 supporting_evidence=[
                     inputs.StructureReference(
@@ -474,8 +485,7 @@ class TestVersioningOnRecalculation:
                     )
                 ],
                 provenance=inputs.ProvenanceContext(subject="user1", app_id="test")
-            )
-        )
+            )))
         
         entity = graph_controller.get_entity(id=result.db_id)
         original_last_derived = entity.last_derived

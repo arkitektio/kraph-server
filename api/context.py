@@ -45,7 +45,15 @@ def get_controller_for_graph_id(graph_id: str, info: Info) -> GraphController:
     if definition is None:
         raise ValueError(f"Graph {graph_id} has no active schema definition")
     
-    return GraphController(engine=engine, graph=db_graph)
+    # Extract provenance from context
+    provenance = get_provenance_from_context(info)
+    
+    return GraphController(
+        engine=engine, 
+        graph=db_graph,
+        subject=provenance.subject,
+        app_id=provenance.app_id,
+    )
 
 
 def get_controller_for_node_id(node_id: str, info: Info) -> GraphController:

@@ -5,7 +5,7 @@ from kante.types import Info
 
 from api.types import Relation, RelationCreationResult
 from api.inputs import RelationCreationInput
-from api.context import get_controller_from_context
+from api.context import get_controller_for_node_id, get_provenance_from_context
 
 
 def create_relation(
@@ -27,10 +27,11 @@ def create_relation(
     Returns:
         RelationCreationResult with the created relation
     """
-    controller = get_controller_from_context(info)
-    
     # Convert strawberry-pydantic input to pydantic model
     payload = input.to_pydantic()
+    
+    # Get controller from source entity's graph
+    controller = get_controller_for_node_id(payload.source_id, info)
     
     result = controller.create_relation(payload)
     

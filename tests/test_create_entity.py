@@ -7,6 +7,28 @@ from graph_engine import input_models as inputs
 from graph_engine import vocab
 
 
+def _payload_to_kwargs(payload: inputs.EntityCreationPayload) -> dict:
+    """Helper to convert EntityCreationPayload to controller kwargs."""
+    # Convert supporting_evidence to list of dicts
+    evidence_dicts = []
+    for evidence in payload.supporting_evidence:
+        evidence_dict = {
+            'identifier': evidence.identifier,
+            'object': evidence.object,
+            'measurements': [m.model_dump() for m in evidence.measurements]
+        }
+        evidence_dicts.append(evidence_dict)
+    
+    return {
+        'kind': payload.kind,
+        'ref_id': payload.ref_id or payload.kind.lower(),  # Default ref_id if not provided
+        'action_id': payload.provenance.action_id,
+        'action_name': payload.provenance.action_name,
+        'action_args': payload.provenance.action_args,
+        'supporting_evidence': evidence_dicts,
+    }
+
+
 def test_create_ais_with_timestamp_conversion(graph_controller: GraphController, bio_graph_schema: models.GraphDefinitionModel):
     """
     Test that ISO timestamps are converted to Unix Milliseconds (int).
@@ -53,7 +75,7 @@ def test_create_ais_with_timestamp_conversion(graph_controller: GraphController,
         provenance=inputs.ProvenanceContext(subject="test", app_id="test")
     )
 
-    result = graph_controller.create_entity(payload)
+    result = graph_controller.create_entity(**_payload_to_kwargs(payload))
     
     entity = graph_controller.get_entity(
         id=result.db_id,
@@ -89,7 +111,7 @@ def test_create_entity_with_single_evidence(graph_controller: GraphController):
         provenance=inputs.ProvenanceContext(subject="user123", app_id="mikro")
     )
     
-    result = graph_controller.create_entity(payload)
+    result = graph_controller.create_entity(**_payload_to_kwargs(payload))
     
     # Check the result
     assert result.db_id is not None
@@ -143,7 +165,7 @@ def test_create_entity_with_multiple_evidence_sources(graph_controller: GraphCon
         provenance=inputs.ProvenanceContext(subject="user1", app_id="app1")
     )
     
-    result = graph_controller.create_entity(payload)
+    result = graph_controller.create_entity(**_payload_to_kwargs(payload))
     
     # Verify entity was created
     entity = graph_controller.get_entity(id=result.db_id)
@@ -181,7 +203,7 @@ def test_create_entity_with_told_you_so_evidence(graph_controller: GraphControll
         provenance=inputs.ProvenanceContext(subject="expert", app_id="manual_entry")
     )
     
-    result = graph_controller.create_entity(payload)
+    result = graph_controller.create_entity(**_payload_to_kwargs(payload))
     
     # Verify entity was created with the name from ToldYouSo
     entity = graph_controller.get_entity(id=result.db_id)
@@ -215,7 +237,7 @@ def test_create_entity_with_multiple_measurements_per_structure(graph_controller
         provenance=inputs.ProvenanceContext(subject="tool", app_id="analyzer")
     )
     
-    result = graph_controller.create_entity(payload)
+    result = graph_controller.create_entity(**_payload_to_kwargs(payload))
     
     # Verify entity was created
     entity = graph_controller.get_entity(id=result.db_id)
@@ -256,7 +278,7 @@ def test_create_entity_evidence_links_to_entity(graph_controller: GraphControlle
         provenance=inputs.ProvenanceContext(subject="user", app_id="app")
     )
     
-    result = graph_controller.create_entity(payload)
+    result = graph_controller.create_entity(**_payload_to_kwargs(payload))
     
     # Verify entity exists
     entity = graph_controller.get_entity(id=result.db_id)
@@ -302,7 +324,7 @@ def test_create_entity_assertion_links_to_measurements(graph_controller: GraphCo
         provenance=inputs.ProvenanceContext(subject="user", app_id="app")
     )
     
-    result = graph_controller.create_entity(payload)
+    result = graph_controller.create_entity(**_payload_to_kwargs(payload))
     
     # Verify entity was created
     entity = graph_controller.get_entity(id=result.db_id)
@@ -311,8 +333,9 @@ def test_create_entity_assertion_links_to_measurements(graph_controller: GraphCo
     # Get the assertion that generated this entity
     assertion = graph_controller.get_assertion_for_entity(entity_id=result.db_id)
     assert assertion is not None
-    assert assertion.subject == "user"
-    assert assertion.app_id == "app"
+    # Provenance now comes from controller, not payload
+    assert assertion.subject == "test_user"
+    assert assertion.app_id == "test_app"
     
     # Verify all measurements are linked to this assertion
     asserted_measurements = graph_controller.get_measurements_for_assertion(assertion_id=assertion.graph_id)
@@ -343,7 +366,7 @@ def test_create_entity_provenance_includes_action_info(graph_controller: GraphCo
         )
     )
     
-    result = graph_controller.create_entity(payload)
+    result = graph_controller.create_entity(**_payload_to_kwargs(payload))
     
     # Verify entity was created
     entity = graph_controller.get_entity(id=result.db_id)
@@ -352,8 +375,10 @@ def test_create_entity_provenance_includes_action_info(graph_controller: GraphCo
     # Get the assertion and verify provenance info
     assertion = graph_controller.get_assertion_for_entity(entity_id=result.db_id)
     assert assertion is not None
-    assert assertion.subject == "user123"
-    assert assertion.app_id == "mikro-napari"
+    # Provenance now comes from controller, not payload
+    assert assertion.subject == "test_user"
+    assert assertion.app_id == "test_app"
+    # Action info still comes from payload
     assert assertion.action_id == "segment_cells"
     assert assertion.action_name == "Segment Cells"
 
@@ -368,7 +393,7 @@ def test_create_entity_no_evidence(graph_controller: GraphController):
         provenance=inputs.ProvenanceContext(subject="user", app_id="app")
     )
     
-    result = graph_controller.create_entity(payload)
+    result = graph_controller.create_entity(**_payload_to_kwargs(payload))
     
     # Should still create the entity and assertion
     assert result.ref_id is not None
@@ -412,7 +437,7 @@ def test_measurement_timestamp_conversion_datetime(graph_controller: GraphContro
         provenance=inputs.ProvenanceContext(subject="user", app_id="app")
     )
     
-    result = graph_controller.create_entity(payload)
+    result = graph_controller.create_entity(**_payload_to_kwargs(payload))
     
     # Verify entity was created
     entity = graph_controller.get_entity(id=result.db_id)
@@ -453,7 +478,7 @@ def test_measurement_with_optional_fields(graph_controller: GraphController):
         provenance=inputs.ProvenanceContext(subject="user", app_id="app")
     )
     
-    result = graph_controller.create_entity(payload)
+    result = graph_controller.create_entity(**_payload_to_kwargs(payload))
     
     # Verify entity was created
     entity = graph_controller.get_entity(id=result.db_id)

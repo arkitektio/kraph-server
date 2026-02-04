@@ -45,6 +45,10 @@ def measurements_for_assertion(
     Returns:
         List of Measurement objects
     """
-    controller = get_controller_from_context(info)
-    responses = controller.get_measurements_for_assertion(assertion_id=assertion_id)
-    return [measurement_from_response(r) for r in responses]
+    # For assertion queries, we need to extract the graph from the assertion_id
+    # This is a temporary solution - ideally assertion_id would include graph prefix
+    # For now, we'll need to handle this differently or require graph_id as parameter
+    from api.context import get_controller_for_graph_id
+    # TODO: This needs graph_id - assertion_id alone doesn't contain it
+    # This might need refactoring to include graph context
+    raise NotImplementedError("measurements_for_assertion needs graph_id context")

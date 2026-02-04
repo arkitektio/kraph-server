@@ -44,9 +44,11 @@ def _extract_id(raw_node: Any) -> int:
 
 class GraphController:
     """ Controller for interacting with the graph database."""
-    def __init__(self, engine: CypherEngine, graph: GraphProtocol):
+    def __init__(self, engine: CypherEngine, graph: GraphProtocol, subject: str, app_id: str):
         self.engine = engine
         self.graph = graph
+        self.subject = subject
+        self.app_id = app_id
 
     @property
     def age_name(self) -> str:
@@ -63,8 +65,6 @@ class GraphController:
         *,
         kind: str,
         ref_id: str,
-        subject: str,
-        app_id: str,
         action_id: Optional[str] = None,
         action_name: Optional[str] = None,
         action_args: Optional[Dict[str, Any]] = None,
@@ -77,8 +77,6 @@ class GraphController:
         Args:
             kind: The entity type/label (must match schema)
             ref_id: Unique reference ID for the entity
-            subject: User ID (provenance)
-            app_id: Client/app ID (provenance)
             action_id: Optional action ID (provenance)
             action_name: Optional action name (provenance)
             action_args: Optional action arguments (provenance)
@@ -97,7 +95,7 @@ class GraphController:
             raise ValueError(f"Unknown Entity: {kind}")
 
         # --- Step 2: Create Assertion (Provenance) ---
-        prov_dict: Dict[str, Any] = {"subject": subject, "app_id": app_id}
+        prov_dict: Dict[str, Any] = {"subject": self.subject, "app_id": self.app_id}
         if action_id is not None:
             prov_dict["action_id"] = action_id
         if action_name is not None:

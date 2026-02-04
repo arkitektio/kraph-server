@@ -252,6 +252,7 @@ class SetSchemaInput:
     The definition is a fully typed GraphDefinition with structures, entities,
     relations, and events.
     """
+    graph_id: int = strawberry.field(description="ID of the graph to set the schema on")
     version: str = strawberry.field(description="Semantic version (e.g., '1.0.0'). Must follow semver format.")
     definition: GraphDefinitionInput = strawberry.field(description="The graph schema definition")
     description: Optional[str] = strawberry.field(default=None, description="Description of changes in this version")

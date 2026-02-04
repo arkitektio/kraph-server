@@ -456,7 +456,7 @@ async def test_validate_schema_with_derived_properties(api_schema: kante.Schema,
         }
     }
 
-    result = await schema.execute(
+    result = await api_schema.execute(
         mutation,
         variable_values={
             "input": {
@@ -467,6 +467,7 @@ async def test_validate_schema_with_derived_properties(api_schema: kante.Schema,
     )
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None, "No data returned from GraphQL execution"
     assert result.data["validateSchema"]["isValid"] is True
 
 

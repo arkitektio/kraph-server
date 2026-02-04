@@ -32,11 +32,8 @@ def create_entity(
     """
     import uuid
     
-    # Get controller for the specified graph
+    # Get controller for the specified graph (includes provenance from context)
     controller = get_controller_for_graph(input.graph_id)
-    
-    # Extract provenance from authenticated context
-    provenance = get_provenance_from_context(info)
     
     # Generate ref_id if not provided
     entity_ref_id = input.ref_id or str(uuid.uuid4())
@@ -55,12 +52,10 @@ def create_entity(
             }
             evidence_list.append(ev_dict)
     
-    # Call controller with kwargs
+    # Call controller with kwargs (provenance is already in the controller)
     result = controller.create_entity(
         kind=input.kind,
         ref_id=entity_ref_id,
-        subject=provenance["subject"],
-        app_id=provenance["app_id"],
         action_id=input.action_id,
         action_name=input.action_name,
         action_args=input.action_args,

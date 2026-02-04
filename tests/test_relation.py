@@ -15,6 +15,29 @@ from graph_engine import base_models as models
 from graph_engine.engine.protocol import SimpleGraph
 
 
+def _payload_to_kwargs(payload: inputs.EntityCreationPayload) -> dict:
+    """Helper to convert EntityCreationPayload to controller kwargs."""
+    # Convert supporting_evidence to list of dicts
+    evidence_dicts = []
+    for evidence in payload.supporting_evidence:
+        evidence_dict = {
+            'identifier': evidence.identifier,
+            'object': evidence.object,
+            'measurements': [m.model_dump() for m in evidence.measurements]
+        }
+        evidence_dicts.append(evidence_dict)
+    
+    return {
+        'kind': payload.kind,
+        'ref_id': payload.ref_id or payload.kind.lower(),  # Default ref_id if not provided
+        'action_id': payload.provenance.action_id,
+        'action_name': payload.provenance.action_name,
+        'action_args': payload.provenance.action_args,
+        'supporting_evidence': evidence_dicts,
+    }
+
+
+
 def _uid(prefix: str = "test") -> str:
     """Generate a unique ID for test objects."""
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
@@ -116,7 +139,12 @@ def relation_graph(relation_schema):
 @pytest.fixture
 def relation_controller(transactional_db, age_engine, relation_graph):
     """Create a controller with the relation schema."""
-    return GraphController(engine=age_engine, graph=relation_graph)
+    return GraphController(
+        engine=age_engine, 
+        graph=relation_graph,
+        subject="test_user",
+        app_id="test_app",
+    )
 
 
 class TestRelationCreation:
@@ -132,23 +160,19 @@ class TestRelationCreation:
         roi_obj = _uid("synapse_roi")
         
         # Create source and target entities
-        entity1_result = relation_controller.create_entity(
-            inputs.EntityCreationPayload(
+        entity1_result = relation_controller.create_entity(**_payload_to_kwargs(inputs.EntityCreationPayload(
                 kind="Neuron",
                 ref_id=neuron1_id,
                 supporting_evidence=[],
                 provenance=inputs.ProvenanceContext(subject="user", app_id="test")
-            )
-        )
+            )))
         
-        entity2_result = relation_controller.create_entity(
-            inputs.EntityCreationPayload(
+        entity2_result = relation_controller.create_entity(**_payload_to_kwargs(inputs.EntityCreationPayload(
                 kind="Neuron",
                 ref_id=neuron2_id,
                 supporting_evidence=[],
                 provenance=inputs.ProvenanceContext(subject="user", app_id="test")
-            )
-        )
+            )))
         
         # Create the relation with ROI evidence
         relation_result = relation_controller.create_relation(
@@ -191,23 +215,19 @@ class TestRelationCreation:
         roi3_obj = _uid("roi3")
         
         # Create entities
-        entity1_result = relation_controller.create_entity(
-            inputs.EntityCreationPayload(
+        entity1_result = relation_controller.create_entity(**_payload_to_kwargs(inputs.EntityCreationPayload(
                 kind="Neuron",
                 ref_id=neuron1_id,
                 supporting_evidence=[],
                 provenance=inputs.ProvenanceContext(subject="user", app_id="test")
-            )
-        )
+            )))
         
-        entity2_result = relation_controller.create_entity(
-            inputs.EntityCreationPayload(
+        entity2_result = relation_controller.create_entity(**_payload_to_kwargs(inputs.EntityCreationPayload(
                 kind="Neuron",
                 ref_id=neuron2_id,
                 supporting_evidence=[],
                 provenance=inputs.ProvenanceContext(subject="user", app_id="test")
-            )
-        )
+            )))
         
         # Create relation with multiple ROIs as evidence
         relation_result = relation_controller.create_relation(
@@ -267,20 +287,16 @@ class TestRelationMaterialization:
         neuron2_id = _uid("neuron2")
         
         # Create entities
-        entity1 = relation_controller.create_entity(
-            inputs.EntityCreationPayload(
+        entity1 = relation_controller.create_entity(**_payload_to_kwargs(inputs.EntityCreationPayload(
                 kind="Neuron", ref_id=neuron1_id,
                 supporting_evidence=[],
                 provenance=inputs.ProvenanceContext(subject="user", app_id="test")
-            )
-        )
-        entity2 = relation_controller.create_entity(
-            inputs.EntityCreationPayload(
+            )))
+        entity2 = relation_controller.create_entity(**_payload_to_kwargs(inputs.EntityCreationPayload(
                 kind="Neuron", ref_id=neuron2_id,
                 supporting_evidence=[],
                 provenance=inputs.ProvenanceContext(subject="user", app_id="test")
-            )
-        )
+            )))
         
         # Create relation with known overlap scores: 0.6, 0.8, 1.0
         # Expected average: (0.6 + 0.8 + 1.0) / 3 = 0.8
@@ -331,20 +347,16 @@ class TestRelationMaterialization:
         neuron2_id = _uid("neuron2")
         
         # Create entities
-        entity1 = relation_controller.create_entity(
-            inputs.EntityCreationPayload(
+        entity1 = relation_controller.create_entity(**_payload_to_kwargs(inputs.EntityCreationPayload(
                 kind="Neuron", ref_id=neuron1_id,
                 supporting_evidence=[],
                 provenance=inputs.ProvenanceContext(subject="user", app_id="test")
-            )
-        )
-        entity2 = relation_controller.create_entity(
-            inputs.EntityCreationPayload(
+            )))
+        entity2 = relation_controller.create_entity(**_payload_to_kwargs(inputs.EntityCreationPayload(
                 kind="Neuron", ref_id=neuron2_id,
                 supporting_evidence=[],
                 provenance=inputs.ProvenanceContext(subject="user", app_id="test")
-            )
-        )
+            )))
         
         # Create relation with known confidence: 0.3, 0.4, 0.3
         # Expected sum: 0.3 + 0.4 + 0.3 = 1.0
@@ -394,20 +406,16 @@ class TestRelationMaterialization:
         neuron2_id = _uid("neuron2")
         
         # Create entities
-        entity1 = relation_controller.create_entity(
-            inputs.EntityCreationPayload(
+        entity1 = relation_controller.create_entity(**_payload_to_kwargs(inputs.EntityCreationPayload(
                 kind="Neuron", ref_id=neuron1_id,
                 supporting_evidence=[],
                 provenance=inputs.ProvenanceContext(subject="user", app_id="test")
-            )
-        )
-        entity2 = relation_controller.create_entity(
-            inputs.EntityCreationPayload(
+            )))
+        entity2 = relation_controller.create_entity(**_payload_to_kwargs(inputs.EntityCreationPayload(
                 kind="Neuron", ref_id=neuron2_id,
                 supporting_evidence=[],
                 provenance=inputs.ProvenanceContext(subject="user", app_id="test")
-            )
-        )
+            )))
         
         # Create relation with known distances: 5.0, 2.5, 8.0
         # Expected min: 2.5
@@ -457,20 +465,16 @@ class TestRelationMaterialization:
         neuron2_id = _uid("neuron2")
         
         # Create entities
-        entity1 = relation_controller.create_entity(
-            inputs.EntityCreationPayload(
+        entity1 = relation_controller.create_entity(**_payload_to_kwargs(inputs.EntityCreationPayload(
                 kind="Neuron", ref_id=neuron1_id,
                 supporting_evidence=[],
                 provenance=inputs.ProvenanceContext(subject="user", app_id="test")
-            )
-        )
-        entity2 = relation_controller.create_entity(
-            inputs.EntityCreationPayload(
+            )))
+        entity2 = relation_controller.create_entity(**_payload_to_kwargs(inputs.EntityCreationPayload(
                 kind="Neuron", ref_id=neuron2_id,
                 supporting_evidence=[],
                 provenance=inputs.ProvenanceContext(subject="user", app_id="test")
-            )
-        )
+            )))
         
         # Create relation with 4 overlap_score measurements
         relation_result = relation_controller.create_relation(
@@ -529,20 +533,16 @@ class TestRelationEvidenceGraph:
         neuron1_id = _uid("neuron1")
         neuron2_id = _uid("neuron2")
         
-        entity1 = relation_controller.create_entity(
-            inputs.EntityCreationPayload(
+        entity1 = relation_controller.create_entity(**_payload_to_kwargs(inputs.EntityCreationPayload(
                 kind="Neuron", ref_id=neuron1_id,
                 supporting_evidence=[],
                 provenance=inputs.ProvenanceContext(subject="user", app_id="test")
-            )
-        )
-        entity2 = relation_controller.create_entity(
-            inputs.EntityCreationPayload(
+            )))
+        entity2 = relation_controller.create_entity(**_payload_to_kwargs(inputs.EntityCreationPayload(
                 kind="Neuron", ref_id=neuron2_id,
                 supporting_evidence=[],
                 provenance=inputs.ProvenanceContext(subject="user", app_id="test")
-            )
-        )
+            )))
         
         link_ref_id = _uid("link_ref")
         
@@ -578,20 +578,16 @@ class TestRelationEvidenceGraph:
         neuron2_id = _uid("neuron2")
         roi_obj = _uid("roi")
         
-        entity1 = relation_controller.create_entity(
-            inputs.EntityCreationPayload(
+        entity1 = relation_controller.create_entity(**_payload_to_kwargs(inputs.EntityCreationPayload(
                 kind="Neuron", ref_id=neuron1_id,
                 supporting_evidence=[],
                 provenance=inputs.ProvenanceContext(subject="user", app_id="test")
-            )
-        )
-        entity2 = relation_controller.create_entity(
-            inputs.EntityCreationPayload(
+            )))
+        entity2 = relation_controller.create_entity(**_payload_to_kwargs(inputs.EntityCreationPayload(
                 kind="Neuron", ref_id=neuron2_id,
                 supporting_evidence=[],
                 provenance=inputs.ProvenanceContext(subject="user", app_id="test")
-            )
-        )
+            )))
         
         link_ref_id = _uid("link")
         
@@ -627,20 +623,16 @@ class TestRelationEvidenceGraph:
         neuron1_id = _uid("neuron1")
         neuron2_id = _uid("neuron2")
         
-        entity1 = relation_controller.create_entity(
-            inputs.EntityCreationPayload(
+        entity1 = relation_controller.create_entity(**_payload_to_kwargs(inputs.EntityCreationPayload(
                 kind="Neuron", ref_id=neuron1_id,
                 supporting_evidence=[],
                 provenance=inputs.ProvenanceContext(subject="user", app_id="test")
-            )
-        )
-        entity2 = relation_controller.create_entity(
-            inputs.EntityCreationPayload(
+            )))
+        entity2 = relation_controller.create_entity(**_payload_to_kwargs(inputs.EntityCreationPayload(
                 kind="Neuron", ref_id=neuron2_id,
                 supporting_evidence=[],
                 provenance=inputs.ProvenanceContext(subject="user", app_id="test")
-            )
-        )
+            )))
         
         link_ref_id = _uid("link")
         
@@ -674,20 +666,16 @@ class TestRelationProvenance:
         neuron1_id = _uid("neuron1")
         neuron2_id = _uid("neuron2")
         
-        entity1 = relation_controller.create_entity(
-            inputs.EntityCreationPayload(
+        entity1 = relation_controller.create_entity(**_payload_to_kwargs(inputs.EntityCreationPayload(
                 kind="Neuron", ref_id=neuron1_id,
                 supporting_evidence=[],
                 provenance=inputs.ProvenanceContext(subject="user", app_id="test")
-            )
-        )
-        entity2 = relation_controller.create_entity(
-            inputs.EntityCreationPayload(
+            )))
+        entity2 = relation_controller.create_entity(**_payload_to_kwargs(inputs.EntityCreationPayload(
                 kind="Neuron", ref_id=neuron2_id,
                 supporting_evidence=[],
                 provenance=inputs.ProvenanceContext(subject="user", app_id="test")
-            )
-        )
+            )))
         
         relation_result = relation_controller.create_relation(
             inputs.RelationCreationPayload(

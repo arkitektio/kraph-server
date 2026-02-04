@@ -5,7 +5,7 @@ from typing import Optional, List
 from kante.types import Info
 
 from api.types import Structure, structure_from_response
-from api.context import get_controller_from_context
+from api.context import get_controller_for_node_id
 
 
 def structure(
@@ -24,7 +24,7 @@ def structure(
     Returns:
         Structure object or None if not found
     """
-    controller = get_controller_from_context(info)
+    controller = get_controller_for_node_id(object, info)
     response = controller.get_structure(identifier=identifier, object=object)
     if response is None:
         return None
@@ -45,6 +45,6 @@ def informing_structures(
     Returns:
         List of Structure objects
     """
-    controller = get_controller_from_context(info)
+    controller = get_controller_for_node_id(entity_id, info)
     responses = controller.get_informing_structures(entity_id=entity_id)
     return [structure_from_response(r) for r in responses]

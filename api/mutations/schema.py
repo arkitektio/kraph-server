@@ -168,10 +168,12 @@ def set_schema(
         error_msgs = [f"{'.'.join(err.location)}: {err.message}" for err in errors]
         raise ValueError(f"Invalid schema: {'; '.join(error_msgs)}")
     
-    # Get the graph from the request context
-    from api.context import get_controller_from_context
-    controller = get_controller_from_context(info)
-    graph = controller.graph
+    # Get the graph from the database
+    from core.models import Graph
+    try:
+        graph = Graph.objects.get(id=input.graph_id)
+    except Graph.DoesNotExist:
+        raise ValueError(f"Graph with ID {input.graph_id} not found")
     
     # Check if this version already exists
     if GraphSchema.objects.filter(graph=graph, version=version).exists():

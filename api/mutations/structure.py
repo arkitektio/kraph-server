@@ -5,7 +5,7 @@ from kante.types import Info
 
 from api.types import Structure, LinkStructureResult, structure_from_response, entity_from_response
 from api.inputs import StructureCreationInput, LinkStructureInput
-from api.context import get_controller_from_context
+from api.context import get_controller_for_graph_id
 
 
 def create_structure(
@@ -25,10 +25,10 @@ def create_structure(
     Returns:
         Structure object
     """
-    controller = get_controller_from_context(info)
-    
     # Convert strawberry-pydantic input to pydantic model
     payload = input.to_pydantic()
+    
+    controller = get_controller_for_graph_id(payload.graph_id, info)
     
     response = controller.create_structure(
         identifier=payload.identifier,
@@ -58,7 +58,8 @@ def link_structure_to_entity(
     Returns:
         LinkStructureResult with updated entity and structure
     """
-    controller = get_controller_from_context(info)
+    from api.context import get_controller_for_node_id
+    controller = get_controller_for_node_id(input.entity_id, info)
     
     entity_response = controller.link_structure_to_entity(
         structure_identifier=input.structure_identifier,

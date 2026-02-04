@@ -255,12 +255,22 @@ def test_graph(bio_graph_schema):
 @pytest.fixture
 def mock_graph_controller(mock_engine, test_graph):
     """Create a graph controller with mock engine and test graph."""
-    return GraphController(engine=mock_engine, graph=test_graph)
+    return GraphController(
+        engine=mock_engine, 
+        graph=test_graph,
+        subject="test_user",
+        app_id="test_app",
+    )
 
 @pytest.fixture(scope="function")
 def graph_controller(transactional_db, age_engine, test_graph):
     """Create a graph controller with AGE engine and test graph."""
-    return GraphController(engine=age_engine, graph=test_graph)
+    return GraphController(
+        engine=age_engine, 
+        graph=test_graph,
+        subject="test_user",
+        app_id="test_app",
+    )
 
 
 
@@ -316,7 +326,7 @@ def age_engine(transactional_db, backend_stack, test_graph: GraphProtocol) -> Ge
     
     
     
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def api_schema(age_engine):
     """
     Simple API context for validation tests that don't need database/AGE.
@@ -333,7 +343,7 @@ def api_schema(age_engine):
     
     
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def simple_api_context(db, backend_stack) -> HttpContext:
     user, _ = User.objects.get_or_create(
         username="fart", password="123456789", sub="1")
