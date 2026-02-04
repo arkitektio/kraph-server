@@ -19,7 +19,7 @@ def validate_structure_definition(
             if not isinstance(identifier, str):
                 raise ValueError("Identifier filters must be a list of identifier IDs")
 
-            stc = models.StructureCategory.objects.get_or_create(
+            models.StructureCategory.objects.get_or_create(
                 graph=graph,
                 age_name=manager.build_structure_age_name(identifier),
                 defaults=dict(

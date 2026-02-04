@@ -23,7 +23,6 @@ def path(node_query: models.NodeQuery, node_id: str, filters: inputs.NodeQueryFi
     print("Called")
 
     tgraph = node_query.graph
-    query = node_query.query
     print(tgraph.age_name)
     node = node_id
     

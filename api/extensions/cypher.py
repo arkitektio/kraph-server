@@ -11,7 +11,7 @@ def get_current_cypher_engine() -> CypherEngine:
 
 class CypherEngineExtension(SchemaExtension):
     
-    def __init__(self, engine: CypherEngine, *args, **kwargs):
+    def __init__(self, engine: CypherEngine, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.engine: CypherEngine = engine
     def on_operation(self):

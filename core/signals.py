@@ -4,7 +4,7 @@ from core import models
 
 
 @receiver(post_save, sender=models.StructureCategory)
-def create_structure_query(sender, instance, created, **kwargs):
+def create_structure_query(sender, instance, created, **kwargs) -> None:
 
     if created:
         node_query = models.NodeQuery.objects.create(

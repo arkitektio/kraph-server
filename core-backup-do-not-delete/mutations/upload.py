@@ -18,18 +18,6 @@ def request_upload(
     """Request upload credentials for a given key"""
 
     datalayer = get_current_datalayer()
-    policy = {
-        "Version": "2012-10-17",
-        "Statement": [
-            {
-                "Sid": "AllowAllS3ActionsInUserFolder",
-                "Effect": "Allow",
-                "Principal": "*",
-                "Action": ["s3:*"],
-                "Resource": "arn:aws:s3:::*",
-            },
-        ],
-    }
 
     response = datalayer.s3v4.generate_presigned_post(
         Bucket=settings.MEDIA_BUCKET,

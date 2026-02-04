@@ -560,7 +560,6 @@ class Node:
         filter: filters.EntityRelationFilter | None = None,
         pagination: p.GraphPaginationInput | None = None,
     ) -> List["Edge"]:
-        from_arg_relations = []
         if not pagination:
             pagination = p.GraphPaginationInput()
 

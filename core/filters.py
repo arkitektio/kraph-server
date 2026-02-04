@@ -196,7 +196,7 @@ class RelationCategoryFilter:
 
         entity = age.get_age_entity(graph_id, entity_id)
 
-        category = models.EntityCategory.objects.get(id=entity.category_id)
+        models.EntityCategory.objects.get(id=entity.category_id)
 
         return queryset.filter(graph__age_name=graph_id).filter(source_definition__category_filters__contains=str(entity.category_id))
 
@@ -211,7 +211,7 @@ class RelationCategoryFilter:
 
         print("hallo")
         entity = age.get_age_entity(graph_id, entity_id)
-        category = models.EntityCategory.objects.get(id=entity.category_id)
+        models.EntityCategory.objects.get(id=entity.category_id)
 
         return queryset.filter(graph__age_name=graph_id).filter(target_definition__category_filters__contains=str(entity.category_id))
 

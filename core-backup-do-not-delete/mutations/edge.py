@@ -21,5 +21,5 @@ def delete_edge(
     if not x.organization == info.context.request.organization:
         raise Exception(f"You do not have permission to delete edges in graph {graph_name}")
 
-    measurement = age.delete_edge(graph_name, edge_id=local_id)
+    age.delete_edge(graph_name, edge_id=local_id)
     return input.id

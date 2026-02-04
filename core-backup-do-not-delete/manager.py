@@ -3,7 +3,7 @@ from core import models, age, inputs
 from authentikate.models import Organization
 
 
-def rebuild_graph(graph: models.Graph):
+def rebuild_graph(graph: models.Graph) -> None:
     for item in graph.entity_categories.all():
         age.create_age_entity_kind(graph.age_name, item.age_name)
 
@@ -17,7 +17,7 @@ def rebuild_graph(graph: models.Graph):
         age.create_age_structure_kind(graph.age_name, item.age_name)
 
 
-def add_descriptors_to_category(category: models.Category, descriptors: list[inputs.DescriptorInput]):
+def add_descriptors_to_category(category: models.Category, descriptors: list[inputs.DescriptorInput]) -> None:
     for descriptor in descriptors:
         descriptor_obj, _ = models.Descriptor.objects.update_or_create(key=descriptor.key, defaults={"description": descriptor.description, "value": descriptor.value}, category=category)
 
@@ -72,14 +72,9 @@ def build_participant_age_name(label: str):
     return "AS_" + clean_string(label.replace(" ", "_").replace("-", "_")).upper()
 
 
-def create_default_structure_queries_for_structure(structure_category: models.StructureCategory, entity: age.RetrievedEntity):
+def create_default_structure_queries_for_structure(structure_category: models.StructureCategory, entity: age.RetrievedEntity) -> None:
     # Should create a query that takes all self-referencing relations as measurements
     # and returns it as a table
-    node_query = f"""
-    MATCH (n:{entity.age_name}) -[r]-> (n)
-    
-    RETURN n
-    """
 
     return None
 
@@ -122,7 +117,7 @@ def set_age_sequence(category: "models.Category", sequence_id: str | None = None
     return index
 
 
-def set_position_info(category: "models.NodeCategory", input: inputs.NodeCategoryInput):
+def set_position_info(category: "models.NodeCategory", input: inputs.NodeCategoryInput) -> None:
     if input.position_x:
         category.position_x = input.position_x
     if input.position_y:

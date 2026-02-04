@@ -64,7 +64,7 @@ def create_stats_type(
     # --------- Enums ---------
     enum_name = enum_name or f"{model.__name__}Field"
     FieldEnumPy = Enum(enum_name, {k.upper(): v for k, v in allowed_fields.items()})
-    FieldEnum = strawberry.enum(
+    strawberry.enum(
         FieldEnumPy,
         description=f"Numeric/aggregatable fields of {model.__name__}",
     )  # type: ignore

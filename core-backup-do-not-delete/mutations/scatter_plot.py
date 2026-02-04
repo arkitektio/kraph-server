@@ -96,12 +96,12 @@ def update_scatter_plot(info: Info, input: UpdateScatterPlotInput) -> types.Scat
     if input.x_column:
         splot.x_column = check_column(columns, input.x_column)
 
-    y_column = check_column(columns, input.y_column)
-    x_id_column = check_id_column(columns, input.x_id_column) if input.x_id_column else None
-    y_id_column = check_id_column(columns, input.y_id_column) if input.y_id_column else None
-    size_column = check_column(columns, input.size_column) if input.size_column else None
-    color_column = check_column(columns, input.color_column) if input.color_column else None
-    shape_column = check_column(columns, input.shape_column) if input.shape_column else None
+    check_column(columns, input.y_column)
+    check_id_column(columns, input.x_id_column) if input.x_id_column else None
+    check_id_column(columns, input.y_id_column) if input.y_id_column else None
+    check_column(columns, input.size_column) if input.size_column else None
+    check_column(columns, input.color_column) if input.color_column else None
+    check_column(columns, input.shape_column) if input.shape_column else None
 
     splot.save()
     return splot

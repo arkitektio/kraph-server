@@ -184,7 +184,7 @@ class RetrievedEntity:
         return self.properties.get("identifier", None)
 
     @property
-    def unique_id(self):
+    def unique_id(self) -> str:
         return f"{self.graph_name}:{self.id}"
 
     def retrieve_properties(self):
@@ -268,15 +268,15 @@ class RetrievedRelation:
         return self.properties.get("valid_relative_to", None)
 
     @property
-    def unique_left_id(self):
+    def unique_left_id(self) -> str:
         return f"{self.graph_name}:{self.left_id}"
 
     @property
-    def unique_right_id(self):
+    def unique_right_id(self) -> str:
         return f"{self.graph_name}:{self.right_id}"
 
     @property
-    def unique_id(self):
+    def unique_id(self) -> str:
         return f"{self.graph_name}:{self.id}"
 
 
@@ -302,13 +302,13 @@ def create_age_graph(name: str):
             print(cursor.fetchone())
 
 
-def delete_age_graph(name: str):
+def delete_age_graph(name: str) -> None:
     with graph_cursor() as cursor:
         cursor.execute("SELECT drop_graph(%s, true);", [name])
         print(cursor.fetchone())
 
 
-def create_age_entity_kind(category: "models.EntityCategory"):
+def create_age_entity_kind(category: "models.EntityCategory") -> None:
     with graph_cursor() as cursor:
         try:
             cursor.execute(
@@ -320,7 +320,7 @@ def create_age_entity_kind(category: "models.EntityCategory"):
             print(e)
 
 
-def create_age_relation_kind(category: "models.RelationCategory"):
+def create_age_relation_kind(category: "models.RelationCategory") -> None:
     with graph_cursor() as cursor:
         try:
             cursor.execute(
@@ -332,7 +332,7 @@ def create_age_relation_kind(category: "models.RelationCategory"):
             print(e)
 
 
-def create_age_structure_kind(category: "models.StructureCategory"):
+def create_age_structure_kind(category: "models.StructureCategory") -> None:
     with graph_cursor() as cursor:
         try:
             cursor.execute(
@@ -344,7 +344,7 @@ def create_age_structure_kind(category: "models.StructureCategory"):
             print(e)
 
 
-def create_age_natural_event_kind(category: "models.NaturalEventCategory"):
+def create_age_natural_event_kind(category: "models.NaturalEventCategory") -> None:
     with graph_cursor() as cursor:
         try:
             cursor.execute(
@@ -375,7 +375,7 @@ def create_age_natural_event_kind(category: "models.NaturalEventCategory"):
                 print(e)
 
 
-def create_age_protocol_event_kind(category: "models.ProtocolEventCategory"):
+def create_age_protocol_event_kind(category: "models.ProtocolEventCategory") -> None:
     with graph_cursor() as cursor:
         try:
             cursor.execute(
@@ -406,7 +406,7 @@ def create_age_protocol_event_kind(category: "models.ProtocolEventCategory"):
                 print(e)
 
 
-def create_age_metric_kind(category: "models.MetricCategory"):
+def create_age_metric_kind(category: "models.MetricCategory") -> None:
     with graph_cursor() as cursor:
         try:
             cursor.execute(
@@ -418,7 +418,7 @@ def create_age_metric_kind(category: "models.MetricCategory"):
             print(e)
 
 
-def create_age_reagent_kind(category: "models.ReagentCategory"):
+def create_age_reagent_kind(category: "models.ReagentCategory") -> None:
     with graph_cursor() as cursor:
         try:
             cursor.execute(
@@ -430,7 +430,7 @@ def create_age_reagent_kind(category: "models.ReagentCategory"):
             print(e)
 
 
-def create_age_measurement_kind(category: "models.MeasurementCategory"):
+def create_age_measurement_kind(category: "models.MeasurementCategory") -> None:
     with graph_cursor() as cursor:
         try:
             cursor.execute(
@@ -442,7 +442,7 @@ def create_age_measurement_kind(category: "models.MeasurementCategory"):
             print(e)
 
 
-def create_age_relation_kind(category: "models.RelationCategory"):
+def create_age_relation_kind(category: "models.RelationCategory") -> None:
     with graph_cursor() as cursor:
         try:
             cursor.execute(
@@ -1433,7 +1433,7 @@ def create_measurement(
 def delete_edge(
     graph_name: str,
     edge_id: int,
-):
+) -> None:
     """
     Delete an edge by its ID.
 
@@ -1456,14 +1456,14 @@ def delete_edge(
             (graph_name, int(edge_id)),
         )
 
-        result = cursor.fetchone()
+        cursor.fetchone()
         return None
 
 
 def delete_node(
     graph_name: str,
     node_id: int,
-):
+) -> None:
     """
     Delete an edge by its ID.
 
@@ -1486,14 +1486,14 @@ def delete_node(
             (graph_name, int(node_id)),
         )
 
-        result = cursor.fetchone()
+        cursor.fetchone()
         return None
 
 
 def detach_delete_node(
     graph_name: str,
     node_id: int,
-):
+) -> None:
     """
     Delete an edge by its ID.
 
@@ -1516,7 +1516,7 @@ def detach_delete_node(
             (graph_name, int(node_id)),
         )
 
-        result = cursor.fetchone()
+        cursor.fetchone()
         return None
 
 

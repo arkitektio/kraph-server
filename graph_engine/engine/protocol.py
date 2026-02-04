@@ -32,7 +32,7 @@ class SimpleGraph:
     A simple implementation of GraphProtocol for testing and basic usage.
     """
     
-    def __init__(self, age_name: str, definition: "GraphDefinitionModel"):
+    def __init__(self, age_name: str, definition: "GraphDefinitionModel") -> None:
         if not age_name:
             raise ValueError("age_name cannot be empty")
         if definition is None:

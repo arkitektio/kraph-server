@@ -307,7 +307,7 @@ class GraphExtensions(BaseModel):
     @model_validator(mode='after')
     def validate_unique_keys(self):
         """Validate that all keys within each category are unique."""
-        def check_duplicates(items: list, category: str):
+        def check_duplicates(items: list, category: str) -> None:
             keys = [item.key for item in items]
             seen = set()
             for key in keys:

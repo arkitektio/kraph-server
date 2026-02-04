@@ -61,7 +61,7 @@ class MediaStore(S3Store):
     def fill_info(self) -> None:
         pass
 
-    def put_file(self, datalayer: Datalayer, file: FileField):
+    def put_file(self, datalayer: Datalayer, file: FileField) -> None:
         s3 = datalayer.s3
         s3.upload_fileobj(file, self.bucket, self.key)
         self.save()
@@ -239,18 +239,18 @@ class GraphSchema(models.Model):
         unique_together = [("graph", "index"), ("graph", "version")]
         ordering = ["-index"]
     
-    def __str__(self):
+    def __str__(self) -> str:
         active_marker = " (active)" if self.is_active else ""
         return f"{self.graph.name} v{self.version}{active_marker}"
     
-    def save(self, *args, **kwargs):
+    def save(self, *args, **kwargs) -> None:
         # Auto-increment index if not set
         if self.index is None:
             last_schema = GraphSchema.objects.filter(graph=self.graph).order_by("-index").first()
             self.index = (last_schema.index + 1) if last_schema else 1
         super().save(*args, **kwargs)
     
-    def activate(self):
+    def activate(self) -> None:
         """Set this schema as the active one, deactivating others."""
         GraphSchema.objects.filter(graph=self.graph).update(is_active=False)
         self.is_active = True
@@ -313,7 +313,7 @@ class GraphSequence(models.Model):
         default_related_name = "graph_sequences"
 
     @property
-    def ps_name(self):
+    def ps_name(self) -> str:
         return f"{self.graph.age_name}{self.index}"
 
 
@@ -548,7 +548,7 @@ class StructureCategory(NodeCategory):
     def get_age_vertex_name(self):
         return self.age_name
 
-    def get_age_type_name(self):
+    def get_age_type_name(self) -> str:
         return "STRUCTURE"
 
     class Meta:
@@ -590,7 +590,7 @@ class NaturalEventCategory(NodeCategory):
     def get_age_vertex_name(self):
         return self.age_name
 
-    def get_age_type_name(self):
+    def get_age_type_name(self) -> str:
         return "NATURAL_EVENT"
 
     @property
@@ -650,7 +650,7 @@ class ProtocolEventCategory(NodeCategory):
     def get_age_vertex_name(self):
         return self.age_name
 
-    def get_age_type_name(self):
+    def get_age_type_name(self) -> str:
         return "PROTOCOL_EVENT"
 
     @property
@@ -721,7 +721,7 @@ class EntityCategory(NodeCategory):
     def get_age_vertex_name(self):
         return self.age_name
 
-    def get_age_type_name(self):
+    def get_age_type_name(self) -> str:
         return "ENTITY"
 
     class Meta:
@@ -782,7 +782,7 @@ class ReagentCategory(NodeCategory):
     def get_age_vertex_name(self):
         return self.age_name
 
-    def get_age_type_name(self):
+    def get_age_type_name(self) -> str:
         return "REAGENT"
 
     class Meta:
@@ -842,7 +842,7 @@ class MetricCategory(NodeCategory):
     def get_age_vertex_name(self):
         return self.age_name
 
-    def get_age_type_name(self):
+    def get_age_type_name(self) -> str:
         return "METRIC"
 
     class Meta:
@@ -862,7 +862,7 @@ class MeasurementCategory(EdgeCategory):
     def get_age_edge_name(self):
         return self.age_name
 
-    def get_age_type_name(self):
+    def get_age_type_name(self) -> str:
         return "MEASUREMENT"
 
     class Meta:
@@ -881,7 +881,7 @@ class RelationCategory(EdgeCategory):
     def get_age_edge_name(self):
         return self.age_name
 
-    def get_age_type_name(self):
+    def get_age_type_name(self) -> str:
         return "RELATION"
 
     class Meta:
@@ -900,7 +900,7 @@ class StructureRelationCategory(EdgeCategory):
     def get_age_edge_name(self):
         return self.age_name
 
-    def get_age_type_name(self):
+    def get_age_type_name(self) -> str:
         return "STRUCTURE_RELATION"
 
     class Meta:

@@ -13,7 +13,8 @@ from .mutations import Mutation
 from .subscriptions import Subscription
 from .extensions.cypher import CypherEngineExtension
 import kante
-from graph_engine.engine.age_engine import AgeEngine, CypherEngine
+from graph_engine.engine.age_engine import AgeEngine
+from graph_engine.engine.protocol import CypherEngine
 
 
 
@@ -65,7 +66,7 @@ def get_schema_sdl() -> str:
     return str(schema)
 
 
-def print_schema():
+def print_schema() -> None:
     """Print the schema SDL to stdout."""
     print(get_schema_sdl())
 

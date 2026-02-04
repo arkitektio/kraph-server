@@ -4,15 +4,11 @@ from .parser import render_cypher_template
 
 def node_list(graph_query: models.GraphQuery, check_exists: bool = True, filters: inputs.GraphQueryFilters | None = None, pagination: inputs.GraphQueryPagination | None = None, order: inputs.GraphQueryOrder | None = None) -> types.NodeList:
     tgraph = graph_query.graph
-    query = graph_query.query
 
-    all_nodes = []
-    all_edges = []
 
     print("Called")
 
     tgraph = graph_query.graph
-    query = graph_query.query
 
     rendered_query, params = render_cypher_template(graph_query.query, filters=filters, pagination=pagination, order=order)
 

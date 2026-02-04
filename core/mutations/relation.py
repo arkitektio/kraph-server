@@ -43,7 +43,7 @@ def create_relation(
         left_graph == right_graph
     ), "Cannot create a relation between entities in different graphs"
 
-    tleft_graph = models.Graph.objects.get(age_name=left_graph)
+    models.Graph.objects.get(age_name=left_graph)
 
     retrieve = age.create_age_relation(
         category,

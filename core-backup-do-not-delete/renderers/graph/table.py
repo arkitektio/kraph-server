@@ -29,7 +29,6 @@ def table(graph_query: models.GraphQuery, check_exists: bool = True, filters: in
     print("Called")
 
     tgraph = graph_query.graph
-    query = graph_query.query
     columns = graph_query.input_columns
     print(tgraph.age_name)
 

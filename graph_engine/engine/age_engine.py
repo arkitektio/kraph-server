@@ -43,7 +43,7 @@ class AgeEngine:
         self,
         connection_name: str = "default",
         statement_timeout_ms: Optional[int] = None,
-    ):
+    ) -> None:
         """
         Initialize the AGE engine.
         

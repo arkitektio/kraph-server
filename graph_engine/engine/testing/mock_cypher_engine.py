@@ -14,7 +14,7 @@ class MockCypherEngine:
     - CREATE with RETURN x.id -> returns the id from params
     - MATCH queries return empty results by default
     """
-    def __init__(self):
+    def __init__(self) -> None:
         self.log: List[tuple] = []  # Stores (graph, query, params) tuples
         self.return_values: List[List[Dict[str, Any]]] = []  # Stack of fake results to pop
         self._next_id = 844424930131969  # Start with a realistic AGE ID

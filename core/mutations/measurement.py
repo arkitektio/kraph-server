@@ -56,8 +56,8 @@ def delete_measurement(
     info: Info,
     input: DeleteMeasurementInput,
 ) -> strawberry.ID:
-    local_id = age.to_entity_id(input.id)
+    age.to_entity_id(input.id)
     graph_name = age.to_graph_id(input.id)
 
-    measurement = age.delete_measurement(graph_name, measurement_id=input.id)
+    age.delete_measurement(graph_name, measurement_id=input.id)
     return input.id

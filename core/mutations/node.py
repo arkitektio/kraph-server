@@ -21,7 +21,7 @@ def delete_node(
     if not x.organization == info.context.request.organization:
         raise Exception(f"You do not have permission to delete nodes in graph {graph_name}")
 
-    measurement = age.delete_node(graph_name, node_id=local_id)
+    age.delete_node(graph_name, node_id=local_id)
     return input.id
 
 
@@ -38,5 +38,5 @@ def detach_delete_node(
     if not x.organization == info.context.request.organization:
         raise Exception(f"You do not have permission to delete nodes in graph {graph_name}")
 
-    measurement = age.detach_delete_node(graph_name, node_id=local_id)
+    age.detach_delete_node(graph_name, node_id=local_id)
     return input.id

@@ -1,7 +1,7 @@
 from core import models
 
 
-def all_informed_measurements_view_builder(structure: models.StructureCategory):
+def all_informed_measurements_view_builder(structure: models.StructureCategory) -> str:
     return f"""
         MATCH (n) -> [r] -> (m)
         WHERE r.informed_by = "{structure.identifier}"
@@ -10,7 +10,7 @@ def all_informed_measurements_view_builder(structure: models.StructureCategory):
     """
 
 
-def all_measurements_for_generic_node(node: models.GenericCategory):
+def all_measurements_for_generic_node(node: models.GenericCategory) -> str:
 
     measurements = node.ontology.measurement_categories.filter(target=node).values_list(
         "age_name", flat=True

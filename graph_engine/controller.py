@@ -42,7 +42,7 @@ def _extract_id(raw_node: Any) -> int:
 
 class GraphController:
     """ Controller for interacting with the graph database."""
-    def __init__(self, engine: CypherEngine, graph: GraphProtocol, subject: str, app_id: str):
+    def __init__(self, engine: CypherEngine, graph: GraphProtocol, subject: str, app_id: str) -> None:
         self.engine = engine
         self.graph = graph
         self.subject = subject
@@ -184,7 +184,7 @@ class GraphController:
 
         return EntityCreationResult(ref_id=ref_id, db_id=db_id, graph_id=graph_id)
 
-    def _recalculate_entity(self, graph_id: int, label: str, schema: GraphDefinitionModel):
+    def _recalculate_entity(self, graph_id: int, label: str, schema: GraphDefinitionModel) -> None:
         """
         Scans schema rules and updates the Entity's cached properties based on connected evidence.
         
@@ -302,7 +302,7 @@ class GraphController:
         edge_id: int,
         label: str,
         schema: GraphDefinitionModel,
-    ):
+    ) -> None:
         """
         Recalculates derived properties on a relation edge.
         
