@@ -5,12 +5,12 @@ from typing import List
 from kante.types import Info
 
 from api.types import Entity, entity_from_response
-from api.context import get_controller_from_context
+from api.context import get_controller_for_node_id
 
 
 def entity(info: Info, id: str) -> Entity:
     """
-    Fetch a single entity by its ID.
+    Fetch a single entity by its Global ID.
     
     Args:
         info: Strawberry Info context
@@ -19,7 +19,7 @@ def entity(info: Info, id: str) -> Entity:
     Returns:
         Entity object
     """
-    controller = get_controller_from_context(info)
+    controller = get_controller_for_node_id(id, info)
     response = controller.get_entity(id=id)
     return entity_from_response(response)
 
@@ -40,7 +40,7 @@ def entities_informed_by(
     Returns:
         List of Entity objects
     """
-    controller = get_controller_from_context(info)
+    controller = get_controller_for_node_id(object, info)
     responses = controller.get_entities_informed_by(
         identifier=identifier,
         structure_object=object,

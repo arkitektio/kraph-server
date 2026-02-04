@@ -54,16 +54,28 @@ class ProvenanceInput:
     action_args: Optional[AnyScalar] = None  # Override Dict[str, Any] with our scalar
 
 
-@pydantic.input(model=input_models.EntityCreationPayload)
+@strawberry.input(description="Input for creating a new entity with supporting evidence")
 class EntityCreationInput:
     """
     Input for creating a new entity with supporting evidence.
-    Validates against EntityCreationPayload Pydantic model.
+    
+    Provenance (subject, app_id) is automatically derived from the 
+    authenticated request context.
     """
-    ref_id: strawberry.auto
-    kind: strawberry.auto
-    supporting_evidence: Optional[List[StructureReferenceInput]] = strawberry.field(default_factory=list)
-    provenance: ProvenanceInput
+    graph_id: strawberry.ID = strawberry.field(description="The ID of the graph to create the entity in")
+    kind: str = strawberry.field(description="The entity type/label (must match schema)")
+    ref_id: Optional[str] = strawberry.field(default=None, description="Optional unique reference ID (auto-generated if not provided)")
+    supporting_evidence: Optional[List[StructureReferenceInput]] = strawberry.field(default_factory=list, description="List of evidence structures with measurements")
+    action_id: Optional[str] = strawberry.field(default=None, description="Optional action ID for provenance tracking")
+    action_name: Optional[str] = strawberry.field(default=None, description="Optional action name for provenance tracking")
+    action_args: Optional[AnyScalar] = strawberry.field(default=None, description="Optional action arguments for provenance tracking")
+
+
+@strawberry.input(description="Input for recalculating entity properties")
+class RecalculateEntityInput:
+    """Input for recalculating an entity's derived properties."""
+    graph_id: strawberry.ID = strawberry.field(description="The ID of the graph containing the entity")
+    entity_id: str = strawberry.field(description="The entity's string ID")
     
 
 

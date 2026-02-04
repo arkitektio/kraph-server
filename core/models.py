@@ -123,6 +123,7 @@ class Graph(models.Model):
         related_name="pinned_graphs",
         help_text="The users that have this query active",
     )
+    
 
     @classmethod
     def create_age_name(cls, name: str, organization: Organization) -> str:

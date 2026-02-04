@@ -2,7 +2,12 @@ import json
 import time
 from typing import Optional, Dict, Any, List
 from graph_engine.base_models import GraphDefinitionModel
-from graph_engine.input_models import EntityCreationPayload, EntityCreationResult, MeasurementInput, ProvenanceContext, RelationCreationPayload
+from graph_engine.input_models import (
+    EntityCreationResult,
+    MeasurementInput,
+    ProvenanceContext,
+    RelationCreationPayload,
+)
 from graph_engine.engine.protocol import CypherEngine, GraphProtocol
 from graph_engine.retrieved import (
     RetrievedNode,
@@ -11,8 +16,6 @@ from graph_engine.retrieved import (
     RetrievedStructure,
     RetrievedMeasurement,
     RetrievedAssertion,
-    node_from_age_result,
-    edge_from_age_result,
 )
 from graph_engine import vocab
 from graph_engine.rollup import build_property_query
@@ -41,8 +44,9 @@ def _extract_id(raw_node: Any) -> int:
 
 class GraphController:
     """ Controller for interacting with the graph database."""
-    def __init__(self, engine: CypherEngine):
+    def __init__(self, engine: CypherEngine, graph: GraphProtocol):
         self.engine = engine
+        self.graph = graph
 
     @property
     def age_name(self) -> str:
@@ -56,21 +60,50 @@ class GraphController:
 
     def create_entity(
         self, 
-        payload: EntityCreationPayload, 
+        *,
+        kind: str,
+        ref_id: str,
+        subject: str,
+        app_id: str,
+        action_id: Optional[str] = None,
+        action_name: Optional[str] = None,
+        action_args: Optional[Dict[str, Any]] = None,
+        supporting_evidence: Optional[List[Dict[str, Any]]] = None,
         schema: Optional[GraphDefinitionModel] = None,
     ) -> EntityCreationResult:
+        """
+        Create a new entity with optional supporting evidence structures.
         
+        Args:
+            kind: The entity type/label (must match schema)
+            ref_id: Unique reference ID for the entity
+            subject: User ID (provenance)
+            app_id: Client/app ID (provenance)
+            action_id: Optional action ID (provenance)
+            action_name: Optional action name (provenance)
+            action_args: Optional action arguments (provenance)
+            supporting_evidence: List of evidence dicts with 'identifier', 'object', 'measurements'
+            schema: Optional schema override (defaults to graph's definition)
+            
+        Returns:
+            EntityCreationResult with ref_id, db_id, and graph_id
+        """
         effective_schema = schema or self.graph.definition
+        supporting_evidence = supporting_evidence or []
         
         # --- Step 1: Validate Kind Only ---
-        entity_def = effective_schema.extensions.entities_map.get(payload.kind)
+        entity_def = effective_schema.extensions.entities_map.get(kind)
         if not entity_def:
-            raise ValueError(f"Unknown Entity: {payload.kind}")
+            raise ValueError(f"Unknown Entity: {kind}")
 
         # --- Step 2: Create Assertion (Provenance) ---
-        prov_dict = payload.provenance.model_dump(exclude_none=True)
-        if 'action_args' in prov_dict:
-            prov_dict['action_args'] = json.dumps(prov_dict['action_args'])
+        prov_dict: Dict[str, Any] = {"subject": subject, "app_id": app_id}
+        if action_id is not None:
+            prov_dict["action_id"] = action_id
+        if action_name is not None:
+            prov_dict["action_name"] = action_name
+        if action_args is not None:
+            prov_dict["action_args"] = json.dumps(action_args)
         
         assertion_props = ", ".join([f"{k}: ${k}" for k in prov_dict.keys()])
         aid_res = self.engine.execute(
@@ -81,20 +114,25 @@ class GraphController:
         assertion_id = aid_res[0]['aid']
 
         # --- Step 3: Handle Evidence & Measurements ---
-        for evidence in payload.supporting_evidence:
-            structure_graph_label = IDENTIFIER_MAP.get(evidence.identifier, "Structure")
+        for evidence in supporting_evidence:
+            evidence_identifier = evidence.get("identifier", "Structure")
+            evidence_object = evidence.get("object")
+            evidence_measurements = evidence.get("measurements", [])
+            
+            structure_graph_label = IDENTIFIER_MAP.get(evidence_identifier, "Structure")
             
             # Auto-Create Structure (MERGE) - using 'object' as the external ID
             self.engine.execute(
                 self.graph,
                 f"MERGE (s:{structure_graph_label} {{object: $obj}})", 
-                {"obj": evidence.object}
+                {"obj": evidence_object}
             )
 
             # Create Measurements
-            for meas in evidence.measurements:
-                meas_params = meas.model_dump(exclude_none=True)
-                meas_params.update({"obj": evidence.object, "aid": assertion_id})
+            for meas in evidence_measurements:
+                # meas is a dict with key, value, and optional fields
+                meas_params = {k: v for k, v in meas.items() if v is not None}
+                meas_params.update({"obj": evidence_object, "aid": assertion_id})
                 
                 prop_clauses = ["key: $key", "value: $value"]
                 for optional_key in ["unit", "confidence", "confidence_type", "timestamp"]:
@@ -113,14 +151,13 @@ class GraphController:
 
         # --- Step 4: Create Entity (Shell) ---
         # We only set the immutable ID (db_id). All other props come from cache recalculation.
-        # We use payload.ref_id as the immutable DB ID.
-        e_params = {"eid": payload.ref_id, "aid": assertion_id}
+        e_params = {"eid": ref_id, "aid": assertion_id}
         
         create_res = self.engine.execute(
             self.graph,
             f"""
             MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
-            CREATE (e:{payload.kind} {{id: $eid}})
+            CREATE (e:{kind} {{id: $eid}})
             CREATE (a)-[:{vocab.GENERATED}]->(e)
             RETURN e.id as db_id, id(e) as graph_id
             """, 
@@ -131,23 +168,25 @@ class GraphController:
         graph_id = create_res[0]['graph_id']
         
         # --- Step 5: Link Entity -> Evidence ---
-        for evidence in payload.supporting_evidence:
-            g_label = IDENTIFIER_MAP.get(evidence.identifier, "Structure")
+        for evidence in supporting_evidence:
+            evidence_identifier = evidence.get("identifier", "Structure")
+            evidence_object = evidence.get("object")
+            g_label = IDENTIFIER_MAP.get(evidence_identifier, "Structure")
             self.engine.execute(
                 self.graph,
                 f"""
-                MATCH (e:{payload.kind}) WHERE id(e) = $eid
+                MATCH (e:{kind}) WHERE id(e) = $eid
                 MATCH (s:{g_label} {{object: $obj}})
                 MERGE (s)-[:{vocab.INFORMS}]->(e)
                 """, 
-                {"eid": graph_id, "obj": evidence.object}
+                {"eid": graph_id, "obj": evidence_object}
             )
 
         # --- Step 6: Recalculate Cached Properties ---
         # This is where the magic happens: Properties flow from Evidence -> Entity
-        self._recalculate_entity(graph_id, payload.kind, effective_schema)
+        self._recalculate_entity(graph_id, kind, effective_schema)
 
-        return EntityCreationResult(ref_id=payload.ref_id, db_id=db_id, graph_id=graph_id)
+        return EntityCreationResult(ref_id=ref_id, db_id=db_id, graph_id=graph_id)
 
     def _recalculate_entity(self, graph_id: int, label: str, schema: GraphDefinitionModel):
         """

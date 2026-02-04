@@ -5,13 +5,12 @@ from typing import List
 from kante.types import Info
 
 from api.types import Measurement, measurement_from_response
-from api.context import get_controller_from_context
+from api.context import get_controller_for_node_id
 
 
 def measurements_for_structure(
     info: Info,
-    identifier: str,
-    object: str,
+    structure_id: str,
 ) -> List[Measurement]:
     """
     Fetch all measurements attached to a structure.
@@ -24,7 +23,7 @@ def measurements_for_structure(
     Returns:
         List of Measurement objects
     """
-    controller = get_controller_from_context(info)
+    controller = get_controller_for_node_id(structure_id, info)
     responses = controller.get_measurements_for_structure(
         identifier=identifier,
         structure_object=object,

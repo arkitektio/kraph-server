@@ -13,6 +13,7 @@ from api.types import (
 )
 from api.inputs import (
     EntityCreationInput,
+    RecalculateEntityInput,
     StructureCreationInput,
     AddMeasurementInput,
     LinkStructureInput,
@@ -42,7 +43,8 @@ class Mutation:
         Create a new entity with optional supporting evidence structures.
         
         Properties are automatically derived from the evidence according to
-        the graph schema rules.
+        the graph schema rules. Provenance (subject, app_id) is automatically
+        derived from the authenticated request context.
         """
         return entity_mutations.create_entity(info, input)
 
@@ -50,7 +52,7 @@ class Mutation:
     def recalculate_entity(
         self,
         info: Info,
-        entity_id: str,
+        input: RecalculateEntityInput,
     ) -> Entity:
         """
         Force recalculation of an entity's derived properties.
@@ -58,7 +60,7 @@ class Mutation:
         This is useful after batch linking operations where
         recalculate was set to False.
         """
-        return entity_mutations.recalculate_entity(info, entity_id)
+        return entity_mutations.recalculate_entity(info, input)
 
     @strawberry.mutation(description="Create a new standalone structure")
     def create_structure(
