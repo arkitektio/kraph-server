@@ -47,13 +47,14 @@ from .types import (
 
 from .inputs import (
     # Pydantic-validated inputs
-    MeasurementInputType,
-    StructureReferenceInputType,
-    ProvenanceInputType,
-    EntityCreationInputType,
-    StructureCreationInputType,
-    AddMeasurementInputType,
-    LinkStructureInputType,
+    MeasurementInput,
+    StructureReferenceInput,
+    ProvenanceInput,
+    EntityCreationInput,
+    StructureCreationInput,
+    RelationCreationInput,
+    AddMeasurementInput,
+    LinkStructureInput,
 )
 
 from .queries import Query
@@ -91,13 +92,14 @@ __all__ = [
     "NodeSubtype",
     "EdgeSubtype",
     # Inputs (Pydantic-validated)
-    "MeasurementInputType",
-    "StructureReferenceInputType",
-    "ProvenanceInputType",
-    "EntityCreationInputType",
-    "StructureCreationInputType",
-    "AddMeasurementInputType",
-    "LinkStructureInputType",
+    "MeasurementInput",
+    "StructureReferenceInput",
+    "ProvenanceInput",
+    "EntityCreationInput",
+    "StructureCreationInput",
+    "RelationCreationInput",
+    "AddMeasurementInput",
+    "LinkStructureInput",
     # Schema components
     "Mutation",
     "Query",

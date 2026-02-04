@@ -4,14 +4,14 @@ Measurement mutation resolvers.
 from kante.types import Info
 
 from api.types import Measurement, measurement_from_response
-from api.inputs import AddMeasurementInputType
+from api.inputs import AddMeasurementInput
 from api.context import get_controller_from_context
 from graph_engine import input_models
 
 
 def add_measurement(
     info: Info,
-    input: AddMeasurementInputType,
+    input: AddMeasurementInput,
 ) -> Measurement:
     """
     Add a measurement to an existing structure.
@@ -20,7 +20,7 @@ def add_measurement(
     
     Args:
         info: Strawberry Info context
-        input: AddMeasurementInputType
+        input: AddMeasurementInput
         
     Returns:
         Created Measurement object

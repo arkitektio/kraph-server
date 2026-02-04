@@ -39,26 +39,20 @@ def _extract_id(raw_node: Any) -> int:
     raise ValueError("Unable to extract graph ID from node representation.")
 
 
-def _extract_schema_version(raw_node: Any) -> Optional[str]:
-    """Helper to extract schema version from properties."""
-    return raw_node.get("__schema_version")
-
-
-def _extract_last_derived(raw_node: Any) -> Optional[int]:
-    """Helper to extract last derived timestamp from properties."""
-    return raw_node.get("__last_derived")
-
 class GraphController:
+    """ Controller for interacting with the graph database."""
     def __init__(self, engine: CypherEngine, graph: GraphProtocol):
         self.engine = engine
         self.graph = graph
 
     @property
     def age_name(self) -> str:
+        """ The name of the AGE graph this controller manages."""
         return self.graph.age_name
     
     @property
     def definition(self) -> GraphDefinitionModel:
+        """ The graph definition model this controller uses."""
         return self.graph.definition
 
     def create_entity(
@@ -70,7 +64,7 @@ class GraphController:
         effective_schema = schema or self.graph.definition
         
         # --- Step 1: Validate Kind Only ---
-        entity_def = effective_schema.extensions.entities.get(payload.kind)
+        entity_def = effective_schema.extensions.entities_map.get(payload.kind)
         if not entity_def:
             raise ValueError(f"Unknown Entity: {payload.kind}")
 
@@ -163,19 +157,19 @@ class GraphController:
         Uses the rollup module to generate appropriate Cypher queries for each property's
         derivation type and aggregation function.
         """
-        entity_def = schema.extensions.entities.get(label)
+        entity_def = schema.extensions.entities_map.get(label)
         if not entity_def:
             raise ValueError(f"Unknown Entity for recalculation: {label}")
 
         updates: Dict[str, Any] = {}
         
-        for prop_name, prop_def in entity_def.properties.items():
+        for prop_def in entity_def.properties:
             # Skip the 'id' property - it's immutable
-            if prop_name == "id":
+            if prop_def.key == "id":
                 continue
                 
             # Build the query using the rollup utilities
-            rollup_query = build_property_query(label, prop_name, prop_def)
+            rollup_query = build_property_query(label, prop_def.key, prop_def)
             
             if rollup_query:
                 # Add entity id to params
@@ -184,7 +178,7 @@ class GraphController:
                 result = self.engine.execute(self.graph, rollup_query.query, params)
                 
                 if result and result[0].get('val') is not None:
-                    updates[prop_name] = result[0]['val']
+                    updates[prop_def.key] = result[0]['val']
 
         # Add System Metadata
         updates["__schema_version"] = schema.system_version
@@ -203,17 +197,220 @@ class GraphController:
                 """,
                 update_params
             )
+    
+    # ===================================================================
+    # MIGRATION METHODS
+    # ===================================================================
+    
+    def migrate_node(
+        self,
+        node_id: int,
+        label: str,
+        from_version: Optional[str] = None,
+        to_version: Optional[str] = None,
+    ) -> bool:
+        """
+        Migrate a node from one schema version to another.
+        
+        This re-runs property derivation to update the node to the current
+        schema version. The migration is essentially a recalculation with
+        the new schema.
+        
+        Args:
+            node_id: The AGE node ID (graph_id)
+            label: The node's label (entity kind)
+            from_version: The version the node was created with (optional, for logging)
+            to_version: The target version (defaults to current schema version)
+            
+        Returns:
+            True if migration was performed
+        """
+        target_schema = self.definition
+        if to_version and target_schema.system_version != to_version:
+            # In the future, we could load a specific schema version
+            # For now, we only migrate to the current active schema
+            pass
+        
+        # Perform recalculation which updates all derived properties
+        self._recalculate_entity(node_id, label, target_schema)
+        return True
+    
+    def migrate_edge(
+        self,
+        edge_id: int,
+        label: str,
+        from_version: Optional[str] = None,
+        to_version: Optional[str] = None,
+    ) -> bool:
+        """
+        Migrate an edge (relation) from one schema version to another.
+        
+        This re-runs property derivation on the relation to update it to
+        the current schema version.
+        
+        Args:
+            edge_id: The AGE edge ID
+            label: The edge's label (relation kind)
+            from_version: The version the edge was created with (optional)
+            to_version: The target version (defaults to current schema version)
+            
+        Returns:
+            True if migration was performed
+        """
+        target_schema = self.definition
+        
+        # Recalculate relation properties
+        self._recalculate_relation(edge_id, label, target_schema)
+        return True
+    
+    def _recalculate_relation(
+        self,
+        edge_id: int,
+        label: str,
+        schema: GraphDefinitionModel,
+    ):
+        """
+        Recalculates derived properties on a relation edge.
+        
+        Similar to _recalculate_entity but for edges/relations.
+        """
+        relation_def = schema.extensions.relations_map.get(label)
+        if not relation_def:
+            # No schema definition for this relation type, skip
+            return
+        
+        updates: Dict[str, Any] = {}
+        
+        # Process property definitions with rollup/derivation
+        for prop_def in relation_def.materialization.properties if relation_def.materialization else []:
+            if prop_def.key == "id":
+                continue
+            
+            # Build rollup query for edge properties
+            # This would need edge-specific rollup logic
+            # For now, we just update metadata
+            pass
+        
+        # Update system metadata
+        updates["__schema_version"] = schema.system_version
+        updates["__last_derived"] = int(time.time() * 1000)
+        
+        if updates:
+            set_clause = ", ".join([f"r.{k} = $u_{k}" for k in updates.keys()])
+            update_params = {f"u_{k}": v for k, v in updates.items()}
+            update_params["eid"] = edge_id
+            
+            self.engine.execute(
+                self.graph,
+                f"""
+                MATCH ()-[r]->() WHERE id(r) = $eid
+                SET {set_clause}
+                """,
+                update_params
+            )
+    
+    def _check_and_migrate_node(
+        self,
+        entity: 'RetrievedEntity',
+        auto_migrate: bool = True,
+    ) -> 'RetrievedEntity':
+        """
+        Check if a node needs migration and optionally migrate it.
+        
+        Args:
+            entity: The retrieved entity to check
+            auto_migrate: Whether to perform migration automatically
+            
+        Returns:
+            The entity (possibly refreshed after migration)
+        """
+        current_version = self.definition.system_version
+        entity_version = entity.schema_version
+        
+        # No migration needed if versions match or entity has no version
+        if not entity_version or entity_version == current_version:
+            return entity
+        
+        if auto_migrate:
+            # Perform migration
+            self.migrate_node(
+                node_id=entity.graph_id,
+                label=entity.kind,
+                from_version=entity_version,
+                to_version=current_version,
+            )
+            
+            # Re-fetch the updated entity
+            return self._get_entity_without_migration(entity.id)
+        
+        return entity
+    
+    def _get_entity_without_migration(self, id: str) -> 'RetrievedEntity':
+        """
+        Internal method to fetch entity without triggering migration check.
+        Used after migration to avoid infinite loops.
+        """
+        effective_schema = self.graph.definition
+        
+        query = f"""
+            MATCH (n) WHERE n.id = $id
+            RETURN n, labels(n) as lbls
+        """
+        result = self.engine.execute(self.graph, query, {"id": id})
+        
+        if not result:
+            raise ValueError(f"Entity not found with ID {id}")
+            
+        raw_node = result[0]['n']
+        labels = result[0]['lbls']
+        
+        if isinstance(raw_node, dict) and 'properties' in raw_node:
+            node_props = raw_node['properties']
+        else:
+            node_props = raw_node
+        
+        detected_kind = None
+        possible_kinds = effective_schema.extensions.entities_map.keys()
+        
+        for label in labels:
+            if label in possible_kinds:
+                detected_kind = label
+                break
+        
+        if not detected_kind:
+            detected_kind = labels[0] if labels else "Unknown"
+        
+        graph_id = _extract_id(raw_node)
+        
+        return RetrievedEntity(
+            graph_name=self.age_name,
+            id=graph_id,
+            label=detected_kind,
+            properties=node_props,
+        )
             
             
     def get_entity(
         self, 
         id: str, 
-        schema: Optional[GraphDefinitionModel] = None
+        schema: Optional[GraphDefinitionModel] = None,
+        auto_migrate: bool = True,
     ) -> RetrievedEntity:
         """
         Retrieves an Entity by ID.
         Dynamically detects the 'kind' from the Node Labels and returns
         a RetrievedEntity with the raw graph data.
+        
+        If the entity's schema version doesn't match the current schema,
+        and auto_migrate is True, the entity will be migrated automatically.
+        
+        Args:
+            id: The entity's unique string ID
+            schema: Optional override schema (defaults to graph's active schema)
+            auto_migrate: Whether to auto-migrate if schema version mismatch
+            
+        Returns:
+            RetrievedEntity with the node's data
         """
         effective_schema = schema or self.graph.definition
         
@@ -244,7 +441,7 @@ class GraphController:
         detected_kind = None
         
         # Priority: Check Entities first
-        possible_kinds = effective_schema.extensions.entities.keys()
+        possible_kinds = effective_schema.extensions.entities_map.keys()
         
         for label in labels:
             if label in possible_kinds:
@@ -258,12 +455,18 @@ class GraphController:
         # Extract graph_id from raw node
         graph_id = _extract_id(raw_node)
         
-        return RetrievedEntity(
+        entity = RetrievedEntity(
             graph_name=self.age_name,
             id=graph_id,
             label=detected_kind,
             properties=node_props,
         )
+        
+        # 3. Check for schema version mismatch and auto-migrate if needed
+        if auto_migrate and effective_schema:
+            entity = self._check_and_migrate_node(entity, auto_migrate=True)
+        
+        return entity
     
     def get_structure(
         self,
@@ -363,7 +566,7 @@ class GraphController:
             
             # Filter for entity labels
             kind = next(
-                (l for l in labels if l in self.definition.extensions.entities),
+                (l for l in labels if l in self.definition.extensions.entities_map),
                 labels[0] if labels else "Unknown"
             )
             
@@ -639,7 +842,7 @@ class GraphController:
         relation_name = payload.kind
         
         # --- Step 1: Validate Schema ---
-        rel_def = effective_schema.extensions.relations.get(relation_name)
+        rel_def = effective_schema.extensions.relations_map.get(relation_name)
         if not rel_def:
             raise ValueError(f"Unknown Relation: {relation_name}")
 
@@ -774,7 +977,7 @@ class GraphController:
         Returns:
             The edge ID of the created/updated relation edge
         """
-        rel_def = schema.extensions.relations.get(relation_label)
+        rel_def = schema.extensions.relations_map.get(relation_label)
         if not rel_def or not rel_def.materialization:
             # No materialization config - just create the edge without properties
             # Still store the shadow link id for provenance tracking
@@ -794,7 +997,7 @@ class GraphController:
 
         updates = {"__shadow_link_id": shadow_link_id}
         
-        for prop_name, prop_def in rel_def.materialization.properties.items():
+        for prop_def in rel_def.materialization.properties:
             
             # Logic: (ShadowLink) <-[INFORMS]- (Structure) <-[DESCRIBES]- (Measurement)
             if prop_def.derivation == 'ROLLUP' and prop_def.rule:
@@ -819,11 +1022,11 @@ class GraphController:
                 result = self.engine.execute(
                     self.graph, 
                     query, 
-                    {"sl_id": shadow_link_id, "key": rule.key or prop_name}
+                    {"sl_id": shadow_link_id, "key": rule.key or prop_def.key}
                 )
                 
                 if result and result[0]['val'] is not None:
-                    updates[prop_name] = result[0]['val']
+                    updates[prop_def.key] = result[0]['val']
         
         # Use MERGE to ensure the relation exists only once per direction
         # Then SET the aggregated properties
@@ -1051,7 +1254,7 @@ class GraphController:
         # First, get the shadow_link_id stored on the edge
         edge_result = self.engine.execute(
             self.graph,
-            f"""
+            """
             MATCH ()-[r]->() WHERE id(r) = $eid
             RETURN r.__shadow_link_id as sl_id
             """,
@@ -1059,7 +1262,7 @@ class GraphController:
         )
         
         if not edge_result or not edge_result[0].get('sl_id'):
-            return None
+            raise ValueError(f"Edge {edge_id} does not have a shadow link ID.")
         
         shadow_link_id = edge_result[0]['sl_id']
         

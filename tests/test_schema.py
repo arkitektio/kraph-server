@@ -13,14 +13,14 @@ def test_fixture_integrity(bio_graph_schema):
     assert bio_graph_schema.system_version == "1.0"
     
     # Check Structure
-    assert "ROI" in bio_graph_schema.extensions.structures
+    assert "ROI" in bio_graph_schema.extensions.structures_map
     
     # Check Rollup Logic
-    ais = bio_graph_schema.extensions.entities["AIS"]
-    assert ais.properties["avg_length"].rule.aggregation == models.AggregationFunction.MEAN
+    ais = bio_graph_schema.extensions.entities_map["AIS"]
+    assert ais.properties_map["avg_length"].rule.aggregation == models.AggregationFunction.MEAN
     
     # Check Relation Materialization
-    rel = bio_graph_schema.extensions.relations["IS_CONNECTED_TO"]
+    rel = bio_graph_schema.extensions.relations_map["IS_CONNECTED_TO"]
     assert rel.materialization.backing_link_type == "link_ais_soma"
     
 def test_validation_logic_works():
@@ -30,6 +30,7 @@ def test_validation_logic_works():
     # 1. Test Missing Rollup Rule
     with pytest.raises(ValueError, match="must have a 'rule' configuration"):
         models.PropertyDefinition(
+            key="test",
             type=models.PropertyType.FLOAT,
             derivation=models.DerivationType.ROLLUP,
             rule=None # Missing!
@@ -40,17 +41,19 @@ def test_validation_logic_works():
     from pydantic import ValidationError
     with pytest.raises((ValueError, ValidationError)):
         models.RelationDefinition(
+            key="TEST_REL",
             source="AIS",
             target="Soma",
             materialization=models.MaterializationConfig(
                 backing_link_type="foo",
                 desired_evidence=[],
-                properties={
-                    "bad_prop": models.PropertyDefinition(
+                properties=[
+                    models.PropertyDefinition(
+                        key="bad_prop",
                         type=models.PropertyType.FLOAT,
                         derivation=models.DerivationType.ROLLUP,
                         rule=None # Missing!
                     )
-                }
+                ]
             )
         )

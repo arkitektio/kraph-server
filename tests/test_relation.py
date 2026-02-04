@@ -29,21 +29,25 @@ def relation_schema():
     return models.GraphDefinitionModel(
         system_version="1.0",
         extensions=models.GraphExtensions(
-            structures={
-                "ROI": models.StructureDefinition(
+            structures=[
+                models.StructureDefinition(
+                    key="ROI",
                     description="Region of Interest",
                 ),
-            },
-            entities={
-                "Neuron": models.EntityDefinition(
-                    properties={}
+            ],
+            entities=[
+                models.EntityDefinition(
+                    key="Neuron",
+                    properties=[]
                 ),
-                "Synapse": models.EntityDefinition(
-                    properties={}
+                models.EntityDefinition(
+                    key="Synapse",
+                    properties=[]
                 )
-            },
-            relations={
-                "SYNAPSES_WITH": models.RelationDefinition(
+            ],
+            relations=[
+                models.RelationDefinition(
+                    key="SYNAPSES_WITH",
                     source="Neuron",
                     target="Neuron",
                     cardinality="N:N",
@@ -53,8 +57,9 @@ def relation_schema():
                             models.EvidenceRequirement(key="overlap_score", unit="score"),
                             models.EvidenceRequirement(key="distance", unit="um"),
                         ],
-                        properties={
-                            "avg_overlap": models.PropertyDefinition(
+                        properties=[
+                            models.PropertyDefinition(
+                                key="avg_overlap",
                                 type=models.PropertyType.FLOAT,
                                 derivation=models.DerivationType.ROLLUP,
                                 rule=models.DerivationRule(
@@ -63,7 +68,8 @@ def relation_schema():
                                     aggregation=models.AggregationFunction.MEAN
                                 )
                             ),
-                            "total_confidence": models.PropertyDefinition(
+                            models.PropertyDefinition(
+                                key="total_confidence",
                                 type=models.PropertyType.FLOAT,
                                 derivation=models.DerivationType.ROLLUP,
                                 rule=models.DerivationRule(
@@ -72,7 +78,8 @@ def relation_schema():
                                     aggregation=models.AggregationFunction.SUM
                                 )
                             ),
-                            "min_distance": models.PropertyDefinition(
+                            models.PropertyDefinition(
+                                key="min_distance",
                                 type=models.PropertyType.FLOAT,
                                 derivation=models.DerivationType.ROLLUP,
                                 rule=models.DerivationRule(
@@ -81,7 +88,8 @@ def relation_schema():
                                     aggregation=models.AggregationFunction.MIN
                                 )
                             ),
-                            "evidence_count": models.PropertyDefinition(
+                            models.PropertyDefinition(
+                                key="evidence_count",
                                 type=models.PropertyType.INTEGER,
                                 derivation=models.DerivationType.ROLLUP,
                                 rule=models.DerivationRule(
@@ -90,11 +98,11 @@ def relation_schema():
                                     aggregation=models.AggregationFunction.COUNT
                                 )
                             )
-                        }
+                        ]
                     )
                 )
-            },
-            events={}
+            ],
+            events=[]
         )
     )
 

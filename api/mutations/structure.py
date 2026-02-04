@@ -4,13 +4,13 @@ Structure mutation resolvers.
 from kante.types import Info
 
 from api.types import Structure, LinkStructureResult, structure_from_response, entity_from_response
-from api.inputs import StructureCreationInputType, LinkStructureInputType
+from api.inputs import StructureCreationInput, LinkStructureInput
 from api.context import get_controller_from_context
 
 
 def create_structure(
     info: Info,
-    input: StructureCreationInputType,
+    input: StructureCreationInput,
 ) -> Structure:
     """
     Create a new structure (or return existing if already exists).
@@ -20,7 +20,7 @@ def create_structure(
     
     Args:
         info: Strawberry Info context
-        input: StructureCreationInputType (pydantic-validated)
+        input: StructureCreationInput (pydantic-validated)
         
     Returns:
         Structure object
@@ -40,7 +40,7 @@ def create_structure(
 
 def link_structure_to_entity(
     info: Info,
-    input: LinkStructureInputType,
+    input: LinkStructureInput,
 ) -> LinkStructureResult:
     """
     Link an existing structure to an existing entity.
@@ -53,7 +53,7 @@ def link_structure_to_entity(
     
     Args:
         info: Strawberry Info context
-        input: LinkStructureInputType
+        input: LinkStructureInput
         
     Returns:
         LinkStructureResult with updated entity and structure

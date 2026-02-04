@@ -110,26 +110,31 @@ def mock_engine():
 def bio_graph_schema():
     """
     Fixture defined using EXPLICIT Pydantic Model constructors.
+    Uses list-based definitions with key attributes.
     """
     return models.GraphDefinitionModel(
         system_version="1.0",
         extensions=models.GraphExtensions(
             
             # --- 1. STRUCTURES ---
-            structures={
-                "ROI": models.StructureDefinition(
+            structures=[
+                models.StructureDefinition(
+                    key="ROI",
                     description="Region of Interest",
                 ),
-                "ToldYouSo": models.StructureDefinition(
+                models.StructureDefinition(
+                    key="ToldYouSo",
                     description="Evidence structure for assertions",
                 )
-            },
+            ],
 
             # --- 2. ENTITIES ---
-            entities={
-                "AIS": models.EntityDefinition(
-                    properties={
-                        "avg_length": models.PropertyDefinition(
+            entities=[
+                models.EntityDefinition(
+                    key="AIS",
+                    properties=[
+                        models.PropertyDefinition(
+                            key="avg_length",
                             type=models.PropertyType.FLOAT,
                             derivation=models.DerivationType.ROLLUP,
                             rule=models.DerivationRule(
@@ -138,7 +143,8 @@ def bio_graph_schema():
                                 aggregation=models.AggregationFunction.MEAN
                             )
                         ),
-                        "name": models.PropertyDefinition(
+                        models.PropertyDefinition(
+                            key="name",
                             type=models.PropertyType.STRING,
                             derivation=models.DerivationType.ROLLUP,
                             rule=models.DerivationRule(
@@ -147,11 +153,13 @@ def bio_graph_schema():
                                 aggregation=models.AggregationFunction.LATEST
                             )
                         )
-                    }
+                    ]
                 ),
-                "Soma": models.EntityDefinition(
-                    properties={
-                        "centroid": models.PropertyDefinition(
+                models.EntityDefinition(
+                    key="Soma",
+                    properties=[
+                        models.PropertyDefinition(
+                            key="centroid",
                             type=models.PropertyType.POINT_3D,
                             derivation=models.DerivationType.LATEST,
                             rule=models.DerivationRule(
@@ -159,38 +167,40 @@ def bio_graph_schema():
                                 key="centroid"
                             )
                         )
-                    }
+                    ]
                 ),
-                "Cell": models.EntityDefinition(
-                    properties={
-                        "id": models.PropertyDefinition(type=models.PropertyType.STRING),
-                        "mitosis_count": models.PropertyDefinition(
+                models.EntityDefinition(
+                    key="Cell",
+                    properties=[
+                        models.PropertyDefinition(key="id", type=models.PropertyType.STRING),
+                        models.PropertyDefinition(
+                            key="mitosis_count",
                             type=models.PropertyType.INTEGER,
                             derivation=models.DerivationType.ROLLUP,
                             rule=models.DerivationRule(
                                 key=None,
                                 source_node="Mitosis",
-                                relationship="INPUT_TO",
                                 aggregation=models.AggregationFunction.COUNT
                             )
                         ),
-                        "ais_length_summary": models.PropertyDefinition(
+                        models.PropertyDefinition(
+                            key="ais_length_summary",
                             type=models.PropertyType.FLOAT,
                             derivation=models.DerivationType.ROLLUP,
                             rule=models.DerivationRule(
                                 source_node="AIS",
-                                relationship="PART_OF",
                                 key="avg_length",
                                 aggregation=models.AggregationFunction.LATEST
                             )
                         )
-                    }
+                    ]
                 )
-            },
+            ],
 
             # --- 3. RELATIONS ---
-            relations={
-                "IS_CONNECTED_TO": models.RelationDefinition(
+            relations=[
+                models.RelationDefinition(
+                    key="IS_CONNECTED_TO",
                     source="AIS",
                     target="Soma",
                     cardinality="1:1",
@@ -200,8 +210,9 @@ def bio_graph_schema():
                             models.EvidenceRequirement(key="vector_alignment", unit="score_0_1"),
                             models.EvidenceRequirement(key="proximity", unit="um")
                         ],
-                        properties={
-                            "distance": models.PropertyDefinition(
+                        properties=[
+                            models.PropertyDefinition(
+                                key="distance",
                                 type=models.PropertyType.FLOAT,
                                 derivation=models.DerivationType.ROLLUP,
                                 rule=models.DerivationRule(
@@ -210,22 +221,25 @@ def bio_graph_schema():
                                     aggregation=models.AggregationFunction.EUCLIDEAN_RANGE
                                 )
                             )
-                        }
+                        ]
                     )
                 ),
-                "PART_OF": models.RelationDefinition(
+                models.RelationDefinition(
+                    key="PART_OF",
                     source=["AIS", "Soma"],
                     target="Cell"
                 )
-            },
+            ],
 
             # --- 4. EVENTS ---
-            events={
-                "Mitosis": models.EventDefinition(
+            events=[
+                models.EventDefinition(
+                    key="Mitosis",
                     inputs=["Cell"],
                     outputs=["Cell", "Cell"],
-                    properties={
-                        "cell_count": models.PropertyDefinition(
+                    properties=[
+                        models.PropertyDefinition(
+                            key="cell_count",
                             type=models.PropertyType.INTEGER,
                             derivation=models.DerivationType.ROLLUP,
                             rule=models.DerivationRule(
@@ -234,9 +248,9 @@ def bio_graph_schema():
                                 aggregation=models.AggregationFunction.COUNT
                             )
                         )
-                    }
+                    ]
                 )
-            }
+            ]
         )
     )
 
@@ -265,15 +279,16 @@ def minimal_schema():
     return models.GraphDefinitionModel(
         system_version="1.0",
         extensions=models.GraphExtensions(
-            entities={
-                "Person": models.EntityDefinition(
+            entities=[
+                models.EntityDefinition(
+                    key="Person",
                     description="A person",
-                    properties={
-                        "name": models.PropertyDefinition(type=models.PropertyType.STRING),
-                        "age": models.PropertyDefinition(type=models.PropertyType.INTEGER),
-                    }
+                    properties=[
+                        models.PropertyDefinition(key="name", type=models.PropertyType.STRING),
+                        models.PropertyDefinition(key="age", type=models.PropertyType.INTEGER),
+                    ]
                 )
-            }
+            ]
         )
     )
 

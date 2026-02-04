@@ -6,16 +6,26 @@ Assembles all mutation resolvers into the root Mutation type.
 import strawberry
 from kante.types import Info
 
-from api.types import Entity, Structure, Measurement, EntityCreationResult, LinkStructureResult
+from api.types import (
+    Entity, Structure, Measurement, EntityCreationResult, 
+    LinkStructureResult, RelationCreationResult, Relation,
+    SchemaValidationResult, SetSchemaResult,
+)
 from api.inputs import (
-    EntityCreationInputType,
-    StructureCreationInputType,
-    AddMeasurementInputType,
-    LinkStructureInputType,
+    EntityCreationInput,
+    StructureCreationInput,
+    AddMeasurementInput,
+    LinkStructureInput,
+    RelationCreationInput,
+    ValidateSchemaInput,
+    SetSchemaInput,
+    ActivateSchemaInput,
 )
 from . import entity as entity_mutations
 from . import structure as structure_mutations
 from . import measurement as measurement_mutations
+from . import relation as relation_mutations
+from . import schema as schema_mutations
 
 
 @strawberry.type(description="Graph Engine Mutations")
@@ -26,7 +36,7 @@ class Mutation:
     def create_entity(
         self,
         info: Info,
-        input: EntityCreationInputType,
+        input: EntityCreationInput,
     ) -> EntityCreationResult:
         """
         Create a new entity with optional supporting evidence structures.
@@ -54,7 +64,7 @@ class Mutation:
     def create_structure(
         self,
         info: Info,
-        input: StructureCreationInputType,
+        input: StructureCreationInput,
     ) -> Structure:
         """
         Create a new structure (or return existing if already exists).
@@ -68,7 +78,7 @@ class Mutation:
     def add_measurement(
         self,
         info: Info,
-        input: AddMeasurementInputType,
+        input: AddMeasurementInput,
     ) -> Measurement:
         """
         Add a measurement to an existing structure.
@@ -81,7 +91,7 @@ class Mutation:
     def link_structure_to_entity(
         self,
         info: Info,
-        input: LinkStructureInputType,
+        input: LinkStructureInput,
     ) -> LinkStructureResult:
         """
         Link an existing structure to an existing entity.
@@ -93,3 +103,69 @@ class Mutation:
         Set recalculate=False for batch operations.
         """
         return structure_mutations.link_structure_to_entity(info, input)
+
+    @strawberry.mutation(description="Create a new relation between two entities")
+    def create_relation(
+        self,
+        info: Info,
+        input: RelationCreationInput,
+    ) -> RelationCreationResult:
+        """
+        Create a new relation between two entities with optional supporting evidence.
+        
+        Relations are edges between entities that can be backed by evidence
+        (e.g., ROI overlaps that prove a synapse connection). Properties on
+        the relation are automatically derived from the evidence according
+        to the graph schema's materialization rules.
+        
+        A relation between the same source and target (in the same direction)
+        will use MERGE semantics - adding more evidence will update the
+        existing relation's materialized properties.
+        """
+        return relation_mutations.create_relation(info, input)
+
+    # ===========================================
+    # SCHEMA MUTATIONS
+    # ===========================================
+
+    @strawberry.mutation(description="Validate a schema definition without saving")
+    def validate_schema(
+        self,
+        info: Info,
+        input: ValidateSchemaInput,
+    ) -> SchemaValidationResult:
+        """
+        Validate a schema definition and return pydantic-style errors.
+        
+        Use this to check a schema before committing it. This does not
+        save the schema to the database.
+        """
+        return schema_mutations.validate_schema(info, input)
+
+    @strawberry.mutation(description="Create and optionally activate a new schema version")
+    def set_schema(
+        self,
+        info: Info,
+        input: SetSchemaInput,
+    ) -> SetSchemaResult:
+        """
+        Create a new schema version for the current graph.
+        
+        The schema is validated before saving. By default, if no active
+        schema exists, the new schema becomes active. Use activate=True
+        to always activate, or activate=False to create without activating.
+        """
+        return schema_mutations.set_schema(info, input)
+
+    @strawberry.mutation(description="Activate an existing schema version")
+    def activate_schema(
+        self,
+        info: Info,
+        input: ActivateSchemaInput,
+    ) -> SetSchemaResult:
+        """
+        Make a specific schema version the active one for its graph.
+        
+        All previously active schemas for the same graph are deactivated.
+        """
+        return schema_mutations.activate_schema(info, input)

@@ -1,6 +1,7 @@
 from enum import Enum
 from typing import List, Dict, Optional, Union, Literal
-from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict, computed_field
+from functools import cached_property
 
 # --- Enums for Strict Typing ---
 
@@ -101,6 +102,9 @@ class PropertyDefinition(BaseModel):
     """
     Defines a single field on a Node, Event, or Relation.
     """
+    model_config = ConfigDict(frozen=True)
+    
+    key: str = Field(..., description="The unique key/name for this property")
     type: PropertyType
     unit: Optional[str] = None
     description: Optional[str] = None
@@ -144,13 +148,22 @@ class PropertyDefinition(BaseModel):
 # --- 2. Node Definitions ---
 
 
-
 class NodeDefinition(BaseModel):
+    """Base class for node definitions."""
+    model_config = ConfigDict(frozen=True)
+    
+    key: str = Field(..., description="The unique key/name for this node type")
     description: Optional[str] = None
 
 
 class EntityDefinition(NodeDefinition):
-    properties: Dict[str, PropertyDefinition] = {}
+    """Definition of an Entity (logical aggregation like a Cell)."""
+    properties: List[PropertyDefinition] = Field(default_factory=list, description="Properties on this entity")
+    
+    @cached_property
+    def properties_map(self) -> Dict[str, PropertyDefinition]:
+        """Cached dict lookup for properties by key."""
+        return {p.key: p for p in self.properties}
 
 
 class StructureDefinition(NodeDefinition):
@@ -164,6 +177,9 @@ class StructureDefinition(NodeDefinition):
 # --- 3. Edge Definitions (Relation Materialization) ---
 
 class EvidenceRequirement(BaseModel):
+    """A required measurement on evidence for relation materialization."""
+    model_config = ConfigDict(frozen=True)
+    
     key: str
     unit: str
     description: Optional[str] = None
@@ -172,11 +188,22 @@ class MaterializationConfig(BaseModel):
     """
     Rules for turning a TemporalLink (Evidence) into an Edge (Relation).
     """
+    model_config = ConfigDict(frozen=True)
+    
     backing_link_type: str = Field(..., description="The internal label for the Evidence Node (e.g. 'link_ais_soma').")
-    desired_evidence: List[EvidenceRequirement] = Field(..., description="Measurements expected on the backing link.")
-    properties: Dict[str, PropertyDefinition] = {}
+    desired_evidence: List[EvidenceRequirement] = Field(default_factory=list, description="Measurements expected on the backing link.")
+    properties: List[PropertyDefinition] = Field(default_factory=list, description="Properties to derive on the relation")
+    
+    @cached_property
+    def properties_map(self) -> Dict[str, PropertyDefinition]:
+        """Cached dict lookup for properties by key."""
+        return {p.key: p for p in self.properties}
 
 class RelationDefinition(BaseModel):
+    """Definition of a relation (edge) between entities."""
+    model_config = ConfigDict(frozen=True)
+    
+    key: str = Field(..., description="The unique key/name for this relation type")
     source: Union[str, List[str]]
     target: Union[str, List[str]]
     cardinality: Literal["1:1", "1:N", "N:N"] = "1:N"
@@ -188,43 +215,99 @@ class RelationDefinition(BaseModel):
     def validate_materialization_props(self):
         """Ensure materialized edges define how to calculate their properties."""
         if self.materialization:
-            for key, prop in self.materialization.properties.items():
+            for prop in self.materialization.properties:
                 if prop.derivation == DerivationType.ROLLUP and not prop.rule:
-                     raise ValueError(f"Materialized property '{key}' must have a derivation rule.")
+                     raise ValueError(f"Materialized property '{prop.key}' must have a derivation rule.")
         return self
 
 # --- 4. Event Definitions ---
 
 class EventDefinition(BaseModel):
-    inputs: List[str]
-    outputs: List[str]
-    properties: Dict[str, PropertyDefinition] = {}
+    """Definition of an event (spatio-temporal transition)."""
+    model_config = ConfigDict(frozen=True)
+    
+    key: str = Field(..., description="The unique key/name for this event type")
+    inputs: List[str] = Field(default_factory=list)
+    outputs: List[str] = Field(default_factory=list)
+    properties: List[PropertyDefinition] = Field(default_factory=list, description="Properties on this event")
+    
+    @cached_property
+    def properties_map(self) -> Dict[str, PropertyDefinition]:
+        """Cached dict lookup for properties by key."""
+        return {p.key: p for p in self.properties}
 
 # --- 5. The Root Schema ---
 
 class GraphExtensions(BaseModel):
-    structures: Dict[str, StructureDefinition] = Field(default_factory=dict, description="Physical observations (ROIs).")
-    entities: Dict[str, EntityDefinition] = Field(default_factory=dict, description="Logical aggregations (Cells).")
-    relations: Dict[str, RelationDefinition] = Field(default_factory=dict, description="Edges between nodes.")
-    events: Dict[str, EventDefinition] = Field(default_factory=dict, description="Spatio-temporal transitions.")
+    """
+    Container for all type definitions in the graph schema.
+    
+    Uses lists with keyed items for easy GraphQL input serialization.
+    Provides cached dict properties for efficient runtime access.
+    """
+    model_config = ConfigDict(frozen=True)
+    
+    structures: List[StructureDefinition] = Field(default_factory=list, description="Physical observations (ROIs).")
+    entities: List[EntityDefinition] = Field(default_factory=list, description="Logical aggregations (Cells).")
+    relations: List[RelationDefinition] = Field(default_factory=list, description="Edges between nodes.")
+    events: List[EventDefinition] = Field(default_factory=list, description="Spatio-temporal transitions.")
+    
+    # --- Cached Dict Properties for Performance ---
+    
+    @cached_property
+    def structures_map(self) -> Dict[str, StructureDefinition]:
+        """Cached dict lookup for structures by key."""
+        return {s.key: s for s in self.structures}
+    
+    @cached_property
+    def entities_map(self) -> Dict[str, EntityDefinition]:
+        """Cached dict lookup for entities by key."""
+        return {e.key: e for e in self.entities}
+    
+    @cached_property
+    def relations_map(self) -> Dict[str, RelationDefinition]:
+        """Cached dict lookup for relations by key."""
+        return {r.key: r for r in self.relations}
+    
+    @cached_property
+    def events_map(self) -> Dict[str, EventDefinition]:
+        """Cached dict lookup for events by key."""
+        return {e.key: e for e in self.events}
+    
+    @model_validator(mode='after')
+    def validate_unique_keys(self):
+        """Validate that all keys within each category are unique."""
+        def check_duplicates(items: list, category: str):
+            keys = [item.key for item in items]
+            seen = set()
+            for key in keys:
+                if key in seen:
+                    raise ValueError(f"Duplicate {category} key: '{key}'")
+                seen.add(key)
+        
+        check_duplicates(self.structures, "structure")
+        check_duplicates(self.entities, "entity")
+        check_duplicates(self.relations, "relation")
+        check_duplicates(self.events, "event")
+        return self
 
     @model_validator(mode='after')
     def validate_references(self):
         """
         Cross-check that relations refer to existing Node Types.
         """
-        all_nodes = set(self.structures.keys()) | set(self.entities.keys())
+        all_nodes = set(s.key for s in self.structures) | set(e.key for e in self.entities)
         
-        for name, rel in self.relations.items():
+        for rel in self.relations:
             sources = [rel.source] if isinstance(rel.source, str) else rel.source
             targets = [rel.target] if isinstance(rel.target, str) else rel.target
             
             for s in sources:
                 if s not in all_nodes:
-                    raise ValueError(f"Relation '{name}' defines source '{s}' which is not a defined Structure or Entity.")
+                    raise ValueError(f"Relation '{rel.key}' defines source '{s}' which is not a defined Structure or Entity.")
             for t in targets:
                 if t not in all_nodes:
-                    raise ValueError(f"Relation '{name}' defines target '{t}' which is not a defined Structure or Entity.")
+                    raise ValueError(f"Relation '{rel.key}' defines target '{t}' which is not a defined Structure or Entity.")
         return self
     
     @model_validator(mode='after')
@@ -233,17 +316,16 @@ class GraphExtensions(BaseModel):
         Validate that ROLLUP derivations reference valid source nodes/properties
         and that the source property type is compatible with the aggregation function.
         """
-        # Collect all node definitions (structures, entities, events)
+        # Collect all node definitions using the cached maps
         all_node_defs: Dict[str, NodeDefinition] = {}
-        all_node_defs.update(self.structures)
-        all_node_defs.update(self.entities)
+        all_node_defs.update(self.structures_map)
+        all_node_defs.update(self.entities_map)
         
         # Also include events (they have properties too)
-        event_defs: Dict[str, EventDefinition] = dict(self.events)
+        event_defs: Dict[str, EventDefinition] = self.events_map
         
         def validate_property_rollup(
             container_name: str,
-            prop_name: str,
             prop_def: PropertyDefinition,
         ) -> None:
             """Validate a single property's rollup configuration."""
@@ -255,7 +337,7 @@ class GraphExtensions(BaseModel):
             
             if not aggregation:
                 raise ValueError(
-                    f"Property '{prop_name}' on '{container_name}' has ROLLUP derivation "
+                    f"Property '{prop_def.key}' on '{container_name}' has ROLLUP derivation "
                     f"but no aggregation function specified."
                 )
             
@@ -269,7 +351,7 @@ class GraphExtensions(BaseModel):
             # For non-COUNT aggregations, we need a key to aggregate
             if not source_key:
                 raise ValueError(
-                    f"Property '{prop_name}' on '{container_name}' uses '{aggregation.value}' "
+                    f"Property '{prop_def.key}' on '{container_name}' uses '{aggregation.value}' "
                     f"aggregation but no source 'key' is specified."
                 )
             
@@ -280,30 +362,36 @@ class GraphExtensions(BaseModel):
                 
                 if source_def is None:
                     raise ValueError(
-                        f"Property '{prop_name}' on '{container_name}' references "
+                        f"Property '{prop_def.key}' on '{container_name}' references "
                         f"source_node '{source_node}' which does not exist."
                     )
-                
-                
         
         # Validate all entities
-        for entity_name, entity_def in self.entities.items():
-            for prop_name, prop_def in entity_def.properties.items():
-                validate_property_rollup(f"entity:{entity_name}", prop_name, prop_def)
+        for entity_def in self.entities:
+            for prop_def in entity_def.properties:
+                validate_property_rollup(f"entity:{entity_def.key}", prop_def)
         
         # Validate all events
-        for event_name, event_def in self.events.items():
-            for prop_name, prop_def in event_def.properties.items():
-                validate_property_rollup(f"event:{event_name}", prop_name, prop_def)
+        for event_def in self.events:
+            for prop_def in event_def.properties:
+                validate_property_rollup(f"event:{event_def.key}", prop_def)
         
         # Validate materialized relation properties
-        for rel_name, rel_def in self.relations.items():
+        for rel_def in self.relations:
             if rel_def.materialization:
-                for prop_name, prop_def in rel_def.materialization.properties.items():
-                    validate_property_rollup(f"relation:{rel_name}", prop_name, prop_def)
+                for prop_def in rel_def.materialization.properties:
+                    validate_property_rollup(f"relation:{rel_def.key}", prop_def)
         
         return self
 
 class GraphDefinitionModel(BaseModel):
-    system_version: str
-    extensions: GraphExtensions
+    """
+    The root graph schema definition.
+    
+    This model defines all types (entities, structures, relations, events)
+    in a graph database schema.
+    """
+    model_config = ConfigDict(frozen=True)
+    
+    system_version: str = Field(..., description="Semantic version of the schema")
+    extensions: GraphExtensions = Field(..., description="All type definitions")

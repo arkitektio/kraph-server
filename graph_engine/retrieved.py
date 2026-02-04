@@ -440,6 +440,14 @@ class RetrievedEdge:
             k: v for k, v in self.properties.items()
             if k not in RESERVED_PROPERTY_KEYS
         }
+        
+    @property
+    def shadow_link_id(self) -> Optional[int]:
+        """Get the shadow link ID if present (used for structure-entity links)."""
+        val = self.properties.get("__shadow_link_id")
+        if val is None:
+            return None
+        return int(val) if isinstance(val, (int, float, str)) else None
     
     
     # === Hash/Equality ===

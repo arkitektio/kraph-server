@@ -4,14 +4,14 @@ Entity mutation resolvers.
 from kante.types import Info
 
 from api.types import Entity, EntityCreationResult, entity_from_response
-from api.inputs import EntityCreationInputType
+from api.inputs import EntityCreationInput
 from api.context import get_controller_from_context
 from graph_engine import input_models
 
 
 def create_entity(
     info: Info,
-    input: EntityCreationInputType,
+    input: EntityCreationInput,
 ) -> EntityCreationResult:
     """
     Create a new entity with optional supporting evidence structures.
@@ -21,7 +21,7 @@ def create_entity(
     
     Args:
         info: Strawberry Info context
-        input: EntityCreationInputType (pydantic-validated)
+        input: EntityCreationInput (pydantic-validated)
         
     Returns:
         EntityCreationResult with the created entity
