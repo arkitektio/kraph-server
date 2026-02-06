@@ -238,23 +238,38 @@ def bio_graph_schema():
     )
 
 
+@pytest.fixture(scope="function")
+def test_graph(transactional_db, age_engine, bio_graph_schema) -> core_models.Graph:
+    """
+    Create a test graph with the bio_graph schema.
+    
+    This is the standard test graph fixture that materializes a graph
+    from the bio_graph_schema definition, creating all necessary
+    Django models (EntityCategory, RelationCategory, etc.).
+    """
+    return materialize(bio_graph_schema, age_engine, name="test_graph")
+
 
 @pytest.fixture
 def mock_graph_controller(mock_engine, test_graph):
     """Create a graph controller with mock engine and test graph."""
     return GraphController(
         engine=mock_engine, 
-        graph=test_graph,
         subject="test_user",
         app_id="test_app",
     )
 
+
 @pytest.fixture(scope="function")
-def graph_controller(transactional_db, age_engine, test_graph):
-    """Create a graph controller with AGE engine and test graph."""
+def graph_controller(transactional_db, age_engine, test_graph) -> GraphController:
+    """
+    Create a graph controller with AGE engine and test graph.
+    
+    This fixture provides a ready-to-use GraphController instance
+    that is connected to the test graph and AGE engine.
+    """
     return GraphController(
         engine=age_engine, 
-        graph=test_graph,
         subject="test_user",
         app_id="test_app",
     )
@@ -296,12 +311,11 @@ def minimal_schema():
 
 
 @pytest.fixture(scope="function")
-def age_engine(transactional_db, backend_stack, test_graph: GraphProtocol) -> Generator[AgeEngine, None, None]:
+def age_engine(transactional_db, backend_stack) -> Generator[AgeEngine, None, None]:
     """
-    Create an AGE engine with the test graph.
+    Create an AGE engine.
     
     Uses transactional_db to maintain database state across the fixture.
-    The graph is created once and reused.
     """
     from django.db import connections, connection
     

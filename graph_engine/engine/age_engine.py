@@ -149,7 +149,7 @@ class AgeEngine:
             self.execute_raw(f"SELECT * FROM ag_catalog.create_graph('{graph_name}')")
         except Exception as e:
             if "already exists" not in str(e):
-                raise
+                raise e
     
     def drop_graph(self, graph_name: str, cascade: bool = True) -> None:
         """Drop an AGE graph."""

@@ -2,6 +2,7 @@ import pytest
 import uuid
 from graph_engine.controller import GraphController
 from graph_engine import input_models as inputs
+from core import models as core_models
 
 
 def _uid(prefix: str) -> str:
@@ -9,12 +10,13 @@ def _uid(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
 
 
-def test_create_structure(graph_controller: GraphController):
+def test_create_structure(graph_controller: GraphController, bio_graph: core_models.Graph):
     """
     Test creating a simple structure.
     """
     obj_id = _uid("roi_test")
     result = graph_controller.create_structure(
+        graph=bio_graph,
         identifier="@mikro/roi",
         object=obj_id
     )
@@ -24,15 +26,16 @@ def test_create_structure(graph_controller: GraphController):
     assert result.identifier == "@mikro/roi"
     assert result.label == "ROI"
     assert result.graph_id is not None
-    assert result.global_id == f"{graph_controller.age_name}:{result.graph_id}"
+    assert result.global_id == f"{bio_graph.age_name}:{result.graph_id}"
 
 
-def test_create_structure_told_you_so(graph_controller: GraphController):
+def test_create_structure_told_you_so(graph_controller: GraphController, bio_graph: core_models.Graph):
     """
     Test creating a ToldYouSo structure.
     """
     obj_id = _uid("tys_test")
     result = graph_controller.create_structure(
+        graph=bio_graph,
         identifier="told_you_so",
         object=obj_id
     )
@@ -42,21 +45,23 @@ def test_create_structure_told_you_so(graph_controller: GraphController):
     assert result.identifier == "told_you_so"
     assert result.label == "ToldYouSo"
     assert result.graph_id is not None
-    assert result.global_id == f"{graph_controller.age_name}:{result.graph_id}"
+    assert result.global_id == f"{bio_graph.age_name}:{result.graph_id}"
 
 
-def test_create_structure_idempotent(graph_controller: GraphController):
+def test_create_structure_idempotent(graph_controller: GraphController, bio_graph: core_models.Graph):
     """
     Test that creating the same structure twice is idempotent.
     """
     obj_id = _uid("roi_idem")
     
     result1 = graph_controller.create_structure(
+        graph=bio_graph,
         identifier="@mikro/roi",
         object=obj_id
     )
     
     result2 = graph_controller.create_structure(
+        graph=bio_graph,
         identifier="@mikro/roi",
         object=obj_id
     )
@@ -68,6 +73,7 @@ def test_create_structure_idempotent(graph_controller: GraphController):
     
     # Verify only one structure exists
     structure = graph_controller.get_structure(
+        graph=bio_graph,
         identifier="@mikro/roi",
         object=obj_id
     )
@@ -75,7 +81,7 @@ def test_create_structure_idempotent(graph_controller: GraphController):
     assert structure.object == obj_id
 
 
-def test_add_measurement_to_structure(graph_controller: GraphController):
+def test_add_measurement_to_structure(graph_controller: GraphController, bio_graph: core_models.Graph):
     """
     Test adding a measurement to an existing structure.
     """
@@ -83,6 +89,7 @@ def test_add_measurement_to_structure(graph_controller: GraphController):
     
     # Create structure first
     graph_controller.create_structure(
+        graph=bio_graph,
         identifier="@mikro/roi",
         object=obj_id
     )
@@ -102,6 +109,7 @@ def test_add_measurement_to_structure(graph_controller: GraphController):
     )
     
     result = graph_controller.add_measurement(
+        graph=bio_graph,
         structure_identifier="@mikro/roi",
         structure_object=obj_id,
         measurement=measurement,
@@ -115,10 +123,10 @@ def test_add_measurement_to_structure(graph_controller: GraphController):
     assert result.confidence == 0.95
     assert result.timestamp == 1698400800000
     assert result.graph_id is not None
-    assert result.global_id == f"{graph_controller.age_name}:{result.graph_id}"
+    assert result.global_id == f"{bio_graph.age_name}:{result.graph_id}"
 
 
-def test_add_measurement_creates_structure_if_not_exists(graph_controller: GraphController):
+def test_add_measurement_creates_structure_if_not_exists(graph_controller: GraphController, bio_graph: core_models.Graph):
     """
     Test that add_measurement creates the structure if it doesn't exist.
     """
@@ -138,6 +146,7 @@ def test_add_measurement_creates_structure_if_not_exists(graph_controller: Graph
     
     # Add measurement to non-existent structure
     result = graph_controller.add_measurement(
+        graph=bio_graph,
         structure_identifier="@mikro/roi",
         structure_object=obj_id,
         measurement=measurement,
@@ -149,6 +158,7 @@ def test_add_measurement_creates_structure_if_not_exists(graph_controller: Graph
     
     # Verify structure was created
     structure = graph_controller.get_structure(
+        graph=bio_graph,
         identifier="@mikro/roi",
         object=obj_id
     )
@@ -156,7 +166,7 @@ def test_add_measurement_creates_structure_if_not_exists(graph_controller: Graph
     assert structure.object == obj_id
 
 
-def test_add_multiple_measurements_to_structure(graph_controller: GraphController):
+def test_add_multiple_measurements_to_structure(graph_controller: GraphController, bio_graph: core_models.Graph):
     """
     Test adding multiple measurements to the same structure.
     """
@@ -164,6 +174,7 @@ def test_add_multiple_measurements_to_structure(graph_controller: GraphControlle
     
     # Create structure
     graph_controller.create_structure(
+        graph=bio_graph,
         identifier="@mikro/roi",
         object=obj_id
     )
@@ -176,6 +187,7 @@ def test_add_multiple_measurements_to_structure(graph_controller: GraphControlle
     # Add first measurement
     m1 = inputs.MeasurementInput(key="length", value=100, timestamp=1000)
     graph_controller.add_measurement(
+        graph=bio_graph,
         structure_identifier="@mikro/roi",
         structure_object=obj_id,
         measurement=m1,
@@ -185,6 +197,7 @@ def test_add_multiple_measurements_to_structure(graph_controller: GraphControlle
     # Add second measurement
     m2 = inputs.MeasurementInput(key="width", value=50, timestamp=2000)
     graph_controller.add_measurement(
+        graph=bio_graph,
         structure_identifier="@mikro/roi",
         structure_object=obj_id,
         measurement=m2,
@@ -194,6 +207,7 @@ def test_add_multiple_measurements_to_structure(graph_controller: GraphControlle
     # Add third measurement
     m3 = inputs.MeasurementInput(key="height", value=25, timestamp=3000)
     graph_controller.add_measurement(
+        graph=bio_graph,
         structure_identifier="@mikro/roi",
         structure_object=obj_id,
         measurement=m3,
@@ -202,6 +216,7 @@ def test_add_multiple_measurements_to_structure(graph_controller: GraphControlle
     
     # Verify all measurements exist
     measurements = graph_controller.get_measurements_for_structure(
+        graph=bio_graph,
         identifier="@mikro/roi",
         structure_object=obj_id
     )
@@ -211,13 +226,14 @@ def test_add_multiple_measurements_to_structure(graph_controller: GraphControlle
     assert keys == {"length", "width", "height"}
 
 
-def test_add_measurement_with_provenance_action(graph_controller: GraphController):
+def test_add_measurement_with_provenance_action(graph_controller: GraphController, bio_graph: core_models.Graph):
     """
     Test that measurement provenance includes action information.
     """
     obj_id = _uid("roi_provenance")
     
     graph_controller.create_structure(
+        graph=bio_graph,
         identifier="@mikro/roi",
         object=obj_id
     )
@@ -236,6 +252,7 @@ def test_add_measurement_with_provenance_action(graph_controller: GraphControlle
     )
     
     result = graph_controller.add_measurement(
+        graph=bio_graph,
         structure_identifier="@mikro/roi",
         structure_object=obj_id,
         measurement=measurement,
@@ -247,6 +264,7 @@ def test_add_measurement_with_provenance_action(graph_controller: GraphControlle
     
     # Verify we can get the measurement
     measurements = graph_controller.get_measurements_for_structure(
+        graph=bio_graph,
         identifier="@mikro/roi",
         structure_object=obj_id
     )
@@ -254,19 +272,20 @@ def test_add_measurement_with_provenance_action(graph_controller: GraphControlle
     assert measurements[0].value == 0.75
 
 
-def test_get_structure_not_found(graph_controller: GraphController):
+def test_get_structure_not_found(graph_controller: GraphController, bio_graph: core_models.Graph):
     """
-    Test that get_structure returns None for non-existent structure.
+    Test that get_structure raises ValueError for non-existent structure.
     """
     with pytest.raises(ValueError, match="Structure not found"):
-        result = graph_controller.get_structure(
+        graph_controller.get_structure(
+            graph=bio_graph,
             identifier="@mikro/roi",
             object=_uid("non_existent_structure")
         )
     
 
 
-def test_add_measurement_minimal(graph_controller: GraphController):
+def test_add_measurement_minimal(graph_controller: GraphController, bio_graph: core_models.Graph):
     """
     Test adding a measurement with only required fields.
     """
@@ -283,6 +302,7 @@ def test_add_measurement_minimal(graph_controller: GraphController):
     )
     
     result = graph_controller.add_measurement(
+        graph=bio_graph,
         structure_identifier="@mikro/roi",
         structure_object=obj_id,
         measurement=measurement,
@@ -297,7 +317,7 @@ def test_add_measurement_minimal(graph_controller: GraphController):
     assert result.timestamp is None
 
 
-def test_add_measurement_with_string_value(graph_controller: GraphController):
+def test_add_measurement_with_string_value(graph_controller: GraphController, bio_graph: core_models.Graph):
     """
     Test adding a measurement with a string value.
     """
@@ -315,6 +335,7 @@ def test_add_measurement_with_string_value(graph_controller: GraphController):
     )
     
     result = graph_controller.add_measurement(
+        graph=bio_graph,
         structure_identifier="told_you_so",
         structure_object=obj_id,
         measurement=measurement,
@@ -327,6 +348,7 @@ def test_add_measurement_with_string_value(graph_controller: GraphController):
     
     # Verify retrieval
     measurements = graph_controller.get_measurements_for_structure(
+        graph=bio_graph,
         identifier="told_you_so",
         structure_object=obj_id
     )

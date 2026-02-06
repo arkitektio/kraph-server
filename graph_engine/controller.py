@@ -110,13 +110,19 @@ class GraphController:
 
             # Create Measurements
             for meas in evidence.measurements:
-                # meas is a dict with key, value, and optional fields
-                meas_params = {}
-                meas_params.update({"obj": evidence.object, "aid": assertion_id})
+                # meas is a MeasurementInput with key, value, and optional fields
+                meas_params = {
+                    "obj": evidence.object, 
+                    "aid": assertion_id,
+                    "key": meas.key,
+                    "value": meas.value,
+                }
                 
                 prop_clauses = ["key: $key", "value: $value"]
                 for optional_key in ["unit", "confidence", "confidence_type", "timestamp"]:
-                    if optional_key in meas_params:
+                    val = getattr(meas, optional_key, None)
+                    if val is not None:
+                        meas_params[optional_key] = val
                         prop_clauses.append(f"{optional_key}: ${optional_key}")
 
                 meas_query = f"""
@@ -149,8 +155,8 @@ class GraphController:
         
         # --- Step 5: Link Entity -> Evidence ---
         for evidence in supporting_evidence:
-            evidence_identifier = evidence.get("identifier", "Structure")
-            evidence_object = evidence.get("object")
+            evidence_identifier = evidence.identifier
+            evidence_object = evidence.object
             g_label = get_label_for_identifier(evidence_identifier)
             self.engine.execute(
                 entity_category.graph,
@@ -328,6 +334,7 @@ class GraphController:
     def _check_and_migrate_node(
         self,
         entity: 'RetrievedEntity',
+        entity_category: models.EntityCategory,
         auto_migrate: bool = True,
     ) -> 'RetrievedEntity':
         """
@@ -335,13 +342,14 @@ class GraphController:
         
         Args:
             entity: The retrieved entity to check
+            entity_category: The entity category (used to get the current schema version)
             auto_migrate: Whether to perform migration automatically
             
         Returns:
             The entity (possibly refreshed after migration)
         """
-        current_version = self.definition.system_version
-        entity_version = entity.schema_version
+        current_version = entity_category.schema_hash
+        entity_version = entity.properties.get("__schema_version")
         
         # No migration needed if versions match or entity has no version
         if not entity_version or entity_version == current_version:
@@ -349,30 +357,46 @@ class GraphController:
         
         if auto_migrate:
             # Perform migration
-            self.migrate_node(
-                node_id=entity.graph_id,
-                label=entity.kind,
-                from_version=entity_version,
-                to_version=current_version,
+            self._migrate_node(
+                entity_category=entity_category,
+                node_id=entity.id,
+                label=entity.label,
             )
             
             # Re-fetch the updated entity
-            return self._get_entity_without_migration(entity.id)
+            return self._get_entity_without_migration(entity.properties.get("id"), entity_category)
         
         return entity
     
-    def _get_entity_without_migration(self, id: str) -> 'RetrievedEntity':
+    def _migrate_node(
+        self,
+        entity_category: models.EntityCategory,
+        node_id: int,
+        label: str,
+    ) -> None:
+        """
+        Migrate a node to the current schema version by recalculating its properties.
+        
+        Args:
+            entity_category: The entity category to use for migration
+            node_id: The internal graph id of the node
+            label: The node's label
+        """
+        # Simply recalculate all properties based on current schema
+        self._recalculate_entity(node_id, entity_category)
+    
+    def _get_entity_without_migration(self, id: str, entity_category: models.EntityCategory) -> 'RetrievedEntity':
         """
         Internal method to fetch entity without triggering migration check.
         Used after migration to avoid infinite loops.
         """
-        effective_schema = self.graph.definition
+        graph = entity_category.graph
         
         query = """
             MATCH (n) WHERE n.id = $id
             RETURN n, labels(n) as lbls
         """
-        result = self.engine.execute(self.graph, query, {"id": id})
+        result = self.engine.execute(graph, query, {"id": id})
         
         if not result:
             raise ValueError(f"Entity not found with ID {id}")
@@ -386,10 +410,10 @@ class GraphController:
             node_props = raw_node
         
         detected_kind = None
-        possible_kinds = effective_schema.extensions.entities_map.keys()
+        entity_categories = {ec.age_name for ec in graph.entity_categories.all()}
         
         for label in labels:
-            if label in possible_kinds:
+            if label in entity_categories:
                 detected_kind = label
                 break
         
@@ -399,7 +423,7 @@ class GraphController:
         graph_id = _extract_id(raw_node)
         
         return RetrievedEntity(
-            graph_name=self.age_name,
+            graph_name=graph.age_name,
             id=graph_id,
             label=detected_kind,
             properties=node_props,
@@ -409,7 +433,7 @@ class GraphController:
     def get_entity(
         self, 
         id: str, 
-        schema: Optional[GraphDefinitionModel] = None,
+        entity_category: models.EntityCategory,
         auto_migrate: bool = True,
     ) -> RetrievedEntity:
         """
@@ -422,13 +446,13 @@ class GraphController:
         
         Args:
             id: The entity's unique string ID
-            schema: Optional override schema (defaults to graph's active schema)
+            entity_category: The entity category (used to access the graph and schema)
             auto_migrate: Whether to auto-migrate if schema version mismatch
             
         Returns:
             RetrievedEntity with the node's data
         """
-        effective_schema = schema or self.graph.definition
+        graph = entity_category.graph
         
         # 1. Fetch Node AND its Labels
         # We search strictly by the unique 'id' property.
@@ -436,7 +460,7 @@ class GraphController:
             MATCH (n) WHERE n.id = $id
             RETURN n, labels(n) as lbls
         """
-        result = self.engine.execute(self.graph, query, {"id": id})
+        result = self.engine.execute(graph, query, {"id": id})
         
         if not result:
             raise ValueError(f"Entity not found with ID {id}")
@@ -453,14 +477,14 @@ class GraphController:
             node_props = raw_node
         
         # 2. Detect Kind from Labels
-        # We look for a label that exists in our Schema Entities
+        # We look for a label that exists in our graph's entity categories
         detected_kind = None
         
-        # Priority: Check Entities first
-        possible_kinds = effective_schema.extensions.entities_map.keys()
+        # Priority: Check entity categories defined in this graph
+        entity_categories = {ec.age_name for ec in graph.entity_categories.all()}
         
         for label in labels:
-            if label in possible_kinds:
+            if label in entity_categories:
                 detected_kind = label
                 break
         
@@ -472,25 +496,31 @@ class GraphController:
         graph_id = _extract_id(raw_node)
         
         entity = RetrievedEntity(
-            graph_name=self.age_name,
+            graph_name=graph.age_name,
             id=graph_id,
             label=detected_kind,
             properties=node_props,
         )
         
         # 3. Check for schema version mismatch and auto-migrate if needed
-        if auto_migrate and effective_schema:
-            entity = self._check_and_migrate_node(entity, auto_migrate=True)
+        if auto_migrate:
+            entity = self._check_and_migrate_node(entity, entity_category, auto_migrate=True)
         
         return entity
     
     def get_structure(
         self,
+        graph: models.Graph,
         identifier: str,
         object: str,
     ) -> RetrievedStructure:
         """
         Retrieves a Structure by identifier and object.
+        
+        Args:
+            graph: The graph to query
+            identifier: Schema identifier (e.g. '@mikro/roi')
+            object: Object ID of the structure
         """
         structure_label = get_label_for_identifier(identifier)
         
@@ -498,7 +528,7 @@ class GraphController:
             MATCH (s:{structure_label} {{object: $obj}})
             RETURN s, labels(s) as lbls
         """
-        result = self.engine.execute(self.graph, query, {"obj": object})
+        result = self.engine.execute(graph, query, {"obj": object})
         
         if not result:
             raise ValueError(f"Structure not found with identifier {identifier} and object {object}")
@@ -511,7 +541,7 @@ class GraphController:
         props['identifier'] = identifier
         
         return RetrievedStructure(
-            graph_name=self.age_name,
+            graph_name=graph.age_name,
             id=graph_id,
             label=structure_label,
             properties=props,
@@ -519,17 +549,22 @@ class GraphController:
     
     def get_informing_structures(
         self,
+        graph: models.Graph,
         entity_id: str,
     ) -> List[RetrievedStructure]:
         """
         Gets all structures that INFORM a given entity.
+        
+        Args:
+            graph: The graph to query
+            entity_id: The entity's string ID
         """
         query = f"""
             MATCH (s)-[:{vocab.INFORMS}]->(e)
             WHERE e.id = $eid
             RETURN s, labels(s) as lbls
         """
-        result = self.engine.execute(self.graph, query, {"eid": entity_id})
+        result = self.engine.execute(graph, query, {"eid": entity_id})
         
         structures = []
         for row in result:
@@ -546,7 +581,7 @@ class GraphController:
             props['identifier'] = identifier
             
             structures.append(RetrievedStructure(
-                graph_name=self.age_name,
+                graph_name=graph.age_name,
                 id=graph_id,
                 label=label,
                 properties=props,
@@ -594,11 +629,17 @@ class GraphController:
     
     def get_measurements_for_structure(
         self,
+        graph: models.Graph,
         identifier: str,
         structure_object: str,
     ) -> List[RetrievedMeasurement]:
         """
         Gets all measurements that describe a given structure.
+        
+        Args:
+            graph: The graph to query
+            identifier: Schema identifier (e.g. '@mikro/roi')
+            structure_object: Object ID of the structure
         """
         structure_label = get_label_for_identifier(identifier)
         
@@ -606,7 +647,7 @@ class GraphController:
             MATCH (m:{vocab.Measurement})-[:{vocab.DESCRIBES}]->(s:{structure_label} {{object: $obj}})
             RETURN m
         """
-        result = self.engine.execute(self.graph, query, {"obj": structure_object})
+        result = self.engine.execute(graph, query, {"obj": structure_object})
         
         measurements = []
         for row in result:
@@ -615,7 +656,7 @@ class GraphController:
             graph_id = _extract_id(raw)
             
             measurements.append(RetrievedMeasurement(
-                graph_name=self.age_name,
+                graph_name=graph.age_name,
                 id=graph_id,
                 label=vocab.Measurement,
                 properties=props,
@@ -625,17 +666,22 @@ class GraphController:
     
     def get_assertion_for_entity(
         self,
+        graph: models.Graph,
         entity_id: str,
     ) -> Optional[RetrievedAssertion]:
         """
         Gets the assertion that generated a given entity.
+        
+        Args:
+            graph: The graph to query
+            entity_id: The entity's string ID
         """
         query = f"""
             MATCH (a:{vocab.Assertion})-[:{vocab.GENERATED}]->(e)
             WHERE e.id = $eid
             RETURN a, id(a) as aid
         """
-        result = self.engine.execute(self.graph, query, {"eid": entity_id})
+        result = self.engine.execute(graph, query, {"eid": entity_id})
         
         if not result:
             return None
@@ -645,7 +691,7 @@ class GraphController:
         props = _extract_props(raw)
         
         return RetrievedAssertion(
-            graph_name=self.age_name,
+            graph_name=graph.age_name,
             id=graph_id,
             label=vocab.Assertion,
             properties=props,
@@ -653,17 +699,22 @@ class GraphController:
     
     def get_measurements_for_assertion(
         self,
+        graph: models.Graph,
         assertion_id: int,
     ) -> List[RetrievedMeasurement]:
         """
         Gets all measurements asserted by a given assertion.
+        
+        Args:
+            graph: The graph to query
+            assertion_id: The internal graph ID of the assertion
         """
         query = f"""
             MATCH (a:{vocab.Assertion})-[:{vocab.ASSERTED}]->(m:{vocab.Measurement})
             WHERE id(a) = $aid
             RETURN m
         """
-        result = self.engine.execute(self.graph, query, {"aid": assertion_id})
+        result = self.engine.execute(graph, query, {"aid": assertion_id})
         
         measurements = []
         for row in result:
@@ -672,7 +723,7 @@ class GraphController:
             graph_id = _extract_id(raw)
             
             measurements.append(RetrievedMeasurement(
-                graph_name=self.age_name,
+                graph_name=graph.age_name,
                 id=graph_id,
                 label=vocab.Measurement,
                 properties=props,
@@ -682,6 +733,7 @@ class GraphController:
 
     def create_structure(
         self,
+        graph: models.Graph,
         identifier: str,
         object: str,
     ) -> RetrievedStructure:
@@ -689,6 +741,7 @@ class GraphController:
         Create a new structure node.
         
         Args:
+            graph: The graph to create the structure in
             identifier: Schema identifier (e.g. '@mikro/roi')
             object: Unique ID of the object this structure references
             
@@ -699,7 +752,7 @@ class GraphController:
         
         # MERGE to create or match existing, return the graph id
         result = self.engine.execute(
-            self.graph,
+            graph,
             f"MERGE (s:{structure_label} {{object: $obj}}) RETURN id(s) as graph_id",
             {"obj": object}
         )
@@ -707,7 +760,7 @@ class GraphController:
         graph_id = result[0]['graph_id']
         
         return RetrievedStructure(
-            graph_name=self.age_name,
+            graph_name=graph.age_name,
             id=graph_id,
             label=structure_label,
             properties={"object": object, "identifier": identifier},
@@ -715,6 +768,7 @@ class GraphController:
 
     def add_measurement(
         self,
+        graph: models.Graph,
         structure_identifier: str,
         structure_object: str,
         measurement: 'MeasurementInput',
@@ -724,6 +778,7 @@ class GraphController:
         Add a measurement to an existing structure.
         
         Args:
+            graph: The graph to add the measurement to
             structure_identifier: Schema identifier of the structure
             structure_object: Object ID of the structure to add measurement to
             measurement: The measurement data
@@ -736,7 +791,7 @@ class GraphController:
         
         # First ensure structure exists
         self.engine.execute(
-            self.graph,
+            graph,
             f"MERGE (s:{structure_label} {{object: $obj}})",
             {"obj": structure_object}
         )
@@ -748,7 +803,7 @@ class GraphController:
         
         assertion_props = ", ".join([f"{k}: ${k}" for k in prov_dict.keys()])
         aid_res = self.engine.execute(
-            self.graph,
+            graph,
             f"CREATE (a:{vocab.Assertion} {{{assertion_props}}}) RETURN id(a) as aid",
             prov_dict
         )
@@ -772,14 +827,14 @@ class GraphController:
             CREATE (m)-[:{vocab.DESCRIBES}]->(s)
             RETURN id(m) as mid
         """
-        result = self.engine.execute(self.graph, meas_query, meas_params)
+        result = self.engine.execute(graph, meas_query, meas_params)
         graph_id = result[0]['mid']
         
         # Build properties dict from measurement input
         meas_props = measurement.model_dump(exclude_none=True)
         
         return RetrievedMeasurement(
-            graph_name=self.age_name,
+            graph_name=graph.age_name,
             id=graph_id,
             label=vocab.Measurement,
             properties=meas_props,
