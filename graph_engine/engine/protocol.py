@@ -20,10 +20,6 @@ class GraphProtocol(Protocol):
         """The Apache AGE graph name (e.g., 'org_123_graph')."""
         ...
     
-    @property
-    def definition(self) -> "GraphDefinitionModel":
-        """The graph schema definition."""
-        ...
 
 
 class SimpleGraph:
@@ -73,5 +69,19 @@ class CypherEngine(Protocol):
             
         Returns:
             List of dictionaries representing rows of results
+        """
+        ...
+
+    
+    def create_graph(
+        self,
+        age_name: str,
+    ) -> None:
+        """
+        Create a new graph in the database based on the provided definition.
+        
+        Args:
+            graph: The Graph model instance representing the graph to create
+            definition: The GraphDefinitionModel defining the schema
         """
         ...

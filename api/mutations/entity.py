@@ -6,13 +6,15 @@ from kante.types import Info
 from api.types import Entity, EntityCreationResult, entity_from_response
 from api.inputs import EntityCreationInput, RecalculateEntityInput
 from api.context import get_controller_for_graph_id
+from core import models
+
 
 
 
 def create_entity(
     info: Info,
     input: EntityCreationInput,
-) -> EntityCreationResult:
+) -> Entity:
     """
     Create a new entity with optional supporting evidence structures.
     
@@ -28,8 +30,11 @@ def create_entity(
     """
     import uuid
     
+    
+    category = models.EntityCategory.objects.get(id=input.entity_category)  # Validate graph exists
+    
     # Get controller for the specified graph (includes provenance from context)
-    controller = get_controller_for_graph_id(input.graph_id, info)
+    controller = get_controller_for_graph_id(info)
     
     # Generate ref_id if not provided
     entity_ref_id = input.ref_id or str(uuid.uuid4())
@@ -47,10 +52,13 @@ def create_entity(
                 "measurements": [m.model_dump(exclude_none=True) for m in ev_pydantic.measurements],
             }
             evidence_list.append(ev_dict)
+            
+            
+    entity_category = models.EntityCategory.objects.get(id=input.entity_category)
     
     # Call controller with kwargs (provenance is already in the controller)
     result = controller.create_entity(
-        kind=input.kind,
+        entity_category=entity_category,
         ref_id=entity_ref_id,
         action_id=input.action_id,
         action_name=input.action_name,
@@ -60,19 +68,8 @@ def create_entity(
     
     # Fetch the created entity for the response
     entity_response = controller.get_entity(id=result.db_id)
-    entity = entity_from_response(entity_response)
     
-    # Create composite db_id in format {graph_id}-{entity_uuid}
-    # This allows get_controller_for_node_id to extract the graph ID
-    composite_db_id = f"{input.graph_id}-{result.db_id}"
-    
-    return EntityCreationResult(
-        ref_id=result.ref_id,
-        db_id=composite_db_id,
-        graph_id=str(result.graph_id),
-        status=result.status,
-        entity=entity,
-    )
+    return Entity(_value=entity_response)
 
 
 def recalculate_entity(

@@ -62,8 +62,7 @@ class EntityCreationInput:
     Provenance (subject, app_id) is automatically derived from the 
     authenticated request context.
     """
-    graph_id: strawberry.ID = strawberry.field(description="The ID of the graph to create the entity in")
-    kind: str = strawberry.field(description="The entity type/label (must match schema)")
+    entity_category: strawberry.ID = strawberry.field(default=None, description="Optional entity category/type")
     ref_id: Optional[str] = strawberry.field(default=None, description="Optional unique reference ID (auto-generated if not provided)")
     supporting_evidence: Optional[List[StructureReferenceInput]] = strawberry.field(default_factory=list, description="List of evidence structures with measurements")
     action_id: Optional[str] = strawberry.field(default=None, description="Optional action ID for provenance tracking")

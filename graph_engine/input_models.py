@@ -215,6 +215,8 @@ class PropertyDefinitionInput(BaseModel):
     description: Optional[str] = Field(None, description="Description of this property")
     derivation: str = Field("LATEST", description="Derivation type: LATEST, PRIORITY_LATEST, ROLLUP, LATEST_ASSERTION_TOOL")
     rule: Optional[DerivationRuleInput] = Field(None, description="Rule configuration for ROLLUP derivation")
+    index: bool = Field(False, description="Whether to create an index on this property for faster queries")
+    searchable: bool = Field(False, description="Whether this property should be full-text searchable")
     
     @field_validator('type')
     @classmethod
@@ -233,19 +235,23 @@ class PropertyDefinitionInput(BaseModel):
         return v.upper()
 
 
+class SequenceMapping(BaseModel):
+    """Input for a sequence mapping within a structure."""
+    sequence: str = Field(..., description="The sequence identifier (e.g., 'IAZ001')")
+    property: str = Field(..., description="The property key that will be set with the sequence value")
+
 
 class NodeDefinitionInput(BaseModel):
     """Input for a node definition within an event."""
+    sequences: List[SequenceMapping] = Field(default_factory=list, description="Sequence mappings for this node")
     key: str = Field(..., description="The label of the node participating in the event")
     description: Optional[str] = Field(None, description="Description of this node role")
     ontology_references: List[OntologyReferenceInput] = Field(default_factory=list, description="Ontology references for this event")
     tags: List[str] = Field(default_factory=list, description="Optional tags for this node role (e.g. 'cell_body', 'dendrite', 'axon')")
 
 
-class EntityDefinitionInput(BaseModel):
+class EntityDefinitionInput(NodeDefinitionInput):
     """Input for an entity definition."""
-    key: str = Field(..., description="Entity type name/key")
-    description: Optional[str] = Field(None, description="Description of this entity type")
     properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Property definitions")
 
 class EventKind(str, Enum):
@@ -310,7 +316,15 @@ class PrefixInput(BaseModel):
     uri: str = Field(..., description="The URI that the prefix maps to (e.g. 'http://purl.obolibrary.org/obo/OBI_')")
     description: Optional[str] = Field(None, description="Description of this prefix")
     
+ 
+class SequenceInput(BaseModel):
+    """Input for a graph prefix definition."""
+    prefix: str = Field(..., description="The prefix string (e.g. 'IAZ')")
     
+    
+    
+    
+   
 
 
 class GraphExtensionsInput(BaseModel):
@@ -321,6 +335,7 @@ class GraphExtensionsInput(BaseModel):
     dynamically resolved via get_label_for_identifier() from the
     IDENTIFIER_MAP in graph_engine.base_models.
     """
+    sequences: List[SequenceInput] = Field(default_factory=list, description="Graph sequences for ordering entities")
     prefixes: List[PrefixInput] = Field(default_factory=list, description="Graph prefixes for namespacing")
     entities: List[EntityDefinitionInput] = Field(default_factory=list, description="Entity definitions")
     relations: List[RelationDefinitionInput] = Field(default_factory=list, description="Relation definitions")

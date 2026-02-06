@@ -43,23 +43,16 @@ def _extract_id(raw_node: Any) -> int:
 
 class GraphController:
     """ Controller for interacting with the graph database."""
-    def __init__(self, engine: CypherEngine, graph: models.Graph, subject: str, app_id: str) -> None:
+    def __init__(self, engine: CypherEngine, subject: str, app_id: str) -> None:
         self.engine = engine
-        self.graph = graph
         self.subject = subject
         self.app_id = app_id
 
-    @property
-    def age_name(self) -> str:
-        """ The name of the AGE graph this controller manages."""
-        return self.graph.age_name
-    
-    
+
 
     def create_entity(
         self, 
-        *,
-        kind: str,
+        entity_category: models.EntityCategory,
         ref_id: str,
         action_id: Optional[str] = None,
         action_name: Optional[str] = None,
@@ -82,11 +75,10 @@ class GraphController:
         Returns:
             EntityCreationResult with ref_id, db_id, and graph_id
         """
-        effective_schema = schema or self.graph.definition
         supporting_evidence = supporting_evidence or []
         
         # --- Step 1: Validate Kind Only ---
-        entity_def = self.graph.entity_categories.get(kind)
+        entity_def = entity_category
         if not entity_def:
             raise ValueError(f"Unknown Entity: {kind}")
 
@@ -101,7 +93,7 @@ class GraphController:
         
         assertion_props = ", ".join([f"{k}: ${k}" for k in prov_dict.keys()])
         aid_res = self.engine.execute(
-            self.graph,
+            entity_category.graph,
             f"CREATE (a:{vocab.Assertion} {{{assertion_props}}}) RETURN id(a) as aid", 
             prov_dict
         )
@@ -117,7 +109,7 @@ class GraphController:
             
             # Auto-Create Structure (MERGE) - using 'object' as the external ID
             self.engine.execute(
-                self.graph,
+                entity_category.graph,
                 f"MERGE (s:{structure_graph_label} {{object: $obj}})", 
                 {"obj": evidence_object}
             )
@@ -141,17 +133,17 @@ class GraphController:
                     CREATE (a)-[:{vocab.ASSERTED}]->(m)
                     CREATE (m)-[:{vocab.DESCRIBES}]->(s)
                 """
-                self.engine.execute(self.graph, meas_query, meas_params)
+                self.engine.execute(entity_category.graph, meas_query, meas_params)
 
         # --- Step 4: Create Entity (Shell) ---
         # We only set the immutable ID (db_id). All other props come from cache recalculation.
         e_params = {"eid": ref_id, "aid": assertion_id}
         
         create_res = self.engine.execute(
-            self.graph,
+            entity_category.graph,
             f"""
             MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
-            CREATE (e:{kind} {{id: $eid}})
+            CREATE (e:{entity_category.age_name} {{id: $eid}})
             CREATE (a)-[:{vocab.GENERATED}]->(e)
             RETURN e.id as db_id, id(e) as graph_id
             """, 
@@ -167,9 +159,9 @@ class GraphController:
             evidence_object = evidence.get("object")
             g_label = get_label_for_identifier(evidence_identifier)
             self.engine.execute(
-                self.graph,
+                entity_category.graph,
                 f"""
-                MATCH (e:{kind}) WHERE id(e) = $eid
+                MATCH (e:{entity_category.age_name}) WHERE id(e) = $eid
                 MATCH (s:{g_label} {{object: $obj}})
                 MERGE (s)-[:{vocab.INFORMS}]->(e)
                 """, 
@@ -178,42 +170,40 @@ class GraphController:
 
         # --- Step 6: Recalculate Cached Properties ---
         # This is where the magic happens: Properties flow from Evidence -> Entity
-        self._recalculate_entity(graph_id, kind, effective_schema)
+        self._recalculate_entity(graph_id, entity_category)
 
         return EntityCreationResult(ref_id=ref_id, db_id=db_id, graph_id=graph_id)
 
-    def _recalculate_entity(self, graph_id: int, label: str, schema: GraphDefinitionModel) -> None:
+    def _recalculate_entity(self, graph_id: int, entity_category: models.EntityCategory) -> None:
         """
         Scans schema rules and updates the Entity's cached properties based on connected evidence.
         
         Uses the rollup module to generate appropriate Cypher queries for each property's
         derivation type and aggregation function.
         """
-        entity_def = schema.extensions.entities_map.get(label)
-        if not entity_def:
-            raise ValueError(f"Unknown Entity for recalculation: {label}")
+        entity_def = entity_category
 
         updates: Dict[str, Any] = {}
         
-        for prop_def in entity_def.properties:
+        for prop_def in entity_def.defined_properties:
             # Skip the 'id' property - it's immutable
             if prop_def.key == "id":
                 continue
                 
             # Build the query using the rollup utilities
-            rollup_query = build_property_query(label, prop_def.key, prop_def)
+            rollup_query = build_property_query(entity_category.age_name, prop_def.key, prop_def)
             
             if rollup_query:
                 # Add entity id to params
                 params = {**rollup_query.params, "eid": graph_id}
                 
-                result = self.engine.execute(self.graph, rollup_query.query, params)
+                result = self.engine.execute(entity_category.graph, rollup_query.query, params)
                 
                 if result and result[0].get('val') is not None:
                     updates[prop_def.key] = result[0]['val']
 
         # Add System Metadata
-        updates["__schema_version"] = schema.system_version
+        updates["__schema_version"] = entity_category.schema_hash
         updates["__last_derived"] = int(time.time() * 1000)
 
         if updates:
@@ -222,9 +212,9 @@ class GraphController:
             update_params["eid"] = graph_id
             
             self.engine.execute(
-                self.graph,
+                entity_category.graph,
                 f"""
-                MATCH (e:{label}) WHERE id(e) = $eid
+                MATCH (e:{entity_category.age_name}) WHERE id(e) = $eid
                 SET {set_clause}
                 """,
                 update_params

@@ -427,6 +427,11 @@ class NodeCategory(Category):
     protocol steps.
 
     """
+    schema_hash = models.CharField(
+        max_length=1000,
+        help_text="The schema hash representing the version of the schema this category was defined with",
+        default="",
+    )
 
     position_x = models.FloatField(
         help_text="The x position of the node class in the graph (if a node)",
@@ -454,9 +459,9 @@ class NodeCategory(Category):
 
     @property
     def defined_properties(self):
-        from .inputs import PropertyDefinitionInput
+        from graph_engine.base_models import PropertyDefinition
 
-        return [PropertyDefinitionInput(**p) for p in self.property_definitions] if self.property_definitions else []
+        return [PropertyDefinition(**p) for p in self.property_definitions] if self.property_definitions else []
 
     @property
     def property_map(self):

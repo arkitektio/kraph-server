@@ -75,7 +75,7 @@ class AgeEngine:
             List of dictionaries representing rows of results
         """
         params = params or {}
-        graph_name = graph.age_name
+        graph_name = graph.get_age_name()
         
         print(f"Executing Cypher on graph '{graph_name}': {query} with params {params}")
         

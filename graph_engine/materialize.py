@@ -1,10 +1,34 @@
 from .input_models import GraphInput
 from core import models
+from .engine.protocol import CypherEngine
 
 
-def materialize(input: GraphInput) -> models.Graph:
+
+def ensure_node_category(
+    graph: models.Graph,
+    category: models.EntityCategory,
+    engine: CypherEngine,
+):
+    """
+    Ensure that the node category exists in the graph database.
+    
+    This function checks if the corresponding labels and indexes
+    for the node category are present in the graph database,
+    and creates them if they do not exist.
+    
+    Args:
+        category: The EntityCategory model instance to ensure.
+        engine: The CypherEngine to execute queries against.
+    """
+    # Implementation of ensuring node category in the graph database goes here
+    pass
+
+
+def materialize(input: GraphInput, engine: CypherEngine) -> models.Graph:
     """
     Materialize a graph based on the provided graph definition.
+    This is the initial step to set up the graph structure in the database
+    and import. 
     
     This function creates or updates the graph schema, node categories,
     edge categories, and event categories as defined in the input.
@@ -21,6 +45,9 @@ def materialize(input: GraphInput) -> models.Graph:
         name=input.name,
         description=input.description,
     )
+    age_graph = engine.create_graph(graph=graph, definition=input.definition)
+    
+    # TODO: Create sequences in the graph and in the db
     
     
     entity_definitions = input.definition.extensions.entities
@@ -45,7 +72,7 @@ def materialize(input: GraphInput) -> models.Graph:
             property_definitions=[prop.model_dump(mode='json') for prop in defn.properties] if defn.properties else [],
         )
     
-
+    #TODO: Implement everything based on the input definition
     
     
     pass

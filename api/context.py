@@ -25,7 +25,7 @@ def get_provenance_from_context(info: Info) -> ProvenanceContext:
     )
 
 
-def get_controller_for_graph_id(graph_id: str, info: Info) -> GraphController:
+def get_controller_for_graph_id(info: Info) -> GraphController:
     """
     Load a Graph from the database and create a controller for it.
     
@@ -37,19 +37,12 @@ def get_controller_for_graph_id(graph_id: str, info: Info) -> GraphController:
     """
     engine = cypher_engine.get()
     
-    db_graph = Graph.objects.get(id=graph_id)
-    
-    # Create a SimpleGraph that implements GraphProtocol
-    definition = db_graph.definition
-    if definition is None:
-        raise ValueError(f"Graph {graph_id} has no active schema definition")
     
     # Extract provenance from context
     provenance = get_provenance_from_context(info)
     
     return GraphController(
         engine=engine, 
-        graph=db_graph,
         subject=provenance.subject,
         app_id=provenance.app_id,
     )
