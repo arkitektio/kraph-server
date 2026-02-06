@@ -107,6 +107,14 @@ class RelationCreationInput:
 # ADDITIONAL INPUT TYPES (not in input_models)
 # ==========================================
 
+
+@pydantic.input(model=input_models.OntologyReferenceInput)
+class OntologyReferenceInput:
+    """Input for an ontology reference."""
+    prefix: strawberry.auto
+    uri: strawberry.auto
+
+
 @strawberry.input(description="Input for adding a measurement to a structure")
 class AddMeasurementInput:
     """Input for adding a measurement to an existing structure."""
@@ -146,6 +154,7 @@ class PropertyDefinitionInput:
     key: strawberry.auto
     type: strawberry.auto
     unit: strawberry.auto
+    ontology_references: Optional[List[OntologyReferenceInput]] = strawberry.field(default_factory=list)
     description: strawberry.auto
     derivation: strawberry.auto
     rule: Optional[DerivationRuleInput] = None
@@ -156,6 +165,7 @@ class EntityDefinitionInput:
     """Definition of an entity type in the graph schema."""
     key: strawberry.auto
     description: strawberry.auto
+    ontology_references: Optional[List[OntologyReferenceInput]] = strawberry.field(default_factory=list)
     properties: Optional[List[PropertyDefinitionInput]] = strawberry.field(default_factory=list)
 
 
@@ -187,20 +197,37 @@ class CardinalityEnum(str, Enum):
 class RelationDefinitionInput:
     """Definition of a relation type in the graph schema."""
     key: strawberry.auto
+    ontology_references: Optional[List[OntologyReferenceInput]] = strawberry.field(default_factory=list)
     source: List[str] = strawberry.field(description="Source entity type(s)")
     target: List[str] = strawberry.field(description="Target entity type(s)")
     cardinality: CardinalityEnum = strawberry.field(default=CardinalityEnum.ONE_TO_MANY, description="Relation cardinality")
     materialization: Optional[MaterializationConfigInput] = None
 
 
+@pydantic.input(model=input_models.EventRoleInput)
+class EventRoleInput:
+    """Role of a node in an event (input or output)."""
+    key: strawberry.auto
+    role: strawberry.auto
+    ontology_references: Optional[List[OntologyReferenceInput]] = strawberry.field(default_factory=list)
+    
+
 @pydantic.input(model=input_models.EventDefinitionInput)
 class EventDefinitionInput:
     """Definition of an event type in the graph schema."""
     key: strawberry.auto
+    kind: strawberry.auto
     inputs: Optional[List[str]] = strawberry.field(default_factory=list)
     outputs: Optional[List[str]] = strawberry.field(default_factory=list)
     properties: Optional[List[PropertyDefinitionInput]] = strawberry.field(default_factory=list)
+    ontology_references: Optional[List[OntologyReferenceInput]] = strawberry.field(default_factory=list)
 
+
+@pydantic.input(model=input_models.PrefixInput)
+class PrefixInput:
+    """Prefix definition for namespacing in the graph schema."""
+    prefix: strawberry.auto
+    uri: strawberry.auto
 
 @pydantic.input(model=input_models.GraphExtensionsInput)
 class GraphExtensionsInput:
@@ -211,6 +238,7 @@ class GraphExtensionsInput:
     dynamically resolved via get_label_for_identifier() from the
     IDENTIFIER_MAP in graph_engine.base_models.
     """
+    prefixes: Optional[List[PrefixInput]] = strawberry.field(default_factory=list)
     entities: Optional[List[EntityDefinitionInput]] = strawberry.field(default_factory=list)
     relations: Optional[List[RelationDefinitionInput]] = strawberry.field(default_factory=list)
     events: Optional[List[EventDefinitionInput]] = strawberry.field(default_factory=list)

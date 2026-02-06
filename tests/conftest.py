@@ -217,8 +217,9 @@ def bio_graph_schema():
             events=[
                 models.EventDefinition(
                     key="Mitosis",
-                    inputs=["Cell"],
-                    outputs=["Cell", "Cell"],
+                    kind=models.EventKind.INTRINSIC,
+                    inputs=[models.EventRole(key="Cell", role="a")],
+                    outputs=[models.EventRole(key="Cell", role="a"), models.EventRole(key="Cell", role="b")],
                     properties=[
                         models.PropertyDefinition(
                             key="cell_count",

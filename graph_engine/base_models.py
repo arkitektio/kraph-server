@@ -214,13 +214,27 @@ class RelationDefinition(BaseModel):
 
 # --- 4. Event Definitions ---
 
+
+class EventRole(BaseModel):
+    """Role of a node in an event (input or output)."""
+    model_config = ConfigDict(frozen=True)
+    key: str = Field(..., description="The label of the node participating in the event")
+    role: str = Field(..., description="What type of role does this node play in the event")
+    
+
+
+
+class EventKind(str, Enum):
+    INTRINSIC = "intrinsic"
+    EXTRINSIC = "extrinsic"
+
 class EventDefinition(BaseModel):
     """Definition of an event (spatio-temporal transition)."""
     model_config = ConfigDict(frozen=True)
-    
+    kind: EventKind = EventKind.INTRINSIC
     key: str = Field(..., description="The unique key/name for this event type")
-    inputs: List[str] = Field(default_factory=list)
-    outputs: List[str] = Field(default_factory=list)
+    inputs: List[EventRole] = Field(default_factory=list)
+    outputs: List[EventRole] = Field(default_factory=list)
     properties: List[PropertyDefinition] = Field(default_factory=list, description="Properties on this event")
     
     @cached_property
@@ -285,7 +299,7 @@ class GraphExtensions(BaseModel):
     
     entities: List[EntityDefinition] = Field(default_factory=list, description="Logical aggregations (Cells).")
     relations: List[RelationDefinition] = Field(default_factory=list, description="Edges between nodes.")
-    events: List[EventDefinition] = Field(default_factory=list, description="Spatio-temporal transitions.")
+    events: List[EventDefinition] = Field(default_factory=list, description="Temporal transitions.")
     
     # --- Cached Dict Properties for Performance ---
     

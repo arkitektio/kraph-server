@@ -1,3 +1,4 @@
+from enum import Enum
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import List, Dict, Optional, Any, Literal
 from datetime import datetime, timezone
@@ -188,6 +189,14 @@ class SchemaValidationResult(BaseModel):
     warnings: List[SchemaValidationError] = Field(default_factory=list, description="List of validation warnings (non-fatal issues)")
 
 
+    
+    
+class OntologyReferenceInput(BaseModel):
+    """Input for an ontology reference."""
+    prefix: str = Field(..., description="The ontology prefix (e.g. 'OBI'). Must be defined in graph prefixes.")
+    uri: str = Field(..., description="The full URI for the ontology term")
+
+
 # --- Schema Definition Input Models ---
 # These mirror the base_models but are used for input validation
 
@@ -224,11 +233,41 @@ class PropertyDefinitionInput(BaseModel):
         return v.upper()
 
 
+
+class NodeDefinitionInput(BaseModel):
+    """Input for a node definition within an event."""
+    key: str = Field(..., description="The label of the node participating in the event")
+    description: Optional[str] = Field(None, description="Description of this node role")
+    ontology_references: List[OntologyReferenceInput] = Field(default_factory=list, description="Ontology references for this event")
+    tags: List[str] = Field(default_factory=list, description="Optional tags for this node role (e.g. 'cell_body', 'dendrite', 'axon')")
+
+
 class EntityDefinitionInput(BaseModel):
     """Input for an entity definition."""
     key: str = Field(..., description="Entity type name/key")
     description: Optional[str] = Field(None, description="Description of this entity type")
     properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Property definitions")
+
+class EventKind(str, Enum):
+    """Role type for a node in an event."""
+    INTRINSIC= "intrinsic"
+    EXTRINSIC = "extrinsic"
+
+class EventRoleInput(BaseModel):
+    """Input for a role of a node in an event (input or output)."""
+    key: str = Field(..., description="The label of the node participating in the event")
+    role: str = Field(..., description="What type of role does this node play in the event")
+    ontology_references: List[OntologyReferenceInput] = Field(default_factory=list, description="Ontology references for this event")
+
+
+
+class EventDefinitionInput(NodeDefinitionInput):
+    """Input for an event definition."""
+    inputs: List[EventRoleInput] = Field(default_factory=list, description="Input node roles")
+    outputs: List[EventRoleInput] = Field(default_factory=list, description="Output node roles")
+    properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Property definitions")
+    ontology_references: List[OntologyReferenceInput] = Field(default_factory=list, description="Ontology references for this event")
+
 
 
 class EvidenceRequirementInput(BaseModel):
@@ -247,6 +286,7 @@ class MaterializationConfigInput(BaseModel):
 
 class RelationDefinitionInput(BaseModel):
     """Input for a relation definition."""
+    ontology_references: List[OntologyReferenceInput] = Field(default_factory=list, description="Ontology references for this event")
     key: str = Field(..., description="Relation type name/key")
     source: List[str] = Field(..., description="Source entity type(s)")
     target: List[str] = Field(..., description="Target entity type(s)")
@@ -262,12 +302,15 @@ class RelationDefinitionInput(BaseModel):
         return v
 
 
-class EventDefinitionInput(BaseModel):
-    """Input for an event definition."""
-    key: str = Field(..., description="Event type name/key")
-    inputs: List[str] = Field(default_factory=list, description="Input node types")
-    outputs: List[str] = Field(default_factory=list, description="Output node types")
-    properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Property definitions")
+
+
+class PrefixInput(BaseModel):
+    """Input for a graph prefix definition."""
+    prefix: str = Field(..., description="The prefix string (e.g. 'OBI')")
+    uri: str = Field(..., description="The URI that the prefix maps to (e.g. 'http://purl.obolibrary.org/obo/OBI_')")
+    description: Optional[str] = Field(None, description="Description of this prefix")
+    
+    
 
 
 class GraphExtensionsInput(BaseModel):
@@ -278,6 +321,7 @@ class GraphExtensionsInput(BaseModel):
     dynamically resolved via get_label_for_identifier() from the
     IDENTIFIER_MAP in graph_engine.base_models.
     """
+    prefixes: List[PrefixInput] = Field(default_factory=list, description="Graph prefixes for namespacing")
     entities: List[EntityDefinitionInput] = Field(default_factory=list, description="Entity definitions")
     relations: List[RelationDefinitionInput] = Field(default_factory=list, description="Relation definitions")
     events: List[EventDefinitionInput] = Field(default_factory=list, description="Event definitions")

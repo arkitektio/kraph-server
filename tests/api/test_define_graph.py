@@ -389,8 +389,9 @@ async def test_validate_connectome_schema(api_schema: kante.Schema, simple_api_c
             "events": [
                 {
                     "key": "Activation",
-                    "inputs": ["Neuron"],
-                    "outputs": ["Neuron"]
+                    "kind": "intrinsic",
+                    "inputs": [{"key": "Neuron", "role": "activator"}],
+                    "outputs": [{"key": "Neuron", "role": "activated"}]
                 }
             ]
         }
