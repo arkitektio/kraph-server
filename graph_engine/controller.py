@@ -22,6 +22,7 @@ from graph_engine.retrieved import (
     RetrievedAssertion,
 )
 from core import models
+from graph_engine import input_models as inputs
 from graph_engine import vocab
 from graph_engine.rollup import build_property_query
 
@@ -57,7 +58,7 @@ class GraphController:
         action_id: Optional[str] = None,
         action_name: Optional[str] = None,
         action_args: Optional[Dict[str, Any]] = None,
-        supporting_evidence: Optional[List[Dict[str, Any]]] = None,
+        supporting_evidence: Optional[List[inputs.StructureReference]] = None,
         schema: Optional[GraphDefinitionModel] = None,
     ) -> EntityCreationResult:
         """
@@ -77,10 +78,6 @@ class GraphController:
         """
         supporting_evidence = supporting_evidence or []
         
-        # --- Step 1: Validate Kind Only ---
-        entity_def = entity_category
-        if not entity_def:
-            raise ValueError(f"Unknown Entity: {kind}")
 
         # --- Step 2: Create Assertion (Provenance) ---
         prov_dict: Dict[str, Any] = {"subject": self.subject, "app_id": self.app_id}
@@ -101,24 +98,21 @@ class GraphController:
 
         # --- Step 3: Handle Evidence & Measurements ---
         for evidence in supporting_evidence:
-            evidence_identifier = evidence.get("identifier", "Structure")
-            evidence_object = evidence.get("object")
-            evidence_measurements = evidence.get("measurements", [])
             
-            structure_graph_label = get_label_for_identifier(evidence_identifier)
+            structure_graph_label = get_label_for_identifier(evidence.identifier)
             
             # Auto-Create Structure (MERGE) - using 'object' as the external ID
             self.engine.execute(
                 entity_category.graph,
                 f"MERGE (s:{structure_graph_label} {{object: $obj}})", 
-                {"obj": evidence_object}
+                {"obj": evidence.object}
             )
 
             # Create Measurements
-            for meas in evidence_measurements:
+            for meas in evidence.measurements:
                 # meas is a dict with key, value, and optional fields
-                meas_params = {k: v for k, v in meas.items() if v is not None}
-                meas_params.update({"obj": evidence_object, "aid": assertion_id})
+                meas_params = {}
+                meas_params.update({"obj": evidence.object, "aid": assertion_id})
                 
                 prop_clauses = ["key: $key", "value: $value"]
                 for optional_key in ["unit", "confidence", "confidence_type", "timestamp"]:

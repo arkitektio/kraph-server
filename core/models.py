@@ -126,6 +126,11 @@ class Graph(models.Model):
     def get_age_name(self) -> str:
         """ Get the Apache AGE graph name for this graph, which is used to identify the graph in the AGE database."""
         return self.age_name
+    
+    
+    def get_entity_def(self, label: str) -> "EntityCategory":
+        """Get the entity definition for a specific label from the active schema."""
+        return self.entity_categories.get(age_name=label)
 
     @classmethod
     def get_active(cls, user):

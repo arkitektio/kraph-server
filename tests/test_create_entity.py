@@ -5,31 +5,10 @@ from graph_engine.engine.protocol import CypherEngine
 from graph_engine import base_models as models
 from graph_engine import input_models as inputs 
 from graph_engine import vocab
+from core import models as core_models
 
 
-def _payload_to_kwargs(payload: inputs.EntityCreationPayload) -> dict:
-    """Helper to convert EntityCreationPayload to controller kwargs."""
-    # Convert supporting_evidence to list of dicts
-    evidence_dicts = []
-    for evidence in payload.supporting_evidence:
-        evidence_dict = {
-            'identifier': evidence.identifier,
-            'object': evidence.object,
-            'measurements': [m.model_dump() for m in evidence.measurements]
-        }
-        evidence_dicts.append(evidence_dict)
-    
-    return {
-        'kind': payload.kind,
-        'ref_id': payload.ref_id or payload.kind.lower(),  # Default ref_id if not provided
-        'action_id': payload.provenance.action_id,
-        'action_name': payload.provenance.action_name,
-        'action_args': payload.provenance.action_args,
-        'supporting_evidence': evidence_dicts,
-    }
-
-
-def test_create_ais_with_timestamp_conversion(graph_controller: GraphController, bio_graph_schema: models.GraphDefinitionModel):
+def test_create_ais_with_timestamp_conversion(graph_controller: GraphController, bio_graph: core_models.Graph):
     """
     Test that ISO timestamps are converted to Unix Milliseconds (int).
     """
@@ -39,9 +18,7 @@ def test_create_ais_with_timestamp_conversion(graph_controller: GraphController,
     a_little_later = "2023-10-27T10:05:00.456Z"
     
 
-    payload = inputs.EntityCreationPayload(
-        kind="AIS",
-        supporting_evidence=[
+    supporting_evidence=[
             inputs.StructureReference(
                 identifier="@mikro/roi",
                 object="1",
@@ -71,11 +48,13 @@ def test_create_ais_with_timestamp_conversion(graph_controller: GraphController,
                     )                ],
                 object="told_you_so_1"
             )
-        ],
-        provenance=inputs.ProvenanceContext(subject="test", app_id="test")
-    )
+    ]
 
-    result = graph_controller.create_entity(**_payload_to_kwargs(payload))
+    result = graph_controller.create_entity(
+        entity_category=bio_graph.get_entity_def("AIS"),
+        ref_id="ais_test_001",
+        supporting_evidence=supporting_evidence,
+    )
     
     entity = graph_controller.get_entity(
         id=result.db_id,

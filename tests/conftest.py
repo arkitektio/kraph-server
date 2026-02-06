@@ -19,9 +19,9 @@ from guardian.shortcuts import get_perms
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext, UniversalRequest
 from dokker import local, HealthCheck
-from graph_engine import base_models as models
-
-
+from graph_engine import base_models as models, engine
+from graph_engine.materialize import materialize
+from core import models as core_models
 
 @pytest.fixture(scope="function")
 def aws_credentials():
@@ -237,11 +237,6 @@ def bio_graph_schema():
         )
     )
 
-@pytest.fixture(scope="session")
-def test_graph(bio_graph_schema):
-    """Create a test graph with the bio schema."""
-    from graph_engine.engine.protocol import SimpleGraph
-    return SimpleGraph(age_name="test_graph", definition=bio_graph_schema)
 
 
 @pytest.fixture
@@ -264,6 +259,19 @@ def graph_controller(transactional_db, age_engine, test_graph):
         app_id="test_app",
     )
 
+
+
+@pytest.fixture(scope="function")
+def bio_graph(transactional_db, age_engine, bio_graph_schema) -> core_models.Graph:
+    """
+    Create a biological graph with the provided schema.
+    Uses transactional_db to maintain database state across the fixture.
+    The graph is created once and reused.
+    """
+
+    graph = materialize(bio_graph_schema, age_engine)
+
+    return graph
 
 
 @pytest.fixture(scope="function")
@@ -303,13 +311,6 @@ def age_engine(transactional_db, backend_stack, test_graph: GraphProtocol) -> Ge
     
     engine = AgeEngine()
     
-    # Create the graph if it doesn't exist
-    try:
-        engine.execute_raw(f"SELECT * FROM ag_catalog.create_graph('{test_graph.age_name}')")
-    except Exception as e:
-        # Graph already exists - that's fine
-        if "already exists" not in str(e):
-            raise
     
     yield engine
     
