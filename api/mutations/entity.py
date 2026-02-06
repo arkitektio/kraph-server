@@ -31,45 +31,31 @@ def create_entity(
     import uuid
     
     
-    category = models.EntityCategory.objects.get(id=input.entity_category)  # Validate graph exists
+    
+    input_model = input.to_pydantic()  # Validate input with Pydantic models
+    
+    entity_category = models.EntityCategory.objects.get(id=input_model.entity_category)  # Validate graph exists
     
     # Get controller for the specified graph (includes provenance from context)
     controller = get_controller_for_graph_id(info)
     
-    # Generate ref_id if not provided
-    entity_ref_id = input.ref_id or str(uuid.uuid4())
-    
-    # Convert evidence to list of dicts for the controller
-    evidence_list = []
-    if input.supporting_evidence:
-        for ev in input.supporting_evidence:
-            # ev is a StructureReferenceInput (strawberry-pydantic type)
-            # Convert to pydantic first, then to dict
-            ev_pydantic = ev.to_pydantic()
-            ev_dict = {
-                "identifier": ev_pydantic.identifier,
-                "object": ev_pydantic.object,
-                "measurements": [m.model_dump(exclude_none=True) for m in ev_pydantic.measurements],
-            }
-            evidence_list.append(ev_dict)
             
-            
-    entity_category = models.EntityCategory.objects.get(id=input.entity_category)
     
+    ref_id = str(uuid.uuid4())  # Generate a unique reference ID for the entity
     # Call controller with kwargs (provenance is already in the controller)
     result = controller.create_entity(
         entity_category=entity_category,
-        ref_id=entity_ref_id,
-        action_id=input.action_id,
-        action_name=input.action_name,
-        action_args=input.action_args,
-        supporting_evidence=evidence_list,
+        ref_id=ref_id,
+        supporting_evidence=input_model.supporting_evidence,
     )
     
     # Fetch the created entity for the response
-    entity_response = controller.get_entity(id=result.db_id)
+    entity_response = controller.get_entity(id=result.db_id, entity_category=entity_category)
     
     return Entity(_value=entity_response)
+
+
+
 
 
 def recalculate_entity(

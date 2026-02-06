@@ -54,7 +54,7 @@ class ProvenanceInput:
     action_args: Optional[AnyScalar] = None  # Override Dict[str, Any] with our scalar
 
 
-@strawberry.input(description="Input for creating a new entity with supporting evidence")
+@pydantic.input(model=input_models.EntityCreationInput, description="Input for creating a new entity with supporting evidence")
 class EntityCreationInput:
     """
     Input for creating a new entity with supporting evidence.
@@ -63,12 +63,8 @@ class EntityCreationInput:
     authenticated request context.
     """
     entity_category: strawberry.ID = strawberry.field(default=None, description="Optional entity category/type")
-    ref_id: Optional[str] = strawberry.field(default=None, description="Optional unique reference ID (auto-generated if not provided)")
     supporting_evidence: Optional[List[StructureReferenceInput]] = strawberry.field(default_factory=list, description="List of evidence structures with measurements")
-    action_id: Optional[str] = strawberry.field(default=None, description="Optional action ID for provenance tracking")
-    action_name: Optional[str] = strawberry.field(default=None, description="Optional action name for provenance tracking")
-    action_args: Optional[AnyScalar] = strawberry.field(default=None, description="Optional action arguments for provenance tracking")
-
+    
 
 @strawberry.input(description="Input for recalculating entity properties")
 class RecalculateEntityInput:

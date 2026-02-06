@@ -408,3 +408,11 @@ class SetSchemaResult(BaseModel):
     version: str = Field(..., description="Version string of the schema")
     index: int = Field(..., description="Sequential index of this schema")
     is_active: bool = Field(..., description="Whether this schema is now active")
+    
+    
+    
+class EntityCreationInput(BaseModel):
+    """Input for creating a new entity with supporting evidence."""
+    entity_category: str = Field(..., description="The ID of the entity category/type to create")
+    supporting_evidence: List[StructureReference] = Field(default_factory=list, description="List of evidence structures with measurements")
+    
