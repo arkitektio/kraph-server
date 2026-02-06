@@ -76,15 +76,6 @@ class Graph(models.Model):
     to their name.s
 
     """
-
-    node_deletion_allowed = models.BooleanField(
-        default=True,
-        help_text="If node deletion is allowed in this graph",
-    )
-    edge_deletion_allowed = models.BooleanField(
-        default=True,
-        help_text="If node deletion is allowed in this graph",
-    )
     membership = models.ForeignKey(Membership, on_delete=models.CASCADE, related_name="graphs")
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="graphs")
     user = models.ForeignKey(
@@ -130,6 +121,11 @@ class Graph(models.Model):
             age_name = f"{base_name}_{org_slug}_{counter}"
             counter += 1
         return age_name
+    
+    
+    def get_age_name(self) -> str:
+        """ Get the Apache AGE graph name for this graph, which is used to identify the graph in the AGE database."""
+        return self.age_name
 
     @classmethod
     def get_active(cls, user):
@@ -186,97 +182,56 @@ class Graph(models.Model):
         return None
 
 
-class GraphSchema(models.Model):
-    """
-    A versioned schema definition for a graph.
-    
-    Schemas are immutable once created. Each graph has one active schema
-    at a time, and schemas have increasing indices for version tracking.
-    """
-    
-    graph = models.ForeignKey(
-        Graph,
-        on_delete=models.CASCADE,
-        related_name="schemas",
-        help_text="The graph this schema belongs to",
-    )
-    
-    version = models.CharField(
-        max_length=100,
-        help_text="Semantic version of this schema (e.g., '1.0.0')",
-    )
-    
-    index = models.PositiveIntegerField(
-        help_text="Sequential index of this schema version (auto-incremented)",
-    )
-    
-    definition = models.JSONField(
-        help_text="The full GraphDefinitionModel as JSON",
-    )
-    
-    is_active = models.BooleanField(
-        default=False,
-        help_text="Whether this is the currently active schema for the graph",
-    )
-    
-    created_at = models.DateTimeField(auto_now_add=True)
-    
-    created_by = models.ForeignKey(
-        get_user_model(),
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="created_schemas",
-        help_text="User who created this schema",
-    )
-    
-    description = models.TextField(
-        null=True,
-        blank=True,
-        help_text="Description of changes in this schema version",
-    )
-    
-    class Meta:
-        unique_together = [("graph", "index"), ("graph", "version")]
-        ordering = ["-index"]
-    
-    def __str__(self) -> str:
-        active_marker = " (active)" if self.is_active else ""
-        return f"{self.graph.name} v{self.version}{active_marker}"
-    
-    def save(self, *args, **kwargs) -> None:
-        # Auto-increment index if not set
-        if self.index is None:
-            last_schema = GraphSchema.objects.filter(graph=self.graph).order_by("-index").first()
-            self.index = (last_schema.index + 1) if last_schema else 1
-        super().save(*args, **kwargs)
-    
-    def activate(self) -> None:
-        """Set this schema as the active one, deactivating others."""
-        GraphSchema.objects.filter(graph=self.graph).update(is_active=False)
-        self.is_active = True
-        self.save(update_fields=["is_active"])
-    
-    def get_definition_model(self):
-        """Parse the stored JSON into a GraphDefinitionModel."""
-        from graph_engine.base_models import GraphDefinitionModel
-        return GraphDefinitionModel.model_validate(self.definition)
-    
-    @property
-    def schema(self):
-        """
-        Get the schema definition as a Pydantic GraphDefinitionModel.
-        
-        Returns:
-            GraphDefinitionModel: The parsed and validated schema definition
-        """
-        return self.get_definition_model()
-
 
 def random_color():
     levels = range(32, 256, 32)
     return tuple(random.choice(levels) for _ in range(3))
 
+
+
+class GraphOntology(models.Model):
+    """An ontology reference for the graph schema."""
+    
+    graph = models.ForeignKey(
+        "Graph",
+        on_delete=models.CASCADE,
+        related_name="ontologies",
+        help_text="The graph this ontology belongs to",
+    )
+    name = models.CharField(
+        max_length=1000,
+        help_text="The name of the ontology",
+    )
+    url = models.CharField(
+        max_length=2000,
+        help_text="The URL of the ontology",
+    )
+    description = models.CharField(
+        max_length=2000,
+        help_text="The description of the ontology",
+        null=True,
+    )
+    
+    class Meta:
+        unique_together = ("graph", "name")
+        default_related_name = "graph_ontologies"
+        
+        
+class OntologyReference(models.Model):
+    category = models.ForeignKey(
+        "Category",
+        on_delete=models.CASCADE,
+        related_name="ontology_references",
+    )
+    name = models.CharField(
+        max_length=1000,
+        help_text="The name of the ontology reference",
+    )
+    ontology = models.ForeignKey(
+        GraphOntology,
+        on_delete=models.CASCADE,
+        related_name="references",
+    )
 
 class GraphSequence(models.Model):
     """A node index for a category"""
@@ -287,6 +242,7 @@ class GraphSequence(models.Model):
         related_name="graph_sequences",
         help_text="The graph this sequence belongs to",
     )
+    
     index = models.CharField(
         max_length=1000,
         help_text="The index name that was created",

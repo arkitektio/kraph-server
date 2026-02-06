@@ -365,6 +365,15 @@ class GraphDefinitionInput(BaseModel):
         return validate_semver(v)
 
 
+
+class GraphInput(BaseModel):
+    """Input for creating or updating a graph."""
+    name: str = Field(..., description="Name of the graph")
+    description: Optional[str] = Field(None, description="Description of the graph")
+    definition: GraphDefinitionInput = Field(..., description="The complete graph schema definition")
+
+
+
 class SetSchemaPayload(BaseModel):
     """Payload for setting a new schema on a graph."""
     version: str = Field(..., description="Semantic version for this schema (e.g., '1.0.0', '1.1.0')")

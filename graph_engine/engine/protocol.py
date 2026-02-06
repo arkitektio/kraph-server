@@ -16,8 +16,7 @@ class GraphProtocol(Protocol):
     This is what the engine and controller receive to know which graph to operate on.
     """
     
-    @property
-    def age_name(self) -> str:
+    def get_age_name(self) -> str:
         """The Apache AGE graph name (e.g., 'org_123_graph')."""
         ...
     

@@ -21,6 +21,7 @@ from graph_engine.retrieved import (
     RetrievedMeasurement,
     RetrievedAssertion,
 )
+from core import models
 from graph_engine import vocab
 from graph_engine.rollup import build_property_query
 
@@ -42,7 +43,7 @@ def _extract_id(raw_node: Any) -> int:
 
 class GraphController:
     """ Controller for interacting with the graph database."""
-    def __init__(self, engine: CypherEngine, graph: GraphProtocol, subject: str, app_id: str) -> None:
+    def __init__(self, engine: CypherEngine, graph: models.Graph, subject: str, app_id: str) -> None:
         self.engine = engine
         self.graph = graph
         self.subject = subject
@@ -53,10 +54,7 @@ class GraphController:
         """ The name of the AGE graph this controller manages."""
         return self.graph.age_name
     
-    @property
-    def definition(self) -> GraphDefinitionModel:
-        """ The graph definition model this controller uses."""
-        return self.graph.definition
+    
 
     def create_entity(
         self, 
@@ -88,7 +86,7 @@ class GraphController:
         supporting_evidence = supporting_evidence or []
         
         # --- Step 1: Validate Kind Only ---
-        entity_def = effective_schema.extensions.entities_map.get(kind)
+        entity_def = self.graph.entity_categories.get(kind)
         if not entity_def:
             raise ValueError(f"Unknown Entity: {kind}")
 

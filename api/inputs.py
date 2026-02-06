@@ -216,11 +216,12 @@ class EventRoleInput:
 class EventDefinitionInput:
     """Definition of an event type in the graph schema."""
     key: strawberry.auto
-    kind: strawberry.auto
-    inputs: Optional[List[str]] = strawberry.field(default_factory=list)
-    outputs: Optional[List[str]] = strawberry.field(default_factory=list)
+    description: strawberry.auto
+    inputs: Optional[List[EventRoleInput]] = strawberry.field(default_factory=list)
+    outputs: Optional[List[EventRoleInput]] = strawberry.field(default_factory=list)
     properties: Optional[List[PropertyDefinitionInput]] = strawberry.field(default_factory=list)
     ontology_references: Optional[List[OntologyReferenceInput]] = strawberry.field(default_factory=list)
+    tags: Optional[List[str]] = strawberry.field(default_factory=list)
 
 
 @pydantic.input(model=input_models.PrefixInput)
@@ -258,13 +259,14 @@ class GraphDefinitionInput:
 @strawberry.input(description="Input for validating a schema definition")
 class ValidateSchemaInput:
     """
-    Input for validating a graph schema before applying it.
+    Input for validating a graph schema before creating a graph
+    from it.
     
     The definition should be a GraphDefinitionModel-compatible JSON object with:
     - system_version: Semantic version string (e.g., '1.0.0')
     - extensions: Object containing structures, entities, relations, events
     """
-    definition: AnyScalar = strawberry.field(description="The graph schema definition as JSON")
+    definition: GraphDefinitionInput = strawberry.field(description="The graph schema definition as JSON")
 
 
 @strawberry.input(description="Input for setting a new schema on a graph")
