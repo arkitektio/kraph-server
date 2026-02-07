@@ -5,7 +5,8 @@ from kante.types import Info
 
 from api.types import Measurement, measurement_from_response
 from api.inputs import AddMeasurementInput
-from api.context import get_controller_for_node_id, get_provenance_from_context
+from api.context import extract_graph_id, get_provenance_from_context, get_controller, extract_node_id
+from core import models
 
 
 def add_measurement(
@@ -24,17 +25,22 @@ def add_measurement(
     Returns:
         Created Measurement object
     """
-    controller = get_controller_for_node_id(input.structure_object, info)
+    controller = get_controller()
     
     # Convert strawberry-pydantic inputs to pydantic models
     measurement = input.measurement.to_pydantic()
-    provenance = get_provenance_from_context(info)
+    
+    graph_id = extract_graph_id(input.structure_id)
+    local_id = extract_node_id(input.structure_id)
+    
+    graph = models.Graph.objects.get(id=graph_id)  # Validate graph exists
+    
     
     response = controller.add_measurement(
-        structure_identifier=input.structure_identifier,
-        structure_object=input.structure_object,
+        graph,
+        structure_id=local_id,
         measurement=measurement,
-        provenance=provenance,
+        provenance=get_provenance_from_context(info),
     )
     
     return measurement_from_response(response)

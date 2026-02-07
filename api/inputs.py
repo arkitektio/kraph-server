@@ -13,8 +13,24 @@ from graph_engine import input_models
 from .scalars import AnyScalar
 
 
+
 # ==========================================
-# PYDANTIC-VALIDATED INPUT TYPES
+# Schema Creation Input Types
+# ==========================================
+
+@pydantic.input(model=input_models.CreateEntityDefinitionInput, fields=["__all__"], description="Input for creating a new entity definition in the graph schema")
+class CreateEntityDefinitionInput:
+    pass
+
+@pydantic.input(model=input_models.UpdateEntityDefinitionInput, fields=["__all__"], description="Input for updating an existing entity definition in the graph schema")
+class UpdateEntityDefinitionInput:
+    pass
+   
+@pydantic.input(model=input_models.DeleteEntityDefinitionInput, fields=["__all__"], description="Input for deleting an existing entity definition in the graph schema")
+class DeleteEntityDefinitionInput:
+    pass
+# ==========================================
+# Object Creation Input Types
 # ==========================================
 
 @pydantic.input(model=input_models.MeasurementInput)
@@ -103,6 +119,10 @@ class RelationCreationInput:
 # ==========================================
 
 
+
+
+
+
 @pydantic.input(model=input_models.OntologyReferenceInput)
 class OntologyReferenceInput:
     """Input for an ontology reference."""
@@ -113,8 +133,7 @@ class OntologyReferenceInput:
 @strawberry.input(description="Input for adding a measurement to a structure")
 class AddMeasurementInput:
     """Input for adding a measurement to an existing structure."""
-    structure_identifier: str = strawberry.field(description="Structure identifier (e.g. '@mikro/roi')")
-    structure_object: str = strawberry.field(description="Structure object ID")
+    structure_id: strawberry.ID = strawberry.field(description="ID of the structure to add the measurement to")  
     measurement: MeasurementInput = strawberry.field(description="The measurement to add")
     provenance: ProvenanceInput = strawberry.field(description="Provenance context for this measurement")
 

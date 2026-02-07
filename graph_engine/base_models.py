@@ -112,38 +112,7 @@ class PropertyDefinition(BaseModel):
     derivation: DerivationType = DerivationType.LATEST
     rule: Optional[DerivationRule] = None
 
-    @model_validator(mode='after')
-    def validate_rule_presence(self):
-        """If using ROLLUP, a rule definition is mandatory."""
-        if self.derivation == DerivationType.ROLLUP and not self.rule:
-            raise ValueError("Property with derivation 'ROLLUP' must have a 'rule' configuration.")
-        return self
     
-    @model_validator(mode='after')
-    def validate_aggregation_result_type(self):
-        """
-        Validate that the property type is compatible with the aggregation result.
-        
-        For example:
-        - MEAN always produces FLOAT, so property type must be FLOAT
-        - COUNT always produces INTEGER, so property type must be INTEGER
-        - EUCLIDEAN_RANGE produces FLOAT (distance)
-        """
-        if self.derivation != DerivationType.ROLLUP or not self.rule or not self.rule.aggregation:
-            return self
-        
-        aggregation = self.rule.aggregation
-        expected_result_type = AGGREGATION_RESULT_TYPES.get(aggregation)
-        
-        # If aggregation has a fixed result type, check compatibility
-        if expected_result_type is not None and self.type != expected_result_type:
-            raise ValueError(
-                f"Aggregation '{aggregation.value}' produces type '{expected_result_type.value}', "
-                f"but property is defined as '{self.type.value}'. "
-                f"Change property type to '{expected_result_type.value}'."
-            )
-        
-        return self
 
 # --- 2. Node Definitions ---
 

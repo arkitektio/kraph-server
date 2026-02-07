@@ -9,6 +9,7 @@ from graph_engine.base_models import (
 from graph_engine.input_models import (
     EntityCreationResult,
     MeasurementInput,
+    MetricInput,
     ProvenanceContext,
     RelationCreationPayload,
 )
@@ -44,17 +45,29 @@ def _extract_id(raw_node: Any) -> int:
 
 class GraphController:
     """ Controller for interacting with the graph database."""
-    def __init__(self, engine: CypherEngine, subject: str, app_id: str) -> None:
+    def __init__(self, engine: CypherEngine, subject: str | None = None, app_id: str | None = None) -> None:
         self.engine = engine
         self.subject = subject
         self.app_id = app_id
-
+        
+     
+     
+    def create_universal_id(self) -> str:
+        """Generates a unique reference ID for entities."""
+        import uuid
+        return str(uuid.uuid4()) 
+    
+    
+    def ensure_entity(
+        self,
+        entity_category: models.EntityCategory,
+        universal_id: str,
+    ) -> EntityCreationResult:
 
 
     def create_entity(
         self, 
         entity_category: models.EntityCategory,
-        ref_id: str,
         action_id: Optional[str] = None,
         action_name: Optional[str] = None,
         action_args: Optional[Dict[str, Any]] = None,
@@ -77,7 +90,7 @@ class GraphController:
             EntityCreationResult with ref_id, db_id, and graph_id
         """
         supporting_evidence = supporting_evidence or []
-        
+        graph: models.Graph = entity_category.graph
 
         # --- Step 2: Create Assertion (Provenance) ---
         prov_dict: Dict[str, Any] = {"subject": self.subject, "app_id": self.app_id}
@@ -95,45 +108,80 @@ class GraphController:
             prov_dict
         )
         assertion_id = aid_res[0]['aid']
+        
 
         # --- Step 3: Handle Evidence & Measurements ---
         for evidence in supporting_evidence:
             
-            structure_graph_label = get_label_for_identifier(evidence.identifier)
+            if graph.allow_auto_add_structure_definitions:
+                scategory, _ = models.StructureCategory.objects.get_or_create(
+                    graph=graph,
+                    identifier=evidence.identifier,
+                )
+            else:
+                scategory = models.StructureCategory.objects.filter(
+                    graph=graph,
+                    identifier=evidence.identifier,
+                ).first()
+                if not scategory:
+                    raise ValueError(f"Structure identifier {evidence.identifier} not found in graph schema.")
+                
+            
+            
+            structure_vertex_name = scategory.get_age_vertex_name()
             
             # Auto-Create Structure (MERGE) - using 'object' as the external ID
-            self.engine.execute(
+            result = self.engine.execute(
                 entity_category.graph,
-                f"MERGE (s:{structure_graph_label} {{object: $obj}})", 
-                {"obj": evidence.object}
+                f"MERGE (s:{structure_vertex_name} {{object: $obj, identifier: $identifier, category: $sid}}) RETURN id(s) as sid", 
+                {"obj": evidence.object, "identifier": evidence.identifier, "sid": scategory.pk}
             )
+            structure_id = result[0]['sid']
 
-            # Create Measurements
-            for meas in evidence.measurements:
-                # meas is a MeasurementInput with key, value, and optional fields
-                meas_params = {
-                    "obj": evidence.object, 
+            # Create Metrics
+            for meas in evidence.metrics:
+                # meas is a MetricInput with key, value, and optional fields
+                
+                if graph.allow_auto_adding_metrics:
+                    mcategory, _ = models.MetricCategory.objects.get_or_create(
+                        graph=graph,
+                        identifier=meas.key,
+                        structure_category=scategory,
+                    )
+                else:
+                    mcategory = models.MetricCategory.objects.filter(
+                        graph=graph,
+                        identifier=meas.key,
+                        structure_category=scategory,
+                    ).first()
+                    if not mcategory:
+                        raise ValueError(f"Metric identifier {meas.key} not found in graph schema for structure {evidence.identifier}.")
+                
+                
+                params = {
+                    "sid": structure_id,
                     "aid": assertion_id,
+                    "category": mcategory.pk,
                     "key": meas.key,
                     "value": meas.value,
+                    "unit": meas.unit,
+                    "confidence": meas.confidence,
+                    "confidence_type": meas.confidence_type,
+                    "timestamp": meas.timestamp
                 }
                 
-                prop_clauses = ["key: $key", "value: $value"]
-                for optional_key in ["unit", "confidence", "confidence_type", "timestamp"]:
-                    val = getattr(meas, optional_key, None)
-                    if val is not None:
-                        meas_params[optional_key] = val
-                        prop_clauses.append(f"{optional_key}: ${optional_key}")
-
+                property_clauses = ", ".join([f"{k}: ${k}" for k in params.keys()])
+                
                 meas_query = f"""
-                    MATCH (s:{structure_graph_label} {{object: $obj}})
+                    MATCH (s:{structure_vertex_name}) WHERE id(s) = $sid
                     MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
                     
-                    CREATE (m:{vocab.Measurement} {{{", ".join(prop_clauses)}}})
+                    CREATE (m:{vocab.Metric} {{{property_clauses}}})
                     CREATE (a)-[:{vocab.ASSERTED}]->(m)
                     CREATE (m)-[:{vocab.DESCRIBES}]->(s)
+                    RETURN id(m) as mid
                 """
-                self.engine.execute(entity_category.graph, meas_query, meas_params)
+                self.engine.execute(entity_category.graph, meas_query, params)
 
         # --- Step 4: Create Entity (Shell) ---
         # We only set the immutable ID (db_id). All other props come from cache recalculation.
@@ -428,6 +476,60 @@ class GraphController:
             label=detected_kind,
             properties=node_props,
         )
+        
+    def get_node(self, graph: models.Graph, entity_id: str) -> RetrievedNode:
+        """
+        Retrieve a raw node by its string ID.
+        
+        This is a low-level method that returns the raw graph data without
+        any schema-based processing or migration. It can be used for debugging
+        or for operations that need direct access to the underlying graph.
+        
+        Args:
+            graph: The graph to query
+            entity_id: The string ID of the entity (the 'id' property in the graph)
+        """
+        
+        query = """
+            MATCH (n) WHERE n.id = $id
+            RETURN n, labels(n) as lbls
+        """
+        result = self.engine.execute(graph, query, {"id": entity_id})
+        
+        if not result:
+            raise ValueError(f"Node not found with ID {entity_id}")
+        
+        raw_node = result[0]['n']
+        
+        return RetrievedNode(
+            graph_name=graph.age_name,
+            id=_extract_id(raw_node),
+            label=result[0]['lbls'][0] if result[0]['lbls'] else "Unknown",
+            properties=_extract_props(raw_node),
+        )
+        
+    
+    def get_node_for_composite_id(self, composite_id: str) -> RetrievedNode:
+        """
+        Retrieve a node using a composite global ID (format: {graph_id}:{entity_id}).
+        
+        This method extracts the graph ID and entity ID from the composite ID,
+        fetches the corresponding graph, and then retrieves the node.
+        
+        Args:
+            composite_id: The composite ID in the format "graph_id:entity_id"
+            
+        Returns:
+            RetrievedNode with the node's data
+        """
+        graph_id, entity_id = composite_id.split(":", 1)
+        
+        graph = models.Graph.objects.get(id=graph_id)
+        
+        return self.get_node(graph, entity_id)
+        
+        
+        
             
             
     def get_entity(
@@ -591,6 +693,7 @@ class GraphController:
     
     def get_entities_informed_by(
         self,
+        graph: models.Graph,
         identifier: str,
         structure_object: str,
     ) -> List[RetrievedEntity]:
@@ -603,7 +706,7 @@ class GraphController:
             MATCH (s:{structure_label} {{object: $obj}})-[:{vocab.INFORMS}]->(e)
             RETURN e, labels(e) as lbls
         """
-        result = self.engine.execute(self.graph, query, {"obj": structure_object})
+        result = self.engine.execute(graph, query, {"obj": structure_object})
         
         entities = []
         for row in result:
@@ -614,7 +717,7 @@ class GraphController:
             
             # Filter for entity labels
             kind = next(
-                (l for l in labels if l in self.definition.extensions.entities_map),
+                (l for l in labels if l in graph.extensions.entities_map),
                 labels[0] if labels else "Unknown"
             )
             
@@ -769,9 +872,8 @@ class GraphController:
     def add_measurement(
         self,
         graph: models.Graph,
-        structure_identifier: str,
-        structure_object: str,
-        measurement: 'MeasurementInput',
+        node_id: int,
+        measurement: MetricInput,
         provenance: 'ProvenanceContext',
     ) -> RetrievedMeasurement:
         """
@@ -779,22 +881,35 @@ class GraphController:
         
         Args:
             graph: The graph to add the measurement to
-            structure_identifier: Schema identifier of the structure
-            structure_object: Object ID of the structure to add measurement to
+            node_id: Internal graph ID of the structure node
             measurement: The measurement data
             provenance: Provenance context for this measurement
             
         Returns:
             RetrievedMeasurement with the created measurement info
         """
-        structure_label = get_label_for_identifier(structure_identifier)
+        # First, get the structure to find its identifier and object
+        structure_query = f"""
+            MATCH (s) WHERE id(s) = $nid
+            RETURN s, labels(s) as lbls, s.category as category, s.object as object
+        """
         
-        # First ensure structure exists
-        self.engine.execute(
-            graph,
-            f"MERGE (s:{structure_label} {{object: $obj}})",
-            {"obj": structure_object}
-        )
+        result = self.engine.execute(graph, structure_query, {"nid": node_id})
+        
+        if not result:
+            raise ValueError(f"Structure not found with node ID {node_id}")
+        
+        raw = result[0]['s']
+        labels = result[0]['lbls']
+        category = result[0]['category']
+        structure_object = result[0]['object']
+        
+        
+        # Reverse lookup structure from category
+        structure_category = models.StructureCategory.objects.filter(pk=category).first()
+        if not structure_category:
+            raise ValueError(f"Structure category with ID {category} not found in database.")
+        
         
         # Create assertion for provenance
         prov_dict = provenance.model_dump(exclude_none=True)

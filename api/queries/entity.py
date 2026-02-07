@@ -5,7 +5,7 @@ from typing import List
 from kante.types import Info
 
 from api.types import Entity, entity_from_response
-from api.context import get_controller_for_node_id
+from api.context import get_controller
 
 
 def entity(info: Info, id: str) -> Entity:
@@ -19,13 +19,14 @@ def entity(info: Info, id: str) -> Entity:
     Returns:
         Entity object
     """
-    controller = get_controller_for_node_id(id, info)
-    response = controller.get_entity(id=id)
+    controller = get_controller()
+    response = controller.get_node_for_composite_id(composite_id=id)
     return entity_from_response(response)
 
 
 def entities_informed_by(
     info: Info,
+    graph: str,
     identifier: str,
     object: str,
 ) -> List[Entity]:
@@ -40,7 +41,7 @@ def entities_informed_by(
     Returns:
         List of Entity objects
     """
-    controller = get_controller_for_node_id(object, info)
+    controller = get_controller()
     responses = controller.get_entities_informed_by(
         identifier=identifier,
         structure_object=object,

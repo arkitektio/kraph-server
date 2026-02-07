@@ -15,8 +15,8 @@ REIFIES_AS_TARGET = "REIFIES_AS_TARGET"  # Relationship indicating that a Relati
 
 ShadowLink = "ShadowLink"  # A link representing a shadow relationship between nodes
 
-Measurement = "Measurement"
 Structure = "Structure"
+Metric = "Metric"
 
 # 
 Assertion = "Assertion"

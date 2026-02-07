@@ -9,6 +9,7 @@ from core.fields import S3Field
 from core.datalayer import Datalayer
 from authentikate.models import Organization, Membership
 from polymorphic.models import PolymorphicModel
+from django.db.models import QuerySet
 
 # Create your models here.
 from django.conf import settings
@@ -118,6 +119,13 @@ class Graph(models.Model):
         help_text="The users that have this query active",
     )
     
+    @classmethod
+    def get_for_node_global_id(cls, node_id: str):
+        graph_id, node_id = node_id.split(":")
+        return cls.objects.get(id=graph_id)
+    
+
+    
 
     @classmethod
     def create_age_name(cls, name: str, organization: Organization) -> str:
@@ -193,8 +201,30 @@ class Graph(models.Model):
         if schema:
             return GraphDefinitionModel.model_validate(schema.definition)
         return None
+    
+    
+    @property
+    def allow_adding_structure_definitions(self) -> bool:
+        return True
+    
+    @property
+    def allow_auto_add_structure_definitions(self) -> bool:
+        return True
 
-
+    @property
+    def allow_adding_entity_definitions(self) -> bool:
+        return True
+    
+    @property
+    def allow_adding_relation_definitions(self) -> bool:
+        return True
+    
+    @property
+    def allow_auto_adding_metrics(self) -> bool:
+        return True
+    
+    
+    
 class GraphSchema(models.Model):
     """
     A versioned schema definition for a graph.
@@ -611,6 +641,9 @@ class StructureCategory(NodeCategory):
 
     def get_age_type_name(self) -> str:
         return "STRUCTURE"
+    
+    
+    
 
     class Meta:
         default_related_name = "structure_categories"
@@ -784,6 +817,10 @@ class EntityCategory(NodeCategory):
 
     def get_age_type_name(self) -> str:
         return "ENTITY"
+    
+    
+    @property
+    def descriptors(self) -> QuerySet["Descriptor"]:
 
     class Meta:
         default_related_name = "entity_categories"

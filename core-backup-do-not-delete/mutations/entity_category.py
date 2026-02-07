@@ -5,20 +5,6 @@ from core import types, models, enums, manager, inputs
 from core import age
 
 
-@strawberry.input(description="Input for updating an existing generic category")
-class UpdateEntityCategoryInput(inputs.UpdateCategoryInput, inputs.NodeCategoryInput):
-    id: strawberry.ID = strawberry.field(description="The ID of the expression to update")
-    label: str | None = strawberry.field(default=None, description="New label for the generic category")
-    description: str | None = strawberry.field(default=None, description="New description for the expression")
-    purl: str | None = strawberry.field(default=None, description="New permanent URL for the expression")
-    color: list[int] | None = strawberry.field(default=None, description="New RGBA color values as list of 3 or 4 integers")
-    image: strawberry.ID | None = strawberry.field(default=None, description="New image ID for the expression")
-
-
-@strawberry.input(description="Input for deleting a generic category")
-class DeleteEntityCategoryInput:
-    id: strawberry.ID = strawberry.field(description="The ID of the expression to delete")
-
 
 def entity_category_creator(
     info: Info,

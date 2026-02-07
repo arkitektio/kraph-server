@@ -9,23 +9,6 @@ from api.context import get_controller_for_node_id
 from graph_engine.input_models import RelationCreationPayload
 
 
-def _extract_entity_id(composite_id: str) -> str:
-    """
-    Extract the entity UUID from a composite ID.
-    
-    Composite IDs are in the format: {graph_id}-{entity_uuid}
-    This function returns everything after the first hyphen.
-    
-    Args:
-        composite_id: The composite ID (e.g., "1-abc123-def456-...")
-        
-    Returns:
-        The entity UUID part (e.g., "abc123-def456-...")
-    """
-    parts = composite_id.split("-", 1)
-    if len(parts) == 2:
-        return parts[1]
-    return composite_id
 
 
 def create_relation(

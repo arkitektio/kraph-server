@@ -25,38 +25,58 @@ def get_provenance_from_context(info: Info) -> ProvenanceContext:
     )
 
 
-def get_controller_for_graph_id(info: Info) -> GraphController:
-    """
-    Load a Graph from the database and create a controller for it.
     
-    Args:
-        graph_id: The database ID of the Graph
-        
+def get_controller() -> GraphController:
+    """
+    Get a default GraphController without a specific graph context.
+    
+    This can be used for operations that don't require a specific graph,
+    such as listing available graphs or creating a new graph.
+    
     Returns:
-        GraphController configured for the specified graph
+        GraphController with no specific graph context
     """
     engine = cypher_engine.get()
     
+    return GraphController(engine=engine)
     
-    # Extract provenance from context
-    provenance = get_provenance_from_context(info)
     
-    return GraphController(
-        engine=engine, 
-        subject=provenance.subject,
-        app_id=provenance.app_id,
-    )
 
 
-def get_controller_for_node_id(node_id: str, info: Info) -> GraphController:
+
+def extract_node_id(composite_id: str) -> str:
     """
-    Load a Graph from the database and create a controller for it.
+    Extract the entity UUID from a composite ID.
+    
+    Composite IDs are in the format: {graph_id}-{entity_uuid}
+    This function returns everything after the first hyphen.
     
     Args:
-        node_id: The database ID of the Graph
+        composite_id: The composite ID (e.g., "1-abc123-def456-...")
         
     Returns:
-        GraphController configured for the specified graph
+        The entity UUID part (e.g., "abc123-def456-...")
     """
-    graph_id = node_id.split("-")[0]
-    return get_controller_for_graph_id(graph_id, info)
+    parts = composite_id.split("-", 1)
+    if len(parts) == 2:
+        return parts[1]
+    return composite_id
+
+
+def extract_graph_id(composite_id: str) -> str:
+    """
+    Extract the entity UUID from a composite ID.
+    
+    Composite IDs are in the format: {graph_id}-{entity_uuid}
+    This function returns everything after the first hyphen.
+    
+    Args:
+        composite_id: The composite ID (e.g., "1-abc123-def456-...")
+        
+    Returns:
+        The entity UUID part (e.g., "abc123-def456-...")
+    """
+    parts = composite_id.split("-", 1)
+    if len(parts) == 2:
+        return parts[1]
+    return composite_id

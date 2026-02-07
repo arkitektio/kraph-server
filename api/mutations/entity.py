@@ -3,9 +3,9 @@ Entity mutation resolvers.
 """
 from kante.types import Info
 
-from api.types import Entity, EntityCreationResult, entity_from_response
+from api.types import Entity, entity_from_response
 from api.inputs import EntityCreationInput, RecalculateEntityInput
-from api.context import get_controller_for_graph_id
+from api.context import get_controller, extract_graph_id, extract_node_id
 from core import models
 
 
@@ -37,7 +37,7 @@ def create_entity(
     entity_category = models.EntityCategory.objects.get(id=input_model.entity_category)  # Validate graph exists
     
     # Get controller for the specified graph (includes provenance from context)
-    controller = get_controller_for_graph_id(info)
+    controller = get_controller()
     
             
     
@@ -75,21 +75,18 @@ def recalculate_entity(
     Returns:
         Updated Entity with recalculated properties
     """
-    controller = get_controller_for_graph_id(input.graph_id, info)
+    controller = get_controller()
     
-    # Get entity first to find its graph_id and kind
-    entity = controller.get_entity(id=input.entity_id)
+    graph_id = extract_graph_id(input.entity_id)
+    node_id = extract_node_id(input.entity_id)
     
-    # Trigger recalculation
-    controller._recalculate_entity(
-        graph_id=entity.graph_id,
-        label=entity.kind,
-        schema=controller.definition,
-    )
+    graph = models.Graph.objects.get(id=graph_id)  # Validate graph exists
     
-    # Return updated entity
-    updated_response = controller.get_entity(id=input.entity_id)
-    return entity_from_response(updated_response)
+    # Get entity first to find its  and kind
+    entity = controller.get_node(graph, entity_id=node_id)
+    
+    
+    return Entity(_value=entity)
 
 
 

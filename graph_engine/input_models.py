@@ -5,11 +5,20 @@ from datetime import datetime, timezone
 import uuid
 import re
 
+from graph_engine.base_models import AGGREGATION_RESULT_TYPES, AggregationFunction, DerivationType
+
+
+
+# ==========================================
+# SCHEMA INPUT MODELS
+# ==========================================
+
+
 # ==========================================
 # INPUT MODELS
 # ==========================================
 
-class MeasurementInput(BaseModel):
+class MetricInput(BaseModel):
     """ 
     A single measurement entry.
     Timestamps are converted to Unix Epoch Milliseconds (int) for Apache AGE.
@@ -69,10 +78,10 @@ def create_max_confidence_measurement(key: str, value: Any, unit: Optional[str] 
 class StructureReference(BaseModel):
     identifier: str = Field(..., description="Schema identifier, e.g. '@mikro/roi'")
     object: str = Field(..., description="The unique ID of the object this structure references")
-    measurements: List[MeasurementInput] = []
+    metrics: List[MetricInput] = []
 
-def create_told_you_so(measurements: List[MeasurementInput], object: str) -> StructureReference:
-    return StructureReference(identifier="told_you_so", object=object, measurements=measurements)
+def create_told_you_so(metrics: List[MetricInput], object: str) -> StructureReference:
+    return StructureReference(identifier="told_you_so", object=object, metrics=metrics)
 
 class ProvenanceContext(BaseModel):
     subject: str = Field(..., description="User ID")
@@ -129,11 +138,11 @@ class StructureCreationResult(BaseModel):
     status: str = "CREATED"
 
 
-class AddMeasurementPayload(BaseModel):
-    """Payload for adding a measurement to a structure."""
+class AddMetricPayload(BaseModel):
+    """Payload for adding a metric to a structure."""
     structure_identifier: str = Field(..., description="Schema identifier of the structure")
     structure_id: str = Field(..., description="The unique ID of the structure")
-    measurement: MeasurementInput
+    metric: MetricInput
     provenance: ProvenanceContext
 
 
@@ -204,7 +213,7 @@ class DerivationRuleInput(BaseModel):
     """Input for a derivation rule configuration."""
     source_node: Optional[str] = Field(None, description="The label of the describing structure to read from")
     key: Optional[str] = Field(None, description="The property key on the source node")
-    aggregation: Optional[str] = Field(None, description="Aggregation function (MEAN, SUM, MAX, MIN, COUNT, etc.)")
+    aggregation: Optional[AggregationFunction] = Field(None, description="Aggregation function (MEAN, SUM, MAX, MIN, COUNT, etc.)")
 
 
 class PropertyDefinitionInput(BaseModel):
@@ -213,7 +222,7 @@ class PropertyDefinitionInput(BaseModel):
     type: str = Field(..., description="Property type: string, float, integer, boolean, datetime, point_3d")
     unit: Optional[str] = Field(None, description="Unit of measurement")
     description: Optional[str] = Field(None, description="Description of this property")
-    derivation: str = Field("LATEST", description="Derivation type: LATEST, PRIORITY_LATEST, ROLLUP, LATEST_ASSERTION_TOOL")
+    derivation: DerivationType = Field(DerivationType.LATEST, description="Derivation type: LATEST, PRIORITY_LATEST, ROLLUP, LATEST_ASSERTION_TOOL")
     rule: Optional[DerivationRuleInput] = Field(None, description="Rule configuration for ROLLUP derivation")
     index: bool = Field(False, description="Whether to create an index on this property for faster queries")
     searchable: bool = Field(False, description="Whether this property should be full-text searchable")
@@ -233,6 +242,39 @@ class PropertyDefinitionInput(BaseModel):
         if v.upper() not in valid_derivations:
             raise ValueError(f"Invalid derivation type '{v}'. Must be one of: {', '.join(valid_derivations)}")
         return v.upper()
+    
+    @model_validator(mode='after')
+    def validate_rule_presence(self):
+        """If using ROLLUP, a rule definition is mandatory."""
+        if self.derivation == DerivationType.ROLLUP and not self.rule:
+            raise ValueError("Property with derivation 'ROLLUP' must have a 'rule' configuration.")
+        return self
+    
+    @model_validator(mode='after')
+    def validate_aggregation_result_type(self):
+        """
+        Validate that the property type is compatible with the aggregation result.
+        
+        For example:
+        - MEAN always produces FLOAT, so property type must be FLOAT
+        - COUNT always produces INTEGER, so property type must be INTEGER
+        - EUCLIDEAN_RANGE produces FLOAT (distance)
+        """
+        if self.derivation != DerivationType.ROLLUP or not self.rule or not self.rule.aggregation:
+            return self
+        
+        aggregation = self.rule.aggregation
+        expected_result_type = AGGREGATION_RESULT_TYPES.get(aggregation)
+        
+        # If aggregation has a fixed result type, check compatibility
+        if expected_result_type is not None and self.type != expected_result_type:
+            raise ValueError(
+                f"Aggregation '{aggregation.value}' produces type '{expected_result_type.value}', "
+                f"but property is defined as '{self.type.value}'. "
+                f"Change property type to '{expected_result_type.value}'."
+            )
+        
+        return self
 
 
 class SequenceMapping(BaseModel):
@@ -248,11 +290,46 @@ class NodeDefinitionInput(BaseModel):
     description: Optional[str] = Field(None, description="Description of this node role")
     ontology_references: List[OntologyReferenceInput] = Field(default_factory=list, description="Ontology references for this event")
     tags: List[str] = Field(default_factory=list, description="Optional tags for this node role (e.g. 'cell_body', 'dendrite', 'axon')")
+    color: Optional[List[int]] = Field(None, description="Optional RGBA color for this node role (e.g. [255, 0, 0, 128])")
+    image: Optional[str] = Field(None, description="Optional media store ID for an image representing this node role")
+    label: Optional[str] = Field(None, description="Optional human-readable label for this node role (defaults to 'key' if not provided)")
+    pin: Optional[bool] = Field(None, description="Whether to pin this node role in the UI")
 
 
 class EntityDefinitionInput(NodeDefinitionInput):
     """Input for an entity definition."""
     properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Property definitions")
+
+    @field_validator('properties')
+    @classmethod
+    def validate_properties(cls, v: List[PropertyDefinitionInput]) -> List[PropertyDefinitionInput]:
+        """Validate that property keys are unique within this entity definition."""
+        keys = set()
+        for prop in v:
+            if prop.key in keys:
+                raise ValueError(f"Duplicate property key '{prop.key}' in entity definition")
+            keys.add(prop.key)
+            
+            
+            
+        return v
+
+
+class CreateEntityDefinitionInput(EntityDefinitionInput):
+    """Input for an entity definition at the graph level (not within an event)."""
+    graph: str = Field(..., description="The graph id this entitiy will beong to")
+    
+    
+class UpdateEntityDefinitionInput(EntityDefinitionInput):
+    """Input for updating an existing entity definition at the graph level."""
+    id: str = Field(..., description="The ID of the entity category to update")
+
+
+class DeleteEntityDefinitionInput(BaseModel):
+    """Input for deleting an existing entity definition at the graph level."""
+    id: str = Field(..., description="The ID of the entity category to delete")
+
+
 
 class EventKind(str, Enum):
     """Role type for a node in an event."""
