@@ -1,6 +1,7 @@
 import json
 import time
 from typing import Optional, Dict, Any, List
+from api.context import extract_node_id
 from graph_engine.base_models import (
     GraphDefinitionModel,
     get_label_for_identifier,
@@ -8,13 +9,13 @@ from graph_engine.base_models import (
 )
 from graph_engine.input_models import (
     EntityCreationResult,
-    MeasurementInput,
     MetricInput,
     ProvenanceContext,
     RelationCreationPayload,
 )
-from graph_engine.engine.protocol import CypherEngine, GraphProtocol
+from graph_engine.engine.protocol import CypherEngine
 from graph_engine.retrieved import (
+    RetrievedEvent,
     RetrievedNode,
     RetrievedEdge,
     RetrievedEntity,
@@ -63,6 +64,7 @@ class GraphController:
         entity_category: models.EntityCategory,
         universal_id: str,
     ) -> EntityCreationResult:
+        pass
 
 
     def create_entity(
@@ -72,7 +74,6 @@ class GraphController:
         action_name: Optional[str] = None,
         action_args: Optional[Dict[str, Any]] = None,
         supporting_evidence: Optional[List[inputs.StructureReference]] = None,
-        schema: Optional[GraphDefinitionModel] = None,
     ) -> EntityCreationResult:
         """
         Create a new entity with optional supporting evidence structures.
@@ -528,14 +529,12 @@ class GraphController:
         
         return self.get_node(graph, entity_id)
         
-        
-        
-            
+         
             
     def get_entity(
         self, 
-        id: str, 
         entity_category: models.EntityCategory,
+        id: str, 
         auto_migrate: bool = True,
     ) -> RetrievedEntity:
         """
@@ -722,7 +721,7 @@ class GraphController:
             )
             
             entities.append(RetrievedEntity(
-                graph_name=self.age_name,
+                graph_name=graph.age_name,
                 id=graph_id,
                 label=kind,
                 properties=props,
@@ -747,7 +746,7 @@ class GraphController:
         structure_label = get_label_for_identifier(identifier)
         
         query = f"""
-            MATCH (m:{vocab.Measurement})-[:{vocab.DESCRIBES}]->(s:{structure_label} {{object: $obj}})
+            MATCH (m:{vocab.Metric})-[:{vocab.DESCRIBES}]->(s:{structure_label} {{object: $obj}})
             RETURN m
         """
         result = self.engine.execute(graph, query, {"obj": structure_object})
@@ -761,7 +760,7 @@ class GraphController:
             measurements.append(RetrievedMeasurement(
                 graph_name=graph.age_name,
                 id=graph_id,
-                label=vocab.Measurement,
+                label=vocab.Metric,
                 properties=props,
             ))
         
@@ -868,6 +867,178 @@ class GraphController:
             label=structure_label,
             properties={"object": object, "identifier": identifier},
         )
+        
+        
+        
+        
+    def add_natural_event(
+        self,
+        category: models.NaturalEventCategory,
+        payload: inputs.NaturalEventInput,
+    ) -> RetrievedEvent:
+        """
+        Add a natural event to the graph.
+        
+        Args:
+            category: The NaturalEventCategory to use for this event
+            payload: The input data for the natural event
+            
+        Returns:
+            RetrievedEvent with the created event info
+        """
+        supporting_evidence = payload.supporting_evidence or []
+        graph: models.Graph = category.graph
+
+        # --- Step 1: Create Assertion (Provenance) ---
+        prov_dict: Dict[str, Any] = {"subject": self.subject, "app_id": self.app_id}
+        assertion_props = ", ".join([f"{k}: ${k}" for k in prov_dict.keys()])
+        aid_res = self.engine.execute(
+            graph,
+            f"CREATE (a:{vocab.Assertion} {{{assertion_props}}}) RETURN id(a) as aid", 
+            prov_dict
+        )
+        assertion_id = aid_res[0]['aid']
+        
+        # Assertion Created but not linked to anything yet - we will link evidence and event after we create them
+        
+
+        # --- Step 2: Handle Evidence & Measurements ---
+        for evidence in supporting_evidence:
+            
+            if graph.allow_auto_add_structure_definitions:
+                scategory, _ = models.StructureCategory.objects.get_or_create(
+                    graph=graph,
+                    identifier=evidence.identifier,
+                )
+            else:
+                scategory = models.StructureCategory.objects.filter(
+                    graph=graph,
+                    identifier=evidence.identifier,
+                ).first()
+                if not scategory:
+                    raise ValueError(f"Structure identifier {evidence.identifier} not found in graph schema.")
+                
+            
+            structure_vertex_name = scategory.get_age_vertex_name()
+            
+            # Auto-Create Structure (MERGE) - using 'object' as the external ID
+            result = self.engine.execute(
+                graph,
+                f"MERGE (s:{structure_vertex_name} {{object: $obj, identifier: $identifier, category: $sid}}) RETURN id(s) as sid", 
+                {"obj": evidence.object, "identifier": evidence.identifier, "sid": scategory.pk}
+            )
+            structure_id = result[0]['sid']
+
+            # Create Metrics
+            for meas in evidence.metrics:
+                # meas is a MetricInput with key, value, and optional fields
+                
+                if graph.allow_auto_adding_metrics:
+                    mcategory, _ = models.MetricCategory.objects.get_or_create(
+                        graph=graph,
+                        identifier=meas.key,
+                        structure_category=scategory,
+                    )
+                else:
+                    mcategory = models.MetricCategory.objects.filter(
+                        graph=graph,
+                        identifier=meas.key,
+                        structure_category=scategory,
+                    ).first()
+                    if not mcategory:
+                        raise ValueError(f"Metric identifier {meas.key} not found in graph schema for structure {evidence.identifier}.")
+                
+                
+                params = {
+                    "sid": structure_id,
+                    "aid": assertion_id,
+                    "category": mcategory.pk,
+                    "key": meas.key,
+                    "value": meas.value,
+                    "unit": meas.unit,
+                    "confidence": meas.confidence,
+                    "confidence_type": meas.confidence_type,
+                    "timestamp": meas.timestamp
+                }
+                
+                property_clauses = ", ".join([f"{k}: ${k}" for k in params.keys()])
+                
+                meas_query = f"""
+                    MATCH (s:{structure_vertex_name}) WHERE id(s) = $sid
+                    MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
+                    
+                    CREATE (m:{vocab.Metric} {{{property_clauses}}})
+                    CREATE (a)-[:{vocab.ASSERTED}]->(m)
+                    CREATE (m)-[:{vocab.DESCRIBES}]->(s)
+                    RETURN id(m) as mid
+                """
+                self.engine.execute(graph, meas_query, params)
+                
+                # We have created the metric and linked it to the structure and assertion, so when we later link the structure to the event, the metric will inform the event's properties through the rollup mechanism.
+
+
+
+        # --- Step 4: Create Entity (Shell) ---
+        # We only set the immutable ID (db_id). All other props come from cache recalculation.
+        e_params = {"eid": self.create_universal_id(), "aid": assertion_id}
+        
+        event_vertex_name = category.get_age_vertex_name()
+        
+        create_res = self.engine.execute(
+            graph,
+            f"""
+            MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
+            CREATE (e:{event_vertex_name} {{id: $eid}})
+            CREATE (a)-[:{vocab.GENERATED}]->(e)
+            RETURN id(e) as event_id
+            """, 
+            e_params
+        )
+        
+        event_id = create_res[0]['event_id']
+        
+        # We have created the event node, now we link the roles and evidence to it, and then recalculate properties based on the evidence.
+        
+        for mapping in payload.inputs:
+            role_vertex_name = category.get_age_input_role_edge_name(mapping.role)
+            graph_local_entity = extract_node_id(mapping.entity_id)
+            
+            self.engine.execute(
+                graph,
+                f"""
+                MATCH (e:{event_vertex_name}) WHERE id(e) = $eid
+                MATCH (ent) WHERE id(ent) = $entity_id
+                MERGE (r:{role_vertex_name})
+                MERGE (e)<-[:{role_vertex_name}]-(r)
+                """,
+                {"eid": event_id, "entity_id": graph_local_entity}
+            )
+            
+        for mapping in payload.outputs:
+            role_vertex_name = category.get_age_output_role_edge_name(mapping.role)
+            graph_local_entity = extract_node_id(mapping.entity_id)
+            
+            self.engine.execute(
+                graph,
+                f"""
+                MATCH (e:{event_vertex_name}) WHERE id(e) = $eid
+                MATCH (ent) WHERE id(ent) = $entity_id
+                MERGE (r:{role_vertex_name})
+                MERGE (e)-[:{role_vertex_name}]->(r)
+                """,
+                {"eid": event_id, "entity_id": graph_local_entity}
+            )
+        
+        # --- Step 6: Recalculate Cached Properties ---
+        
+        
+        # This is where the magic happens: Properties flow from Evidence -> Entity
+        return self.get_event_by_graph_id(graph, event_id)
+        
+        
+        
+        
+        
 
     def add_measurement(
         self,
@@ -889,7 +1060,7 @@ class GraphController:
             RetrievedMeasurement with the created measurement info
         """
         # First, get the structure to find its identifier and object
-        structure_query = f"""
+        structure_query = """
             MATCH (s) WHERE id(s) = $nid
             RETURN s, labels(s) as lbls, s.category as category, s.object as object
         """
@@ -899,8 +1070,8 @@ class GraphController:
         if not result:
             raise ValueError(f"Structure not found with node ID {node_id}")
         
-        raw = result[0]['s']
-        labels = result[0]['lbls']
+        result[0]['s']
+        result[0]['lbls']
         category = result[0]['category']
         structure_object = result[0]['object']
         

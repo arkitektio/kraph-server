@@ -1,5 +1,4 @@
 from kante.types import Info
-from core.models import Graph
 from graph_engine.input_models import ProvenanceContext
 from api.extensions.cypher import cypher_engine
 from graph_engine.controller import GraphController

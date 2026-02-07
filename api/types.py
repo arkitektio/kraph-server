@@ -67,6 +67,23 @@ class EntityCategory(NodeCategory):
 class StructureCategory(NodeCategory):
     pass
 
+@kante.django_type(models.MetricCategory, description="A relation category/schema definition")
+class MetricCategory(NodeCategory):
+    pass
+
+@kante.django_interface(models.NaturalEventCategory)
+class EventCategory(NodeCategory):
+    pass
+
+@kante.django_type(models.NaturalEventCategory, description="A relation category/schema definition")
+class ProtocolEventCategory(EventCategory):
+    pass
+
+@kante.django_type(models.NaturalEventCategory, description="A relation category/schema definition")
+class NaturalEventCategory(EventCategory):
+    pass
+
+
 @kante.django_type(models.EdgeCategory, description="A relation category/schema definition")
 class RelationCategory(EdgeCategory):
     pass

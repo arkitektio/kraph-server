@@ -10,10 +10,11 @@ import json
 from typing import Optional
 from pydantic import BaseModel, Field
 
-from .base_models import GraphDefinitionModel, GraphExtensions
+from .base_models import GraphDefinitionModel
 from .engine.protocol import CypherEngine
 from core import models
-
+from itertools import product
+from django.db.models import Q
 
 class MaterializeInput(BaseModel):
     """Input for materializing a graph."""
@@ -49,6 +50,57 @@ def compute_properties_hash(properties: list) -> str:
     sorted_props = sorted(properties, key=lambda p: p.get('key', ''))
     json_str = json.dumps(sorted_props, sort_keys=True, default=str)
     return hashlib.sha256(json_str.encode()).hexdigest()[:16]
+
+
+
+class LinkPairs:
+    """Helper dataclass to store pairs of source and target nodes for relation materialization."""
+    source_id: str
+    target_id: str
+
+def re_materialize_relation_category(graph: models.Graph, relation_category: models.RelationCategory) -> models.RelationCategory:
+    
+    source_def: dict[int, list[int]] = {}
+    
+    sources= relation_category.get_matching_source_entities()
+    target = relation_category.get_matching_target_entities()
+    
+    models.MaterializedEdge.objects.filter(graph=graph, relation_category=relation_category).delete()
+    
+    for source_cat, target_cat in product(sources, target):
+        models.MaterializedEdge.objects.create(
+            graph=graph,
+            relation_category=relation_category,
+            source_category=source_cat,
+            target_category=target_cat,
+        )
+        
+    return relation_category
+
+
+def re_materialize_from_entity_category(graph: models.Graph, entity_category: models.EntityCategory) -> models.EntityCategory:
+    
+    
+    # Get all relation categories where this entity category might be a source or target
+    as_potential_input_relations = models.RelationCategory.objects.filter(
+        graph=graph,
+    ).filter(
+        Q(source_definition__category___contains=[entity_category.pk]) |
+        Q(target_definition__tags___contains=[entity_category.tags])
+    )
+    
+    for relation_category in as_potential_input_relations:
+        re_materialize_relation_category(graph, relation_category)
+        
+        
+        
+            
+            
+        
+        
+    
+    
+
 
 
 def materialize(
@@ -197,5 +249,10 @@ def materialize(
         is_active=True,
         created_by=user,
     )
+    
+    for category in graph.entity_categories.all():
+        
+        
+    
     
     return graph

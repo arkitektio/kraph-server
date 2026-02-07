@@ -29,12 +29,38 @@ class UpdateEntityDefinitionInput:
 @pydantic.input(model=input_models.DeleteEntityDefinitionInput, fields=["__all__"], description="Input for deleting an existing entity definition in the graph schema")
 class DeleteEntityDefinitionInput:
     pass
+
+
+
+@pydantic.input(model=input_models.CreateEventDefinitionInput, fields=["__all__"], description="Input for creating a new entity definition in the graph schema")
+class CreateEventDefinitionInput:
+    pass
+
+@pydantic.input(model=input_models.UpdateEntityDefinitionInput, fields=["__all__"], description="Input for updating an existing entity definition in the graph schema")
+class UpdateEventDefinitionInput:
+    pass
+   
+@pydantic.input(model=input_models.DeleteEventDefinitionInput, fields=["__all__"], description="Input for deleting an existing event definition in the graph schema")
+class DeleteEventDefinitionInput:
+    pass
 # ==========================================
 # Object Creation Input Types
 # ==========================================
 
-@pydantic.input(model=input_models.MeasurementInput)
-class MeasurementInput:
+
+@pydantic.input(model=input_models.CreateNaturalEventInput, fields=["__all__"], description="Input for creating a new natural event instance")
+class CreateNaturalEventInput:
+    """Input for creating a new natural event instance."""
+    pass
+
+
+
+
+
+
+
+@pydantic.input(model=input_models.MetricInput)
+class MetricInput:
     """
     A single measurement entry.
     Timestamps are automatically validated and converted to Unix Epoch Milliseconds.
@@ -55,7 +81,7 @@ class StructureReferenceInput:
     """
     identifier: strawberry.auto
     object: strawberry.auto
-    measurements: Optional[List[MeasurementInput]] = strawberry.field(default_factory=list)
+    measurements: Optional[List[MetricInput]] = strawberry.field(default_factory=list)
 
 
 @pydantic.input(model=input_models.ProvenanceContext)

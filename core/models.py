@@ -14,6 +14,9 @@ from django.db.models import QuerySet
 # Create your models here.
 from django.conf import settings
 
+from graph_engine.base_models import EntityDefinition
+from graph_engine.input_models import EntityDescriptorInput
+
 
 class S3Store(models.Model):
     path = S3Field(null=True, blank=True, help_text="The stodre of the image", unique=True)
@@ -613,6 +616,41 @@ class EdgeCategory(Category):
     def get_age_type_name(self) -> str:
         """Should return the type name of the edge in the age graph"""
         raise NotImplementedError("Not implemented needs to be implemented")
+    
+    
+    @property
+    def source_definition_model(self) -> EntityDescriptorInput:
+        return EntityDescriptorInput(**self.source_definition) 
+    
+    @property
+    def target_definition_model(self) -> EntityDescriptorInput:
+        return EntityDescriptorInput(**self.target_definition) 
+    
+    
+    def matches_source(self, entity: "EntityCategory") -> bool:
+        """Check if an entity matches the source definition of this edge category."""
+        return self.source_definition_model.matches(entity)
+
+    def matches_target(self, entity: "EntityCategory") -> bool:
+        """Check if an entity matches the target definition of this edge category."""
+        return self.target_definition_model.matches(entity)
+    
+    
+    def get_matching_source_entities(self, graph: Graph) -> QuerySet["EntityCategory"]:
+        """Get all entities in the graph that match the source definition of this edge category."""
+        return graph.entity_categories.filter(
+            id_in=self.source_definition_model.category,
+            tags__value__in=self.source_definition_model.tags,
+            ontology_references__name__in=self.source_definition_model.ontotology_terms,
+        ).distinct()
+        
+    def get_matching_target_entities(self, graph: Graph) -> QuerySet["EntityCategory"]:
+        """Get all entities in the graph that match the target definition of this edge category."""
+        return graph.entity_categories.filter(
+            id_in=self.target_definition_model.category,
+            tags__value__in=self.target_definition_model.tags,
+            ontology_references__name__in=self.target_definition_model.ontotology_terms,
+        ).distinct()
 
 
 class StructureCategory(NodeCategory):
@@ -686,11 +724,17 @@ class NaturalEventCategory(NodeCategory):
 
     def get_age_type_name(self) -> str:
         return "NATURAL_EVENT"
+    
+    
+    def get_age_input_role_edge_name(self, role) -> str:
+        return "WENT_THROUGH"
+    
+    def get_age_output_role_edge_name(self, role) -> str:
+        return "CAME_OUT_OF"
 
     @property
     def collected_in_role_vertex_name(self):
-        return ["UNDERWENT"]  # TODO This needs to be implemented but currently not used
-
+        return ["WENT_THROUGH"]  # TODO This needs to be implemented but currently not used
     @property
     def collected_out_role_vertex_name(self):
         return ["CREATED"]  # TODO This needs to be implemented but currently not used
@@ -981,6 +1025,22 @@ class RelationCategory(EdgeCategory):
 
     def get_age_type_name(self) -> str:
         return "RELATION"
+    
+    
+    def source_matches(self, entity: EntityCategory) -> bool:
+        """Check if the given entity matches the source definition of this relation category."""
+        if not self.source_definition:
+            return True  # If no source definition, match all
+        # For simplicity, we assume source_definition is a list of required tags
+        required_tags = set(self.source_definition.get("tags", []))
+        entity_tags = set(entity.tags.values_list("value", flat=True))
+        return required_tags.issubset(entity_tags)
+    
+    
+    
+    
+    
+    
 
     class Meta:
         default_related_name = "relation_categories"
@@ -1214,6 +1274,12 @@ class MaterializedEdge(models.Model):
         on_delete=models.CASCADE,
         related_name="materialized_edges_as_relation",
         help_text="The relation category of the edge",
+    )
+    role = models.CharField(
+        max_length=1000,
+        null=True,
+        blank=True,
+        help_text="The role of the edge, if its part of a protocol or natural event (e.g. source, target, etc.)",
     )
 
 

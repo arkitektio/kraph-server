@@ -3,7 +3,7 @@ Entity mutation resolvers.
 """
 from kante.types import Info
 
-from api.types import Entity, entity_from_response
+from api.types import Entity
 from api.inputs import EntityCreationInput, RecalculateEntityInput
 from api.context import get_controller, extract_graph_id, extract_node_id
 from core import models

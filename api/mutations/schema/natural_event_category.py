@@ -7,7 +7,7 @@ from api import inputs, types
 from core import models
 
 
-def create_entity_category(
+def create_event_category(
     info: Info,
     input: inputs.CreateEntityDefinitionInput,
 ) -> types.EntityCategory:
@@ -22,7 +22,7 @@ def create_entity_category(
     if model.image:
         media_store = models.MediaStore.objects.get(id=model.image)
     
-    vocab, created = models.EntityCategory.objects.update_or_create(
+    vocab, created = models.NodeCategory.objects.update_or_create(
         graph_id=model.graph,
         age_name=model.key,
         defaults=dict(
@@ -30,6 +30,7 @@ def create_entity_category(
             store=media_store,
             label=model.label if model.label else model.key,
             property_definitions=[pdef.model_dump() for pdef in model.properties] or [],
+            source_
         ),
     )
     
@@ -58,9 +59,6 @@ def create_entity_category(
             vocab.pinned_by.add(info.context.request.user)
         else:
             vocab.pinned_by.remove(info.context.request.user)
-            
-            
-    
 
 
     return cast(types.EntityCategory, vocab)
@@ -68,12 +66,11 @@ def create_entity_category(
     
     
 
-def update_entity_category(info: Info, input: inputs.UpdateEntityDefinitionInput) -> types.EntityCategory:
-    """ GraphQL mutation wrapper for updating entity categories."""
+def update_event_category(info: Info, input: inputs.UpdateEventDefinitionInput) -> types.NaturalEventCategory:
+    """ GraphQL mutation wrapper for updating event categories."""
     model = input.to_pydantic()  # Validate input with Pydantic models
     
-    item = models.EntityCategory.objects.get(id=model.id)
-
+    item = models.NaturalEventCategory.objects.get(id=model.id)
     if model.color:
         assert len(model.color) == 3 or len(model.color) == 4, "Color must be a list of 3 or 4 values RGBA"
 
@@ -107,9 +104,9 @@ def update_entity_category(info: Info, input: inputs.UpdateEntityDefinitionInput
 
 def delete_entity_category(
     info: Info,
-    input: inputs.DeleteEntityDefinitionInput,
+    input: inputs.DeleteEventDefinitionInput,
 ) -> strawberry.ID:
     model = input.to_pydantic()  # Validate input with Pydantic models
-    item = models.EntityCategory.objects.get(id=model.id)
+    item = models.NaturalEventCategory.objects.get(id=model.id)
     item.delete()
     return model.id

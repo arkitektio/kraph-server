@@ -1,3 +1,4 @@
+from asyncio import Protocol
 from enum import Enum
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import List, Dict, Optional, Any, Literal
@@ -335,12 +336,41 @@ class EventKind(str, Enum):
     """Role type for a node in an event."""
     INTRINSIC= "intrinsic"
     EXTRINSIC = "extrinsic"
+    
+    
+    
+class EntityCategoryProtocol(Protocol):
+    """Protocol for entity categories to provide source definition for event linking."""
+    id: str
+    tags: List[str]
+    ontology_references: List[OntologyReferenceInput]
+        
+    
+    
+class EntityDescriptorInput(BaseModel):
+    """Input for filtering entities when linking to a structure."""
+    category: Optional[List[str]] = Field(None, description="Filter by entity category/label")
+    tags: Optional[List[str]] = Field(None, description="Filter by tags on the entity")
+    ontotology_terms: Optional[List[str]] = Field(None, description="Filter by ontology references on the entity (format: 'PREFIX:TERM_ID')")
+    
+    
+    def matches(self, entity: EntityCategoryProtocol) -> bool:
+        """Check if a given entity matches this descriptor."""
+        if self.category and entity.id not in self.category:
+            return False
+        if self.tags and not set(self.tags).issubset(set(entity.tags)):
+            return False
+        if self.ontotology_terms and not set(self.ontotology_terms).issubset(set(map(lambda x: x.uri, entity.ontology_references))):
+            return False
+        return True
 
 class EventRoleInput(BaseModel):
     """Input for a role of a node in an event (input or output)."""
     key: str = Field(..., description="The label of the node participating in the event")
     role: str = Field(..., description="What type of role does this node play in the event")
+    descriptor: EntityDescriptorInput = Field(..., description="Optional filters to apply when linking entities to structures for this role")
     ontology_references: List[OntologyReferenceInput] = Field(default_factory=list, description="Ontology references for this event")
+    
 
 
 
@@ -351,6 +381,21 @@ class EventDefinitionInput(NodeDefinitionInput):
     properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Property definitions")
     ontology_references: List[OntologyReferenceInput] = Field(default_factory=list, description="Ontology references for this event")
 
+
+
+class CreateEventDefinitionInput(EventDefinitionInput):
+    """Input for an event definition at the graph level (not within an event)."""
+    graph: str = Field(..., description="The graph id this event will belong to")
+    
+    
+class UpdateEventDefinitionInput(EventDefinitionInput):
+    """Input for updating an existing event definition at the graph level."""
+    id: str = Field(..., description="The ID of the event category to update")
+
+
+class DeleteEventDefinitionInput(BaseModel):
+    """Input for deleting an existing event definition at the graph level."""
+    id: str = Field(..., description="The ID of the event category to delete")
 
 
 class EvidenceRequirementInput(BaseModel):
@@ -371,11 +416,11 @@ class RelationDefinitionInput(BaseModel):
     """Input for a relation definition."""
     ontology_references: List[OntologyReferenceInput] = Field(default_factory=list, description="Ontology references for this event")
     key: str = Field(..., description="Relation type name/key")
-    source: List[str] = Field(..., description="Source entity type(s)")
-    target: List[str] = Field(..., description="Target entity type(s)")
+    source: List[EntityDescriptorInput] = Field(..., description="Source entity type(s)")
+    target: List[EntityDescriptorInput] = Field(..., description="Target entity type(s)")
     cardinality: Literal["1:1", "1:N", "N:N"] = Field("1:N", description="Relation cardinality")
-    materialization: Optional[MaterializationConfigInput] = Field(None, description="Materialization config if this relation is derived from evidence")
-    
+    properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Derived property definitions")
+
     @field_validator('source', 'target', mode='before')
     @classmethod
     def coerce_to_list(cls, v):
@@ -400,9 +445,56 @@ class SequenceInput(BaseModel):
     
     
     
+class RoleMappingInput(BaseModel):
+    """
+    Input for role mappings in an event.
+    """
+    role: str = Field(..., description="The role name")
+    entity_id: str = Field(..., description="The ID of the entity assigned to this role")
+    
+class EventInput(BaseModel):
+    """Input for creating a new event instance."""
+    event_category: str = Field(..., description="The ID of the event category/type to create")
+    inputs: List[RoleMappingInput] = Field(default_factory=list, description="List of entity IDs that are inputs to this event")
+    outputs: List[RoleMappingInput] = Field(default_factory=list, description="List of entity IDs that are outputs of this event")
+    supporting_evidence: List[StructureReference] = Field(default_factory=list, description="List of evidence structures with measurements")
+    provenance: ProvenanceContext
+    
+
+class NaturalEventInput(EventInput):
+    """Input for creating a new natural event instance."""
+    pass
+    
+    
+class CreateNaturalEventInput(NaturalEventInput):
+    """Input for creating a new natural event instance."""
+    event_category: str = Field(..., description="The ID of the natural event category/type to create")
+    
+class UpdateNaturalEventInput(NaturalEventInput):
+    """Input for updating an existing natural event instance."""
+    id: str = Field(..., description="The ID of the natural event to update")
+    
+class DeleteNaturalEventInput(BaseModel):
+    """Input for deleting an existing natural event instance."""
+    id: str = Field(..., description="The ID of the natural event to delete")
     
    
-
+ 
+class StructureInput(BaseModel):
+    """Input for creating a new structure instance."""
+    identifier: str = Field(..., description="Schema identifier, e.g. '@mikro/roi'")
+    object: str = Field(..., description="The unique ID of the object this structure references")
+    metrics: List[MetricInput] = Field(default_factory=list, description="List of measurements associated with this structure")
+    
+    
+class CreateStructureInput(StructureInput):
+    """Input for creating a new structure instance."""
+    graph: str = Field(..., description="The graph id this structure will belong to")
+    
+    
+   
+   
+   
 
 class GraphExtensionsInput(BaseModel):
     """

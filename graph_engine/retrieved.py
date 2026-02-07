@@ -482,6 +482,13 @@ class RetrievedStructure(RetrievedNode):
     """A retrieved Structure node from the AGE graph."""
     pass
 
+
+@dataclass
+class RetrievedEvent(RetrievedNode):
+    """A retrieved Event node from the AGE graph."""
+    pass
+
+
 @dataclass
 class RetrievedMeasurement(RetrievedNode):
     """A retrieved Measurement node from the AGE graph."""
