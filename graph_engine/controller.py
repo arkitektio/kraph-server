@@ -9,10 +9,8 @@ from graph_engine.base_models import (
     get_identifier_for_label,
 )
 from graph_engine.input_models import (
-    EntityCreationResult,
     MetricInput,
     ProvenanceContext,
-    RelationCreationPayload,
     RelationInput,
 )
 from graph_engine.engine.protocol import CypherEngine
@@ -67,17 +65,38 @@ class GraphController:
         self,
         entity_category: models.EntityCategory,
         universal_id: str,
-    ) -> EntityCreationResult:
-        pass
+        payload: inputs.EntityInput,
+    ) -> RetrievedEntity:
+        raise NotImplementedError("Ensure entity is not implemented yet. Use create_entity for now.")
+
+    def _create_provenance_node(self, graph: models.Graph, context: ProvenanceContext) -> int:
+        """
+        Creates an Assertion node for provenance tracking and returns its internal graph ID.
+
+        Args:
+            graph: The graph to create the assertion in
+            context: The provenance context with subject and app_id
+        Returns:
+            The internal graph ID of the created assertion node
+        """
+        query = f"""
+            CREATE (a:{vocab.Assertion} {{subject: $subject, app_id: $app_id, timestamp: $timestamp}})
+            RETURN id(a) as assertion_id
+        """
+        params = {
+            "subject": context.subject,
+            "app_id": context.app_id,
+            "timestamp": int(time.time() * 1000),
+        }
+        result = self.engine.execute(graph, query, params)
+        return result[0]["assertion_id"]
 
     def create_entity(
         self,
         entity_category: models.EntityCategory,
-        action_id: Optional[str] = None,
-        action_name: Optional[str] = None,
-        action_args: Optional[Dict[str, Any]] = None,
-        supporting_evidence: Optional[List[inputs.StructureReference]] = None,
-    ) -> EntityCreationResult:
+        payload: inputs.EntityInput,
+        context: ProvenanceContext,
+    ) -> RetrievedEntity:
         """
         Create a new entity with optional supporting evidence structures.
 
@@ -93,21 +112,11 @@ class GraphController:
         Returns:
             EntityCreationResult with ref_id, db_id, and graph_id
         """
-        supporting_evidence = supporting_evidence or []
+        supporting_evidence = payload.supporting_evidence or []
         graph: models.Graph = entity_category.graph
 
         # --- Step 2: Create Assertion (Provenance) ---
-        prov_dict: Dict[str, Any] = {"subject": self.subject, "app_id": self.app_id}
-        if action_id is not None:
-            prov_dict["action_id"] = action_id
-        if action_name is not None:
-            prov_dict["action_name"] = action_name
-        if action_args is not None:
-            prov_dict["action_args"] = json.dumps(action_args)
-
-        assertion_props = ", ".join([f"{k}: ${k}" for k in prov_dict.keys()])
-        aid_res = self.engine.execute(entity_category.graph, f"CREATE (a:{vocab.Assertion} {{{assertion_props}}}) RETURN id(a) as aid", prov_dict)
-        assertion_id = aid_res[0]["aid"]
+        assertion_id = self._create_provenance_node(graph, context)
 
         # --- Step 3: Handle Evidence & Measurements ---
         for evidence in supporting_evidence:
@@ -166,6 +175,7 @@ class GraphController:
 
         # --- Step 4: Create Entity (Shell) ---
         # We only set the immutable ID (db_id). All other props come from cache recalculation.
+        ref_id = self.create_universal_id()
         e_params = {"eid": ref_id, "aid": assertion_id}
 
         create_res = self.engine.execute(
@@ -174,13 +184,15 @@ class GraphController:
             MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
             CREATE (e:{entity_category.age_name} {{id: $eid}})
             CREATE (a)-[:{vocab.GENERATED}]->(e)
-            RETURN e.id as db_id, id(e) as graph_id
+            RETURN e as entity, id(e) as db_id
             """,
             e_params,
         )
 
         db_id = str(create_res[0]["db_id"])
-        graph_id = create_res[0]["graph_id"]
+        entity = create_res[0]["entity"]
+
+        retrieved = RetrievedEntity.from_node(entity, graph_name=entity_category.graph)
 
         # --- Step 5: Link Entity -> Evidence ---
         for evidence in supporting_evidence:
@@ -194,14 +206,14 @@ class GraphController:
                 MATCH (s:{g_label} {{object: $obj}})
                 MERGE (s)-[:{vocab.INFORMS}]->(e)
                 """,
-                {"eid": graph_id, "obj": evidence_object},
+                {"eid": retrieved.local_id, "obj": evidence_object},
             )
 
         # --- Step 6: Recalculate Cached Properties ---
         # This is where the magic happens: Properties flow from Evidence -> Entity
-        self._recalculate_entity(graph_id, entity_category)
+        self._recalculate_entity(retrieved.local_id, entity_category)
 
-        return EntityCreationResult(ref_id=ref_id, db_id=db_id, graph_id=graph_id)
+        return retrieved
 
     def _recalculate_entity(self, graph_id: int, entity_category: models.EntityCategory) -> None:
         """
@@ -253,67 +265,6 @@ class GraphController:
     # MIGRATION METHODS
     # ===================================================================
 
-    def migrate_node(
-        self,
-        node_id: int,
-        label: str,
-        from_version: Optional[str] = None,
-        to_version: Optional[str] = None,
-    ) -> bool:
-        """
-        Migrate a node from one schema version to another.
-
-        This re-runs property derivation to update the node to the current
-        schema version. The migration is essentially a recalculation with
-        the new schema.
-
-        Args:
-            node_id: The AGE node ID (graph_id)
-            label: The node's label (entity kind)
-            from_version: The version the node was created with (optional, for logging)
-            to_version: The target version (defaults to current schema version)
-
-        Returns:
-            True if migration was performed
-        """
-        target_schema = self.definition
-        if to_version and target_schema.system_version != to_version:
-            # In the future, we could load a specific schema version
-            # For now, we only migrate to the current active schema
-            pass
-
-        # Perform recalculation which updates all derived properties
-        self._recalculate_entity(node_id, label, target_schema)
-        return True
-
-    def migrate_edge(
-        self,
-        edge_id: int,
-        label: str,
-        from_version: Optional[str] = None,
-        to_version: Optional[str] = None,
-    ) -> bool:
-        """
-        Migrate an edge (relation) from one schema version to another.
-
-        This re-runs property derivation on the relation to update it to
-        the current schema version.
-
-        Args:
-            edge_id: The AGE edge ID
-            label: The edge's label (relation kind)
-            from_version: The version the edge was created with (optional)
-            to_version: The target version (defaults to current schema version)
-
-        Returns:
-            True if migration was performed
-        """
-        target_schema = self.definition
-
-        # Recalculate relation properties
-        self._recalculate_relation(edge_id, label, target_schema)
-        return True
-
     def _recalculate_relation(
         self,
         edge_id: int,
@@ -360,104 +311,6 @@ class GraphController:
                 update_params,
             )
 
-    def _check_and_migrate_node(
-        self,
-        entity: "RetrievedEntity",
-        entity_category: models.EntityCategory,
-        auto_migrate: bool = True,
-    ) -> "RetrievedEntity":
-        """
-        Check if a node needs migration and optionally migrate it.
-
-        Args:
-            entity: The retrieved entity to check
-            entity_category: The entity category (used to get the current schema version)
-            auto_migrate: Whether to perform migration automatically
-
-        Returns:
-            The entity (possibly refreshed after migration)
-        """
-        current_version = entity_category.schema_hash
-        entity_version = entity.properties.get("__schema_version")
-
-        # No migration needed if versions match or entity has no version
-        if not entity_version or entity_version == current_version:
-            return entity
-
-        if auto_migrate:
-            # Perform migration
-            self._migrate_node(
-                entity_category=entity_category,
-                node_id=entity.id,
-                label=entity.label,
-            )
-
-            # Re-fetch the updated entity
-            return self._get_entity_without_migration(entity.properties.get("id"), entity_category)
-
-        return entity
-
-    def _migrate_node(
-        self,
-        entity_category: models.EntityCategory,
-        node_id: int,
-        label: str,
-    ) -> None:
-        """
-        Migrate a node to the current schema version by recalculating its properties.
-
-        Args:
-            entity_category: The entity category to use for migration
-            node_id: The internal graph id of the node
-            label: The node's label
-        """
-        # Simply recalculate all properties based on current schema
-        self._recalculate_entity(node_id, entity_category)
-
-    def _get_entity_without_migration(self, id: str, entity_category: models.EntityCategory) -> "RetrievedEntity":
-        """
-        Internal method to fetch entity without triggering migration check.
-        Used after migration to avoid infinite loops.
-        """
-        graph = entity_category.graph
-
-        query = """
-            MATCH (n) WHERE n.id = $id
-            RETURN n, labels(n) as lbls
-        """
-        result = self.engine.execute(graph, query, {"id": id})
-
-        if not result:
-            raise ValueError(f"Entity not found with ID {id}")
-
-        raw_node = result[0]["n"]
-        labels = result[0]["lbls"]
-
-        if isinstance(raw_node, dict) and "properties" in raw_node:
-            node_props = raw_node["properties"]
-        else:
-            node_props = raw_node
-
-        detected_kind = None
-        entity_categories = {ec.age_name for ec in graph.entity_categories.all()}
-
-        for label in labels:
-            if label in entity_categories:
-                detected_kind = label
-                break
-
-        if not detected_kind:
-            detected_kind = labels[0] if labels else "Unknown"
-
-        graph_id = _extract_id(raw_node)
-
-        return RetrievedEntity(
-            graph_name=graph.age_name,
-            id=graph_id,
-            label=detected_kind,
-            properties=node_props,
-        )
-
     def get_node(self, graph: models.Graph, entity_id: str) -> RetrievedNode:
         """
         Retrieve a raw node by its string ID.
@@ -482,12 +335,7 @@ class GraphController:
 
         raw_node = result[0]["n"]
 
-        return RetrievedNode(
-            graph_name=graph.age_name,
-            id=_extract_id(raw_node),
-            label=result[0]["lbls"][0] if result[0]["lbls"] else "Unknown",
-            properties=_extract_props(raw_node),
-        )
+        return RetrievedNode.from_node(raw_node, graph_name=graph.age_name)
 
     def get_node_for_composite_id(self, composite_id: str) -> RetrievedNode:
         """
@@ -580,9 +428,12 @@ class GraphController:
             properties=node_props,
         )
 
-        # 3. Check for schema version mismatch and auto-migrate if needed
-        if auto_migrate:
-            entity = self._check_and_migrate_node(entity, entity_category, auto_migrate=True)
+        if entity.schema_hash != entity_category.schema_hash and auto_migrate:
+            # Perform migration
+            self._migrate_entity(entity, entity_category)
+
+            # Refetch the node after migration to get updated properties
+            return self.get_entity(entity_category, id, auto_migrate=False)
 
         return entity
 

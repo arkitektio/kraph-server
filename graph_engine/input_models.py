@@ -71,14 +71,14 @@ def create_max_confidence_metric(key: str, value: Any, unit: Optional[str] = Non
     return MetricInput(key=key, value=value, confidence=1.0, confidence_type="max", unit=unit, timestamp=timestamp)
 
 
-class StructureReference(BaseModel):
+class StructureReferenceInput(BaseModel):
     identifier: str = Field(..., description="Schema identifier, e.g. '@mikro/roi'")
     object: str = Field(..., description="The unique ID of the object this structure references")
     metrics: List[MetricInput] = []
 
 
-def create_told_you_so(metrics: List[MetricInput], object: str) -> StructureReference:
-    return StructureReference(identifier="told_you_so", object=object, metrics=metrics)
+def create_told_you_so(metrics: List[MetricInput], object: str) -> StructureReferenceInput:
+    return StructureReferenceInput(identifier="told_you_so", object=object, metrics=metrics)
 
 
 class ProvenanceContext(BaseModel):
@@ -87,65 +87,6 @@ class ProvenanceContext(BaseModel):
     action_id: Optional[str] = None
     action_name: Optional[str] = None
     action_args: Optional[Dict[str, Any]] = None
-
-
-class EntityCreationPayload(BaseModel):
-    ref_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    kind: str
-    supporting_evidence: List[StructureReference] = []
-    provenance: ProvenanceContext
-    graph_id: Optional[Any] = None  # This will be filled in by the controller after creation
-
-
-# ... [Previous imports & models: MeasurementInput, StructureReference, ProvenanceContext] ...
-
-
-class RelationCreationPayload(BaseModel):
-    """
-    Payload to create a relationship backed by evidence.
-    """
-
-    ref_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    kind: str = Field(..., description="The relationship label (e.g. 'CONNECTED_TO')")
-
-    source_id: str = Field(..., description="The ID of the source entity")
-    target_id: str = Field(..., description="The ID of the target entity")
-
-    # Evidence is used to calculate properties on the edge (e.g. confidence)
-    supporting_evidence: List[StructureReference] = []
-    provenance: ProvenanceContext
-
-
-class EntityCreationResult(BaseModel):
-    ref_id: str
-    db_id: str
-    graph_id: Any
-    status: str = "CREATED"
-
-
-class StructureCreationPayload(BaseModel):
-    """Payload for creating a structure."""
-
-    identifier: str = Field(..., description="Schema identifier, e.g. '@mikro/roi'")
-    object: str = Field(..., description="The unique ID of the object this structure references")
-
-
-class StructureCreationResult(BaseModel):
-    """Result of structure creation."""
-
-    id: str
-    identifier: str
-    label: str
-    status: str = "CREATED"
-
-
-class AddMetricPayload(BaseModel):
-    """Payload for adding a metric to a structure."""
-
-    structure_identifier: str = Field(..., description="Schema identifier of the structure")
-    structure_id: str = Field(..., description="The unique ID of the structure")
-    metric: MetricInput
-    provenance: ProvenanceContext
 
 
 # ==========================================
@@ -276,7 +217,7 @@ class PropertyDefinitionInput(BaseModel):
         return self
 
 
-class SequenceMapping(BaseModel):
+class SequenceMappingInput(BaseModel):
     """Input for a sequence mapping within a structure."""
 
     sequence: str = Field(..., description="The sequence identifier (e.g., 'IAZ001')")
@@ -286,7 +227,7 @@ class SequenceMapping(BaseModel):
 class NodeDefinitionInput(BaseModel):
     """Input for a node definition within an event."""
 
-    sequences: List[SequenceMapping] = Field(default_factory=list, description="Sequence mappings for this node")
+    sequences: List[SequenceMappingInput] = Field(default_factory=list, description="Sequence mappings for this node")
     key: str = Field(..., description="The label of the node participating in the event")
     description: Optional[str] = Field(None, description="Description of this node role")
     ontology_references: List[OntologyReferenceInput] = Field(default_factory=list, description="Ontology references for this event")
@@ -381,7 +322,6 @@ class EventDefinitionInput(NodeDefinitionInput):
     inputs: List[EventRoleInput] = Field(default_factory=list, description="Input node roles")
     outputs: List[EventRoleInput] = Field(default_factory=list, description="Output node roles")
     properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Property definitions")
-    ontology_references: List[OntologyReferenceInput] = Field(default_factory=list, description="Ontology references for this event")
 
 
 class NaturalEventDefinitionInput(EventDefinitionInput):
@@ -494,8 +434,7 @@ class EventInput(BaseModel):
     event_category: str = Field(..., description="The ID of the event category/type to create")
     inputs: List[RoleMappingInput] = Field(default_factory=list, description="List of entity IDs that are inputs to this event")
     outputs: List[RoleMappingInput] = Field(default_factory=list, description="List of entity IDs that are outputs of this event")
-    supporting_evidence: List[StructureReference] = Field(default_factory=list, description="List of evidence structures with measurements")
-    provenance: ProvenanceContext
+    supporting_evidence: List[StructureReferenceInput] = Field(default_factory=list, description="List of evidence structures with measurements")
 
 
 class NaturalEventInput(EventInput):
@@ -532,7 +471,7 @@ class EntityInput(BaseModel):
     """Input for creating a new entity instance."""
 
     entity_category: str = Field(..., description="The ID of the entity category/type to create")
-    supporting_evidence: List[StructureReference] = Field(default_factory=list, description="List of evidence structures with measurements")
+    supporting_evidence: List[StructureReferenceInput] = Field(default_factory=list, description="List of evidence structures with measurements")
     provenance: ProvenanceContext
 
 
@@ -552,6 +491,12 @@ class ArchiveEntityInput(BaseModel):
     """Input for archiving (soft deleting) an existing entity instance."""
 
     id: str = Field(..., description="The ID of the entity to archive")
+
+
+class DeleteEntityInput(BaseModel):
+    """Input for deleting an existing entity instance."""
+
+    id: str = Field(..., description="The ID of the entity to delete")
 
 
 class StructureInput(BaseModel):
@@ -578,17 +523,6 @@ class DeleteStructureInput(BaseModel):
     """Input for hard deleting an existing structure."""
 
     id: str = Field(..., description="The ID of the structure to delete")
-
-
-class MetricInput(BaseModel):
-    """Input for a measurement/metric."""
-
-    key: str = Field(..., description="The property key/name for this metric")
-    value: Any = Field(..., description="The value of the metric (string, number, boolean, datetime, or point_3d)")
-    confidence: Optional[float] = Field(None, description="Optional confidence score for this metric (0.0 to 1.0)")
-    confidence_type: Optional[str] = Field(None, description="Optional type/category for the confidence score (e.g. 'expert_estimate', 'model_prediction')")
-    unit: Optional[str] = Field(None, description="Optional unit of measurement for this metric (e.g. 'microns', 'seconds', 'mV')")
-    timestamp: Optional[int] = Field(None, description="Optional timestamp for this metric (Unix epoch time in milliseconds)")
 
 
 class CreateMetricInput(MetricInput):
@@ -738,10 +672,3 @@ class SetSchemaResult(BaseModel):
     version: str = Field(..., description="Version string of the schema")
     index: int = Field(..., description="Sequential index of this schema")
     is_active: bool = Field(..., description="Whether this schema is now active")
-
-
-class EntityCreationInput(BaseModel):
-    """Input for creating a new entity with supporting evidence."""
-
-    entity_category: str = Field(..., description="The ID of the entity category/type to create")
-    supporting_evidence: List[StructureReference] = Field(default_factory=list, description="List of evidence structures with measurements")

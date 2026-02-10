@@ -7,7 +7,7 @@ as core/age.py's RetrievedEntity and RetrievedRelation.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Type, TypeVar
 from datetime import datetime
 from graph_engine import vocab
 
@@ -74,6 +74,9 @@ class RetrievedVariable:
 
     def __hash__(self):
         return hash(self.key)
+
+
+T = TypeVar("T", bound="RetrievedNode")
 
 
 @dataclass
@@ -261,6 +264,16 @@ class RetrievedNode:
         if not isinstance(other, RetrievedNode):
             return False
         return self.graph_name == other.graph_name and self.id == other.id
+
+    @classmethod
+    def from_node(cls: Type[T], node: Dict[str, Any], graph_name: str = "default_graph") -> T:
+        """Factory method to create a RetrievedNode from raw AGE node data."""
+        return cls(
+            graph_name=graph_name,
+            id=node.get("id", 0),
+            label=node.get("label", "Unknown"),
+            properties=node.get("properties", {}),
+        )
 
 
 @dataclass
@@ -459,6 +472,11 @@ class RetrievedEdge:
 @dataclass
 class RetrievedEntity(RetrievedNode):
     """A retrieved Entity node from the AGE graph."""
+
+    @property
+    def schema_hash(self) -> Optional[str]:
+        """The schema hash of the entity."""
+        return self.properties.get("schema_hash")
 
     @property
     def entity_id(self) -> Optional[str]:
