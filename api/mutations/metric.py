@@ -3,16 +3,16 @@ Measurement mutation resolvers.
 """
 from kante.types import Info
 
-from api.types import Measurement, measurement_from_response
+from api.types import Metric, measurement_from_response
 from api.inputs import AddMeasurementInput
 from api.context import extract_graph_id, get_provenance_from_context, get_controller, extract_node_id
 from core import models
 
 
-def add_measurement(
+def add_metric(
     info: Info,
     input: AddMeasurementInput,
-) -> Measurement:
+) -> Metric:
     """
     Add a measurement to an existing structure.
     

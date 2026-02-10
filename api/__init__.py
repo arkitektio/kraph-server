@@ -7,7 +7,7 @@ the provenance-aware graph database.
 
 The API is designed around three core concepts:
 1. Entities - Domain objects with derived properties
-2. Structures - Evidence sources that inform entities  
+2. Structures - Evidence sources that inform entities
 3. Measurements - Data points attached to structures
 
 Uses strawberry-pydantic for input validation against Pydantic models.
@@ -17,7 +17,8 @@ from .types import (
     # Core Response Types
     Entity,
     Structure,
-    Measurement,
+    Describes,
+    Asserted,
     Assertion,
     NaturalEvent,
     Metric,
@@ -28,13 +29,6 @@ from .types import (
     # Rich Property Type
     RichProperty,
     Property,
-    # Aggregate Types
-    EntityConnection,
-    StructureConnection,
-    MeasurementConnection,
-    NodeConnection,
-    EdgeConnection,
-    # Base Interfaces
     Node,
     VersionedNode,
     Edge,
@@ -47,7 +41,7 @@ from .types import (
 
 from .inputs import (
     # Pydantic-validated inputs
-    MeasurementInput,
+    MetricInput,
     StructureReferenceInput,
     ProvenanceInput,
     EntityCreationInput,
@@ -78,7 +72,7 @@ __all__ = [
     "Property",
     # Connections
     "EntityConnection",
-    "StructureConnection", 
+    "StructureConnection",
     "MeasurementConnection",
     "NodeConnection",
     "EdgeConnection",

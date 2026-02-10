@@ -80,6 +80,7 @@ class Graph(models.Model):
     to their name.s
 
     """
+
     node_deletion_allowed = models.BooleanField(
         default=True,
         help_text="If node deletion is allowed in this graph",
@@ -121,14 +122,11 @@ class Graph(models.Model):
         related_name="pinned_graphs",
         help_text="The users that have this query active",
     )
-    
+
     @classmethod
     def get_for_node_global_id(cls, node_id: str):
         graph_id, node_id = node_id.split(":")
         return cls.objects.get(id=graph_id)
-    
-
-    
 
     @classmethod
     def create_age_name(cls, name: str, organization: Organization) -> str:
@@ -140,13 +138,11 @@ class Graph(models.Model):
             age_name = f"{base_name}_{org_slug}_{counter}"
             counter += 1
         return age_name
-    
-    
+
     def get_age_name(self) -> str:
-        """ Get the Apache AGE graph name for this graph, which is used to identify the graph in the AGE database."""
+        """Get the Apache AGE graph name for this graph, which is used to identify the graph in the AGE database."""
         return self.age_name
-    
-    
+
     def get_entity_def(self, label: str) -> "EntityCategory":
         """Get the entity definition for a specific label from the active schema."""
         return self.entity_categories.get(age_name=label)
@@ -195,21 +191,21 @@ class Graph(models.Model):
     def active_schema(self) -> "GraphSchema":
         """Get the currently active schema for this graph."""
         return self.schemas.filter(is_active=True).first()
-    
+
     @property
     def definition(self):
         """Get the GraphDefinitionModel from the active schema."""
         from graph_engine.base_models import GraphDefinitionModel
+
         schema = self.active_schema
         if schema:
             return GraphDefinitionModel.model_validate(schema.definition)
         return None
-    
-    
+
     @property
     def allow_adding_structure_definitions(self) -> bool:
         return True
-    
+
     @property
     def allow_auto_add_structure_definitions(self) -> bool:
         return True
@@ -217,52 +213,51 @@ class Graph(models.Model):
     @property
     def allow_adding_entity_definitions(self) -> bool:
         return True
-    
+
     @property
     def allow_adding_relation_definitions(self) -> bool:
         return True
-    
+
     @property
     def allow_auto_adding_metrics(self) -> bool:
         return True
-    
-    
-    
+
+
 class GraphSchema(models.Model):
     """
     A versioned schema definition for a graph.
-    
+
     Schemas are immutable once created. Each graph has one active schema
     at a time, and schemas have increasing indices for version tracking.
     """
-    
+
     graph = models.ForeignKey(
         Graph,
         on_delete=models.CASCADE,
         related_name="schemas",
         help_text="The graph this schema belongs to",
     )
-    
+
     version = models.CharField(
         max_length=100,
         help_text="Semantic version of this schema (e.g., '1.0.0')",
     )
-    
+
     index = models.PositiveIntegerField(
         help_text="Sequential index of this schema version (auto-incremented)",
     )
-    
+
     definition = models.JSONField(
         help_text="The full GraphDefinitionModel as JSON",
     )
-    
+
     is_active = models.BooleanField(
         default=False,
         help_text="Whether this is the currently active schema for the graph",
     )
-    
+
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
     created_by = models.ForeignKey(
         get_user_model(),
         on_delete=models.SET_NULL,
@@ -271,37 +266,38 @@ class GraphSchema(models.Model):
         related_name="created_schemas",
         help_text="User who created this schema",
     )
-    
+
     description = models.TextField(
         null=True,
         blank=True,
         help_text="Description of changes in this schema version",
     )
-    
+
     class Meta:
         unique_together = [("graph", "index"), ("graph", "version")]
         ordering = ["-index"]
-    
+
     def __str__(self) -> str:
         active_marker = " (active)" if self.is_active else ""
         return f"{self.graph.name} v{self.version}{active_marker}"
-    
+
     def save(self, *args, **kwargs) -> None:
         # Auto-increment index if not set
         if self.index is None:
             last_schema = GraphSchema.objects.filter(graph=self.graph).order_by("-index").first()
             self.index = (last_schema.index + 1) if last_schema else 1
         super().save(*args, **kwargs)
-    
+
     def activate(self) -> None:
         """Set this schema as the active one, deactivating others."""
         GraphSchema.objects.filter(graph=self.graph).update(is_active=False)
         self.is_active = True
         self.save(update_fields=["is_active"])
-    
+
     def get_definition_model(self):
         """Parse the stored JSON into a GraphDefinitionModel."""
         from graph_engine.base_models import GraphDefinitionModel
+
         return GraphDefinitionModel.model_validate(self.definition)
 
 
@@ -310,10 +306,9 @@ def random_color():
     return tuple(random.choice(levels) for _ in range(3))
 
 
-
 class GraphOntology(models.Model):
     """An ontology reference for the graph schema."""
-    
+
     graph = models.ForeignKey(
         "Graph",
         on_delete=models.CASCADE,
@@ -333,12 +328,12 @@ class GraphOntology(models.Model):
         help_text="The description of the ontology",
         null=True,
     )
-    
+
     class Meta:
         unique_together = ("graph", "name")
         default_related_name = "graph_ontologies"
-        
-        
+
+
 class OntologyReference(models.Model):
     category = models.ForeignKey(
         "Category",
@@ -355,6 +350,7 @@ class OntologyReference(models.Model):
         related_name="references",
     )
 
+
 class GraphSequence(models.Model):
     """A node index for a category"""
 
@@ -364,7 +360,7 @@ class GraphSequence(models.Model):
         related_name="graph_sequences",
         help_text="The graph this sequence belongs to",
     )
-    
+
     index = models.CharField(
         max_length=1000,
         help_text="The index name that was created",
@@ -549,6 +545,7 @@ class NodeCategory(Category):
     protocol steps.
 
     """
+
     schema_hash = models.CharField(
         max_length=1000,
         help_text="The schema hash representing the version of the schema this category was defined with",
@@ -616,17 +613,15 @@ class EdgeCategory(Category):
     def get_age_type_name(self) -> str:
         """Should return the type name of the edge in the age graph"""
         raise NotImplementedError("Not implemented needs to be implemented")
-    
-    
+
     @property
     def source_definition_model(self) -> EntityDescriptorInput:
-        return EntityDescriptorInput(**self.source_definition) 
-    
+        return EntityDescriptorInput(**self.source_definition)
+
     @property
     def target_definition_model(self) -> EntityDescriptorInput:
-        return EntityDescriptorInput(**self.target_definition) 
-    
-    
+        return EntityDescriptorInput(**self.target_definition)
+
     def matches_source(self, entity: "EntityCategory") -> bool:
         """Check if an entity matches the source definition of this edge category."""
         return self.source_definition_model.matches(entity)
@@ -634,8 +629,7 @@ class EdgeCategory(Category):
     def matches_target(self, entity: "EntityCategory") -> bool:
         """Check if an entity matches the target definition of this edge category."""
         return self.target_definition_model.matches(entity)
-    
-    
+
     def get_matching_source_entities(self, graph: Graph) -> QuerySet["EntityCategory"]:
         """Get all entities in the graph that match the source definition of this edge category."""
         return graph.entity_categories.filter(
@@ -643,7 +637,7 @@ class EdgeCategory(Category):
             tags__value__in=self.source_definition_model.tags,
             ontology_references__name__in=self.source_definition_model.ontotology_terms,
         ).distinct()
-        
+
     def get_matching_target_entities(self, graph: Graph) -> QuerySet["EntityCategory"]:
         """Get all entities in the graph that match the target definition of this edge category."""
         return graph.entity_categories.filter(
@@ -679,9 +673,6 @@ class StructureCategory(NodeCategory):
 
     def get_age_type_name(self) -> str:
         return "STRUCTURE"
-    
-    
-    
 
     class Meta:
         default_related_name = "structure_categories"
@@ -724,17 +715,17 @@ class NaturalEventCategory(NodeCategory):
 
     def get_age_type_name(self) -> str:
         return "NATURAL_EVENT"
-    
-    
+
     def get_age_input_role_edge_name(self, role) -> str:
         return "WENT_THROUGH"
-    
+
     def get_age_output_role_edge_name(self, role) -> str:
         return "CAME_OUT_OF"
 
     @property
     def collected_in_role_vertex_name(self):
         return ["WENT_THROUGH"]  # TODO This needs to be implemented but currently not used
+
     @property
     def collected_out_role_vertex_name(self):
         return ["CREATED"]  # TODO This needs to be implemented but currently not used
@@ -861,10 +852,10 @@ class EntityCategory(NodeCategory):
 
     def get_age_type_name(self) -> str:
         return "ENTITY"
-    
-    
+
     @property
     def descriptors(self) -> QuerySet["Descriptor"]:
+        return self.descriptors
 
     class Meta:
         default_related_name = "entity_categories"
@@ -1025,8 +1016,7 @@ class RelationCategory(EdgeCategory):
 
     def get_age_type_name(self) -> str:
         return "RELATION"
-    
-    
+
     def source_matches(self, entity: EntityCategory) -> bool:
         """Check if the given entity matches the source definition of this relation category."""
         if not self.source_definition:
@@ -1035,12 +1025,6 @@ class RelationCategory(EdgeCategory):
         required_tags = set(self.source_definition.get("tags", []))
         entity_tags = set(entity.tags.values_list("value", flat=True))
         return required_tags.issubset(entity_tags)
-    
-    
-    
-    
-    
-    
 
     class Meta:
         default_related_name = "relation_categories"

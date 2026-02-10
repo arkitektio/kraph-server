@@ -3,7 +3,7 @@ Measurement mutation resolvers.
 """
 from kante.types import Info
 
-from api.types import Measurement, measurement_from_response
+from api.types import NaturalEvent, measurement_from_response
 from api.inputs import CreateNaturalEventInput
 from api.context import get_provenance_from_context, get_controller
 from core import models
@@ -12,7 +12,7 @@ from core import models
 def create_natural_event(
     info: Info,
     input: CreateNaturalEventInput,
-) -> Measurement:
+) -> NaturalEvent:
     """
     Add a measurement to an existing structure.
     
@@ -20,7 +20,7 @@ def create_natural_event(
     
     Args:
         info: Strawberry Info context
-        input: AddMeasurementInput
+        input: CreateNaturalEventInput
         
     Returns:
         Created Measurement object

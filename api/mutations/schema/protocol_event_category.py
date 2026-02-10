@@ -7,11 +7,11 @@ from api import inputs, types
 from core import models
 
 
-def create_natural_event_category(
+def create_protocol_event_category(
     info: Info,
-    input: inputs.CreateNaturalEventDefinitionInput,
-) -> types.NaturalEventCategory:
-    """GraphQL mutation wrapper for creating natural event categories."""
+    input: inputs.CreateProtocolEventDefinitionInput,
+) -> types.EntityCategory:
+    """GraphQL mutation wrapper for creating entity categories."""
     
     model = input.to_pydantic()  # Validate input with Pydantic models
     
@@ -61,16 +61,16 @@ def create_natural_event_category(
             vocab.pinned_by.remove(info.context.request.user)
 
 
-    return cast(types.NaturalEventCategory, vocab)
+    return cast(types.EntityCategory, vocab)
     
     
     
 
-def update_natural_event_category(info: Info, input: inputs.UpdateNaturalEventDefinitionInput) -> types.NaturalEventCategory:
+def update_protocol_event_category(info: Info, input: inputs.UpdateProtocolEventDefinitionInput) -> types.ProtocolEventCategory:
     """ GraphQL mutation wrapper for updating event categories."""
     model = input.to_pydantic()  # Validate input with Pydantic models
     
-    item = models.NaturalEventCategory.objects.get(id=model.id)
+    item = models.ProtocolEventCategory.objects.get(id=model.id)
     if model.color:
         assert len(model.color) == 3 or len(model.color) == 4, "Color must be a list of 3 or 4 values RGBA"
 
@@ -99,14 +99,14 @@ def update_natural_event_category(info: Info, input: inputs.UpdateNaturalEventDe
             item.pinned_by.remove(info.context.request.user)
 
     item.save()
-    return cast(types.NaturalEventCategory, item)
+    return item
 
 
-def delete_natural_event_category(
+def delete_protocol_event_category(
     info: Info,
-    input: inputs.DeleteNaturalEventDefinitionInput,
+    input: inputs.DeleteProtocolEventDefinitionInput,
 ) -> strawberry.ID:
     model = input.to_pydantic()  # Validate input with Pydantic models
-    item = models.NaturalEventCategory.objects.get(id=model.id)
+    item = models.ProtocolEventCategory.objects.get(id=model.id)
     item.delete()
     return model.id

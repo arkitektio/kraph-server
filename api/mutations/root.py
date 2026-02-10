@@ -22,7 +22,7 @@ from api.inputs import (
 )
 from . import entity as entity_mutations
 from . import structure as structure_mutations
-from . import measurement as measurement_mutations
+from . import metric as measurement_mutations
 from . import relation as relation_mutations
 from . import schema as schema_mutations
 import kante
