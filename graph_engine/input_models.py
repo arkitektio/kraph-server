@@ -557,7 +557,6 @@ class ArchiveEntityInput(BaseModel):
 class StructureInput(BaseModel):
     """Input for creating a new structure instance."""
 
-    identifier: str = Field(..., description="Schema identifier, e.g. '@mikro/roi'")
     object: str = Field(..., description="The unique ID of the object this structure references")
     metrics: List[MetricInput] = Field(default_factory=list, description="List of measurements associated with this structure")
 
@@ -565,6 +564,7 @@ class StructureInput(BaseModel):
 class CreateStructureInput(StructureInput):
     """Input for creating a new structure instance."""
 
+    category: str = Field(..., description="The ID of the structure category/type to create")
     graph: str = Field(..., description="The graph id this structure will belong to")
 
 
@@ -594,8 +594,7 @@ class MetricInput(BaseModel):
 class CreateMetricInput(MetricInput):
     """Input for creating a new metric associated with a structure."""
 
-    structure_identifier: str = Field(..., description="Schema identifier of the structure this metric is associated with")
-    structure_object: str = Field(..., description="The unique ID of the structure this metric is associated with")
+    structure_id: str = Field(..., description="The unique ID of the structure this metric is associated with")
     graph: str = Field(..., description="The graph id this metric will belong to")
 
 
@@ -606,6 +605,44 @@ class ArchiveMetricInput(BaseModel):
 
 
 class DeleteMetricInput(BaseModel):
+    """Input for hard deleting an existing metric."""
+
+    id: str = Field(..., description="The ID of the metric to delete")
+
+
+class RelationInput(BaseModel):
+    """Input for a measurement/metric."""
+
+    key: str = Field(..., description="The property key/name for this metric")
+    value: Any = Field(..., description="The value of the metric (string, number, boolean, datetime, or point_3d)")
+    confidence: Optional[float] = Field(None, description="Optional confidence score for this metric (0.0 to 1.0)")
+    confidence_type: Optional[str] = Field(None, description="Optional type/category for the confidence score (e.g. 'expert_estimate', 'model_prediction')")
+    unit: Optional[str] = Field(None, description="Optional unit of measurement for this metric (e.g. 'microns', 'seconds', 'mV')")
+    timestamp: Optional[int] = Field(None, description="Optional timestamp for this metric (Unix epoch time in milliseconds)")
+    source_id: str = Field(..., description="The ID of the source entity")
+    target_id: str = Field(..., description="The ID of the target entity")
+
+
+class CreateRelationInput(RelationInput):
+    """Input for creating a new relation associated with a structure."""
+
+    category: str = Field(..., description="The unique ID of the structure this metric is associated with")
+    graph: str = Field(..., description="The graph id this metric will belong to")
+
+
+class UpdateRelationInput(RelationInput):
+    """Input for updating an existing relation. Note: this will not update the relation in-place, but rather create a new relation and archive the old one to preserve history."""
+
+    id: str = Field(..., description="The ID of the relation to update")
+
+
+class ArchiveRelationInput(BaseModel):
+    """Input for archiving (soft deleting) an existing relation."""
+
+    id: str = Field(..., description="The ID of the relation to archive")
+
+
+class DeleteRelationInput(BaseModel):
     """Input for hard deleting an existing metric."""
 
     id: str = Field(..., description="The ID of the metric to delete")

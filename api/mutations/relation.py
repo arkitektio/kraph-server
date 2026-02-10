@@ -1,66 +1,112 @@
 """
 Relation mutation resolvers.
 """
+
 from kante.types import Info
 
-from api.types import Relation, RelationCreationResult
-from api.inputs import RelationCreationInput
-from api.context import get_controller_for_node_id
+from api import types, inputs, context
+from core import models
 from graph_engine.input_models import RelationCreationPayload
 
 
-
-
-def create_relation(
-    info: Info,
-    input: RelationCreationInput,
-) -> RelationCreationResult:
+def create_relation(info: Info, input: inputs.CreateRelationInput) -> types.Relation:
     """
     Create a new relation between two entities with optional supporting evidence.
-    
+
     Relations are edges between entities that can be backed by evidence
     (e.g., ROI overlaps that prove a synapse connection). Properties on
     the relation are automatically derived from the evidence according
     to the graph schema's materialization rules.
-    
+
     Args:
         info: Strawberry Info context
         input: RelationCreationInput (pydantic-validated)
-        
+
     Returns:
         RelationCreationResult with the created relation
     """
     # Convert strawberry-pydantic input to pydantic model
     payload = input.to_pydantic()
-    
+
     # Get controller from source entity's graph
-    controller = get_controller_for_node_id(payload.source_id, info)
-    
+    controller = context.get_controller()
+
     # Extract the actual entity IDs from the composite IDs
     # The controller expects just the entity UUID, not the composite ID
-    source_entity_id = _extract_entity_id(payload.source_id)
-    target_entity_id = _extract_entity_id(payload.target_id)
-    
-    # Create a new payload with the extracted entity IDs
-    controller_payload = RelationCreationPayload(
-        ref_id=payload.ref_id,
-        kind=payload.kind,
-        source_id=source_entity_id,
-        target_id=target_entity_id,
-        supporting_evidence=payload.supporting_evidence,
-        provenance=payload.provenance,
+    graph1 = context.extract_graph_id(payload.source_id)  # Validate graph exists and get graph context
+    graph2 = context.extract_graph_id(payload.target_id)  # Validate graph exists and get graph context
+
+    if graph1 != graph2:
+        raise ValueError("Source and target entities must belong to the same graph")
+    source_entity_id = context.extract_node_id(payload.source_id)
+    target_entity_id = context.extract_node_id(payload.target_id)
+
+    relation = models.RelationCategory.objects.get(id=payload.category)  # Validate relation category exists
+
+    assert relation.graph.get_age_name() == graph1, "Relation category must belong to the same graph as the entities"
+
+    result = controller.create_relation(
+        category=relation,
+        payload=payload,
+        provenance=context.get_provenance_from_context(info),
     )
-    
-    result = controller.create_relation(controller_payload)
-    
-    # Fetch the created relation edge for the response
-    relation_edge = controller.get_relation_by_id(result.graph_id)
-    relation = Relation(_value=relation_edge) if relation_edge else None
-    
-    return RelationCreationResult(
-        ref_id=result.ref_id,
-        db_id=result.db_id,
-        graph_id=str(result.graph_id),
-        status=result.status,
-        relation=relation,
+
+    return types.Relation(_value=result)
+
+
+def delete_relation(info: Info, input: inputs.DeleteRelationInput) -> strawberry.ID:
+    """
+    Delete a relation by its composite ID. Only the owner of the graph or an admin can delete a relation.
+
+    Args:
+        info: Strawberry Info context
+        input: Composite ID of the relation to delete (e.g., "1-abc123-def456-...")
+
+    Returns:
+        The ID of the deleted relation
+    """
+    controller = context.get_controller()
+
+    model = input.to_pydantic()  # Validate input with Pydantic models
+    # Extract graph ID and local ID from composite ID
+    graph_id = context.extract_graph_id(model.id)
+    local_id = context.extract_node_id(model.id)
+
+    graph = models.Graph.objects.get(id=graph_id)  # Validate graph exists
+
+    controller.delete_relation(
+        graph,
+        relation_id=local_id,
+        provenance=context.get_provenance_from_context(info),
     )
+
+    return model.id
+
+
+def archive_relation(info: Info, input: inputs.ArchiveRelationInput) -> types.Relation:
+    """
+    Archive (soft delete) a relation by its composite ID.
+
+    Args:
+        info: Strawberry Info context
+        input: Composite ID of the relation to archive (e.g., "1-abc123-def456-...")
+
+    Returns:
+        The ID of the archived relation
+    """
+    controller = context.get_controller()
+
+    model = input.to_pydantic()  # Validate input with Pydantic models
+    # Extract graph ID and local ID from composite ID
+    graph_id = context.extract_graph_id(model.id)
+    local_id = context.extract_node_id(model.id)
+
+    graph = models.Graph.objects.get(id=graph_id)  # Validate graph exists
+
+    controller.archive_relation(
+        graph,
+        relation_id=local_id,
+        provenance=context.get_provenance_from_context(info),
+    )
+
+    return types.Relation(_value=model.id)

@@ -481,6 +481,20 @@ class RetrievedEvent(RetrievedNode):
 
 
 @dataclass
+class RetrievedNaturalEvent(RetrievedNode):
+    """A retrieved Event node from the AGE graph."""
+
+    pass
+
+
+@dataclass
+class RetrievedProtocolEvent(RetrievedNode):
+    """A retrieved Event node from the AGE graph."""
+
+    pass
+
+
+@dataclass
 class RetrievedMetric(RetrievedNode):
     """A retrieved Metric node from the AGE graph."""
 

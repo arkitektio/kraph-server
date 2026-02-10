@@ -19,21 +19,6 @@ from strawberry.experimental import pydantic
 # ==========================================
 
 
-@pydantic.input(model=input_models.CreateEntityDefinitionInput, fields=["__all__"], description="Input for creating a new entity definition in the graph schema")
-class CreateEntityDefinitionInput:
-    pass
-
-
-@pydantic.input(model=input_models.UpdateEntityDefinitionInput, fields=["__all__"], description="Input for updating an existing entity definition in the graph schema")
-class UpdateEntityDefinitionInput:
-    pass
-
-
-@pydantic.input(model=input_models.DeleteEntityDefinitionInput, fields=["__all__"], description="Input for deleting an existing entity definition in the graph schema")
-class DeleteEntityDefinitionInput:
-    pass
-
-
 @pydantic.input(model=input_models.CreateNaturalEventDefinitionInput, fields=["__all__"], description="Input for creating a new natural event definition in the graph schema")
 class CreateNaturalEventDefinitionInput:
     pass
@@ -67,6 +52,27 @@ class DeleteProtocolEventDefinitionInput:
 # ==========================================
 # Node Creation Input Types
 # ==========================================
+
+
+@pydantic.input(model=input_models.CreateEntityDefinitionInput, fields=["__all__"], description="Input for creating a new entity definition in the graph schema")
+class CreateEntityDefinitionInput:
+    """Input for creating a new entity definition in the graph schema."""
+
+    pass
+
+
+@pydantic.input(model=input_models.UpdateEntityDefinitionInput, fields=["__all__"], description="Input for updating an existing entity definition in the graph schema")
+class UpdateEntityDefinitionInput:
+    """Input for updating an existing entity definition in the graph schema."""
+
+    pass
+
+
+@pydantic.input(model=input_models.DeleteEntityDefinitionInput, fields=["__all__"], description="Input for deleting an existing entity definition in the graph schema")
+class DeleteEntityDefinitionInput:
+    """Input for deleting an existing entity definition in the graph schema."""
+
+    pass
 
 
 @pydantic.input(model=input_models.CreateNaturalEventInput, fields=["__all__"], description="Input for creating a new natural event instance")
@@ -142,6 +148,27 @@ class DeleteStructureInput:
 @pydantic.input(model=input_models.ArchiveStructureInput, fields=["__all__"], description="Input for deleting an existing structure")
 class ArchiveStructureInput:
     """Input for deleting an existing structure."""
+
+    pass
+
+
+@pydantic.input(model=input_models.CreateRelationInput, fields=["__all__"], description="Input for creating a new relation between two entities with supporting evidence")
+class CreateRelationInput:
+    """Input for creating a new relation."""
+
+    pass
+
+
+@pydantic.input(model=input_models.DeleteRelationInput, fields=["__all__"], description="Input for deleting an existing relation")
+class DeleteRelationInput:
+    """Input for deleting an existing relation."""
+
+    pass
+
+
+@pydantic.input(model=input_models.ArchiveRelationInput, fields=["__all__"], description="Input for archiving an existing relation")
+class ArchiveRelationInput:
+    """Input for archiving an existing relation."""
 
     pass
 
