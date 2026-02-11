@@ -16,6 +16,7 @@ from .engine.protocol import CypherEngine
 from core import models
 from itertools import product
 from django.db.models import Q
+from authentikate.models import Organization, Membership, User
 
 
 class MaterializeInput(BaseModel):
@@ -103,11 +104,11 @@ def re_materialize_from_entity_category(graph: models.Graph, entity_category: mo
 def materialize(
     definition: GraphDefinitionModel,
     engine: CypherEngine,
+    user: User,
+    organization: Organization,
+    membership: Membership,
     name: Optional[str] = None,
     description: Optional[str] = None,
-    user=None,
-    organization=None,
-    membership=None,
 ) -> models.Graph:
     """
     Materialize a graph based on the provided graph definition.
@@ -140,20 +141,6 @@ def materialize(
     # Generate name if not provided
     if name is None:
         name = f"graph_{schema_hash}"
-
-    # Get or create default user/org/membership for testing
-    if user is None:
-        User = get_user_model()
-        user, _ = User.objects.get_or_create(username="test_user", defaults={"password": "test", "sub": "test_sub"})
-
-    if organization is None:
-        organization, _ = Organization.objects.get_or_create(slug="test-organization")
-
-    if membership is None:
-        membership, _ = Membership.objects.get_or_create(
-            user=user,
-            organization=organization,
-        )
 
     # Create unique age_name
     age_name = models.Graph.create_age_name(name, organization)
@@ -218,8 +205,8 @@ def materialize(
         props_hash = compute_properties_hash(property_defs)
 
         # Map inputs/outputs to source/target roles
-        source_roles = [{"key": role.key, "role": role.role} for role in event_def.inputs]
-        target_roles = [{"key": role.key, "role": role.role} for role in event_def.outputs]
+        source_roles = [p.model_dump(mode="json") for p in event_def.inputs]
+        target_roles = [p.model_dump(mode="json") for p in event_def.outputs]
 
         models.NaturalEventCategory.objects.create(
             graph=graph,

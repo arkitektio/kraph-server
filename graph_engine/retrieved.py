@@ -532,43 +532,6 @@ class RetrievedMetric(RetrievedNode):
 
 
 @dataclass
-class RetrievedMeasurement(RetrievedNode):
-    """A retrieved Measurement node from the AGE graph."""
-
-    # === Measurement-Specific Properties ===
-
-    @property
-    def key(self) -> str:
-        """The measurement key/name."""
-        return self.properties.get("key", "")
-
-    @property
-    def value(self) -> Any:
-        """The measurement value."""
-        return self.properties.get("value")
-
-    @property
-    def unit(self) -> Optional[str]:
-        """The measurement unit (if any)."""
-        return self.properties.get("unit")
-
-    @property
-    def confidence(self) -> Optional[float]:
-        """The measurement confidence (if any)."""
-        return self.properties.get("confidence")
-
-    @property
-    def confidence_type(self) -> Optional[str]:
-        """The type of confidence measure (if any)."""
-        return self.properties.get("confidence_type")
-
-    @property
-    def timestamp(self) -> Optional[str]:
-        """The timestamp of the measurement (if any)."""
-        return self.properties.get("timestamp")
-
-
-@dataclass
 class RetrievedAssertion(RetrievedNode):
     """A retrieved Assertion node from the AGE graph."""
 

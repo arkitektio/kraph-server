@@ -36,6 +36,17 @@ class PropertyDefinition:
     description: Optional[str] = strawberry.field(default=None, description="Description of this property")
 
 
+@kante.django_interface(models.Graph, description="Base interface for graph schemas")
+class Graph:
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
+    graph_id: strawberry.ID = strawberry.field(description="ID of the graph this category belongs to")
+    label: str = strawberry.field(description="Label/name of the category")
+    description: Optional[str] = strawberry.field(default=None, description="Description of the category")
+    purl: Optional[str] = strawberry.field(default=None, description="Persistent URL for this category")
+    color: Optional[List[int]] = strawberry.field(default=None, description="Color as RGBA list (0-255)")
+    tags: List[str] = strawberry.field(default_factory=list, description="List of tags associated with this category")
+
+
 @kante.django_interface(models.EdgeCategory, description="Base interface for graph schemas")
 class EdgeCategory:
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
@@ -80,16 +91,22 @@ class EventCategory(NodeCategory):
 
 @kante.django_type(models.NaturalEventCategory, description="A relation category/schema definition")
 class ProtocolEventCategory(EventCategory):
+    """A protocol event category/schema definition, which is a subtype of EventCategory."""
+
     pass
 
 
 @kante.django_type(models.NaturalEventCategory, description="A relation category/schema definition")
 class NaturalEventCategory(EventCategory):
+    """A natural event category/schema definition, which is a subtype of EventCategory."""
+
     pass
 
 
 @kante.django_type(models.EdgeCategory, description="A relation category/schema definition")
 class RelationCategory(EdgeCategory):
+    """A relation category/schema definition, which defines the type of a relation edge between entities. It can also include property definitions for the relation."""
+
     pass
 
 
@@ -569,7 +586,7 @@ NodeSubtype = Union[Entity, Structure, NaturalEvent, Metric, Reagent, ProtocolEv
 EdgeSubtype = Union[Assertion, Relation, StructureRelation, Describes, Informs, Asserted, Generated, ReifiesAsSource, ReifiesAsTarget]
 
 
-def node_to_subtype(node: RetrievedNode) -> NodeSubtype:
+def cast_node_to_graphql_type(node: RetrievedNode) -> NodeSubtype:
     """
     Convert a RetrievedNode to the appropriate Strawberry type based on its node_type.
 
@@ -611,7 +628,7 @@ def node_to_subtype(node: RetrievedNode) -> NodeSubtype:
             raise ValueError(f"Unknown node type: {node.node_type}")
 
 
-def edge_to_subtype(edge: RetrievedEdge) -> EdgeSubtype:
+def cast_edge_to_graphql_type(edge: RetrievedEdge) -> EdgeSubtype:
     """
     Convert a RetrievedEdge to the appropriate Strawberry type based on its edge_type.
 
@@ -651,30 +668,6 @@ def edge_to_subtype(edge: RetrievedEdge) -> EdgeSubtype:
 # ===========================================
 # RESULT TYPES
 # ===========================================
-
-
-@strawberry.type(description="Result of creating an entity")
-class EntityCreationResult:
-    """Result returned after successfully creating an entity."""
-
-    ref_id: str = strawberry.field(description="The reference ID (external UUID)")
-    db_id: str = strawberry.field(description="The database ID")
-    graph_id: str = strawberry.field(description="The AGE graph ID (as string for 64-bit support)")
-    status: str = strawberry.field(default="CREATED", description="Creation status")
-
-    entity: Optional[Entity] = strawberry.field(default=None, description="The created entity")
-
-
-@strawberry.type(description="Result of creating a relation")
-class RelationCreationResult:
-    """Result returned after successfully creating a relation between entities."""
-
-    ref_id: str = strawberry.field(description="The reference ID (external UUID)")
-    db_id: str = strawberry.field(description="The database ID (source->target)")
-    graph_id: str = strawberry.field(description="The AGE graph ID of the edge (as string for 64-bit support)")
-    status: str = strawberry.field(default="CREATED", description="Creation status")
-
-    relation: Optional[Relation] = strawberry.field(default=None, description="The created relation edge")
 
 
 @strawberry.type(description="Result of linking a structure to an entity")
@@ -729,76 +722,3 @@ class SetSchemaResult:
     schema: GraphSchemaType = strawberry.field(description="The created schema")
     activated: bool = strawberry.field(description="Whether the schema was activated")
     migration_required: bool = strawberry.field(default=False, description="Whether existing nodes may need migration")
-
-
-# ===========================================
-# CONVERTERS (from Pydantic to Strawberry via Retrieved)
-# ===========================================
-
-
-def entity_from_response(response) -> Entity:
-    """
-    Convert EntityResponse Pydantic model or RetrievedEntity to Strawberry Entity type.
-    Creates a RetrievedNode as the intermediary.
-    """
-    from graph_engine.output_models import EntityResponse
-    from graph_engine.retrieved import RetrievedEntity
-
-    if isinstance(response, RetrievedEntity):
-        # RetrievedEntity is already a RetrievedNode subclass, use it directly
-        return Entity(_value=response)
-
-    if isinstance(response, EntityResponse):
-        # Build properties dict from response
-        props = {
-            "type": "ENTITY",
-            "kind": response.kind,
-            "external_id": response.id,
-            "schema_version": response.schema_version,
-            "last_derived": response.last_derived,
-            **response.properties,
-        }
-
-        # Parse global_id to get graph_name and graph_id
-        parts = response.global_id.split(":")
-        graph_name = parts[0] if len(parts) > 1 else "default"
-
-        node = RetrievedNode(
-            graph_name=graph_name,
-            id=response.graph_id,
-            label=response.label,
-            properties=props,
-        )
-
-        return Entity(_value=node)
-
-    raise TypeError(f"Expected EntityResponse or RetrievedEntity, got {type(response)}")
-
-
-def structure_from_response(response) -> Structure:
-    """
-    Convert StructureResponse Pydantic model to Strawberry Structure type.
-    Creates a RetrievedNode as the intermediary.
-    """
-    from graph_engine.output_models import StructureResponse
-
-    if not isinstance(response, StructureResponse):
-        raise TypeError(f"Expected StructureResponse, got {type(response)}")
-
-    props = {
-        "type": "STRUCTURE",
-        "identifier": response.identifier,
-        "object": response.object,
-    }
-
-    parts = response.global_id.split(":")
-    graph_name = parts[0] if len(parts) > 1 else "default"
-
-    node = RetrievedNode(
-        graph_name=graph_name,
-        id=response.graph_id,
-        label=response.label,
-        properties=props,
-    )
-
-    return Structure(_value=node)

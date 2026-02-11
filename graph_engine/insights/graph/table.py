@@ -1,0 +1,65 @@
+from core.age import (
+    graph_cursor,
+)
+from core.renderers.graph.parser import render_cypher_template
+import strawberry
+from core import models, types, inputs
+
+
+def columns_to_age_string(columns: list[inputs.ColumnInput]):
+    return ", ".join(f"{column.name} agtype" for column in columns)
+
+
+def input_to_columns(columns: list[inputs.ColumnInput]) -> list[types.Column]:
+    return [types.Column(**strawberry.asdict(column)) for column in columns]
+
+
+def table(graph_query: models.GraphQuery, check_exists: bool = True, filters: inputs.GraphQueryFilters | None = None, pagination: inputs.GraphQueryPagination | None = None, order: inputs.GraphQueryOrder | None = None) -> types.Table:
+    """
+    Query the knowledge graph for information about a given entity.
+
+    Args:
+        query: The entity to search for in the knowledge graph.
+
+    Returns:
+        A dictionary containing information about the entity.
+    """
+
+    rows = []
+    print("Called")
+
+    tgraph = graph_query.graph
+    columns = graph_query.input_columns
+    print(tgraph.age_name)
+
+    rendered_query, params = render_cypher_template(graph_query.query, filters=filters, pagination=pagination, order=order)
+
+    # First set the timeout
+    real_query = f"""
+    SELECT *
+    FROM cypher(%s, $$
+        {rendered_query}
+    $$) as ({columns_to_age_string(columns)});
+    """
+
+    print(real_query)
+
+    with graph_cursor() as cursor:
+        cursor.execute(
+            real_query,
+            [tgraph.age_name],
+        )
+        all_results = cursor.fetchall()
+
+        print("The result", all_results)
+
+        # Convert AGTYPE (JSON string) to Python dict
+
+        for result in all_results:
+            rows.append(result)
+
+        if check_exists:
+            if not rows:
+                raise ValueError("No rows found in the table query result")
+
+    return types.Table(rows=rows, columns=input_to_columns(columns), graph=tgraph)

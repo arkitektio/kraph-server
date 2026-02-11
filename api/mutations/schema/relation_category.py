@@ -7,11 +7,11 @@ from api import inputs, types
 from core import models
 
 
-def create_entity_category(
+def create_relation_category(
     info: Info,
-    input: inputs.CreateEntityDefinitionInput,
-) -> types.EntityCategory:
-    """GraphQL mutation wrapper for creating entity categories."""
+    input: inputs.CreateRelationDefinitionInput,
+) -> types.RelationCategory:
+    """GraphQL mutation wrapper for creating relation categories."""
 
     model = input.to_pydantic()  # Validate input with Pydantic models
 
@@ -22,7 +22,7 @@ def create_entity_category(
     if model.image:
         media_store = models.MediaStore.objects.get(id=model.image)
 
-    vocab, created = models.EntityCategory.objects.update_or_create(
+    vocab, created = models.RelationCategory.objects.update_or_create(
         graph_id=model.graph,
         age_name=model.key,
         defaults=dict(
@@ -62,11 +62,11 @@ def create_entity_category(
     return cast(types.EntityCategory, vocab)
 
 
-def update_entity_category(info: Info, input: inputs.UpdateEntityDefinitionInput) -> types.EntityCategory:
-    """GraphQL mutation wrapper for updating entity categories."""
+def update_relation_category(info: Info, input: inputs.UpdateRelationDefinitionInput) -> types.RelationCategory:
+    """GraphQL mutation wrapper for updating relation categories."""
     model = input.to_pydantic()  # Validate input with Pydantic models
 
-    item = models.EntityCategory.objects.get(id=model.id)
+    item = models.RelationCategory.objects.get(id=model.id)
 
     if model.color:
         assert len(model.color) == 3 or len(model.color) == 4, "Color must be a list of 3 or 4 values RGBA"
@@ -103,11 +103,11 @@ def update_entity_category(info: Info, input: inputs.UpdateEntityDefinitionInput
     return item
 
 
-def delete_entity_category(
+def delete_relation_category(
     info: Info,
-    input: inputs.DeleteEntityDefinitionInput,
+    input: inputs.DeleteRelationDefinitionInput,
 ) -> strawberry.ID:
     model = input.to_pydantic()  # Validate input with Pydantic models
-    item = models.EntityCategory.objects.get(id=model.id)
+    item = models.RelationCategory.objects.get(id=model.id)
     item.delete()
     return model.id

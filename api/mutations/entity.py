@@ -37,12 +37,10 @@ def create_entity(
     result = controller.create_entity(
         entity_category=entity_category,
         payload=input_model,
+        context=context.get_provenance_from_context(info),
     )
 
-    # Fetch the created entity for the response
-    entity_response = controller.get_entity(id=result.db_id, entity_category=entity_category)
-
-    return types.Entity(_value=entity_response)
+    return types.Entity(_value=result)
 
 
 def delete_entity(

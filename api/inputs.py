@@ -123,6 +123,41 @@ class DeleteEntityDefinitionInput:
     pass
 
 
+@pydantic.input(model=input_models.CreateRelationDefinitionInput, all_fields=True, description="Input for creating a new relation definition in the graph schema")
+class CreateRelationDefinitionInput:
+    """Input for creating a new relation definition in the graph schema."""
+
+    pass
+
+
+@pydantic.input(model=input_models.UpdateRelationDefinitionInput, all_fields=True, description="Input for updating an existing relation definition in the graph schema")
+class UpdateRelationDefinitionInput:
+    """Input for updating an existing relation definition in the graph schema."""
+
+    pass
+
+
+@pydantic.input(model=input_models.DeleteRelationDefinitionInput, all_fields=True, description="Input for deleting an existing relation definition in the graph schema")
+class DeleteRelationDefinitionInput:
+    """Input for deleting an existing relation definition in the graph schema."""
+
+    pass
+
+
+@pydantic.input(model=input_models.ArchiveRelationDefinitionInput, all_fields=True, description="Input for archiving (soft deleting) an existing relation definition in the graph schema")
+class ArchiveRelationDefinitionInput:
+    """Input for archiving (soft deleting) an existing relation definition in the graph schema."""
+
+    pass
+
+
+@pydantic.input(model=input_models.RestoreRelationDefinitionInput, all_fields=True, description="Input for restoring a previously archived relation definition in the graph schema")
+class RestoreRelationDefinitionInput:
+    """Input for restoring a previously archived relation definition in the graph schema."""
+
+    pass
+
+
 @pydantic.input(model=input_models.CreateNaturalEventInput, all_fields=True, description="Input for creating a new natural event instance")
 class CreateNaturalEventInput:
     """Input for creating a new natural event instance."""
@@ -227,6 +262,11 @@ class ArchiveRelationInput:
 
 @pydantic.input(model=input_models.CreateEntityInput, all_fields=True, description="Input for creating a new entity")
 class CreateEntityInput:
+    pass
+
+
+@pydantic.input(model=input_models.CreateEntityInput, all_fields=True, description="Input for creating a new entity")
+class EnsureEntityInput:
     pass
 
 

@@ -21,7 +21,6 @@ from graph_engine.retrieved import (
     RetrievedEntity,
     RetrievedRelation,
     RetrievedStructure,
-    RetrievedMeasurement,
     RetrievedAssertion,
 )
 from core import models
@@ -252,7 +251,42 @@ class GraphController:
 
         return retrieved
 
-    def _recalculate_entity(self, graph_id: int, entity_category: models.EntityCategory) -> None:
+    def delete_entity(self, graph: models.Graph, local_id: int) -> int:
+        """
+        Deletes an entity by its composite ID.
+
+        This performs a hard delete, removing the node and all its relationships from the graph.
+
+        Args:
+            graph: The graph to operate on
+            entity_id: The composite ID of the entity to delete (e.g., "1-abc123-def456-...")
+        """
+        self.engine.execute(
+            graph,
+            f"""
+            MATCH (e) WHERE id(e) = $eid
+            DETACH DELETE e
+            """,
+            {"eid": local_id},
+        )
+
+        return local_id
+
+    def archive_entity(self, graph: models.Graph, local_id: int, provenance: ProvenanceContext) -> int:
+        """
+        Archives an entity by its composite ID.
+
+        This performs a soft delete, setting the 'archived' flag and recording provenance.
+
+        Args:
+            graph: The graph to operate on
+            entity_id: The composite ID of the entity to delete (e.g., "1-abc123-def456-...")
+        """
+        # Instead of hard deleting, we record an LifeCycleAssertion
+        raise NotImplementedError("Archive entity is not implemented yet. Use delete_entity for now.")
+        return local_id
+
+    def _recalculate_entity(self, entity_category: models.EntityCategory, local_id: int) -> None:
         """
         Scans schema rules and updates the Entity's cached properties based on connected evidence.
 
@@ -273,12 +307,18 @@ class GraphController:
 
             if rollup_query:
                 # Add entity id to params
-                params = {**rollup_query.params, "eid": graph_id}
+                params = {**rollup_query.params, "eid": local_id}
 
                 result = self.engine.execute(entity_category.graph, rollup_query.query, params)
 
                 if result and result[0].get("val") is not None:
                     updates[prop_def.key] = result[0]["val"]
+
+        # TODO: Calculate LifeCycle State based on connected evidence and set 'lifecycle_state' property accordingly
+        updates["__lifecycle_state"] = "active"  # Placeholder - real logic would analyze evidence and timestamps to determine state
+        updates["__measured__from"] = None  # Placeholder - real logic would determine the earliest timestamp from connected evidence and set this property
+        updates["__measured__to"] = None  # Placeholder - real logic would determine the latest timestamp from connected evidence and set this property
+        updates["__measured__at"] = None  # Placeholder - real logic would determine the timestamp of the measurement, if ONLY one piece of evidence is connected, and set this property
 
         # Add System Metadata
         updates["__schema_version"] = entity_category.schema_hash
@@ -287,12 +327,12 @@ class GraphController:
         if updates:
             set_clause = ", ".join([f"e.{k} = $u_{k}" for k in updates.keys()])
             update_params = {f"u_{k}": v for k, v in updates.items()}
-            update_params["eid"] = graph_id
+            update_params["local_id"] = local_id
 
             self.engine.execute(
                 entity_category.graph,
                 f"""
-                MATCH (e:{entity_category.age_name}) WHERE id(e) = $eid
+                MATCH (e:{entity_category.age_name}) WHERE id(e) = $local_id
                 SET {set_clause}
                 """,
                 update_params,
@@ -302,51 +342,100 @@ class GraphController:
     # MIGRATION METHODS
     # ===================================================================
 
-    def _recalculate_relation(
-        self,
-        edge_id: int,
-        label: str,
-        schema: GraphDefinitionModel,
-    ) -> None:
+    def _recalculate_relation(self, relation_category: models.RelationCategory, local_id: int) -> Optional[int]:
         """
-        Recalculates derived properties on a relation edge.
+        Updates Edge properties based on measurements connected via the ShadowLink.
 
-        Similar to _recalculate_entity but for edges/relations.
+        A relation can only exist once per direction between source and target.
+        This method uses MERGE to ensure uniqueness.
+
+        Returns:
+            The edge ID of the created/updated relation edge
         """
-        relation_def = schema.extensions.relations_map.get(label)
-        if not relation_def:
-            # No schema definition for this relation type, skip
-            return
+        rel_def = relation_category.properties_models
+        if not rel_def or not rel_def.materialization:
+            # No materialization config - just create the edge without properties
+            # Still store the shadow link id for provenance tracking
+            result = self.engine.execute(
+                self.graph,
+                f"""
+                MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
+                MATCH (sl)-[:{vocab.REIFIES_AS_SOURCE}]->(source)
+                MATCH (sl)-[:{vocab.REIFIES_AS_TARGET}]->(target)
+                MERGE (source)-[r:{relation_label}]->(target)
+                SET r.__shadow_link_id = $sl_id
+                RETURN id(r) as edge_id
+                """,
+                {"sl_id": shadow_link_id},
+            )
+            return result[0]["edge_id"] if result else None
 
-        updates: Dict[str, Any] = {}
+        updates = {"__shadow_link_id": shadow_link_id}
 
-        # Process property definitions with rollup/derivation
-        for prop_def in relation_def.materialization.properties if relation_def.materialization else []:
-            if prop_def.key == "id":
-                continue
+        for prop_def in rel_def.materialization.properties:
+            # Logic: (ShadowLink) <-[INFORMS]- (Structure) <-[DESCRIBES]- (Measurement)
+            if prop_def.derivation == "ROLLUP" and prop_def.rule:
+                rule = prop_def.rule
 
-            # Build rollup query for edge properties
-            # This would need edge-specific rollup logic
-            # For now, we just update metadata
-            pass
+                agg_func = "avg"
+                if rule.aggregation == "MAX":
+                    agg_func = "max"
+                elif rule.aggregation == "MIN":
+                    agg_func = "min"
+                elif rule.aggregation == "SUM":
+                    agg_func = "sum"
+                elif rule.aggregation == "COUNT":
+                    agg_func = "count"
 
-        # Update system metadata
-        updates["__schema_version"] = schema.system_version
-        updates["__last_derived"] = int(time.time() * 1000)
+                target_var = "m" if rule.aggregation == "COUNT" else "m.value"
 
+                query = f"""
+                    MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
+                    MATCH (sl)<-[:{vocab.INFORMS}]-(s)
+                    MATCH (m:{vocab.Measurement})-[:{vocab.DESCRIBES}]->(s)
+                    WHERE m.key = $key
+                    RETURN {agg_func}({target_var}) as val
+                """
+
+                result = self.engine.execute(self.graph, query, {"sl_id": shadow_link_id, "key": rule.key or prop_def.key})
+
+                if result and result[0]["val"] is not None:
+                    updates[prop_def.key] = result[0]["val"]
+
+        # Use MERGE to ensure the relation exists only once per direction
+        # Then SET the aggregated properties
         if updates:
             set_clause = ", ".join([f"r.{k} = $u_{k}" for k in updates.keys()])
             update_params = {f"u_{k}": v for k, v in updates.items()}
-            update_params["eid"] = edge_id
+            update_params["sl_id"] = shadow_link_id
 
-            self.engine.execute(
+            result = self.engine.execute(
                 self.graph,
                 f"""
-                MATCH ()-[r]->() WHERE id(r) = $eid
+                MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
+                MATCH (sl)-[:{vocab.REIFIES_AS_SOURCE}]->(source)
+                MATCH (sl)-[:{vocab.REIFIES_AS_TARGET}]->(target)
+                MERGE (source)-[r:{relation_label}]->(target)
                 SET {set_clause}
+                RETURN id(r) as edge_id
                 """,
                 update_params,
             )
+            return result[0]["edge_id"] if result else None
+        else:
+            # No properties to set, just ensure the edge exists
+            result = self.engine.execute(
+                self.graph,
+                f"""
+                MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
+                MATCH (sl)-[:{vocab.REIFIES_AS_SOURCE}]->(source)
+                MATCH (sl)-[:{vocab.REIFIES_AS_TARGET}]->(target)
+                MERGE (source)-[r:{relation_label}]->(target)
+                RETURN id(r) as edge_id
+                """,
+                {"sl_id": shadow_link_id},
+            )
+            return result[0]["edge_id"] if result else None
 
     def get_node(self, graph: models.Graph, entity_id: str) -> RetrievedNode:
         """
@@ -595,12 +684,12 @@ class GraphController:
 
         return entities
 
-    def get_measurements_for_structure(
+    def get_metrics_for_structure(
         self,
         graph: models.Graph,
         identifier: str,
         structure_object: str,
-    ) -> List[RetrievedMeasurement]:
+    ) -> List[RetrievedMetric]:
         """
         Gets all measurements that describe a given structure.
 
@@ -620,17 +709,7 @@ class GraphController:
         measurements = []
         for row in result:
             raw = row["m"]
-            props = _extract_props(raw)
-            graph_id = _extract_id(raw)
-
-            measurements.append(
-                RetrievedMeasurement(
-                    graph_name=graph.age_name,
-                    id=graph_id,
-                    label=vocab.Metric,
-                    properties=props,
-                )
-            )
+            measurements.append(RetrievedMetric.from_node(raw, graph_name=graph.age_name))
 
         return measurements
 
@@ -657,21 +736,13 @@ class GraphController:
             return None
 
         raw = result[0]["a"]
-        graph_id = result[0]["aid"]
-        props = _extract_props(raw)
+        return RetrievedAssertion.from_node(raw, graph_name=graph.age_name)
 
-        return RetrievedAssertion(
-            graph_name=graph.age_name,
-            id=graph_id,
-            label=vocab.Assertion,
-            properties=props,
-        )
-
-    def get_measurements_for_assertion(
+    def get_metrics_for_assertion(
         self,
         graph: models.Graph,
         assertion_id: int,
-    ) -> List[RetrievedMeasurement]:
+    ) -> List[RetrievedMetric]:
         """
         Gets all measurements asserted by a given assertion.
 
@@ -680,7 +751,7 @@ class GraphController:
             assertion_id: The internal graph ID of the assertion
         """
         query = f"""
-            MATCH (a:{vocab.Assertion})-[:{vocab.ASSERTED}]->(m:{vocab.Measurement})
+            MATCH (a:{vocab.Assertion})-[:{vocab.ASSERTED}]->(m:{vocab.Metric})
             WHERE id(a) = $aid
             RETURN m
         """
@@ -693,10 +764,10 @@ class GraphController:
             graph_id = _extract_id(raw)
 
             measurements.append(
-                RetrievedMeasurement(
+                RetrievedMetric(
                     graph_name=graph.age_name,
                     id=graph_id,
-                    label=vocab.Measurement,
+                    label=vocab.Metric,
                     properties=props,
                 )
             )
@@ -719,10 +790,11 @@ class GraphController:
         Returns:
             RetrievedStructure with the created structure info
         """
-        structure_label = get_label_for_identifier(identifier)
+        structure_label = structure_category.get_age_vertex_name()
+        graph = structure_category.graph
 
         # MERGE to create or match existing, return the graph id
-        result = self.engine.execute(graph, f"MERGE (s:{structure_label} {{object: $obj}}) RETURN id(s) as graph_id", {"obj": object})
+        result = self.engine.execute(graph, f"MERGE (s:{structure_label} {{object: $obj}}) RETURN id(s) as graph_id", {"obj": payload.object})
 
         graph_id = result[0]["graph_id"]
 
@@ -730,7 +802,7 @@ class GraphController:
             graph_name=graph.age_name,
             id=graph_id,
             label=structure_label,
-            properties={"object": object, "identifier": identifier},
+            properties={"object": payload.object, "identifier": structure_category.identifier},
         )
 
     def create_natural_event(
@@ -1005,7 +1077,7 @@ class GraphController:
         self,
         category: models.RelationCategory,
         payload: RelationInput,
-        provenance: ProvenanceContext | None = None,
+        provenance: ProvenanceContext,
     ) -> RetrievedRelation:
         """
         Creates a Relationship between two nodes, backed by Evidence.
@@ -1018,31 +1090,24 @@ class GraphController:
         5. (Structure)-[:INFORMS]->(ShadowLink) <-- Evidence attached here
         """
 
-        # --- Step 1: Validate Schema ---
-        rel_def = effective_schema.extensions.relations_map.get(relation_name)
-        if not rel_def:
-            raise ValueError(f"Unknown Relation: {relation_name}")
-
-        # --- Step 2: Create Assertion (Provenance) ---
-        prov_dict = payload.provenance.model_dump(exclude_none=True)
-        if "action_args" in prov_dict:
-            prov_dict["action_args"] = json.dumps(prov_dict["action_args"])
-
-        assertion_props = ", ".join([f"{k}: ${k}" for k in prov_dict.keys()])
-        aid_res = self.engine.execute(self.graph, f"CREATE (a:{vocab.Assertion} {{{assertion_props}}}) RETURN id(a) as aid", prov_dict)
-        assertion_id = aid_res[0]["aid"]
-
+        assertion_id = self._create_provenance_node(category.graph, provenance)
         # --- Step 3: Create Shadow Link & Attach Evidence ---
         # We create a "ShadowLink" node to represent this specific instance of the relationship.
         # This allows us to attach measurements to "the link" rather than the edge itself.
 
-        shadow_params = {"link_id": payload.ref_id, "aid": assertion_id}
+        ref_id = self.create_universal_id()
 
+        shadow_params = {"link_id": ref_id, "aid": assertion_id}
+
+        # TODO: Check if a relation already exists between these nodes in this direction, and if so,
+        # either prevent creation or create a new ShadowLink and overwrite the existing edge to point to the new ShadowLink.
+        # This allows us to maintain history of changes to the relationship over time, while still enforcing that only one "active"
+        # relationship exists between any two nodes in a given direction.
         shadow_res = self.engine.execute(
-            self.graph,
+            category.graph,
             f"""
             MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
-            CREATE (sl:{vocab.ShadowLink} {{id: $link_id}})
+            MERGE (sl:{vocab.ShadowLink} {{id: $link_id, ref_id: $link_id}})
             CREATE (a)-[:{vocab.GENERATED}]->(sl)
             RETURN id(sl) as shadow_graph_id
             """,
@@ -1055,12 +1120,12 @@ class GraphController:
             structure_graph_label = get_label_for_identifier(evidence.identifier)
 
             # Auto-Create Structure
-            self.engine.execute(self.graph, f"MERGE (s:{structure_graph_label} {{object: $obj}})", {"obj": evidence.object})
+            self.engine.execute(category.graph, f"MERGE (s:{structure_graph_label} {{object: $obj}})", {"obj": evidence.object})
 
             # Link Structure -> Shadow Link (INFORMS)
             # This says: "This structure (e.g. ROI Overlap) informs this relationship"
             self.engine.execute(
-                self.graph,
+                category.graph,
                 f"""
                 MATCH (s:{structure_graph_label} {{object: $obj}})
                 MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
@@ -1070,7 +1135,7 @@ class GraphController:
             )
 
             # Create Measurements for that Structure
-            for meas in evidence.measurements:
+            for meas in evidence.metrics:
                 meas_params = meas.model_dump(exclude_none=True)
                 meas_params.update({"obj": evidence.object, "aid": assertion_id})
 
@@ -1083,11 +1148,11 @@ class GraphController:
                     MATCH (s:{structure_graph_label} {{object: $obj}})
                     MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
                     
-                    CREATE (m:{vocab.Measurement} {{{", ".join(prop_clauses)}}})
+                    CREATE (m:{vocab.Metric} {{{", ".join(prop_clauses)}}})
                     CREATE (a)-[:{vocab.ASSERTED}]->(m)
                     CREATE (m)-[:{vocab.DESCRIBES}]->(s)
                 """
-                self.engine.execute(self.graph, meas_query, meas_params)
+                self.engine.execute(category.graph, meas_query, meas_params)
 
         # --- Step 4: Create the Physical Edge ---
         edge_params = {"src": payload.source_id, "tgt": payload.target_id, "aid": assertion_id, "sl_id": shadow_graph_id}
@@ -1096,7 +1161,7 @@ class GraphController:
         # so we connect the assertion to the ShadowLink instead.
         # The ShadowLink already has (Assertion)-[:GENERATED]->(ShadowLink)
         create_shadow_links = self.engine.execute(
-            self.graph,
+            category.graph,
             f"""
             MATCH (source) WHERE source.id = $src
             MATCH (target) WHERE target.id = $tgt
@@ -1120,107 +1185,12 @@ class GraphController:
 
         # --- Step 5: Recalculate Relation Properties ---
         # Rolls up values from the ShadowLink evidence onto the Edge itself
-        edge_id = self._recalculate_relation(shadow_link_id, relation_name, effective_schema)
+        edge_id = self._recalculate_relation(relation_category=category, local_id=shadow_link_id)
 
         if edge_id is None:
             raise ValueError(f"Failed to create relation edge for {relation_name}")
 
         return EntityCreationResult(ref_id=payload.ref_id, db_id=f"{payload.source_id}->{payload.target_id}", graph_id=edge_id)
-
-    def _recalculate_relation(self, shadow_link_id: int, relation_label: str, schema: GraphDefinitionModel) -> Optional[int]:
-        """
-        Updates Edge properties based on measurements connected via the ShadowLink.
-
-        A relation can only exist once per direction between source and target.
-        This method uses MERGE to ensure uniqueness.
-
-        Returns:
-            The edge ID of the created/updated relation edge
-        """
-        rel_def = schema.extensions.relations_map.get(relation_label)
-        if not rel_def or not rel_def.materialization:
-            # No materialization config - just create the edge without properties
-            # Still store the shadow link id for provenance tracking
-            result = self.engine.execute(
-                self.graph,
-                f"""
-                MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
-                MATCH (sl)-[:{vocab.REIFIES_AS_SOURCE}]->(source)
-                MATCH (sl)-[:{vocab.REIFIES_AS_TARGET}]->(target)
-                MERGE (source)-[r:{relation_label}]->(target)
-                SET r.__shadow_link_id = $sl_id
-                RETURN id(r) as edge_id
-                """,
-                {"sl_id": shadow_link_id},
-            )
-            return result[0]["edge_id"] if result else None
-
-        updates = {"__shadow_link_id": shadow_link_id}
-
-        for prop_def in rel_def.materialization.properties:
-            # Logic: (ShadowLink) <-[INFORMS]- (Structure) <-[DESCRIBES]- (Measurement)
-            if prop_def.derivation == "ROLLUP" and prop_def.rule:
-                rule = prop_def.rule
-
-                agg_func = "avg"
-                if rule.aggregation == "MAX":
-                    agg_func = "max"
-                elif rule.aggregation == "MIN":
-                    agg_func = "min"
-                elif rule.aggregation == "SUM":
-                    agg_func = "sum"
-                elif rule.aggregation == "COUNT":
-                    agg_func = "count"
-
-                target_var = "m" if rule.aggregation == "COUNT" else "m.value"
-
-                query = f"""
-                    MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
-                    MATCH (sl)<-[:{vocab.INFORMS}]-(s)
-                    MATCH (m:{vocab.Measurement})-[:{vocab.DESCRIBES}]->(s)
-                    WHERE m.key = $key
-                    RETURN {agg_func}({target_var}) as val
-                """
-
-                result = self.engine.execute(self.graph, query, {"sl_id": shadow_link_id, "key": rule.key or prop_def.key})
-
-                if result and result[0]["val"] is not None:
-                    updates[prop_def.key] = result[0]["val"]
-
-        # Use MERGE to ensure the relation exists only once per direction
-        # Then SET the aggregated properties
-        if updates:
-            set_clause = ", ".join([f"r.{k} = $u_{k}" for k in updates.keys()])
-            update_params = {f"u_{k}": v for k, v in updates.items()}
-            update_params["sl_id"] = shadow_link_id
-
-            result = self.engine.execute(
-                self.graph,
-                f"""
-                MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
-                MATCH (sl)-[:{vocab.REIFIES_AS_SOURCE}]->(source)
-                MATCH (sl)-[:{vocab.REIFIES_AS_TARGET}]->(target)
-                MERGE (source)-[r:{relation_label}]->(target)
-                SET {set_clause}
-                RETURN id(r) as edge_id
-                """,
-                update_params,
-            )
-            return result[0]["edge_id"] if result else None
-        else:
-            # No properties to set, just ensure the edge exists
-            result = self.engine.execute(
-                self.graph,
-                f"""
-                MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
-                MATCH (sl)-[:{vocab.REIFIES_AS_SOURCE}]->(source)
-                MATCH (sl)-[:{vocab.REIFIES_AS_TARGET}]->(target)
-                MERGE (source)-[r:{relation_label}]->(target)
-                RETURN id(r) as edge_id
-                """,
-                {"sl_id": shadow_link_id},
-            )
-            return result[0]["edge_id"] if result else None
 
     # ===================================================================
     # Relation Query Methods

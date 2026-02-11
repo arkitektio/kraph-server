@@ -605,6 +605,7 @@ class EdgeCategory(Category):
         help_text="The reverse label of the edge class",
         null=True,
     )
+    property_definitions = models.JSONField(default=list, help_text="The property definitions of this")
 
     def get_age_edge_name(self) -> str:
         """Should return the name of the edge in the age graph"""
@@ -645,6 +646,16 @@ class EdgeCategory(Category):
             tags__value__in=self.target_definition_model.tags,
             ontology_references__name__in=self.target_definition_model.ontotology_terms,
         ).distinct()
+
+    @property
+    def defined_properties(self):
+        from graph_engine.base_models import PropertyDefinition
+
+        return [PropertyDefinition(**p) for p in self.property_definitions] if self.property_definitions else []
+
+    @property
+    def property_map(self):
+        return {prodf.key: prodf for prodf in self.defined_properties}
 
 
 class StructureCategory(NodeCategory):

@@ -404,6 +404,36 @@ class RelationDefinitionInput(BaseModel):
         return v
 
 
+class CreateRelationDefinitionInput(EntityDefinitionInput):
+    """Input for an entity definition at the graph level (not within an event)."""
+
+    graph: str = Field(..., description="The graph id this entitiy will beong to")
+
+
+class UpdateRelationDefinitionInput(EntityDefinitionInput):
+    """Input for updating an existing entity definition at the graph level."""
+
+    id: str = Field(..., description="The ID of the entity category to update")
+
+
+class DeleteRelationDefinitionInput(BaseModel):
+    """Input for deleting an existing relation definition at the graph level."""
+
+    id: str = Field(..., description="The ID of the relation category to delete")
+
+
+class ArchiveRelationDefinitionInput(BaseModel):
+    """Input for archiving (soft deleting) an existing relation definition at the graph level."""
+
+    id: str = Field(..., description="The ID of the relation category to archive")
+
+
+class RestoreRelationDefinitionInput(BaseModel):
+    """Input for restoring an existing relation definition at the graph level."""
+
+    id: str = Field(..., description="The ID of the relation category to restore")
+
+
 class PrefixInput(BaseModel):
     """Input for a graph prefix definition."""
 
@@ -479,6 +509,13 @@ class CreateEntityInput(EntityInput):
     entity_category: str = Field(..., description="The ID of the entity category/type to create")
 
 
+class EnsureEntityInput(EntityInput):
+    """Input for ensuring a new entity instance."""
+
+    entity_category: str = Field(..., description="The ID of the entity category/type to create")
+    universal_id: str = Field(..., description="A universal ID to use for this entity. If an existing entity with this universal ID exists, it will be returned instead of creating a new one.")
+
+
 class UpdateEntityInput(EntityInput):
     """Input for updating an existing entity instance. Note: this will not update the entity in-place, but rather create a new entity and archive the old one to preserve history."""
 
@@ -545,6 +582,8 @@ class DeleteMetricInput(BaseModel):
 class RelationInput(BaseModel):
     """Input for a measurement/metric."""
 
+    source_id: str = Field(..., description="The ID of the source entity/structure")
+    target_id: str = Field(..., description="The ID of the target entity/structure")
     supporting_evidence: List[StructureReferenceInput] = Field(default_factory=list, description="List of evidence structures with measurements")
 
 
