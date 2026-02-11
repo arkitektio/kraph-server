@@ -2,7 +2,7 @@ from core import models, types, enums, inputs
 from .path import path
 from .table import table
 from .pairs import pairs
-from .node_list import node_list
+from .nodes import node_list
 
 
 def render_graph_query(graph_query: models.GraphQuery, check_exists: bool = False, filters: inputs.GraphQueryFilters | None = None, pagination: inputs.GraphQueryPagination | None = None, order: inputs.GraphQueryOrder | None = None) -> types.Path | types.Table | types.Pairs | types.NodeList:
