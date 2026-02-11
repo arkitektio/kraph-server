@@ -30,8 +30,15 @@ from api import queries, types, scalars
 class Query:
     """Root query type for the graph engine API."""
 
+    # Schema Operations
     entity_categories: list[types.EntityCategory] = kante.django_field(description="List of all entity categories/schemas")
     entity_category: types.EntityCategory = kante.django_field(description="Get a single entity category/schema by ID")
+    structure_categories: list[types.StructureCategory] = kante.django_field(description="List of all structure categories/schemas")
+    structure_category: types.StructureCategory = kante.django_field(description="Get a single structure category/schema by ID")
+    metric_categories: list[types.MetricCategory] = kante.django_field(description="List of all metric categories/schemas")
+    metric_category: types.MetricCategory = kante.django_field(description="Get a single metric category/schema by ID")
+    relation_categories: list[types.RelationCategory] = kante.django_field(description="List of all relation categories/schemas")
+    relation_category: types.RelationCategory = kante.django_field(description="Get a single relation category/schema by ID")
 
     entity = kante.django_field(queries.entity, description="Get an entity by ID")
 

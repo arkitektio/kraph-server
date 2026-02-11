@@ -34,6 +34,11 @@ class EntityCategoryFilter(CategoryFilter):
     instance_kind: strawberry.auto
 
 
+@kante.filter_type(models.MetricCategory)
+class MetricCategoryFilter(CategoryFilter):
+    metric_kind: strawberry.auto
+
+
 @kante.filter_type(models.RelationCategory)
 class RelationCategoryFilter(CategoryFilter):
     pass
@@ -41,6 +46,11 @@ class RelationCategoryFilter(CategoryFilter):
 
 @kante.filter_type(models.NaturalEventCategory)
 class NaturalEventCategoryFilter(CategoryFilter):
+    pass
+
+
+@kante.filter_type(models.ProtocolEventCategory)
+class ProtocolEventCategoryFilter(CategoryFilter):
     pass
 
 
