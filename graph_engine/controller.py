@@ -356,23 +356,23 @@ class GraphController:
         Returns:
             The edge ID of the created/updated relation edge
         """
-        rel_def = relation_category.properties_models
-        if not rel_def or not rel_def.materialization:
-            # No materialization config - just create the edge without properties
-            # Still store the shadow link id for provenance tracking
-            result = self.engine.execute(
-                self.graph,
-                f"""
-                MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
-                MATCH (sl)-[:{vocab.REIFIES_AS_SOURCE}]->(source)
-                MATCH (sl)-[:{vocab.REIFIES_AS_TARGET}]->(target)
-                MERGE (source)-[r:{relation_label}]->(target)
-                SET r.__shadow_link_id = $sl_id
-                RETURN id(r) as edge_id
-                """,
-                {"sl_id": shadow_link_id},
-            )
-            return result[0]["edge_id"] if result else None
+
+        rel_def = relation_category.defined_properties
+        # No materialization config - just create the edge without properties
+        # Still store the shadow link id for provenance tracking
+
+        result = self.engine.execute(
+            relation_category.graph,
+            f"""
+            MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
+            MATCH (sl)-[:{vocab.REIFIES_AS_SOURCE}]->(source)
+            MATCH (sl)-[:{vocab.REIFIES_AS_TARGET}]->(target)
+            MERGE (source)-[r:{relation_label}]->(target)
+            SET r.__shadow_link_id = $sl_id
+            RETURN id(r) as edge_id
+            """,
+            {"sl_id": shadow_link_id},
+        )
 
         updates = {"__shadow_link_id": shadow_link_id}
 
@@ -440,6 +440,31 @@ class GraphController:
                 {"sl_id": shadow_link_id},
             )
             return result[0]["edge_id"] if result else None
+
+    def list_entities_informed_by_structure(self, graph: models.Graph, structure_id: int) -> List[RetrievedEntity]:
+        """
+        Lists all entities that are informed by a given structure.
+
+        Args:
+            graph: The graph to query
+            structure_id: The internal graph ID of the structure node
+
+        Returns:
+            List of RetrievedEntity objects that are informed by the structure
+        """
+        query = f"""
+            MATCH (s)-[:{vocab.INFORMS}]->(e)
+            WHERE id(s) = $sid
+            RETURN e, labels(e) as lbls
+        """
+        result = self.engine.execute(graph, query, {"sid": structure_id})
+
+        entities = []
+        for row in result:
+            raw = row["e"]
+            entities.append(RetrievedEntity.from_node(raw, graph_name=graph.age_name))
+
+        return entities
 
     def get_node(self, graph: models.Graph, entity_id: str) -> RetrievedNode:
         """

@@ -13,13 +13,14 @@ This module follows the pattern from core/types.py where:
 import strawberry
 from typing import Optional, List, Union
 from datetime import datetime
-from api import loaders
+from api import loaders, order
 from .scalars import AnyScalar, UnixMilliseconds, StructureIdentifier, GlobalID
 from graph_engine.retrieved import RetrievedMetric, RetrievedNode, RetrievedEdge, RetrievedVariable
 from graph_engine import base_models
 import kante
 from core import models
 from graph_engine import retrieved
+from api import filters
 
 
 # ===========================================
@@ -70,7 +71,7 @@ class NodeCategory:
     tags: List[str] = strawberry.field(default_factory=list, description="List of tags associated with this category")
 
 
-@kante.django_type(models.EntityCategory, description="An entity category/schema definition")
+@kante.django_type(models.EntityCategory, filters=filters.EntityCategoryFilter, pagination=True, order=order.EntityCategoryOrder, description="An entity category/schema definition")
 class EntityCategory(NodeCategory):
     property_definitions: List[PropertyDefinition] = strawberry.field(default_factory=list, description="List of property definitions for this entity category")
 

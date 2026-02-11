@@ -81,7 +81,6 @@ AWS_DEFAULT_ACL = "private"
 AWS_S3_USE_SSL = True
 AWS_S3_SECURE_URLS = False
 
-GRAPHENE = {"SCHEMA": "core.schema.schema"}
 
 CHANNEL_LAYERS = {
     "default": {

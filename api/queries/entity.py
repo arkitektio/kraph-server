@@ -7,6 +7,7 @@ from kante.types import Info
 import strawberry
 
 from api import types, context, inputs
+from core import models
 
 
 def entities(info, filters: inputs.EntityFilterInput | None = None, order: inputs.EntityOrderInput | None = None) -> List[types.Entity]:
@@ -29,26 +30,24 @@ def entity(info: Info, id: str) -> types.Entity:
     return types.Entity(_value=response)
 
 
-def entities_informed_by(
-    info: Info,
-    graph: str,
-    identifier: str,
-    object: str,
-) -> List[types.Entity]:
+def entities_informed_by(info: Info, id: strawberry.ID) -> List[types.Entity]:
     """
     Fetch all entities that are informed by a given structure.
 
     Args:
         info: Strawberry Info context
-        identifier: Structure identifier (e.g. '@mikro/roi')
-        object: Structure object ID
+        id: The composite ID of the structure (format: "graph_id:node_id")
 
     Returns:
         List of Entity objects
     """
     controller = context.get_controller()
-    responses = controller.get_entities_informed_by(
-        identifier=identifier,
-        structure_object=object,
-    )
-    return [types.Entity(_value=r) for r in responses]
+
+    graph = context.extract_graph_id(id)
+    identifier = context.extract_node_id(id)
+
+    models.Graph.objects.get(id=graph)  # Validate graph exists
+
+    structures = controller.get_entities_informed_by_structure(graph_id=graph, structure_id=identifier)
+
+    return [types.Entity(_value=r) for r in structures]
