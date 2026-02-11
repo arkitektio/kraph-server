@@ -4,7 +4,6 @@ Queries submodule for the API.
 Contains all GraphQL query resolvers for the graph engine.
 """
 
-from .root import Query
 from .entity import entity, entities_informed_by
 from .structure import structure, informing_structures
 from .metric import metrics_for_structure
