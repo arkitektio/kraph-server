@@ -633,19 +633,28 @@ class EdgeCategory(Category):
 
     def get_matching_source_entities(self) -> QuerySet["EntityCategory"]:
         """Get all entities in the graph that match the source definition of this edge category."""
-        return self.graph.entity_categories.filter(
-            id_in=self.source_definition_model.category,
-            tags__value__in=self.source_definition_model.tags,
-            ontology_references__name__in=self.source_definition_model.ontotology_terms,
-        ).distinct()
+        """Get all entities in the graph that match the target definition of this edge category."""
+        kwargs = {}
+        if self.source_definition_model.category:
+            kwargs["id__in"] = self.source_definition_model.category
+        if self.source_definition_model.tags:
+            kwargs["tags__value__in"] = self.source_definition_model.tags
+        if self.source_definition_model.ontotology_terms:
+            kwargs["ontology_references__name__in"] = self.source_definition_model.ontotology_terms
+
+        return self.graph.entity_categories.filter(**kwargs).distinct()
 
     def get_matching_target_entities(self) -> QuerySet["EntityCategory"]:
         """Get all entities in the graph that match the target definition of this edge category."""
-        return self.graph.entity_categories.filter(
-            id_in=self.target_definition_model.category,
-            tags__value__in=self.target_definition_model.tags,
-            ontology_references__name__in=self.target_definition_model.ontotology_terms,
-        ).distinct()
+        kwargs = {}
+        if self.target_definition_model.category:
+            kwargs["id__in"] = self.target_definition_model.category
+        if self.target_definition_model.tags:
+            kwargs["tags__value__in"] = self.target_definition_model.tags
+        if self.target_definition_model.ontotology_terms:
+            kwargs["ontology_references__name__in"] = self.target_definition_model.ontotology_terms
+
+        return self.graph.entity_categories.filter(**kwargs).distinct()
 
     @property
     def defined_properties(self):

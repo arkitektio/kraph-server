@@ -7,18 +7,20 @@ from django.db.models import Q
 import kante
 
 
-print("Test")
-
-
-@kante.filter_type(models.EntityCategory)
-class EntityCategoryFilter:
-    label: strawberry.auto
+@kante.filter_type(models.Category)
+class CategoryFilter:
     id: strawberry.auto
+    label: strawberry.auto
 
     @kante.filter_field(description="Filter by list of IDs")
     def pinned(self, info: kante.Info, value: bool, prefix: str) -> Q:
-        return Q(**{f"{prefix}_pinned_by": info.context.request.user}) if value else Q()
+        return Q(**{f"{prefix}__pinned_by": info.context.request.user})
 
     @kante.filter_field(description="Filter by list of IDs")
-    def search(self, info: kante.Info, value: str, prefix: str) -> Q:
-        return Q(**{f"{prefix}__label__search": value}) if value else Q()
+    def search(self, value: str, prefix: str) -> Q:
+        return Q(**{f"{prefix}label__search": value})
+
+
+@kante.filter_type(models.EntityCategory)
+class EntityCategoryFilter(CategoryFilter):
+    instance_kind: strawberry.auto
