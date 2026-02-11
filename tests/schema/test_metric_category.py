@@ -21,19 +21,19 @@ async def test_metric_category_filter_by_metric_kind(test_graph: Graph, authenti
         graph=test_graph,
         age_name="Intensity",
         label="Intensity",
-        metric_kind=enums.MeasurementKindChoices.INT,
+        metric_kind=enums.MetricKindChoices.INT,
         structure_category=structure_category,
     )
     await core_models.MetricCategory.objects.acreate(
         graph=test_graph,
         age_name="Area",
         label="Area",
-        metric_kind=enums.MeasurementKindChoices.FLOAT,
+        metric_kind=enums.MetricKindChoices.FLOAT,
         structure_category=structure_category,
     )
 
     query = """
-        query SearchMetricCategories($metricKind: MetricKind!) {
+        query SearchMetricCategories($metricKind: MetricKindChoices!) {
             metricCategories(filters: {metricKind: $metricKind}) {
                 id
                 label

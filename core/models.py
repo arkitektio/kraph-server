@@ -6,7 +6,7 @@ from core import enums
 from koherent.fields import ProvenanceField
 from django_choices_field import TextChoicesField
 from datalayer.fields import S3Field
-from core.datalayer import Datalayer
+from datalayer import models as datalayer_models
 from authentikate.models import Organization, Membership
 from polymorphic.models import PolymorphicModel
 from django.db.models import QuerySet
@@ -45,7 +45,7 @@ class Graph(models.Model):
         help_text="The user that this graph belongs to",
     )
     store = models.ForeignKey(
-        MediaStore,
+        datalayer_models.MediaStore,
         on_delete=models.CASCADE,
         null=True,
         blank=True,
@@ -395,7 +395,7 @@ class Category(PolymorphicModel):
         help_text="The index of this category (new entities will be created with this index)",
     )
     store = models.ForeignKey(
-        MediaStore,
+        datalayer_models.MediaStore,
         on_delete=models.CASCADE,
         null=True,
         blank=True,
@@ -1287,7 +1287,7 @@ class Model(models.Model):
         help_text="The materialized grpah this model was trained on",
     )
     store = models.ForeignKey(
-        MediaStore,
+        datalayer_models.MediaStore,
         on_delete=models.CASCADE,
         null=True,
         blank=True,

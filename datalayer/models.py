@@ -73,7 +73,7 @@ class MediaStore(S3Store):
         """Fill the info of the media store. This is used to populate the media store with the correct path and mark it as populated. The path is in the format s3://bucket/key. This function should be called after the file has been uploaded to S3."""
         pass
 
-    def put_file(self, datalayer: Datalayer, file: FileobjTypeDef) -> None:
+    def put_file(self, datalayer: Datalayer, file: "FileobjTypeDef") -> None:
         """Upload a file to the media store. This function is used to upload a file to S3 and fill the info of the media store. The file should be uploaded to S3 before calling this function, and the key and bucket of the media store should be set accordingly. After uploading the file, this function will fill the info of the media store and mark it as populated."""
         s3 = datalayer.s3
         s3.upload_fileobj(file, self.bucket, self.key)

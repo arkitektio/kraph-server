@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "django.contrib.postgres",
     "channels_redis",
+    "datalayer",
     "guardian",
     "simple_history",
     "strawberry",

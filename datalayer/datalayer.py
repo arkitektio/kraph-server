@@ -15,7 +15,7 @@ class Datalayer:
     """A S3 Powered Datalayer"""
 
     @cached_property
-    def s3(self) -> S3Client:
+    def s3(self) -> "S3Client":
         """Get a boto3 session for S3 without s3v4 signature"""
         return boto3.client(
             "s3",
@@ -26,7 +26,7 @@ class Datalayer:
         )
 
     @cached_property
-    def s3v4(self) -> S3Client:
+    def s3v4(self) -> "S3Client":
         """Get a boto3 session for S3 with s3v4 signature"""
         return boto3.client(
             "s3",
@@ -40,7 +40,7 @@ class Datalayer:
         )
 
     @cached_property
-    def sts(self) -> STSClient:
+    def sts(self) -> "STSClient":
         """Get a boto3 session for STS with s3v4 signature"""
         return boto3.client(
             "sts",

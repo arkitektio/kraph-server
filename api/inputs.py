@@ -13,12 +13,25 @@ from enum import Enum
 from graph_engine import input_models
 from .scalars import AnyScalar
 from strawberry.experimental import pydantic
+from strawberry import LazyType
+from typing import Annotated
 
 
-@pydantic.input(model=input_models.PlateChildInput, all_fields=True, description="Input for requesting media upload credentials")
+@pydantic.input(model=input_models.PlateChildInput, description="Input for requesting media upload credentials")
 class PlateChildInput:
     """Input for requesting media upload credentials"""
 
+    id: str
+    type: str | None = None
+    text: str | None = None
+    value: str | None = None
+    color: str | None = None
+    font_size: str | None = None
+    background_color: str | None = None
+    bold: bool | None = None
+    italic: bool | None = None
+    underline: bool | None = None
+    children: List[Annotated["PlateChildInput", strawberry.lazy(".")]] | None
     pass
 
 
