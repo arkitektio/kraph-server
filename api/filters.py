@@ -7,8 +7,16 @@ from django.db.models import Q
 import kante
 
 
+@kante.filter_type(models.Graph)
+class GraphFilter:
+    id: strawberry.auto
+    name: strawberry.auto
+    description: strawberry.auto
+
+
 @kante.filter_type(models.Category)
 class CategoryFilter:
+    graph: GraphFilter | None
     id: strawberry.auto
     label: strawberry.auto
 
@@ -24,3 +32,23 @@ class CategoryFilter:
 @kante.filter_type(models.EntityCategory)
 class EntityCategoryFilter(CategoryFilter):
     instance_kind: strawberry.auto
+
+
+@kante.filter_type(models.RelationCategory)
+class RelationCategoryFilter(CategoryFilter):
+    pass
+
+
+@kante.filter_type(models.NaturalEventCategory)
+class NaturalEventCategoryFilter(CategoryFilter):
+    pass
+
+
+@kante.filter_type(models.StructureCategory)
+class StructureCategoryFilter(CategoryFilter):
+    pass
+
+
+@kante.filter_type(models.StructureRelationCategory)
+class StructureRelationCategoryFilter(CategoryFilter):
+    pass

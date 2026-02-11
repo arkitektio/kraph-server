@@ -21,29 +21,29 @@ def test_create_ais_with_timestamp_conversion(graph_controller: GraphController,
     
 
     supporting_evidence=[
-            inputs.StructureReference(
+            inputs.StructureReferenceInput(
                 identifier="@mikro/roi",
                 object="1",
-                measurements=[
-                inputs.create_max_confidence_measurement(
+                metrics=[
+                inputs.create_max_confidence_metric(
                     key="vector_length", 
                     value=100, 
                     timestamp=ts_string  
                 )]
             ),
-            inputs.StructureReference(
+            inputs.StructureReferenceInput(
                 identifier="@mikro/roi",
                 object="2",
-                measurements=[
-                inputs.create_max_confidence_measurement(
+                metrics=[
+                inputs.create_max_confidence_metric(
                     key="vector_length", 
                     value=120, 
                     timestamp=a_little_later  
                 )]
             ),  
             inputs.create_told_you_so(
-                measurements=[
-                    inputs.create_max_confidence_measurement(
+                metrics=[
+                    inputs.create_max_confidence_metric(
                         key="name", 
                         value="A little ducky", 
                         timestamp="2023-10-27T10:10:00.789Z"  
@@ -56,19 +56,18 @@ def test_create_ais_with_timestamp_conversion(graph_controller: GraphController,
     
     result = graph_controller.create_entity(
         entity_category=ais_category,
-        ref_id="ais_test_001",
-        supporting_evidence=supporting_evidence,
+        payload=inputs.EntityInput(
+            supporting_evidence=supporting_evidence,
+        ),
+        context=inputs.ProvenanceContext.bland()
+            
     )
     
-    entity = graph_controller.get_entity(
-        id=result.db_id,
-        entity_category=ais_category,
-    )
     
     # Verify properties
-    assert "avg_length" in entity.properties
-    assert entity.properties["avg_length"] == 110  # Average of 100 and 120
-    assert entity.properties["name"] == "A little ducky"  # From told_you_so
+    assert "avg_length" in result.properties
+    assert result.properties["avg_length"] == 110  # Average of 100 and 120
+    assert result.properties["name"] == "A little ducky"  # From told_you_so
 
 
 def test_create_entity_with_single_evidence(graph_controller: GraphController, bio_graph: core_models.Graph):
@@ -78,11 +77,11 @@ def test_create_entity_with_single_evidence(graph_controller: GraphController, b
     ais_category = bio_graph.get_entity_def("AIS")
     
     supporting_evidence = [
-        inputs.StructureReference(
+        inputs.StructureReferenceInput(
             identifier="@mikro/roi",
             object="roi_single_001",
-            measurements=[
-                inputs.MeasurementInput(
+            metrics=[
+                inputs.MetricInput(
                     key="vector_length",
                     value=50.5,
                     confidence=0.95,
@@ -117,25 +116,25 @@ def test_create_entity_with_multiple_evidence_sources(graph_controller: GraphCon
     ais_category = bio_graph.get_entity_def("AIS")
     
     supporting_evidence = [
-        inputs.StructureReference(
+        inputs.StructureReferenceInput(
             identifier="@mikro/roi",
             object="roi_multi_001",
-            measurements=[
-                inputs.MeasurementInput(key="vector_length", value=100, timestamp=1000)
+            metrics=[
+                inputs.MetricInput(key="vector_length", value=100, timestamp=1000)
             ]
         ),
-        inputs.StructureReference(
+        inputs.StructureReferenceInput(
             identifier="@mikro/roi", 
             object="roi_multi_002",
-            measurements=[
-                inputs.MeasurementInput(key="vector_length", value=200, timestamp=2000)
+            metrics=[
+                inputs.MetricInput(key="vector_length", value=200, timestamp=2000)
             ]
         ),
-        inputs.StructureReference(
+        inputs.StructureReferenceInput(
             identifier="@mikro/roi",
             object="roi_multi_003", 
-            measurements=[
-                inputs.MeasurementInput(key="vector_length", value=150, timestamp=3000)
+            metrics=[
+                inputs.MetricInput(key="vector_length", value=150, timestamp=3000)
             ]
         )
     ]
@@ -164,8 +163,8 @@ def test_create_entity_with_told_you_so_evidence(graph_controller: GraphControll
     supporting_evidence = [
         inputs.create_told_you_so(
             object="tys_test_001",
-            measurements=[
-                inputs.create_max_confidence_measurement(
+            metrics=[
+                inputs.create_max_confidence_metric(
                     key="name",
                     value="My Custom AIS",
                     timestamp=1698400800000
@@ -194,13 +193,13 @@ def test_create_entity_with_multiple_measurements_per_structure(graph_controller
     ais_category = bio_graph.get_entity_def("AIS")
     
     supporting_evidence = [
-        inputs.StructureReference(
+        inputs.StructureReferenceInput(
             identifier="@mikro/roi",
             object="roi_multi_measure",
-            measurements=[
-                inputs.MeasurementInput(key="vector_length", value=100, unit="um", timestamp=1000),
-                inputs.MeasurementInput(key="vector_length", value=150, unit="um", timestamp=2000),
-                inputs.MeasurementInput(key="vector_length", value=125, unit="um", timestamp=3000),
+            metrics=[
+                inputs.MetricInput(key="vector_length", value=100, unit="um", timestamp=1000),
+                inputs.MetricInput(key="vector_length", value=150, unit="um", timestamp=2000),
+                inputs.MetricInput(key="vector_length", value=125, unit="um", timestamp=3000),
             ]
         )
     ]
@@ -250,11 +249,11 @@ def test_measurement_timestamp_conversion_datetime(graph_controller: GraphContro
     expected_ms = 1698400800123  # Unix ms for this datetime
     
     supporting_evidence = [
-        inputs.StructureReference(
+        inputs.StructureReferenceInput(
             identifier="@mikro/roi",
             object="roi_dt_test",
-            measurements=[
-                inputs.MeasurementInput(
+            metrics=[
+                inputs.MetricInput(
                     key="vector_length",
                     value=100,
                     timestamp=dt  # Pass datetime directly
@@ -281,12 +280,12 @@ def test_measurement_with_optional_fields(graph_controller: GraphController, bio
     ais_category = bio_graph.get_entity_def("AIS")
     
     supporting_evidence = [
-        inputs.StructureReference(
+        inputs.StructureReferenceInput(
             identifier="@mikro/roi",
             object="roi_optional_test",
-            measurements=[
+            metrics=[
                 # Full measurement with all fields
-                inputs.MeasurementInput(
+                inputs.MetricInput(
                     key="vector_length",
                     value=100,
                     confidence=0.95,

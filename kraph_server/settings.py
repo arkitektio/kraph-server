@@ -46,6 +46,8 @@ INSTALLED_APPS = [
     "channels_redis",
     "guardian",
     "simple_history",
+    "strawberry",
+    "strawberry_django",
     "authentikate",
     "koherent",
     "kante",

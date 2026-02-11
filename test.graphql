@@ -1,0 +1,822 @@
+directive @oneOf on INPUT_OBJECT
+
+enum AggregationFunction {
+  MEAN
+  SUM
+  MAX
+  MIN
+  COUNT
+  RANGE
+  EUCLIDEAN_RANGE
+  LATEST
+}
+
+"""An assertion representing provenance information"""
+type Assertion implements Node {
+  """Local AGE graph ID"""
+  graphId: Int!
+
+  """Global identifier in format 'graph_name:graph_id'"""
+  globalId: GlobalID!
+
+  """The AGE graph label"""
+  label: String!
+
+  """Composite ID for node lookup"""
+  id: String!
+
+  """External ID if set"""
+  externalId: String
+
+  """Local ID if set"""
+  localId: String
+
+  """Tags associated with this node"""
+  tags: [String!]!
+
+  """User/subject who made the assertion"""
+  subject: String
+
+  """Application that made the assertion"""
+  appId: String
+
+  """Action identifier"""
+  actionId: String
+
+  """Human-readable action name"""
+  actionName: String
+
+  """Action arguments as JSON"""
+  actionArgs: Base64
+
+  """When this assertion was created"""
+  createdAt: DateTime
+}
+
+scalar Base64
+
+enum CardinalityEnum {
+  ONE_TO_ONE
+  ONE_TO_MANY
+  MANY_TO_MANY
+}
+
+"""Input for creating a new entity"""
+input CreateEntityInput {
+  """The ID of the entity category/type to create"""
+  entityCategory: String!
+
+  """List of evidence structures with measurements"""
+  supportingEvidence: [StructureReferenceInput!]! = []
+}
+
+"""Input for creating a new metric"""
+input CreateMetricInput {
+  key: String!
+  value: Base64!
+}
+
+"""
+Input for creating a new relation between two entities with supporting evidence
+"""
+input CreateRelationInput {
+  """The ID of the source entity/structure"""
+  sourceId: String!
+
+  """The ID of the target entity/structure"""
+  targetId: String!
+
+  """List of evidence structures with measurements"""
+  supportingEvidence: [StructureReferenceInput!]! = []
+
+  """The unique ID of the structure this metric is associated with"""
+  category: String!
+
+  """The graph id this metric will belong to"""
+  graph: String!
+}
+
+"""Input for creating a new entity category/type in the graph schema"""
+input CreateStructureInput {
+  """The unique ID of the object this structure references"""
+  object: String!
+
+  """List of measurements associated with this structure"""
+  metrics: [MetricInput!]! = []
+
+  """The ID of the structure category/type to create"""
+  category: String!
+
+  """The graph id this structure will belong to"""
+  graph: String!
+}
+
+"""Date with time (isoformat)"""
+scalar DateTime
+
+input DerivationRuleInput {
+  """The label of the describing structure to read from"""
+  sourceNode: String = null
+
+  """The property key on the source node"""
+  key: String = null
+
+  """Aggregation function (MEAN, SUM, MAX, MIN, COUNT, etc.)"""
+  aggregation: AggregationFunction = null
+}
+
+enum DerivationType {
+  LATEST
+  PRIORITY_LATEST
+  ROLLUP
+  LATEST_ASSERTION_TOOL
+}
+
+"""A natural event category/schema definition"""
+type Describes implements Edge {
+  """Local AGE graph ID"""
+  graphId: Int!
+
+  """Global identifier in format 'graph_name:graph_id'"""
+  globalId: GlobalID!
+
+  """Composite ID for edge lookup"""
+  id: String!
+
+  """The edge label/type"""
+  label: String!
+
+  """Global ID of the source/left node"""
+  leftId: String!
+
+  """Global ID of the target/right node"""
+  rightId: String!
+}
+
+"""Base interface for all graph edges"""
+interface Edge {
+  """Local AGE graph ID"""
+  graphId: Int!
+
+  """Global identifier in format 'graph_name:graph_id'"""
+  globalId: GlobalID!
+
+  """Composite ID for edge lookup"""
+  id: String!
+
+  """The edge label/type"""
+  label: String!
+
+  """Global ID of the source/left node"""
+  leftId: String!
+
+  """Global ID of the target/right node"""
+  rightId: String!
+}
+
+"""An entity in the knowledge graph with derived properties"""
+type Entity implements VersionedNode & Node {
+  """Local AGE graph ID"""
+  graphId: Int!
+
+  """Global identifier in format 'graph_name:graph_id'"""
+  globalId: GlobalID!
+
+  """The AGE graph label"""
+  label: String!
+
+  """Composite ID for node lookup"""
+  id: String!
+
+  """External ID if set"""
+  externalId: String
+
+  """Local ID if set"""
+  localId: String
+
+  """Tags associated with this node"""
+  tags: [String!]!
+
+  """Schema version used to derive properties"""
+  schemaVersion: String!
+
+  """Timestamp when properties were last derived (unix ms)"""
+  lastDerived: UnixMilliseconds
+
+  """The entity type/kind (e.g. 'AIS', 'Cell')"""
+  kind: String!
+
+  """Category ID linking to EntityCategory model"""
+  categoryId: String
+
+  """When this entity became valid"""
+  validFrom: DateTime
+
+  """When this entity stopped being valid"""
+  validTo: DateTime
+
+  """List of properties derived for this entity"""
+  richProperties: [RichProperty!]!
+
+  """List of the current derived properties for this entity"""
+  properties: Base64!
+}
+
+"""An entity category/schema definition"""
+type EntityCategory implements NodeCategory {
+  """Database ID of the category"""
+  id: ID!
+
+  """ID of the graph this category belongs to"""
+  graphId: ID!
+
+  """Label/name of the category"""
+  label: String!
+
+  """Description of the category"""
+  description: String
+
+  """Persistent URL for this category"""
+  purl: String
+
+  """Color as RGBA list (0-255)"""
+  color: [Int!]
+
+  """List of tags associated with this category"""
+  tags: [String!]!
+
+  """List of property definitions for this entity category"""
+  propertyDefinitions: [PropertyDefinition!]!
+}
+
+input EntityCategoryFilter {
+  graph: GraphFilter
+  id: ID
+  label: String
+  AND: EntityCategoryFilter
+  OR: EntityCategoryFilter
+  NOT: EntityCategoryFilter
+  DISTINCT: Boolean
+
+  """Filter by list of IDs"""
+  pinned: Boolean
+
+  """Filter by list of IDs"""
+  search: String
+  instanceKind: String
+}
+
+input EntityCategoryOrder @oneOf {
+  label: Ordering
+  id: Ordering
+}
+
+input EntityDefinitionInput {
+  """The label of the node participating in the event"""
+  key: String!
+
+  """Description of this node role"""
+  description: String = null
+
+  """Ontology references for this event"""
+  ontologyReferences: [OntologyReferenceInput!] = []
+
+  """Property definitions"""
+  properties: [PropertyDefinitionInput!] = []
+}
+
+"""Input for creating a new natural event definition in the graph schema"""
+input EntityDescriptorInput {
+  """Filter by entity category/label"""
+  category: [String!] = null
+
+  """Filter by tags on the entity"""
+  tags: [String!] = null
+
+  """Filter by ontology references on the entity (format: 'PREFIX:TERM_ID')"""
+  ontotologyTerms: [String!] = null
+}
+
+input EventDefinitionInput {
+  """The label of the node participating in the event"""
+  key: String!
+
+  """Description of this node role"""
+  description: String = null
+
+  """Ontology references for this event"""
+  ontologyReferences: [OntologyReferenceInput!] = []
+
+  """
+  Optional tags for this node role (e.g. 'cell_body', 'dendrite', 'axon')
+  """
+  tags: [String!] = []
+
+  """Input node roles"""
+  inputs: [EventRoleInput!] = []
+
+  """Output node roles"""
+  outputs: [EventRoleInput!] = []
+
+  """Property definitions"""
+  properties: [PropertyDefinitionInput!] = []
+}
+
+"""Input for creating a new natural event definition in the graph schema"""
+input EventRoleInput {
+  """The label of the node participating in the event"""
+  key: String!
+
+  """What type of role does this node play in the event"""
+  role: String!
+
+  """
+  Optional filters to apply when linking entities to structures for this role
+  """
+  descriptor: EntityDescriptorInput!
+
+  """Ontology references for this event"""
+  ontologyReferences: [OntologyReferenceInput!]! = []
+}
+
+input EvidenceRequirementInput {
+  """Property key expected on the evidence"""
+  key: String!
+
+  """Unit of measurement"""
+  unit: String!
+
+  """Description"""
+  description: String = null
+}
+
+scalar GlobalID
+
+input GraphDefinitionInput {
+  """Semantic version for this schema definition (e.g., '1.0.0')"""
+  systemVersion: String!
+
+  """The graph extensions containing all type definitions"""
+  extensions: GraphExtensionsInput!
+}
+
+input GraphExtensionsInput {
+  """Graph prefixes for namespacing"""
+  prefixes: [PrefixInput!] = []
+
+  """Entity definitions"""
+  entities: [EntityDefinitionInput!] = []
+
+  """Relation definitions"""
+  relations: [RelationDefinitionInput!] = []
+
+  """Event definitions"""
+  events: [EventDefinitionInput!] = []
+}
+
+input GraphFilter {
+  id: ID
+  name: String
+  description: String
+  AND: GraphFilter
+  OR: GraphFilter
+  NOT: GraphFilter
+  DISTINCT: Boolean
+}
+
+"""Input for linking a structure to an entity"""
+input LinkStructureInput {
+  """Structure identifier"""
+  structureIdentifier: String!
+
+  """Structure object ID"""
+  structureObject: String!
+
+  """Entity ID to link to"""
+  entityId: String!
+
+  """Whether to recalculate entity properties after linking"""
+  recalculate: Boolean = true
+}
+
+input MaterializationConfigInput {
+  """Internal label for the evidence node"""
+  backingLinkType: String!
+
+  """Expected measurements on the backing link"""
+  desiredEvidence: [EvidenceRequirementInput!] = []
+
+  """Derived property definitions"""
+  properties: [PropertyDefinitionInput!] = []
+}
+
+"""A metric node representing computed values"""
+type Metric implements Node {
+  """Local AGE graph ID"""
+  graphId: Int!
+
+  """Global identifier in format 'graph_name:graph_id'"""
+  globalId: GlobalID!
+
+  """The AGE graph label"""
+  label: String!
+
+  """Composite ID for node lookup"""
+  id: String!
+
+  """External ID if set"""
+  externalId: String
+
+  """Local ID if set"""
+  localId: String
+
+  """Tags associated with this node"""
+  tags: [String!]!
+
+  """Category ID linking to MetricCategory model"""
+  categoryId: String
+
+  """The metric value"""
+  value: Base64!
+}
+
+"""Input for creating a new natural event definition in the graph schema"""
+input MetricInput {
+  key: String!
+  value: Base64!
+}
+
+"""Graph Engine Mutations"""
+type Mutation {
+  """Create a new entity with supporting evidence"""
+  createEntity(input: CreateEntityInput!): Entity!
+
+  """Recalculate entity properties from its evidence"""
+  recalculateEntity(input: RecalculateEntityInput!): Entity!
+
+  """Create a new standalone structure"""
+  createStructure(input: CreateStructureInput!): Structure!
+
+  """Add a measurement to a structure"""
+  createMetric(input: CreateMetricInput!): Metric!
+
+  """Link an existing structure to an entity"""
+  linkStructureToEntity(input: LinkStructureInput!): Describes!
+
+  """Create a new relation between two entities"""
+  createRelation(input: CreateRelationInput!): Relation!
+
+  """Validate a schema definition without saving"""
+  validateSchema(input: ValidateSchemaInput!): SchemaValidationResult!
+}
+
+"""Base interface for all graph nodes"""
+interface Node {
+  """Local AGE graph ID"""
+  graphId: Int!
+
+  """Global identifier in format 'graph_name:graph_id'"""
+  globalId: GlobalID!
+
+  """The AGE graph label"""
+  label: String!
+
+  """Composite ID for node lookup"""
+  id: String!
+
+  """External ID if set"""
+  externalId: String
+
+  """Local ID if set"""
+  localId: String
+
+  """Tags associated with this node"""
+  tags: [String!]!
+}
+
+"""Base interface for graph schemas"""
+interface NodeCategory {
+  """Database ID of the category"""
+  id: ID!
+
+  """ID of the graph this category belongs to"""
+  graphId: ID!
+
+  """Label/name of the category"""
+  label: String!
+
+  """Description of the category"""
+  description: String
+
+  """Persistent URL for this category"""
+  purl: String
+
+  """Color as RGBA list (0-255)"""
+  color: [Int!]
+
+  """List of tags associated with this category"""
+  tags: [String!]!
+}
+
+input OffsetPaginationInput {
+  offset: Int! = 0
+  limit: Int
+}
+
+"""Input for creating a new natural event definition in the graph schema"""
+input OntologyReferenceInput {
+  """The ontology prefix (e.g. 'OBI'). Must be defined in graph prefixes."""
+  prefix: String!
+
+  """The full URI for the ontology term"""
+  uri: String!
+}
+
+enum Ordering {
+  ASC
+  ASC_NULLS_FIRST
+  ASC_NULLS_LAST
+  DESC
+  DESC_NULLS_FIRST
+  DESC_NULLS_LAST
+}
+
+input PrefixInput {
+  """The prefix string (e.g. 'OBI')"""
+  prefix: String!
+
+  """
+  The URI that the prefix maps to (e.g. 'http://purl.obolibrary.org/obo/OBI_')
+  """
+  uri: String!
+}
+
+"""A property definition from the graph schema"""
+type PropertyDefinition {
+  """The unique key/name for this property"""
+  key: String!
+  type: String!
+  unit: String
+  description: String
+}
+
+input PropertyDefinitionInput {
+  ontologyReferences: [OntologyReferenceInput!] = []
+
+  """Property key/name"""
+  key: String!
+
+  """Property type: string, float, integer, boolean, datetime, point_3d"""
+  type: String!
+
+  """Unit of measurement"""
+  unit: String = null
+
+  """Description of this property"""
+  description: String = null
+
+  """
+  Derivation type: LATEST, PRIORITY_LATEST, ROLLUP, LATEST_ASSERTION_TOOL
+  """
+  derivation: DerivationType! = LATEST
+
+  """Rule configuration for ROLLUP derivation"""
+  rule: DerivationRuleInput = null
+}
+
+type Query {
+  _service: _Service!
+
+  """List of all entity categories/schemas"""
+  entityCategories(filters: EntityCategoryFilter, ordering: [EntityCategoryOrder!]! = [], pagination: OffsetPaginationInput): [EntityCategory!]!
+
+  """Get a single entity category/schema by ID"""
+  entityCategory(pk: ID!): EntityCategory!
+
+  """Get an entity by ID"""
+  entity(id: String!): Entity!
+
+  """Get entities informed by a specific structure"""
+  entitiesInformedBy(identifier: StructureIdentifier!, object: String!): [Entity!]!
+
+  """Get a structure by identifier and object"""
+  structure(identifier: StructureIdentifier!, object: String!): Structure
+
+  """Get all structures that inform an entity"""
+  informingStructures(entityId: String!): [Structure!]!
+
+  """Get all measurements for a structure"""
+  measurementsForStructure(identifier: StructureIdentifier!, object: String!): [Metric!]!
+
+  """Get the assertion that generated an entity"""
+  assertionForEntity(entityId: String!): Assertion
+
+  """Get all metrics asserted by an assertion"""
+  metricsForAssertion(assertionId: Int!): [Metric!]!
+}
+
+"""Input for recalculating entity properties"""
+input RecalculateEntityInput {
+  """The ID of the graph containing the entity"""
+  graphId: ID!
+
+  """The entity's string ID"""
+  entityId: String!
+}
+
+"""A relation edge between two entities"""
+type Relation implements Edge {
+  """Local AGE graph ID"""
+  graphId: Int!
+
+  """Global identifier in format 'graph_name:graph_id'"""
+  globalId: GlobalID!
+
+  """Composite ID for edge lookup"""
+  id: String!
+
+  """The edge label/type"""
+  label: String!
+
+  """Global ID of the source/left node"""
+  leftId: String!
+
+  """Global ID of the target/right node"""
+  rightId: String!
+
+  """When this relation became valid"""
+  validFrom: DateTime
+
+  """When this relation stopped being valid"""
+  validTo: DateTime
+
+  """When this relation was created"""
+  createdAt: DateTime
+
+  """Category ID linking to RelationCategory model"""
+  categoryId: String
+
+  """List of properties derived for this entity"""
+  richProperties: [RichProperty!]!
+
+  """List of the current derived properties for this entity"""
+  properties: Base64!
+}
+
+input RelationDefinitionInput {
+  materialization: MaterializationConfigInput = null
+
+  """Ontology references for this event"""
+  ontologyReferences: [OntologyReferenceInput!] = []
+
+  """Relation type name/key"""
+  key: String!
+
+  """Source entity type(s)"""
+  source: [String!]!
+
+  """Target entity type(s)"""
+  target: [String!]!
+
+  """Relation cardinality"""
+  cardinality: CardinalityEnum! = ONE_TO_MANY
+}
+
+"""A rich property with metadata from schema and graph"""
+type RichProperty {
+  """Local AGE graph ID"""
+  graphId: Int!
+
+  """The property key/name"""
+  definition: PropertyDefinition
+
+  """The property value"""
+  value: Base64!
+
+  """
+  Supporting evidence for this property, in form of metrics derived from observations/measurements
+  """
+  supportingEvidence: [Metric!]!
+}
+
+"""A validation error from schema validation"""
+type SchemaValidationError {
+  """Path to the error (e.g., ['extensions', 'entities', 'Neuron'])"""
+  location: [String!]!
+
+  """Human-readable error message"""
+  message: String!
+
+  """Error type"""
+  type: String!
+}
+
+"""Result of validating a schema"""
+type SchemaValidationResult {
+  """Whether the schema is valid"""
+  isValid: Boolean!
+
+  """List of validation errors"""
+  errors: [SchemaValidationError!]!
+
+  """List of warnings (non-fatal)"""
+  warnings: [SchemaValidationError!]!
+}
+
+"""A structure that provides evidence for entities"""
+type Structure implements Node {
+  """Local AGE graph ID"""
+  graphId: Int!
+
+  """Global identifier in format 'graph_name:graph_id'"""
+  globalId: GlobalID!
+
+  """The AGE graph label"""
+  label: String!
+
+  """Composite ID for node lookup"""
+  id: String!
+
+  """External ID if set"""
+  externalId: String
+
+  """Local ID if set"""
+  localId: String
+
+  """Tags associated with this node"""
+  tags: [String!]!
+
+  """Schema identifier (e.g. '@mikro/roi')"""
+  identifier: StructureIdentifier!
+
+  """External object ID this structure references"""
+  object: String!
+
+  """Category ID linking to StructureCategory model"""
+  categoryId: String
+}
+
+scalar StructureIdentifier
+
+"""Input for creating a new natural event definition in the graph schema"""
+input StructureReferenceInput {
+  """Schema identifier, e.g. '@mikro/roi'"""
+  identifier: String!
+
+  """The unique ID of the object this structure references"""
+  object: String!
+  metrics: [MetricInput!]! = []
+}
+
+"""Graph Engine Subscriptions"""
+type Subscription {
+  """Subscribe to entity updates"""
+  entityUpdated(entityId: String!): Entity!
+
+  """Subscribe to new entities of a specific kind"""
+  entityCreated(kind: String!): Entity!
+}
+
+scalar UnixMilliseconds
+
+"""Input for validating a schema definition"""
+input ValidateSchemaInput {
+  """The graph schema definition as JSON"""
+  definition: GraphDefinitionInput!
+}
+
+"""Interface for versioned nodes with schema tracking"""
+interface VersionedNode implements Node {
+  """Local AGE graph ID"""
+  graphId: Int!
+
+  """Global identifier in format 'graph_name:graph_id'"""
+  globalId: GlobalID!
+
+  """The AGE graph label"""
+  label: String!
+
+  """Composite ID for node lookup"""
+  id: String!
+
+  """External ID if set"""
+  externalId: String
+
+  """Local ID if set"""
+  localId: String
+
+  """Tags associated with this node"""
+  tags: [String!]!
+
+  """Schema version used to derive properties"""
+  schemaVersion: String!
+
+  """Timestamp when properties were last derived (unix ms)"""
+  lastDerived: UnixMilliseconds
+}
+
+scalar _Any
+
+type _Service {
+  sdl: String!
+}

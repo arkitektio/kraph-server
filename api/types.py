@@ -71,7 +71,7 @@ class NodeCategory:
     tags: List[str] = strawberry.field(default_factory=list, description="List of tags associated with this category")
 
 
-@kante.django_type(models.EntityCategory, filters=filters.EntityCategoryFilter, pagination=True, order=order.EntityCategoryOrder, description="An entity category/schema definition")
+@kante.django_type(models.EntityCategory, filters=filters.EntityCategoryFilter, pagination=True, ordering=order.EntityCategoryOrder, description="An entity category/schema definition")
 class EntityCategory(NodeCategory):
     property_definitions: List[PropertyDefinition] = strawberry.field(default_factory=list, description="List of property definitions for this entity category")
 

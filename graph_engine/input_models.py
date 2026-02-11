@@ -172,6 +172,11 @@ class ProvenanceContext(BaseModel):
     action_name: Optional[str] = None
     action_args: Optional[Dict[str, Any]] = None
 
+    @classmethod
+    def bland(cls) -> "ProvenanceContext":
+        """A bland provenance context for testing or when user info is not available."""
+        return cls(subject="unknown", app_id="unknown")
+
 
 # ==========================================
 # SCHEMA MANAGEMENT MODELS
@@ -584,7 +589,6 @@ class DeleteNaturalEventInput(BaseModel):
 class EntityInput(BaseModel):
     """Input for creating a new entity instance."""
 
-    entity_category: str = Field(..., description="The ID of the entity category/type to create")
     supporting_evidence: List[StructureReferenceInput] = Field(default_factory=list, description="List of evidence structures with measurements")
 
 
