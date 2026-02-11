@@ -1,8 +1,6 @@
 import json
 import time
 from typing import Optional, Dict, Any, List
-from api.context import extract_node_id
-from core.age import RetrievedRelation
 from graph_engine.base_models import (
     GraphDefinitionModel,
     get_label_for_identifier,
@@ -21,6 +19,7 @@ from graph_engine.retrieved import (
     RetrievedNode,
     RetrievedEdge,
     RetrievedEntity,
+    RetrievedRelation,
     RetrievedStructure,
     RetrievedMeasurement,
     RetrievedAssertion,
@@ -29,6 +28,44 @@ from core import models
 from graph_engine import input_models as inputs
 from graph_engine import vocab
 from graph_engine.rollup import build_property_query
+
+
+def extract_node_id(composite_id: str) -> int:
+    """
+    Extract the entity UUID from a composite ID.
+
+    Composite IDs are in the format: {graph_id}-{entity_uuid}
+    This function returns everything after the first hyphen.
+
+    Args:
+        composite_id: The composite ID (e.g., "1-abc123-def456-...")
+
+    Returns:
+        The entity UUID part (e.g., "abc123-def456-...")
+    """
+    parts = composite_id.split("-", 1)
+    if len(parts) == 2:
+        return int(parts[1])
+    raise ValueError(f"Invalid composite ID format: {composite_id}")
+
+
+def extract_graph_id(composite_id: str) -> str:
+    """
+    Extract the graph ID from a composite ID.
+
+    Composite IDs are in the format: {graph_id}-{entity_uuid}
+    This function returns everything before the first hyphen.
+
+    Args:
+        composite_id: The composite ID (e.g., "1-abc123-def456-...")
+
+    Returns:
+        The graph ID part (e.g., "1")
+    """
+    parts = composite_id.split("-", 1)
+    if len(parts) == 2:
+        return parts[0]
+    raise ValueError(f"Invalid composite ID format: {composite_id}")
 
 
 def _extract_props(raw_node: Any) -> Dict[str, Any]:
@@ -968,7 +1005,7 @@ class GraphController:
         self,
         category: models.RelationCategory,
         payload: RelationInput,
-        provenance: "ProvenanceContext" | None = None,
+        provenance: ProvenanceContext | None = None,
     ) -> RetrievedRelation:
         """
         Creates a Relationship between two nodes, backed by Evidence.

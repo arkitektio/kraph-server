@@ -630,17 +630,17 @@ class EdgeCategory(Category):
         """Check if an entity matches the target definition of this edge category."""
         return self.target_definition_model.matches(entity)
 
-    def get_matching_source_entities(self, graph: Graph) -> QuerySet["EntityCategory"]:
+    def get_matching_source_entities(self) -> QuerySet["EntityCategory"]:
         """Get all entities in the graph that match the source definition of this edge category."""
-        return graph.entity_categories.filter(
+        return self.graph.entity_categories.filter(
             id_in=self.source_definition_model.category,
             tags__value__in=self.source_definition_model.tags,
             ontology_references__name__in=self.source_definition_model.ontotology_terms,
         ).distinct()
 
-    def get_matching_target_entities(self, graph: Graph) -> QuerySet["EntityCategory"]:
+    def get_matching_target_entities(self) -> QuerySet["EntityCategory"]:
         """Get all entities in the graph that match the target definition of this edge category."""
-        return graph.entity_categories.filter(
+        return self.graph.entity_categories.filter(
             id_in=self.target_definition_model.category,
             tags__value__in=self.target_definition_model.tags,
             ontology_references__name__in=self.target_definition_model.ontotology_terms,

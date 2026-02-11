@@ -1,47 +1,48 @@
 """
 Measurement query resolvers.
 """
+
 from typing import List
 from kante.types import Info
 
-from api.types import Measurement, measurement_from_response
-from api.context import get_controller_for_node_id
+from api import types, context
+from core import models
 
 
-def measurements_for_structure(
+def metrics_for_structure(
     info: Info,
     structure_id: str,
-) -> List[Measurement]:
+) -> List[types.Metric]:
     """
     Fetch all measurements attached to a structure.
-    
+
     Args:
         info: Strawberry Info context
         identifier: Structure identifier (e.g. '@mikro/roi')
         object: Structure object ID
-        
+
     Returns:
         List of Measurement objects
     """
-    controller = get_controller_for_node_id(structure_id, info)
+    controller = context.get_controller()
     responses = controller.get_measurements_for_structure(
         identifier=identifier,
         structure_object=object,
     )
-    return [measurement_from_response(r) for r in responses]
+    return [types.Metric(_value=r) for r in responses]
 
 
 def measurements_for_assertion(
     info: Info,
     assertion_id: int,
-) -> List[Measurement]:
+) -> List[types.Metric]:
     """
     Fetch all measurements that were asserted by a given assertion.
-    
+
     Args:
         info: Strawberry Info context
         assertion_id: The assertion's graph ID
-        
+
     Returns:
         List of Measurement objects
     """

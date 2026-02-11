@@ -5,7 +5,6 @@ from typing import List, Dict, Optional, Any, Literal
 from datetime import datetime, timezone
 import uuid
 import re
-
 from graph_engine.base_models import AGGREGATION_RESULT_TYPES, AggregationFunction, DerivationType
 
 
@@ -472,7 +471,6 @@ class EntityInput(BaseModel):
 
     entity_category: str = Field(..., description="The ID of the entity category/type to create")
     supporting_evidence: List[StructureReferenceInput] = Field(default_factory=list, description="List of evidence structures with measurements")
-    provenance: ProvenanceContext
 
 
 class CreateEntityInput(EntityInput):
@@ -547,14 +545,7 @@ class DeleteMetricInput(BaseModel):
 class RelationInput(BaseModel):
     """Input for a measurement/metric."""
 
-    key: str = Field(..., description="The property key/name for this metric")
-    value: Any = Field(..., description="The value of the metric (string, number, boolean, datetime, or point_3d)")
-    confidence: Optional[float] = Field(None, description="Optional confidence score for this metric (0.0 to 1.0)")
-    confidence_type: Optional[str] = Field(None, description="Optional type/category for the confidence score (e.g. 'expert_estimate', 'model_prediction')")
-    unit: Optional[str] = Field(None, description="Optional unit of measurement for this metric (e.g. 'microns', 'seconds', 'mV')")
-    timestamp: Optional[int] = Field(None, description="Optional timestamp for this metric (Unix epoch time in milliseconds)")
-    source_id: str = Field(..., description="The ID of the source entity")
-    target_id: str = Field(..., description="The ID of the target entity")
+    supporting_evidence: List[StructureReferenceInput] = Field(default_factory=list, description="List of evidence structures with measurements")
 
 
 class CreateRelationInput(RelationInput):

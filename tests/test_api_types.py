@@ -3,7 +3,7 @@ Tests for the API types and type matching functionality.
 """
 import pytest
 from api.types import (
-    Entity, Structure, Measurement, Assertion, Relation,
+    Entity, Structure, Metric, Assertion, Relation,
     NaturalEvent, Metric, Reagent, ProtocolEvent,
     node_to_subtype, edge_to_subtype, Property,
 )

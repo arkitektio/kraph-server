@@ -20,8 +20,10 @@ from strawberry.experimental import pydantic
 # ==========================================
 
 
-@pydantic.input(model=input_models.MetricInput, all_fields=True, description="Input for creating a new natural event definition in the graph schema")
+@pydantic.input(model=input_models.MetricInput, description="Input for creating a new natural event definition in the graph schema")
 class MetricInput:
+    key: str = strawberry.field(description="The key/name of the metric")
+    value: AnyScalar = strawberry.field(description="The value of the metric, which can be any scalar type (string, number, boolean)")
     pass
 
 
@@ -149,9 +151,13 @@ class DeleteNaturalEventInput:
     pass
 
 
-@pydantic.input(model=input_models.CreateMetricInput, all_fields=True, description="Input for creating a new metric")
-class CreateMetricInput:
+@pydantic.input(model=input_models.CreateMetricInput, description="Input for creating a new metric")
+class CreateMetricInput(MetricInput):
     """Input for creating a new metric."""
+
+    key: str = strawberry.field(description="The key/name of the metric")
+    value: AnyScalar = strawberry.field(description="The value of the metric, which can be any scalar type (string, number, boolean)")
+    pass
 
     pass
 
@@ -216,6 +222,11 @@ class DeleteRelationInput:
 class ArchiveRelationInput:
     """Input for archiving an existing relation."""
 
+    pass
+
+
+@pydantic.input(model=input_models.CreateEntityInput, all_fields=True, description="Input for creating a new entity")
+class CreateEntityInput:
     pass
 
 

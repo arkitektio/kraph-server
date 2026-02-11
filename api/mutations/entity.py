@@ -9,7 +9,7 @@ from core import models
 
 def create_entity(
     info: Info,
-    input: inputs.EntityCreationInput,
+    input: inputs.CreateEntityInput,
 ) -> types.Entity:
     """
     Create a new entity with optional supporting evidence structures.
@@ -19,7 +19,7 @@ def create_entity(
 
     Args:
         info: Strawberry Info context
-        input: EntityCreationInput with graph_id, kind, and evidence
+        input: CreateEntityInput         with graph_id, kind, and evidence
 
     Returns:
         EntityCreationResult with the created entity
@@ -33,12 +33,10 @@ def create_entity(
     # Get controller for the specified graph (includes provenance from context)
     controller = context.get_controller()
 
-    ref_id = str(uuid.uuid4())  # Generate a unique reference ID for the entity
     # Call controller with kwargs (provenance is already in the controller)
     result = controller.create_entity(
         entity_category=entity_category,
-        ref_id=ref_id,
-        supporting_evidence=input_model.supporting_evidence,
+        payload=input_model,
     )
 
     # Fetch the created entity for the response

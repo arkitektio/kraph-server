@@ -3,10 +3,10 @@ Relation mutation resolvers.
 """
 
 from kante.types import Info
+import strawberry
 
 from api import types, inputs, context
 from core import models
-from graph_engine.input_models import RelationCreationPayload
 
 
 def create_relation(info: Info, input: inputs.CreateRelationInput) -> types.Relation:

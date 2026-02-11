@@ -3,15 +3,16 @@ Root Query type for the API.
 
 Assembles all query resolvers into the root Query type.
 """
+
 import strawberry
 from typing import Optional, List
 from kante.types import Info
 
-from api.types import Entity, Structure, Measurement, Assertion
+from api.types import Entity, Structure, Metric, Assertion
 from api.scalars import StructureIdentifier
 from . import entity as entity_resolvers
 from . import structure as structure_resolvers
-from . import measurement as measurement_resolvers
+from . import metric as metric_resolvers
 from . import assertion as assertion_resolvers
 
 
@@ -59,9 +60,9 @@ class Query:
         info: Info,
         identifier: StructureIdentifier,
         object: str,
-    ) -> List[Measurement]:
+    ) -> List[Metric]:
         """Fetch all measurements attached to a structure."""
-        return measurement_resolvers.measurements_for_structure(info, identifier, object)
+        return metric_resolvers.metrics_for_structure(info, identifier, object)
 
     @strawberry.field(description="Get the assertion that generated an entity")
     def assertion_for_entity(
@@ -72,11 +73,11 @@ class Query:
         """Fetch the assertion (provenance) that generated an entity."""
         return assertion_resolvers.assertion_for_entity(info, entity_id)
 
-    @strawberry.field(description="Get all measurements asserted by an assertion")
-    def measurements_for_assertion(
+    @strawberry.field(description="Get all metrics asserted by an assertion")
+    def metrics_for_assertion(
         self,
         info: Info,
         assertion_id: int,
-    ) -> List[Measurement]:
+    ) -> List[Metric]:
         """Fetch all measurements that were asserted by a given assertion."""
-        return measurement_resolvers.measurements_for_assertion(info, assertion_id)
+        return metric_resolvers.measurements_for_assertion(info, assertion_id)
