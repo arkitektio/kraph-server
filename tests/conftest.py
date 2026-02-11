@@ -239,7 +239,7 @@ def bio_graph_schema():
 
 
 @pytest.fixture(scope="function")
-def test_graph(transactional_db, age_engine, bio_graph_schema) -> core_models.Graph:
+def test_graph(transactional_db, age_engine, bio_graph_schema, authenticated_context) -> core_models.Graph:
     """
     Create a test graph with the bio_graph schema.
     
@@ -247,7 +247,15 @@ def test_graph(transactional_db, age_engine, bio_graph_schema) -> core_models.Gr
     from the bio_graph_schema definition, creating all necessary
     Django models (EntityCategory, RelationCategory, etc.).
     """
-    return materialize(bio_graph_schema, age_engine, name="test_graph")
+    request = authenticated_context.request
+    return materialize(
+        bio_graph_schema,
+        age_engine,
+        user=request._user,
+        organization=request._organization,
+        membership=request.membership,
+        name="test_graph",
+    )
 
 
 @pytest.fixture
@@ -277,16 +285,21 @@ def graph_controller(transactional_db, age_engine, test_graph) -> GraphControlle
 
 
 @pytest.fixture(scope="function")
-def bio_graph(transactional_db, age_engine, bio_graph_schema) -> core_models.Graph:
+def bio_graph(transactional_db, age_engine, bio_graph_schema, authenticated_context) -> core_models.Graph:
     """
     Create a biological graph with the provided schema.
     Uses transactional_db to maintain database state across the fixture.
     The graph is created once and reused.
     """
-
-    graph = materialize(bio_graph_schema, age_engine)
-
-    return graph
+    request = authenticated_context.request
+    return materialize(
+        bio_graph_schema,
+        age_engine,
+        user=request._user,
+        organization=request._organization,
+        membership=request.membership,
+        name="bio_graph",
+    )
 
 
 @pytest.fixture(scope="function")
@@ -324,9 +337,21 @@ def age_engine(transactional_db, backend_stack) -> Generator[AgeEngine, None, No
         cursor.execute("CREATE EXTENSION IF NOT EXISTS age;")
     
     engine = AgeEngine()
-    
-    
-    yield engine
+
+    class _AgeEngineAdapter:
+        def __init__(self, inner: AgeEngine) -> None:
+            self._inner = inner
+
+        def create_graph(self, age_name: str | None = None, graph_name: str | None = None, **_kwargs):
+            target = age_name or graph_name
+            if target is None:
+                raise ValueError("create_graph requires age_name or graph_name")
+            return self._inner.create_graph(target)
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+    yield _AgeEngineAdapter(engine)
     
     # Don't drop the graph between tests - just leave it
     # This avoids the type cache invalidation issue
