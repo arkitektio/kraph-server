@@ -38,8 +38,8 @@ def create_relation(info: Info, input: inputs.CreateRelationInput) -> types.Rela
 
     if graph1 != graph2:
         raise ValueError("Source and target entities must belong to the same graph")
-    source_entity_id = context.extract_node_id(payload.source_id)
-    target_entity_id = context.extract_node_id(payload.target_id)
+    context.extract_node_id(payload.source_id)
+    context.extract_node_id(payload.target_id)
 
     relation = models.RelationCategory.objects.get(id=payload.category)  # Validate relation category exists
 

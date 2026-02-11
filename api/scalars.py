@@ -2,8 +2,7 @@
 GraphQL Scalar types for the API.
 """
 
-import strawberry
-from typing import Any, NewType
+from typing import NewType
 
 
 # Scalar for arbitrary JSON-like values

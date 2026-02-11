@@ -29,7 +29,7 @@ def _materialize_with_context(definition, engine, context, name=None, descriptio
     )
 
 
-def test_materialize_creates_graph(transactional_db, age_engine, bio_graph_schema, authenticated_context):
+def test_materialize_creates_graph(transactional_db, age_engine, bio_graph_schema, authenticated_context) -> None:
     """Test that materialize creates a Graph instance with correct attributes."""
     graph = _materialize_with_context(
         bio_graph_schema,
@@ -45,7 +45,7 @@ def test_materialize_creates_graph(transactional_db, age_engine, bio_graph_schem
     assert graph.age_name is not None
 
 
-def test_materialize_creates_entity_categories(transactional_db, age_engine, bio_graph_schema, authenticated_context):
+def test_materialize_creates_entity_categories(transactional_db, age_engine, bio_graph_schema, authenticated_context) -> None:
     """Test that materialize creates EntityCategory for each entity definition."""
     graph = _materialize_with_context(
         bio_graph_schema,
@@ -64,7 +64,7 @@ def test_materialize_creates_entity_categories(transactional_db, age_engine, bio
     assert "Cell" in entity_keys
 
 
-def test_materialize_creates_relation_categories(transactional_db, age_engine, bio_graph_schema, authenticated_context):
+def test_materialize_creates_relation_categories(transactional_db, age_engine, bio_graph_schema, authenticated_context) -> None:
     """Test that materialize creates RelationCategory for each relation definition."""
     graph = _materialize_with_context(
         bio_graph_schema,
@@ -82,7 +82,7 @@ def test_materialize_creates_relation_categories(transactional_db, age_engine, b
     assert "PART_OF" in relation_keys
 
 
-def test_materialize_creates_event_categories(transactional_db, age_engine, bio_graph_schema, authenticated_context):
+def test_materialize_creates_event_categories(transactional_db, age_engine, bio_graph_schema, authenticated_context) -> None:
     """Test that materialize creates NaturalEventCategory for each event definition."""
     graph = _materialize_with_context(
         bio_graph_schema,
@@ -99,7 +99,7 @@ def test_materialize_creates_event_categories(transactional_db, age_engine, bio_
     assert "Mitosis" in event_keys
 
 
-def test_materialize_creates_active_schema(transactional_db, age_engine, bio_graph_schema, authenticated_context):
+def test_materialize_creates_active_schema(transactional_db, age_engine, bio_graph_schema, authenticated_context) -> None:
     """Test that materialize creates an active GraphSchema."""
     graph = _materialize_with_context(
         bio_graph_schema,
@@ -115,7 +115,7 @@ def test_materialize_creates_active_schema(transactional_db, age_engine, bio_gra
     assert active_schema.version == bio_graph_schema.system_version
 
 
-def test_entity_category_has_property_definitions(transactional_db, age_engine, bio_graph_schema, authenticated_context):
+def test_entity_category_has_property_definitions(transactional_db, age_engine, bio_graph_schema, authenticated_context) -> None:
     """Test that EntityCategory stores property definitions correctly."""
     graph = _materialize_with_context(
         bio_graph_schema,
@@ -138,7 +138,7 @@ def test_entity_category_has_property_definitions(transactional_db, age_engine, 
     assert "name" in prop_keys
 
 
-def test_entity_category_has_schema_hash(transactional_db, age_engine, bio_graph_schema, authenticated_context):
+def test_entity_category_has_schema_hash(transactional_db, age_engine, bio_graph_schema, authenticated_context) -> None:
     """Test that EntityCategory has a schema_hash computed from property definitions."""
     graph = _materialize_with_context(
         bio_graph_schema,
@@ -152,7 +152,7 @@ def test_entity_category_has_schema_hash(transactional_db, age_engine, bio_graph
     assert len(ais_cat.schema_hash) > 0
 
 
-def test_relation_category_has_source_target_definitions(transactional_db, age_engine, bio_graph_schema, authenticated_context):
+def test_relation_category_has_source_target_definitions(transactional_db, age_engine, bio_graph_schema, authenticated_context) -> None:
     """Test that RelationCategory stores source/target definitions correctly."""
     graph = _materialize_with_context(
         bio_graph_schema,
@@ -173,7 +173,7 @@ def test_relation_category_has_source_target_definitions(transactional_db, age_e
     assert "Soma" in rel_cat.target_definition["types"]
 
 
-def test_event_category_has_roles(transactional_db, age_engine, bio_graph_schema, authenticated_context):
+def test_event_category_has_roles(transactional_db, age_engine, bio_graph_schema, authenticated_context) -> None:
     """Test that NaturalEventCategory stores source/target roles correctly."""
     graph = _materialize_with_context(
         bio_graph_schema,
@@ -191,7 +191,7 @@ def test_event_category_has_roles(transactional_db, age_engine, bio_graph_schema
     assert len(event_cat.target_entity_roles) > 0
 
 
-def test_compute_definition_hash_is_deterministic():
+def test_compute_definition_hash_is_deterministic() -> None:
     """Test that compute_definition_hash produces consistent results."""
     schema = models.GraphDefinitionModel(
         system_version="1.0",
@@ -213,7 +213,7 @@ def test_compute_definition_hash_is_deterministic():
     assert hash1 == hash2
 
 
-def test_compute_properties_hash_is_deterministic():
+def test_compute_properties_hash_is_deterministic() -> None:
     """Test that compute_properties_hash produces consistent results."""
     props = [
         {"key": "name", "type": "string"},
@@ -226,7 +226,7 @@ def test_compute_properties_hash_is_deterministic():
     assert hash1 == hash2
 
 
-def test_compute_properties_hash_is_order_independent():
+def test_compute_properties_hash_is_order_independent() -> None:
     """Test that compute_properties_hash produces same results regardless of list order."""
     props1 = [
         {"key": "name", "type": "string"},
@@ -243,7 +243,7 @@ def test_compute_properties_hash_is_order_independent():
     assert hash1 == hash2
 
 
-def test_materialize_with_minimal_schema(transactional_db, age_engine, minimal_schema, authenticated_context):
+def test_materialize_with_minimal_schema(transactional_db, age_engine, minimal_schema, authenticated_context) -> None:
     """Test materialize works with a minimal schema (just entities)."""
     graph = _materialize_with_context(
         minimal_schema,
@@ -263,7 +263,7 @@ def test_materialize_with_minimal_schema(transactional_db, age_engine, minimal_s
     assert person_cat.description == "A person"
 
 
-def test_get_entity_def_returns_correct_category(transactional_db, age_engine, bio_graph_schema, authenticated_context):
+def test_get_entity_def_returns_correct_category(transactional_db, age_engine, bio_graph_schema, authenticated_context) -> None:
     """Test that Graph.get_entity_def returns the correct EntityCategory."""
     graph = _materialize_with_context(
         bio_graph_schema,
@@ -281,7 +281,7 @@ def test_get_entity_def_returns_correct_category(transactional_db, age_engine, b
     assert cell.age_name == "Cell"
 
 
-def test_get_entity_def_raises_for_unknown_key(transactional_db, age_engine, bio_graph_schema, authenticated_context):
+def test_get_entity_def_raises_for_unknown_key(transactional_db, age_engine, bio_graph_schema, authenticated_context) -> None:
     """Test that Graph.get_entity_def raises an error for unknown keys."""
     graph = _materialize_with_context(
         bio_graph_schema,

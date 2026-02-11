@@ -155,7 +155,7 @@ async def test_create_relation_minimal(
     api_schema: kante.Schema, 
     simple_api_context: HttpContext,
     relation_test_graph: Graph,
-):
+) -> None:
     """Test creating a basic relation between two entities."""
     
     graph_id = str(relation_test_graph.id)
@@ -210,7 +210,7 @@ async def test_create_relation_with_evidence(
     api_schema: kante.Schema, 
     simple_api_context: HttpContext,
     relation_test_graph: Graph,
-):
+) -> None:
     """Test creating a relation with supporting evidence."""
     
     graph_id = str(relation_test_graph.id)
@@ -266,7 +266,7 @@ async def test_create_relation_with_evidence_measurements(
     api_schema: kante.Schema, 
     simple_api_context: HttpContext,
     relation_test_graph: Graph,
-):
+) -> None:
     """Test creating a relation with evidence that has measurements."""
     
     graph_id = str(relation_test_graph.id)
@@ -323,7 +323,7 @@ async def test_create_relation_multiple_evidence(
     api_schema: kante.Schema, 
     simple_api_context: HttpContext,
     relation_test_graph: Graph,
-):
+) -> None:
     """Test creating a relation with multiple supporting evidence structures."""
     
     graph_id = str(relation_test_graph.id)
@@ -390,7 +390,7 @@ async def test_create_relation_various_kinds(
     api_schema: kante.Schema, 
     simple_api_context: HttpContext,
     relation_test_graph: Graph,
-):
+) -> None:
     """Test creating relations with different relation kinds."""
     
     graph_id = str(relation_test_graph.id)
@@ -450,7 +450,7 @@ async def test_create_relation_both_directions(
     api_schema: kante.Schema, 
     simple_api_context: HttpContext,
     relation_test_graph: Graph,
-):
+) -> None:
     """Test creating relations in both directions between entities."""
     
     graph_id = str(relation_test_graph.id)
@@ -526,7 +526,7 @@ async def test_create_multiple_relations_same_kind(
     api_schema: kante.Schema, 
     simple_api_context: HttpContext,
     relation_test_graph: Graph,
-):
+) -> None:
     """Test creating multiple relations of the same kind from one source."""
     
     graph_id = str(relation_test_graph.id)
@@ -585,7 +585,7 @@ async def test_create_relation_provenance_tracking(
     api_schema: kante.Schema, 
     simple_api_context: HttpContext,
     relation_test_graph: Graph,
-):
+) -> None:
     """Test that relation creation properly tracks provenance."""
     
     graph_id = str(relation_test_graph.id)
@@ -640,7 +640,7 @@ async def test_create_relation_invalid_source_id(
     api_schema: kante.Schema, 
     simple_api_context: HttpContext,
     relation_test_graph: Graph,
-):
+) -> None:
     """Test that creating a relation with invalid source ID fails."""
     
     graph_id = str(relation_test_graph.id)
@@ -688,7 +688,7 @@ async def test_create_relation_invalid_target_id(
     api_schema: kante.Schema, 
     simple_api_context: HttpContext,
     relation_test_graph: Graph,
-):
+) -> None:
     """Test that creating a relation with invalid target ID fails."""
     
     graph_id = str(relation_test_graph.id)
@@ -736,7 +736,7 @@ async def test_create_relation_missing_provenance(
     api_schema: kante.Schema, 
     simple_api_context: HttpContext,
     relation_test_graph: Graph,
-):
+) -> None:
     """Test that creating a relation without provenance fails validation."""
     
     mutation = """
@@ -776,7 +776,7 @@ async def test_create_self_relation(
     api_schema: kante.Schema, 
     simple_api_context: HttpContext,
     relation_test_graph: Graph,
-):
+) -> None:
     """Test creating a relation from an entity to itself."""
     
     graph_id = str(relation_test_graph.id)

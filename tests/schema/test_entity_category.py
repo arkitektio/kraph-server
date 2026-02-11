@@ -7,7 +7,7 @@ from kante.context import HttpContext
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_entity_category_search(test_graph: Graph, authenticated_context: HttpContext):
+async def test_entity_category_search(test_graph: Graph, authenticated_context: HttpContext) -> None:
 
     await core_models.EntityCategory.objects.acreate(
         graph=test_graph,

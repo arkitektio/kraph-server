@@ -38,7 +38,7 @@ class PropertyDefinition:
     description: Optional[str] = strawberry.field(default=None, description="Description of this property")
 
 
-@kante.django_interface(models.Graph, description="Base interface for graph schemas")
+@kante.django_type(models.Graph, description="Base interface for graph schemas")
 class Graph:
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
     graph_id: strawberry.ID = strawberry.field(description="ID of the graph this category belongs to")
@@ -47,6 +47,7 @@ class Graph:
     purl: Optional[str] = strawberry.field(default=None, description="Persistent URL for this category")
     color: Optional[List[int]] = strawberry.field(default=None, description="Color as RGBA list (0-255)")
     tags: List[str] = strawberry.field(default_factory=list, description="List of tags associated with this category")
+    name: str = strawberry.field(description="Name of the graph")
 
 
 @kante.django_interface(models.EdgeCategory, description="Base interface for graph schemas")

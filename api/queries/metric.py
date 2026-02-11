@@ -6,7 +6,6 @@ from typing import List
 from kante.types import Info
 
 from api import types, context
-from core import models
 
 
 def metrics_for_structure(

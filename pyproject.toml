@@ -79,7 +79,6 @@ exclude = [
     "dist",
     "node_modules",
     "venv",
-    "tests",
     "examples",
     "**/migrations",
 ]

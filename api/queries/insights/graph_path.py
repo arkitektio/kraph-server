@@ -8,7 +8,6 @@ import strawberry
 
 from api import types, context, inputs
 from core import models
-from graph_engine import input_models
 
 
 def render_graph_path(

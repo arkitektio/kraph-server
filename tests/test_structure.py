@@ -12,7 +12,7 @@ def _uid(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
 
 
-def test_create_structure(graph_controller: GraphController, bio_graph: core_models.Graph):
+def test_create_structure(graph_controller: GraphController, bio_graph: core_models.Graph) -> None:
     """
     Test creating a simple structure.
     """
@@ -31,7 +31,7 @@ def test_create_structure(graph_controller: GraphController, bio_graph: core_mod
     assert result.global_id == f"{bio_graph.age_name}:{result.graph_id}"
 
 
-def test_create_structure_told_you_so(graph_controller: GraphController, bio_graph: core_models.Graph):
+def test_create_structure_told_you_so(graph_controller: GraphController, bio_graph: core_models.Graph) -> None:
     """
     Test creating a ToldYouSo structure.
     """
@@ -50,7 +50,7 @@ def test_create_structure_told_you_so(graph_controller: GraphController, bio_gra
     assert result.global_id == f"{bio_graph.age_name}:{result.graph_id}"
 
 
-def test_create_structure_idempotent(graph_controller: GraphController, bio_graph: core_models.Graph):
+def test_create_structure_idempotent(graph_controller: GraphController, bio_graph: core_models.Graph) -> None:
     """
     Test that creating the same structure twice is idempotent.
     """
@@ -83,7 +83,7 @@ def test_create_structure_idempotent(graph_controller: GraphController, bio_grap
     assert structure.object == obj_id
 
 
-def test_add_measurement_to_structure(graph_controller: GraphController, bio_graph: core_models.Graph):
+def test_add_measurement_to_structure(graph_controller: GraphController, bio_graph: core_models.Graph) -> None:
     """
     Test adding a measurement to an existing structure.
     """
@@ -128,7 +128,7 @@ def test_add_measurement_to_structure(graph_controller: GraphController, bio_gra
     assert result.global_id == f"{bio_graph.age_name}:{result.graph_id}"
 
 
-def test_add_measurement_creates_structure_if_not_exists(graph_controller: GraphController, bio_graph: core_models.Graph):
+def test_add_measurement_creates_structure_if_not_exists(graph_controller: GraphController, bio_graph: core_models.Graph) -> None:
     """
     Test that add_measurement creates the structure if it doesn't exist.
     """
@@ -168,7 +168,7 @@ def test_add_measurement_creates_structure_if_not_exists(graph_controller: Graph
     assert structure.object == obj_id
 
 
-def test_add_multiple_measurements_to_structure(graph_controller: GraphController, bio_graph: core_models.Graph):
+def test_add_multiple_measurements_to_structure(graph_controller: GraphController, bio_graph: core_models.Graph) -> None:
     """
     Test adding multiple measurements to the same structure.
     """
@@ -228,7 +228,7 @@ def test_add_multiple_measurements_to_structure(graph_controller: GraphControlle
     assert keys == {"length", "width", "height"}
 
 
-def test_add_measurement_with_provenance_action(graph_controller: GraphController, bio_graph: core_models.Graph):
+def test_add_measurement_with_provenance_action(graph_controller: GraphController, bio_graph: core_models.Graph) -> None:
     """
     Test that measurement provenance includes action information.
     """
@@ -274,7 +274,7 @@ def test_add_measurement_with_provenance_action(graph_controller: GraphControlle
     assert measurements[0].value == 0.75
 
 
-def test_get_structure_not_found(graph_controller: GraphController, bio_graph: core_models.Graph):
+def test_get_structure_not_found(graph_controller: GraphController, bio_graph: core_models.Graph) -> None:
     """
     Test that get_structure raises ValueError for non-existent structure.
     """
@@ -287,7 +287,7 @@ def test_get_structure_not_found(graph_controller: GraphController, bio_graph: c
     
 
 
-def test_add_measurement_minimal(graph_controller: GraphController, bio_graph: core_models.Graph):
+def test_add_measurement_minimal(graph_controller: GraphController, bio_graph: core_models.Graph) -> None:
     """
     Test adding a measurement with only required fields.
     """
@@ -319,7 +319,7 @@ def test_add_measurement_minimal(graph_controller: GraphController, bio_graph: c
     assert result.timestamp is None
 
 
-def test_add_measurement_with_string_value(graph_controller: GraphController, bio_graph: core_models.Graph):
+def test_add_measurement_with_string_value(graph_controller: GraphController, bio_graph: core_models.Graph) -> None:
     """
     Test adding a measurement with a string value.
     """

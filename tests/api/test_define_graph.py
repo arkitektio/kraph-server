@@ -18,7 +18,7 @@ pytestmark = pytest.mark.skip(reason="GraphQL schema changed; API tests need ref
 # ===========================================
 
 @pytest.mark.asyncio
-async def test_validate_schema_valid(api_schema: kante.Schema, simple_api_context: HttpContext):
+async def test_validate_schema_valid(api_schema: kante.Schema, simple_api_context: HttpContext) -> None:
     """Test validating a valid schema definition."""
     
     mutation = """
@@ -76,7 +76,7 @@ async def test_validate_schema_valid(api_schema: kante.Schema, simple_api_contex
 
 
 @pytest.mark.asyncio
-async def test_validate_schema_invalid_version(api_schema: kante.Schema, simple_api_context: HttpContext):
+async def test_validate_schema_invalid_version(api_schema: kante.Schema, simple_api_context: HttpContext) -> None:
     """Test validating a schema with invalid version format."""
     
     mutation = """
@@ -122,7 +122,7 @@ async def test_validate_schema_invalid_version(api_schema: kante.Schema, simple_
 
 
 @pytest.mark.asyncio
-async def test_validate_schema_missing_entity_key(api_schema: kante.Schema, simple_api_context: HttpContext):
+async def test_validate_schema_missing_entity_key(api_schema: kante.Schema, simple_api_context: HttpContext) -> None:
     """Test validating a schema with missing entity key."""
     
     mutation = """
@@ -172,7 +172,7 @@ async def test_validate_schema_missing_entity_key(api_schema: kante.Schema, simp
 
 
 @pytest.mark.asyncio
-async def test_validate_schema_with_relations(api_schema: kante.Schema, simple_api_context: HttpContext):
+async def test_validate_schema_with_relations(api_schema: kante.Schema, simple_api_context: HttpContext) -> None:
     """Test validating a schema with relation definitions."""
     
     mutation = """
@@ -226,7 +226,7 @@ async def test_validate_schema_with_relations(api_schema: kante.Schema, simple_a
 
 
 @pytest.mark.asyncio
-async def test_validate_schema_with_properties(api_schema: kante.Schema, simple_api_context: HttpContext):
+async def test_validate_schema_with_properties(api_schema: kante.Schema, simple_api_context: HttpContext) -> None:
     """Test validating a schema with property definitions on entities."""
     
     mutation = """
@@ -278,7 +278,7 @@ async def test_validate_schema_with_properties(api_schema: kante.Schema, simple_
 
 
 @pytest.mark.asyncio
-async def test_validate_schema_empty_extensions_warning(api_schema: kante.Schema, simple_api_context: HttpContext):
+async def test_validate_schema_empty_extensions_warning(api_schema: kante.Schema, simple_api_context: HttpContext) -> None:
     """Test that empty extensions generate warnings."""
     
     mutation = """
@@ -330,7 +330,7 @@ async def test_validate_schema_empty_extensions_warning(api_schema: kante.Schema
 # ===========================================
 
 @pytest.mark.asyncio
-async def test_validate_connectome_schema(api_schema: kante.Schema, simple_api_context: HttpContext):
+async def test_validate_connectome_schema(api_schema: kante.Schema, simple_api_context: HttpContext) -> None:
     """Test validating a complex connectome-style schema."""
     
     mutation = """
@@ -415,7 +415,7 @@ async def test_validate_connectome_schema(api_schema: kante.Schema, simple_api_c
 
 
 @pytest.mark.asyncio
-async def test_validate_schema_with_derived_properties(api_schema: kante.Schema, simple_api_context: HttpContext):
+async def test_validate_schema_with_derived_properties(api_schema: kante.Schema, simple_api_context: HttpContext) -> None:
     """Test validating a schema with derived properties and rollup rules."""
     
     mutation = """
@@ -475,7 +475,7 @@ async def test_validate_schema_with_derived_properties(api_schema: kante.Schema,
 
 
 @pytest.mark.asyncio
-async def test_validate_schema_with_materialization(api_schema: kante.Schema, simple_api_context: HttpContext):
+async def test_validate_schema_with_materialization(api_schema: kante.Schema, simple_api_context: HttpContext) -> None:
     """Test validating a schema with relation materialization config."""
     
     mutation = """

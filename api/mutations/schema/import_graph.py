@@ -1,7 +1,6 @@
 from kante.types import Info
 import strawberry
-from api import types, inputs, context
-from core import models
+from api import types, inputs
 
 
 @strawberry.input(description="Input type for creating a new entity")

@@ -2,13 +2,11 @@
 Assertion query resolvers.
 """
 
-from typing import Optional
 from kante.types import Info
 import strawberry
 
 from api import types, context, inputs
 from core import models
-from graph_engine import input_models
 
 
 def render_graph_pairs(

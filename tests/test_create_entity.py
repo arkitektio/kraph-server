@@ -1,16 +1,13 @@
 import pytest
 from datetime import datetime, timezone
 from graph_engine.controller import GraphController
-from graph_engine.engine.protocol import CypherEngine
-from graph_engine import base_models as models
 from graph_engine import input_models as inputs 
-from graph_engine import vocab
 from core import models as core_models
 
 pytestmark = pytest.mark.skip(reason="Requires updated DB schema/migrations for materialize")
 
 
-def test_create_ais_with_timestamp_conversion(graph_controller: GraphController, bio_graph: core_models.Graph):
+def test_create_ais_with_timestamp_conversion(graph_controller: GraphController, bio_graph: core_models.Graph) -> None:
     """
     Test that ISO timestamps are converted to Unix Milliseconds (int).
     """
@@ -70,7 +67,7 @@ def test_create_ais_with_timestamp_conversion(graph_controller: GraphController,
     assert result.properties["name"] == "A little ducky"  # From told_you_so
 
 
-def test_create_entity_with_single_evidence(graph_controller: GraphController, bio_graph: core_models.Graph):
+def test_create_entity_with_single_evidence(graph_controller: GraphController, bio_graph: core_models.Graph) -> None:
     """
     Test creating an entity with a single supporting evidence creates correct graph structure.
     """
@@ -109,7 +106,7 @@ def test_create_entity_with_single_evidence(graph_controller: GraphController, b
     assert entity.properties["avg_length"] == 50.5  # Single measurement = same value
 
 
-def test_create_entity_with_multiple_evidence_sources(graph_controller: GraphController, bio_graph: core_models.Graph):
+def test_create_entity_with_multiple_evidence_sources(graph_controller: GraphController, bio_graph: core_models.Graph) -> None:
     """
     Test creating an entity with multiple evidence sources from different structures.
     """
@@ -154,7 +151,7 @@ def test_create_entity_with_multiple_evidence_sources(graph_controller: GraphCon
     assert entity.properties["avg_length"] == 150  # (100 + 200 + 150) / 3
 
 
-def test_create_entity_with_told_you_so_evidence(graph_controller: GraphController, bio_graph: core_models.Graph):
+def test_create_entity_with_told_you_so_evidence(graph_controller: GraphController, bio_graph: core_models.Graph) -> None:
     """
     Test creating an entity with ToldYouSo evidence for manual property assertions.
     """
@@ -186,7 +183,7 @@ def test_create_entity_with_told_you_so_evidence(graph_controller: GraphControll
     assert entity.properties["name"] == "My Custom AIS"
 
 
-def test_create_entity_with_multiple_measurements_per_structure(graph_controller: GraphController, bio_graph: core_models.Graph):
+def test_create_entity_with_multiple_measurements_per_structure(graph_controller: GraphController, bio_graph: core_models.Graph) -> None:
     """
     Test creating an entity where a single structure has multiple measurements.
     """
@@ -219,7 +216,7 @@ def test_create_entity_with_multiple_measurements_per_structure(graph_controller
     assert entity.properties["avg_length"] == 125  # (100 + 150 + 125) / 3
 
 
-def test_create_entity_no_evidence(graph_controller: GraphController, bio_graph: core_models.Graph):
+def test_create_entity_no_evidence(graph_controller: GraphController, bio_graph: core_models.Graph) -> None:
     """
     Test creating an entity with no supporting evidence (edge case).
     """
@@ -240,13 +237,12 @@ def test_create_entity_no_evidence(graph_controller: GraphController, bio_graph:
     assert entity is not None
 
 
-def test_measurement_timestamp_conversion_datetime(graph_controller: GraphController, bio_graph: core_models.Graph):
+def test_measurement_timestamp_conversion_datetime(graph_controller: GraphController, bio_graph: core_models.Graph) -> None:
     """
     Test that datetime objects are correctly converted to milliseconds.
     """
     ais_category = bio_graph.get_entity_def("AIS")
     dt = datetime(2023, 10, 27, 10, 0, 0, 123000, tzinfo=timezone.utc)
-    expected_ms = 1698400800123  # Unix ms for this datetime
     
     supporting_evidence = [
         inputs.StructureReferenceInput(
@@ -273,7 +269,7 @@ def test_measurement_timestamp_conversion_datetime(graph_controller: GraphContro
     assert entity is not None
 
 
-def test_measurement_with_optional_fields(graph_controller: GraphController, bio_graph: core_models.Graph):
+def test_measurement_with_optional_fields(graph_controller: GraphController, bio_graph: core_models.Graph) -> None:
     """
     Test that optional measurement fields (unit, confidence) are stored when provided.
     """

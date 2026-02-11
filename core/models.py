@@ -1,20 +1,16 @@
 import random
 from django.db import models
 from django.contrib.auth import get_user_model
-from django.forms import FileField
 from core import enums
 from koherent.fields import ProvenanceField
 from django_choices_field import TextChoicesField
-from datalayer.fields import S3Field
 from datalayer import models as datalayer_models
 from authentikate.models import Organization, Membership
 from polymorphic.models import PolymorphicModel
 from django.db.models import QuerySet
 
 # Create your models here.
-from django.conf import settings
 
-from graph_engine.base_models import EntityDefinition
 from graph_engine.input_models import EntityDescriptorInput
 
 
@@ -93,6 +89,10 @@ class Graph(models.Model):
     def get_entity_def(self, label: str) -> "EntityCategory":
         """Get the entity definition for a specific label from the active schema."""
         return self.entity_categories.get(age_name=label)
+
+    async def aget_entity_def(self, label: str) -> "EntityCategory":
+        """Async version of get_entity_def."""
+        return await self.entity_categories.aget(age_name=label)
 
     @classmethod
     def get_active(cls, user):

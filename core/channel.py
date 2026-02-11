@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from kante.channel import build_channel
 from pydantic import BaseModel
 

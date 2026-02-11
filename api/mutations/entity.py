@@ -24,7 +24,6 @@ def create_entity(
     Returns:
         EntityCreationResult with the created entity
     """
-    import uuid
 
     input_model = input.to_pydantic()  # Validate input with Pydantic models
 

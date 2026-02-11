@@ -6,7 +6,6 @@ from typing import List, Optional, Union, cast
 from core import models, scalars, filters, enums, loaders, inputs, pagination
 from kante.types import Info
 import datetime
-from core.datalayer import get_current_datalayer
 from core import age, pagination as p, filters as f
 from strawberry_django.pagination import OffsetPaginationInput
 from django.db.models import Q

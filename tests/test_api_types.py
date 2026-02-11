@@ -21,7 +21,7 @@ from graph_engine.retrieved import RetrievedNode, RetrievedEdge, RetrievedVariab
 class TestRetrievedNode:
     """Tests for the RetrievedNode dataclass."""
     
-    def test_basic_properties(self):
+    def test_basic_properties(self) -> None:
         """Test basic property access."""
         node = RetrievedNode(
             graph_name="test_graph",
@@ -36,7 +36,7 @@ class TestRetrievedNode:
         assert node.unique_id == "test_graph:123"
         assert node.global_id == "test_graph:123"
     
-    def test_node_type_discrimination(self):
+    def test_node_type_discrimination(self) -> None:
         """Test type property for discrimination."""
         entity_node = RetrievedNode(
             graph_name="g",
@@ -55,7 +55,7 @@ class TestRetrievedNode:
         )
         assert structure_node.node_type == "STRUCTURE"
     
-    def test_cleaned_properties(self):
+    def test_cleaned_properties(self) -> None:
         """Test that reserved keys are filtered out."""
         node = RetrievedNode(
             graph_name="g",
@@ -75,7 +75,7 @@ class TestRetrievedNode:
         assert cleaned["name"] == "Test"
         assert cleaned["value"] == 42
     
-    def test_versioning_properties(self):
+    def test_versioning_properties(self) -> None:
         """Test schema versioning properties."""
         node = RetrievedNode(
             graph_name="g",
@@ -90,7 +90,7 @@ class TestRetrievedNode:
         assert node.schema_version == "2.0.0"
         assert node.last_derived == 1700000000000
     
-    def test_structure_properties(self):
+    def test_structure_properties(self) -> None:
         """Test structure-specific properties."""
         node = RetrievedNode(
             graph_name="g",
@@ -110,7 +110,7 @@ class TestRetrievedNode:
 class TestRetrievedEdge:
     """Tests for the RetrievedEdge dataclass."""
     
-    def test_basic_properties(self):
+    def test_basic_properties(self) -> None:
         """Test basic property access."""
         edge = RetrievedEdge(
             graph_name="test_graph",
@@ -130,7 +130,7 @@ class TestRetrievedEdge:
         assert edge.unique_left_id == "test_graph:1"
         assert edge.unique_right_id == "test_graph:2"
     
-    def test_measurement_properties(self):
+    def test_measurement_properties(self) -> None:
         """Test measurement-specific properties."""
         edge = RetrievedEdge(
             graph_name="g",
@@ -155,7 +155,7 @@ class TestRetrievedEdge:
         assert edge.confidence == 0.95
         assert edge.confidence_type == "statistical"
     
-    def test_assertion_properties(self):
+    def test_assertion_properties(self) -> None:
         """Test assertion-specific properties."""
         edge = RetrievedEdge(
             graph_name="g",
@@ -180,7 +180,7 @@ class TestRetrievedEdge:
 class TestCastNodeToGraphqlType:
     """Tests for cast_node_to_graphql_type matching function."""
     
-    def test_entity_matching(self):
+    def test_entity_matching(self) -> None:
         """Test matching ENTITY type."""
         node = RetrievedNode(
             graph_name="g",
@@ -194,7 +194,7 @@ class TestCastNodeToGraphqlType:
         assert result.kind() == "Cell"
         assert result.id() == "g:1"
     
-    def test_structure_matching(self):
+    def test_structure_matching(self) -> None:
         """Test matching STRUCTURE type."""
         node = RetrievedNode(
             graph_name="g",
@@ -208,7 +208,7 @@ class TestCastNodeToGraphqlType:
         assert result.identifier() == "@mikro/roi"
         assert result.object() == "obj123"
     
-    def test_natural_event_matching(self):
+    def test_natural_event_matching(self) -> None:
         """Test matching NATURAL_EVENT type."""
         node = RetrievedNode(
             graph_name="g",
@@ -221,7 +221,7 @@ class TestCastNodeToGraphqlType:
         assert isinstance(result, NaturalEvent)
         assert result.kind() == "Mitosis"
     
-    def test_metric_matching(self):
+    def test_metric_matching(self) -> None:
         """Test matching METRIC type."""
         node = RetrievedNode(
             graph_name="g",
@@ -233,7 +233,7 @@ class TestCastNodeToGraphqlType:
         
         assert isinstance(result, Metric)
     
-    def test_reagent_matching(self):
+    def test_reagent_matching(self) -> None:
         """Test matching REAGENT type."""
         node = RetrievedNode(
             graph_name="g",
@@ -245,7 +245,7 @@ class TestCastNodeToGraphqlType:
         
         assert isinstance(result, Reagent)
     
-    def test_protocol_event_matching(self):
+    def test_protocol_event_matching(self) -> None:
         """Test matching PROTOCOL_EVENT type."""
         node = RetrievedNode(
             graph_name="g",
@@ -258,7 +258,7 @@ class TestCastNodeToGraphqlType:
         assert isinstance(result, ProtocolEvent)
         assert result.kind() == "Staining"
     
-    def test_fallback_to_label_entity(self):
+    def test_fallback_to_label_entity(self) -> None:
         """Test fallback to Entity when type is None and label is ENTITY."""
         node = RetrievedNode(
             graph_name="g",
@@ -270,7 +270,7 @@ class TestCastNodeToGraphqlType:
         
         assert isinstance(result, Entity)
     
-    def test_fallback_to_label_structure(self):
+    def test_fallback_to_label_structure(self) -> None:
         """Test fallback to Structure when type is None and label is STRUCTURE."""
         node = RetrievedNode(
             graph_name="g",
@@ -282,7 +282,7 @@ class TestCastNodeToGraphqlType:
         
         assert isinstance(result, Structure)
     
-    def test_unknown_type_raises(self):
+    def test_unknown_type_raises(self) -> None:
         """Test that unknown types raise ValueError."""
         node = RetrievedNode(
             graph_name="g",
@@ -298,7 +298,7 @@ class TestCastNodeToGraphqlType:
 class TestCastEdgeToGraphqlType:
     """Tests for cast_edge_to_graphql_type matching function."""
     
-    def test_measurement_matching(self):
+    def test_measurement_matching(self) -> None:
         """Test matching MEASUREMENT type."""
         edge = RetrievedEdge(
             graph_name="g",
@@ -313,7 +313,7 @@ class TestCastEdgeToGraphqlType:
         assert isinstance(result, Metric)
         assert result.value() == 42.5
     
-    def test_assertion_matching(self):
+    def test_assertion_matching(self) -> None:
         """Test matching ASSERTION type."""
         edge = RetrievedEdge(
             graph_name="g",
@@ -328,7 +328,7 @@ class TestCastEdgeToGraphqlType:
         assert isinstance(result, Assertion)
         assert result.subject() == "user123"
     
-    def test_relation_matching(self):
+    def test_relation_matching(self) -> None:
         """Test matching RELATION type."""
         edge = RetrievedEdge(
             graph_name="g",
@@ -342,7 +342,7 @@ class TestCastEdgeToGraphqlType:
         
         assert isinstance(result, Relation)
     
-    def test_fallback_to_label_measurement_raises(self):
+    def test_fallback_to_label_measurement_raises(self) -> None:
         """Test fallback based on label containing MEASURE raises for missing type."""
         edge = RetrievedEdge(
             graph_name="g",
@@ -355,7 +355,7 @@ class TestCastEdgeToGraphqlType:
         with pytest.raises(NameError, match="Measurement"):
             cast_edge_to_graphql_type(edge)
     
-    def test_fallback_to_label_assertion(self):
+    def test_fallback_to_label_assertion(self) -> None:
         """Test fallback based on label containing ASSERT."""
         edge = RetrievedEdge(
             graph_name="g",
@@ -369,7 +369,7 @@ class TestCastEdgeToGraphqlType:
         
         assert isinstance(result, Assertion)
     
-    def test_fallback_to_relation(self):
+    def test_fallback_to_relation(self) -> None:
         """Test fallback to Relation for unknown labels."""
         edge = RetrievedEdge(
             graph_name="g",
@@ -383,7 +383,7 @@ class TestCastEdgeToGraphqlType:
         
         assert isinstance(result, Relation)
     
-    def test_unknown_type_raises(self):
+    def test_unknown_type_raises(self) -> None:
         """Test that unknown types raise ValueError."""
         edge = RetrievedEdge(
             graph_name="g",
@@ -401,7 +401,7 @@ class TestCastEdgeToGraphqlType:
 class TestStrawberryTypeFields:
     """Tests for Strawberry type field access."""
     
-    def test_entity_fields(self):
+    def test_entity_fields(self) -> None:
         """Test Entity field access via _value."""
         node = RetrievedNode(
             graph_name="test",
@@ -439,7 +439,7 @@ class TestStrawberryTypeFields:
         assert props["area"] == 100.5
         assert "type" not in props  # Reserved key filtered
     
-    def test_structure_fields(self):
+    def test_structure_fields(self) -> None:
         """Test Structure field access via _value."""
         node = RetrievedNode(
             graph_name="test",
@@ -457,7 +457,7 @@ class TestStrawberryTypeFields:
         assert structure.identifier() == "@mikro/roi"
         assert structure.object() == "roi-abc-123"
     
-    def test_edge_fields(self):
+    def test_edge_fields(self) -> None:
         """Test Edge field access via a Relation instance."""
         edge = RetrievedEdge(
             graph_name="test",
@@ -474,7 +474,7 @@ class TestStrawberryTypeFields:
         assert relation.left_id() == "test:1"
         assert relation.right_id() == "test:2"
 
-    def test_property_fields(self):
+    def test_property_fields(self) -> None:
         """Test Property field access via _value."""
         variable = RetrievedVariable(key="name", value="Test")
         prop = Property(_value=variable)

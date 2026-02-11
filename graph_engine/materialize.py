@@ -132,8 +132,6 @@ def materialize(
     Returns:
         The materialized Graph instance with all related models created
     """
-    from django.contrib.auth import get_user_model
-    from authentikate.models import Organization, Membership
 
     # Compute schema hash for versioning
     schema_hash = compute_definition_hash(definition)

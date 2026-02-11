@@ -7,7 +7,7 @@ Assembles all mutation resolvers into the root Mutation type.
 from kante.types import Info
 
 
-from api import inputs, context, types
+from api import inputs, types
 from . import entity as entity_mutations
 from . import structure as structure_mutations
 from . import metric as measurement_mutations

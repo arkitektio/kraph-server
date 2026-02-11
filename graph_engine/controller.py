@@ -14,7 +14,6 @@ from graph_engine.input_models import (
 )
 from graph_engine.engine.protocol import CypherEngine
 from graph_engine.retrieved import (
-    RetrievedEvent,
     RetrievedGraphNodesRender,
     RetrievedGraphPathRender,
     RetrievedMetric,
@@ -229,7 +228,7 @@ class GraphController:
             e_params,
         )
 
-        db_id = str(create_res[0]["db_id"])
+        str(create_res[0]["db_id"])
         entity = create_res[0]["entity"]
 
         retrieved = RetrievedEntity.from_node(entity, graph_name=entity_category.graph)
@@ -251,7 +250,10 @@ class GraphController:
 
         # --- Step 6: Recalculate Cached Properties ---
         # This is where the magic happens: Properties flow from Evidence -> Entity
-        self._recalculate_entity(retrieved.local_id, entity_category)
+        self._recalculate_entity(
+            entity_category,
+            retrieved.local_id,
+        )
 
         return retrieved
 
@@ -267,7 +269,7 @@ class GraphController:
         """
         self.engine.execute(
             graph,
-            f"""
+            """
             MATCH (e) WHERE id(e) = $eid
             DETACH DELETE e
             """,

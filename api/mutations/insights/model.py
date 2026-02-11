@@ -1,6 +1,5 @@
 from kante.types import Info
-import strawberry
-from api import types, inputs, scalars
+from api import types, inputs
 from core import models
 
 

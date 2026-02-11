@@ -1,6 +1,5 @@
 from kante.types import Info
-import strawberry
-from api import types, scalars
+from api import types
 from core import models
 import datetime
 

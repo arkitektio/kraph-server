@@ -3,11 +3,10 @@ from core.models import Graph
 from api.schema import schema
 from kante.context import HttpContext
 
-@pytest.mark.skip(reason="Requires full database migrations and backend stack - legacy test")
+
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_graph(db, authenticated_context: HttpContext):
-
+async def test_graph(db, authenticated_context: HttpContext) -> None:
     graph = await Graph.objects.acreate(
         name="Test Model",
         description="This is a test model",
@@ -16,13 +15,13 @@ async def test_graph(db, authenticated_context: HttpContext):
         membership=authenticated_context.request.membership,
     )
 
-    query = """
-        query {
-            graph(id: 1) {
+    query = f"""
+        query {{
+            graph(id: {graph.pk}) {{
                 id
                 name
-            }
-        }
+            }}
+        }}
     """
 
     sub = await schema.execute(
@@ -33,5 +32,3 @@ async def test_graph(db, authenticated_context: HttpContext):
     assert sub.data, sub.errors
 
     assert sub.data["graph"]["name"] == "Test Model"
-
-

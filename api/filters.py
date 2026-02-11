@@ -1,7 +1,5 @@
-import datetime
 import strawberry
-from core import models, enums, scalars
-from strawberry import auto
+from core import models
 import strawberry_django as kante
 from django.db.models import Q
 import kante

@@ -107,7 +107,7 @@ async def test_create_entity_minimal(
     api_schema: kante.Schema, 
     simple_api_context: HttpContext,
     api_test_graph: Graph,
-):
+) -> None:
     """Test creating a basic entity with minimal input."""
     
     mutation = """
@@ -152,7 +152,7 @@ async def test_create_entity_with_ref_id(
     api_schema: kante.Schema, 
     simple_api_context: HttpContext,
     api_test_graph: Graph,
-):
+) -> None:
     """Test creating an entity with a custom reference ID."""
     
     mutation = """
@@ -191,7 +191,7 @@ async def test_create_entity_with_provenance(
     api_schema: kante.Schema, 
     simple_api_context: HttpContext,
     api_test_graph: Graph,
-):
+) -> None:
     """Test creating an entity with provenance tracking."""
     
     mutation = """
@@ -236,7 +236,7 @@ async def test_create_entity_with_single_evidence(
     api_schema: kante.Schema, 
     simple_api_context: HttpContext,
     api_test_graph: Graph,
-):
+) -> None:
     """Test creating an entity with a single supporting evidence structure."""
     
     mutation = """
@@ -284,7 +284,7 @@ async def test_create_entity_with_multiple_evidence(
     api_schema: kante.Schema, 
     simple_api_context: HttpContext,
     api_test_graph: Graph,
-):
+) -> None:
     """Test creating an entity with multiple supporting evidence structures."""
     
     mutation = """
@@ -327,7 +327,7 @@ async def test_create_entity_with_measurements(
     api_schema: kante.Schema, 
     simple_api_context: HttpContext,
     api_test_graph: Graph,
-):
+) -> None:
     """Test creating an entity with evidence that has measurements."""
     
     mutation = """
@@ -377,7 +377,7 @@ async def test_create_entity_different_evidence_types(
     api_schema: kante.Schema, 
     simple_api_context: HttpContext,
     api_test_graph: Graph,
-):
+) -> None:
     """Test creating an entity with different types of evidence structures."""
     
     mutation = """
@@ -430,7 +430,7 @@ async def test_create_entity_various_kinds(
     api_schema: kante.Schema, 
     simple_api_context: HttpContext,
     api_test_graph: Graph,
-):
+) -> None:
     """Test creating entities with different kinds."""
     
     mutation = """
@@ -472,7 +472,7 @@ async def test_create_multiple_entities_same_kind(
     api_schema: kante.Schema, 
     simple_api_context: HttpContext,
     api_test_graph: Graph,
-):
+) -> None:
     """Test creating multiple entities of the same kind."""
     
     mutation = """
@@ -514,7 +514,7 @@ async def test_create_multiple_entities_same_kind(
 async def test_create_entity_invalid_graph_id(
     api_schema: kante.Schema, 
     simple_api_context: HttpContext,
-):
+) -> None:
     """Test that creating an entity with invalid graph ID fails gracefully."""
     
     mutation = """
@@ -550,7 +550,7 @@ async def test_create_entity_missing_kind(
     api_schema: kante.Schema, 
     simple_api_context: HttpContext,
     api_test_graph: Graph,
-):
+) -> None:
     """Test that creating an entity without kind fails."""
     
     mutation = """

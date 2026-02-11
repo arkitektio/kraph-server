@@ -3,7 +3,6 @@ from enum import Enum
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import List, Dict, Optional, Any, Literal
 from datetime import datetime, timezone
-import uuid
 import re
 
 from graph_engine.base_models import AGGREGATION_RESULT_TYPES, AggregationFunction, DerivationType

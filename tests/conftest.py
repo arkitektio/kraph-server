@@ -5,26 +5,18 @@ import boto3
 from moto import mock_aws
 import os
 
-import pytest
-from django.contrib.auth import get_user_model
 from graph_engine.controller import GraphController
 from graph_engine.engine.age_engine import AgeEngine
-from graph_engine.engine.protocol import GraphProtocol
-from graph_engine.engine.testing.mock_cypher_engine import MockCypherEngine
-from api.schema import create_schema, schema
-from guardian.shortcuts import get_perms
-from asgiref.sync import sync_to_async
+from api.schema import create_schema
 from authentikate.models import Client, Organization, User, Membership
-from guardian.shortcuts import get_perms
-from asgiref.sync import sync_to_async
 from kante.context import HttpContext, UniversalRequest
-from dokker import local, HealthCheck
-from graph_engine import base_models as models, engine
+from dokker import local
+from graph_engine import base_models as models
 from graph_engine.materialize import materialize
 from core import models as core_models
 
 @pytest.fixture(scope="function")
-def aws_credentials():
+def aws_credentials() -> None:
     """Mocked AWS Credentials for moto."""
     os.environ["AWS_ACCESS_KEY_ID"] = "testing"
     os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
@@ -40,12 +32,12 @@ def s3(aws_credentials):
 
 
 @pytest.fixture
-def create_bucket1(s3):
+def create_bucket1(s3) -> None:
     s3.create_bucket(Bucket="babanana")
 
 
 @pytest.fixture
-def create_bucket2(s3):
+def create_bucket2(s3) -> None:
     s3.create_bucket(Bucket="cabanana")
 
 
@@ -330,7 +322,7 @@ def age_engine(transactional_db, backend_stack) -> Generator[AgeEngine, None, No
     
     Uses transactional_db to maintain database state across the fixture.
     """
-    from django.db import connections, connection
+    from django.db import connections
     
     # Ensure the AGE extension is created first
     with connections["default"].cursor() as cursor:

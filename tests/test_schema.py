@@ -6,7 +6,7 @@ import graph_engine.base_models as models  # Assumes base_models.py exists in th
 
 # --- TESTS ---
 
-def test_fixture_integrity(bio_graph_schema):
+def test_fixture_integrity(bio_graph_schema) -> None:
     """
     Simply verifies that the manually constructed object is valid.
     """
@@ -26,7 +26,7 @@ def test_fixture_integrity(bio_graph_schema):
     assert rel.materialization.backing_link_type == "link_ais_soma"
     
 @pytest.mark.skip(reason="Validation behavior changed; update expected errors")
-def test_validation_logic_works():
+def test_validation_logic_works() -> None:
     """
     Ensures that calling the constructors with bad data still raises errors.
     """
@@ -41,7 +41,6 @@ def test_validation_logic_works():
 
     # 2. Test Materialization Logic
     # Pydantic V2 wraps nested validation errors in ValidationError
-    from pydantic import ValidationError
     with pytest.raises((ValueError, ValidationError)):
         models.RelationDefinition(
             key="TEST_REL",

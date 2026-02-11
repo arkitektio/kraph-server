@@ -26,7 +26,7 @@ def assertion_for_entity(
     controller = context.get_controller()
 
     graph_id = context.extract_graph_id(entity_id)
-    node_id = context.extract_node_id(entity_id)
+    context.extract_node_id(entity_id)
 
     graph = models.Graph.objects.get(id=graph_id)  # Validate graph exists
 

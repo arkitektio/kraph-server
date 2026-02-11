@@ -20,7 +20,7 @@ from datalayer.extension import DatalayerExtension
 
 
 import strawberry
-from typing import Optional, List
+from typing import List
 from kante.types import Info
 
 from api.types import Entity, Structure, Metric, Assertion
@@ -31,6 +31,8 @@ from api import queries, types, scalars
 @strawberry.type(description="Graph Engine Queries")
 class Query:
     """Root query type for the graph engine API."""
+
+    graph: types.Graph = kante.django_field(description="Get a graph by ID")
 
     # Schema Operations
     entity_categories: list[types.EntityCategory] = kante.django_field(description="List of all entity categories/schemas")

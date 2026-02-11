@@ -1,5 +1,4 @@
 import strawberry
-import strawberry_django
 from datalayer import models
 from kante.types import Info
 import kante
