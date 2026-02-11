@@ -15,7 +15,13 @@ from .scalars import AnyScalar
 from strawberry.experimental import pydantic
 
 
-# =========================================
+@pydantic.input(model=input_models.PlateChildInput, all_fields=True, description="Input for requesting media upload credentials")
+class PlateChildInput:
+    """Input for requesting media upload credentials"""
+
+    pass
+
+
 # Filter Models
 # =========================================
 # Filter Models

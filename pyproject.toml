@@ -40,6 +40,7 @@ dev = [
     "pytest>=8.4.2",
     "pytest-asyncio>=1.1.0",
     "pytest-django>=4.11.1",
+    "types-boto3[essential,sts]>=1.42.46",
 ]
 
 [tool.django-stubs]

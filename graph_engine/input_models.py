@@ -5,7 +5,25 @@ from typing import List, Dict, Optional, Any, Literal
 from datetime import datetime, timezone
 import uuid
 import re
+
 from graph_engine.base_models import AGGREGATION_RESULT_TYPES, AggregationFunction, DerivationType
+
+
+# =======================
+# TEXT MODELS
+# =======================
+class PlateChildInput(BaseModel):
+    id: str
+    type: str | None = None
+    text: str | None = None
+    children: list["PlateChildInput"] | None = None
+    value: str | None = None
+    color: str | None = None
+    font_size: str | None = None
+    background_color: str | None = None
+    bold: bool | None = None
+    italic: bool | None = None
+    underline: bool | None = None
 
 
 # ==========================================

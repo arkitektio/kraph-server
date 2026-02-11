@@ -31,47 +31,6 @@ def build_prescoper(field="organization"):
     return prescoper
 
 
-@strawberry.type(description="Temporary Credentials for a file upload that can be used by a Client (e.g. in a python datalayer)")
-class Credentials:
-    """Temporary Credentials for a a file upload."""
-
-    status: str
-    access_key: str
-    secret_key: str
-    session_token: str
-    datalayer: str
-    bucket: str
-    key: str
-    store: str
-
-
-@strawberry.type(description="Temporary Credentials for a file upload that can be used by a Client (e.g. in a python datalayer)")
-class PresignedPostCredentials:
-    """Temporary Credentials for a a file upload."""
-
-    key: str
-    x_amz_algorithm: str
-    x_amz_credential: str
-    x_amz_date: str
-    x_amz_signature: str
-    policy: str
-    datalayer: str
-    bucket: str
-    store: str
-
-
-@strawberry.type(description="Temporary Credentials for a file download that can be used by a Client (e.g. in a python datalayer)")
-class AccessCredentials:
-    """Temporary Credentials for a a file upload."""
-
-    access_key: str
-    secret_key: str
-    session_token: str
-    bucket: str
-    key: str
-    path: str
-
-
 @strawberry.type(description="A column definition for a table view.")
 class Column:
     name: str
@@ -84,32 +43,6 @@ class Column:
     idfor: list[strawberry.ID] | None = None
     preferhidden: bool | None = None
     identifier: str | None = None
-
-
-@strawberry_django.type(models.BigFileStore)
-class BigFileStore:
-    id: auto
-    path: str
-    bucket: str
-    key: str
-
-    @strawberry.field()
-    def presigned_url(self, info: Info) -> str:
-        datalayer = get_current_datalayer()
-        return cast(models.BigFileStore, self).get_presigned_url(info, datalayer=datalayer)
-
-
-@strawberry_django.type(models.MediaStore)
-class MediaStore:
-    id: auto
-    path: str
-    bucket: str
-    key: str
-
-    @strawberry_django.field()
-    def presigned_url(self, info: Info, host: str | None = None) -> str:
-        datalayer = get_current_datalayer()
-        return cast(models.MediaStore, self).get_presigned_url(info, datalayer=datalayer, host=host)
 
 
 @strawberry_django.type(models.GraphSequence, filters=filters.GraphSequenceFilter, pagination=True)
@@ -183,6 +116,7 @@ class MaterializedEdge:
 )
 class GraphSchema:
     """A versioned schema that defines the structure and validation rules for a graph."""
+
     id: auto
     version: str = strawberry_django.field(description="Semantic version of this schema (e.g., '1.0.0')")
     index: int = strawberry_django.field(description="Sequential index of this schema version")
@@ -191,7 +125,7 @@ class GraphSchema:
     description: Optional[str] = strawberry_django.field(description="Description of changes in this schema version")
     definition: scalars.Any = strawberry_django.field(description="The full GraphDefinitionModel as JSON")
     created_by: Optional[User] = strawberry_django.field(description="User who created this schema")
-    
+
     @strawberry_django.field(description="The graph this schema belongs to")
     def graph(self) -> "Graph":
         return cast(models.GraphSchema, self).graph
@@ -207,6 +141,7 @@ from graph_engine.models import GraphSchemaDefinition as GraphSchemaDefinitionMo
 )
 class GraphSchemaDefinition:
     """Schema definition containing node labels, required properties, and validation rules."""
+
     id: auto
     name: str = strawberry_django.field(description="Human-readable name for this schema version")
     schema_json: scalars.Any = strawberry_django.field(description="The schema definition containing node labels, properties, and validation rules")
@@ -214,15 +149,15 @@ class GraphSchemaDefinition:
     is_active: bool = strawberry_django.field(description="Whether this schema version is currently active")
     created_at: datetime.datetime = strawberry_django.field(description="When this schema was created")
     updated_at: datetime.datetime = strawberry_django.field(description="When this schema was last updated")
-    
+
     @strawberry_django.field(description="The graph this schema applies to")
     def graph(self) -> "Graph":
         return cast(GraphSchemaDefinitionModel, self).graph
-    
+
     @strawberry_django.field(description="Valid node labels defined in this schema")
     def valid_node_labels(self) -> List[str]:
         return cast(GraphSchemaDefinitionModel, self).get_valid_node_labels()
-    
+
     @strawberry_django.field(description="Valid edge labels defined in this schema")
     def valid_edge_labels(self) -> List[str]:
         return cast(GraphSchemaDefinitionModel, self).get_valid_edge_labels()
@@ -263,7 +198,7 @@ class Graph:
     @strawberry_django.field(description="The currently active schema for this graph")
     def active_schema(self) -> Optional["GraphSchema"]:
         return cast(models.Graph, self).active_schema
-    
+
     @strawberry_django.field(description="The currently active schema definition for validation")
     def active_schema_definition(self) -> Optional["GraphSchemaDefinition"]:
         return cast(models.Graph, self).schema_definitions.filter(is_active=True).first()
@@ -556,7 +491,6 @@ class Node:
 
     @strawberry_django.field()
     def relevant_queries(self, info: Info) -> List["NodeQuery"]:
-
         if not self._value.category_id:
             return []
 
@@ -564,7 +498,6 @@ class Node:
 
     @strawberry_django.field()
     def views(self, info: Info) -> List["NodeQueryView"]:
-
         if not self._value.category_id:
             return []
 
@@ -572,7 +505,6 @@ class Node:
 
     @strawberry_django.field(description="The best view of the node given the current context")
     def best_view(self, info: Info) -> NodeQueryView | None:
-
         if not self._value.category_id:
             return None
 

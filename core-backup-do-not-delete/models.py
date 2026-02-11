@@ -5,7 +5,7 @@ from django.forms import FileField
 from core import enums
 from koherent.fields import ProvenanceField
 from django_choices_field import TextChoicesField
-from core.fields import S3Field
+from datalayer.fields import S3Field
 from core.datalayer import Datalayer
 from authentikate.models import Organization, Membership
 from polymorphic.models import PolymorphicModel
@@ -174,11 +174,12 @@ class Graph(models.Model):
     def active_schema(self) -> "GraphSchema":
         """Get the currently active schema for this graph."""
         return self.schemas.filter(is_active=True).first()
-    
+
     @property
     def definition(self):
         """Get the GraphDefinitionModel from the active schema."""
         from graph_engine.base_models import GraphDefinitionModel
+
         schema = self.active_schema
         if schema:
             return GraphDefinitionModel.model_validate(schema.definition)
@@ -188,38 +189,38 @@ class Graph(models.Model):
 class GraphSchema(models.Model):
     """
     A versioned schema definition for a graph.
-    
+
     Schemas are immutable once created. Each graph has one active schema
     at a time, and schemas have increasing indices for version tracking.
     """
-    
+
     graph = models.ForeignKey(
         Graph,
         on_delete=models.CASCADE,
         related_name="schemas",
         help_text="The graph this schema belongs to",
     )
-    
+
     version = models.CharField(
         max_length=100,
         help_text="Semantic version of this schema (e.g., '1.0.0')",
     )
-    
+
     index = models.PositiveIntegerField(
         help_text="Sequential index of this schema version (auto-incremented)",
     )
-    
+
     definition = models.JSONField(
         help_text="The full GraphDefinitionModel as JSON",
     )
-    
+
     is_active = models.BooleanField(
         default=False,
         help_text="Whether this is the currently active schema for the graph",
     )
-    
+
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
     created_by = models.ForeignKey(
         get_user_model(),
         on_delete=models.SET_NULL,
@@ -228,37 +229,38 @@ class GraphSchema(models.Model):
         related_name="created_schemas",
         help_text="User who created this schema",
     )
-    
+
     description = models.TextField(
         null=True,
         blank=True,
         help_text="Description of changes in this schema version",
     )
-    
+
     class Meta:
         unique_together = [("graph", "index"), ("graph", "version")]
         ordering = ["-index"]
-    
+
     def __str__(self) -> str:
         active_marker = " (active)" if self.is_active else ""
         return f"{self.graph.name} v{self.version}{active_marker}"
-    
+
     def save(self, *args, **kwargs) -> None:
         # Auto-increment index if not set
         if self.index is None:
             last_schema = GraphSchema.objects.filter(graph=self.graph).order_by("-index").first()
             self.index = (last_schema.index + 1) if last_schema else 1
         super().save(*args, **kwargs)
-    
+
     def activate(self) -> None:
         """Set this schema as the active one, deactivating others."""
         GraphSchema.objects.filter(graph=self.graph).update(is_active=False)
         self.is_active = True
         self.save(update_fields=["is_active"])
-    
+
     def get_definition_model(self):
         """Parse the stored JSON into a GraphDefinitionModel."""
         from graph_engine.base_models import GraphDefinitionModel
+
         return GraphDefinitionModel.model_validate(self.definition)
 
 

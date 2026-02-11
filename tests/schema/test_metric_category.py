@@ -33,7 +33,7 @@ async def test_metric_category_filter_by_metric_kind(test_graph: Graph, authenti
     )
 
     query = """
-        query SearchMetricCategories($metricKind: String!) {
+        query SearchMetricCategories($metricKind: MetricKind!) {
             metricCategories(filters: {metricKind: $metricKind}) {
                 id
                 label

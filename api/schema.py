@@ -16,6 +16,8 @@ from .extensions.cypher import CypherEngineExtension
 import kante
 from graph_engine.engine.age_engine import AgeEngine
 from graph_engine.engine.protocol import CypherEngine
+from datalayer.extension import DatalayerExtension
+
 
 import strawberry
 from typing import Optional, List
@@ -121,6 +123,7 @@ def create_schema(
     extensions = [
         QueryDepthLimiter(max_depth=max_depth),
         AuthentikateExtension(),
+        DatalayerExtension(),
     ]
 
     # Add CypherEngineExtension if an engine is provided

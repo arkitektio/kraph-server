@@ -5,7 +5,7 @@ from django.forms import FileField
 from core import enums
 from koherent.fields import ProvenanceField
 from django_choices_field import TextChoicesField
-from core.fields import S3Field
+from datalayer.fields import S3Field
 from core.datalayer import Datalayer
 from authentikate.models import Organization, Membership
 from polymorphic.models import PolymorphicModel
@@ -16,59 +16,6 @@ from django.conf import settings
 
 from graph_engine.base_models import EntityDefinition
 from graph_engine.input_models import EntityDescriptorInput
-
-
-class S3Store(models.Model):
-    path = S3Field(null=True, blank=True, help_text="The stodre of the image", unique=True)
-    key = models.CharField(max_length=1000)
-    bucket = models.CharField(max_length=1000)
-    populated = models.BooleanField(default=False)
-
-
-class BigFileStore(S3Store):
-    pass
-
-    def fill_info(self) -> None:
-        pass
-
-    def get_presigned_url(
-        self,
-        info,
-        datalayer: Datalayer,
-        host: str | None = None,
-    ) -> str:
-        s3 = datalayer.s3
-        url = s3.generate_presigned_url(
-            ClientMethod="get_object",
-            Params={
-                "Bucket": self.bucket,
-                "Key": self.key,
-            },
-            ExpiresIn=3600,
-        )
-        return url.replace(settings.AWS_S3_ENDPOINT_URL, host or "")
-
-
-class MediaStore(S3Store):
-    def get_presigned_url(self, info, datalayer: Datalayer, host: str | None = None) -> str:
-        s3 = datalayer.s3
-        url: str = s3.generate_presigned_url(
-            ClientMethod="get_object",
-            Params={
-                "Bucket": self.bucket,
-                "Key": self.key,
-            },
-            ExpiresIn=3600,
-        )
-        return url.replace(settings.AWS_S3_ENDPOINT_URL, host or "")
-
-    def fill_info(self) -> None:
-        pass
-
-    def put_file(self, datalayer: Datalayer, file: FileField) -> None:
-        s3 = datalayer.s3
-        s3.upload_fileobj(file, self.bucket, self.key)
-        self.save()
 
 
 class Graph(models.Model):
@@ -962,7 +909,7 @@ class MetricCategory(NodeCategory):
     """
 
     metric_kind = TextChoicesField(
-        choices_enum=enums.MeasurementKindChoices,
+        choices_enum=enums.MetricKindChoices,
         help_text="The data type (if a metric)",
         null=True,
         blank=True,
@@ -1004,13 +951,6 @@ class MetricCategory(NodeCategory):
 
 class MeasurementCategory(EdgeCategory):
     """A Measurement class is a class that describes an edge with a value"""
-
-    metric_kind = TextChoicesField(
-        choices_enum=enums.MeasurementKindChoices,
-        help_text="The data type (if a metric)",
-        null=True,
-        blank=True,
-    )
 
     def get_age_edge_name(self):
         return self.age_name

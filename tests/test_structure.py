@@ -36,7 +36,7 @@ def test_create_structure_told_you_so(graph_controller: GraphController, bio_gra
     Test creating a ToldYouSo structure.
     """
     obj_id = _uid("tys_test")
-    result = graph_controller.create_structure(
+    result = graph_controller.ensure_structure_via_identifier(
         graph=bio_graph,
         identifier="told_you_so",
         object=obj_id

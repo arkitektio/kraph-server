@@ -3,7 +3,7 @@ import strawberry
 from enum import Enum
 
 
-class MeasurementKindChoices(TextChoices):
+class MetricKindChoices(TextChoices):
     INT = "INT"
     FLOAT = "FLOAT"
     DATETIME = "DATETIME"
