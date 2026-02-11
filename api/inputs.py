@@ -15,6 +15,71 @@ from .scalars import AnyScalar
 from strawberry.experimental import pydantic
 
 
+# =========================================
+# Filter Models
+# =========================================
+# Filter Models
+# =========================================
+@pydantic.input(model=input_models.RenderGraphNodesFilter, all_fields=True, description="Filters for querying node lists")
+class RenderGraphNodesFilter:
+    pass
+
+
+@pydantic.input(model=input_models.RenderGraphNodesPagination, all_fields=True, description="Pagination options for querying node lists")
+class RenderGraphNodesPagination:
+    pass
+
+
+@pydantic.input(model=input_models.RenderGraphNodesOrder, all_fields=True, description="Ordering options for querying node lists")
+class RenderGraphNodesOrder:
+    pass
+
+
+@pydantic.input(model=input_models.RenderGraphPathFilter, all_fields=True, description="Filters for querying node lists")
+class RenderGraphPathFilter:
+    pass
+
+
+@pydantic.input(model=input_models.RenderGraphPathPagination, all_fields=True, description="Pagination options for querying node lists")
+class RenderGraphPathPagination:
+    pass
+
+
+@pydantic.input(model=input_models.RenderGraphPathOrder, all_fields=True, description="Ordering options for querying node lists")
+class RenderGraphPathOrder:
+    pass
+
+
+@pydantic.input(model=input_models.RenderGraphPairsFilter, all_fields=True, description="Filters for querying node lists")
+class RenderGraphPairsFilter:
+    pass
+
+
+@pydantic.input(model=input_models.RenderGraphPairsPagination, all_fields=True, description="Pagination options for querying node lists")
+class RenderGraphPairsPagination:
+    pass
+
+
+@pydantic.input(model=input_models.RenderGraphPairsOrder, all_fields=True, description="Ordering options for querying node lists")
+class RenderGraphPairsOrder:
+    pass
+
+
+@pydantic.input(model=input_models.RenderGraphTableFilter, all_fields=True, description="Filters for querying node lists")
+class RenderGraphTableFilter:
+    pass
+
+
+@pydantic.input(model=input_models.RenderGraphTablePagination, all_fields=True, description="Pagination options for querying node lists")
+class RenderGraphTablePagination:
+    pass
+
+
+@pydantic.input(model=input_models.RenderGraphTableOrder, all_fields=True, description="Ordering options for querying node lists")
+class RenderGraphTableOrder:
+    pass
+
+
 # ==========================================
 # Schema Creation Input Types
 # ==========================================
@@ -482,7 +547,16 @@ class ActivateSchemaInput:
 class EntityFilterInput:
     """Filter options for entity queries."""
 
-    kind: Optional[str] = strawberry.field(default=None, description="Filter by entity kind/type")
+    category: Optional[str] = strawberry.field(default=None, description="Filter by entity kind/type")
+    ids: Optional[List[str]] = strawberry.field(default=None, description="Filter by specific entity IDs")
+    has_property: Optional[str] = strawberry.field(default=None, description="Filter entities that have a specific property")
+
+
+@strawberry.input(description="Filter options for querying entities")
+class EntityOrderInput:
+    """Filter options for entity queries."""
+
+    category: Optional[str] = strawberry.field(default=None, description="Filter by entity kind/type")
     ids: Optional[List[str]] = strawberry.field(default=None, description="Filter by specific entity IDs")
     has_property: Optional[str] = strawberry.field(default=None, description="Filter entities that have a specific property")
 

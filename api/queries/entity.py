@@ -6,7 +6,11 @@ from typing import List
 from kante.types import Info
 import strawberry
 
-from api import types, context
+from api import types, context, inputs
+
+
+def entities(info, filters: inputs.EntityFilterInput | None = None, order: inputs.EntityOrderInput | None = None) -> List[types.Entity]:
+    raise NotImplementedError("This resolver is not implemented yet")
 
 
 def entity(info: Info, id: str) -> types.Entity:

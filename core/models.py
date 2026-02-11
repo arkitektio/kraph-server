@@ -1060,7 +1060,7 @@ class StructureRelationCategory(EdgeCategory):
         default_related_name = "structure_relation_categories"
 
 
-class GraphQuery(models.Model):
+class GraphQuery(PolymorphicModel):
     graph = models.ForeignKey(
         Graph,
         on_delete=models.CASCADE,
@@ -1077,19 +1077,6 @@ class GraphQuery(models.Model):
     kind = models.CharField(
         max_length=1000,
         help_text="The kind of the materialized graph (i.e path, property, etc.)",
-    )
-    columns = models.JSONField(
-        help_text="The columns (if ViewKind is Table)",
-        default=None,
-        null=True,
-    )
-    node_category = models.ForeignKey(
-        NodeCategory,
-        default=None,
-        null=True,
-        on_delete=models.CASCADE,
-        related_name="graph_queries",
-        help_text="The category this query is associated if its a node_list",
     )
     pinned_by = models.ManyToManyField(
         get_user_model(),
@@ -1117,6 +1104,52 @@ class GraphQuery(models.Model):
         null=True,
     )
 
+
+class GraphNodesQuery(GraphQuery):
+    """A query that is used to materialize a list of nodes"""
+
+    # The node category this query is associated with (e.g. if this is a query that materializes the nodes of a certain category, this is the category)
+    node_category = models.ForeignKey(
+        NodeCategory,
+        default=None,
+        null=True,
+        on_delete=models.CASCADE,
+        related_name="node_list_queries",
+        help_text="The category this query is associated if its a node_list",
+    )
+
+
+class GraphPathQuery(GraphQuery):
+    """A query that is used to materialize a list of paths"""
+
+    # The node category this query is associated with (e.g. if this is a query that materializes the nodes of a certain category, this is the category)
+    left_category = models.ForeignKey(
+        NodeCategory,
+        default=None,
+        null=True,
+        on_delete=models.CASCADE,
+        related_name="path_list_queries",
+        help_text="The category this query is associated if its a path_list",
+    )
+    right_category = models.ForeignKey(
+        NodeCategory,
+        default=None,
+        null=True,
+        on_delete=models.CASCADE,
+        related_name="path_list_queries_right",
+        help_text="The category this query is associated if its a path_list",
+    )
+
+
+class GraphTableQuery(GraphQuery):
+    """A query that is used to materialize a table"""
+
+    columns = models.JSONField(
+        help_text="The columns (if ViewKind is Table)",
+        default=list,
+        null=True,
+    )
+
     @property
     def input_columns(self):
         from core import inputs
@@ -1124,7 +1157,7 @@ class GraphQuery(models.Model):
         return [inputs.ColumnInput(**i) for i in self.columns]
 
 
-class NodeQuery(models.Model):
+class NodeQuery(PolymorphicModel):
     graph = models.ForeignKey(
         Graph,
         on_delete=models.CASCADE,
@@ -1142,11 +1175,7 @@ class NodeQuery(models.Model):
         max_length=1000,
         help_text="The kind of the materialized graph (i.e path, property, etc.)",
     )
-    columns = models.JSONField(
-        help_text="The columns (if ViewKind is Table)",
-        default=list,
-        null=True,
-    )
+
     pinned_by = models.ManyToManyField(
         get_user_model(),
         related_name="pinned_node_queries",
@@ -1167,6 +1196,24 @@ class NodeQuery(models.Model):
     @classmethod
     def active_for_user_and_graph(self, user, graph):
         return self.objects.filter(graph=graph, pinned_by=user).first()
+
+
+class NodePathQuery(NodeQuery):
+    pass
+
+
+class NodeTableQuery(NodeQuery):
+    columns = models.JSONField(
+        help_text="The columns (if ViewKind is Table)",
+        default=list,
+        null=True,
+    )
+
+    @property
+    def input_columns(self):
+        from core import inputs
+
+        return [inputs.ColumnInput(**i) for i in self.columns]
 
 
 class MaterializedView(models.Model):

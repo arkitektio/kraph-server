@@ -1,6 +1,7 @@
 import json
 import time
 from typing import Optional, Dict, Any, List
+from graph_engine import input_models
 from graph_engine.base_models import (
     GraphDefinitionModel,
     get_label_for_identifier,
@@ -14,11 +15,14 @@ from graph_engine.input_models import (
 from graph_engine.engine.protocol import CypherEngine
 from graph_engine.retrieved import (
     RetrievedEvent,
+    RetrievedGraphNodesRender,
+    RetrievedGraphPathRender,
     RetrievedMetric,
     RetrievedNaturalEvent,
     RetrievedNode,
     RetrievedEdge,
     RetrievedEntity,
+    RetrievedGraphTableRender,
     RetrievedRelation,
     RetrievedStructure,
     RetrievedAssertion,
@@ -1371,7 +1375,22 @@ class GraphController:
         target_entities = self.get_reified_as_target_entities(link_ref_id)
         return source_entities + target_entities
 
-    def get_assertion_for_relation(self, edge_id: int) -> Optional[RetrievedAssertion]:
+    def render_graph_nodes_query(self, graph_query: models.GraphNodesQuery, filters: input_models.RenderGraphNodesFilter | None = None, pagination: input_models.RenderGraphNodesPagination | None = None, order: input_models.RenderGraphNodesOrder | None = None) -> RetrievedGraphNodesRender:
+        """Render a set of nodes matching the graph query, with optional filters, pagination, and ordering."""
+        raise Exception("Not implemented yet")
+
+    def render_graph_path_query(self, graph_query: models.GraphPathQuery, filters: input_models.RenderGraphPathFilter | None = None, pagination: input_models.RenderGraphPathPagination | None = None, order: input_models.RenderGraphPathOrder | None = None) -> RetrievedGraphPathRender:
+        """Render a set of nodes matching the graph query, with optional filters, pagination, and ordering."""
+        raise Exception("Not implemented yet")
+
+    def render_graph_table_query(self, graph_query: models.GraphTableQuery, filters: input_models.RenderGraphTableFilter | None = None, pagination: input_models.RenderGraphTablePagination | None = None, order: input_models.RenderGraphTableOrder | None = None) -> RetrievedGraphTableRender:
+        """Render a set of nodes matching the graph query, with optional filters, pagination, and ordering."""
+        raise Exception("Not implemented yet")
+
+    def list_entities(self, graph: models.Graph, filters: input_models.EntityFilters | None = None, pagination: input_models.EntityPagination | None = None, order: input_models.EntityOrder | None = None) -> List[RetrievedEntity]:
+        raise Exception("Not implemented yet")
+
+    def get_assertion_for_relation(self, graph: models.Graph, edge_id: int) -> Optional[RetrievedAssertion]:
         """
         Get the Assertion that generated a relation edge.
 
@@ -1386,7 +1405,7 @@ class GraphController:
         """
         # First, get the shadow_link_id stored on the edge
         edge_result = self.engine.execute(
-            self.graph,
+            graph,
             """
             MATCH ()-[r]->() WHERE id(r) = $eid
             RETURN r.__shadow_link_id as sl_id
@@ -1401,7 +1420,7 @@ class GraphController:
 
         # Now get the assertion that GENERATED the ShadowLink
         result = self.engine.execute(
-            self.graph,
+            graph,
             f"""
             MATCH (a:{vocab.Assertion})-[:{vocab.GENERATED}]->(sl:{vocab.ShadowLink})
             WHERE id(sl) = $sl_id
@@ -1415,7 +1434,7 @@ class GraphController:
 
         row = result[0]
         return RetrievedAssertion(
-            graph_name=self.age_name,
+            graph_name=graph.age_name,
             id=row["graph_id"],
             label=vocab.Assertion,
             properties=_extract_props(row["a"]),

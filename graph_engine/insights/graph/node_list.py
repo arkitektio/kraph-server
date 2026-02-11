@@ -1,10 +1,10 @@
-from core import models, types, age, inputs
+from graph_engine import input_models, retrieved
+from core import models
 from .parser import render_cypher_template
 
 
-def node_list(graph_query: models.GraphQuery, check_exists: bool = True, filters: inputs.GraphQueryFilters | None = None, pagination: inputs.GraphQueryPagination | None = None, order: inputs.GraphQueryOrder | None = None) -> types.NodeList:
+def run_node_list(graph_query: models.GraphQuery, filters: input_models.NodeListFilters | None = None, pagination: input_models.NodeListPagination | None = None, order: input_models.NodeListOrder | None = None) -> retrieved.RetrievedNodeList:
     tgraph = graph_query.graph
-
 
     print("Called")
 

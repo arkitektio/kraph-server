@@ -543,6 +543,62 @@ class RetrievedAssertion(RetrievedNode):
 # ==========================================
 
 
+@dataclass
+class RetrievedGraphNodesRender:
+    """A list of retrieved nodes, with the graph name for context."""
+
+    graph_name: str
+    nodes: List[RetrievedNode]
+
+
+@dataclass
+class RetrievedGraphTableRender:
+    """A list of retrieved nodes, with the graph name for context."""
+
+    graph_name: str
+    rows: List[Dict[str, Any]]
+
+
+@dataclass
+class RetrievedGraphPathRender:
+    """A list of retrieved nodes, with the graph name for context."""
+
+    graph_name: str
+    nodes: List[RetrievedNode]
+    edges: List[RetrievedEdge]
+
+
+@dataclass
+class Pairs:
+    left: RetrievedNode
+    right: RetrievedNode
+    edge: Optional[RetrievedEdge] = None
+
+
+@dataclass
+class RetrievedGraphPairsRender:
+    """A list of retrieved node pairs, with the graph name for context."""
+
+    graph_name: str
+    pairs: List[Pairs]
+
+
+@dataclass
+class RetrievedNodePathRender:
+    """A list of retrieved nodes, with the graph name for context."""
+
+    graph_name: str
+    paths: List[List[RetrievedNode]]
+
+
+@dataclass
+class RetrievedNodeTableRender:
+    """A list of retrieved nodes, with the graph name for context."""
+
+    graph_name: str
+    rows: List[Dict[str, Any]]
+
+
 def node_from_age_result(
     graph_name: str,
     vertex_data: Dict[str, Any],

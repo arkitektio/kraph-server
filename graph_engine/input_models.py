@@ -9,8 +9,93 @@ from graph_engine.base_models import AGGREGATION_RESULT_TYPES, AggregationFuncti
 
 
 # ==========================================
+# FILTER MODELS FOR NON MODELS
+# ==========================================
+
+
+class RenderGraphNodesFilter(BaseModel):
+    key: str
+    operator: str
+    value: Any
+
+
+class RenderGraphNodesPagination(BaseModel):
+    limit: int
+    offset: int
+
+
+class RenderGraphNodesOrder(BaseModel):
+    key: str
+    direction: Literal["asc", "desc"] = "asc"
+
+
+class RenderGraphPathFilter(BaseModel):
+    key: str
+    operator: str
+    value: Any
+
+
+class RenderGraphPathPagination(BaseModel):
+    limit: int
+    offset: int
+
+
+class RenderGraphPathOrder(BaseModel):
+    key: str
+    direction: Literal["asc", "desc"] = "asc"
+
+
+class RenderGraphPairsFilter(BaseModel):
+    key: str
+    operator: str
+    value: Any
+
+
+class RenderGraphPairsPagination(BaseModel):
+    limit: int
+    offset: int
+
+
+class RenderGraphPairsOrder(BaseModel):
+    key: str
+    direction: Literal["asc", "desc"] = "asc"
+
+
+class RenderGraphTableFilter(BaseModel):
+    key: str
+    operator: str
+    value: Any
+
+
+class RenderGraphTablePagination(BaseModel):
+    limit: int
+    offset: int
+
+
+class RenderGraphTableOrder(BaseModel):
+    key: str
+    direction: Literal["asc", "desc"] = "asc"
+
+
+# ==========================================
 # SCHEMA INPUT MODELS
 # ==========================================
+
+
+class EntityFilters(BaseModel):
+    key: str
+    operator: str
+    value: Any
+
+
+class EntityPagination(BaseModel):
+    limit: int
+    offset: int
+
+
+class EntityOrder(BaseModel):
+    key: str
+    direction: Literal["asc", "desc"] = "asc"
 
 
 # ==========================================

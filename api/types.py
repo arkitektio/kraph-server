@@ -19,6 +19,7 @@ from graph_engine.retrieved import RetrievedMetric, RetrievedNode, RetrievedEdge
 from graph_engine import base_models
 import kante
 from core import models
+from graph_engine import retrieved
 
 
 # ===========================================
@@ -668,6 +669,28 @@ def cast_edge_to_graphql_type(edge: RetrievedEdge) -> EdgeSubtype:
 # ===========================================
 # RESULT TYPES
 # ===========================================
+@strawberry.type(description="Result of linking a structure to an entity")
+class GraphNodesRender:
+    _value: strawberry.Private[retrieved.RetrievedGraphNodesRender]
+    pass
+
+
+@strawberry.type(description="Result of linking a structure to an entity")
+class GraphPathRender:
+    _value: strawberry.Private[retrieved.RetrievedGraphPathRender]
+    pass
+
+
+@strawberry.type(description="Result of linking a structure to an entity")
+class GraphPairsRender:
+    _value: strawberry.Private[retrieved.RetrievedGraphPairsRender]
+    pass
+
+
+@strawberry.type(description="Result of linking a structure to an entity")
+class GraphTableRender:
+    _value: strawberry.Private[retrieved.RetrievedGraphTableRender]
+    pass
 
 
 @strawberry.type(description="Result of linking a structure to an entity")
