@@ -411,6 +411,10 @@ class Category(PolymorphicModel):
         max_length=1000,
         help_text="The name of the graph class in the age graph",
     )
+    key = models.CharField(
+        max_length=1000,
+        help_text="The entity key that the node relates to (e.g. a cell line, a cell type, etc.)",
+    )
     description = models.CharField(
         max_length=1000,
         help_text="The description of category",
@@ -450,7 +454,12 @@ class Category(PolymorphicModel):
 
     class Meta:
         default_related_name = "categories"
-        unique_together = ("graph", "age_name")
+        unique_together = ("graph", "age_name"), ("graph", "key")
+
+    @classmethod
+    def key_to_age_name(cls, key: str) -> str:
+        """Convert an entity key to a valid AGE name by replacing invalid characters."""
+        return "".join(e for e in key if e.isalnum()).lower()
 
 
 class Descriptor(models.Model):
@@ -533,6 +542,11 @@ class NodeCategory(Category):
     def property_map(self):
         return {prodf.key: prodf for prodf in self.defined_properties}
 
+    @classmethod
+    def key_to_age_name(cls, key: str) -> str:
+        """Convert an entity key to a valid AGE name by replacing invalid characters."""
+        return "".join(e for e in key if e.isalnum()).lower()
+
 
 class EdgeCategory(Category):
     """An Edge class is a class that describes an edge in the graph which represents a relationship between two nodes."""
@@ -582,8 +596,11 @@ class EdgeCategory(Category):
         """Get all entities in the graph that match the source definition of this edge category."""
         """Get all entities in the graph that match the target definition of this edge category."""
         kwargs = {}
-        if self.source_definition_model.category:
-            kwargs["id__in"] = self.source_definition_model.category
+        if self.source_definition_model.keys:
+            kwargs["key__in"] = self.source_definition_model.keys
+
+        if self.source_definition_model.categories:
+            kwargs["id__in"] = self.source_definition_model.categories
         if self.source_definition_model.tags:
             kwargs["tags__value__in"] = self.source_definition_model.tags
         if self.source_definition_model.ontotology_terms:
@@ -594,8 +611,10 @@ class EdgeCategory(Category):
     def get_matching_target_entities(self) -> QuerySet["EntityCategory"]:
         """Get all entities in the graph that match the target definition of this edge category."""
         kwargs = {}
-        if self.target_definition_model.category:
-            kwargs["id__in"] = self.target_definition_model.category
+        if self.target_definition_model.keys:
+            kwargs["key__in"] = self.target_definition_model.keys
+        if self.target_definition_model.categories:
+            kwargs["id__in"] = self.target_definition_model.categories
         if self.target_definition_model.tags:
             kwargs["tags__value__in"] = self.target_definition_model.tags
         if self.target_definition_model.ontotology_terms:
@@ -612,6 +631,11 @@ class EdgeCategory(Category):
     @property
     def property_map(self):
         return {prodf.key: prodf for prodf in self.defined_properties}
+
+    @classmethod
+    def key_to_age_name(cls, key: str) -> str:
+        """Convert an entity key to a valid AGE name by replacing invalid characters."""
+        return "".join(e for e in key if e.isalnum()).upper()
 
 
 class StructureCategory(NodeCategory):
@@ -922,17 +946,17 @@ class MetricCategory(NodeCategory):
     )
 
     def validate_input(self, value):
-        if self.metric_kind == enums.MeasurementKindChoices.INT:
+        if self.metric_kind == enums.MetricKind.INT:
             try:
                 return int(value)
             except ValueError:
                 raise ValueError(f"Value {value} is not an integer")
-        elif self.metric_kind == enums.MeasurementKindChoices.FLOAT:
+        elif self.metric_kind == enums.MetricKind.FLOAT:
             try:
                 return float(value)
             except ValueError:
                 raise ValueError(f"Value {value} is not a float")
-        elif self.metric_kind == enums.MeasurementKindChoices.BOOLEAN:
+        elif self.metric_kind == enums.MetricKind.BOOLEAN:
             if value not in [True, False, "true", "false", "True", "False", 1, 0, "1", "0"]:
                 raise ValueError(f"Value {value} is not a boolean")
             return value in [True, "true", "True", 1, "1"]

@@ -8,16 +8,17 @@ from kante.context import HttpContext
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_entity_category_search(test_graph: Graph, authenticated_context: HttpContext) -> None:
-
     await core_models.EntityCategory.objects.acreate(
         graph=test_graph,
         age_name="Neuron",
+        key="Neuron",
         label="Neuron",
         instance_kind="neuron",
     )
     await core_models.EntityCategory.objects.acreate(
         graph=test_graph,
         age_name="Astrocyte",
+        key="Astrocyte",
         label="Astrocyte",
         instance_kind="astrocyte",
     )

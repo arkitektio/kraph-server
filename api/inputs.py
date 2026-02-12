@@ -394,7 +394,7 @@ class LinkStructureInput:
 # ==========================================
 
 
-@pydantic.input(model=input_models.DerivationRuleInput)
+@pydantic.input(model=input_models.DerivationRuleInput, all_fields=True, description="Configuration for property derivation rules")
 class DerivationRuleInput:
     """Configuration for property derivation rules."""
 
@@ -403,30 +403,17 @@ class DerivationRuleInput:
     aggregation: strawberry.auto
 
 
-@pydantic.input(model=input_models.PropertyDefinitionInput)
+@pydantic.input(model=input_models.PropertyDefinitionInput, all_fields=True, description="Definition of a property on an entity, structure, or relation")
 class PropertyDefinitionInput:
     """Definition of a property on an entity, structure, or relation."""
 
-    key: strawberry.auto
-    type: strawberry.auto
-    unit: strawberry.auto
-    ontology_references: Optional[List[OntologyReferenceInput]] = strawberry.field(default_factory=list)
-    description: strawberry.auto
-    derivation: strawberry.auto
-    rule: Optional[DerivationRuleInput] = None
 
-
-@pydantic.input(model=input_models.EntityDefinitionInput)
+@pydantic.input(model=input_models.EntityDefinitionInput, all_fields=True, description="Definition of an entity type in the graph schema")
 class EntityDefinitionInput:
     """Definition of an entity type in the graph schema."""
 
-    key: strawberry.auto
-    description: strawberry.auto
-    ontology_references: Optional[List[OntologyReferenceInput]] = strawberry.field(default_factory=list)
-    properties: Optional[List[PropertyDefinitionInput]] = strawberry.field(default_factory=list)
 
-
-@pydantic.input(model=input_models.EvidenceRequirementInput)
+@pydantic.input(model=input_models.EvidenceRequirementInput, all_fields=True, description="Definition of an evidence requirement for relation materialization")
 class EvidenceRequirementInput:
     """Evidence requirement for relation materialization."""
 
@@ -435,7 +422,7 @@ class EvidenceRequirementInput:
     description: strawberry.auto
 
 
-@pydantic.input(model=input_models.MaterializationConfigInput)
+@pydantic.input(model=input_models.MaterializationConfigInput, all_fields=True, description="Configuration for relation materialization from evidence")
 class MaterializationConfigInput:
     """Configuration for relation materialization from evidence."""
 
@@ -453,29 +440,14 @@ class CardinalityEnum(str, Enum):
     MANY_TO_MANY = "N:N"
 
 
-@pydantic.input(model=input_models.RelationDefinitionInput)
+@pydantic.input(model=input_models.RelationDefinitionInput, all_fields=True, description="Definition of a relation type in the graph schema")
 class RelationDefinitionInput:
     """Definition of a relation type in the graph schema."""
 
-    key: strawberry.auto
-    ontology_references: Optional[List[OntologyReferenceInput]] = strawberry.field(default_factory=list)
-    source: List[str] = strawberry.field(description="Source entity type(s)")
-    target: List[str] = strawberry.field(description="Target entity type(s)")
-    cardinality: CardinalityEnum = strawberry.field(default=CardinalityEnum.ONE_TO_MANY, description="Relation cardinality")
-    materialization: Optional[MaterializationConfigInput] = None
 
-
-@pydantic.input(model=input_models.EventDefinitionInput)
+@pydantic.input(model=input_models.EventDefinitionInput, all_fields=True, description="Definition of an event type in the graph schema")
 class EventDefinitionInput:
     """Definition of an event type in the graph schema."""
-
-    key: strawberry.auto
-    description: strawberry.auto
-    inputs: Optional[List[EventRoleInput]] = strawberry.field(default_factory=list)
-    outputs: Optional[List[EventRoleInput]] = strawberry.field(default_factory=list)
-    properties: Optional[List[PropertyDefinitionInput]] = strawberry.field(default_factory=list)
-    ontology_references: Optional[List[OntologyReferenceInput]] = strawberry.field(default_factory=list)
-    tags: Optional[List[str]] = strawberry.field(default_factory=list)
 
 
 @pydantic.input(model=input_models.PrefixInput)
@@ -486,73 +458,9 @@ class PrefixInput:
     uri: strawberry.auto
 
 
-@pydantic.input(model=input_models.GraphExtensionsInput)
-class GraphExtensionsInput:
-    """
-    The graph extensions containing all type definitions.
-
-    Note: Structures are no longer defined in the schema. They are
-    dynamically resolved via get_label_for_identifier() from the
-    IDENTIFIER_MAP in graph_engine.base_models.
-    """
-
-    prefixes: Optional[List[PrefixInput]] = strawberry.field(default_factory=list)
-    entities: Optional[List[EntityDefinitionInput]] = strawberry.field(default_factory=list)
-    relations: Optional[List[RelationDefinitionInput]] = strawberry.field(default_factory=list)
-    events: Optional[List[EventDefinitionInput]] = strawberry.field(default_factory=list)
-
-
-@pydantic.input(model=input_models.GraphDefinitionInput)
-class GraphDefinitionInput:
-    """Complete graph schema definition with semantic versioning."""
-
-    system_version: strawberry.auto
-    extensions: GraphExtensionsInput
-
-
 # ==========================================
 # SCHEMA MANAGEMENT INPUT TYPES
 # ==========================================
-
-
-@strawberry.input(description="Input for validating a schema definition")
-class ValidateSchemaInput:
-    """
-    Input for validating a graph schema before creating a graph
-    from it.
-
-    The definition should be a GraphDefinitionModel-compatible JSON object with:
-    - system_version: Semantic version string (e.g., '1.0.0')
-    - extensions: Object containing structures, entities, relations, events
-    """
-
-    definition: GraphDefinitionInput = strawberry.field(description="The graph schema definition as JSON")
-
-
-@strawberry.input(description="Input for setting a new schema on a graph")
-class SetSchemaInput:
-    """
-    Input for setting a new schema version on a graph.
-
-    The version must be a valid semantic version (MAJOR.MINOR.PATCH format,
-    e.g., '1.0.0', '2.1.3-beta.1').
-
-    The definition is a fully typed GraphDefinition with structures, entities,
-    relations, and events.
-    """
-
-    graph_id: int = strawberry.field(description="ID of the graph to set the schema on")
-    version: str = strawberry.field(description="Semantic version (e.g., '1.0.0'). Must follow semver format.")
-    definition: GraphDefinitionInput = strawberry.field(description="The graph schema definition")
-    description: Optional[str] = strawberry.field(default=None, description="Description of changes in this version")
-    activate: Optional[bool] = strawberry.field(default=True, description="Whether to immediately activate this schema")
-
-
-@strawberry.input(description="Input for activating an existing schema")
-class ActivateSchemaInput:
-    """Input for activating an existing schema version."""
-
-    schema_id: int = strawberry.field(description="Database ID of the schema to activate")
 
 
 # ==========================================
@@ -605,3 +513,37 @@ class PaginationInput:
 
     offset: Optional[int] = strawberry.field(default=0, description="Number of items to skip")
     limit: Optional[int] = strawberry.field(default=100, description="Maximum number of items to return")
+
+
+@pydantic.input(model=input_models.SequenceInput, all_fields=True, description="Input for creating a new graph from a schema definition")
+class SequenceInput:
+    pass
+
+
+@pydantic.input(model=input_models.GraphExtensionsInput, all_fields=True, description="Input for creating a new graph from a schema definition")
+class GraphExtensionsInput:
+    pass
+
+
+@pydantic.input(model=input_models.GraphDefinitionInput, all_fields=True, description="Input for creating a new graph from a schema definition")
+class GraphDefinitionInput:
+    pass
+
+
+@pydantic.input(model=input_models.CreateGraphFromSchema, all_fields=True, description="Input for creating a new graph from a schema definition")
+class CreateGraphFromSchemaInput:
+    pass
+
+
+@strawberry.input(description="Input for validating a schema definition")
+class ValidateSchemaInput:
+    """
+    Input for validating a graph schema before creating a graph
+    from it.
+
+    The definition should be a GraphDefinitionModel-compatible JSON object with:
+    - system_version: Semantic version string (e.g., '1.0.0')
+    - extensions: Object containing structures, entities, relations, events
+    """
+
+    definition: GraphDefinitionInput = strawberry.field(description="The graph schema definition as JSON")

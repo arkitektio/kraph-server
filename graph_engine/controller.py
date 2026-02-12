@@ -2,10 +2,8 @@ import json
 import time
 from typing import Optional, Dict, Any, List
 from graph_engine import input_models
-from graph_engine.base_models import (
-    GraphDefinitionModel,
-    get_label_for_identifier,
-    get_identifier_for_label,
+from graph_engine.input_models import (
+    GraphDefinitionInput,
 )
 from graph_engine.input_models import (
     MetricInput,
@@ -1061,7 +1059,6 @@ class GraphController:
         structure_object: str,
         entity_id: str,
         recalculate: bool = True,
-        schema: Optional[GraphDefinitionModel] = None,
     ) -> RetrievedEntity:
         """
         Link an existing structure to an existing entity.

@@ -9,6 +9,7 @@ from .entity import create_entity, recalculate_entity
 from .structure import create_structure, link_structure_to_entity
 from .metric import create_metric, delete_metric, archive_metric
 from .relation import create_relation
+from .schema import create_graph_from_schema, import_graph
 
 __all__ = [
     "Mutation",

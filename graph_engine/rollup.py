@@ -8,11 +8,11 @@ derived properties from measurements on connected structures.
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 
-from graph_engine.base_models import (
+from graph_engine.input_models import (
     AggregationFunction,
     DerivationType,
-    PropertyDefinition,
-    DerivationRule,
+    PropertyDefinitionInput,
+    DerivationRuleInput,
 )
 from graph_engine import vocab
 
@@ -37,7 +37,7 @@ class RollupQuery:
 
 def build_rollup_aggregation_query(
     entity_label: str,
-    rule: DerivationRule,
+    rule: DerivationRuleInput,
 ) -> RollupQuery:
     """
     Build a Cypher query for standard aggregation functions (MEAN, SUM, MIN, MAX, COUNT).
@@ -74,7 +74,7 @@ def build_rollup_aggregation_query(
 
 def build_rollup_latest_query(
     entity_label: str,
-    rule: DerivationRule,
+    rule: DerivationRuleInput,
 ) -> RollupQuery:
     """
     Build a Cypher query for LATEST aggregation (most recent by timestamp).
@@ -104,7 +104,7 @@ def build_rollup_latest_query(
 
 def build_rollup_range_query(
     entity_label: str,
-    rule: DerivationRule,
+    rule: DerivationRuleInput,
 ) -> RollupQuery:
     """
     Build a Cypher query for RANGE aggregation (max - min).
@@ -132,7 +132,7 @@ def build_rollup_range_query(
 
 def build_rollup_euclidean_range_query(
     entity_label: str,
-    rule: DerivationRule,
+    rule: DerivationRuleInput,
 ) -> RollupQuery:
     """
     Build a Cypher query for EUCLIDEAN_RANGE aggregation.
@@ -203,7 +203,7 @@ def build_derivation_latest_query(
 
 def build_rollup_query(
     entity_label: str,
-    rule: DerivationRule,
+    rule: DerivationRuleInput,
 ) -> RollupQuery:
     """
     Build the appropriate rollup query based on the aggregation function.
@@ -238,7 +238,7 @@ def build_rollup_query(
 def build_property_query(
     entity_label: str,
     prop_name: str,
-    prop_def: PropertyDefinition,
+    prop_def: PropertyDefinitionInput,
 ) -> Optional[RollupQuery]:
     """
     Build the appropriate query for a property based on its derivation type.

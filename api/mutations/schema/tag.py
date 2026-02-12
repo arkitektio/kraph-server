@@ -4,7 +4,7 @@ from core import models
 import datetime
 
 
-def create_tag(input: TagInput, info: Info) -> types.Tag:
+def create_tag(input: TagInput, info: Info) -> types.:
     tag = models.CategoryTag(
         value=input.value,
         graph_id=input.graph,

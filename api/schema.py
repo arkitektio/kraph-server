@@ -10,7 +10,6 @@ from strawberry.extensions import QueryDepthLimiter
 from typing import Optional
 from authentikate.strawberry.extension import AuthentikateExtension
 
-from .mutations import Mutation
 from .subscriptions import Subscription
 from .extensions.cypher import CypherEngineExtension
 import kante
@@ -25,7 +24,7 @@ from kante.types import Info
 
 from api.types import Entity, Structure, Metric, Assertion
 from api.scalars import StructureIdentifier
-from api import queries, types, scalars
+from api import queries, types, scalars, mutations
 
 
 @strawberry.type(description="Graph Engine Queries")
@@ -102,6 +101,14 @@ class Query:
     ) -> List[Metric]:
         """Fetch all measurements that were asserted by a given assertion."""
         return queries.metrics_for_structure(info, assertion_id)
+
+
+@strawberry.type(description="Graph Engine Mutations")
+class Mutation:
+    create_graph_from_schema = kante.django_mutation(
+        description="Create a new graph based on a provided graph schema definition",
+        resolver=mutations.create_graph_from_schema,
+    )
 
 
 def create_schema(

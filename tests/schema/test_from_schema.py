@@ -1,0 +1,53 @@
+import pytest
+from api.schema import schema
+from kante.context import HttpContext
+
+from graph_engine.input_models import GraphDefinitionInput
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_create_graph_from_schema(db, bio_graph_schema: GraphDefinitionInput, authenticated_context: HttpContext) -> None:
+    query = """
+        mutation CreateGraphFromSchema($input: CreateGraphFromSchemaInput!) {
+            createGraphFromSchema(input: $input) {
+                id
+                name
+            }
+        }
+    """
+
+    variables = {
+        "input": {
+            "name": "Test Model",
+            "description": "A test graph schema for validating graph creation from schema functionality.",
+            "definition": {
+                "systemVersion": "1.0.1",
+                "extensions": {
+                    "entities": [
+                        {
+                            "key": "TestEntity",
+                            "label": "Test Entity",
+                            "description": "Entity used for schema creation tests",
+                            "properties": [
+                                {
+                                    "key": "name",
+                                    "type": "string",
+                                }
+                            ],
+                        }
+                    ]
+                },
+            },
+        }
+    }
+
+    sub = await schema.execute(
+        query,
+        variable_values=variables,
+        context_value=authenticated_context,
+    )
+
+    assert sub.data, sub.errors
+
+    assert sub.data["createGraphFromSchema"]["name"] == "Test Model"

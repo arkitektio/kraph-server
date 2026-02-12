@@ -5,7 +5,98 @@ from typing import List, Dict, Optional, Any, Literal
 from datetime import datetime, timezone
 import re
 
-from graph_engine.base_models import AGGREGATION_RESULT_TYPES, AggregationFunction, DerivationType
+from datalayer.scalars import MediaStore, MediaStoreLike
+
+# --- Enums for Strict Typing ---
+
+
+class DerivationType(str, Enum):
+    # Standard: User/Tool sets it directly
+    LATEST = "LATEST"
+    PRIORITY_LATEST = "PRIORITY_LATEST"
+
+    # Computed: Calculated from children/neighbors
+    ROLLUP = "ROLLUP"
+    LATEST_ASSERTION_TOOL = "LATEST_ASSERTION_TOOL"
+
+
+class AggregationFunction(str, Enum):
+    MEAN = "MEAN"
+    SUM = "SUM"
+    MAX = "MAX"
+    MIN = "MIN"
+    COUNT = "COUNT"
+    RANGE = "RANGE"  # Max - Min (Temporal)
+    EUCLIDEAN_RANGE = "EUCLIDEAN_RANGE"  # Distance between First & Last
+    LATEST = "LATEST"  # Grab the most recent child value
+
+
+class PropertyType(str, Enum):
+    STRING = "string"
+    FLOAT = "float"
+    INTEGER = "integer"
+    BOOLEAN = "boolean"
+    DATETIME = "datetime"
+    POINT_3D = "point_3d"
+
+
+# --- Type compatibility mappings for aggregations ---
+
+# Aggregations that require numeric source types
+NUMERIC_AGGREGATIONS = {
+    AggregationFunction.MEAN,
+    AggregationFunction.SUM,
+    AggregationFunction.MIN,
+    AggregationFunction.MAX,
+}
+
+# Aggregations that work with any type
+ANY_TYPE_AGGREGATIONS = {
+    AggregationFunction.COUNT,
+    AggregationFunction.LATEST,
+}
+
+# Property types considered numeric
+NUMERIC_TYPES = {
+    PropertyType.FLOAT,
+    PropertyType.INTEGER,
+}
+
+# Map aggregation -> required source types (None means any type allowed)
+AGGREGATION_SOURCE_TYPES: Dict[AggregationFunction, Optional[set]] = {
+    AggregationFunction.MEAN: NUMERIC_TYPES,
+    AggregationFunction.SUM: NUMERIC_TYPES,
+    AggregationFunction.MIN: NUMERIC_TYPES | {PropertyType.DATETIME},
+    AggregationFunction.MAX: NUMERIC_TYPES | {PropertyType.DATETIME},
+    AggregationFunction.COUNT: None,  # Any type
+    AggregationFunction.LATEST: None,  # Any type
+    AggregationFunction.RANGE: NUMERIC_TYPES | {PropertyType.DATETIME},
+    AggregationFunction.EUCLIDEAN_RANGE: {PropertyType.POINT_3D},
+}
+
+# Map aggregation -> result type (None means same as source)
+AGGREGATION_RESULT_TYPES: Dict[AggregationFunction, Optional[PropertyType]] = {
+    AggregationFunction.MEAN: PropertyType.FLOAT,  # Mean always produces float
+    AggregationFunction.SUM: None,  # Same as source (int->int, float->float)
+    AggregationFunction.MIN: None,  # Same as source
+    AggregationFunction.MAX: None,  # Same as source
+    AggregationFunction.COUNT: PropertyType.INTEGER,  # Count produces integer
+    AggregationFunction.LATEST: None,  # Same as source
+    AggregationFunction.RANGE: PropertyType.FLOAT,  # Range produces float (for datetime too)
+    AggregationFunction.EUCLIDEAN_RANGE: PropertyType.FLOAT,  # Distance is float
+}
+
+# --- 1. Property & Derivation Rules ---
+
+
+class DerivationRule(BaseModel):
+    """
+    Configuration for how to calculate a value if derivation != LATEST.
+    """
+
+    source_node: Optional[str] = Field(..., description="The label of the the describing structure to read from.")
+    key: Optional[str] = Field(..., description="The property key on the source node.")
+    aggregation: Optional[AggregationFunction] = None
 
 
 # =======================
@@ -260,9 +351,9 @@ class OntologyReferenceInput(BaseModel):
 class DerivationRuleInput(BaseModel):
     """Input for a derivation rule configuration."""
 
-    source_node: Optional[str] = Field(None, description="The label of the describing structure to read from")
-    key: Optional[str] = Field(None, description="The property key on the source node")
-    aggregation: Optional[AggregationFunction] = Field(None, description="Aggregation function (MEAN, SUM, MAX, MIN, COUNT, etc.)")
+    source_node: Optional[str] = Field(default=None, description="The label of the describing structure to read from")
+    key: Optional[str] = Field(default=None, description="The property key on the source node")
+    aggregation: Optional[AggregationFunction] = Field(default=None, description="Aggregation function (MEAN, SUM, MAX, MIN, COUNT, etc.)")
 
 
 class PropertyDefinitionInput(BaseModel):
@@ -270,12 +361,12 @@ class PropertyDefinitionInput(BaseModel):
 
     key: str = Field(..., description="Property key/name")
     type: str = Field(..., description="Property type: string, float, integer, boolean, datetime, point_3d")
-    unit: Optional[str] = Field(None, description="Unit of measurement")
-    description: Optional[str] = Field(None, description="Description of this property")
-    derivation: DerivationType = Field(DerivationType.LATEST, description="Derivation type: LATEST, PRIORITY_LATEST, ROLLUP, LATEST_ASSERTION_TOOL")
-    rule: Optional[DerivationRuleInput] = Field(None, description="Rule configuration for ROLLUP derivation")
-    index: bool = Field(False, description="Whether to create an index on this property for faster queries")
-    searchable: bool = Field(False, description="Whether this property should be full-text searchable")
+    unit: Optional[str] = Field(default=None, description="Unit of measurement")
+    description: Optional[str] = Field(default=None, description="Description of this property")
+    derivation: DerivationType = Field(default=DerivationType.LATEST, description="Derivation type: LATEST, PRIORITY_LATEST, ROLLUP, LATEST_ASSERTION_TOOL")
+    rule: Optional[DerivationRuleInput] = Field(default=None, description="Rule configuration for ROLLUP derivation")
+    index: bool = Field(default=False, description="Whether to create an index on this property for faster queries")
+    searchable: bool = Field(default=False, description="Whether this property should be full-text searchable")
 
     @field_validator("type")
     @classmethod
@@ -335,13 +426,13 @@ class NodeDefinitionInput(BaseModel):
 
     sequences: List[SequenceMappingInput] = Field(default_factory=list, description="Sequence mappings for this node")
     key: str = Field(..., description="The label of the node participating in the event")
-    description: Optional[str] = Field(None, description="Description of this node role")
+    description: Optional[str] = Field(default=None, description="Description of this node role")
     ontology_references: List[OntologyReferenceInput] = Field(default_factory=list, description="Ontology references for this event")
     tags: List[str] = Field(default_factory=list, description="Optional tags for this node role (e.g. 'cell_body', 'dendrite', 'axon')")
-    color: Optional[List[int]] = Field(None, description="Optional RGBA color for this node role (e.g. [255, 0, 0, 128])")
-    image: Optional[str] = Field(None, description="Optional media store ID for an image representing this node role")
-    label: Optional[str] = Field(None, description="Optional human-readable label for this node role (defaults to 'key' if not provided)")
-    pin: Optional[bool] = Field(None, description="Whether to pin this node role in the UI")
+    color: Optional[List[int]] = Field(default=None, description="Optional RGBA color for this node role (e.g. [255, 0, 0, 128])")
+    image: Optional[MediaStoreLike] = Field(default=None, description="Optional media store ID for an image representing this node role")
+    label: Optional[str] = Field(default=None, description="Optional human-readable label for this node role (defaults to 'key' if not provided)")
+    pin: Optional[bool] = Field(default=None, description="Whether to pin this node role in the UI")
 
 
 class EntityDefinitionInput(NodeDefinitionInput):
@@ -392,19 +483,23 @@ class EntityCategoryProtocol(Protocol):
 
     id: str
     tags: List[str]
+    key: str
     ontology_references: List[OntologyReferenceInput]
 
 
 class EntityDescriptorInput(BaseModel):
     """Input for filtering entities when linking to a structure."""
 
-    category: Optional[List[str]] = Field(None, description="Filter by entity category/label")
-    tags: Optional[List[str]] = Field(None, description="Filter by tags on the entity")
-    ontotology_terms: Optional[List[str]] = Field(None, description="Filter by ontology references on the entity (format: 'PREFIX:TERM_ID')")
+    keys: Optional[List[str]] = Field(default=None, description="Filter by entity key/label")
+    categories: Optional[List[str]] = Field(default=None, description="Filter by entity category/label")
+    tags: Optional[List[str]] = Field(default=None, description="Filter by tags on the entity")
+    ontotology_terms: Optional[List[str]] = Field(default=None, description="Filter by ontology references on the entity (format: 'PREFIX:TERM_ID')")
 
     def matches(self, entity: EntityCategoryProtocol) -> bool:
         """Check if a given entity matches this descriptor."""
-        if self.category and entity.id not in self.category:
+        if self.keys and entity.key not in self.keys:
+            return False
+        if self.categories and entity.id not in self.categories:
             return False
         if self.tags and not set(self.tags).issubset(set(entity.tags)):
             return False
@@ -492,23 +587,21 @@ class MaterializationConfigInput(BaseModel):
     properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Derived property definitions")
 
 
+class CardinalityEnum(str, Enum):
+    ONE_TO_ONE = "1:1"
+    ONE_TO_MANY = "1:N"
+    MANY_TO_ONE = "N:1"
+
+
 class RelationDefinitionInput(BaseModel):
     """Input for a relation definition."""
 
     ontology_references: List[OntologyReferenceInput] = Field(default_factory=list, description="Ontology references for this event")
     key: str = Field(..., description="Relation type name/key")
-    source: List[EntityDescriptorInput] = Field(..., description="Source entity type(s)")
-    target: List[EntityDescriptorInput] = Field(..., description="Target entity type(s)")
-    cardinality: Literal["1:1", "1:N", "N:N"] = Field("1:N", description="Relation cardinality")
+    source: EntityDescriptorInput = Field(..., description="Source entity type(s)")
+    target: EntityDescriptorInput = Field(..., description="Target entity type(s)")
+    cardinality: CardinalityEnum = Field(default=CardinalityEnum.ONE_TO_ONE, description="Relation cardinality")
     properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Derived property definitions")
-
-    @field_validator("source", "target", mode="before")
-    @classmethod
-    def coerce_to_list(cls, v):
-        """Accept either a single string or list of strings, always return list."""
-        if isinstance(v, str):
-            return [v]
-        return v
 
 
 class CreateRelationDefinitionInput(EntityDefinitionInput):
@@ -739,28 +832,6 @@ class GraphExtensionsInput(BaseModel):
     relations: List[RelationDefinitionInput] = Field(default_factory=list, description="Relation definitions")
     events: List[EventDefinitionInput] = Field(default_factory=list, description="Event definitions")
 
-    @model_validator(mode="after")
-    def validate_relation_references(self):
-        """Validate that relations reference existing entity types or structure labels."""
-        from graph_engine.base_models import IDENTIFIER_MAP
-
-        # Structure labels from IDENTIFIER_MAP are valid
-        structure_labels = set(IDENTIFIER_MAP.values())
-        all_nodes = structure_labels | {e.key for e in self.entities}
-
-        for rel in self.relations:
-            sources = [rel.source] if isinstance(rel.source, str) else rel.source
-            targets = [rel.target] if isinstance(rel.target, str) else rel.target
-
-            for s in sources:
-                if s not in all_nodes:
-                    raise ValueError(f"Relation '{rel.key}' source '{s}' is not a defined structure or entity")
-            for t in targets:
-                if t not in all_nodes:
-                    raise ValueError(f"Relation '{rel.key}' target '{t}' is not a defined structure or entity")
-
-        return self
-
 
 class GraphDefinitionInput(BaseModel):
     """
@@ -808,3 +879,11 @@ class SetSchemaResult(BaseModel):
     version: str = Field(..., description="Version string of the schema")
     index: int = Field(..., description="Sequential index of this schema")
     is_active: bool = Field(..., description="Whether this schema is now active")
+
+
+class CreateGraphFromSchema(BaseModel):
+    """Input for creating a new graph from a schema definition."""
+
+    name: str = Field(..., description="Name of the graph")
+    description: Optional[str] = Field(None, description="Description of the graph")
+    definition: GraphDefinitionInput = Field(..., description="The complete graph schema definition")

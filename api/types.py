@@ -16,7 +16,7 @@ from datetime import datetime
 from api import loaders, order
 from .scalars import AnyScalar, UnixMilliseconds, StructureIdentifier, GlobalID
 from graph_engine.retrieved import RetrievedMetric, RetrievedNode, RetrievedEdge, RetrievedVariable
-from graph_engine import base_models
+from graph_engine import input_models
 import kante
 from core import models
 from graph_engine import retrieved
@@ -28,7 +28,7 @@ from api import filters
 # ===========================================
 
 
-@kante.pydantic_type(base_models.PropertyDefinition, description="A property definition from the graph schema")
+@kante.pydantic_type(input_models.PropertyDefinitionInput, description="A property definition from the graph schema")
 class PropertyDefinition:
     """A property definition from the graph schema."""
 

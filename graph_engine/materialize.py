@@ -11,7 +11,7 @@ import json
 from typing import Optional
 from pydantic import BaseModel, Field
 
-from .base_models import GraphDefinitionModel
+from .input_models import GraphDefinitionInput
 from .engine.protocol import CypherEngine
 from core import models
 from itertools import product
@@ -19,20 +19,12 @@ from django.db.models import Q
 from authentikate.models import Organization, Membership, User
 
 
-class MaterializeInput(BaseModel):
-    """Input for materializing a graph."""
-
-    name: str = Field(..., description="Name of the graph")
-    description: Optional[str] = Field(None, description="Description of the graph")
-    definition: GraphDefinitionModel = Field(..., description="The graph schema definition")
-
-
-def compute_definition_hash(definition: GraphDefinitionModel) -> str:
+def compute_definition_hash(definition: GraphDefinitionInput) -> str:
     """
     Compute a stable hash of the graph definition for versioning.
 
     Args:
-        definition: The GraphDefinitionModel to hash
+        definition: The GraphDefinitionInput to hash
 
     Returns:
         SHA256 hash string
@@ -95,14 +87,14 @@ def re_materialize_from_entity_category(graph: models.Graph, entity_category: mo
     # Get all relation categories where this entity category might be a source or target
     as_potential_input_relations = models.RelationCategory.objects.filter(
         graph=graph,
-    ).filter(Q(source_definition__category___contains=[entity_category.pk]) | Q(target_definition__tags___contains=[entity_category.tags]))
+    ).filter(Q(source_definition__categories___contains=[entity_category.pk]) | Q(target_definition__categories___contains=[entity_category.pk]))
 
     for relation_category in as_potential_input_relations:
         re_materialize_relation_category(graph, relation_category)
 
 
 def materialize(
-    definition: GraphDefinitionModel,
+    definition: GraphDefinitionInput,
     engine: CypherEngine,
     user: User,
     organization: Organization,
@@ -167,7 +159,8 @@ def materialize(
 
         models.EntityCategory.objects.create(
             graph=graph,
-            age_name=entity_def.key,
+            age_name=models.EntityCategory.key_to_age_name(entity_def.key),
+            key=entity_def.key,
             label=entity_def.key,
             description=entity_def.description or "",
             property_definitions=property_defs,
@@ -176,25 +169,21 @@ def materialize(
 
     # Create RelationCategories
     for relation_def in definition.extensions.relations:
-        # Handle source/target that can be string or list
-        source = relation_def.source if isinstance(relation_def.source, list) else [relation_def.source]
-        target = relation_def.target if isinstance(relation_def.target, list) else [relation_def.target]
-
-        source_def = {"types": source, "cardinality": relation_def.cardinality}
-        target_def = {"types": target, "cardinality": relation_def.cardinality}
+        source_def = relation_def.source.model_dump(mode="json")
+        target_def = relation_def.target.model_dump(mode="json")
 
         # Get properties from materialization config if present
         property_defs = []
-        if relation_def.materialization:
-            property_defs = [p.model_dump(mode="json") for p in relation_def.materialization.properties]
 
         models.RelationCategory.objects.create(
             graph=graph,
-            age_name=relation_def.key,
+            age_name=models.RelationCategory.key_to_age_name(relation_def.key),
+            key=relation_def.key,
             label=relation_def.key,
             description=getattr(relation_def, "description", None) or "",
             source_definition=source_def,
             target_definition=target_def,
+            property_definitions=[p.model_dump(mode="json") for p in relation_def.properties],
         )
 
     # Create NaturalEventCategories

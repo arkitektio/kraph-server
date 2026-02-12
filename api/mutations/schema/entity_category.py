@@ -5,6 +5,7 @@ from kante.types import Info
 
 from api import inputs, types
 from core import models
+from 
 
 
 def create_entity_category(
@@ -20,11 +21,12 @@ def create_entity_category(
 
     media_store = None
     if model.image:
-        media_store = models.MediaStore.objects.get(id=model.image)
+        media_store = model.image.model()  # Fetch the MediaStore model instance from the database
 
     vocab, created = models.EntityCategory.objects.update_or_create(
         graph_id=model.graph,
         age_name=model.key,
+        key=model.key,
         defaults=dict(
             description=model.description,
             store=media_store,
