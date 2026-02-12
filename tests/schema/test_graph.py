@@ -1,13 +1,13 @@
 import pytest
-from core.models import Graph
 from api.schema import schema
+from core.models import Graph
 from kante.context import HttpContext
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_graph(db, authenticated_context: HttpContext) -> None:
-    graph = await Graph.objects.acreate(
+async def test_graph(db: object, authenticated_context: HttpContext) -> None:
+    graph: Graph = await Graph.objects.acreate(
         name="Test Model",
         description="This is a test model",
         user=authenticated_context.request.user,
@@ -15,7 +15,7 @@ async def test_graph(db, authenticated_context: HttpContext) -> None:
         membership=authenticated_context.request.membership,
     )
 
-    query = f"""
+    query: str = f"""
         query {{
             graph(id: {graph.pk}) {{
                 id

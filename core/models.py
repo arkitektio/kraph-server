@@ -2,6 +2,7 @@ import random
 from django.db import models
 from django.contrib.auth import get_user_model
 from core import enums
+from core import managers
 from koherent.fields import ProvenanceField
 from django_choices_field import TextChoicesField
 from datalayer import models as datalayer_models
@@ -382,6 +383,7 @@ class CategoryTag(models.Model):
 
 
 class Category(PolymorphicModel):
+    objects = managers.CategoryManager()
     graph = models.ForeignKey(
         "Graph",
         on_delete=models.CASCADE,
@@ -494,6 +496,7 @@ class Descriptor(models.Model):
 
 
 class NodeCategory(Category):
+    objects = managers.NodeCategoryManager()
     """A Node class is a class that describes a node in the graph which represent
     a bioentity (e.g. a cell, a tissue, etc.). Node classes are the most basic building
     block of the graph and represent physical objects that can be measured
@@ -549,6 +552,7 @@ class NodeCategory(Category):
 
 
 class EdgeCategory(Category):
+    objects = managers.EdgeCategoryManager()
     """An Edge class is a class that describes an edge in the graph which represents a relationship between two nodes."""
 
     source_definition = models.JSONField(
@@ -639,6 +643,7 @@ class EdgeCategory(Category):
 
 
 class StructureCategory(NodeCategory):
+    objects: managers.StructureCategoryManager = managers.StructureCategoryManager()
     """A Structure class is a class represents a datapoint in your graph and
     will relate metrics (like Intensity, Area, etc.) to it and then in turn
     relate temporally to a bioentity. It therefore is one element in the
@@ -670,6 +675,7 @@ class StructureCategory(NodeCategory):
 
 
 class NaturalEventCategory(NodeCategory):
+    objects: managers.NaturalEventCategoryManager = managers.NaturalEventCategoryManager()
     """A natural event class is a class that describes a natural event that happened
     to some bioenties (e.g. a cell division, a cell death, etc.). Natural events are
     used to describe the natural events that happen to a bioentity and are not
@@ -726,6 +732,7 @@ class NaturalEventCategory(NodeCategory):
 
 
 class ProtocolEventCategory(NodeCategory):
+    objects: managers.ProtocolEventCategoryManager = managers.ProtocolEventCategoryManager()
     """A protocol event class is a node that describes a protocol event that some
     entities were subjected to using, creating or altering them.
 
@@ -786,6 +793,7 @@ class ProtocolEventCategory(NodeCategory):
 
 
 class EntityCategory(NodeCategory):
+    objects: managers.EntityCategoryManager = managers.EntityCategoryManager()
     """An Entity class is a class that describes a node in the graph which represent
     a bioentity (e.g. a cell, a tissue, etc.). Entitys are the most basic building
     block of the graph and represent physical objects that can be measured
@@ -853,6 +861,7 @@ class EntityCategory(NodeCategory):
 
 
 class ReagentCategory(NodeCategory):
+    objects = managers.ReagentCategoryManager()
     """An Regation class is a class that describes a node in the graph which represent
     a reagent in the graph that does not have a biological meaning in this graph (e.g. a
     4% formaldehyde, a 10% DMSO, etc.).
@@ -914,6 +923,7 @@ class ReagentCategory(NodeCategory):
 
 
 class MetricCategory(NodeCategory):
+    objects: managers.MetricCategoryManager = managers.MetricCategoryManager()
     """A Metric class is an analticay statement that describes a structure.
 
     Metric classes are used to describe a kind of  metric that described a certain measurment
@@ -974,6 +984,7 @@ class MetricCategory(NodeCategory):
 
 
 class MeasurementCategory(EdgeCategory):
+    objects = managers.MeasurementCategoryManager()
     """A Measurement class is a class that describes an edge with a value"""
 
     def get_age_edge_name(self):
@@ -989,6 +1000,7 @@ class MeasurementCategory(EdgeCategory):
 class RelationCategory(EdgeCategory):
     """A Relation class is a class that describes a relation between two entities without a value"""
 
+    objects: managers.RelationCategoryManager = managers.RelationCategoryManager()
     reverse_description = models.CharField(
         max_length=1000,
         help_text="The description of category",

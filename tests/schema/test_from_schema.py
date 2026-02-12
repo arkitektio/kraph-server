@@ -1,14 +1,19 @@
+from typing import Any, Dict
+
 import pytest
 from api.schema import schema
-from kante.context import HttpContext
-
 from graph_engine.input_models import GraphDefinitionInput
+from kante.context import HttpContext
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_create_graph_from_schema(db, bio_graph_schema: GraphDefinitionInput, authenticated_context: HttpContext) -> None:
-    query = """
+async def test_create_graph_from_schema(
+    db: object,
+    bio_graph_schema: GraphDefinitionInput,
+    authenticated_context: HttpContext,
+) -> None:
+    query: str = """
         mutation CreateGraphFromSchema($input: CreateGraphFromSchemaInput!) {
             createGraphFromSchema(input: $input) {
                 id
@@ -17,7 +22,7 @@ async def test_create_graph_from_schema(db, bio_graph_schema: GraphDefinitionInp
         }
     """
 
-    variables = {
+    variables: Dict[str, Any] = {
         "input": {
             "name": "Test Model",
             "description": "A test graph schema for validating graph creation from schema functionality.",

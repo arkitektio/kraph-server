@@ -1,28 +1,36 @@
+from typing import Set
+
 import pytest
+from api.schema import schema
 from core import models as core_models
 from core.models import Graph
-from api.schema import schema
+from graph_engine import input_models
 from kante.context import HttpContext
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_relation_category_filter_by_label(test_graph: Graph, authenticated_context: HttpContext) -> None:
-
-    await core_models.RelationCategory.objects.acreate(
+    await core_models.RelationCategory.objects.acreate_from_relation_definition(
         graph=test_graph,
-        age_name="CONNECTED_TO_TEST",
-        label="CONNECTED_TO_TEST",
+        definition=input_models.RelationDefinitionInput(
+            key="CONNECTED_TO_TEST",
+            source=input_models.EntityDescriptorInput(),
+            target=input_models.EntityDescriptorInput(),
+        ),
         reverse_label="CONNECTED_FROM_TEST",
     )
-    await core_models.RelationCategory.objects.acreate(
+    await core_models.RelationCategory.objects.acreate_from_relation_definition(
         graph=test_graph,
-        age_name="PART_OF_TEST",
-        label="PART_OF_TEST",
+        definition=input_models.RelationDefinitionInput(
+            key="PART_OF_TEST",
+            source=input_models.EntityDescriptorInput(),
+            target=input_models.EntityDescriptorInput(),
+        ),
         reverse_label="HAS_PART_TEST",
     )
 
-    query = """
+    query: str = """
         query SearchRelationCategories($label: String!) {
             relationCategories(filters: {label: $label}) {
                 id
@@ -40,7 +48,7 @@ async def test_relation_category_filter_by_label(test_graph: Graph, authenticate
     assert result.errors is None, result.errors
     assert result.data, result.errors
 
-    labels = {item["label"] for item in result.data["relationCategories"]}
+    labels: Set[str] = {item["label"] for item in result.data["relationCategories"]}
 
     assert "CONNECTED_TO_TEST" in labels
     assert "PART_OF_TEST" not in labels

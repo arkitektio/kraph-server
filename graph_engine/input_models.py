@@ -421,7 +421,19 @@ class SequenceMappingInput(BaseModel):
     property: str = Field(..., description="The property key that will be set with the sequence value")
 
 
-class NodeDefinitionInput(BaseModel):
+class DefinitionInput(BaseModel):
+    sequences: List[SequenceMappingInput] = Field(default_factory=list, description="Sequence mappings for this node")
+    key: str = Field(..., description="The label of the node participating in the event")
+    description: Optional[str] = Field(default=None, description="Description of this node role")
+    ontology_references: List[OntologyReferenceInput] = Field(default_factory=list, description="Ontology references for this event")
+    tags: List[str] = Field(default_factory=list, description="Optional tags for this node role (e.g. 'cell_body', 'dendrite', 'axon')")
+    color: Optional[List[int]] = Field(default=None, description="Optional RGBA color for this node role (e.g. [255, 0, 0, 128])")
+    image: Optional[MediaStoreLike] = Field(default=None, description="Optional media store ID for an image representing this node role")
+    label: Optional[str] = Field(default=None, description="Optional human-readable label for this node role (defaults to 'key' if not provided)")
+    pin: Optional[bool] = Field(default=None, description="Whether to pin this node role in the UI")
+
+
+class NodeDefinitionInput(DefinitionInput):
     """Input for a node definition within an event."""
 
     sequences: List[SequenceMappingInput] = Field(default_factory=list, description="Sequence mappings for this node")
@@ -435,9 +447,27 @@ class NodeDefinitionInput(BaseModel):
     pin: Optional[bool] = Field(default=None, description="Whether to pin this node role in the UI")
 
 
+class StructureDefinitionInput(NodeDefinitionInput):
+    """Input for a structure definition within an event."""
+
+    identifier: str = Field(description="Optional schema identifier for this structure (e.g. '@mikro/roi')")
+
+    pass
+
+
+class MetricDefinitionInput(NodeDefinitionInput):
+    """Input for a structure definition within an event."""
+
+    value_kind: PropertyType = Field(description="Optional schema identifier for this structure (e.g. '@mikro/roi')")
+    structure: str = Field(description="The label of the describing structure to read from")
+
+    pass
+
+
 class EntityDefinitionInput(NodeDefinitionInput):
     """Input for an entity definition."""
 
+    instance_kind: Optional[str] = Field(default=None, description="Optional instance kind for this entity category (e.g. 'neuron', 'synapse', 'behavior'). This is used for further categorization and filtering of entities within the graph.")
     properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Property definitions")
 
     @field_validator("properties")
@@ -593,7 +623,7 @@ class CardinalityEnum(str, Enum):
     MANY_TO_ONE = "N:1"
 
 
-class RelationDefinitionInput(BaseModel):
+class EdgeDefinitionInput(DefinitionInput):
     """Input for a relation definition."""
 
     ontology_references: List[OntologyReferenceInput] = Field(default_factory=list, description="Ontology references for this event")
@@ -601,6 +631,11 @@ class RelationDefinitionInput(BaseModel):
     source: EntityDescriptorInput = Field(..., description="Source entity type(s)")
     target: EntityDescriptorInput = Field(..., description="Target entity type(s)")
     cardinality: CardinalityEnum = Field(default=CardinalityEnum.ONE_TO_ONE, description="Relation cardinality")
+
+
+class RelationDefinitionInput(EdgeDefinitionInput):
+    """Input for a relation definition."""
+
     properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Derived property definitions")
 
 
