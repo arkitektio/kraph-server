@@ -224,6 +224,10 @@ class VersionedNode(Node):
 
     _value: strawberry.Private[RetrievedNode]
 
+    @strawberry.field(description="External object ID this entity references")
+    def lifecycle(self) -> Optional[str]:
+        return self._value.lifecycle
+
     @strawberry.field(description="Schema version used to derive properties")
     def schema_version(self) -> str:
         return self._value.schema_version

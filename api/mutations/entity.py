@@ -95,6 +95,33 @@ def archive_entity(
     return input
 
 
+def update_entity(
+    info: Info,
+    input: inputs.UpdateEntityInput,
+) -> types.Entity:
+    """
+    Archive (soft delete) an entity by its composite ID.
+
+    Args:
+        info: Strawberry Info context
+        input: Composite ID of the entity to archive (e.g., "1-abc123-def456-...")
+
+    Returns:
+        The ID of the archived entity
+    """
+    controller = context.get_controller()
+
+    model = input.to_pydantic()  # Validate input with Pydantic models
+
+    graph_id = context.extract_graph_id(model.id)
+    local_id = context.extract_node_id(model.id)
+    graph = models.Graph.objects.get(id=graph_id)  # Validate graph exists
+
+    controller.update_entity(graph, entity_id=node_id)
+
+    return input
+
+
 def recalculate_entity(
     info: Info,
     input: inputs.RecalculateEntityInput,

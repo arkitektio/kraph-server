@@ -9,7 +9,7 @@ as core/age.py's RetrievedEntity and RetrievedRelation.
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Type, TypeVar
 from datetime import datetime
-from graph_engine import vocab
+from graph_engine import vocab, scalars
 
 # Reserved property keys that should not be exposed as user properties
 RESERVED_PROPERTY_KEYS = frozenset(
@@ -26,6 +26,7 @@ RESERVED_PROPERTY_KEYS = frozenset(
         "object",
         "schema_version",
         "last_derived",
+        "lyfecyle_status",
     }
 )
 
@@ -72,7 +73,8 @@ class RetrievedVariable:
     key: str
     value: Any
 
-    def __hash__(self):
+    def __hash__(self) -> int:
+        """A hash"""
         return hash(self.key)
 
 
@@ -103,24 +105,27 @@ class RetrievedNode:
     # === Core ID Properties ===
 
     @property
-    def unique_id(self) -> str:
-        """Global unique identifier: 'graph_name:id'"""
-        return f"{self.graph_name}:{self.id}"
+    def lifecycle_status(self) -> Optional[str]:
+        """Get the lifecycle status of the node, if present."""
+        return self.properties.get("lifecycle_status")
 
     @property
     def global_id(self) -> str:
         """Alias for unique_id."""
-        return self.unique_id
+        if not self.properties.get("global_id"):
+            raise ValueError("Node is missing 'global_id' property")
+
+        return scalars.GlobalID(self.properties["global_id"])
 
     @property
-    def local_id(self) -> int:
+    def local_id(self) -> scalars.LocalID:
         """Local AGE graph ID."""
-        return self.id
+        return scalars.LocalID(self.id)
 
     @property
-    def graph_id(self) -> int:
+    def graph_id(self) -> scalars.GraphID:
         """Alias for local_id - the AGE graph ID."""
-        return self.id
+        return scalars.GraphID(f"{self.graph_name}:{self.id}")
 
     # === Type Discrimination ===
 
@@ -207,33 +212,6 @@ class RetrievedNode:
     def object(self) -> Optional[str]:
         """External object ID the structure references."""
         return self.properties.get("object")
-
-    # === Assertion Properties (when node_type == 'ASSERTION') ===
-
-    @property
-    def subject(self) -> Optional[str]:
-        """User/subject who made the assertion."""
-        return self.properties.get("subject")
-
-    @property
-    def app_id(self) -> Optional[str]:
-        """Application that made the assertion."""
-        return self.properties.get("app_id")
-
-    @property
-    def action_id(self) -> Optional[str]:
-        """Action identifier."""
-        return self.properties.get("action_id")
-
-    @property
-    def action_name(self) -> Optional[str]:
-        """Human-readable action name."""
-        return self.properties.get("action_name")
-
-    @property
-    def action_args(self) -> Optional[Any]:
-        """Action arguments as JSON."""
-        return self.properties.get("action_args")
 
     # === Property Access Methods ===
 
@@ -535,7 +513,32 @@ class RetrievedMetric(RetrievedNode):
 class RetrievedAssertion(RetrievedNode):
     """A retrieved Assertion node from the AGE graph."""
 
-    pass
+    # === Assertion Properties (when node_type == 'ASSERTION') ===
+
+    @property
+    def subject(self) -> Optional[str]:
+        """User/subject who made the assertion."""
+        return self.properties.get("subject")
+
+    @property
+    def app_id(self) -> Optional[str]:
+        """Application that made the assertion."""
+        return self.properties.get("app_id")
+
+    @property
+    def action_id(self) -> Optional[str]:
+        """Action identifier."""
+        return self.properties.get("action_id")
+
+    @property
+    def action_name(self) -> Optional[str]:
+        """Human-readable action name."""
+        return self.properties.get("action_name")
+
+    @property
+    def action_args(self) -> Optional[Any]:
+        """Action arguments as JSON."""
+        return self.properties.get("action_args")
 
 
 # ==========================================

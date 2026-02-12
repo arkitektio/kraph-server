@@ -28,4 +28,4 @@ def test_validation_logic_works() -> None:
             key="TEST_REL",
             source="AIS",
             target="Soma",
-        )
+        )  # type: ignore

@@ -342,12 +342,20 @@ class ArchiveRelationInput:
     pass
 
 
+@pydantic.input(model=input_models.UpdateEntityInput, all_fields=True, description="Input for updating an existing entity")
+class UpdateEntityInput:
+    """Input for updating an existing entity. Note: this will not update the properties of the entity in-place, but rather
+    attach new measurements to the correspoding toldyouso evidence structure"""
+
+    pass
+
+
 @pydantic.input(model=input_models.CreateEntityInput, all_fields=True, description="Input for creating a new entity")
 class CreateEntityInput:
     pass
 
 
-@pydantic.input(model=input_models.CreateEntityInput, all_fields=True, description="Input for creating a new entity")
+@pydantic.input(model=input_models.UpdateEntityInput, all_fields=True, description="Input for creating a new entity")
 class EnsureEntityInput:
     pass
 

@@ -189,7 +189,7 @@ class EdgeCategoryManager(CategoryManager[T], Generic[T]):
         label = definition or definition.key
 
         defaults: dict[str, object] = {
-            "label": label,
+            "label": label or definition.key,
             "description": definition.description,
             "age_name": resolved_age_name,
             **(other_defaults or {}),

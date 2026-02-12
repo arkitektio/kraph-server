@@ -117,7 +117,7 @@ def bio_graph_schema() -> models.GraphDefinitionInput:
                     key="IS_CONNECTED_TO",
                     source=models.EntityDescriptorInput(keys=["Cell"]),
                     target=models.EntityDescriptorInput(keys=["Cell"]),
-                    cardinality="1:1",
+                    cardinality=models.Cardinality.ONE_TO_ONE,
                     properties=[models.PropertyDefinitionInput(key="distance", type=models.PropertyType.FLOAT, derivation=models.DerivationType.ROLLUP, rule=models.DerivationRuleInput(source_node="ROI", key="centroid", aggregation=models.AggregationFunction.EUCLIDEAN_RANGE))],
                 ),
                 models.RelationDefinitionInput(key="PART_OF", source=models.EntityDescriptorInput(keys=["AIS", "Soma"]), target=models.EntityDescriptorInput(keys=["Cell"])),

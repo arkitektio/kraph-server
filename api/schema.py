@@ -58,6 +58,18 @@ class Mutation:
         description="Create a new entity in the graph",
         resolver=mutations.create_entity,
     )
+    delete_entity = kante.django_mutation(
+        description="Delete an entity from the graph",
+        resolver=mutations.delete_entity,
+    )
+    archive_entity = kante.django_mutation(
+        description="Archive an entity in the graph (soft delete)",
+        resolver=mutations.archive_entity,
+    )
+    update_entity = kante.django_mutation(
+        description="Update an existing entity in the graph",
+        resolver=mutations.update_entity,
+    )
 
 
 @strawberry.type(description="Graph Engine Subscriptions")

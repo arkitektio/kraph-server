@@ -7,6 +7,7 @@ import re
 
 from datalayer.scalars import MediaStore, MediaStoreLike
 from graph_engine.scalars import GraphID
+from graph_engine import scalars
 
 # --- Enums for Strict Typing ---
 
@@ -551,6 +552,7 @@ class EventRoleInput(BaseModel):
 class EventDefinitionInput(NodeDefinitionInput):
     """Input for an event definition."""
 
+    kind: EventKind = Field(..., description="The kind of event")
     inputs: List[EventRoleInput] = Field(default_factory=list, description="Input node roles")
     outputs: List[EventRoleInput] = Field(default_factory=list, description="Output node roles")
     properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Property definitions")
@@ -618,7 +620,7 @@ class MaterializationConfigInput(BaseModel):
     properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Derived property definitions")
 
 
-class CardinalityEnum(str, Enum):
+class Cardinality(str, Enum):
     ONE_TO_ONE = "1:1"
     ONE_TO_MANY = "1:N"
     MANY_TO_ONE = "N:1"
@@ -631,7 +633,7 @@ class EdgeDefinitionInput(DefinitionInput):
     key: str = Field(..., description="Relation type name/key")
     source: EntityDescriptorInput = Field(..., description="Source entity type(s)")
     target: EntityDescriptorInput = Field(..., description="Target entity type(s)")
-    cardinality: CardinalityEnum = Field(default=CardinalityEnum.ONE_TO_ONE, description="Relation cardinality")
+    cardinality: Cardinality = Field(default=Cardinality.ONE_TO_ONE, description="Relation cardinality")
 
 
 class RelationDefinitionInput(EdgeDefinitionInput):
@@ -754,19 +756,19 @@ class EnsureEntityInput(EntityInput):
 class UpdateEntityInput(EntityInput):
     """Input for updating an existing entity instance. Note: this will not update the entity in-place, but rather create a new entity and archive the old one to preserve history."""
 
-    id: str = Field(..., description="The ID of the entity to update")
+    id: scalars.GraphID = Field(..., description="The ID of the entity to update")
 
 
 class ArchiveEntityInput(BaseModel):
     """Input for archiving (soft deleting) an existing entity instance."""
 
-    id: str = Field(..., description="The ID of the entity to archive")
+    id: scalars.GraphID = Field(..., description="The ID of the entity to archive")
 
 
 class DeleteEntityInput(BaseModel):
     """Input for deleting an existing entity instance."""
 
-    id: str = Field(..., description="The ID of the entity to delete")
+    id: scalars.GraphID = Field(..., description="The ID of the entity to delete")
 
 
 class StructureInput(BaseModel):
