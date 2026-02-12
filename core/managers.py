@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Generic, Iterable, Optional, TYPE_CHECKING, TypeVar
 
-from asgiref.sync import sync_to_async
+from asgiref.sync import sync_to_async, async_to_sync
 from polymorphic.managers import PolymorphicManager
 
 from datalayer import models as datalayer_models
@@ -68,6 +68,9 @@ class NodeCategoryManager(CategoryManager[T], Generic[T]):
 
     pass
 
+    def key_to_age_name(self, key: str) -> str:
+        return key
+
     async def acreate_from_node_definition(
         self,
         graph: "core_models.Graph",
@@ -108,16 +111,29 @@ class EntityCategoryManager(NodeCategoryManager["core_models.EntityCategory"]):
         graph: "core_models.Graph",
         definition: input_models.EntityDefinitionInput,
     ) -> "core_models.EntityCategory":
+        from graph_engine.materialize import compute_properties_hash
+
+        property_defs = [p.model_dump(mode="json") for p in definition.properties]
+        props_hash = compute_properties_hash(property_defs)
+
         category = await self.acreate_from_node_definition(
             graph=graph,
             definition=definition,
+            other_defaults={
+                "instance_kind": definition.instance_kind,
+                "property_definitions": property_defs,
+                "schema_hash": props_hash,
+            },
         )
 
-        if definition.instance_kind is not None:
-            category.instance_kind = definition.instance_kind
-            await sync_to_async(category.save)(update_fields=["instance_kind"])
-
         return category
+
+    def create_from_entity_definition(
+        self,
+        graph: "core_models.Graph",
+        definition: input_models.EntityDefinitionInput,
+    ) -> "core_models.EntityCategory":
+        return async_to_sync(self.acreate_from_entity_definition)(graph, definition)
 
 
 class StructureCategoryManager(NodeCategoryManager["core_models.StructureCategory"]):
@@ -139,6 +155,13 @@ class StructureCategoryManager(NodeCategoryManager["core_models.StructureCategor
 
         return category
 
+    def create_from_structure_definition(
+        self,
+        graph: "core_models.Graph",
+        definition: input_models.StructureDefinitionInput,
+    ) -> "core_models.StructureCategory":
+        return async_to_sync(self.acreate_from_structure_definition)(graph, definition)
+
 
 class NaturalEventCategoryManager(NodeCategoryManager["core_models.NaturalEventCategory"]):
     pass
@@ -153,6 +176,9 @@ class ReagentCategoryManager(NodeCategoryManager["core_models.ReagentCategory"])
 
 
 class EdgeCategoryManager(CategoryManager[T], Generic[T]):
+    def key_to_age_name(self, key: str) -> str:
+        return key.upper()
+
     async def acreate_from_edge_definition(
         self,
         graph: "core_models.Graph",
@@ -186,6 +212,14 @@ class EdgeCategoryManager(CategoryManager[T], Generic[T]):
 
         return category
 
+    def create_from_edge_definition(
+        self,
+        graph: "core_models.Graph",
+        definition: input_models.EdgeDefinitionInput,
+        other_defaults: Optional[dict[str, object]] = None,
+    ) -> T:
+        return async_to_sync(self.acreate_from_edge_definition)(graph, definition, other_defaults)
+
 
 class RelationCategoryManager(EdgeCategoryManager["core_models.RelationCategory"]):
     pass
@@ -201,6 +235,13 @@ class RelationCategoryManager(EdgeCategoryManager["core_models.RelationCategory"
         )
 
         return category
+
+    def create_from_relation_definition(
+        self,
+        graph: "core_models.Graph",
+        definition: input_models.RelationDefinitionInput,
+    ) -> "core_models.RelationCategory":
+        return async_to_sync(self.acreate_from_relation_definition)(graph, definition)
 
 
 class MeasurementCategoryManager(EdgeCategoryManager["core_models.MeasurementCategory"]):
@@ -228,3 +269,10 @@ class MetricCategoryManager(NodeCategoryManager["core_models.MetricCategory"]):
         )
 
         return category
+
+    def create_from_metric_definition(
+        self,
+        graph: "core_models.Graph",
+        definition: input_models.MetricDefinitionInput,
+    ) -> "core_models.MetricCategory":
+        return async_to_sync(self.acreate_from_metric_definition)(graph, definition)

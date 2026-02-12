@@ -54,6 +54,10 @@ class Mutation:
         description="Create a new graph based on a provided graph schema definition",
         resolver=mutations.create_graph_from_schema,
     )
+    create_entity = kante.django_mutation(
+        description="Create a new entity in the graph",
+        resolver=mutations.create_entity,
+    )
 
 
 @strawberry.type(description="Graph Engine Subscriptions")

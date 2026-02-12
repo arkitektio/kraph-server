@@ -18,7 +18,6 @@ async def test_relation_category_filter_by_label(test_graph: Graph, authenticate
             source=input_models.EntityDescriptorInput(),
             target=input_models.EntityDescriptorInput(),
         ),
-        reverse_label="CONNECTED_FROM_TEST",
     )
     await core_models.RelationCategory.objects.acreate_from_relation_definition(
         graph=test_graph,
@@ -27,7 +26,6 @@ async def test_relation_category_filter_by_label(test_graph: Graph, authenticate
             source=input_models.EntityDescriptorInput(),
             target=input_models.EntityDescriptorInput(),
         ),
-        reverse_label="HAS_PART_TEST",
     )
 
     query: str = """

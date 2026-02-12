@@ -154,17 +154,9 @@ def materialize(
 
     # Create EntityCategories
     for entity_def in definition.extensions.entities:
-        property_defs = [p.model_dump(mode="json") for p in entity_def.properties]
-        props_hash = compute_properties_hash(property_defs)
-
-        models.EntityCategory.objects.create(
+        models.EntityCategory.objects.create_from_entity_definition(
             graph=graph,
-            age_name=models.EntityCategory.key_to_age_name(entity_def.key),
-            key=entity_def.key,
-            label=entity_def.key,
-            description=entity_def.description or "",
-            property_definitions=property_defs,
-            schema_hash=props_hash,
+            definition=entity_def,
         )
 
     # Create RelationCategories

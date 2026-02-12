@@ -87,13 +87,13 @@ class Graph(models.Model):
         """Get the Apache AGE graph name for this graph, which is used to identify the graph in the AGE database."""
         return self.age_name
 
-    def get_entity_def(self, label: str) -> "EntityCategory":
+    def get_entity_def(self, key: str) -> "EntityCategory":
         """Get the entity definition for a specific label from the active schema."""
-        return self.entity_categories.get(age_name=label)
+        return self.entity_categories.get(key=key)
 
-    async def aget_entity_def(self, label: str) -> "EntityCategory":
+    async def aget_entity_def(self, key: str) -> "EntityCategory":
         """Async version of get_entity_def."""
-        return await self.entity_categories.aget(age_name=label)
+        return await self.entity_categories.aget(key=key)
 
     @classmethod
     def get_active(cls, user):
@@ -537,9 +537,9 @@ class NodeCategory(Category):
 
     @property
     def defined_properties(self):
-        from graph_engine.base_models import PropertyDefinition
+        from graph_engine.input_models import PropertyDefinitionInput
 
-        return [PropertyDefinition(**p) for p in self.property_definitions] if self.property_definitions else []
+        return [PropertyDefinitionInput(**p) for p in self.property_definitions] if self.property_definitions else []
 
     @property
     def property_map(self):
