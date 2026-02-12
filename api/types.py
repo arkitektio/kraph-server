@@ -14,7 +14,7 @@ import strawberry
 from typing import Optional, List, Union
 from datetime import datetime
 from api import loaders, order
-from .scalars import AnyScalar, UnixMilliseconds, StructureIdentifier, GlobalID
+from graph_engine.scalars import AnyScalar, UnixMilliseconds, StructureIdentifier, GlobalID
 from graph_engine.retrieved import RetrievedMetric, RetrievedNode, RetrievedEdge, RetrievedVariable
 from graph_engine import input_models
 import kante

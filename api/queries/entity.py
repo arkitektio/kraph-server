@@ -8,13 +8,14 @@ import strawberry
 
 from api import types, context, inputs
 from core import models
+from graph_engine import scalars
 
 
 def entities(info, filters: inputs.EntityFilterInput | None = None, order: inputs.EntityOrderInput | None = None) -> List[types.Entity]:
     raise NotImplementedError("This resolver is not implemented yet")
 
 
-def entity(info: Info, id: str) -> types.Entity:
+def entity(info: Info, id: scalars.GraphID) -> types.Entity:
     """
     Fetch a single entity by its Global ID.
 
@@ -30,7 +31,7 @@ def entity(info: Info, id: str) -> types.Entity:
     return types.Entity(_value=response)
 
 
-def entities_informed_by(info: Info, id: strawberry.ID) -> List[types.Entity]:
+def entities_informed_by(info: Info, id: scalars.GraphID) -> List[types.Entity]:
     """
     Fetch all entities that are informed by a given structure.
 

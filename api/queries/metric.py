@@ -6,6 +6,33 @@ from typing import List
 from kante.types import Info
 
 from api import types, context
+from core import models
+from graph_engine import scalars
+
+
+def metric(
+    info: Info,
+    metric_id: scalars.GraphID,
+) -> types.Metric:
+    """
+    Fetch a single metric by ID.
+
+    Args:
+        info: Strawberry Info context
+        metric_id: The metric's graph ID
+
+    Returns:
+        A Metric object
+    """
+    controller = context.get_controller()
+
+    graph_id = context.extract_graph_id(metric_id)
+    local_id = context.extract_node_id(metric_id)
+
+    graph = models.Graph.objects.get(id=graph_id)
+
+    response = controller.get_node(local_id=local_id)
+    return types.Metric(_value=response)
 
 
 def metrics_for_structure(

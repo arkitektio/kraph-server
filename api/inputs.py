@@ -10,7 +10,7 @@ from typing import Optional, List
 from enum import Enum
 
 from graph_engine import input_models
-from .scalars import AnyScalar
+from graph_engine.scalars import AnyScalar
 from strawberry.experimental import pydantic
 from typing import Annotated
 

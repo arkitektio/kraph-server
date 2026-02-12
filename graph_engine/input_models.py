@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import re
 
 from datalayer.scalars import MediaStore, MediaStoreLike
+from graph_engine.scalars import GraphID
 
 # --- Enums for Strict Typing ---
 
@@ -831,25 +832,25 @@ class CreateRelationInput(RelationInput):
 class UpdateRelationInput(RelationInput):
     """Input for updating an existing relation. Note: this will not update the relation in-place, but rather create a new relation and archive the old one to preserve history."""
 
-    id: str = Field(..., description="The ID of the relation to update")
+    id: GraphID = Field(..., description="The ID of the relation to update")
 
 
 class ArchiveRelationInput(BaseModel):
     """Input for archiving (soft deleting) an existing relation."""
 
-    id: str = Field(..., description="The ID of the relation to archive")
+    id: GraphID = Field(..., description="The ID of the relation to archive")
 
 
 class DeleteRelationInput(BaseModel):
     """Input for hard deleting an existing metric."""
 
-    id: str = Field(..., description="The ID of the metric to delete")
+    id: GraphID = Field(..., description="The ID of the metric to delete")
 
 
 class UpdateMetricInput(MetricInput):
     """Input for updating an existing metric. The metric will not be updated in-place, but a new metric will be created and the old one archived to preserve history."""
 
-    id: str = Field(..., description="The ID of the metric to update")
+    id: GraphID = Field(..., description="The ID of the metric to update")
 
 
 class GraphExtensionsInput(BaseModel):

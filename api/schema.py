@@ -7,10 +7,9 @@ mutations, and subscriptions.
 
 from strawberry.schema.config import StrawberryConfig
 from strawberry.extensions import QueryDepthLimiter
-from typing import Optional
+from typing import AsyncGenerator, Optional
 from authentikate.strawberry.extension import AuthentikateExtension
 
-from .subscriptions import Subscription
 from .extensions.cypher import CypherEngineExtension
 import kante
 from graph_engine.engine.age_engine import AgeEngine
@@ -23,8 +22,9 @@ from typing import List
 from kante.types import Info
 
 from api.types import Entity, Structure, Metric, Assertion
-from api.scalars import StructureIdentifier
-from api import queries, types, scalars, mutations
+
+from api import queries, types, mutations
+from graph_engine import scalars
 
 
 @strawberry.type(description="Graph Engine Queries")
@@ -44,63 +44,8 @@ class Query:
     relation_category: types.RelationCategory = kante.django_field(description="Get a single relation category/schema by ID")
 
     entity = kante.django_field(queries.entity, description="Get an entity by ID")
-
-    @strawberry.field(description="Get entities informed by a specific structure")
-    def entities_informed_by(
-        self,
-        info: Info,
-        identifier: StructureIdentifier,
-        object: str,
-    ) -> List[Entity]:
-        """Fetch all entities that are informed by a given structure."""
-        return queries.entities_informed_by(info, identifier, object)
-
-    @strawberry.field(description="Get a structure by identifier and object")
-    def structure(
-        self,
-        info: Info,
-        identifier: StructureIdentifier,
-        object: str,
-    ) -> Optional[Structure]:
-        """Fetch a specific structure by its identifier and object ID."""
-        return queries.structure(info, identifier, object)
-
-    @strawberry.field(description="Get all structures that inform an entity")
-    def informing_structures(
-        self,
-        info: Info,
-        entity_id: str,
-    ) -> List[Structure]:
-        """Fetch all structures that inform a given entity."""
-        return queries.informing_structures(info, entity_id)
-
-    @strawberry.field(description="Get all measurements for a structure")
-    def measurements_for_structure(
-        self,
-        info: Info,
-        identifier: StructureIdentifier,
-        object: str,
-    ) -> List[Metric]:
-        """Fetch all measurements attached to a structure."""
-        return queries.metrics_for_structure(info, identifier, object)
-
-    @strawberry.field(description="Get the assertion that generated an entity")
-    def assertion_for_entity(
-        self,
-        info: Info,
-        entity_id: str,
-    ) -> Optional[Assertion]:
-        """Fetch the assertion (provenance) that generated an entity."""
-        return queries.assertion_for_entity(info, entity_id)
-
-    @strawberry.field(description="Get all metrics asserted by an assertion")
-    def metrics_for_assertion(
-        self,
-        info: Info,
-        assertion_id: int,
-    ) -> List[Metric]:
-        """Fetch all measurements that were asserted by a given assertion."""
-        return queries.metrics_for_structure(info, assertion_id)
+    structure = kante.django_field(queries.structure, description="Get a structure by ID")
+    metric = kante.django_field(queries.metric, description="Get a metric by ID")
 
 
 @strawberry.type(description="Graph Engine Mutations")
@@ -109,6 +54,22 @@ class Mutation:
         description="Create a new graph based on a provided graph schema definition",
         resolver=mutations.create_graph_from_schema,
     )
+
+
+@strawberry.type(description="Graph Engine Subscriptions")
+class Subscription:
+    """A GraphQL subscription type for real-time updates from the graph engine."""
+
+    @strawberry.subscription(description="Subscribe to updates for a specific graph")
+    async def graph_updated(self, info: Info, graph_id: scalars.GraphID) -> AsyncGenerator[types.Graph, None]:
+        """
+        Subscription that triggers when a graph is updated.
+
+        Args:
+            info: Strawberry Info context
+            graph_id: The ID of the graph to subscribe to updates for
+        """
+        yield None
 
 
 def create_schema(
@@ -164,6 +125,21 @@ def create_schema(
                     ),
                     scalars.UnixMilliseconds: strawberry.scalar(
                         name="UnixMilliseconds",
+                        serialize=lambda v: v,  # Implement your serialization logic here
+                        parse_value=lambda v: v,  # Implement your parsing logic here
+                    ),
+                    scalars.GraphID: strawberry.scalar(
+                        name="GraphID",
+                        serialize=lambda v: v,  # Implement your serialization logic here
+                        parse_value=lambda v: v,  # Implement your parsing logic here
+                    ),
+                    scalars.LocalID: strawberry.scalar(
+                        name="LocalID",
+                        serialize=lambda v: v,  # Implement your serialization logic here
+                        parse_value=lambda v: v,  # Implement your parsing logic here
+                    ),
+                    scalars.AnyScalar: strawberry.scalar(
+                        name="AnyScalar",
                         serialize=lambda v: v,  # Implement your serialization logic here
                         parse_value=lambda v: v,  # Implement your parsing logic here
                     ),
