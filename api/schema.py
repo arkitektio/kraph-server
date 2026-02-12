@@ -70,6 +70,22 @@ class Mutation:
         description="Update an existing entity in the graph",
         resolver=mutations.update_entity,
     )
+    create_structure = kante.django_mutation(
+        description="Create a new structure in the graph",
+        resolver=mutations.create_structure,
+    )
+    delete_structure = kante.django_mutation(
+        description="Delete a structure from the graph",
+        resolver=mutations.delete_structure,
+    )
+    archive_structure = kante.django_mutation(
+        description="Archive a structure in the graph (soft delete)",
+        resolver=mutations.archive_structure,
+    )
+    update_structure = kante.django_mutation(
+        description="Update an existing structure in the graph",
+        resolver=mutations.update_structure,
+    )
 
 
 @strawberry.type(description="Graph Engine Subscriptions")

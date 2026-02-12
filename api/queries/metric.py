@@ -31,7 +31,7 @@ def metric(
 
     graph = models.Graph.objects.get(id=graph_id)
 
-    response = controller.get_node(local_id=local_id)
+    response = controller.get_node(graph, local_id=local_id)
     return types.Metric(_value=response)
 
 

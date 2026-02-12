@@ -7,11 +7,12 @@ from kante.types import Info
 
 from api import types, context
 from core import models
+from graph_engine import scalars
 
 
 def assertion_for_entity(
     info: Info,
-    entity_id: str,
+    entity_id: scalars.GraphID,
 ) -> Optional[types.Assertion]:
     """
     Fetch the assertion (provenance) that generated an entity.

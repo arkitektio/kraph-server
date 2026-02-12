@@ -33,6 +33,23 @@ class PlateChildInput:
     pass
 
 
+# ==========================================
+# SCHEMA DEFINITION INPUT TYPES (List-based)
+# ==========================================
+
+
+@pydantic.input(model=input_models.DerivationRuleInput, all_fields=True, description="Configuration for property derivation rules")
+class DerivationRuleInput:
+    """Configuration for property derivation rules."""
+
+    pass
+
+
+@pydantic.input(model=input_models.PropertyDefinitionInput, all_fields=True, description="Definition of a property on an entity, structure, or relation")
+class PropertyDefinitionInput:
+    """Definition of a property on an entity, structure, or relation."""
+
+
 # Filter Models
 # =========================================
 # Filter Models
@@ -119,18 +136,8 @@ class RoleMappingInput:
     pass
 
 
-@pydantic.input(model=input_models.DerivationRuleInput, all_fields=True, description="Input for creating a new natural event definition in the graph schema")
-class DerivationRuleInput:
-    pass
-
-
 @pydantic.input(model=input_models.OntologyReferenceInput, all_fields=True, description="Input for creating a new natural event definition in the graph schema")
 class OntologyReferenceInput:
-    pass
-
-
-@pydantic.input(model=input_models.PropertyDefinitionInput, all_fields=True, description="Input for creating a new natural event definition in the graph schema")
-class PropertyDefinitionInput:
     pass
 
 
@@ -307,6 +314,13 @@ class CreateStructureInput:
     pass
 
 
+@pydantic.input(model=input_models.UpdateStructureInput, all_fields=True, description="Input for updating an existing structure")
+class UpdateStructureInput:
+    """Input for updating an existing structure."""
+
+    pass
+
+
 @pydantic.input(model=input_models.DeleteStructureInput, all_fields=True, description="Input for deleting an existing structure")
 class DeleteStructureInput:
     """Input for deleting an existing structure."""
@@ -395,25 +409,6 @@ class LinkStructureInput:
     structure_object: str = strawberry.field(description="Structure object ID")
     entity_id: str = strawberry.field(description="Entity ID to link to")
     recalculate: Optional[bool] = strawberry.field(default=True, description="Whether to recalculate entity properties after linking")
-
-
-# ==========================================
-# SCHEMA DEFINITION INPUT TYPES (List-based)
-# ==========================================
-
-
-@pydantic.input(model=input_models.DerivationRuleInput, all_fields=True, description="Configuration for property derivation rules")
-class DerivationRuleInput:
-    """Configuration for property derivation rules."""
-
-    source_node: strawberry.auto
-    key: strawberry.auto
-    aggregation: strawberry.auto
-
-
-@pydantic.input(model=input_models.PropertyDefinitionInput, all_fields=True, description="Definition of a property on an entity, structure, or relation")
-class PropertyDefinitionInput:
-    """Definition of a property on an entity, structure, or relation."""
 
 
 @pydantic.input(model=input_models.EntityDefinitionInput, all_fields=True, description="Definition of an entity type in the graph schema")

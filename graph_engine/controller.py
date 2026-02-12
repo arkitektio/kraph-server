@@ -30,7 +30,7 @@ from graph_engine import vocab, scalars
 from graph_engine.rollup import build_property_query
 
 
-def extract_node_id(composite_id: scalars.GraphID) -> scalars.LocalID:
+def extract_node_id(composite_id: str | scalars.GraphID) -> scalars.LocalID:
     """
     Extract the entity UUID from a composite ID.
 
@@ -46,15 +46,15 @@ def extract_node_id(composite_id: scalars.GraphID) -> scalars.LocalID:
     if "-" in composite_id:
         parts = composite_id.split("-", 1)
         if len(parts) == 2:
-            return int(parts[1])
+            return scalars.LocalID(int(parts[1]))
     if ":" in composite_id:
         parts = composite_id.split(":", 1)
         if len(parts) == 2:
-            return int(parts[1])
+            return scalars.LocalID(int(parts[1]))
     raise ValueError(f"Invalid composite ID format: {composite_id}")
 
 
-def extract_graph_id(composite_id: scalars.GraphID) -> scalars.GraphName:
+def extract_graph_id(composite_id: str | scalars.GraphID) -> scalars.GraphName:
     """
     Extract the graph ID from a composite ID.
 
@@ -70,11 +70,11 @@ def extract_graph_id(composite_id: scalars.GraphID) -> scalars.GraphName:
     if "-" in composite_id:
         parts = composite_id.split("-", 1)
         if len(parts) == 2:
-            return parts[0]
+            return scalars.GraphName(parts[0])
     if ":" in composite_id:
         parts = composite_id.split(":", 1)
         if len(parts) == 2:
-            return parts[0]
+            return scalars.GraphName(parts[0])
     raise ValueError(f"Invalid composite ID format: {composite_id}")
 
 
@@ -87,10 +87,10 @@ def _extract_props(raw_node: Any) -> Dict[str, Any]:
     return {}
 
 
-def _extract_id(raw_node: Any) -> int:
+def _extract_id(raw_node: Any) -> scalars.LocalID:
     """Extract the internal graph ID from an AGE node representation."""
     if isinstance(raw_node, dict) and "id" in raw_node:
-        return raw_node["id"]
+        return scalars.LocalID(raw_node["id"])
     raise ValueError("Unable to extract graph ID from node representation.")
 
 
@@ -102,13 +102,13 @@ class GraphController:
         self.subject = subject
         self.app_id = app_id
 
-    def create_universal_id(self) -> str:
+    def create_universal_id(self) -> scalars.GlobalID:
         """Generates a unique reference ID for entities."""
         import uuid
 
-        return str(uuid.uuid4())
+        return scalars.GlobalID(str(uuid.uuid4()))
 
-    def _get_entity_category_for_local_id(self, graph: models.Graph, local_id: int) -> models.EntityCategory:
+    def _get_entity_category_for_local_id(self, graph: models.Graph, local_id: scalars.LocalID) -> models.EntityCategory:
         """Resolve an entity category by inspecting the node label in AGE."""
         result = self.engine.execute(
             graph,
@@ -137,12 +137,12 @@ class GraphController:
     def ensure_entity(
         self,
         entity_category: models.EntityCategory,
-        universal_id: str,
+        universal_id: scalars.GlobalID,
         payload: inputs.EntityInput,
     ) -> RetrievedEntity:
         raise NotImplementedError("Ensure entity is not implemented yet. Use create_entity for now.")
 
-    def _create_provenance_node(self, graph: models.Graph, context: ProvenanceContext) -> int:
+    def _create_provenance_node(self, graph: models.Graph, context: ProvenanceContext) -> scalars.LocalID:
         """
         Creates an Assertion node for provenance tracking and returns its internal graph ID.
 
@@ -162,7 +162,7 @@ class GraphController:
             "timestamp": int(time.time() * 1000),
         }
         result = self.engine.execute(graph, query, params)
-        return result[0]["assertion_id"]
+        return scalars.LocalID(result[0]["assertion_id"])
 
     def create_entity(
         self,
@@ -291,7 +291,7 @@ class GraphController:
 
         return retrieved
 
-    def delete_entity(self, graph: models.Graph, local_id: int) -> int:
+    def delete_entity(self, graph: models.Graph, local_id: scalars.LocalID) -> scalars.LocalID:
         """
         Deletes an entity by its composite ID.
 
@@ -312,7 +312,7 @@ class GraphController:
 
         return local_id
 
-    def archive_entity(self, graph: models.Graph, local_id: int, provenance: ProvenanceContext) -> int:
+    def archive_entity(self, graph: models.Graph, local_id: scalars.LocalID, provenance: ProvenanceContext) -> scalars.LocalID:
         """
         Archives an entity by its composite ID.
 
@@ -349,7 +349,7 @@ class GraphController:
 
         return local_id
 
-    def _recalculate_entity(self, entity_category: models.EntityCategory, local_id: int) -> None:
+    def _recalculate_entity(self, entity_category: models.EntityCategory, local_id: scalars.LocalID) -> None:
         """
         Scans schema rules and updates the Entity's cached properties based on connected evidence.
 
@@ -416,7 +416,7 @@ class GraphController:
     # MIGRATION METHODS
     # ===================================================================
 
-    def _recalculate_relation(self, relation_category: models.RelationCategory, local_id: int) -> Optional[int]:
+    def _recalculate_relation(self, relation_category: models.RelationCategory, local_id: scalars.LocalID) -> Optional[scalars.LocalID]:
         """
         Updates Edge properties based on measurements connected via the ShadowLink.
 
@@ -511,7 +511,7 @@ class GraphController:
             )
             return result[0]["edge_id"] if result else None
 
-    def list_entities_informed_by_structure(self, graph: models.Graph, structure_id: int) -> List[RetrievedEntity]:
+    def list_entities_informed_by_structure(self, graph: models.Graph, structure_id: scalars.LocalID) -> List[RetrievedEntity]:
         """
         Lists all entities that are informed by a given structure.
 
@@ -536,7 +536,7 @@ class GraphController:
 
         return entities
 
-    def get_node(self, graph: models.Graph, entity_id: str) -> RetrievedNode:
+    def get_node(self, graph: models.Graph, local_id: scalars.LocalID) -> RetrievedNode:
         """
         Retrieve a raw node by its string ID.
 
@@ -546,17 +546,17 @@ class GraphController:
 
         Args:
             graph: The graph to query
-            entity_id: The string ID of the entity (the 'id' property in the graph)
+            local_id: The internal graph ID of the node to retrieve
         """
 
         query = """
-            MATCH (n) WHERE n.id = $id
+            MATCH (n) WHERE id(n) = $id
             RETURN n, labels(n) as lbls
         """
-        result = self.engine.execute(graph, query, {"id": entity_id})
+        result = self.engine.execute(graph, query, {"id": local_id})
 
         if not result:
-            raise ValueError(f"Node not found with ID {entity_id}")
+            raise ValueError(f"Node not found with ID {local_id}")
 
         raw_node = result[0]["n"]
 
@@ -860,7 +860,7 @@ class GraphController:
     def get_metrics_for_assertion(
         self,
         graph: models.Graph,
-        assertion_id: int,
+        assertion_id: scalars.LocalID,
     ) -> List[RetrievedMetric]:
         """
         Gets all measurements asserted by a given assertion.
@@ -922,6 +922,115 @@ class GraphController:
             id=graph_id,
             label=structure_label,
             properties={"object": payload.object, "identifier": structure_category.identifier},
+        )
+
+    def delete_structure(
+        self,
+        graph: models.Graph,
+        structure_id: scalars.LocalID,
+        provenance: ProvenanceContext,
+    ) -> scalars.LocalID:
+        """Hard delete a structure node and all attached relationships."""
+        self.engine.execute(
+            graph,
+            """
+            MATCH (s) WHERE id(s) = $sid
+            DETACH DELETE s
+            """,
+            {"sid": structure_id},
+        )
+        return structure_id
+
+    def archive_structure(
+        self,
+        graph: models.Graph,
+        structure_id: scalars.LocalID,
+        provenance: ProvenanceContext,
+    ) -> RetrievedStructure:
+        """Archive a structure by attaching a lifecycle assertion and setting lifecycle state."""
+        assertion_id = self._create_provenance_node(graph, provenance)
+        archived_at = int(time.time() * 1000)
+
+        self.engine.execute(
+            graph,
+            f"""
+            MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
+            MATCH (s) WHERE id(s) = $sid
+            CREATE (lc:LifeCycleAssertion {{status: $status, archived_at: $archived_at, timestamp: $timestamp}})
+            CREATE (a)-[:{vocab.ASSERTED}]->(lc)
+            CREATE (lc)-[:{vocab.INFORMS}]->(s)
+            RETURN id(lc) as lifecycle_id
+            """,
+            {
+                "aid": assertion_id,
+                "sid": structure_id,
+                "status": "archived",
+                "archived_at": archived_at,
+                "timestamp": archived_at,
+            },
+        )
+
+        self.engine.execute(
+            graph,
+            """
+            MATCH (lc:LifeCycleAssertion)-[:INFORMS]->(s)
+            WHERE id(s) = $sid
+            WITH s, lc
+            ORDER BY coalesce(lc.archived_at, lc.timestamp, 0) DESC
+            WITH s, collect(lc)[0] as latest
+            SET s.__lifecycle_state = latest.status
+            RETURN s
+            """,
+            {"sid": structure_id},
+        )
+
+        archived_node = self.get_node_by_local_id(graph, local_id=structure_id)
+        return RetrievedStructure.from_node(
+            {
+                "id": archived_node.id,
+                "label": archived_node.label,
+                "properties": archived_node.properties,
+            },
+            graph_name=graph.age_name,
+        )
+
+    def update_structure(
+        self,
+        graph: models.Graph,
+        structure_id: scalars.LocalID,
+        payload: inputs.StructureInput,
+        provenance: ProvenanceContext,
+    ) -> RetrievedStructure:
+        """Update a structure in-place and optionally append new metrics."""
+        node = self.get_node_by_local_id(graph, local_id=structure_id)
+        label = node.label
+
+        self.engine.execute(
+            graph,
+            f"""
+            MATCH (s:{label}) WHERE id(s) = $sid
+            SET s.object = $obj
+            RETURN s
+            """,
+            {"sid": structure_id, "obj": payload.object},
+        )
+
+        for metric in payload.metrics or []:
+            self.create_metric(
+                graph,
+                structure_id=structure_id,
+                input=metric,
+                provenance=provenance,
+            )
+
+        updated = self.get_node_by_local_id(graph, local_id=structure_id)
+        return RetrievedStructure.from_node(
+            {
+                "id": updated.id,
+                "label": updated.label,
+                "properties": updated.properties,
+            },
+            graph_name=graph.age_name,
         )
 
     def create_natural_event(
@@ -1066,7 +1175,7 @@ class GraphController:
     def create_metric(
         self,
         graph: models.Graph,
-        structure_id: int,
+        structure_id: scalars.LocalID,
         input: MetricInput,
         provenance: "ProvenanceContext",
     ) -> RetrievedMetric:
@@ -1314,7 +1423,7 @@ class GraphController:
     # Relation Query Methods
     # ===================================================================
 
-    def get_relation_by_id(self, edge_id: int) -> Optional[RetrievedEdge]:
+    def get_relation_by_id(self, edge_id: scalars.LocalID) -> Optional[RetrievedEdge]:
         """
         Get a relation edge by its graph ID.
 
@@ -1504,7 +1613,7 @@ class GraphController:
     def list_entities(self, graph: models.Graph, filters: input_models.EntityFilters | None = None, pagination: input_models.EntityPagination | None = None, order: input_models.EntityOrder | None = None) -> List[RetrievedEntity]:
         raise Exception("Not implemented yet")
 
-    def get_assertion_for_relation(self, graph: models.Graph, edge_id: int) -> Optional[RetrievedAssertion]:
+    def get_assertion_for_relation(self, graph: models.Graph, edge_id: scalars.LocalID) -> Optional[RetrievedAssertion]:
         """
         Get the Assertion that generated a relation edge.
 

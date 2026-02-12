@@ -785,6 +785,12 @@ class CreateStructureInput(StructureInput):
     graph: str = Field(..., description="The graph id this structure will belong to")
 
 
+class UpdateStructureInput(StructureInput):
+    """Input for updating an existing structure instance."""
+
+    id: scalars.GraphID = Field(..., description="The ID of the structure to update")
+
+
 class ArchiveStructureInput(BaseModel):
     """Input for archiving (soft deleting) an existing structure."""
 

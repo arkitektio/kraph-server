@@ -41,10 +41,21 @@ def create_structure(
     return types.Structure(_value=response)
 
 
+def _get_graph_from_identifier(identifier: str) -> models.Graph:
+    graph = None
+    if str(identifier).isdigit():
+        graph = models.Graph.objects.filter(id=int(identifier)).first()
+    if graph is None:
+        graph = models.Graph.objects.filter(age_name=identifier).first()
+    if graph is None:
+        raise ValueError(f"Graph not found for identifier {identifier}")
+    return graph
+
+
 def delete_structure(
     info: Info,
     input: inputs.DeleteStructureInput,
-) -> strawberry.ID:
+) -> types.Structure:
     """
     Delete a structure by its composite ID. Only the owner of the graph or an admin can delete a structure.
 
@@ -62,7 +73,9 @@ def delete_structure(
     graph_id = context.extract_graph_id(model.id)
     local_id = context.extract_node_id(model.id)
 
-    graph = models.Graph.objects.get(id=graph_id)  # Validate graph exists
+    graph = _get_graph_from_identifier(graph_id)
+
+    deleted_structure = controller.get_node_by_local_id(graph, local_id=local_id)
 
     controller.delete_structure(
         graph,
@@ -70,7 +83,7 @@ def delete_structure(
         provenance=context.get_provenance_from_context(info),
     )
 
-    return model.id
+    return types.Structure(_value=deleted_structure)
 
 
 def archive_structure(
@@ -94,7 +107,7 @@ def archive_structure(
     graph_id = context.extract_graph_id(model.id)
     local_id = context.extract_node_id(model.id)
 
-    graph = models.Graph.objects.get(id=graph_id)  # Validate graph exists
+    graph = _get_graph_from_identifier(graph_id)
 
     structure = controller.archive_structure(
         graph,
@@ -145,3 +158,26 @@ def link_structure_to_entity(
         entity=entity_from_response(entity_response),
         structure=structure_from_response(structure_response),
     )
+
+
+def update_structure(
+    info: Info,
+    input: inputs.UpdateStructureInput,
+) -> types.Structure:
+    """Update an existing structure by its composite ID and return the updated structure."""
+    controller = context.get_controller()
+
+    model = input.to_pydantic()
+    graph_id = context.extract_graph_id(model.id)
+    local_id = context.extract_node_id(model.id)
+
+    graph = _get_graph_from_identifier(graph_id)
+
+    updated = controller.update_structure(
+        graph,
+        structure_id=local_id,
+        payload=model,
+        provenance=context.get_provenance_from_context(info),
+    )
+
+    return types.Structure(_value=updated)

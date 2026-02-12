@@ -707,7 +707,7 @@ class NaturalEventCategory(NodeCategory):
     def get_outrole_vertex_name(self, role):
         return role
 
-    def get_age_vertex_name(self):
+    def get_age_vertex_name(self) -> str:
         return self.age_name
 
     def get_age_type_name(self) -> str:
