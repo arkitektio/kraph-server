@@ -105,6 +105,16 @@ class RetrievedNode:
     # === Core ID Properties ===
 
     @property
+    def unique_id(self) -> str:
+        """Global unique identifier in format 'graph_name:graph_id'."""
+        return f"{self.graph_name}:{self.id}"
+
+    @property
+    def lifecycle(self) -> Optional[str]:
+        """Current lifecycle state of the node."""
+        return self.properties.get("__lifecycle_state") or self.properties.get("lifecycle_status")
+
+    @property
     def lifecycle_status(self) -> Optional[str]:
         """Get the lifecycle status of the node, if present."""
         return self.properties.get("lifecycle_status")

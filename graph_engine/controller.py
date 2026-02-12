@@ -26,11 +26,11 @@ from graph_engine.retrieved import (
 )
 from core import models
 from graph_engine import input_models as inputs
-from graph_engine import vocab
+from graph_engine import vocab, scalars
 from graph_engine.rollup import build_property_query
 
 
-def extract_node_id(composite_id: str) -> int:
+def extract_node_id(composite_id: scalars.GraphID) -> scalars.LocalID:
     """
     Extract the entity UUID from a composite ID.
 
@@ -43,13 +43,18 @@ def extract_node_id(composite_id: str) -> int:
     Returns:
         The entity UUID part (e.g., "abc123-def456-...")
     """
-    parts = composite_id.split("-", 1)
-    if len(parts) == 2:
-        return int(parts[1])
+    if "-" in composite_id:
+        parts = composite_id.split("-", 1)
+        if len(parts) == 2:
+            return int(parts[1])
+    if ":" in composite_id:
+        parts = composite_id.split(":", 1)
+        if len(parts) == 2:
+            return int(parts[1])
     raise ValueError(f"Invalid composite ID format: {composite_id}")
 
 
-def extract_graph_id(composite_id: str) -> str:
+def extract_graph_id(composite_id: scalars.GraphID) -> scalars.GraphName:
     """
     Extract the graph ID from a composite ID.
 
@@ -62,9 +67,14 @@ def extract_graph_id(composite_id: str) -> str:
     Returns:
         The graph ID part (e.g., "1")
     """
-    parts = composite_id.split("-", 1)
-    if len(parts) == 2:
-        return parts[0]
+    if "-" in composite_id:
+        parts = composite_id.split("-", 1)
+        if len(parts) == 2:
+            return parts[0]
+    if ":" in composite_id:
+        parts = composite_id.split(":", 1)
+        if len(parts) == 2:
+            return parts[0]
     raise ValueError(f"Invalid composite ID format: {composite_id}")
 
 
@@ -97,6 +107,32 @@ class GraphController:
         import uuid
 
         return str(uuid.uuid4())
+
+    def _get_entity_category_for_local_id(self, graph: models.Graph, local_id: int) -> models.EntityCategory:
+        """Resolve an entity category by inspecting the node label in AGE."""
+        result = self.engine.execute(
+            graph,
+            """
+            MATCH (e) WHERE id(e) = $eid
+            RETURN labels(e) as labels
+            """,
+            {"eid": local_id},
+        )
+
+        if not result:
+            raise ValueError(f"Entity not found with local id {local_id}")
+
+        labels = result[0].get("labels") or []
+        if not labels:
+            raise ValueError(f"Entity with local id {local_id} has no labels")
+
+        age_name = labels[0]
+        category = models.EntityCategory.objects.filter(graph=graph, age_name=age_name).first()
+
+        if not category:
+            raise ValueError(f"No EntityCategory found for age_name '{age_name}' in graph {graph.id}")
+
+        return category
 
     def ensure_entity(
         self,
@@ -229,7 +265,7 @@ class GraphController:
         str(create_res[0]["db_id"])
         entity = create_res[0]["entity"]
 
-        retrieved = RetrievedEntity.from_node(entity, graph_name=entity_category.graph)
+        retrieved = RetrievedEntity.from_node(entity, graph_name=graph.age_name)
 
         # --- Step 5: Link Entity -> Evidence ---
         for evidence in supporting_evidence:
@@ -286,8 +322,31 @@ class GraphController:
             graph: The graph to operate on
             entity_id: The composite ID of the entity to delete (e.g., "1-abc123-def456-...")
         """
-        # Instead of hard deleting, we record an LifeCycleAssertion
-        raise NotImplementedError("Archive entity is not implemented yet. Use delete_entity for now.")
+        assertion_id = self._create_provenance_node(graph, provenance)
+        archived_at = int(time.time() * 1000)
+
+        self.engine.execute(
+            graph,
+            f"""
+            MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
+            MATCH (e) WHERE id(e) = $eid
+            CREATE (lc:LifeCycleAssertion {{status: $status, archived_at: $archived_at, timestamp: $timestamp}})
+            CREATE (a)-[:{vocab.ASSERTED}]->(lc)
+            CREATE (lc)-[:{vocab.INFORMS}]->(e)
+            RETURN id(lc) as lifecycle_id
+            """,
+            {
+                "aid": assertion_id,
+                "eid": local_id,
+                "status": "archived",
+                "archived_at": archived_at,
+                "timestamp": archived_at,
+            },
+        )
+
+        entity_category = self._get_entity_category_for_local_id(graph, local_id)
+        self._recalculate_entity(entity_category, local_id)
+
         return local_id
 
     def _recalculate_entity(self, entity_category: models.EntityCategory, local_id: int) -> None:
@@ -318,8 +377,19 @@ class GraphController:
                 if result and result[0].get("val") is not None:
                     updates[prop_def.key] = result[0]["val"]
 
-        # TODO: Calculate LifeCycle State based on connected evidence and set 'lifecycle_state' property accordingly
-        updates["__lifecycle_state"] = "active"  # Placeholder - real logic would analyze evidence and timestamps to determine state
+        lifecycle_result = self.engine.execute(
+            entity_category.graph,
+            f"""
+            MATCH (lc:LifeCycleAssertion)-[:{vocab.INFORMS}]->(e:{entity_category.age_name})
+            WHERE id(e) = $eid
+            RETURN lc.status as status
+            ORDER BY coalesce(lc.archived_at, lc.timestamp, 0) DESC
+            LIMIT 1
+            """,
+            {"eid": local_id},
+        )
+
+        updates["__lifecycle_state"] = lifecycle_result[0]["status"] if lifecycle_result else "active"
         updates["__measured__from"] = None  # Placeholder - real logic would determine the earliest timestamp from connected evidence and set this property
         updates["__measured__to"] = None  # Placeholder - real logic would determine the latest timestamp from connected evidence and set this property
         updates["__measured__at"] = None  # Placeholder - real logic would determine the timestamp of the measurement, if ONLY one piece of evidence is connected, and set this property
@@ -492,7 +562,21 @@ class GraphController:
 
         return RetrievedNode.from_node(raw_node, graph_name=graph.age_name)
 
-    def get_node_for_composite_id(self, composite_id: str) -> RetrievedNode:
+    def get_node_by_local_id(self, graph: models.Graph, local_id: scalars.LocalID) -> RetrievedNode:
+        """Retrieve a raw node by its internal AGE graph ID."""
+        query = """
+            MATCH (n) WHERE id(n) = $nid
+            RETURN n
+        """
+        result = self.engine.execute(graph, query, {"nid": local_id})
+
+        if not result:
+            raise ValueError(f"Node not found with local ID {local_id}")
+
+        raw_node = result[0]["n"]
+        return RetrievedNode.from_node(raw_node, graph_name=graph.age_name)
+
+    def get_node_for_composite_id(self, composite_id: scalars.GraphID) -> RetrievedNode:
         """
         Retrieve a node using a composite global ID (format: {graph_id}:{entity_id}).
 
@@ -507,7 +591,13 @@ class GraphController:
         """
         graph_id, entity_id = composite_id.split(":", 1)
 
-        graph = models.Graph.objects.get(id=graph_id)
+        graph = None
+        if str(graph_id).isdigit():
+            graph = models.Graph.objects.filter(id=int(graph_id)).first()
+        if graph is None:
+            graph = models.Graph.objects.filter(age_name=graph_id).first()
+        if graph is None:
+            raise ValueError(f"Graph not found for identifier {graph_id}")
 
         return self.get_node(graph, entity_id)
 

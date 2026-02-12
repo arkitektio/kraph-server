@@ -2,14 +2,14 @@ from kante.types import Info
 from graph_engine.input_models import ProvenanceContext
 from api.extensions.cypher import cypher_engine
 from graph_engine.controller import GraphController, extract_graph_id as exg, extract_node_id as exn
-from graph_engine.scalars import GraphID
+from graph_engine.scalars import GraphID, LocalID, GraphName
 
 
-def extract_graph_id(composite_id: GraphID) -> str:
+def extract_graph_id(composite_id: GraphID) -> GraphName:
     return exg(composite_id)
 
 
-def extract_node_id(composite_id: GraphID) -> int:
+def extract_node_id(composite_id: GraphID) -> LocalID:
     return exn(composite_id)
 
 

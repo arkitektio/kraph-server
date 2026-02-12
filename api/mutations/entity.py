@@ -7,6 +7,17 @@ from api import inputs, types, context
 from core import models
 
 
+def _get_graph_from_identifier(identifier: str) -> models.Graph:
+    graph = None
+    if str(identifier).isdigit():
+        graph = models.Graph.objects.filter(id=int(identifier)).first()
+    if graph is None:
+        graph = models.Graph.objects.filter(age_name=identifier).first()
+    if graph is None:
+        raise ValueError(f"Graph not found for identifier {identifier}")
+    return graph
+
+
 def create_entity(
     info: Info,
     input: inputs.CreateEntityInput,
@@ -62,11 +73,13 @@ def delete_entity(
     graph_id = context.extract_graph_id(model.id)
     node_id = context.extract_node_id(model.id)
 
-    graph = models.Graph.objects.get(id=graph_id)  # Validate graph exists
+    graph = _get_graph_from_identifier(graph_id)
 
-    controller.delete_entity(graph, entity_id=node_id)
+    deleted_entity = controller.get_node_by_local_id(graph, local_id=node_id)
 
-    return input
+    controller.delete_entity(graph, local_id=node_id)
+
+    return types.Entity(_value=deleted_entity)
 
 
 def archive_entity(
@@ -85,14 +98,22 @@ def archive_entity(
     """
     controller = context.get_controller()
 
-    graph_id = context.extract_graph_id(input.id)
-    node_id = context.extract_node_id(input.id)
+    model = input.to_pydantic()
 
-    graph = models.Graph.objects.get(id=graph_id)  # Validate graph exists
+    graph_id = context.extract_graph_id(model.id)
+    node_id = context.extract_node_id(model.id)
 
-    controller.archive_entity(graph, entity_id=node_id)
+    graph = _get_graph_from_identifier(graph_id)
 
-    return input
+    controller.archive_entity(
+        graph,
+        local_id=node_id,
+        provenance=context.get_provenance_from_context(info),
+    )
+
+    archived_entity = controller.get_node_by_local_id(graph, local_id=node_id)
+
+    return types.Entity(_value=archived_entity)
 
 
 def update_entity(
@@ -117,7 +138,7 @@ def update_entity(
     local_id = context.extract_node_id(model.id)
     graph = models.Graph.objects.get(id=graph_id)  # Validate graph exists
 
-    controller.update_entity(graph, entity_id=node_id)
+    controller.update_entity(graph, entity_id=local_id)
 
     return input
 
