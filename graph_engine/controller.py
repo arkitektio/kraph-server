@@ -715,12 +715,7 @@ class GraphController:
         # Add identifier to properties for access
         props["identifier"] = identifier
 
-        return RetrievedStructure(
-            graph_name=graph.age_name,
-            id=graph_id,
-            label=structure_label,
-            properties=props,
-        )
+        return retrieved.RetrievedStructure.from_node(raw, graph_name=graph.age_name)
 
     def get_informing_structures(
         self,
@@ -744,25 +739,8 @@ class GraphController:
         structures = []
         for row in result:
             raw = row["s"]
-            labels = row["lbls"]
-            graph_id = _extract_id(raw)
-            props = _extract_props(raw)
 
-            # Reverse lookup identifier from label
-            label = labels[0] if labels else "Structure"
-            identifier = get_identifier_for_label(label) or "unknown"
-
-            # Add identifier to properties for access
-            props["identifier"] = identifier
-
-            structures.append(
-                RetrievedStructure(
-                    graph_name=graph.age_name,
-                    id=graph_id,
-                    label=label,
-                    properties=props,
-                )
-            )
+            structures.append(retrieved.RetrievedStructure.from_node(raw, graph_name=graph.age_name))
 
         return structures
 
@@ -771,7 +749,7 @@ class GraphController:
         graph: models.Graph,
         identifier: str,
         structure_object: str,
-    ) -> List[RetrievedEntity]:
+    ) -> List[retrieved.RetrievedEntity]:
         """
         Gets all entities that are informed by a given structure.
         """
@@ -986,7 +964,7 @@ class GraphController:
         )
 
         archived_node = self.get_node_by_local_id(graph, local_id=structure_id)
-        return RetrievedStructure.from_node(
+        return retrieved.RetrievedStructure.from_node(
             {
                 "id": archived_node.id,
                 "label": archived_node.label,
@@ -1001,7 +979,7 @@ class GraphController:
         structure_id: scalars.LocalID,
         payload: inputs.StructureInput,
         provenance: ProvenanceContext,
-    ) -> RetrievedStructure:
+    ) -> retrieved.RetrievedStructure:
         """Update a structure in-place and optionally append new metrics."""
         node = self.get_node_by_local_id(graph, local_id=structure_id)
         label = node.label
@@ -1489,7 +1467,7 @@ class GraphController:
             properties=_extract_props(row["sl"]),
         )
 
-    def get_informing_structures_for_link(self, link_ref_id: str) -> List[RetrievedStructure]:
+    def get_informing_structures_for_link(self, link_ref_id: str) -> List[retrieved.RetrievedStructure]:
         """
         Get all structures that INFORM a ShadowLink.
 
@@ -1512,7 +1490,7 @@ class GraphController:
         structures = []
         for row in result:
             structures.append(
-                RetrievedStructure(
+                retrieved.RetrievedStructure(
                     graph_name=self.age_name,
                     id=row["graph_id"],
                     label=row.get("label", "Structure"),
