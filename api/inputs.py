@@ -280,6 +280,10 @@ class DeleteNaturalEventInput:
 class RecordMetricInput(MetricInput):
     """Input for creating a new metric."""
 
+    graph: str = strawberry.field(description="The graph id this metric will belong to")
+    identifier: str = strawberry.field(description="The schema identifier for this metric (e.g. '@mikro/roi_volume')")
+    object: str = strawberry.field(description="The unique ID of the object this metric references")
+    value_kind: input_models.PropertyType = strawberry.field(description="The kind of value this metric represents")
     value: AnyScalar = strawberry.field(description="The value of the metric, which can be any scalar type (string, number, boolean)")
 
 

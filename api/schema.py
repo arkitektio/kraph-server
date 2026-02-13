@@ -86,6 +86,10 @@ class Mutation:
         description="Update an existing structure in the graph",
         resolver=mutations.update_structure,
     )
+    record_metric = kante.django_mutation(
+        description="Record a metric, auto-creating structure when allowed",
+        resolver=mutations.record_metric,
+    )
     create_metric = kante.django_mutation(
         description="Create a new metric in the graph",
         resolver=mutations.create_metric,

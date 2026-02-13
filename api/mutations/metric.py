@@ -46,13 +46,13 @@ def record_metric(
             raise ValueError(f"Structure category with identifier '{model.identifier}' does not exist in graph '{model.graph}'")
 
     try:
-        m = models.MetricCategory.objects.get(identifier=model.key, structure_category=s)
+        m = models.MetricCategory.objects.get(key=model.key, structure_category=s)
     except models.MetricCategory.DoesNotExist:
         if graph.allow_auto_add_structure_definitions:
             m = models.MetricCategory.objects.create_from_metric_definition(
                 graph=graph,
                 definition=input_models.MetricDefinitionInput(
-                    structure=s.pk,
+                    structure=s.identifier,
                     value_kind=model.value_kind,
                     key=model.key,
                 ),
