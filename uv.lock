@@ -751,7 +751,7 @@ wheels = [
 
 [[package]]
 name = "kante"
-version = "0.16.0"
+version = "1.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "channels" },
@@ -759,9 +759,9 @@ dependencies = [
     { name = "strawberry-graphql", extra = ["channels"] },
     { name = "strawberry-graphql-django" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/64/f3/b5620152f9660e90dc576e9e5cab9c06806804f88a3449e8b91e4e1bbb12/kante-0.16.0.tar.gz", hash = "sha256:767bf0c5b091a20e8cf37e33b5a42007d6099326a001d0cbbfe6645b682ba346", size = 12020, upload-time = "2025-09-25T11:58:47.778Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fe/bf/8a1d74601778afd3f3454d1c040cce19f8760f6594a6bda7bc3b00e71adb/kante-1.1.0.tar.gz", hash = "sha256:867e4779e3cb5a78ed74a059c14ca2373923a4ad08ff987aa91e3281c8b4eb60", size = 12068, upload-time = "2026-02-13T12:34:21.815Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/77/f7/c851d7e0ea1914745d14406199bdb59299952d2e83b40060a262691007c3/kante-0.16.0-py3-none-any.whl", hash = "sha256:7a237ad55ece051bc9b575e59c4ecd74bd9c15c7eceb0a027736bf19be2d119a", size = 15451, upload-time = "2025-09-25T11:58:46.663Z" },
+    { url = "https://files.pythonhosted.org/packages/a2/c3/40db81ac4d09051e2d441ba7608fa252402b7db3f5d84d022382e65b6e53/kante-1.1.0-py3-none-any.whl", hash = "sha256:c0fe4c706bd76f5076878e094b6f63b657da34c11989babda5097d1b21fbbfb5", size = 15509, upload-time = "2026-02-13T12:34:20.896Z" },
 ]
 
 [[package]]
@@ -811,6 +811,7 @@ dependencies = [
     { name = "django-taggit" },
     { name = "duckdb" },
     { name = "jsonpatch" },
+    { name = "kante" },
     { name = "koherent" },
     { name = "namegenerator" },
     { name = "omegaconf" },
@@ -850,6 +851,7 @@ requires-dist = [
     { name = "django-taggit", specifier = ">=6.1.0" },
     { name = "duckdb", specifier = ">=1.2.2" },
     { name = "jsonpatch", specifier = "~=1.33" },
+    { name = "kante", specifier = ">=1.1.0" },
     { name = "koherent", specifier = ">=0.2.0" },
     { name = "namegenerator", specifier = ">=1.0.6,<2" },
     { name = "omegaconf", specifier = ">=2.3.0,<3" },
@@ -1541,16 +1543,16 @@ channels = [
 
 [[package]]
 name = "strawberry-graphql-django"
-version = "0.59.1"
+version = "0.75.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "asgiref" },
     { name = "django" },
     { name = "strawberry-graphql" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fa/28/543469d33cf12796f20a41c01366cbd4752fba303e85128c530e21724b16/strawberry_graphql_django-0.59.1.tar.gz", hash = "sha256:b886f1371539962f286b43d273fd91505f943e5e6688f191d6113576b40070ad", size = 84110, upload-time = "2025-05-06T07:30:21.994Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0f/50/c0f5aefafde75b7ec14bc07e462043800650fb827eec3b75d5adf8872e8b/strawberry_graphql_django-0.75.0.tar.gz", hash = "sha256:2a3720687811c723e030fe09726a2a81cfa3a7b3b6ff1a5af187368b44df7afd", size = 88085, upload-time = "2026-01-27T18:46:29.015Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/29/c3/b8e5a38d29ab2f9536e5e1f591509396f3e22dd8ba9069d7963edb18ef24/strawberry_graphql_django-0.59.1-py3-none-any.whl", hash = "sha256:c0d74f6f2f140d8683fd3ac7405731ed63342d3aa9294443efe2412e51379227", size = 105410, upload-time = "2025-05-06T07:30:19.791Z" },
+    { url = "https://files.pythonhosted.org/packages/7a/be/18d424473c6a09d23002f3fbe4b9d7a1066a7f4e39660fb76a875618bc8a/strawberry_graphql_django-0.75.0-py3-none-any.whl", hash = "sha256:d4c31a526c72332eafc1067a3e5dd6e2917cbea2a2e5faac589c86a5b6081297", size = 109397, upload-time = "2026-01-27T18:46:27.278Z" },
 ]
 
 [[package]]

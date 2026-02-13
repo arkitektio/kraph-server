@@ -776,10 +776,13 @@ class StructureCategory(NodeCategory):
     )
 
     def get_age_vertex_name(self):
-        return self.age_name
+        return "Structure"
 
     def get_age_type_name(self) -> str:
         return "STRUCTURE"
+
+    def get_age_identifier(self):
+        return self.identifier
 
     class Meta:
         default_related_name = "structure_categories"

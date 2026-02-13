@@ -272,8 +272,8 @@ class GraphController:
         # --- Step 5: Link Entity -> Evidence ---
         for evidence in supporting_evidence:
             evidence_identifier = evidence.identifier
+
             evidence_object = evidence.object
-            g_label = get_label_for_identifier(evidence_identifier)
             self.engine.execute(
                 entity_category.graph,
                 f"""
@@ -328,10 +328,10 @@ class GraphController:
         result = self.engine.execute(
             category.graph,
             f"""
-            MATCH (s:{category.get_age_vertex_name()} {{object: $obj, category: $sid}})
+            MATCH (s:{category.get_age_vertex_name()} {{object: $obj, category: $sid,  identifier: $identifier}})
             RETURN s, id(s) as sid
             """,
-            {"obj": object, "sid": category.pk},
+            {"obj": object, "sid": category.pk, "identifier": category.identifier},
         )
 
         if not result:
@@ -752,7 +752,7 @@ class GraphController:
         query = f"""
             MATCH (s)-[:{vocab.INFORMS}]->(e)
             WHERE e.id = $eid
-            RETURN s, labels(s) as lbls
+            RETURN s
         """
         result = self.engine.execute(graph, query, {"eid": entity_id})
 

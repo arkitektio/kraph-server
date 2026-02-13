@@ -74,26 +74,31 @@ class NodeCategory:
 
 @kante.django_type(models.EntityCategory, filters=filters.EntityCategoryFilter, pagination=True, ordering=order.EntityCategoryOrder, description="An entity category/schema definition")
 class EntityCategory(NodeCategory):
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
     property_definitions: List[PropertyDefinition] = strawberry.field(default_factory=list, description="List of property definitions for this entity category")
 
 
 @kante.django_type(models.StructureCategory, filters=filters.StructureCategoryFilter, pagination=True, ordering=order.StructureCategoryOrder, description="A structure category/schema definition")
 class StructureCategory(NodeCategory):
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
     pass
 
 
 @kante.django_type(models.MetricCategory, filters=filters.MetricCategoryFilter, pagination=True, ordering=order.MetricCategoryOrder, description="A metric category/schema definition")
 class MetricCategory(NodeCategory):
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
     pass
 
 
 @kante.django_interface(models.NaturalEventCategory, description="Base interface for event categories/schemas")
 class EventCategory(NodeCategory):
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
     pass
 
 
 @kante.django_type(models.ProtocolEventCategory, filters=filters.ProtocolEventCategoryFilter, pagination=True, ordering=order.ProtocolEventCategoryOrder, description="A relation category/schema definition")
 class ProtocolEventCategory(EventCategory):
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
     """A protocol event category/schema definition, which is a subtype of EventCategory."""
 
     pass
@@ -101,6 +106,7 @@ class ProtocolEventCategory(EventCategory):
 
 @kante.django_type(models.NaturalEventCategory, filters=filters.NaturalEventCategoryFilter, pagination=True, ordering=order.NaturalEventCategoryOrder, description="A relation category/schema definition")
 class NaturalEventCategory(EventCategory):
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
     """A natural event category/schema definition, which is a subtype of EventCategory."""
 
     pass
@@ -108,6 +114,7 @@ class NaturalEventCategory(EventCategory):
 
 @kante.django_type(models.RelationCategory, filters=filters.RelationCategoryFilter, pagination=True, ordering=order.RelationCategoryOrder, description="A relation category/schema definition")
 class RelationCategory(EdgeCategory):
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
     """A relation category/schema definition, which defines the type of a relation edge between entities. It can also include property definitions for the relation."""
 
     pass
