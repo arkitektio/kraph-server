@@ -11,7 +11,7 @@ This module follows the pattern from core/types.py where:
 """
 
 import strawberry
-from typing import Generic, Optional, List, Type, TypeVar, Union
+from typing import Generic, Optional, List, Type, TypeVar, Union, cast
 from datetime import datetime
 from api import loaders, order
 from graph_engine.scalars import AnyScalar, UnixMilliseconds, StructureIdentifier, GlobalID
@@ -38,6 +38,36 @@ class PropertyDefinition:
     description: Optional[str] = strawberry.field(default=None, description="Description of this property")
 
 
+@kante.pydantic_type(input_models.ColumnInput, all_fields=True, description="Input type for defining a graph schema")
+class Column:
+    """A column definition for a graph schema."""
+
+
+@kante.pydantic_type(input_models.WhereClauseInput, all_fields=True, description="Input type for defining a graph schema")
+class WhereClause:
+    """A column definition for a graph schema."""
+
+
+@kante.pydantic_type(input_models.MatchPathInput, all_fields=True, description="Input type for creating a new graph")
+class MatchPath:
+    """A path definition for matching patterns in the graph."""
+
+
+@kante.pydantic_type(input_models.ReturnInput, all_fields=True, description="Input type for creating a new graph")
+class Return:
+    """A path definition for matching patterns in the graph."""
+
+
+@kante.django_type(models.MaterializedEdge, description="A materialized edge representing a relationship in the graph")
+class MaterializedEdge:
+    """A materialized edge representing a relationship in the graph."""
+
+    id: strawberry.ID = strawberry.field(description="Database ID of the edge")
+    source: "NodeCategory"
+    target: "NodeCategory"
+    relation: "RelationCategory"
+
+
 @kante.django_type(models.Graph, description="Base interface for graph schemas")
 class Graph:
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
@@ -48,6 +78,17 @@ class Graph:
     color: Optional[List[int]] = strawberry.field(default=None, description="Color as RGBA list (0-255)")
     tags: List[str] = strawberry.field(default_factory=list, description="List of tags associated with this category")
     name: str = strawberry.field(description="Name of the graph")
+    materialized_edges: List["MaterializedEdge"] = strawberry.field(default_factory=list, description="List of materialized edges in the graph")
+
+
+@kante.django_interface(models.Category, description="Base interface for structure categories/schemas")
+class Category:
+    label: str = strawberry.field(description="Label/name of the category")
+    description: Optional[str] = strawberry.field(default=None, description="Description of the category")
+    purl: Optional[str] = strawberry.field(default=None, description="Persistent URL for this category")
+    color: Optional[List[int]] = strawberry.field(default=None, description="Color as RGBA list (0-255)")
+    tags: List[str] = strawberry.field(default_factory=list, description="List of tags associated with this category")
+    graph: Graph = strawberry.field(description="The graph this category belongs to")
 
 
 @kante.django_interface(models.EdgeCategory, description="Base interface for graph schemas")
@@ -61,43 +102,90 @@ class EdgeCategory:
     tags: List[str] = strawberry.field(default_factory=list, description="List of tags associated with this category")
 
 
+@kante.django_interface(models.GraphQuery, description="Base interface for entity categories/schemas")
+class GraphQuery:
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
+    graph: "Graph" = strawberry.field(description="The graph this query belongs to")
+    label: str = strawberry.field(description="Label/name of the category")
+    description: Optional[str] = strawberry.field(default=None, description="Description of the category")
+    relevant_for: List["NodeCategory"] = strawberry.field(default_factory=list, description="List of node categories for which this query is relevant")
+
+
+@kante.django_type(models.GraphNodesQuery, description="Base interface for graph schemas")
+class GraphNodesQuery(GraphQuery):
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
+    node_category: "NodeCategory" = strawberry.field(description="The node category/schema to query")
+
+
+@kante.django_type(models.GraphTableQuery, description="Base interface for graph schemas")
+class GraphTableQuery(GraphQuery):
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
+    query: scalars.CypherLiteral = strawberry.field(description="The Cypher query to execute for this table query")
+    columns: List[Column] = strawberry.field(description="List of columns to return in the table query result")
+    match_paths: List[MatchPath] = strawberry.field(description="The pattern to match in the graph for this table query")
+    where_clauses: List[WhereClause] = strawberry.field(description="Optional filtering conditions for the table query")
+    returns: List[Return] = strawberry.field(description="The values to return for each matched pattern in the table query")
+
+
+@kante.django_type(models.GraphPathQuery, description="Base interface for graph schemas")
+class GraphPathQuery(GraphQuery):
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
+
+
+@kante.django_type(models.ScatterPlot, description="Result of linking a structure to an entity")
+class ScatterPlot:
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
+
+
 @kante.django_interface(models.NodeCategory, description="Base interface for graph schemas")
 class NodeCategory:
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
     graph_id: strawberry.ID = strawberry.field(description="ID of the graph this category belongs to")
-    label: str = strawberry.field(description="Label/name of the category")
     description: Optional[str] = strawberry.field(default=None, description="Description of the category")
     purl: Optional[str] = strawberry.field(default=None, description="Persistent URL for this category")
     color: Optional[List[int]] = strawberry.field(default=None, description="Color as RGBA list (0-255)")
     tags: List[str] = strawberry.field(default_factory=list, description="List of tags associated with this category")
+    position_x: float = strawberry.field(description="X coordinate")
+    position_y: float = strawberry.field(description="Y coordinate")
+    position_z: Optional[float] = strawberry.field(default=None, description="Z coordinate (optional)")
+    width: Optional[float] = strawberry.field(default=None, description="Width for visualization (optional)")
+    property_definitions: List[PropertyDefinition] = strawberry.field(default_factory=list, description="List of property definitions for this entity category")
+    relevant_queries: List[GraphQuery] = strawberry.field(default_factory=list, description="List of relevant queries that use this category as input")
 
 
 @kante.django_type(models.EntityCategory, filters=filters.EntityCategoryFilter, pagination=True, ordering=order.EntityCategoryOrder, description="An entity category/schema definition")
-class EntityCategory(NodeCategory):
+class EntityCategory(NodeCategory, Category):
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
-    property_definitions: List[PropertyDefinition] = strawberry.field(default_factory=list, description="List of property definitions for this entity category")
+    graph: "Graph" = strawberry.field(description="The graph this category belongs to")
+    label: str = strawberry.field(description="Label/name of the category")
 
 
 @kante.django_type(models.StructureCategory, filters=filters.StructureCategoryFilter, pagination=True, ordering=order.StructureCategoryOrder, description="A structure category/schema definition")
-class StructureCategory(NodeCategory):
+class StructureCategory(NodeCategory, Category):
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
     pass
 
 
 @kante.django_type(models.MetricCategory, filters=filters.MetricCategoryFilter, pagination=True, ordering=order.MetricCategoryOrder, description="A metric category/schema definition")
-class MetricCategory(NodeCategory):
+class MetricCategory(NodeCategory, Category):
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
+    pass
+
+
+@kante.django_type(models.MeasurementCategory, filters=filters.MetricCategoryFilter, pagination=True, ordering=order.MetricCategoryOrder, description="A metric category/schema definition")
+class MeasurementCategory(NodeCategory, Category):
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
     pass
 
 
 @kante.django_interface(models.NaturalEventCategory, description="Base interface for event categories/schemas")
-class EventCategory(NodeCategory):
+class EventCategory(NodeCategory, Category):
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
     pass
 
 
 @kante.django_type(models.ProtocolEventCategory, filters=filters.ProtocolEventCategoryFilter, pagination=True, ordering=order.ProtocolEventCategoryOrder, description="A relation category/schema definition")
-class ProtocolEventCategory(EventCategory):
+class ProtocolEventCategory(EventCategory, Category):
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
     """A protocol event category/schema definition, which is a subtype of EventCategory."""
 
@@ -105,7 +193,7 @@ class ProtocolEventCategory(EventCategory):
 
 
 @kante.django_type(models.NaturalEventCategory, filters=filters.NaturalEventCategoryFilter, pagination=True, ordering=order.NaturalEventCategoryOrder, description="A relation category/schema definition")
-class NaturalEventCategory(EventCategory):
+class NaturalEventCategory(EventCategory, Category):
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
     """A natural event category/schema definition, which is a subtype of EventCategory."""
 
@@ -113,7 +201,15 @@ class NaturalEventCategory(EventCategory):
 
 
 @kante.django_type(models.RelationCategory, filters=filters.RelationCategoryFilter, pagination=True, ordering=order.RelationCategoryOrder, description="A relation category/schema definition")
-class RelationCategory(EdgeCategory):
+class RelationCategory(EdgeCategory, Category):
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
+    """A relation category/schema definition, which defines the type of a relation edge between entities. It can also include property definitions for the relation."""
+
+    pass
+
+
+@kante.django_type(models.StructureRelationCategory, filters=filters.RelationCategoryFilter, pagination=True, ordering=order.RelationCategoryOrder, description="A relation category/schema definition")
+class StructureRelationCategory(EdgeCategory, Category):
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
     """A relation category/schema definition, which defines the type of a relation edge between entities. It can also include property definitions for the relation."""
 
@@ -181,7 +277,7 @@ class RichProperty:
 # ===========================================
 
 T = TypeVar("T", bound="Node")
-V = TypeVar("V", bound="RetrievedNode")
+V = TypeVar("V", bound=RetrievedNode)
 
 
 @strawberry.interface(description="Base interface for all graph nodes")
@@ -200,12 +296,20 @@ class Node(Generic[V]):
     def graph_id(self) -> int:
         return self._value.id
 
+    @kante.django_field(description="The graph this node belongs to")
+    def graph(self) -> Graph:
+        """Fetch the graph this node belongs to."""
+        # In a real implementation, we would fetch the graph based on the node's graph_id.
+        # For this example, we'll return None for simplicity.
+        return cast(Graph, models.Graph.objects.get_graph_from_graph_name(self._value.graph_name))
+
     @strawberry.field(description="Global identifier in format 'graph_name:graph_id'")
     def global_id(self) -> GlobalID:
         return self._value.global_id
 
-    @strawberry.field(description="The AGE graph label")
+    @strawberry.field(description="The AGE graph label as recently materialized (e.g. 'Cell IAC100', 'ROI 1')")
     def label(self) -> str:
+        """Should return the most specific label for this node (e.g. 'Cell' instead of 'Entity') Composed by its propetries"""
         return self._value.label
 
     @strawberry.field(description="Composite ID for node lookup")
@@ -277,6 +381,13 @@ class Entity(VersionedNode, Node[RetrievedNode]):
     def category_id(self) -> Optional[str]:
         return self._value.category_id
 
+    @kante.django_field(description="The graph this node belongs to")
+    def category(self) -> EntityCategory:
+        """Fetch the graph this node belongs to."""
+        # In a real implementation, we would fetch the graph based on the node's graph_id.
+        # For this example, we'll return None for simplicity.
+        return cast(EntityCategory, models.EntityCategory.objects.get(id=self._value.category_id))
+
     @strawberry.field(description="When this entity became valid")
     def valid_from(self) -> Optional[datetime]:
         return self._value.valid_from
@@ -301,6 +412,22 @@ class Entity(VersionedNode, Node[RetrievedNode]):
         # from the graph and return them as Structure types.
         # For this example, we'll return an empty list.
         return self._value.cleaned_properties
+
+    @kante.django_field(description="The source entity of this relation")
+    def measured_by(self) -> List["Measurement"]:
+        """Return the structures that provide evidence for this relation."""
+        # In a real implementation, we would fetch the linked structures
+        # from the graph and return them as Structure types.
+        # For this example, we'll return an empty list.
+        return []
+
+    @kante.django_field(description="The source entity of this relation")
+    def participated_in(self) -> List["Participation"]:
+        """Return the structures that provide evidence for this relation."""
+        # In a real implementation, we would fetch the linked structures
+        # from the graph and return them as Structure types.
+        # For this example, we'll return an empty list.
+        return []
 
 
 # ===========================================
@@ -414,16 +541,18 @@ class ProtocolEvent(VersionedNode):
 # ===========================================
 # BASE EDGE INTERFACE
 # ===========================================
+T = TypeVar("T", bound="Edge")
+V = TypeVar("V", bound=RetrievedEdge)
 
 
 @strawberry.interface(description="Base interface for all graph edges")
-class Edge:
+class Edge(Generic[V]):
     """
     Base interface that all graph edges implement.
     Uses strawberry.Private to hold the underlying RetrievedEdge data.
     """
 
-    _value: strawberry.Private[RetrievedEdge]
+    _value: strawberry.Private[V]
 
     def __hash__(self):
         return hash(self._value)
@@ -451,6 +580,16 @@ class Edge:
     @strawberry.field(description="Global ID of the target/right node")
     def right_id(self) -> str:
         return self._value.unique_right_id
+
+    @classmethod
+    def to_subtype(cls, value: RetrievedEdge) -> "Edge":
+        """Factory method to create the appropriate Edge subtype based on the value."""
+        return cast_edge_to_graphql_type(value)
+
+    @classmethod
+    def from_specific(cls: Type[T], subtype: V) -> T:
+        """Factory method to convert an Edge subtype back to the base Edge interface."""
+        return cls(_value=subtype)
 
 
 # ===========================================
@@ -492,6 +631,38 @@ class Assertion(Node):
         return self._value.created_at
 
 
+@strawberry.type(description="A relation representing a connection between two entities")
+class ShadowLink(Node[retrieved.RetrievedShadowLink]):
+    """
+    A shadow link represents a relation between two entities that is not materialized in the graph but is inferred from other data.
+    """
+
+    @strawberry.field(description="The relation type/kind")
+    def kind(self) -> str:
+        return self._value.kind or self._value.label
+
+    @strawberry.field(description="Category ID linking to RelationCategory model")
+    def category_id(self) -> Optional[str]:
+        return self._value.category_id
+
+
+@strawberry.type(description="A measurement representing provenance information")
+class Measurement(Edge[retrieved.RetrievedMeasurement]):
+    """
+    A measurement records who made what claims about the graph and when.
+    It links to the assertions it was derived from.
+    """
+
+    @strawberry.field(description="User/subject who made the assertion")
+    def subject(self) -> Optional[str]:
+        return self._value.subject
+
+    @kante.django_field(description="The graph this node belongs to")
+    async def category(self) -> "MeasurementCategory":
+        """Fetch the graph this node belongs to."""
+        return await loaders.measurement_category_loader.load(self._value.category_id)
+
+
 # ===========================================
 # RELATION TYPE
 # ===========================================
@@ -506,21 +677,22 @@ class Relation(Edge):
 
     _value: strawberry.Private[RetrievedEdge]
 
-    @strawberry.field(description="When this relation became valid")
-    def valid_from(self) -> Optional[datetime]:
+    @strawberry.field(description="When this relation became valid according to the evidence")
+    def measured_from(self) -> Optional[datetime]:
         return self._value.valid_from
 
-    @strawberry.field(description="When this relation stopped being valid")
-    def valid_to(self) -> Optional[datetime]:
+    @strawberry.field(description="When this relation stopped being valid according to the evidence")
+    def measured_to(self) -> Optional[datetime]:
         return self._value.valid_to
 
     @strawberry.field(description="When this relation was created")
     def created_at(self) -> Optional[datetime]:
         return self._value.created_at
 
-    @strawberry.field(description="Category ID linking to RelationCategory model")
-    def category_id(self) -> Optional[str]:
-        return self._value.category_id
+    @kante.django_field(description="The graph this node belongs to")
+    async def category(self) -> models.MeasurementCategory:
+        """Fetch the graph this node belongs to."""
+        return await loaders.measurement_category_loader.load(self._value.category_id)
 
     @strawberry.field(description="List of properties derived for this entity")
     def rich_properties(self) -> List[RichProperty]:
@@ -583,6 +755,11 @@ class Asserted(Edge):
 
 @kante.type(description="A natural event category/schema definition")
 class Generated(Edge):
+    pass
+
+
+@kante.type(description="A natural event category/schema definition")
+class Participation(Edge):
     pass
 
 
@@ -710,7 +887,6 @@ class GraphPairsRender:
 @strawberry.type(description="Result of linking a structure to an entity")
 class GraphTableRender:
     _value: strawberry.Private[retrieved.RetrievedGraphTableRender]
-    pass
 
 
 @strawberry.type(description="Result of linking a structure to an entity")

@@ -7,12 +7,13 @@ from kante.types import Info
 
 from api import types, context
 from core import models
+from graph_engine import scalars
 
 
 def structure(
     info: Info,
-    identifier: str,
-    object: str,
+    identifier: scalars.StructureIdentifier,
+    object: scalars.StructureObject,
 ) -> Optional[types.Structure]:
     """
     Fetch a specific structure by its identifier and object ID.

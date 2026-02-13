@@ -21,7 +21,4 @@ from api.schema import schema  # noqa: E402
 from kante.router import router  # noqa: E402
 
 
-application = router(
-    schema=schema,
-    django_asgi_app=django_asgi_app,
-)
+application = router(schema=schema, django_asgi_app=django_asgi_app, schema_path="schema")

@@ -348,9 +348,12 @@ class RetrievedEdge:
         return self.properties.get("type")
 
     @property
-    def category_id(self) -> Optional[str]:
+    def category_id(self) -> str:
         """Get the category ID (for linking to Django model)."""
-        return self.properties.get("category_id")
+        cat = self.properties.get("category_id")
+        if cat is None:
+            raise ValueError("Edge is missing 'category_id' property")
+        return cat
 
     # === Measurement Properties (when edge_type == 'MEASUREMENT') ===
 
@@ -526,6 +529,20 @@ class RetrievedEvent(RetrievedNode):
 
 
 @dataclass
+class RetrievedShadowLink(RetrievedNode):
+    """A retrieved ShadowLink node from the AGE graph."""
+
+    pass
+
+
+@dataclass
+class RetrievedMeasurementLink(RetrievedNode):
+    """A retrieved MeasurementLink node from the AGE graph."""
+
+    pass
+
+
+@dataclass
 class RetrievedNaturalEvent(RetrievedNode):
     """A retrieved Event node from the AGE graph."""
 
@@ -537,6 +554,23 @@ class RetrievedProtocolEvent(RetrievedNode):
     """A retrieved Event node from the AGE graph."""
 
     pass
+
+
+@dataclass
+class RetrievedMeasurement(RetrievedEdge):
+    """A retrieved Measurement edge from the AGE graph."""
+
+    pass
+
+    @property
+    def role(self) -> Optional[str]:
+        """The measurement role (i.e as input to a structure, as a property of an entity, etc)."""
+        return self.properties.get("role")
+
+    @property
+    def supporting_links(self) -> List[RetrievedShadowLink]:
+        """List of shadow link IDs that support this measurement."""
+        raise NotImplementedError("This method is not implemented yet. It would require additional queries to fetch linked shadow links based on the shadow_link_id property.")
 
 
 @dataclass

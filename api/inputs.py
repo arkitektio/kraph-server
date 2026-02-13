@@ -16,6 +16,13 @@ from strawberry.experimental import pydantic
 from typing import Annotated
 
 
+@pydantic.input(model=input_models.MetricInput, description="Input for creating a new natural event definition in the graph schema")
+class MetricInput:
+    key: str = strawberry.field(description="The key/name of the metric")
+    value: AnyScalar = strawberry.field(description="The value of the metric, which can be any scalar type (string, number, boolean)")
+    pass
+
+
 @pydantic.input(model=input_models.PlateChildInput, description="Input for requesting media upload credentials")
 class PlateChildInput:
     """Input for requesting media upload credentials"""
@@ -37,6 +44,13 @@ class PlateChildInput:
 # ==========================================
 # SCHEMA DEFINITION INPUT TYPES (List-based)
 # ==========================================
+
+
+@pydantic.input(model=input_models.CreateStructureInput, all_fields=True, description="Input for creating a new structure")
+class PinNodeInput:
+    """Input for creating a new structure."""
+
+    pass
 
 
 @pydantic.input(model=input_models.DerivationRuleInput, all_fields=True, description="Configuration for property derivation rules")
@@ -118,13 +132,6 @@ class RenderGraphTableOrder:
 # ==========================================
 # Schema Creation Input Types
 # ==========================================
-
-
-@pydantic.input(model=input_models.MetricInput, description="Input for creating a new natural event definition in the graph schema")
-class MetricInput:
-    key: str = strawberry.field(description="The key/name of the metric")
-    value: AnyScalar = strawberry.field(description="The value of the metric, which can be any scalar type (string, number, boolean)")
-    pass
 
 
 @pydantic.input(model=input_models.StructureReferenceInput, all_fields=True, description="Input for creating a new natural event definition in the graph schema")
@@ -213,6 +220,90 @@ class DeleteEntityDefinitionInput:
     pass
 
 
+@pydantic.input(model=input_models.CreateStructureRelationDefinitionInput, all_fields=True, description="Input for creating a new structure relation definition in the graph schema")
+class CreateStructureRelationDefinitionInput:
+    """Input for creating a new structure relation definition in the graph schema."""
+
+    pass
+
+
+@pydantic.input(model=input_models.UpdateStructureRelationDefinitionInput, all_fields=True, description="Input for updating an existing structure relation definition in the graph schema")
+class UpdateStructureRelationDefinitionInput:
+    """Input for updating an existing structure relation definition in the graph schema."""
+
+    pass
+
+
+@pydantic.input(model=input_models.DeleteStructureRelationDefinitionInput, all_fields=True, description="Input for deleting an existing structure relation definition in the graph schema")
+class DeleteStructureRelationDefinitionInput:
+    """Input for deleting an existing structure relation definition in the graph schema."""
+
+    pass
+
+
+@pydantic.input(model=input_models.ArchiveStructureRelationDefinitionInput, all_fields=True, description="Input for archiving (soft deleting) an existing structure relation definition in the graph schema")
+class ArchiveStructureRelationDefinitionInput:
+    """Input for archiving (soft deleting) an existing structure relation definition in the graph schema."""
+
+    pass
+
+
+@pydantic.input(model=input_models.CreateStructureDefinitionInput, all_fields=True, description="Input for creating a new structure definition in the graph schema")
+class CreateStructureDefinitionInput:
+    """Input for creating a new structure definition in the graph schema."""
+
+    pass
+
+
+@pydantic.input(model=input_models.UpdateStructureDefinitionInput, all_fields=True, description="Input for updating an existing structure definition in the graph schema")
+class UpdateStructureDefinitionInput:
+    """Input for updating an existing structure definition in the graph schema."""
+
+    pass
+
+
+@pydantic.input(model=input_models.DeleteStructureDefinitionInput, all_fields=True, description="Input for deleting an existing structure definition in the graph schema")
+class DeleteStructureDefinitionInput:
+    """Input for deleting an existing structure definition in the graph schema."""
+
+    pass
+
+
+@pydantic.input(model=input_models.ArchiveStructureDefinitionInput, all_fields=True, description="Input for archiving (soft deleting) an existing structure definition in the graph schema")
+class ArchiveStructureDefinitionInput:
+    """Input for archiving (soft deleting) an existing structure definition in the graph schema."""
+
+    pass
+
+
+@pydantic.input(model=input_models.CreateMetricDefinitionInput, all_fields=True, description="Input for creating a new metric definition in the graph schema")
+class CreateMetricDefinitionInput:
+    """Input for creating a new metric definition in the graph schema."""
+
+    pass
+
+
+@pydantic.input(model=input_models.UpdateMetricDefinitionInput, all_fields=True, description="Input for updating an existing metric definition in the graph schema")
+class UpdateMetricDefinitionInput:
+    """Input for updating an existing metric definition in the graph schema."""
+
+    pass
+
+
+@pydantic.input(model=input_models.DeleteMetricDefinitionInput, all_fields=True, description="Input for deleting an existing metric definition in the graph schema")
+class DeleteMetricDefinitionInput:
+    """Input for deleting an existing metric definition in the graph schema."""
+
+    pass
+
+
+@pydantic.input(model=input_models.ArchiveMetricDefinitionInput, all_fields=True, description="Input for archiving (soft deleting) an existing metric definition in the graph schema")
+class ArchiveMetricDefinitionInput:
+    """Input for archiving (soft deleting) an existing metric definition in the graph schema."""
+
+    pass
+
+
 @pydantic.input(model=input_models.CreateRelationDefinitionInput, all_fields=True, description="Input for creating a new relation definition in the graph schema")
 class CreateRelationDefinitionInput:
     """Input for creating a new relation definition in the graph schema."""
@@ -237,13 +328,6 @@ class DeleteRelationDefinitionInput:
 @pydantic.input(model=input_models.ArchiveRelationDefinitionInput, all_fields=True, description="Input for archiving (soft deleting) an existing relation definition in the graph schema")
 class ArchiveRelationDefinitionInput:
     """Input for archiving (soft deleting) an existing relation definition in the graph schema."""
-
-    pass
-
-
-@pydantic.input(model=input_models.RestoreRelationDefinitionInput, all_fields=True, description="Input for restoring a previously archived relation definition in the graph schema")
-class RestoreRelationDefinitionInput:
-    """Input for restoring a previously archived relation definition in the graph schema."""
 
     pass
 

@@ -24,6 +24,7 @@ from kante.types import Info
 from api.types import Entity, Structure, Metric, Assertion
 
 from api import queries, types, mutations
+from datalayer import mutations as datalayer_mutations
 from graph_engine import scalars
 
 
@@ -54,6 +55,12 @@ class Mutation:
         description="Create a new graph based on a provided graph schema definition",
         resolver=mutations.create_graph_from_schema,
     )
+
+    pin_node = kante.django_mutation(
+        description="Pin a node in the UI for a user",
+        resolver=mutations.pin_node,
+    )
+
     create_entity = kante.django_mutation(
         description="Create a new entity in the graph",
         resolver=mutations.create_entity,
@@ -106,6 +113,99 @@ class Mutation:
         description="Update an existing metric in the graph",
         resolver=mutations.update_metric,
     )
+
+    upload_media = kante.django_mutation(
+        description="Upload media and return a URL for access",
+        resolver=datalayer_mutations.upload_media,
+    )
+
+    # Categories/schema mutations
+    create_entity_category = kante.django_mutation(
+        description="Create a new entity category/schema in the graph",
+        resolver=mutations.create_entity_category,
+    )
+    delete_entity_category = kante.django_mutation(
+        description="Delete an entity category/schema from the graph",
+        resolver=mutations.delete_entity_category,
+    )
+    update_entity_category = kante.django_mutation(
+        description="Update an existing entity category/schema in the graph",
+        resolver=mutations.update_entity_category,
+    )
+    create_structure_category = kante.django_mutation(
+        description="Create a new structure category/schema in the graph",
+        resolver=mutations.create_structure_category,
+    )
+    delete_structure_category = kante.django_mutation(
+        description="Delete a structure category/schema from the graph",
+        resolver=mutations.delete_structure_category,
+    )
+    update_structure_category = kante.django_mutation(
+        description="Update an existing structure category/schema in the graph",
+        resolver=mutations.update_structure_category,
+    )
+    create_structure_relation_category = kante.django_mutation(
+        description="Create a new structure relation category/schema in the graph",
+        resolver=mutations.create_structure_relation_category,
+    )
+    delete_structure_relation_category = kante.django_mutation(
+        description="Delete a structure relation category/schema from the graph",
+        resolver=mutations.delete_structure_relation_category,
+    )
+    update_structure_relation_category = kante.django_mutation(
+        description="Update an existing structure relation category/schema in the graph",
+        resolver=mutations.update_structure_relation_category,
+    )
+    create_metric_category = kante.django_mutation(
+        description="Create a new metric category/schema in the graph",
+        resolver=mutations.create_metric_category,
+    )
+    delete_metric_category = kante.django_mutation(
+        description="Delete a metric category/schema from the graph",
+        resolver=mutations.delete_metric_category,
+    )
+    update_metric_category = kante.django_mutation(
+        description="Update an existing metric category/schema in the graph",
+        resolver=mutations.update_metric_category,
+    )
+    create_relation_category = kante.django_mutation(
+        description="Create a new relation category/schema in the graph",
+        resolver=mutations.create_relation_category,
+    )
+    delete_relation_category = kante.django_mutation(
+        description="Delete a relation category/schema from the graph",
+        resolver=mutations.delete_relation_category,
+    )
+    update_relation_category = kante.django_mutation(
+        description="Update an existing relation category/schema in the graph",
+        resolver=mutations.update_relation_category,
+    )
+    create_natural_event_category = kante.django_mutation(
+        description="Create a new natural event category/schema in the graph",
+        resolver=mutations.create_natural_event_category,
+    )
+    delete_natural_event_category = kante.django_mutation(
+        description="Delete a natural event category/schema from the graph",
+        resolver=mutations.delete_natural_event_category,
+    )
+    update_natural_event_category = kante.django_mutation(
+        description="Update an existing natural event category/schema in the graph",
+        resolver=mutations.update_natural_event_category,
+    )
+    create_protocol_event_category = kante.django_mutation(
+        description="Create a new protocol event category/schema in the graph",
+        resolver=mutations.create_protocol_event_category,
+    )
+    delete_protocol_event_category = kante.django_mutation(
+        description="Delete a protocol event category/schema from the graph",
+        resolver=mutations.delete_protocol_event_category,
+    )
+    update_protocol_event_category = kante.django_mutation(
+        description="Update an existing protocol event category/schema in the graph",
+        resolver=mutations.update_protocol_event_category,
+    )
+
+    # Add more mutations as needed
 
 
 @strawberry.type(description="Graph Engine Subscriptions")
@@ -187,6 +287,16 @@ def create_schema(
                     ),
                     scalars.LocalID: strawberry.scalar(
                         name="LocalID",
+                        serialize=lambda v: v,  # Implement your serialization logic here
+                        parse_value=lambda v: v,  # Implement your parsing logic here
+                    ),
+                    scalars.StructureObject: strawberry.scalar(
+                        name="StructureObject",
+                        serialize=lambda v: v,  # Implement your serialization logic here
+                        parse_value=lambda v: v,  # Implement your parsing logic here
+                    ),
+                    scalars.StructureIdentifier: strawberry.scalar(
+                        name="StructureIdentifier",
                         serialize=lambda v: v,  # Implement your serialization logic here
                         parse_value=lambda v: v,  # Implement your parsing logic here
                     ),

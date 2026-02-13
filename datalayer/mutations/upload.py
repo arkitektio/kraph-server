@@ -4,7 +4,7 @@ from datalayer.datalayer import get_current_datalayer
 from django.conf import settings
 
 
-def request_upload(info: Info, input: inputs.RequestMediaUploadInput) -> types.PresignedPostCredentials:
+def upload_media(info: Info, input: inputs.RequestMediaUploadInput) -> types.PresignedPostCredentials:
     """Request upload credentials for a given key"""
 
     datalayer = get_current_datalayer()

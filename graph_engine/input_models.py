@@ -51,6 +51,20 @@ class Action(str, Enum):
     ADD_RELATION_DEFINITIONS = "ADD_RELATION_DEFINITIONS"
 
 
+class WhereOperator(str, Enum):
+    EQUALS = "EQUALS"
+    NOT_EQUALS = "NOT_EQUALS"
+    GREATER_THAN = "GREATER_THAN"
+    LESS_THAN = "LESS_THAN"
+    GREATER_OR_EQUAL = "GREATER_OR_EQUAL"
+    LESS_OR_EQUAL = "LESS_OR_EQUAL"
+    IN = "IN"
+    NOT_IN = "NOT_IN"
+    CONTAINS = "CONTAINS"
+    STARTS_WITH = "STARTS_WITH"
+    ENDS_WITH = "ENDS_WITH"
+
+
 # --- Type compatibility mappings for aggregations ---
 
 # Aggregations that require numeric source types
@@ -367,6 +381,38 @@ class DerivationRuleInput(BaseModel):
     aggregation: Optional[AggregationFunction] = Field(default=None, description="Aggregation function (MEAN, SUM, MAX, MIN, COUNT, etc.)")
 
 
+class ColumnInput(BaseModel):
+    key: str = Field(..., description="The property key for this column")
+    type: str = Field(..., description="The property type for this column (e.g., STRING, FLOAT)")
+    unit: Optional[str] = Field(default=None, description="Unit of measurement if applicable")
+
+
+class MatchPathInput(BaseModel):
+    nodes: list[str] = Field(..., description="List of node IDs to match")
+    relations: list[str] = Field(..., description="List of node IDs representing the path")
+    optional: bool = Field(default=False, description="Whether the path match is optional")
+    title: str | None = Field(default=None, description="Title for the matched path")
+    color: list[float] | None = Field(default=None, description="Color for the matched path as RGB values")
+    relation_directions: list[bool] | None = Field(
+        default=None,
+        description="List of booleans indicating the direction of each relationship in the path (True for outgoing, False for incoming)",
+    )
+
+
+class WhereClauseInput(BaseModel):
+    path: str
+    node: str | None = None
+    property: str = Field(..., description="The property name to filter on")
+    operator: WhereOperator = Field(..., description="The operator to use for filtering")
+    value: scalars.CypherLiteral = Field(..., description="The value to compare against")
+
+
+class ReturnInput(BaseModel):
+    path: str = Field(..., description="The path ID to return")
+    node: str | None = Field(default=None, description="The node ID to return")
+    property: str | None = Field(default=None, description="The property name to return")
+
+
 class PropertyDefinitionInput(BaseModel):
     """Input for a property definition on a node or relation."""
 
@@ -533,9 +579,57 @@ class CreateEntityDefinitionInput(EntityDefinitionInput):
 
 
 class DeleteEntityDefinitionInput(BaseModel):
-    """Input for deleting an existing entity definition at the graph level."""
+    """Input for deleting an existing structure definition at the graph level."""
+
+    id: str = Field(..., description="The ID of the structure category to delete")
+
+
+class ArchiveStructureDefinitionInput(BaseModel):
+    """Input for deleting an existing structure definition at the graph level."""
+
+    id: str = Field(..., description="The ID of the structure category to delete")
+
+
+class UpdateStructureDefinitionInput(UpdateDefinitionInput):
+    """Input for updating an existing structure definition."""
+
+    identifier: Optional[str] = Field(default=None, description="Optional schema identifier for this structure (e.g. '@mikro/roi')")
+
+
+class CreateStructureDefinitionInput(StructureDefinitionInput):
+    """Input for a structure definition at the graph level (not within an event)."""
+
+    graph: str = Field(..., description="The graph id this structure will belong to")
+
+
+class DeleteStructureDefinitionInput(BaseModel):
+    """Input for deleting an existing structure definition at the graph level."""
 
     id: str = Field(..., description="The ID of the entity category to delete")
+
+
+class UpdateMetricDefinitionInput(UpdateDefinitionInput):
+    """Input for updating an existing metric definition."""
+
+    identifier: Optional[str] = Field(default=None, description="Optional schema identifier for this metric (e.g. '@mikro/roi')")
+
+
+class CreateMetricDefinitionInput(MetricDefinitionInput):
+    """Input for a metric definition at the graph level (not within an event)."""
+
+    graph: str = Field(..., description="The graph id this metric will belong to")
+
+
+class DeleteMetricDefinitionInput(BaseModel):
+    """Input for deleting an existing metric definition at the graph level."""
+
+    id: str = Field(..., description="The ID of the entity category to delete")
+
+
+class ArchiveMetricDefinitionInput(BaseModel):
+    """Input for archiving (soft deleting) an existing metric definition at the graph level."""
+
+    id: str = Field(..., description="The ID of the metric definition to archive")
 
 
 class EventKind(str, Enum):
@@ -701,8 +795,32 @@ class ArchiveRelationDefinitionInput(BaseModel):
     id: str = Field(..., description="The ID of the relation category to archive")
 
 
-class RestoreRelationDefinitionInput(BaseModel):
-    """Input for restoring an existing relation definition at the graph level."""
+class CreateStructureRelationDefinitionInput(EntityDefinitionInput):
+    """Input for an entity definition at the graph level (not within an event)."""
+
+    graph: str = Field(..., description="The graph id this entitiy will beong to")
+
+
+class UpdateStructureRelationDefinitionInput(EntityDefinitionInput):
+    """Input for updating an existing structure relation definition at the graph level."""
+
+    id: str = Field(..., description="The ID of the structure relation category to update")
+
+
+class DeleteStructureRelationDefinitionInput(BaseModel):
+    """Input for deleting an existing structure relation definition at the graph level."""
+
+    id: str = Field(..., description="The ID of the structure relation category to delete")
+
+
+class ArchiveStructureRelationDefinitionInput(BaseModel):
+    """Input for archiving (soft deleting) an existing structure relation definition at the graph level."""
+
+    id: str = Field(..., description="The ID of the structure relation category to archive")
+
+
+class RestoreStructureRelationDefinitionInput(BaseModel):
+    """Input for restoring an existing structure relation definition at the graph level."""
 
     id: str = Field(..., description="The ID of the relation category to restore")
 
@@ -810,7 +928,16 @@ class StructureInput(BaseModel):
     """Input for creating a new structure instance."""
 
     object: str = Field(..., description="The unique ID of the object this structure references")
-    metrics: List[MetricInput] = Field(default_factory=list, description="List of measurements associated with this structure")
+    metrics: List["MetricInput"] = Field(default_factory=list, description="List of measurements associated with this structure")
+
+
+class PinNodeInput(BaseModel):
+    """Input for pinning a node in the UI."""
+
+    id: str = Field(..., description="The ID of the node to pin")
+    pin: bool = Field(..., description="Whether to pin (true) or unpin (false) this node in the UI for the user making the request")
+    color: Optional[List[int]] = Field(default=None, description="Optional RGBA color for this node (e.g. [255, 0, 0, 128])")
+    user: Optional[str] = Field(default=None, description="The ID of the user for whom to set this pin. If not provided, will default to the user making the request.")
 
 
 class CreateStructureInput(StructureInput):

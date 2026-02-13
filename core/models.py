@@ -1348,7 +1348,7 @@ class MaterializedView(models.Model):
 
 class ScatterPlot(models.Model):
     query = models.ForeignKey(
-        GraphQuery,
+        GraphTableQuery,
         on_delete=models.CASCADE,
         related_name="scatter_plots",
         help_text="The query this scatter plot was trained on",

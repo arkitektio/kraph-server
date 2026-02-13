@@ -28,3 +28,6 @@ LocalID = NewType("LocalID", int)
 
 # Graph ID scalar (integer)
 GraphID = NewType("GraphID", str)
+
+# Cypher literal scalar for raw Cypher queries or fragments
+CypherLiteral = NewType("CypherLiteral", str)

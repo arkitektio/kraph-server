@@ -7,11 +7,11 @@ from api import inputs, types
 from core import models
 
 
-def create_entity_category(
+def create_structure_relation_category(
     info: Info,
-    input: inputs.CreateEntityDefinitionInput,
-) -> types.EntityCategory:
-    """GraphQL mutation wrapper for creating entity categories."""
+    input: inputs.CreateStructureRelationDefinitionInput,
+) -> types.StructureRelationCategory:
+    """GraphQL mutation wrapper for creating structure relation categories."""
 
     model = input.to_pydantic()  # Validate input with Pydantic models
 
@@ -22,7 +22,7 @@ def create_entity_category(
     if model.image:
         media_store = models.MediaStore.objects.get(id=model.image)
 
-    vocab, created = models.EntityCategory.objects.update_or_create(
+    vocab, created = models.StructureRelationCategory.objects.update_or_create(
         graph_id=model.graph,
         age_name=model.key,
         defaults=dict(
@@ -50,7 +50,7 @@ def create_entity_category(
     if model.tags:
         vocab.tags.clear()
         for tag in model.tags:
-            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag, graph=item.graph.id)
+            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag, graph=vocab.graph.id)
             vocab.tags.add(tag_obj)
 
     if model.pin is not None:
@@ -59,14 +59,14 @@ def create_entity_category(
         else:
             vocab.pinned_by.remove(info.context.request.user)
 
-    return cast(types.EntityCategory, vocab)
+    return cast(types.StructureRelationCategory, vocab)
 
 
-def update_entity_category(info: Info, input: inputs.UpdateEntityDefinitionInput) -> types.EntityCategory:
-    """GraphQL mutation wrapper for updating entity categories."""
+def update_structure_relation_category(info: Info, input: inputs.UpdateStructureRelationDefinitionInput) -> types.StructureRelationCategory:
+    """GraphQL mutation wrapper for updating structure relation categories."""
     model = input.to_pydantic()  # Validate input with Pydantic models
 
-    item = models.EntityCategory.objects.get(id=model.id)
+    item = models.StructureRelationCategory.objects.get(id=model.id)
 
     if model.color:
         assert len(model.color) == 3 or len(model.color) == 4, "Color must be a list of 3 or 4 values RGBA"
@@ -103,11 +103,11 @@ def update_entity_category(info: Info, input: inputs.UpdateEntityDefinitionInput
     return item
 
 
-def delete_entity_category(
+def delete_structure_relation_category(
     info: Info,
-    input: inputs.DeleteEntityDefinitionInput,
+    input: inputs.DeleteStructureRelationDefinitionInput,
 ) -> strawberry.ID:
     model = input.to_pydantic()  # Validate input with Pydantic models
-    item = models.EntityCategory.objects.get(id=model.id)
+    item = models.StructureRelationCategory.objects.get(id=model.id)
     item.delete()
     return model.id
