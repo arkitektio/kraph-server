@@ -32,6 +32,7 @@ def create_structure(
     controller = context.get_controller()
 
     structure_category = models.StructureCategory.objects.get(id=payload.category)  # Validate structure category exists
+    context.validate_graph_access(info, structure_category.graph)
 
     response = controller.create_structure(
         structure_category=structure_category,
@@ -39,17 +40,6 @@ def create_structure(
     )
 
     return types.Structure(_value=response)
-
-
-def _get_graph_from_identifier(identifier: str) -> models.Graph:
-    graph = None
-    if str(identifier).isdigit():
-        graph = models.Graph.objects.filter(id=int(identifier)).first()
-    if graph is None:
-        graph = models.Graph.objects.filter(age_name=identifier).first()
-    if graph is None:
-        raise ValueError(f"Graph not found for identifier {identifier}")
-    return graph
 
 
 def delete_structure(
@@ -73,7 +63,7 @@ def delete_structure(
     graph_id = context.extract_graph_id(model.id)
     local_id = context.extract_node_id(model.id)
 
-    graph = _get_graph_from_identifier(graph_id)
+    graph = context.get_accessible_graph(info, graph_id)
 
     deleted_structure = controller.get_node_by_local_id(graph, local_id=local_id)
 
@@ -107,7 +97,7 @@ def archive_structure(
     graph_id = context.extract_graph_id(model.id)
     local_id = context.extract_node_id(model.id)
 
-    graph = _get_graph_from_identifier(graph_id)
+    graph = context.get_accessible_graph(info, graph_id)
 
     structure = controller.archive_structure(
         graph,
@@ -164,7 +154,7 @@ def update_structure(
     graph_id = context.extract_graph_id(model.id)
     local_id = context.extract_node_id(model.id)
 
-    graph = _get_graph_from_identifier(graph_id)
+    graph = context.get_accessible_graph(info, graph_id)
 
     updated = controller.update_structure(
         graph,

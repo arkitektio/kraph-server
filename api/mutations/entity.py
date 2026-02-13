@@ -7,17 +7,6 @@ from api import inputs, types, context
 from core import models
 
 
-def _get_graph_from_identifier(identifier: str) -> models.Graph:
-    graph = None
-    if str(identifier).isdigit():
-        graph = models.Graph.objects.filter(id=int(identifier)).first()
-    if graph is None:
-        graph = models.Graph.objects.filter(age_name=identifier).first()
-    if graph is None:
-        raise ValueError(f"Graph not found for identifier {identifier}")
-    return graph
-
-
 def create_entity(
     info: Info,
     input: inputs.CreateEntityInput,
@@ -39,6 +28,7 @@ def create_entity(
     input_model = input.to_pydantic()  # Validate input with Pydantic models
 
     entity_category = models.EntityCategory.objects.get(id=input_model.entity_category)  # Validate graph exists
+    context.validate_graph_access(info, entity_category.graph)
 
     # Get controller for the specified graph (includes provenance from context)
     controller = context.get_controller()
@@ -73,7 +63,7 @@ def delete_entity(
     graph_id = context.extract_graph_id(model.id)
     node_id = context.extract_node_id(model.id)
 
-    graph = _get_graph_from_identifier(graph_id)
+    graph = context.get_accessible_graph(info, graph_id)
 
     deleted_entity = controller.get_node_by_local_id(graph, local_id=node_id)
 
@@ -103,7 +93,7 @@ def archive_entity(
     graph_id = context.extract_graph_id(model.id)
     node_id = context.extract_node_id(model.id)
 
-    graph = _get_graph_from_identifier(graph_id)
+    graph = context.get_accessible_graph(info, graph_id)
 
     controller.archive_entity(
         graph,
@@ -136,7 +126,7 @@ def update_entity(
 
     graph_id = context.extract_graph_id(model.id)
     local_id = context.extract_node_id(model.id)
-    graph = models.Graph.objects.get(id=graph_id)  # Validate graph exists
+    graph = context.get_accessible_graph(info, graph_id)
 
     controller.update_entity(graph, entity_id=local_id)
 
@@ -165,7 +155,7 @@ def recalculate_entity(
     graph_id = context.extract_graph_id(input.entity_id)
     node_id = context.extract_node_id(input.entity_id)
 
-    graph = models.Graph.objects.get(id=graph_id)  # Validate graph exists
+    graph = context.get_accessible_graph(info, graph_id)
 
     # Get entity first to find its  and kind
     entity = controller.get_node(graph, entity_id=node_id)

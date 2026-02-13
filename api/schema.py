@@ -86,6 +86,22 @@ class Mutation:
         description="Update an existing structure in the graph",
         resolver=mutations.update_structure,
     )
+    create_metric = kante.django_mutation(
+        description="Create a new metric in the graph",
+        resolver=mutations.create_metric,
+    )
+    delete_metric = kante.django_mutation(
+        description="Delete a metric from the graph",
+        resolver=mutations.delete_metric,
+    )
+    archive_metric = kante.django_mutation(
+        description="Archive a metric in the graph (soft delete)",
+        resolver=mutations.archive_metric,
+    )
+    update_metric = kante.django_mutation(
+        description="Update an existing metric in the graph",
+        resolver=mutations.update_metric,
+    )
 
 
 @strawberry.type(description="Graph Engine Subscriptions")

@@ -3,17 +3,39 @@ from __future__ import annotations
 from typing import Generic, Iterable, Optional, TYPE_CHECKING, TypeVar
 
 from asgiref.sync import sync_to_async, async_to_sync
+from duckdb import identifier
 from polymorphic.managers import PolymorphicManager
+from django.db import models
 
 from datalayer import models as datalayer_models
 from core import enums
-from graph_engine import input_models
+from graph_engine import input_models, scalars
 
 if TYPE_CHECKING:
     from core import models as core_models
 
 
 T = TypeVar("T", bound="core_models.Category")
+
+
+class GraphManager(models.Manager):
+    """A small manager class for Graph objects, providing common functionality for retrieving graphs based on different identifiers (e.g. graph ID, graph name, etc.) and ensuring that the correct graph is returned based on the provided identifier format."""
+
+    def get_graph_from_graph_name(self, name: scalars.GraphName) -> "core_models.Graph":
+        from core import models as core_models
+
+        graph = core_models.Graph.objects.filter(age_name=name).first()
+        if graph is None:
+            raise ValueError(f"Graph not found for identifier {name}")
+        return graph
+
+    async def aget_graph_from_graph_name(self, name: scalars.GraphName) -> "core_models.Graph":
+        from core import models as core_models
+
+        graph = await core_models.Graph.objects.filter(age_name=name).afirst()
+        if graph is None:
+            raise ValueError(f"Graph not found for identifier {name}")
+        return graph
 
 
 class CategoryManager(PolymorphicManager, Generic[T]):

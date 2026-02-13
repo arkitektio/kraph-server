@@ -25,6 +25,8 @@ class Graph(models.Model):
 
     """
 
+    objects: managers.GraphManager = managers.GraphManager()
+
     node_deletion_allowed = models.BooleanField(
         default=True,
         help_text="If node deletion is allowed in this graph",
@@ -168,6 +170,13 @@ class Graph(models.Model):
 
     @property
     def allow_auto_adding_metrics(self) -> bool:
+        return True
+
+    def validate_accessible(self, membership: Membership, scopes: list[str]):
+        """Validate if the graph is accessible for a given membership and scopes."""
+        if self.membership.organization != membership.organization:
+            raise PermissionError("You do are not allowed to access this graph")
+        # Here you can add additional scope checks if needed
         return True
 
 

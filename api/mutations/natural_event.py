@@ -62,6 +62,8 @@ def delete_natural_event(
     graph_id = context.extract_graph_id(model.id)
     local_id = context.extract_node_id(model.id)
 
+    context.get_accessible_graph(info, graph_id)
+
     response = controller.delete_natural_event(graph_id=graph_id, local_id=local_id)
 
     return strawberry.ID(response)
@@ -87,6 +89,8 @@ def archive_natural_event(
     # Extract graph ID and local ID from composite ID
     graph_id = context.extract_graph_id(model.id)
     local_id = context.extract_node_id(model.id)
+
+    context.get_accessible_graph(info, graph_id)
 
     response = controller.archive_natural_event(graph_id=graph_id, local_id=local_id)
 

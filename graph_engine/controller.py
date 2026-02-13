@@ -23,6 +23,7 @@ from graph_engine.retrieved import (
     RetrievedRelation,
     RetrievedStructure,
     RetrievedAssertion,
+    RetrievedInforms,
 )
 from graph_engine import retrieved
 from core import models
@@ -664,15 +665,12 @@ class GraphController:
             # Fallback: Just return what we have
             detected_kind = labels[0] if labels else "Unknown"
 
-        # Extract graph_id from raw node
-        graph_id = _extract_id(raw_node)
-
-        entity = RetrievedEntity(
-            graph_name=graph.age_name,
-            id=graph_id,
-            label=detected_kind,
-            properties=node_props,
-        )
+        normalized_node = {
+            "id": raw_node.get("id", 0),
+            "label": detected_kind,
+            "properties": node_props,
+        }
+        entity = RetrievedEntity.from_node(normalized_node, graph_name=graph.age_name)
 
         if entity.schema_hash != entity_category.schema_hash and auto_migrate:
             # Perform migration
@@ -697,10 +695,13 @@ class GraphController:
             identifier: Schema identifier (e.g. '@mikro/roi')
             object: Object ID of the structure
         """
-        structure_label = get_label_for_identifier(identifier)
+        try:
+            scat = models.StructureCategory.objects.get(graph=graph, identifier=identifier)
+        except models.StructureCategory.DoesNotExist:
+            raise ValueError(f"Structure not found with identifier {identifier} and object {object}")
 
         query = f"""
-            MATCH (s:{structure_label} {{object: $obj}})
+            MATCH (s:{scat.get_age_vertex_name()} {{object: $obj}})
             RETURN s, labels(s) as lbls
         """
         result = self.engine.execute(graph, query, {"obj": object})
@@ -709,12 +710,6 @@ class GraphController:
             raise ValueError(f"Structure not found with identifier {identifier} and object {object}")
 
         raw = result[0]["s"]
-        props = _extract_props(raw)
-        graph_id = _extract_id(raw)
-
-        # Add identifier to properties for access
-        props["identifier"] = identifier
-
         return retrieved.RetrievedStructure.from_node(raw, graph_name=graph.age_name)
 
     def get_informing_structures(
@@ -764,21 +759,7 @@ class GraphController:
         entities = []
         for row in result:
             raw = row["e"]
-            labels = row["lbls"]
-            props = _extract_props(raw)
-            graph_id = _extract_id(raw)
-
-            # Filter for entity labels
-            kind = next((l for l in labels if l in graph.extensions.entities_map), labels[0] if labels else "Unknown")
-
-            entities.append(
-                RetrievedEntity(
-                    graph_name=graph.age_name,
-                    id=graph_id,
-                    label=kind,
-                    properties=props,
-                )
-            )
+            entities.append(RetrievedEntity.from_node(raw, graph_name=graph.age_name))
 
         return entities
 
@@ -858,17 +839,7 @@ class GraphController:
         measurements = []
         for row in result:
             raw = row["m"]
-            props = _extract_props(raw)
-            graph_id = _extract_id(raw)
-
-            measurements.append(
-                RetrievedMetric(
-                    graph_name=graph.age_name,
-                    id=graph_id,
-                    label=vocab.Metric,
-                    properties=props,
-                )
-            )
+            measurements.append(RetrievedMetric.from_node(raw, graph_name=graph.age_name))
 
         return measurements
 
@@ -892,15 +863,25 @@ class GraphController:
         graph = structure_category.graph
 
         # MERGE to create or match existing, return the graph id
-        result = self.engine.execute(graph, f"MERGE (s:{structure_label} {{object: $obj}}) RETURN id(s) as graph_id", {"obj": payload.object})
+        result = self.engine.execute(
+            graph,
+            f"""
+            MERGE (s:{structure_label} {{object: $obj}})
+            SET s.identifier = coalesce(s.identifier, $identifier)
+            RETURN id(s) as graph_id
+            """,
+            {"obj": payload.object, "identifier": structure_category.identifier},
+        )
 
         graph_id = result[0]["graph_id"]
-
-        return RetrievedStructure(
+        created_node = self.get_node_by_local_id(graph, local_id=scalars.LocalID(graph_id))
+        return RetrievedStructure.from_node(
+            {
+                "id": created_node.id,
+                "label": created_node.label,
+                "properties": created_node.properties,
+            },
             graph_name=graph.age_name,
-            id=graph_id,
-            label=structure_label,
-            properties={"object": payload.object, "identifier": structure_category.identifier},
         )
 
     def delete_structure(
@@ -1170,65 +1151,188 @@ class GraphController:
         Returns:
             RetrievedMetric with the created measurement info
         """
-        # First, get the structure to find its identifier and object
-        structure_query = """
-            MATCH (s) WHERE id(s) = $nid
-            RETURN s, labels(s) as lbls, s.category as category, s.object as object
-        """
-
-        result = self.engine.execute(graph, structure_query, {"nid": structure_id})
-
-        if not result:
+        structure_result = self.engine.execute(
+            graph,
+            """
+            MATCH (s) WHERE id(s) = $sid
+            RETURN s
+            """,
+            {"sid": structure_id},
+        )
+        if not structure_result:
             raise ValueError(f"Structure not found with node ID {structure_id}")
 
-        result[0]["s"]
-        result[0]["lbls"]
-        category = result[0]["category"]
-        structure_object = result[0]["object"]
+        effective_provenance = self._effective_provenance(provenance)
+        assertion_id = self._create_provenance_node(graph, effective_provenance)
 
-        # Reverse lookup structure from category
-        structure_category = models.StructureCategory.objects.filter(pk=category).first()
-        if not structure_category:
-            raise ValueError(f"Structure category with ID {category} not found in database.")
+        metric_props: Dict[str, Any] = {
+            "key": input.key,
+            "value": input.value,
+        }
+        for optional_key in ["unit", "confidence", "confidence_type", "timestamp"]:
+            val = getattr(input, optional_key, None)
+            if val is not None:
+                metric_props[optional_key] = val
 
-        # Create assertion for provenance
-        prov_dict = provenance.model_dump(exclude_none=True)
-        if "action_args" in prov_dict:
-            prov_dict["action_args"] = json.dumps(prov_dict["action_args"])
-
-        assertion_props = ", ".join([f"{k}: ${k}" for k in prov_dict.keys()])
-        aid_res = self.engine.execute(graph, f"CREATE (a:{vocab.Assertion} {{{assertion_props}}}) RETURN id(a) as aid", prov_dict)
-        assertion_id = aid_res[0]["aid"]
-
-        # Create measurement and link to structure and assertion
-        meas_params = input.model_dump(exclude_none=True)
-        meas_params.update({"obj": structure_object, "aid": assertion_id})
+        metric_params = {**metric_props, "sid": structure_id, "aid": assertion_id}
 
         prop_clauses = ["key: $key", "value: $value"]
         for optional_key in ["unit", "confidence", "confidence_type", "timestamp"]:
-            if optional_key in meas_params:
+            if optional_key in metric_props:
                 prop_clauses.append(f"{optional_key}: ${optional_key}")
 
-        meas_query = f"""
-            MATCH (s:{structure_category.get_age_vertex_name()} {{object: $obj}})
+        metric_query = f"""
+            MATCH (s) WHERE id(s) = $sid
             MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
-            
             CREATE (m:{vocab.Metric} {{{", ".join(prop_clauses)}}})
             CREATE (a)-[:{vocab.ASSERTED}]->(m)
             CREATE (m)-[:{vocab.DESCRIBES}]->(s)
             RETURN id(m) as mid
         """
-        result = self.engine.execute(graph, meas_query, meas_params)
+        result = self.engine.execute(graph, metric_query, metric_params)
         graph_id = result[0]["mid"]
+        raw_metric = self.engine.execute(
+            graph,
+            """
+            MATCH (m) WHERE id(m) = $mid
+            RETURN m
+            """,
+            {"mid": graph_id},
+        )
+        if raw_metric:
+            return RetrievedMetric.from_node(raw_metric[0]["m"], graph_name=graph.age_name)
 
-        # Build properties dict from measurement input
-        meas_props = input.model_dump(exclude_none=True)
-
-        return RetrievedMetric(
+        return RetrievedMetric.from_node(
+            {
+                "id": graph_id,
+                "label": vocab.Metric,
+                "properties": metric_props,
+            },
             graph_name=graph.age_name,
-            id=graph_id,
-            label=vocab.Metric,
-            properties=meas_props,
+        )
+
+    def _effective_provenance(self, provenance: ProvenanceContext | None = None) -> ProvenanceContext:
+        if provenance is not None:
+            return provenance
+        return ProvenanceContext(
+            subject=self.subject or "unknown",
+            app_id=self.app_id or "unknown",
+        )
+
+    def _recalculate_metric_lifecycle_state(
+        self,
+        graph: models.Graph,
+        metric_id: scalars.LocalID,
+    ) -> None:
+        self.engine.execute(
+            graph,
+            """
+            MATCH (m) WHERE id(m) = $mid
+            OPTIONAL MATCH (lc:LifeCycleAssertion)-[:INFORMS]->(m)
+            WITH m, lc
+            ORDER BY coalesce(lc.archived_at, lc.timestamp, 0) DESC
+            WITH m, collect(lc)[0] as latest
+            SET m.__lifecycle_state = coalesce(latest.status, m.__lifecycle_state)
+            RETURN m
+            """,
+            {"mid": metric_id},
+        )
+
+    def archive_metric(
+        self,
+        graph: models.Graph,
+        metric_id: scalars.LocalID,
+        provenance: ProvenanceContext | None = None,
+    ) -> scalars.LocalID:
+        metric_result = self.engine.execute(
+            graph,
+            """
+            MATCH (m) WHERE id(m) = $mid
+            RETURN m
+            """,
+            {"mid": metric_id},
+        )
+        if not metric_result:
+            raise ValueError(f"Metric not found with node ID {metric_id}")
+
+        assertion_id = self._create_provenance_node(graph, self._effective_provenance(provenance))
+        archived_at = int(time.time() * 1000)
+
+        self.engine.execute(
+            graph,
+            f"""
+            MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
+            MATCH (m:{vocab.Metric}) WHERE id(m) = $mid
+            CREATE (lc:LifeCycleAssertion {{status: $status, archived_at: $archived_at, timestamp: $timestamp}})
+            CREATE (a)-[:{vocab.ASSERTED}]->(lc)
+            CREATE (lc)-[:{vocab.INFORMS}]->(m)
+            RETURN id(lc) as lifecycle_id
+            """,
+            {
+                "aid": assertion_id,
+                "mid": metric_id,
+                "status": "archived",
+                "archived_at": archived_at,
+                "timestamp": archived_at,
+            },
+        )
+
+        self._recalculate_metric_lifecycle_state(graph, metric_id)
+        return metric_id
+
+    def delete_metric(
+        self,
+        graph: models.Graph,
+        metric_id: scalars.LocalID,
+        provenance: ProvenanceContext | None = None,
+    ) -> scalars.LocalID:
+        self.engine.execute(
+            graph,
+            """
+            MATCH (m) WHERE id(m) = $mid
+            DETACH DELETE m
+            """,
+            {"mid": metric_id},
+        )
+        return metric_id
+
+    def update_metric(
+        self,
+        graph: models.Graph,
+        payload: inputs.UpdateMetricInput,
+        provenance: ProvenanceContext,
+    ) -> RetrievedMetric:
+        metric_local_id = extract_node_id(payload.id)
+
+        result = self.engine.execute(
+            graph,
+            f"""
+            MATCH (m:{vocab.Metric})-[:{vocab.DESCRIBES}]->(s)
+            WHERE id(m) = $mid
+            RETURN id(s) as sid
+            """,
+            {"mid": metric_local_id},
+        )
+        if not result:
+            raise ValueError(f"Metric not found with node ID {payload.id}")
+
+        structure_id = scalars.LocalID(result[0]["sid"])
+        self.archive_metric(graph, metric_id=metric_local_id, provenance=provenance)
+
+        metric_input = MetricInput(
+            key=payload.key,
+            value=payload.value,
+            confidence=payload.confidence,
+            confidence_type=payload.confidence_type,
+            unit=payload.unit,
+            timestamp=payload.timestamp,
+        )
+
+        return self.create_metric(
+            graph,
+            structure_id=structure_id,
+            input=metric_input,
+            provenance=provenance,
         )
 
     def link_structure_to_entity(
@@ -1237,7 +1341,7 @@ class GraphController:
         structure_object: str,
         entity_id: str,
         recalculate: bool = True,
-    ) -> RetrievedInform:
+    ) -> RetrievedInforms:
         """
         Link an existing structure to an existing entity.
 
@@ -1460,12 +1564,7 @@ class GraphController:
             return None
 
         row = result[0]
-        return RetrievedNode(
-            graph_name=self.age_name,
-            id=row["graph_id"],
-            label=vocab.ShadowLink,
-            properties=_extract_props(row["sl"]),
-        )
+        return RetrievedNode.from_node(row["sl"], graph_name=self.age_name)
 
     def get_informing_structures_for_link(self, link_ref_id: str) -> List[retrieved.RetrievedStructure]:
         """
@@ -1489,14 +1588,7 @@ class GraphController:
 
         structures = []
         for row in result:
-            structures.append(
-                retrieved.RetrievedStructure(
-                    graph_name=self.age_name,
-                    id=row["graph_id"],
-                    label=row.get("label", "Structure"),
-                    properties=_extract_props(row["s"]),
-                )
-            )
+            structures.append(retrieved.RetrievedStructure.from_node(row["s"], graph_name=self.age_name))
         return structures
 
     def get_reified_as_source_entities(self, link_ref_id: str) -> List[RetrievedEntity]:
@@ -1521,14 +1613,7 @@ class GraphController:
 
         entities = []
         for row in result:
-            entities.append(
-                RetrievedEntity(
-                    graph_name=self.age_name,
-                    id=row["graph_id"],
-                    label=row.get("label", "Entity"),
-                    properties=_extract_props(row["e"]),
-                )
-            )
+            entities.append(RetrievedEntity.from_node(row["e"], graph_name=self.age_name))
         return entities
 
     def get_reified_as_target_entities(self, link_ref_id: str) -> List[RetrievedEntity]:
@@ -1553,14 +1638,7 @@ class GraphController:
 
         entities = []
         for row in result:
-            entities.append(
-                RetrievedEntity(
-                    graph_name=self.age_name,
-                    id=row["graph_id"],
-                    label=row.get("label", "Entity"),
-                    properties=_extract_props(row["e"]),
-                )
-            )
+            entities.append(RetrievedEntity.from_node(row["e"], graph_name=self.age_name))
         return entities
 
     def get_reified_entities(self, link_ref_id: str) -> List[RetrievedEntity]:
@@ -1635,9 +1713,4 @@ class GraphController:
             return None
 
         row = result[0]
-        return RetrievedAssertion(
-            graph_name=graph.age_name,
-            id=row["graph_id"],
-            label=vocab.Assertion,
-            properties=_extract_props(row["a"]),
-        )
+        return RetrievedAssertion.from_node(row["a"], graph_name=graph.age_name)

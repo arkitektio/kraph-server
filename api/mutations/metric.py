@@ -5,7 +5,7 @@ Measurement mutation resolvers.
 from kante.types import Info
 
 from api import types, inputs, context
-from core import models
+from graph_engine.scalars import GraphID
 
 
 def create_metric(
@@ -29,10 +29,10 @@ def create_metric(
     # Convert strawberry-pydantic inputs to pydantic models
     model = input.to_pydantic()
 
-    graph_id = context.extract_graph_id(model.structure_id)
-    local_id = context.extract_node_id(model.structure_id)
+    graph_id = context.extract_graph_id(model.structure)
+    local_id = context.extract_node_id(model.structure)
 
-    graph = models.Graph.objects.get(id=graph_id)  # Validate graph exists
+    graph = context.get_accessible_graph(info, graph_id)
 
     response = controller.create_metric(
         graph,
@@ -47,7 +47,7 @@ def create_metric(
 def delete_metric(
     info: Info,
     input: inputs.DeleteMetricInput,
-) -> types.Metric:
+) -> GraphID:
     """
     Delete a measurement by its composite ID.
     Only the owner of the graph or an admin can delete a measurement.
@@ -61,14 +61,49 @@ def delete_metric(
     """
     controller = context.get_controller()
 
-    graph_id = context.extract_graph_id(input.id)
-    node_id = context.extract_node_id(input.id)
+    model = input.to_pydantic()
 
-    graph = models.Graph.objects.get(id=graph_id)  # Validate graph exists
+    graph_id = context.extract_graph_id(model.id)
+    node_id = context.extract_node_id(model.id)
 
-    controller.delete_metric(graph, metric_id=node_id)
+    graph = context.get_accessible_graph(info, graph_id)
 
-    return input
+    controller.delete_metric(
+        graph,
+        metric_id=node_id,
+        provenance=context.get_provenance_from_context(info),
+    )
+
+    return model.id
+
+
+def update_metric(
+    info: Info,
+    input: inputs.UpdateMetricInput,
+) -> types.Metric:
+    """
+    Update a metric by creating a new metric and archiving the previous one.
+
+    Args:
+        info: Strawberry Info context
+        input: The metric update payload
+
+    Returns:
+        The newly created metric
+    """
+    controller = context.get_controller()
+
+    model = input.to_pydantic()
+    graph_id = context.extract_graph_id(model.id)
+    graph = context.get_accessible_graph(info, graph_id)
+
+    updated = controller.update_metric(
+        graph,
+        payload=model,
+        provenance=context.get_provenance_from_context(info),
+    )
+
+    return types.Metric(_value=updated)
 
 
 def archive_metric(
@@ -92,8 +127,14 @@ def archive_metric(
     graph_id = context.extract_graph_id(model.id)
     node_id = context.extract_node_id(model.id)
 
-    graph = models.Graph.objects.get(id=graph_id)  # Validate graph exists
+    graph = context.get_accessible_graph(info, graph_id)
 
-    controller.archive_metric(graph, metric_id=node_id)
+    controller.archive_metric(
+        graph,
+        metric_id=node_id,
+        provenance=context.get_provenance_from_context(info),
+    )
 
-    return input
+    archived_metric = controller.get_node_by_local_id(graph, local_id=node_id)
+
+    return types.Metric(_value=archived_metric)

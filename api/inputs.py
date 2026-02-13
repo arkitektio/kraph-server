@@ -281,15 +281,19 @@ class CreateMetricInput(MetricInput):
 
     key: str = strawberry.field(description="The key/name of the metric")
     value: AnyScalar = strawberry.field(description="The value of the metric, which can be any scalar type (string, number, boolean)")
+    structure_id: str = strawberry.field(description="The composite ID of the structure this metric will be attached to")
     pass
 
     pass
 
 
-@pydantic.input(model=input_models.UpdateMetricInput, all_fields=True, description="Input for updating an existing metric")
-class UpdateMetricInput:
+@pydantic.input(model=input_models.UpdateMetricInput, description="Input for updating an existing metric")
+class UpdateMetricInput(MetricInput):
     """Input for updating an existing metric. Note: this will not update the metric in-place, but rather create a new metric and archive the old one to preserve history."""
 
+    id: str = strawberry.field(description="The ID of the metric to update")
+    key: str = strawberry.field(description="The key/name of the metric")
+    value: AnyScalar = strawberry.field(description="The value of the metric, which can be any scalar type (string, number, boolean)")
     pass
 
 

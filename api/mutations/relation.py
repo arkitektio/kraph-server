@@ -41,7 +41,12 @@ def create_relation(info: Info, input: inputs.CreateRelationInput) -> types.Rela
     context.extract_node_id(payload.source_id)
     context.extract_node_id(payload.target_id)
 
+    source_graph = context.get_accessible_graph(info, graph1)
+    target_graph = context.get_accessible_graph(info, graph2)
+    assert source_graph.id == target_graph.id, "Source and target entities must belong to the same graph"
+
     relation = models.RelationCategory.objects.get(id=payload.category)  # Validate relation category exists
+    context.validate_graph_access(info, relation.graph)
 
     assert relation.graph.get_age_name() == graph1, "Relation category must belong to the same graph as the entities"
 
@@ -72,7 +77,7 @@ def delete_relation(info: Info, input: inputs.DeleteRelationInput) -> strawberry
     graph_id = context.extract_graph_id(model.id)
     local_id = context.extract_node_id(model.id)
 
-    graph = models.Graph.objects.get(id=graph_id)  # Validate graph exists
+    graph = context.get_accessible_graph(info, graph_id)
 
     controller.delete_relation(
         graph,
@@ -101,7 +106,7 @@ def archive_relation(info: Info, input: inputs.ArchiveRelationInput) -> types.Re
     graph_id = context.extract_graph_id(model.id)
     local_id = context.extract_node_id(model.id)
 
-    graph = models.Graph.objects.get(id=graph_id)  # Validate graph exists
+    graph = context.get_accessible_graph(info, graph_id)
 
     controller.archive_relation(
         graph,

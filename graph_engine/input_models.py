@@ -832,20 +832,19 @@ class DeleteStructureInput(BaseModel):
 class CreateMetricInput(MetricInput):
     """Input for creating a new metric associated with a structure."""
 
-    structure_id: str = Field(..., description="The unique ID of the structure this metric is associated with")
-    graph: str = Field(..., description="The graph id this metric will belong to")
+    structure: GraphID = Field(..., description="The unique ID of the structure this metric is associated with")
 
 
 class ArchiveMetricInput(BaseModel):
     """Input for archiving (soft deleting) an existing metric."""
 
-    id: str = Field(..., description="The ID of the metric to archive")
+    id: GraphID = Field(..., description="The ID of the metric to archive")
 
 
 class DeleteMetricInput(BaseModel):
     """Input for hard deleting an existing metric."""
 
-    id: str = Field(..., description="The ID of the metric to delete")
+    id: GraphID = Field(..., description="The ID of the metric to delete")
 
 
 class RelationInput(BaseModel):
@@ -860,7 +859,6 @@ class CreateRelationInput(RelationInput):
     """Input for creating a new relation associated with a structure."""
 
     category: str = Field(..., description="The unique ID of the structure this metric is associated with")
-    graph: str = Field(..., description="The graph id this metric will belong to")
 
 
 class UpdateRelationInput(RelationInput):
