@@ -148,15 +148,8 @@ def link_structure_to_entity(
         recalculate=input.recalculate if input.recalculate is not None else True,
     )
 
-    structure_response = controller.get_structure(
-        identifier=input.structure_identifier,
-        object=input.structure_object,
-    )
-
-    return LinkStructureResult(
-        success=True,
-        entity=entity_from_response(entity_response),
-        structure=structure_from_response(structure_response),
+    return types.Informs(
+        _value=entity_response,
     )
 
 

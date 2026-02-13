@@ -463,6 +463,27 @@ class RetrievedRelation(RetrievedEdge):
 
 
 @dataclass
+class RetrievedInforms(RetrievedEdge):
+    """A retrieved Relation edge from the AGE graph."""
+
+    pass
+
+
+@dataclass
+class RetrievedDescribes(RetrievedEdge):
+    """A retrieved Metric edge from the AGE graph."""
+
+    pass
+
+
+@dataclass
+class RetrievedAsserts(RetrievedEdge):
+    """A retrieved Metric edge from the AGE graph."""
+
+    pass
+
+
+@dataclass
 class RetrievedReifiesAsSource(RetrievedEdge):
     """A retrieved edge that reifies a structure as a source."""
 

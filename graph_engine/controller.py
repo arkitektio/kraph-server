@@ -24,6 +24,7 @@ from graph_engine.retrieved import (
     RetrievedStructure,
     RetrievedAssertion,
 )
+from graph_engine import retrieved
 from core import models
 from graph_engine import input_models as inputs
 from graph_engine import vocab, scalars
@@ -169,7 +170,7 @@ class GraphController:
         entity_category: models.EntityCategory,
         payload: inputs.EntityInput,
         context: ProvenanceContext,
-    ) -> RetrievedEntity:
+    ) -> retrieved.RetrievedEntity:
         """
         Create a new entity with optional supporting evidence structures.
 
@@ -536,7 +537,7 @@ class GraphController:
 
         return entities
 
-    def get_node(self, graph: models.Graph, local_id: scalars.LocalID) -> RetrievedNode:
+    def get_node(self, graph: models.Graph, local_id: scalars.LocalID) -> retrieved.RetrievedNode:
         """
         Retrieve a raw node by its string ID.
 
@@ -562,7 +563,7 @@ class GraphController:
 
         return RetrievedNode.from_node(raw_node, graph_name=graph.age_name)
 
-    def get_node_by_local_id(self, graph: models.Graph, local_id: scalars.LocalID) -> RetrievedNode:
+    def get_node_by_local_id(self, graph: models.Graph, local_id: scalars.LocalID) -> retrieved.RetrievedNode:
         """Retrieve a raw node by its internal AGE graph ID."""
         query = """
             MATCH (n) WHERE id(n) = $nid
@@ -576,7 +577,7 @@ class GraphController:
         raw_node = result[0]["n"]
         return RetrievedNode.from_node(raw_node, graph_name=graph.age_name)
 
-    def get_node_for_composite_id(self, composite_id: scalars.GraphID) -> RetrievedNode:
+    def get_node_for_composite_id(self, composite_id: scalars.GraphID) -> retrieved.RetrievedNode:
         """
         Retrieve a node using a composite global ID (format: {graph_id}:{entity_id}).
 
@@ -606,7 +607,7 @@ class GraphController:
         entity_category: models.EntityCategory,
         id: str,
         auto_migrate: bool = True,
-    ) -> RetrievedEntity:
+    ) -> retrieved.RetrievedEntity:
         """
         Retrieves an Entity by ID.
         Dynamically detects the 'kind' from the Node Labels and returns
@@ -687,7 +688,7 @@ class GraphController:
         graph: models.Graph,
         identifier: str,
         object: str,
-    ) -> RetrievedStructure:
+    ) -> retrieved.RetrievedStructure:
         """
         Retrieves a Structure by identifier and object.
 
@@ -725,7 +726,7 @@ class GraphController:
         self,
         graph: models.Graph,
         entity_id: str,
-    ) -> List[RetrievedStructure]:
+    ) -> List[retrieved.RetrievedStructure]:
         """
         Gets all structures that INFORM a given entity.
 
@@ -1258,7 +1259,7 @@ class GraphController:
         structure_object: str,
         entity_id: str,
         recalculate: bool = True,
-    ) -> RetrievedEntity:
+    ) -> RetrievedInform:
         """
         Link an existing structure to an existing entity.
 
