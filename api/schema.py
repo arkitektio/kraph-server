@@ -119,6 +119,14 @@ class Mutation:
         description="Create a new graph in the graph engine",
         resolver=mutations.create_graph,
     )
+    delete_graph = kante.django_mutation(
+        description="Delete a graph from the graph engine",
+        resolver=mutations.delete_graph,
+    )
+    archive_graph = kante.django_mutation(
+        description="Archive a graph in the graph engine (soft delete)",
+        resolver=mutations.archive_graph,
+    )
 
     # Categories/schema mutations
     create_entity_category = kante.django_mutation(

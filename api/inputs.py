@@ -650,6 +650,21 @@ class CreateGraphInput:
     pass
 
 
+@pydantic.input(model=input_models.DeleteGraphInput, all_fields=True, description="Input for deleting a graph")
+class DeleteGraphInput:
+    pass
+
+
+@pydantic.input(model=input_models.ArchiveGraphInput, all_fields=True, description="Input for archiving a graph")
+class ArchiveGraphInput:
+    pass
+
+
+@pydantic.input(model=input_models.PinGraphInput, all_fields=True, description="Input for pinning a graph")
+class PinGraphInput:
+    pass
+
+
 @strawberry.input(description="Input for validating a schema definition")
 class ValidateSchemaInput:
     """

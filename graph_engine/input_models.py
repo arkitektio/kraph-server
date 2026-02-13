@@ -5,6 +5,8 @@ from typing import List, Dict, Optional, Any, Literal
 from datetime import datetime, timezone
 import re
 
+import strawberry
+
 from datalayer.scalars import MediaStore, MediaStoreLike
 from graph_engine.scalars import GraphID
 from graph_engine import scalars
@@ -289,8 +291,8 @@ def create_max_confidence_metric(key: str, value: Any, unit: Optional[str] = Non
 
 
 class StructureReferenceInput(BaseModel):
-    identifier: str = Field(..., description="Schema identifier, e.g. '@mikro/roi'")
-    object: str = Field(..., description="The unique ID of the object this structure references")
+    identifier: scalars.StructureIdentifier = Field(..., description="Schema identifier, e.g. '@mikro/roi'")
+    object: scalars.StructureObject = Field(..., description="The unique ID of the object this structure references")
     metrics: List[MetricInput] = []
 
 
@@ -491,7 +493,7 @@ class DefinitionInput(BaseModel):
 
 
 class UpdateDefinitionInput(BaseModel):
-    id: str = Field(..., description="The ID of the definition to update")
+    id: GraphID = Field(..., description="The ID of the definition to update")
     sequences: Optional[List[SequenceMappingInput]] = Field(default=None, description="Sequence mappings for this node")
     key: Optional[str] = Field(default=None, description="The label of the node participating in the event")
     description: Optional[str] = Field(default=None, description="Description of this node role")
@@ -518,7 +520,7 @@ class UpdateNodeDefinitionInput(UpdateDefinitionInput):
 class StructureDefinitionInput(NodeDefinitionInput):
     """Input for a structure definition within an event."""
 
-    identifier: str = Field(description="Optional schema identifier for this structure (e.g. '@mikro/roi')")
+    identifier: scalars.StructureIdentifier = Field(description="Optional schema identifier for this structure (e.g. '@mikro/roi')")
 
     pass
 
@@ -527,7 +529,7 @@ class MetricDefinitionInput(NodeDefinitionInput):
     """Input for a structure definition within an event."""
 
     value_kind: PropertyType = Field(description="Optional schema identifier for this structure (e.g. '@mikro/roi')")
-    structure: str = Field(description="The label of the describing structure to read from")
+    structure: scalars.StructureIdentifier = Field(description="The label of the describing structure to read from")
 
     pass
 
@@ -575,37 +577,37 @@ class UpdateEntityDefinitionInput(UpdateDefinitionInput):
 class CreateEntityDefinitionInput(EntityDefinitionInput):
     """Input for an entity definition at the graph level (not within an event)."""
 
-    graph: str = Field(..., description="The graph id this entitiy will beong to")
+    graph: GraphID = Field(..., description="The graph id this entitiy will beong to")
 
 
 class DeleteEntityDefinitionInput(BaseModel):
     """Input for deleting an existing structure definition at the graph level."""
 
-    id: str = Field(..., description="The ID of the structure category to delete")
+    id: GraphID = Field(..., description="The ID of the structure category to delete")
 
 
 class ArchiveStructureDefinitionInput(BaseModel):
     """Input for deleting an existing structure definition at the graph level."""
 
-    id: str = Field(..., description="The ID of the structure category to delete")
+    id: GraphID = Field(..., description="The ID of the structure category to delete")
 
 
 class UpdateStructureDefinitionInput(UpdateDefinitionInput):
     """Input for updating an existing structure definition."""
 
-    identifier: Optional[str] = Field(default=None, description="Optional schema identifier for this structure (e.g. '@mikro/roi')")
+    identifier: Optional[scalars.StructureIdentifier] = Field(default=None, description="Optional schema identifier for this structure (e.g. '@mikro/roi')")
 
 
 class CreateStructureDefinitionInput(StructureDefinitionInput):
     """Input for a structure definition at the graph level (not within an event)."""
 
-    graph: str = Field(..., description="The graph id this structure will belong to")
+    graph: GraphID = Field(..., description="The graph id this structure will belong to")
 
 
 class DeleteStructureDefinitionInput(BaseModel):
     """Input for deleting an existing structure definition at the graph level."""
 
-    id: str = Field(..., description="The ID of the entity category to delete")
+    id: GraphID = Field(..., description="The ID of the entity category to delete")
 
 
 class UpdateMetricDefinitionInput(UpdateDefinitionInput):
@@ -617,19 +619,19 @@ class UpdateMetricDefinitionInput(UpdateDefinitionInput):
 class CreateMetricDefinitionInput(MetricDefinitionInput):
     """Input for a metric definition at the graph level (not within an event)."""
 
-    graph: str = Field(..., description="The graph id this metric will belong to")
+    graph: GraphID = Field(..., description="The graph id this metric will belong to")
 
 
 class DeleteMetricDefinitionInput(BaseModel):
     """Input for deleting an existing metric definition at the graph level."""
 
-    id: str = Field(..., description="The ID of the entity category to delete")
+    id: GraphID = Field(..., description="The ID of the entity category to delete")
 
 
 class ArchiveMetricDefinitionInput(BaseModel):
     """Input for archiving (soft deleting) an existing metric definition at the graph level."""
 
-    id: str = Field(..., description="The ID of the metric definition to archive")
+    id: GraphID = Field(..., description="The ID of the metric definition to archive")
 
 
 class EventKind(str, Enum):
@@ -642,7 +644,7 @@ class EventKind(str, Enum):
 class EntityCategoryProtocol(Protocol):
     """Protocol for entity categories to provide source definition for event linking."""
 
-    id: str
+    id: GraphID
     tags: List[str]
     key: str
     ontology_references: List[OntologyReferenceInput]
@@ -652,7 +654,7 @@ class EntityDescriptorInput(BaseModel):
     """Input for filtering entities when linking to a structure."""
 
     keys: Optional[List[str]] = Field(default=None, description="Filter by entity key/label")
-    categories: Optional[List[str]] = Field(default=None, description="Filter by entity category/label")
+    categories: Optional[List[GraphID]] = Field(default=None, description="Filter by entity category/label")
     tags: Optional[List[str]] = Field(default=None, description="Filter by tags on the entity")
     ontotology_terms: Optional[List[str]] = Field(default=None, description="Filter by ontology references on the entity (format: 'PREFIX:TERM_ID')")
 
@@ -700,37 +702,37 @@ class ProtocolEventDefinitionInput(EventDefinitionInput):
 class CreateNaturalEventDefinitionInput(NaturalEventDefinitionInput):
     """Input for an event definition at the graph level (not within an event)."""
 
-    graph: str = Field(..., description="The graph id this event will belong to")
+    graph: GraphID = Field(..., description="The graph id this event will belong to")
 
 
 class UpdateNaturalEventDefinitionInput(NaturalEventDefinitionInput):
     """Input for updating an existing event definition at the graph level."""
 
-    id: str = Field(..., description="The ID of the event category to update")
+    id: GraphID = Field(..., description="The ID of the event category to update")
 
 
 class DeleteNaturalEventDefinitionInput(BaseModel):
     """Input for deleting an existing event definition at the graph level."""
 
-    id: str = Field(..., description="The ID of the event category to delete")
+    id: GraphID = Field(..., description="The ID of the event category to delete")
 
 
 class CreateProtocolEventDefinitionInput(ProtocolEventDefinitionInput):
     """Input for an event definition at the graph level (not within an event)."""
 
-    graph: str = Field(..., description="The graph id this event will belong to")
+    graph: GraphID = Field(..., description="The graph id this event will belong to")
 
 
 class UpdateProtocolEventDefinitionInput(ProtocolEventDefinitionInput):
     """Input for updating an existing event definition at the graph level."""
 
-    id: str = Field(..., description="The ID of the event category to update")
+    id: GraphID = Field(..., description="The ID of the event category to update")
 
 
 class DeleteProtocolEventDefinitionInput(BaseModel):
     """Input for deleting an existing event definition at the graph level."""
 
-    id: str = Field(..., description="The ID of the event category to delete")
+    id: GraphID = Field(..., description="The ID of the event category to delete")
 
 
 class EvidenceRequirementInput(BaseModel):
@@ -774,55 +776,55 @@ class RelationDefinitionInput(EdgeDefinitionInput):
 class CreateRelationDefinitionInput(EntityDefinitionInput):
     """Input for an entity definition at the graph level (not within an event)."""
 
-    graph: str = Field(..., description="The graph id this entitiy will beong to")
+    graph: GraphID = Field(..., description="The graph id this entitiy will beong to")
 
 
 class UpdateRelationDefinitionInput(EntityDefinitionInput):
     """Input for updating an existing entity definition at the graph level."""
 
-    id: str = Field(..., description="The ID of the entity category to update")
+    id: GraphID = Field(..., description="The ID of the entity category to update")
 
 
 class DeleteRelationDefinitionInput(BaseModel):
     """Input for deleting an existing relation definition at the graph level."""
 
-    id: str = Field(..., description="The ID of the relation category to delete")
+    id: GraphID = Field(..., description="The ID of the relation category to delete")
 
 
 class ArchiveRelationDefinitionInput(BaseModel):
     """Input for archiving (soft deleting) an existing relation definition at the graph level."""
 
-    id: str = Field(..., description="The ID of the relation category to archive")
+    id: GraphID = Field(..., description="The ID of the relation category to archive")
 
 
 class CreateStructureRelationDefinitionInput(EntityDefinitionInput):
     """Input for an entity definition at the graph level (not within an event)."""
 
-    graph: str = Field(..., description="The graph id this entitiy will beong to")
+    graph: GraphID = Field(..., description="The graph id this entitiy will beong to")
 
 
 class UpdateStructureRelationDefinitionInput(EntityDefinitionInput):
     """Input for updating an existing structure relation definition at the graph level."""
 
-    id: str = Field(..., description="The ID of the structure relation category to update")
+    id: GraphID = Field(..., description="The ID of the structure relation category to update")
 
 
 class DeleteStructureRelationDefinitionInput(BaseModel):
     """Input for deleting an existing structure relation definition at the graph level."""
 
-    id: str = Field(..., description="The ID of the structure relation category to delete")
+    id: GraphID = Field(..., description="The ID of the structure relation category to delete")
 
 
 class ArchiveStructureRelationDefinitionInput(BaseModel):
     """Input for archiving (soft deleting) an existing structure relation definition at the graph level."""
 
-    id: str = Field(..., description="The ID of the structure relation category to archive")
+    id: GraphID = Field(..., description="The ID of the structure relation category to archive")
 
 
 class RestoreStructureRelationDefinitionInput(BaseModel):
     """Input for restoring an existing structure relation definition at the graph level."""
 
-    id: str = Field(..., description="The ID of the relation category to restore")
+    id: GraphID = Field(..., description="The ID of the relation category to restore")
 
 
 class PrefixInput(BaseModel):
@@ -845,13 +847,13 @@ class RoleMappingInput(BaseModel):
     """
 
     role: str = Field(..., description="The role name")
-    entity_id: str = Field(..., description="The ID of the entity assigned to this role")
+    entity_id: GraphID = Field(..., description="The ID of the entity assigned to this role")
 
 
 class EventInput(BaseModel):
     """Input for creating a new event instance."""
 
-    event_category: str = Field(..., description="The ID of the event category/type to create")
+    event_category: GraphID = Field(..., description="The ID of the event category/type to create")
     inputs: List[RoleMappingInput] = Field(default_factory=list, description="List of entity IDs that are inputs to this event")
     outputs: List[RoleMappingInput] = Field(default_factory=list, description="List of entity IDs that are outputs of this event")
     supporting_evidence: List[StructureReferenceInput] = Field(default_factory=list, description="List of evidence structures with measurements")
@@ -866,25 +868,25 @@ class NaturalEventInput(EventInput):
 class CreateNaturalEventInput(NaturalEventInput):
     """Input for creating a new natural event instance."""
 
-    event_category: str = Field(..., description="The ID of the natural event category/type to create")
+    event_category: GraphID = Field(..., description="The ID of the natural event category/type to create")
 
 
 class UpdateNaturalEventInput(NaturalEventInput):
     """Input for updating an existing natural event instance. Note: this will not update the event in-place, but rather create a new event and archive the old one to preserve history."""
 
-    id: str = Field(..., description="The ID of the natural event to update")
+    id: GraphID = Field(..., description="The ID of the natural event to update")
 
 
 class ArchiveNaturalEventInput(BaseModel):
     """Input for archiving (soft deleting) an existing natural event instance."""
 
-    id: str = Field(..., description="The ID of the natural event to archive")
+    id: GraphID = Field(..., description="The ID of the natural event to archive")
 
 
 class DeleteNaturalEventInput(BaseModel):
     """Input for deleting an existing natural event instance."""
 
-    id: str = Field(..., description="The ID of the natural event to delete")
+    id: GraphID = Field(..., description="The ID of the natural event to delete")
 
 
 class EntityInput(BaseModel):
@@ -896,14 +898,14 @@ class EntityInput(BaseModel):
 class CreateEntityInput(EntityInput):
     """Input for creating a new entity instance."""
 
-    entity_category: str = Field(..., description="The ID of the entity category/type to create")
+    entity_category: strawberry.ID = Field(..., description="The ID of the entity category/type to create")
 
 
 class EnsureEntityInput(EntityInput):
     """Input for ensuring a new entity instance."""
 
-    entity_category: str = Field(..., description="The ID of the entity category/type to create")
-    universal_id: str = Field(..., description="A universal ID to use for this entity. If an existing entity with this universal ID exists, it will be returned instead of creating a new one.")
+    entity_category: strawberry.ID = Field(..., description="The ID of the entity category/type to create")
+    universal_id: scalars.GlobalID = Field(..., description="A universal ID to use for this entity. If an existing entity with this universal ID exists, it will be returned instead of creating a new one.")
 
 
 class UpdateEntityInput(EntityInput):
@@ -934,7 +936,7 @@ class StructureInput(BaseModel):
 class PinNodeInput(BaseModel):
     """Input for pinning a node in the UI."""
 
-    id: str = Field(..., description="The ID of the node to pin")
+    id: GraphID = Field(..., description="The ID of the node to pin")
     pin: bool = Field(..., description="Whether to pin (true) or unpin (false) this node in the UI for the user making the request")
     color: Optional[List[int]] = Field(default=None, description="Optional RGBA color for this node (e.g. [255, 0, 0, 128])")
     user: Optional[str] = Field(default=None, description="The ID of the user for whom to set this pin. If not provided, will default to the user making the request.")
@@ -943,8 +945,8 @@ class PinNodeInput(BaseModel):
 class CreateStructureInput(StructureInput):
     """Input for creating a new structure instance."""
 
-    category: str = Field(..., description="The ID of the structure category/type to create")
-    graph: str = Field(..., description="The graph id this structure will belong to")
+    category: GraphID = Field(..., description="The ID of the structure category/type to create")
+    graph: GraphID = Field(..., description="The graph id this structure will belong to")
 
 
 class UpdateStructureInput(StructureInput):
@@ -956,19 +958,19 @@ class UpdateStructureInput(StructureInput):
 class ArchiveStructureInput(BaseModel):
     """Input for archiving (soft deleting) an existing structure."""
 
-    id: str = Field(..., description="The ID of the structure to archive")
+    id: GraphID = Field(..., description="The ID of the structure to archive")
 
 
 class DeleteStructureInput(BaseModel):
     """Input for hard deleting an existing structure."""
 
-    id: str = Field(..., description="The ID of the structure to delete")
+    id: GraphID = Field(..., description="The ID of the structure to delete")
 
 
 class RecordMetricInput(MetricInput):
     """Input for creating a new metric associated with a structure."""
 
-    graph: str = Field(..., description="The graph id this metric will belong to")
+    graph: GraphID = Field(..., description="The graph id this metric will belong to")
     identifier: scalars.StructureIdentifier = Field(..., description="The schema identifier for this metric (e.g. '@mikro/roi_volume')")
     object: scalars.StructureObject = Field(..., description="The unique ID of the object this metric references")
     value_kind: PropertyType = Field(..., description="The kind of value this metric represents (e.g. 'float', 'integer', 'string', etc.)")
@@ -1114,3 +1116,24 @@ class CreateGraphFromSchema(BaseModel):
     name: str = Field(..., description="Name of the graph")
     description: Optional[str] = Field(None, description="Description of the graph")
     definition: GraphDefinitionInput = Field(..., description="The complete graph schema definition")
+
+
+class DeleteGraphInput(BaseModel):
+    """Input for deleting an existing graph."""
+
+    id: strawberry.ID = Field(..., description="The ID of the graph to delete")
+
+
+class ArchiveGraphInput(BaseModel):
+    """Input for archiving (soft deleting) an existing graph."""
+
+    id: strawberry.ID = Field(..., description="The ID of the graph to archive")
+
+
+class PinGraphInput(BaseModel):
+    """Input for pinning a graph in the UI."""
+
+    id: strawberry.ID = Field(..., description="The ID of the graph to pin")
+    pin: bool = Field(..., description="Whether to pin (true) or unpin (false) this graph in the UI for the user making the request")
+    color: Optional[List[int]] = Field(default=None, description="Optional RGBA color for this graph (e.g. [255, 0, 0, 128])")
+    user: Optional[str] = Field(default=None, description="The ID of the user for whom to set this pin. If not provided, will default to the user making the request.")

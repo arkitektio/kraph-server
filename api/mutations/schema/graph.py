@@ -30,3 +30,60 @@ def create_graph(
     )
 
     return graph
+
+
+def delete_graph(
+    info: Info,
+    input: inputs.DeleteGraphInput,
+) -> types.Graph:
+    """GraphQL mutation wrapper for deleting a graph."""
+
+    model = input.to_pydantic()  # Validate input with Pydantic models
+
+    graph = models.Graph.objects.get(id=model.graph_id)
+
+    # Check permissions - only graph owner or admin can delete
+    if not info.context.request.user.is_superuser and graph.owner != info.context.request.user:
+        raise PermissionError("You do not have permission to delete this graph.")
+
+    graph.delete()
+
+    return types.Graph(id=model.graph_id)
+
+
+def archive_graph(
+    info: Info,
+    input: inputs.ArchiveGraphInput,
+) -> types.Graph:
+    """GraphQL mutation wrapper for archiving a graph."""
+
+    model = input.to_pydantic()  # Validate input with Pydantic models
+
+    graph = models.Graph.objects.get(id=model.graph_id)
+
+    # Check permissions - only graph owner or admin can archive
+    if not info.context.request.user.is_superuser and graph.owner != info.context.request.user:
+        raise PermissionError("You do not have permission to archive this graph.")
+
+    graph.is_archived = True
+    graph.save()
+
+    return types.Graph(id=model.graph_id)
+
+
+def pin_graph(
+    info: Info,
+    input: inputs.PinGraphInput,
+) -> types.Graph:
+    """GraphQL mutation wrapper for pinning a graph."""
+
+    model = input.to_pydantic()  # Validate input with Pydantic models
+
+    graph = models.Graph.objects.get(id=model.graph_id)
+
+    if model.pin:
+        graph.pinned_by.add(info.context.request.user)
+    else:
+        graph.pinned_by.remove(info.context.request.user)
+
+    return types.Graph(id=model.graph_id)

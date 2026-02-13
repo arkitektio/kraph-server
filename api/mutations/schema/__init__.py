@@ -6,7 +6,7 @@ from .relation_category import create_relation_category, update_relation_categor
 from .natural_event_category import create_natural_event_category, update_natural_event_category, delete_natural_event_category
 from .relation_category import create_relation_category, update_relation_category, delete_relation_category
 from .protocol_event_category import create_protocol_event_category, update_protocol_event_category, delete_protocol_event_category
-from .graph import create_graph
+from .graph import create_graph, delete_graph, archive_graph
 
 __all__ = [
     "create_graph",
@@ -16,6 +16,8 @@ __all__ = [
     "create_structure_category",
     "update_structure_category",
     "delete_structure_category",
+    "delete_graph",
+    "archive_graph",
     "create_structure_relation_category",
     "update_structure_relation_category",
     "delete_structure_relation_category",
