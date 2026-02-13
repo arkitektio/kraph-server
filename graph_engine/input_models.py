@@ -435,18 +435,29 @@ class DefinitionInput(BaseModel):
     pin: Optional[bool] = Field(default=None, description="Whether to pin this node role in the UI")
 
 
-class NodeDefinitionInput(DefinitionInput):
-    """Input for a node definition within an event."""
-
-    sequences: List[SequenceMappingInput] = Field(default_factory=list, description="Sequence mappings for this node")
-    key: str = Field(..., description="The label of the node participating in the event")
+class UpdateDefinitionInput(BaseModel):
+    id: str = Field(..., description="The ID of the definition to update")
+    sequences: Optional[List[SequenceMappingInput]] = Field(default=None, description="Sequence mappings for this node")
+    key: Optional[str] = Field(default=None, description="The label of the node participating in the event")
     description: Optional[str] = Field(default=None, description="Description of this node role")
-    ontology_references: List[OntologyReferenceInput] = Field(default_factory=list, description="Ontology references for this event")
-    tags: List[str] = Field(default_factory=list, description="Optional tags for this node role (e.g. 'cell_body', 'dendrite', 'axon')")
+    ontology_references: Optional[List[OntologyReferenceInput]] = Field(default=None, description="Ontology references for this event")
+    tags: Optional[List[str]] = Field(default=None, description="Optional tags for this node role (e.g. 'cell_body', 'dendrite', 'axon')")
     color: Optional[List[int]] = Field(default=None, description="Optional RGBA color for this node role (e.g. [255, 0, 0, 128])")
     image: Optional[MediaStoreLike] = Field(default=None, description="Optional media store ID for an image representing this node role")
     label: Optional[str] = Field(default=None, description="Optional human-readable label for this node role (defaults to 'key' if not provided)")
     pin: Optional[bool] = Field(default=None, description="Whether to pin this node role in the UI")
+
+
+class NodeDefinitionInput(DefinitionInput):
+    """Input for a node definition within an event."""
+
+    pass
+
+
+class UpdateNodeDefinitionInput(UpdateDefinitionInput):
+    """Input for a node definition within an event."""
+
+    pass
 
 
 class StructureDefinitionInput(NodeDefinitionInput):
@@ -485,16 +496,31 @@ class EntityDefinitionInput(NodeDefinitionInput):
         return v
 
 
+class UpdateEntityDefinitionInput(UpdateDefinitionInput):
+    """Input for updating an existing entity definition."""
+
+    instance_kind: Optional[str] = Field(default=None, description="Optional instance kind for this entity category (e.g. 'neuron', 'synapse', 'behavior'). This is used for further categorization and filtering of entities within the graph.")
+    properties: Optional[List[PropertyDefinitionInput]] = Field(default=None, description="Property definitions")
+
+    @field_validator("properties")
+    @classmethod
+    def validate_properties(cls, v: Optional[List[PropertyDefinitionInput]]) -> Optional[List[PropertyDefinitionInput]]:
+        """Validate that property keys are unique within this entity definition."""
+        if v is None:
+            return v
+        keys = set()
+        for prop in v:
+            if prop.key in keys:
+                raise ValueError(f"Duplicate property key '{prop.key}' in entity definition")
+            keys.add(prop.key)
+
+        return v
+
+
 class CreateEntityDefinitionInput(EntityDefinitionInput):
     """Input for an entity definition at the graph level (not within an event)."""
 
     graph: str = Field(..., description="The graph id this entitiy will beong to")
-
-
-class UpdateEntityDefinitionInput(EntityDefinitionInput):
-    """Input for updating an existing entity definition at the graph level."""
-
-    id: str = Field(..., description="The ID of the entity category to update")
 
 
 class DeleteEntityDefinitionInput(BaseModel):
