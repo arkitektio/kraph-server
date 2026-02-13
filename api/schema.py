@@ -51,11 +51,6 @@ class Query:
 
 @strawberry.type(description="Graph Engine Mutations")
 class Mutation:
-    create_graph_from_schema = kante.django_mutation(
-        description="Create a new graph based on a provided graph schema definition",
-        resolver=mutations.create_graph_from_schema,
-    )
-
     pin_node = kante.django_mutation(
         description="Pin a node in the UI for a user",
         resolver=mutations.pin_node,
@@ -117,6 +112,12 @@ class Mutation:
     upload_media = kante.django_mutation(
         description="Upload media and return a URL for access",
         resolver=datalayer_mutations.upload_media,
+    )
+
+    #
+    create_graph = kante.django_mutation(
+        description="Create a new graph in the graph engine",
+        resolver=mutations.create_graph,
     )
 
     # Categories/schema mutations

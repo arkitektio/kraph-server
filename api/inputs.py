@@ -646,7 +646,7 @@ class GraphDefinitionInput:
 
 
 @pydantic.input(model=input_models.CreateGraphFromSchema, all_fields=True, description="Input for creating a new graph from a schema definition")
-class CreateGraphFromSchemaInput:
+class CreateGraphInput:
     pass
 
 
