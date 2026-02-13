@@ -208,6 +208,7 @@ class CreateEntityDefinitionInput:
 
 @pydantic.input(model=input_models.UpdateEntityDefinitionInput, all_fields=True, description="Input for updating an existing entity definition in the graph schema")
 class UpdateEntityDefinitionInput:
+    id: strawberry.ID = strawberry.field(description="The ID of the entity definition to update")
     """Input for updating an existing entity definition in the graph schema."""
 
     pass
@@ -215,6 +216,7 @@ class UpdateEntityDefinitionInput:
 
 @pydantic.input(model=input_models.DeleteEntityDefinitionInput, all_fields=True, description="Input for deleting an existing entity definition in the graph schema")
 class DeleteEntityDefinitionInput:
+    id: strawberry.ID = strawberry.field(description="The ID of the entity definition to delete")
     """Input for deleting an existing entity definition in the graph schema."""
 
     pass

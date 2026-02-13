@@ -14,8 +14,6 @@ from graph_engine import input_models as models
 from graph_engine.materialize import materialize, compute_definition_hash, compute_properties_hash
 from core import models as core_models
 
-pytestmark = pytest.mark.skip(reason="Requires updated DB schema/migrations for materialize")
-
 
 def _materialize_with_context(definition, engine, context, name=None, description=None):
     request = context.request
