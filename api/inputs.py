@@ -540,6 +540,16 @@ class GraphExtensionsInput:
     pass
 
 
+@pydantic.input(model=input_models.ActionFilterInput, all_fields=True, description="Simple boolean filter over request context for action rules")
+class ActionFilterInput:
+    pass
+
+
+@pydantic.input(model=input_models.ActionRuleInput, all_fields=True, description="Allow/deny rule for a graph action")
+class ActionRuleInput:
+    pass
+
+
 @pydantic.input(model=input_models.GraphDefinitionInput, all_fields=True, description="Input for creating a new graph from a schema definition")
 class GraphDefinitionInput:
     pass

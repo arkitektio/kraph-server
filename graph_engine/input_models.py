@@ -42,6 +42,15 @@ class PropertyType(str, Enum):
     POINT_3D = "point_3d"
 
 
+class Action(str, Enum):
+    AUTO_ADD_STRUCTURES = "AUTO_ADD_STRUCTURES"
+    AUTO_ADD_STRUCTURE_DEFINITIONS = "AUTO_ADD_STRUCTURE_DEFINITIONS"
+    AUTO_ADD_METRICS = "AUTO_ADD_METRICS"
+    ADD_STRUCTURE_DEFINITIONS = "ADD_STRUCTURE_DEFINITIONS"
+    ADD_ENTITY_DEFINITIONS = "ADD_ENTITY_DEFINITIONS"
+    ADD_RELATION_DEFINITIONS = "ADD_RELATION_DEFINITIONS"
+
+
 # --- Type compatibility mappings for aggregations ---
 
 # Aggregations that require numeric source types
@@ -910,6 +919,19 @@ class GraphExtensionsInput(BaseModel):
     events: List[EventDefinitionInput] = Field(default_factory=list, description="Event definitions")
 
 
+class ActionFilterInput(BaseModel):
+    user_id: Optional[str] = Field(None, description="Only applies when request user id matches")
+    membership_id: Optional[str] = Field(None, description="Only applies when request membership id matches")
+    organization_id: Optional[str] = Field(None, description="Only applies when request organization id matches")
+    required_scopes: List[str] = Field(default_factory=list, description="All scopes that must be present on the request")
+
+
+class ActionRuleInput(BaseModel):
+    action: Action = Field(..., description="Action this rule controls")
+    allow: bool = Field(True, description="Whether this rule allows or denies the action")
+    filter: ActionFilterInput = Field(default_factory=ActionFilterInput, description="Simple boolean filter against request context")
+
+
 class GraphDefinitionInput(BaseModel):
     """
     Input model for a complete graph schema definition.
@@ -919,6 +941,7 @@ class GraphDefinitionInput(BaseModel):
     """
 
     system_version: str = Field(..., description="Semantic version for this schema definition (e.g., '1.0.0')")
+    rules: List[ActionRuleInput] = Field(default_factory=list, description="Action-level allow/deny rules evaluated against request context")
     extensions: GraphExtensionsInput = Field(..., description="The graph extensions containing all type definitions")
 
     @field_validator("system_version")

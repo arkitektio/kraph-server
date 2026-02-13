@@ -1,4 +1,5 @@
 import random
+from typing import Any
 from django.db import models
 from django.contrib.auth import get_user_model
 from kante import Info
@@ -68,6 +69,11 @@ class Graph(models.Model):
         get_user_model(),
         related_name="pinned_graphs",
         help_text="The users that have this query active",
+    )
+    rules = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Action-level allow/deny rules evaluated against request context",
     )
 
     @classmethod
@@ -155,7 +161,94 @@ class Graph(models.Model):
 
     def can_auto_add_structures(self, info: Info) -> bool:
         """Whether this graph allows automatically adding structures when recording metrics with new structure identifiers."""
+        return self.can_perform_action(info=info, action="AUTO_ADD_STRUCTURES")
+
+    def _extract_request(self, info: Info | Any):
+        if hasattr(info, "context") and getattr(info.context, "request", None) is not None:
+            return info.context.request
+        if hasattr(info, "request"):
+            return info.request
+        raise ValueError("No request found on info object")
+
+    def _extract_request_scopes(self, request: Any) -> set[str]:
+        extension_scopes = request._extensions.get("scopes") if hasattr(request, "_extensions") else None
+        if isinstance(extension_scopes, list):
+            return {str(scope) for scope in extension_scopes}
+        if isinstance(extension_scopes, str):
+            return {scope for scope in extension_scopes.split(" ") if scope}
+
+        token = request._extensions.get("token") if hasattr(request, "_extensions") else None
+        token_scopes = getattr(token, "scopes", None)
+        if isinstance(token_scopes, list):
+            return {str(scope) for scope in token_scopes}
+        if isinstance(token_scopes, str):
+            return {scope for scope in token_scopes.split(" ") if scope}
+
+        return set()
+
+    def _rule_filter_matches(self, rule_filter: dict[str, Any], request: Any) -> bool:
+        if not rule_filter:
+            return True
+
+        user = getattr(request, "user", None) or getattr(request, "_user", None)
+        membership = getattr(request, "membership", None)
+        if membership is None and hasattr(request, "_extensions"):
+            membership = request._extensions.get("membership")
+        organization = getattr(request, "organization", None) or getattr(request, "_organization", None)
+
+        user_id = rule_filter.get("user_id")
+        if user_id is not None:
+            if user is None or str(getattr(user, "id", "")) != str(user_id):
+                return False
+
+        membership_id = rule_filter.get("membership_id")
+        if membership_id is not None:
+            if membership is None or str(getattr(membership, "id", "")) != str(membership_id):
+                return False
+
+        organization_id = rule_filter.get("organization_id")
+        if organization_id is not None:
+            org_id = getattr(organization, "id", None)
+            if org_id is None and membership is not None:
+                org_id = getattr(getattr(membership, "organization", None), "id", None)
+            if str(org_id) != str(organization_id):
+                return False
+
+        required_scopes = rule_filter.get("required_scopes") or []
+        if required_scopes:
+            request_scopes = self._extract_request_scopes(request)
+            if not set(map(str, required_scopes)).issubset(request_scopes):
+                return False
+
         return True
+
+    def can_perform_action(self, info: Info | Any, action: str) -> bool:
+        request = self._extract_request(info)
+        action_name = str(action)
+
+        raw_rules = self.rules or []
+        action_rules: list[dict[str, Any]] = []
+
+        if isinstance(raw_rules, list):
+            action_rules = [rule for rule in raw_rules if str(rule.get("action")) == action_name]
+        elif isinstance(raw_rules, dict):
+            if isinstance(raw_rules.get("actions"), list):
+                action_rules = [rule for rule in raw_rules["actions"] if str(rule.get("action")) == action_name]
+            elif isinstance(raw_rules.get(action_name), list):
+                action_rules = raw_rules[action_name]
+
+        if not action_rules:
+            return True
+
+        for rule in action_rules:
+            if self._rule_filter_matches(rule.get("filter") or {}, request):
+                return bool(rule.get("allow", True))
+
+        return True
+
+    def validate_action_allowed(self, info: Info | Any, action: str) -> None:
+        if not self.can_perform_action(info=info, action=action):
+            raise PermissionError(f"Action {action} is not allowed in this graph for the current user context")
 
     @property
     def allow_adding_structure_definitions(self) -> bool:

@@ -143,6 +143,7 @@ def materialize(
         user=user,
         organization=organization,
         membership=membership,
+        rules=[rule.model_dump(mode="json") for rule in definition.rules],
     )
 
     # Create the AGE graph in the database
