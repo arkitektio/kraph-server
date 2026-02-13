@@ -11,6 +11,7 @@ from enum import Enum
 
 from graph_engine import input_models
 from graph_engine.scalars import AnyScalar
+from graph_engine import scalars
 from strawberry.experimental import pydantic
 from typing import Annotated
 
@@ -281,7 +282,7 @@ class CreateMetricInput(MetricInput):
 
     key: str = strawberry.field(description="The key/name of the metric")
     value: AnyScalar = strawberry.field(description="The value of the metric, which can be any scalar type (string, number, boolean)")
-    structure_id: str = strawberry.field(description="The composite ID of the structure this metric will be attached to")
+    structure: scalars.GraphID = strawberry.field(description="The composite ID of the structure this metric will be attached to")
     pass
 
     pass

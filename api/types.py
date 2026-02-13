@@ -11,15 +11,15 @@ This module follows the pattern from core/types.py where:
 """
 
 import strawberry
-from typing import Optional, List, Union
+from typing import Generic, Optional, List, Type, TypeVar, Union
 from datetime import datetime
 from api import loaders, order
 from graph_engine.scalars import AnyScalar, UnixMilliseconds, StructureIdentifier, GlobalID
-from graph_engine.retrieved import RetrievedMetric, RetrievedNode, RetrievedEdge, RetrievedVariable
+from graph_engine.retrieved import RetrievedMetric, RetrievedNode, RetrievedEdge, RetrievedStructure, RetrievedVariable
 from graph_engine import input_models
 import kante
 from core import models
-from graph_engine import retrieved
+from graph_engine import retrieved, scalars
 from api import filters
 
 
@@ -140,7 +140,7 @@ class RichProperty:
     _category: strawberry.Private[EntityCategory]
 
     @strawberry.field(description="Local AGE graph ID")
-    def graph_id(self) -> int:
+    def graph_id(self) -> scalars.GraphID:
         return self._entity.graph_id
 
     @strawberry.field(description="The property key/name")
@@ -152,11 +152,13 @@ class RichProperty:
         return None
 
     @strawberry.field(description="The property value")
-    async def value(self) -> AnyScalar:
+    async def value(self) -> AnyScalar | None:
         """Return the value of the property."""
         # In a real implementation, we would fetch the value from the entity's properties.
         # For this example, we'll return None for simplicity.
-        return None
+        value = self._entity.get_property(self._key)
+
+        return value
 
     @strawberry.field(description="Supporting evidence for this property, in form of metrics derived from observations/measurements")
     async def supporting_evidence(self) -> List["Metric"]:
@@ -171,15 +173,18 @@ class RichProperty:
 # BASE NODE INTERFACE
 # ===========================================
 
+T = TypeVar("T", bound="Node")
+V = TypeVar("V", bound="RetrievedNode")
+
 
 @strawberry.interface(description="Base interface for all graph nodes")
-class Node:
+class Node(Generic[V]):
     """
     Base interface that all graph nodes implement.
     Uses strawberry.Private to hold the underlying RetrievedNode data.
     """
 
-    _value: strawberry.Private[RetrievedNode]
+    _value: strawberry.Private[V]
 
     def __hash__(self):
         return hash(self._value)
@@ -212,6 +217,16 @@ class Node:
     def tags(self) -> List[str]:
         return self._value.tags
 
+    @classmethod
+    def to_subtype(cls, value: RetrievedNode) -> "Node":
+        """Factory method to create the appropriate Node subtype based on the value."""
+        return cast_node_to_graphql_type(value)
+
+    @classmethod
+    def from_specific(cls: Type[T], subtype: V) -> T:
+        """Factory method to convert a Node subtype back to the base Node interface."""
+        return cls(_value=subtype)
+
 
 # ===========================================
 # VERSIONED NODE INTERFACE
@@ -221,8 +236,6 @@ class Node:
 @strawberry.interface(description="Interface for versioned nodes with schema tracking")
 class VersionedNode(Node):
     """Interface for nodes that track schema version and derivation time."""
-
-    _value: strawberry.Private[RetrievedNode]
 
     @strawberry.field(description="External object ID this entity references")
     def lifecycle(self) -> Optional[str]:
@@ -243,13 +256,11 @@ class VersionedNode(Node):
 
 
 @strawberry.type(description="An entity in the knowledge graph with derived properties")
-class Entity(VersionedNode):
+class Entity(VersionedNode, Node[RetrievedNode]):
     """
     An entity represents a domain object (e.g. AIS, Cell, Soma) with properties
     derived from supporting evidence structures.
     """
-
-    _value: strawberry.Private[RetrievedNode]
 
     @strawberry.field(description="The entity type/kind (e.g. 'AIS', 'Cell')")
     def kind(self) -> str:
@@ -291,13 +302,11 @@ class Entity(VersionedNode):
 
 
 @strawberry.type(description="A structure that provides evidence for entities")
-class Structure(Node):
+class Structure(Node[RetrievedStructure]):
     """
     A structure represents an evidence source (e.g. ROI, Image) that
     can have measurements attached and inform entities.
     """
-
-    _value: strawberry.Private[RetrievedNode]
 
     @strawberry.field(description="Schema identifier (e.g. '@mikro/roi')")
     def identifier(self) -> StructureIdentifier:
@@ -341,12 +350,10 @@ class NaturalEvent(VersionedNode):
 
 
 @strawberry.type(description="A metric node representing computed values")
-class Metric(Node):
+class Metric(Node[RetrievedMetric]):
     """
     A metric represents a computed or aggregated value in the graph.
     """
-
-    _value: strawberry.Private[RetrievedMetric]
 
     @strawberry.field(description="Category ID linking to MetricCategory model")
     def category_id(self) -> Optional[str]:

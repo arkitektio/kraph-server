@@ -41,7 +41,7 @@ def create_metric(
         provenance=context.get_provenance_from_context(info),
     )
 
-    return types.Metric(_value=response)
+    return types.Metric.from_specific(response)  # Convert to GraphQL type, preserving specific subtype information. If the metric already exists,
 
 
 def delete_metric(

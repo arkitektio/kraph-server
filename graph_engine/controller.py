@@ -267,7 +267,7 @@ class GraphController:
         str(create_res[0]["db_id"])
         entity = create_res[0]["entity"]
 
-        retrieved = RetrievedEntity.from_node(entity, graph_name=graph.age_name)
+        retrieved = RetrievedEntity.from_node(self, entity, graph_name=graph.age_name)
 
         # --- Step 5: Link Entity -> Evidence ---
         for evidence in supporting_evidence:
@@ -534,7 +534,7 @@ class GraphController:
         entities = []
         for row in result:
             raw = row["e"]
-            entities.append(RetrievedEntity.from_node(raw, graph_name=graph.age_name))
+            entities.append(RetrievedEntity.from_node(self, raw, graph_name=graph.age_name))
 
         return entities
 
@@ -562,7 +562,7 @@ class GraphController:
 
         raw_node = result[0]["n"]
 
-        return RetrievedNode.from_node(raw_node, graph_name=graph.age_name)
+        return RetrievedNode.from_node(self, raw_node, graph_name=graph.age_name)
 
     def get_node_by_local_id(self, graph: models.Graph, local_id: scalars.LocalID) -> retrieved.RetrievedNode:
         """Retrieve a raw node by its internal AGE graph ID."""
@@ -576,7 +576,7 @@ class GraphController:
             raise ValueError(f"Node not found with local ID {local_id}")
 
         raw_node = result[0]["n"]
-        return RetrievedNode.from_node(raw_node, graph_name=graph.age_name)
+        return RetrievedNode.from_node(self, raw_node, graph_name=graph.age_name)
 
     def get_node_for_composite_id(self, composite_id: scalars.GraphID) -> retrieved.RetrievedNode:
         """
@@ -670,7 +670,7 @@ class GraphController:
             "label": detected_kind,
             "properties": node_props,
         }
-        entity = RetrievedEntity.from_node(normalized_node, graph_name=graph.age_name)
+        entity = RetrievedEntity.from_node(self, normalized_node, graph_name=graph.age_name)
 
         if entity.schema_hash != entity_category.schema_hash and auto_migrate:
             # Perform migration
@@ -710,7 +710,7 @@ class GraphController:
             raise ValueError(f"Structure not found with identifier {identifier} and object {object}")
 
         raw = result[0]["s"]
-        return retrieved.RetrievedStructure.from_node(raw, graph_name=graph.age_name)
+        return retrieved.RetrievedStructure.from_node(self, raw, graph_name=graph.age_name)
 
     def get_informing_structures(
         self,
@@ -735,7 +735,7 @@ class GraphController:
         for row in result:
             raw = row["s"]
 
-            structures.append(retrieved.RetrievedStructure.from_node(raw, graph_name=graph.age_name))
+            structures.append(retrieved.RetrievedStructure.from_node(self, raw, graph_name=graph.age_name))
 
         return structures
 
@@ -759,7 +759,7 @@ class GraphController:
         entities = []
         for row in result:
             raw = row["e"]
-            entities.append(RetrievedEntity.from_node(raw, graph_name=graph.age_name))
+            entities.append(RetrievedEntity.from_node(self, raw, graph_name=graph.age_name))
 
         return entities
 
@@ -788,7 +788,7 @@ class GraphController:
         measurements = []
         for row in result:
             raw = row["m"]
-            measurements.append(RetrievedMetric.from_node(raw, graph_name=graph.age_name))
+            measurements.append(RetrievedMetric.from_node(self, raw, graph_name=graph.age_name))
 
         return measurements
 
@@ -815,7 +815,7 @@ class GraphController:
             return None
 
         raw = result[0]["a"]
-        return RetrievedAssertion.from_node(raw, graph_name=graph.age_name)
+        return RetrievedAssertion.from_node(self, raw, graph_name=graph.age_name)
 
     def get_metrics_for_assertion(
         self,
@@ -839,7 +839,7 @@ class GraphController:
         measurements = []
         for row in result:
             raw = row["m"]
-            measurements.append(RetrievedMetric.from_node(raw, graph_name=graph.age_name))
+            measurements.append(RetrievedMetric.from_node(self, raw, graph_name=graph.age_name))
 
         return measurements
 
@@ -868,19 +868,14 @@ class GraphController:
             f"""
             MERGE (s:{structure_label} {{object: $obj}})
             SET s.identifier = coalesce(s.identifier, $identifier)
-            RETURN id(s) as graph_id
+            RETURN s
             """,
             {"obj": payload.object, "identifier": structure_category.identifier},
         )
-
-        graph_id = result[0]["graph_id"]
-        created_node = self.get_node_by_local_id(graph, local_id=scalars.LocalID(graph_id))
+        created_node = result[0]["s"]
         return RetrievedStructure.from_node(
-            {
-                "id": created_node.id,
-                "label": created_node.label,
-                "properties": created_node.properties,
-            },
+            self,
+            created_node,
             graph_name=graph.age_name,
         )
 
@@ -930,7 +925,7 @@ class GraphController:
             },
         )
 
-        self.engine.execute(
+        x = self.engine.execute(
             graph,
             """
             MATCH (lc:LifeCycleAssertion)-[:INFORMS]->(s)
@@ -943,14 +938,11 @@ class GraphController:
             """,
             {"sid": structure_id},
         )
+        archived_node = x[0]["s"]
 
-        archived_node = self.get_node_by_local_id(graph, local_id=structure_id)
         return retrieved.RetrievedStructure.from_node(
-            {
-                "id": archived_node.id,
-                "label": archived_node.label,
-                "properties": archived_node.properties,
-            },
+            self,
+            archived_node,
             graph_name=graph.age_name,
         )
 
@@ -965,7 +957,7 @@ class GraphController:
         node = self.get_node_by_local_id(graph, local_id=structure_id)
         label = node.label
 
-        self.engine.execute(
+        x = self.engine.execute(
             graph,
             f"""
             MATCH (s:{label}) WHERE id(s) = $sid
@@ -983,13 +975,10 @@ class GraphController:
                 provenance=provenance,
             )
 
-        updated = self.get_node_by_local_id(graph, local_id=structure_id)
+        node = x[0]["s"]
         return RetrievedStructure.from_node(
-            {
-                "id": updated.id,
-                "label": updated.label,
-                "properties": updated.properties,
-            },
+            self,
+            node=node,
             graph_name=graph.age_name,
         )
 
@@ -1200,9 +1189,10 @@ class GraphController:
             {"mid": graph_id},
         )
         if raw_metric:
-            return RetrievedMetric.from_node(raw_metric[0]["m"], graph_name=graph.age_name)
+            return RetrievedMetric.from_node(self, raw_metric[0]["m"], graph_name=graph.age_name)
 
         return RetrievedMetric.from_node(
+            self,
             {
                 "id": graph_id,
                 "label": vocab.Metric,
@@ -1286,6 +1276,17 @@ class GraphController:
         metric_id: scalars.LocalID,
         provenance: ProvenanceContext | None = None,
     ) -> scalars.LocalID:
+        metric_result = self.engine.execute(
+            graph,
+            """
+            MATCH (m) WHERE id(m) = $mid
+            RETURN m
+            """,
+            {"mid": metric_id},
+        )
+        if not metric_result:
+            raise ValueError(f"Metric not found with node ID {metric_id}")
+
         self.engine.execute(
             graph,
             """
@@ -1294,6 +1295,7 @@ class GraphController:
             """,
             {"mid": metric_id},
         )
+
         return metric_id
 
     def update_metric(
@@ -1564,7 +1566,7 @@ class GraphController:
             return None
 
         row = result[0]
-        return RetrievedNode.from_node(row["sl"], graph_name=self.age_name)
+        return RetrievedNode.from_node(self, row["sl"], graph_name=self.age_name)
 
     def get_informing_structures_for_link(self, link_ref_id: str) -> List[retrieved.RetrievedStructure]:
         """
@@ -1588,7 +1590,7 @@ class GraphController:
 
         structures = []
         for row in result:
-            structures.append(retrieved.RetrievedStructure.from_node(row["s"], graph_name=self.age_name))
+            structures.append(retrieved.RetrievedStructure.from_node(self, row["s"], graph_name=self.age_name))
         return structures
 
     def get_reified_as_source_entities(self, link_ref_id: str) -> List[RetrievedEntity]:
@@ -1613,7 +1615,7 @@ class GraphController:
 
         entities = []
         for row in result:
-            entities.append(RetrievedEntity.from_node(row["e"], graph_name=self.age_name))
+            entities.append(RetrievedEntity.from_node(self, row["e"], graph_name=self.age_name))
         return entities
 
     def get_reified_as_target_entities(self, link_ref_id: str) -> List[RetrievedEntity]:
@@ -1638,7 +1640,7 @@ class GraphController:
 
         entities = []
         for row in result:
-            entities.append(RetrievedEntity.from_node(row["e"], graph_name=self.age_name))
+            entities.append(RetrievedEntity.from_node(self, row["e"], graph_name=self.age_name))
         return entities
 
     def get_reified_entities(self, link_ref_id: str) -> List[RetrievedEntity]:
@@ -1713,4 +1715,4 @@ class GraphController:
             return None
 
         row = result[0]
-        return RetrievedAssertion.from_node(row["a"], graph_name=graph.age_name)
+        return RetrievedAssertion.from_node(self, row["a"], graph_name=graph.age_name)

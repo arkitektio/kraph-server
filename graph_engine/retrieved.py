@@ -7,9 +7,13 @@ as core/age.py's RetrievedEntity and RetrievedRelation.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, Optional, Type, TypeVar
+from typing import Any, Dict, List, Literal, Optional, Type, TypeVar, TYPE_CHECKING
 from datetime import datetime
 from graph_engine import vocab, scalars
+
+if TYPE_CHECKING:
+    from graph_engine.controller import GraphController
+
 
 # Reserved property keys that should not be exposed as user properties
 RESERVED_PROPERTY_KEYS = frozenset(
@@ -97,6 +101,7 @@ class RetrievedNode:
         properties: Raw properties dictionary from AGE
     """
 
+    controller: "GraphController"
     graph_name: str
     id: int
     label: str
@@ -254,9 +259,10 @@ class RetrievedNode:
         return self.graph_name == other.graph_name and self.id == other.id
 
     @classmethod
-    def from_node(cls: Type[T], node: Dict[str, Any], graph_name: str = "default_graph") -> T:
+    def from_node(cls: Type[T], controller: "GraphController", node: Dict[str, Any], graph_name: str = "default_graph") -> T:
         """Factory method to create a RetrievedNode from raw AGE node data."""
         return cls(
+            controller=controller,
             graph_name=graph_name,
             id=node.get("id", 0),
             label=node.get("label", "Unknown"),
@@ -538,6 +544,11 @@ class RetrievedMetric(RetrievedNode):
     """A retrieved Metric node from the AGE graph."""
 
     pass
+
+    @property
+    def value(self) -> Any:
+        """The metric value."""
+        return self.properties.get("value")
 
 
 @dataclass
