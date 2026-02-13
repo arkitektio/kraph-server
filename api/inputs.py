@@ -276,6 +276,13 @@ class DeleteNaturalEventInput:
     pass
 
 
+@pydantic.input(model=input_models.RecordMetricInput, description="Input for creating a new metric")
+class RecordMetricInput(MetricInput):
+    """Input for creating a new metric."""
+
+    value: AnyScalar = strawberry.field(description="The value of the metric, which can be any scalar type (string, number, boolean)")
+
+
 @pydantic.input(model=input_models.CreateMetricInput, description="Input for creating a new metric")
 class CreateMetricInput(MetricInput):
     """Input for creating a new metric."""

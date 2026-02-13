@@ -14,6 +14,9 @@ UnixMilliseconds = NewType("UnixMilliseconds", int)
 # Scalar for structure identifier (e.g. "@mikro/roi")
 StructureIdentifier = NewType("StructureIdentifier", str)
 
+# Scalar for Graph ID (UUID string)
+StructureObject = NewType("StructureObject", str)
+
 # Global ID scalar in format "uuid"
 GlobalID = NewType("GlobalID", str)
 

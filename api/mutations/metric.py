@@ -6,6 +6,81 @@ from kante.types import Info
 
 from api import types, inputs, context
 from graph_engine.scalars import GraphID
+from graph_engine import input_models, scalars
+from core import models
+
+
+def record_metric(
+    info: Info,
+    input: inputs.RecordMetricInput,
+) -> types.Metric:
+    """
+    Record a new metric for a structure. If the structure doesn't exist, it will be created automatically.
+
+    Args:
+        info: Strawberry Info context
+        input: RecordMetricInput
+    Returns:
+        Created Metric object
+    """
+
+    controller = context.get_controller()
+
+    # Convert strawberry-pydantic inputs to pydantic models
+    model = input.to_pydantic()
+
+    graph = context.get_accessible_graph(info, model.graph)
+
+    try:
+        s = models.StructureCategory.objects.get(identifier=model.identifier, graph=graph)
+    except models.StructureCategory.DoesNotExist:
+        if graph.allow_auto_add_structure_definitions:
+            s = models.StructureCategory.objects.create_from_structure_definition(
+                graph=graph,
+                definition=input_models.StructureDefinitionInput(
+                    key=model.identifier,
+                    identifier=model.identifier,
+                ),
+            )
+        else:
+            raise ValueError(f"Structure category with identifier '{model.identifier}' does not exist in graph '{model.graph}'")
+
+    try:
+        m = models.MetricCategory.objects.get(identifier=model.key, structure_category=s)
+    except models.MetricCategory.DoesNotExist:
+        if graph.allow_auto_add_structure_definitions:
+            m = models.MetricCategory.objects.create_from_metric_definition(
+                graph=graph,
+                definition=input_models.MetricDefinitionInput(
+                    structure=s.pk,
+                    value_kind=model.value_kind,
+                    key=model.key,
+                ),
+            )
+        else:
+            raise ValueError(f"Metric category with key '{model.key}' does not exist in graph '{model.graph}'")
+
+    try:
+        s = controller.get_structure_by_object(s, model.object)
+    except ValueError:
+        if graph.can_auto_add_structures(info):
+            s = controller.create_structure(
+                structure_category=s,
+                payload=input_models.StructureInput(
+                    object=model.object,
+                ),
+            )
+        else:
+            raise ValueError(f"Structure with object '{model.object}' does not exist in graph '{model.graph}' and auto-adding structures is not allowed")
+
+    response = controller.create_metric(
+        graph,
+        structure_id=s.local_id,
+        input=model,
+        provenance=context.get_provenance_from_context(info),
+    )
+
+    return types.Metric.from_specific(response)  # Convert to GraphQL type, preserving specific subtype information. If the metric already exists, it will be updated with the new value and timestamp.
 
 
 def create_metric(

@@ -314,6 +314,31 @@ class GraphController:
 
         return local_id
 
+    def get_structure_by_object(self, category: models.StructureCategory, object: scalars.StructureObject) -> retrieved.RetrievedStructure:
+        """
+        Retrieves a structure by its object identifier.
+
+        Args:
+            category: The StructureCategory to search within
+            object: The unique object identifier of the structure
+
+        Returns:
+            A RetrievedStructure if found, or None if no matching structure exists
+        """
+        result = self.engine.execute(
+            category.graph,
+            f"""
+            MATCH (s:{category.get_age_vertex_name()} {{object: $obj, category: $sid}})
+            RETURN s, id(s) as sid
+            """,
+            {"obj": object, "sid": category.pk},
+        )
+
+        if not result:
+            raise ValueError(f"No structure found with object '{object}' in category '{category.identifier}'")
+        raw = result[0]["s"]
+        return RetrievedStructure.from_node(self, raw, graph_name=category.graph.age_name)
+
     def archive_entity(self, graph: models.Graph, local_id: scalars.LocalID, provenance: ProvenanceContext) -> scalars.LocalID:
         """
         Archives an entity by its composite ID.

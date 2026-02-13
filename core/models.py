@@ -1,6 +1,7 @@
 import random
 from django.db import models
 from django.contrib.auth import get_user_model
+from kante import Info
 from core import enums
 from core import managers
 from koherent.fields import ProvenanceField
@@ -9,7 +10,7 @@ from datalayer import models as datalayer_models
 from authentikate.models import Organization, Membership
 from polymorphic.models import PolymorphicModel
 from django.db.models import QuerySet
-
+from kante.context import Membership as KanteMembership
 # Create your models here.
 
 from graph_engine.input_models import EntityDescriptorInput
@@ -152,8 +153,16 @@ class Graph(models.Model):
             return GraphDefinitionModel.model_validate(schema.definition)
         return None
 
+    def can_auto_add_structures(self, info: Info) -> bool:
+        """Whether this graph allows automatically adding structures when recording metrics with new structure identifiers."""
+        return True
+
     @property
     def allow_adding_structure_definitions(self) -> bool:
+        return True
+
+    @property
+    def allow_auto_add_structures(self) -> bool:
         return True
 
     @property

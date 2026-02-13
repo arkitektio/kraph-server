@@ -829,6 +829,15 @@ class DeleteStructureInput(BaseModel):
     id: str = Field(..., description="The ID of the structure to delete")
 
 
+class RecordMetricInput(MetricInput):
+    """Input for creating a new metric associated with a structure."""
+
+    graph: str = Field(..., description="The graph id this metric will belong to")
+    identifier: scalars.StructureIdentifier = Field(..., description="The schema identifier for this metric (e.g. '@mikro/roi_volume')")
+    object: scalars.StructureObject = Field(..., description="The unique ID of the object this metric references")
+    value_kind: PropertyType = Field(..., description="The kind of value this metric represents (e.g. 'float', 'integer', 'string', etc.)")
+
+
 class CreateMetricInput(MetricInput):
     """Input for creating a new metric associated with a structure."""
 
