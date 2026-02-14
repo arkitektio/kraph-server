@@ -6,7 +6,7 @@ from typing import NewType
 
 
 # Scalar for arbitrary JSON-like values
-AnyScalar = NewType("AnyScalar", dict)
+AnyScalar = NewType("AnyScalar", str)
 
 # Scalar for Unix timestamp in milliseconds
 UnixMilliseconds = NewType("UnixMilliseconds", int)

@@ -1,26 +1,22 @@
 from typing import Optional
+
 from core import models
 from strawberry import auto
 import strawberry_django
 import kante
 from strawberry_django.ordering import Ordering
 import strawberry
+from graph_engine import scalars, input_models
 
 
-@kante.input(description="Ordering options for graph table queries")
+@kante.pydantic_input(input_models.PropertyOrder, all_fields=True, description="Ordering options for graph table queries")
 class PropertyOrder:
-    key: str = strawberry.field(description="The property key to order by")
-    direction: Ordering = strawberry.field(description="The direction to order (ASC or DESC)")
+    """Property odering options for graph table queries."""
 
 
-@kante.input(description="Ordering options for entity queries")
+@kante.pydantic_input(input_models.EntityOrder, all_fields=True, description="Ordering options for entity queries")
 class EntityOrder:
     """Ordering options for entity queries."""
-
-    created_at: Optional[Ordering] = kante.field(default=None, description="Order by creation timestamp")
-    category: Optional[Ordering] = kante.field(default=None, description="Order by entity kind/type")
-    id: Optional[Ordering] = kante.field(default=None, description="Order by entity ID")
-    property: Optional[PropertyOrder] = kante.field(default=None, description="Order by a specific property value (requires 'has_property' filter)")
 
 
 @strawberry_django.order_type(models.Graph)

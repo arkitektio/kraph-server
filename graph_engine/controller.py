@@ -1746,16 +1746,18 @@ class GraphController:
 
         return ("WHERE " + " AND ".join(clauses)) if clauses else "", params
 
-    def _build_entity_order_clause(self, order: input_models.EntityOrder | None, variable: str = "e") -> str:
+    def _build_entity_order_clause(self, order: list[input_models.EntityOrder] | None, variable: str = "e") -> str:
         if not order:
             return ""
 
-        key = self._validate_property_key(order.key)
-        direction = (order.direction or "asc").upper()
-        if direction not in {"ASC", "DESC"}:
-            raise ValueError("Order direction must be 'asc' or 'desc'.")
-
-        return f"ORDER BY {variable}.{key} {direction}"
+        clauses = []
+        for o in order:
+            key = self._validate_property_key(o.key)
+            direction = (o.direction or "asc").upper()
+            clauses.append(f"{variable}.{key} {direction}")
+        if not clauses:
+            return ""
+        return f"ORDER BY {', '.join(clauses)}"
 
     def _build_entity_pagination_clause(self, pagination: input_models.EntityPagination | None) -> str:
         if not pagination:
@@ -1765,13 +1767,13 @@ class GraphController:
         limit = pagination.limit if pagination.limit is not None else 200
         return f"SKIP {offset} LIMIT {limit}"
 
-    def list_entities(self, graph: models.Graph, filters: input_models.EntityFilters | None = None, pagination: input_models.EntityPagination | None = None, order: input_models.EntityOrder | None = None) -> List[RetrievedEntity]:
+    def list_entities(self, graph: models.Graph, filters: input_models.EntityFilters | None = None, pagination: input_models.EntityPagination | None = None, ordering: list[input_models.EntityOrder] | None = None) -> List[RetrievedEntity]:
         entity_labels = list(models.EntityCategory.objects.filter(graph=graph).values_list("age_name", flat=True))
         if not entity_labels:
             return []
 
         where_clause, filter_params = self._build_entity_where_clause(filters, variable="e")
-        order_clause = self._build_entity_order_clause(order, variable="e")
+        order_clause = self._build_entity_order_clause(ordering, variable="e")
         pagination_clause = self._build_entity_pagination_clause(pagination)
 
         query = f"""

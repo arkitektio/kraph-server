@@ -4,33 +4,22 @@ from core import models, enums
 import strawberry_django as kante
 from django.db.models import Q
 import kante
-from graph_engine import scalars
+from graph_engine import scalars, input_models
 
 
-@strawberry.input
+@kante.pydantic_input(input_models.PropertyMatch, all_fields=True, description="A property match condition for filtering entities")
 class PropertyMatch:
-    key: str = strawberry.field(description="The property matching")
-    operator: enums.WhereOperator = strawberry.field(description="The operator to use")
-    value: scalars.AnyScalar = strawberry.field(description="THe value to filter agains")
+    """The condition to match for a specific property when filtering entities."""
 
 
-@strawberry.input(description="Filter options for querying entities")
+@kante.pydantic_input(input_models.EntityFilters, all_fields=True, description="Filter options for querying entities")
 class EntityFilter:
     """Filter options for entity queries."""
 
-    category: Optional[str] = strawberry.field(default=None, description="Filter by entity kind/type")
-    ids: Optional[List[scalars.GraphID]] = strawberry.field(default=None, description="Filter by specific entity IDs")
-    has_property: Optional[str] = strawberry.field(default=None, description="Filter entities that have a specific property")
-    search: Optional[str] = strawberry.field(default=None, description="Full-text search over entity properties")
-    matches: Optional[List[PropertyMatch]] = strawberry.field(default=None, description="Filter entities that match specific property conditions")
 
-
-@strawberry.input(description="Filter options for querying entities")
+@kante.pydantic_input(input_models.EntityPagination, all_fields=True, description="Pagination options for querying entities")
 class EntityPaginationInput:
     """Filter options for entity queries."""
-
-    offset: Optional[int] = strawberry.field(default=0, description="Number of items to skip")
-    limit: Optional[int] = strawberry.field(default=100, description="Maximum number of items to return")
 
 
 @kante.filter_type(models.Graph)

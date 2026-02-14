@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import re
 
 import strawberry
+from strawberry_django import Ordering
 
 from datalayer.scalars import MediaStore, MediaStoreLike
 from graph_engine.scalars import GraphID
@@ -217,20 +218,38 @@ class RenderGraphTableOrder(BaseModel):
 # ==========================================
 
 
+class PropertyMatch(BaseModel):
+    """A property match"""
+
+    key: str = Field(description="The property matching")
+    operator: WhereOperator = Field(description="The operator to use")
+    value: scalars.AnyScalar = Field(description="THe value to filter agains")
+
+
 class EntityFilters(BaseModel):
-    key: str
-    operator: str
-    value: Any
+    graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
+    category: Optional[str] = Field(default=None, description="Filter by entity kind/type")
+    ids: Optional[List[scalars.GraphID]] = Field(default=None, description="Filter by specific entity IDs")
+    has_property: Optional[str] = Field(default=None, description="Filter entities that have a specific property")
+    search: Optional[str] = Field(default=None, description="Full-text search over entity properties")
+    matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter entities that match specific property conditions")
 
 
 class EntityPagination(BaseModel):
-    limit: int
-    offset: int
+    offset: Optional[int] = Field(default=0, description="Number of items to skip")
+    limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
+
+
+class PropertyOrder(BaseModel):
+    key: str = Field(description="The property key to order by")
+    direction: Ordering = Field(description="The direction to order (ASC or DESC)")
 
 
 class EntityOrder(BaseModel):
-    key: str
-    direction: Literal["asc", "desc"] = "asc"
+    created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
+    category: Optional[Ordering] = Field(default=None, description="Order by entity kind/type")
+    id: Optional[Ordering] = Field(default=None, description="Order by entity ID")
+    property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value (requires 'has_property' filter)")
 
 
 # ==========================================
