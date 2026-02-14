@@ -1,5 +1,6 @@
 import json
 import time
+import re
 from typing import Optional, Dict, Any, List
 from graph_engine import input_models
 from graph_engine.input_models import (
@@ -1694,8 +1695,98 @@ class GraphController:
         """Render a set of nodes matching the graph query, with optional filters, pagination, and ordering."""
         raise Exception("Not implemented yet")
 
+    def _validate_property_key(self, key: str) -> str:
+        if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", key):
+            raise ValueError(f"Invalid property key '{key}'.")
+        return key
+
+    def _build_entity_where_clause(self, filters: input_models.EntityFilters | None, variable: str = "e") -> tuple[str, dict[str, Any]]:
+        params: dict[str, Any] = {}
+        clauses: list[str] = []
+
+        if not filters:
+            return "", params
+
+        operator = (filters.operator or "EQUALS").upper()
+        key = filters.key
+        value = filters.value
+
+        if key == "id":
+            field_expr = f"id({variable})"
+        else:
+            validated_key = self._validate_property_key(key)
+            field_expr = f"{variable}.{validated_key}"
+
+        params["filter_value"] = value
+
+        if operator in {"EQUALS", "EQ", "="}:
+            clauses.append(f"{field_expr} = $filter_value")
+        elif operator in {"NOT_EQUALS", "NEQ", "!="}:
+            clauses.append(f"{field_expr} <> $filter_value")
+        elif operator in {"GREATER_THAN", "GT", ">"}:
+            clauses.append(f"{field_expr} > $filter_value")
+        elif operator in {"LESS_THAN", "LT", "<"}:
+            clauses.append(f"{field_expr} < $filter_value")
+        elif operator in {"GREATER_OR_EQUAL", "GREATER_THAN_OR_EQUAL", "GTE", ">="}:
+            clauses.append(f"{field_expr} >= $filter_value")
+        elif operator in {"LESS_OR_EQUAL", "LESS_THAN_OR_EQUAL", "LTE", "<="}:
+            clauses.append(f"{field_expr} <= $filter_value")
+        elif operator == "CONTAINS":
+            clauses.append(f"{field_expr} CONTAINS $filter_value")
+        elif operator == "STARTS_WITH":
+            clauses.append(f"{field_expr} STARTS WITH $filter_value")
+        elif operator == "ENDS_WITH":
+            clauses.append(f"{field_expr} ENDS WITH $filter_value")
+        elif operator == "IN":
+            clauses.append(f"{field_expr} IN $filter_value")
+        elif operator == "NOT_IN":
+            clauses.append(f"NOT {field_expr} IN $filter_value")
+        else:
+            raise ValueError(f"Unsupported filter operator '{filters.operator}'.")
+
+        return ("WHERE " + " AND ".join(clauses)) if clauses else "", params
+
+    def _build_entity_order_clause(self, order: input_models.EntityOrder | None, variable: str = "e") -> str:
+        if not order:
+            return ""
+
+        key = self._validate_property_key(order.key)
+        direction = (order.direction or "asc").upper()
+        if direction not in {"ASC", "DESC"}:
+            raise ValueError("Order direction must be 'asc' or 'desc'.")
+
+        return f"ORDER BY {variable}.{key} {direction}"
+
+    def _build_entity_pagination_clause(self, pagination: input_models.EntityPagination | None) -> str:
+        if not pagination:
+            return "SKIP 0 LIMIT 200"
+
+        offset = pagination.offset if pagination.offset is not None else 0
+        limit = pagination.limit if pagination.limit is not None else 200
+        return f"SKIP {offset} LIMIT {limit}"
+
     def list_entities(self, graph: models.Graph, filters: input_models.EntityFilters | None = None, pagination: input_models.EntityPagination | None = None, order: input_models.EntityOrder | None = None) -> List[RetrievedEntity]:
-        raise Exception("Not implemented yet")
+        entity_labels = list(models.EntityCategory.objects.filter(graph=graph).values_list("age_name", flat=True))
+        if not entity_labels:
+            return []
+
+        where_clause, filter_params = self._build_entity_where_clause(filters, variable="e")
+        order_clause = self._build_entity_order_clause(order, variable="e")
+        pagination_clause = self._build_entity_pagination_clause(pagination)
+
+        query = f"""
+            MATCH (e)
+            WHERE any(lbl IN labels(e) WHERE lbl IN $entity_labels)
+            {("AND " + where_clause[len("WHERE ") :]) if where_clause else ""}
+            RETURN e
+            {order_clause}
+            {pagination_clause}
+        """
+
+        params: dict[str, Any] = {"entity_labels": entity_labels, **filter_params}
+        result = self.engine.execute(graph, query, params)
+
+        return [RetrievedEntity.from_node(self, row["e"], graph_name=graph.age_name) for row in result]
 
     def get_assertion_for_relation(self, graph: models.Graph, edge_id: scalars.LocalID) -> Optional[RetrievedAssertion]:
         """
