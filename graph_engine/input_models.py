@@ -432,21 +432,13 @@ class PropertyDefinitionInput(BaseModel):
     """Input for a property definition on a node or relation."""
 
     key: str = Field(..., description="Property key/name")
-    type: str = Field(..., description="Property type: string, float, integer, boolean, datetime, point_3d")
+    value_kind: enums.ValueKind = strawberry.field(description="What type of value, (taking from the universe) 'QUANTITATIVE', 'QUALITATIVE', 'BOOLEAN'")
     unit: Optional[str] = Field(default=None, description="Unit of measurement")
     description: Optional[str] = Field(default=None, description="Description of this property")
     derivation: DerivationType = Field(default=DerivationType.LATEST, description="Derivation type: LATEST, PRIORITY_LATEST, ROLLUP, LATEST_ASSERTION_TOOL")
     rule: Optional[DerivationRuleInput] = Field(default=None, description="Rule configuration for ROLLUP derivation")
     index: bool = Field(default=False, description="Whether to create an index on this property for faster queries")
     searchable: bool = Field(default=False, description="Whether this property should be full-text searchable")
-
-    @field_validator("type")
-    @classmethod
-    def validate_type(cls, v: str) -> str:
-        valid_types = {"string", "float", "integer", "boolean", "datetime", "point_3d"}
-        if v.lower() not in valid_types:
-            raise ValueError(f"Invalid property type '{v}'. Must be one of: {', '.join(valid_types)}")
-        return v.lower()
 
     @field_validator("derivation")
     @classmethod
@@ -657,9 +649,17 @@ class EventKind(str, Enum):
 class EntityCategoryProtocol(Protocol):
     """Protocol for entity categories to provide source definition for event linking."""
 
-    id: GraphID
     tags: List[str]
     key: str
+    ontology_references: List[OntologyReferenceInput]
+
+
+class StructureCategoryProtocol(Protocol):
+    """Protocol for entity categories to provide source definition for event linking."""
+
+    tags: List[str]
+    key: str
+    identifier: scalars.StructureIdentifier
     ontology_references: List[OntologyReferenceInput]
 
 
@@ -691,14 +691,17 @@ class StructureDescriptorInput(BaseModel):
     tags: Optional[List[str]] = Field(default=None, description="Filter by tags on the entity")
     ontotology_terms: Optional[List[str]] = Field(default=None, description="Filter by ontology references on the entity (format: 'PREFIX:TERM_ID')")
     default_category_key: Optional[str] = Field(default=None, description="Default category to link to if no entities match the filters")
+    identifiers: Optional[list[scalars.StructureIdentifier]] = Field(default=None, description="Optional structure identifier to filter by (e.g. '@mikro/roi')")
 
-    def matches(self, entity: EntityCategoryProtocol) -> bool:
+    def matches(self, entity: StructureCategoryProtocol) -> bool:
         """Check if a given entity matches this descriptor."""
         if self.keys and entity.key not in self.keys:
             return False
         if self.tags and not set(self.tags).issubset(set(entity.tags)):
             return False
         if self.ontotology_terms and not set(self.ontotology_terms).issubset(set(map(lambda x: x.uri, entity.ontology_references))):
+            return False
+        if self.identifiers and entity.identifier not in self.identifiers:
             return False
         return True
 

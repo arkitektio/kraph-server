@@ -111,3 +111,28 @@ class StructureRelationCategoryFilter(CategoryFilter):
 @kante.filter_type(models.MaterializedEdge)
 class MaterializedEdgeFilter:
     pass
+
+
+@kante.filter_type(models.GraphQuery)
+class GraphQueryFilter:
+    pass
+
+
+@kante.filter_type(models.GraphTableQuery)
+class GraphTableQueryFilter:
+    pass
+
+
+@kante.filter_type(models.GraphNodesQuery)
+class GraphNodesQueryFilter:
+    pass
+
+
+@kante.filter_type(models.GraphPairsQuery)
+class GraphPairsQueryFilter:
+    pass
+
+
+@kante.filter_type(models.GraphPathQuery)
+class GraphPathQueryFilter:
+    pass

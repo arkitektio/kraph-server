@@ -14,7 +14,7 @@ from django.db.models import QuerySet
 from kante.context import Membership as KanteMembership
 # Create your models here.
 
-from graph_engine.input_models import EntityDescriptorInput
+from graph_engine.input_models import EntityDescriptorInput, StructureDescriptorInput
 
 
 class Graph(models.Model):
@@ -692,52 +692,6 @@ class EdgeCategory(Category):
         raise NotImplementedError("Not implemented needs to be implemented")
 
     @property
-    def source_definition_model(self) -> EntityDescriptorInput:
-        return EntityDescriptorInput(**self.source_definition)
-
-    @property
-    def target_definition_model(self) -> EntityDescriptorInput:
-        return EntityDescriptorInput(**self.target_definition)
-
-    def matches_source(self, entity: "EntityCategory") -> bool:
-        """Check if an entity matches the source definition of this edge category."""
-        return self.source_definition_model.matches(entity)
-
-    def matches_target(self, entity: "EntityCategory") -> bool:
-        """Check if an entity matches the target definition of this edge category."""
-        return self.target_definition_model.matches(entity)
-
-    def get_matching_source_entities(self) -> QuerySet["EntityCategory"]:
-        """Get all entities in the graph that match the source definition of this edge category."""
-        """Get all entities in the graph that match the target definition of this edge category."""
-        kwargs = {}
-        if self.source_definition_model.keys:
-            kwargs["key__in"] = self.source_definition_model.keys
-
-        if self.source_definition_model.categories:
-            kwargs["id__in"] = self.source_definition_model.categories
-        if self.source_definition_model.tags:
-            kwargs["tags__value__in"] = self.source_definition_model.tags
-        if self.source_definition_model.ontotology_terms:
-            kwargs["ontology_references__name__in"] = self.source_definition_model.ontotology_terms
-
-        return self.graph.entity_categories.filter(**kwargs).distinct()
-
-    def get_matching_target_entities(self) -> QuerySet["EntityCategory"]:
-        """Get all entities in the graph that match the target definition of this edge category."""
-        kwargs = {}
-        if self.target_definition_model.keys:
-            kwargs["key__in"] = self.target_definition_model.keys
-        if self.target_definition_model.categories:
-            kwargs["id__in"] = self.target_definition_model.categories
-        if self.target_definition_model.tags:
-            kwargs["tags__value__in"] = self.target_definition_model.tags
-        if self.target_definition_model.ontotology_terms:
-            kwargs["ontology_references__name__in"] = self.target_definition_model.ontotology_terms
-
-        return self.graph.entity_categories.filter(**kwargs).distinct()
-
-    @property
     def defined_properties(self):
         from graph_engine.base_models import PropertyDefinition
 
@@ -1126,6 +1080,47 @@ class MeasurementCategory(EdgeCategory):
     def get_age_type_name(self) -> str:
         return "MEASUREMENT"
 
+    @property
+    def source_definition_model(self) -> StructureDescriptorInput:
+        return StructureDescriptorInput(**self.source_definition)
+
+    @property
+    def target_definition_model(self) -> EntityDescriptorInput:
+        return EntityDescriptorInput(**self.target_definition)
+
+    def matches_source(self, entity: "StructureCategory") -> bool:
+        """Check if an entity matches the source definition of this edge category."""
+        return self.source_definition_model.matches(entity)
+
+    def matches_target(self, entity: "EntityCategory") -> bool:
+        """Check if an entity matches the target definition of this edge category."""
+        return self.target_definition_model.matches(entity)
+
+    def get_matching_source_structures(self) -> QuerySet["StructureCategory"]:
+        """Get all structures in the graph that match the source definition of this edge category."""
+        """Get all entities in the graph that match the target definition of this edge category."""
+        kwargs = {}
+        if self.source_definition_model.keys:
+            kwargs["key__in"] = self.source_definition_model.keys
+        if self.source_definition_model.tags:
+            kwargs["tags__value__in"] = self.source_definition_model.tags
+        if self.source_definition_model.ontotology_terms:
+            kwargs["ontology_references__name__in"] = self.source_definition_model.ontotology_terms
+
+        return self.graph.structure_categories.filter(**kwargs).distinct()
+
+    def get_matching_target_entities(self) -> QuerySet["EntityCategory"]:
+        """Get all entities in the graph that match the target definition of this edge category."""
+        kwargs = {}
+        if self.target_definition_model.keys:
+            kwargs["key__in"] = self.target_definition_model.keys
+        if self.target_definition_model.tags:
+            kwargs["tags__value__in"] = self.target_definition_model.tags
+        if self.target_definition_model.ontotology_terms:
+            kwargs["ontology_references__name__in"] = self.target_definition_model.ontotology_terms
+
+        return self.graph.entity_categories.filter(**kwargs).distinct()
+
     class Meta:
         default_related_name = "measurement_categories"
 
@@ -1139,6 +1134,47 @@ class RelationCategory(EdgeCategory):
         help_text="The description of category",
         null=True,
     )
+
+    @property
+    def source_definition_model(self) -> EntityDescriptorInput:
+        return EntityDescriptorInput(**self.source_definition)
+
+    @property
+    def target_definition_model(self) -> EntityDescriptorInput:
+        return EntityDescriptorInput(**self.target_definition)
+
+    def matches_source(self, entity: "EntityCategory") -> bool:
+        """Check if an entity matches the source definition of this edge category."""
+        return self.source_definition_model.matches(entity)
+
+    def matches_target(self, entity: "EntityCategory") -> bool:
+        """Check if an entity matches the target definition of this edge category."""
+        return self.target_definition_model.matches(entity)
+
+    def get_matching_source_entities(self) -> QuerySet["EntityCategory"]:
+        """Get all entities in the graph that match the source definition of this edge category."""
+        """Get all entities in the graph that match the target definition of this edge category."""
+        kwargs = {}
+        if self.source_definition_model.keys:
+            kwargs["key__in"] = self.source_definition_model.keys
+        if self.source_definition_model.tags:
+            kwargs["tags__value__in"] = self.source_definition_model.tags
+        if self.source_definition_model.ontotology_terms:
+            kwargs["ontology_references__name__in"] = self.source_definition_model.ontotology_terms
+
+        return self.graph.entity_categories.filter(**kwargs).distinct()
+
+    def get_matching_target_entities(self) -> QuerySet["EntityCategory"]:
+        """Get all entities in the graph that match the target definition of this edge category."""
+        kwargs = {}
+        if self.target_definition_model.keys:
+            kwargs["key__in"] = self.target_definition_model.keys
+        if self.target_definition_model.tags:
+            kwargs["tags__value__in"] = self.target_definition_model.tags
+        if self.target_definition_model.ontotology_terms:
+            kwargs["ontology_references__name__in"] = self.target_definition_model.ontotology_terms
+
+        return self.graph.entity_categories.filter(**kwargs).distinct()
 
     def get_age_edge_name(self):
         return self.age_name
@@ -1167,6 +1203,51 @@ class StructureRelationCategory(EdgeCategory):
         help_text="The description of category",
         null=True,
     )
+
+    @property
+    def source_definition_model(self) -> StructureDescriptorInput:
+        return StructureDescriptorInput(**self.source_definition)
+
+    @property
+    def target_definition_model(self) -> StructureDescriptorInput:
+        return StructureDescriptorInput(**self.target_definition)
+
+    def matches_source(self, entity: "StructureCategory") -> bool:
+        """Check if a structure matches the source definition of this edge category."""
+        return self.source_definition_model.matches(entity)
+
+    def matches_target(self, entity: "StructureCategory") -> bool:
+        """Check if a structure matches the target definition of this edge category."""
+        return self.target_definition_model.matches(entity)
+
+    def get_matching_source_structures(self) -> QuerySet["StructureCategory"]:
+        """Get all structures in the graph that match the source definition of this edge category."""
+        """Get all structures in the graph that match the target definition of this edge category."""
+        kwargs = {}
+        if self.source_definition_model.keys:
+            kwargs["key__in"] = self.source_definition_model.keys
+        if self.source_definition_model.tags:
+            kwargs["tags__value__in"] = self.source_definition_model.tags
+        if self.source_definition_model.ontotology_terms:
+            kwargs["ontology_references__name__in"] = self.source_definition_model.ontotology_terms
+        if self.source_definition_model.identifiers:
+            kwargs["identifier__in"] = self.source_definition_model.identifiers
+
+        return self.graph.structure_categories.filter(**kwargs).distinct()
+
+    def get_matching_target_structures(self) -> QuerySet["StructureCategory"]:
+        """Get all structures in the graph that match the target definition of this edge category."""
+        kwargs = {}
+        if self.target_definition_model.keys:
+            kwargs["key__in"] = self.target_definition_model.keys
+        if self.target_definition_model.tags:
+            kwargs["tags__value__in"] = self.target_definition_model.tags
+        if self.target_definition_model.ontotology_terms:
+            kwargs["ontology_references__name__in"] = self.target_definition_model.ontotology_terms
+        if self.target_definition_model.identifiers:
+            kwargs["identifier__in"] = self.target_definition_model.identifiers
+
+        return self.graph.structure_categories.filter(**kwargs).distinct()
 
     def get_age_edge_name(self):
         return self.age_name
@@ -1558,7 +1639,7 @@ class MaterializedEdge(models.Model):
         related_name="materialized_edges_as_target",
         help_text="The target category of the edge",
     )
-    relation = models.ForeignKey(
+    edge = models.ForeignKey(
         Category,
         on_delete=models.CASCADE,
         related_name="materialized_edges_as_relation",

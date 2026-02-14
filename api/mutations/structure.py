@@ -111,7 +111,7 @@ def archive_structure(
 def link_structure_to_entity(
     info: Info,
     input: inputs.LinkStructureInput,
-) -> types.Informs:
+) -> types.Measurement:
     """
     Link an existing structure to an existing entity.
 
@@ -138,7 +138,7 @@ def link_structure_to_entity(
         recalculate=input.recalculate if input.recalculate is not None else True,
     )
 
-    return types.Informs(
+    return types.Measurement(
         _value=entity_response,
     )
 

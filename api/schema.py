@@ -308,6 +308,19 @@ def create_schema(
             mutation=Mutation,
             subscription=Subscription,
             extensions=extensions,
+            types=[
+                # Explicitly include all types that are not directly referenced in the Query/Mutation/Subscription root types
+                # Node Types
+                types.Entity,
+                types.Structure,
+                types.Metric,
+                types.Assertion,
+                # Edge Types
+                types.Measurement,
+                types.Asserted,
+                types.Relation,
+                types.StructureRelation,
+            ],
             config=StrawberryConfig(
                 scalar_map={
                     scalars.AnyScalar: strawberry.scalar(

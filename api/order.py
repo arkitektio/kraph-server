@@ -83,3 +83,27 @@ class RelationCategoryOrder(EdgeCategoryOrder):
 class MeasurementCategoryOrder(CategoryOrder):
     label: auto
     id: auto
+
+
+@strawberry_django.order_type(models.GraphQuery)
+class GraphQueryOrder:
+    label: auto
+    id: auto
+
+
+@strawberry_django.order_type(models.GraphTableQuery)
+class GraphTableQueryOrder:
+    label: auto
+    id: auto
+
+
+@strawberry_django.order_type(models.GraphNodesQuery)
+class GraphNodesQueryOrder:
+    label: auto
+    id: auto
+
+
+@strawberry_django.order_type(models.GraphPairsQuery)
+class GraphPairsQueryOrder:
+    label: auto
+    id: auto
