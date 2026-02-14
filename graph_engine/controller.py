@@ -196,17 +196,21 @@ class GraphController:
 
         # --- Step 3: Handle Evidence & Measurements ---
         for evidence in supporting_evidence:
-            if graph.allow_auto_add_structure_definitions:
-                scategory, _ = models.StructureCategory.objects.get_or_create(
-                    graph=graph,
-                    identifier=evidence.identifier,
-                )
-            else:
-                scategory = models.StructureCategory.objects.filter(
-                    graph=graph,
-                    identifier=evidence.identifier,
-                ).first()
-                if not scategory:
+            scategory = models.StructureCategory.objects.filter(
+                graph=graph,
+                identifier=evidence.identifier,
+            ).first()
+
+            if not scategory:
+                if graph.allow_auto_add_structure_definitions:
+                    scategory = models.StructureCategory.objects.create_from_structure_definition(
+                        graph=graph,
+                        definition=input_models.StructureDefinitionInput(
+                            key=evidence.identifier,
+                            identifier=evidence.identifier,
+                        ),
+                    )
+                else:
                     raise ValueError(f"Structure identifier {evidence.identifier} not found in graph schema.")
 
             structure_vertex_name = scategory.get_age_vertex_name()
@@ -219,19 +223,32 @@ class GraphController:
             for meas in evidence.metrics:
                 # meas is a MetricInput with key, value, and optional fields
 
-                if graph.allow_auto_adding_metrics:
-                    mcategory, _ = models.MetricCategory.objects.get_or_create(
-                        graph=graph,
-                        identifier=meas.key,
-                        structure_category=scategory,
-                    )
-                else:
-                    mcategory = models.MetricCategory.objects.filter(
-                        graph=graph,
-                        identifier=meas.key,
-                        structure_category=scategory,
-                    ).first()
-                    if not mcategory:
+                mcategory = models.MetricCategory.objects.filter(
+                    graph=graph,
+                    key=meas.key,
+                    structure_category=scategory,
+                ).first()
+
+                if not mcategory:
+                    if graph.allow_auto_adding_metrics:
+                        if isinstance(meas.value, bool):
+                            inferred_kind = input_models.PropertyType.BOOLEAN
+                        elif isinstance(meas.value, int):
+                            inferred_kind = input_models.PropertyType.INTEGER
+                        elif isinstance(meas.value, float):
+                            inferred_kind = input_models.PropertyType.FLOAT
+                        else:
+                            inferred_kind = input_models.PropertyType.STRING
+
+                        mcategory = models.MetricCategory.objects.create_from_metric_definition(
+                            graph=graph,
+                            definition=input_models.MetricDefinitionInput(
+                                structure=scategory.identifier,
+                                value_kind=inferred_kind,
+                                key=meas.key,
+                            ),
+                        )
+                    else:
                         raise ValueError(f"Metric identifier {meas.key} not found in graph schema for structure {evidence.identifier}.")
 
                 params = {"sid": structure_id, "aid": assertion_id, "category": mcategory.pk, "key": meas.key, "value": meas.value, "unit": meas.unit, "confidence": meas.confidence, "confidence_type": meas.confidence_type, "timestamp": meas.timestamp}
@@ -272,14 +289,19 @@ class GraphController:
 
         # --- Step 5: Link Entity -> Evidence ---
         for evidence in supporting_evidence:
-            evidence_identifier = evidence.identifier
+            structure_category = models.StructureCategory.objects.filter(
+                graph=graph,
+                identifier=evidence.identifier,
+            ).first()
+            if structure_category is None:
+                raise ValueError(f"Structure identifier {evidence.identifier} not found in graph schema.")
 
             evidence_object = evidence.object
             self.engine.execute(
                 entity_category.graph,
                 f"""
                 MATCH (e:{entity_category.age_name}) WHERE id(e) = $eid
-                MATCH (s:{g_label} {{object: $obj}})
+                MATCH (s:{structure_category.get_age_vertex_name()} {{object: $obj}})
                 MERGE (s)-[:{vocab.INFORMS}]->(e)
                 """,
                 {"eid": retrieved.local_id, "obj": evidence_object},
@@ -1700,6 +1722,21 @@ class GraphController:
             raise ValueError(f"Invalid property key '{key}'.")
         return key
 
+    def _coerce_filter_value(self, value: Any) -> Any:
+        if not isinstance(value, str):
+            return value
+
+        lowered = value.lower()
+        if lowered in {"true", "false"}:
+            return lowered == "true"
+
+        try:
+            if "." in value:
+                return float(value)
+            return int(value)
+        except ValueError:
+            return value
+
     def _build_entity_where_clause(self, filters: input_models.EntityFilters | None, variable: str = "e") -> tuple[str, dict[str, Any]]:
         params: dict[str, Any] = {}
         clauses: list[str] = []
@@ -1707,42 +1744,72 @@ class GraphController:
         if not filters:
             return "", params
 
-        operator = (filters.operator or "EQUALS").upper()
-        key = filters.key
-        value = filters.value
+        if filters.category:
+            params["filter_category"] = filters.category
+            clauses.append(f"labels({variable})[0] = $filter_category")
 
-        if key == "id":
-            field_expr = f"id({variable})"
-        else:
-            validated_key = self._validate_property_key(key)
-            field_expr = f"{variable}.{validated_key}"
+        if filters.ids:
+            params["filter_ids"] = [int(extract_node_id(entity_id)) for entity_id in filters.ids]
+            clauses.append(f"id({variable}) IN $filter_ids")
 
-        params["filter_value"] = value
+        if filters.search:
+            params["filter_search"] = filters.search
+            clauses.append(f"{variable}.label CONTAINS $filter_search")
 
-        if operator in {"EQUALS", "EQ", "="}:
-            clauses.append(f"{field_expr} = $filter_value")
-        elif operator in {"NOT_EQUALS", "NEQ", "!="}:
-            clauses.append(f"{field_expr} <> $filter_value")
-        elif operator in {"GREATER_THAN", "GT", ">"}:
-            clauses.append(f"{field_expr} > $filter_value")
-        elif operator in {"LESS_THAN", "LT", "<"}:
-            clauses.append(f"{field_expr} < $filter_value")
-        elif operator in {"GREATER_OR_EQUAL", "GREATER_THAN_OR_EQUAL", "GTE", ">="}:
-            clauses.append(f"{field_expr} >= $filter_value")
-        elif operator in {"LESS_OR_EQUAL", "LESS_THAN_OR_EQUAL", "LTE", "<="}:
-            clauses.append(f"{field_expr} <= $filter_value")
-        elif operator == "CONTAINS":
-            clauses.append(f"{field_expr} CONTAINS $filter_value")
-        elif operator == "STARTS_WITH":
-            clauses.append(f"{field_expr} STARTS WITH $filter_value")
-        elif operator == "ENDS_WITH":
-            clauses.append(f"{field_expr} ENDS WITH $filter_value")
-        elif operator == "IN":
-            clauses.append(f"{field_expr} IN $filter_value")
-        elif operator == "NOT_IN":
-            clauses.append(f"NOT {field_expr} IN $filter_value")
-        else:
-            raise ValueError(f"Unsupported filter operator '{filters.operator}'.")
+        if filters.has_property:
+            key = self._validate_property_key(filters.has_property)
+            clauses.append(f"{variable}.{key} IS NOT NULL")
+
+        if filters.matches:
+            for index, match in enumerate(filters.matches):
+                key = self._validate_property_key(match.key)
+                operator = match.operator.value if hasattr(match.operator, "value") else str(match.operator)
+                operator = operator.upper()
+
+                value_param = f"match_value_{index}"
+                coerced_value = self._coerce_filter_value(match.value)
+                field_expr = f"{variable}.{key}"
+
+                if key == "id":
+                    field_expr = f"id({variable})"
+                    if isinstance(coerced_value, str):
+                        if ":" in coerced_value or "-" in coerced_value:
+                            try:
+                                coerced_value = int(extract_node_id(coerced_value))
+                            except ValueError:
+                                pass
+                        else:
+                            try:
+                                coerced_value = int(coerced_value)
+                            except ValueError:
+                                pass
+
+                params[value_param] = coerced_value
+
+                if operator in {"EQUALS", "EQ", "="}:
+                    clauses.append(f"{field_expr} = ${value_param}")
+                elif operator in {"NOT_EQUALS", "NEQ", "!="}:
+                    clauses.append(f"{field_expr} <> ${value_param}")
+                elif operator in {"GREATER_THAN", "GT", ">"}:
+                    clauses.append(f"{field_expr} > ${value_param}")
+                elif operator in {"LESS_THAN", "LT", "<"}:
+                    clauses.append(f"{field_expr} < ${value_param}")
+                elif operator in {"GREATER_OR_EQUAL", "GREATER_THAN_OR_EQUAL", "GTE", ">="}:
+                    clauses.append(f"{field_expr} >= ${value_param}")
+                elif operator in {"LESS_OR_EQUAL", "LESS_THAN_OR_EQUAL", "LTE", "<="}:
+                    clauses.append(f"{field_expr} <= ${value_param}")
+                elif operator == "CONTAINS":
+                    clauses.append(f"{field_expr} CONTAINS ${value_param}")
+                elif operator == "STARTS_WITH":
+                    clauses.append(f"{field_expr} STARTS WITH ${value_param}")
+                elif operator == "ENDS_WITH":
+                    clauses.append(f"{field_expr} ENDS WITH ${value_param}")
+                elif operator == "IN":
+                    clauses.append(f"{field_expr} IN ${value_param}")
+                elif operator == "NOT_IN":
+                    clauses.append(f"NOT {field_expr} IN ${value_param}")
+                else:
+                    raise ValueError(f"Unsupported filter operator '{operator}'.")
 
         return ("WHERE " + " AND ".join(clauses)) if clauses else "", params
 
@@ -1752,9 +1819,16 @@ class GraphController:
 
         clauses = []
         for o in order:
-            key = self._validate_property_key(o.key)
-            direction = (o.direction or "asc").upper()
-            clauses.append(f"{variable}.{key} {direction}")
+            if o.property is not None:
+                key = self._validate_property_key(o.property.key)
+                direction = (o.property.direction.value if hasattr(o.property.direction, "value") else str(o.property.direction)).upper()
+                clauses.append(f"{variable}.{key} {direction}")
+            elif o.created_at is not None:
+                direction = (o.created_at.value if hasattr(o.created_at, "value") else str(o.created_at)).upper()
+                clauses.append(f"{variable}.created_at {direction}")
+            elif o.id is not None:
+                direction = (o.id.value if hasattr(o.id, "value") else str(o.id)).upper()
+                clauses.append(f"id({variable}) {direction}")
         if not clauses:
             return ""
         return f"ORDER BY {', '.join(clauses)}"
@@ -1778,7 +1852,7 @@ class GraphController:
 
         query = f"""
             MATCH (e)
-            WHERE any(lbl IN labels(e) WHERE lbl IN $entity_labels)
+            WHERE labels(e)[0] IN $entity_labels
             {("AND " + where_clause[len("WHERE ") :]) if where_clause else ""}
             RETURN e
             {order_clause}
