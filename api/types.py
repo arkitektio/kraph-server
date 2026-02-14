@@ -28,6 +28,12 @@ from core import enums
 # ===========================================
 # Schema Types
 # ===========================================
+@kante.pydantic_type(input_models.OntologyReferenceInput, description="An ontology reference in the graph schema")
+class OntologyReference:
+    """An ontology reference in the graph schema."""
+
+    prefix: str = strawberry.field(description="The ontology prefix (e.g., 'GO', 'CL')")
+    term_id: str = strawberry.field(description="The ontology term ID (e.g., '0008150')")
 
 
 @kante.pydantic_type(input_models.PropertyDefinitionInput, description="A property definition from the graph schema")
@@ -73,6 +79,11 @@ class ReturnStatement:
 @kante.pydantic_type(input_models.BuilderArgsInput, all_fields=True, description="Input type for creating a new graph query")
 class BuilderArgs:
     """Arguments for building a graph query."""
+
+
+@kante.pydantic_type(input_models.EventRoleInput, all_fields=True, description="Input type for defining roles in an event category")
+class EventRole:
+    """Definition of a role in an event category."""
 
 
 @kante.django_type(models.MaterializedEdge, filters=filters.MaterializedEdgeFilter, ordering=order.MaterializedEdgeOrder, pagination=True, description="A materialized edge representing a relationship in the graph")
@@ -178,6 +189,11 @@ class NodeCategory:
     relevant_node_queries: List["NodeQuery"] = strawberry.field(default_factory=list, description="List of relevant node queries that use this category as input")
 
 
+@kante.interface(description="Base interface for plottable queries")
+class Plottable:
+    columns: List[Column] = strawberry.field(description="List of columns to return in the table query result")
+
+
 @kante.django_interface(models.GraphQuery, description="Base interface for entity categories/schemas")
 class GraphQuery:
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
@@ -194,7 +210,7 @@ class GraphNodesQuery(GraphQuery):
 
 
 @kante.django_type(models.GraphTableQuery, description="Base interface for graph schemas")
-class GraphTableQuery(GraphQuery):
+class GraphTableQuery(GraphQuery, Plottable):
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
     query: scalars.CypherLiteral = strawberry.field(description="The Cypher query to execute for this table query")
     columns: List[Column] = strawberry.field(description="List of columns to return in the table query result")
@@ -247,6 +263,7 @@ class MetricCategory(NodeCategory, Category):
 @kante.django_interface(models.NaturalEventCategory, description="Base interface for event categories/schemas")
 class EventCategory(NodeCategory, Category):
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
+
     pass
 
 
@@ -298,13 +315,11 @@ class NodeQuery:
 
 
 @kante.django_type(models.NodeTableQuery, description="Base interface for graph schemas")
-class NodeTableQuery(NodeQuery):
+class NodeTableQuery(NodeQuery, Plottable):
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
     query: scalars.CypherLiteral = strawberry.field(description="The Cypher query to execute for this table query")
     columns: List[Column] = strawberry.field(description="List of columns to return in the table query result")
-    match_paths: List[MatchPath] = strawberry.field(description="The pattern to match in the graph for this table query")
-    where_clauses: List[WhereClause] = strawberry.field(description="Optional filtering conditions for the table query")
-    return_statements: List[ReturnStatement] = strawberry.field(description="The values to return for each matched pattern in the table query")
+    builder_args: Optional[BuilderArgs] = strawberry.field(default=None, description="If this graph was built using a builder function, the arguments used for building it, which can be used for debugging or rebuilding the graph with different parameters")
 
 
 @kante.django_type(models.NodePairsQuery, description="Base interface for graph schemas")
@@ -330,13 +345,11 @@ class EdgeQuery:
 
 
 @kante.django_type(models.EdgeTableQuery, description="Base interface for graph schemas")
-class EdgeTableQuery(EdgeQuery):
+class EdgeTableQuery(EdgeQuery, Plottable):
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
     query: scalars.CypherLiteral = strawberry.field(description="The Cypher query to execute for this table query")
     columns: List[Column] = strawberry.field(description="List of columns to return in the table query result")
-    match_paths: List[MatchPath] = strawberry.field(description="The pattern to match in the graph for this table query")
-    where_clauses: List[WhereClause] = strawberry.field(description="Optional filtering conditions for the table query")
-    return_statements: List[ReturnStatement] = strawberry.field(description="The values to return for each matched pattern in the table query")
+    builder_args: Optional[BuilderArgs] = strawberry.field(default=None, description="If this graph was built using a builder function, the arguments used for building it, which can be used for debugging or rebuilding the graph with different parameters")
 
 
 @kante.django_type(models.EdgePairsQuery, description="Base interface for graph schemas")
@@ -359,7 +372,30 @@ class EdgePathQuery(EdgeQuery):
 
 @kante.django_type(models.ScatterPlot, description="Result of linking a structure to an entity")
 class ScatterPlot:
+    label: str = strawberry.field(description="Label/name of the scatter plot definition")
+    description: Optional[str] = strawberry.field(default=None, description="Description of the scatter plot definition")
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
+    id_column: str = strawberry.field(description="The name of the column to use for point identifiers (e.g. structure ID, or entity id)")
+    x_column: str = strawberry.field(description="The name of the column to use for x values")
+    y_column: str = strawberry.field(description="The name of the column to use for y values")
+    color_column: Optional[str] = strawberry.field(default=None, description="The name of the column to use for color values (optional)")
+    size_column: Optional[str] = strawberry.field(default=None, description="The name of the column to use for size values (optional)")
+    shape_column: Optional[str] = strawberry.field(default=None, description="The name of the column to use for shape values (optional)")
+
+    @kante.django_field(description="The graph this category belongs to")
+    def query(self) -> Plottable:
+        """Fetch the data points for this scatter plot."""
+        # In a real implementation, we would query the graph for the data points linked to this structure and entity.
+        # For this example, we'll return an empty list for simplicity.
+        model = cast(models.ScatterPlot, self)
+        if model.graph_query:
+            return model.graph_query
+        elif model.node_query:
+            return model.node_query
+        elif model.path_query:
+            return model.path_query
+        else:
+            raise ValueError("ScatterPlot must have either a graph_query, node_query, or path_query")
 
 
 @strawberry.type(description="A property/variable from a node")

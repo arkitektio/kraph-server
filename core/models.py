@@ -1185,6 +1185,10 @@ class GraphQuery(PolymorphicModel):
         related_name="graph_queries",
         help_text="The graph this query belongs to",
     )
+    key = models.CharField(
+        max_length=1000,
+        help_text="The key of the query, used for referencing the query in the frontend and for pinning it",
+    )
     query = models.CharField(max_length=7000, help_text="The query that is used to materialize the graph")
     name = models.CharField(max_length=1000, help_text="The name of the materialized graph")
     description = models.CharField(
@@ -1221,6 +1225,12 @@ class GraphQuery(PolymorphicModel):
         default=list,
         null=True,
     )
+
+    class Meta(PolymorphicModel.Meta):
+        """Some Meta options for the GraphQuery model"""
+
+        default_related_name = "graph_queries"
+        unique_together = ("graph", "key")
 
 
 class GraphNodesQuery(GraphQuery):
@@ -1304,6 +1314,10 @@ class NodeQuery(PolymorphicModel):
         related_name="node_queries",
         help_text="The graph this query belongs to",
     )
+    key = models.CharField(
+        max_length=1000,
+        help_text="The key of the query, used for referencing the query in the frontend and for pinning it",
+    )
     query = models.CharField(max_length=7000, help_text="The query that is used to materialize the graph")
     name = models.CharField(max_length=1000, help_text="The name of the materialized graph")
     description = models.CharField(
@@ -1337,6 +1351,12 @@ class NodeQuery(PolymorphicModel):
     def active_for_user_and_graph(self, user, graph):
         return self.objects.filter(graph=graph, pinned_by=user).first()
 
+    class Meta(PolymorphicModel.Meta):
+        """Some Meta options for the GraphQuery model"""
+
+        default_related_name = "node_queries"
+        unique_together = ("graph", "key")
+
 
 class NodePathQuery(NodeQuery):
     pass
@@ -1366,6 +1386,10 @@ class EdgeQuery(PolymorphicModel):
         on_delete=models.CASCADE,
         related_name="edge_queries",
         help_text="The graph this query belongs to",
+    )
+    key = models.CharField(
+        max_length=1000,
+        help_text="The key of the query, used for referencing the query in the frontend and for pinning it",
     )
     query = models.CharField(max_length=7000, help_text="The query that is used to materialize the graph")
     name = models.CharField(max_length=1000, help_text="The name of the materialized graph")
@@ -1399,6 +1423,12 @@ class EdgeQuery(PolymorphicModel):
     @classmethod
     def active_for_user_and_graph(self, user, graph):
         return self.objects.filter(graph=graph, pinned_by=user).first()
+
+    class Meta(PolymorphicModel.Meta):
+        """Some Meta options for the GraphQuery model"""
+
+        default_related_name = "edge_queries"
+        unique_together = ("graph", "key")
 
 
 class EdgePathQuery(EdgeQuery):
@@ -1455,19 +1485,29 @@ class MaterializedView(models.Model):
 
 
 class ScatterPlot(models.Model):
-    query = models.ForeignKey(
+    graph_query = models.ForeignKey(
         GraphTableQuery,
         on_delete=models.CASCADE,
+        null=True,
+        blank=True,
         related_name="scatter_plots",
         help_text="The query this scatter plot was trained on",
     )
-    view = models.ForeignKey(
-        MaterializedView,
-        null=True,
-        blank=True,
+    node_query = models.ForeignKey(
+        NodeTableQuery,
         on_delete=models.CASCADE,
         related_name="scatter_plots",
-        help_text="If this scatter plot is based on a materialized view, this is the view",
+        null=True,
+        blank=True,
+        help_text="The node query this scatter plot was trained on",
+    )
+    path_query = models.ForeignKey(
+        NodePathQuery,
+        on_delete=models.CASCADE,
+        related_name="scatter_plots",
+        null=True,
+        blank=True,
+        help_text="The path query this scatter plot was trained on",
     )
     name = models.CharField(max_length=1000, help_text="The name of the scatter plot")
     description = models.CharField(

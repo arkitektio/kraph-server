@@ -85,6 +85,10 @@ class Query:
     node_path_queries: list[types.NodePathQuery] = kante.django_field(description="Show all saved node path queries")
     node_path_query: types.NodePathQuery = kante.django_field(description="Show a single saved node path query by ID")
 
+    # Plots
+    scatter_plots: list[types.ScatterPlot] = kante.django_field(description="Show all saved scatter plots")
+    scatter_plot: types.ScatterPlot = kante.django_field(description="Show a single saved scatter plot by ID")
+
 
 @strawberry.type(description="Graph Engine Mutations")
 class Mutation:

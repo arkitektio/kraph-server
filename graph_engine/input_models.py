@@ -709,7 +709,7 @@ class EventRoleInput(BaseModel):
     key: str = Field(..., description="The label of the node participating in the event")
     role: str = Field(..., description="What type of role does this node play in the event")
     descriptor: EntityDescriptorInput = Field(..., description="Optional filters to apply when linking entities to structures for this role")
-    ontology_references: List[OntologyReferenceInput] = Field(default_factory=list, description="Ontology references for this event")
+    ontology_references: List[OntologyReferenceInput] = Field(default_factory=list, description="Ontology references for this role")
 
 
 class EventDefinitionInput(NodeDefinitionInput):
