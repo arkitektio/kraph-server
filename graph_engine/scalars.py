@@ -17,6 +17,8 @@ StructureIdentifier = NewType("StructureIdentifier", str)
 # Scalar for Graph ID (UUID string)
 StructureObject = NewType("StructureObject", str)
 
+StructureGlobalID = NewType("StructureGlobalID", str)
+
 # Global ID scalar in format "uuid"
 GlobalID = NewType("GlobalID", str)
 

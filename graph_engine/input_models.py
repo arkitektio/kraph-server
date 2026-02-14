@@ -10,7 +10,7 @@ import strawberry
 from datalayer.scalars import MediaStore, MediaStoreLike
 from graph_engine.scalars import GraphID
 from graph_engine import scalars
-
+from core import enums
 # --- Enums for Strict Typing ---
 
 
@@ -384,9 +384,16 @@ class DerivationRuleInput(BaseModel):
 
 
 class ColumnInput(BaseModel):
-    key: str = Field(..., description="The property key for this column")
+    key: str = Field(..., description="The property key for this column (inside the table query result)")
     type: str = Field(..., description="The property type for this column (e.g., STRING, FLOAT)")
+    label: Optional[str] = Field(default=None, description="Optional human-readable label for this column (defaults to 'key' if not provided)")
+    value_kind: Optional[enums.ValueKind] = Field(default=None, description="Whether this column represents a raw property value, a derived value, or a metric")
     unit: Optional[str] = Field(default=None, description="Unit of measurement if applicable")
+    description: str | None = Field(default=None, description="Optional description for this column")
+    category_key: Optional[str] = Field(default=None, description="Optional category/key for this column, used for grouping or filtering in the UI")
+    searchable: bool = Field(default=False, description="Whether this column should be full-text searchable")
+    is_id_for_key: Optional[str] = Field(default=None, description="If this column represents an ID that can be used to link to another table, specify the target table name here")
+    prefer_hidden: bool = Field(default=False, description="Whether this column should be hidden by default in the UI, even if it's not an ID or metadata column")
 
 
 class MatchPathInput(BaseModel):
@@ -409,10 +416,16 @@ class WhereClauseInput(BaseModel):
     value: scalars.CypherLiteral = Field(..., description="The value to compare against")
 
 
-class ReturnInput(BaseModel):
+class ReturnStatementInput(BaseModel):
     path: str = Field(..., description="The path ID to return")
     node: str | None = Field(default=None, description="The node ID to return")
     property: str | None = Field(default=None, description="The property name to return")
+
+
+class BuilderArgsInput(BaseModel):
+    where_clauses: Optional[List[WhereClauseInput]] = Field(default=None, description="Optional filtering conditions for the graph query")
+    match_paths: Optional[List[MatchPathInput]] = Field(default=None, description="Optional patterns to match in the graph for this query")
+    return_statements: Optional[List[ReturnStatementInput]] = Field(default=None, description="The values to return for each matched pattern in the graph query")
 
 
 class PropertyDefinitionInput(BaseModel):
@@ -651,18 +664,37 @@ class EntityCategoryProtocol(Protocol):
 
 
 class EntityDescriptorInput(BaseModel):
-    """Input for filtering entities when linking to a structure."""
+    """Input for filtering entities when linking to a structure. This only contains relativ fields
+    that can be used for filtering, not absolute references like 'id'."""
 
     keys: Optional[List[str]] = Field(default=None, description="Filter by entity key/label")
-    categories: Optional[List[GraphID]] = Field(default=None, description="Filter by entity category/label")
     tags: Optional[List[str]] = Field(default=None, description="Filter by tags on the entity")
     ontotology_terms: Optional[List[str]] = Field(default=None, description="Filter by ontology references on the entity (format: 'PREFIX:TERM_ID')")
+    default_category_key: Optional[str] = Field(default=None, description="Default category to link to if no entities match the filters")
 
     def matches(self, entity: EntityCategoryProtocol) -> bool:
         """Check if a given entity matches this descriptor."""
         if self.keys and entity.key not in self.keys:
             return False
-        if self.categories and entity.id not in self.categories:
+        if self.tags and not set(self.tags).issubset(set(entity.tags)):
+            return False
+        if self.ontotology_terms and not set(self.ontotology_terms).issubset(set(map(lambda x: x.uri, entity.ontology_references))):
+            return False
+        return True
+
+
+class StructureDescriptorInput(BaseModel):
+    """Input for filtering entities when linking to a structure. This only contains relativ fields
+    that can be used for filtering, not absolute references like 'id'."""
+
+    keys: Optional[List[str]] = Field(default=None, description="Filter by entity key/label")
+    tags: Optional[List[str]] = Field(default=None, description="Filter by tags on the entity")
+    ontotology_terms: Optional[List[str]] = Field(default=None, description="Filter by ontology references on the entity (format: 'PREFIX:TERM_ID')")
+    default_category_key: Optional[str] = Field(default=None, description="Default category to link to if no entities match the filters")
+
+    def matches(self, entity: EntityCategoryProtocol) -> bool:
+        """Check if a given entity matches this descriptor."""
+        if self.keys and entity.key not in self.keys:
             return False
         if self.tags and not set(self.tags).issubset(set(entity.tags)):
             return False
@@ -771,6 +803,61 @@ class RelationDefinitionInput(EdgeDefinitionInput):
     """Input for a relation definition."""
 
     properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Derived property definitions")
+
+
+class GraphQueryInput(BaseModel):
+    """Input for a graph query definition."""
+
+    key: str = Field(..., description="Unique key for this graph query, used for referencing in the UI")
+    label: Optional[str] = Field(default=None, description="Human-readable label for this graph query (defaults to 'key' if not provided)")
+
+
+class GraphTableQueryInput(GraphQueryInput):
+    """Input for a graph table query definition."""
+
+    key: str = Field(..., description="Unique key for this graph query, used for referencing in the UI")
+    name: Optional[str] = Field(default=None, description="Human-readable name for this graph query (defaults to 'key' if not provided)")
+    description: Optional[str] = Field(default=None, description="Description of this graph query")
+
+
+class CreateGraphTableQueryInput(GraphTableQueryInput):
+    """Input for creating a graph table query definition."""
+
+    graph: GraphID = Field(..., description="The graph id this table query will belong to")
+    column_input: List[ColumnInput] = Field(default_factory=list, description="Definitions for the columns returned by this graph query")
+    cypher: scalars.CypherLiteral = Field(..., description="The Cypher query string that defines this graph query. Can include parameter placeholders (e.g. $param) for dynamic filtering")
+
+
+class BuildGraphTableQueryInput(BaseModel):
+    """Input for a table graph query definition."""
+
+    builder_args: Optional[BuilderArgsInput] = Field(default=None, description="Optional additional arguments for the graph query builder to support advanced features like dynamic filtering or pattern matching")
+
+
+class PlotInput(BaseModel):
+    key: str = Field(..., description="Unique key for this plot definition, used for referencing in the UI")
+    label: Optional[str] = Field(default=None, description="Human-readable label for this plot definition (defaults to 'key' if not provided)")
+    graph_table_query: str | None = Field(..., description="The key of the graph table query that provides the data for this plot")
+    node_table_query: str | None = Field(..., description="The key of the node table query that provides the data for this plot")
+    path_table_query: str | None = Field(..., description="The key of the path table query that provides the data for this plot")
+
+    @model_validator(mode="after")
+    def validate_query_keys(self):
+        """Validate that exactly one of graph_table_query, node_table_query, or path_table_query is provided."""
+        query_keys = [self.graph_table_query, self.node_table_query, self.path_table_query]
+        provided_keys = [key for key in query_keys if key is not None]
+        if len(provided_keys) == 0:
+            raise ValueError("At least one of graph_table_query, node_table_query, or path_table_query must be provided")
+        if len(provided_keys) > 1:
+            raise ValueError("Only one of graph_table_query, node_table_query, or path_table_query can be provided")
+        return self
+
+
+class ScatterPlotInput(PlotInput):
+    x_axis: str = Field(..., description="The column key to use for the x-axis")
+    y_axis: str = Field(..., description="The column key to use for the y-axis")
+    color_by: Optional[str] = Field(default=None, description="Optional column key to use for coloring the points")
+    size_by: Optional[str] = Field(default=None, description="Optional column key to use for sizing the points")
 
 
 class CreateRelationDefinitionInput(EntityDefinitionInput):
@@ -1047,18 +1134,20 @@ class GraphExtensionsInput(BaseModel):
     relations: List[RelationDefinitionInput] = Field(default_factory=list, description="Relation definitions")
     events: List[EventDefinitionInput] = Field(default_factory=list, description="Event definitions")
 
+    # insights
+    graph_table_queries: List[GraphTableQueryInput] = Field(default_factory=list, description="Graph table query definitions")
+    scatter_plots: List[ScatterPlotInput] = Field(default_factory=list, description="Scatter plot definitions")
+
 
 class ActionFilterInput(BaseModel):
-    user_id: Optional[str] = Field(None, description="Only applies when request user id matches")
-    membership_id: Optional[str] = Field(None, description="Only applies when request membership id matches")
-    organization_id: Optional[str] = Field(None, description="Only applies when request organization id matches")
+    required_roles: List[str] = Field(default_factory=list, description="All roles that must be present on the request")
     required_scopes: List[str] = Field(default_factory=list, description="All scopes that must be present on the request")
 
 
 class ActionRuleInput(BaseModel):
     action: Action = Field(..., description="Action this rule controls")
     allow: bool = Field(True, description="Whether this rule allows or denies the action")
-    filter: ActionFilterInput = Field(default_factory=ActionFilterInput, description="Simple boolean filter against request context")
+    filter: ActionFilterInput = Field(default_factory=lambda: ActionFilterInput(), description="Simple boolean filter against request context")
 
 
 class GraphDefinitionInput(BaseModel):

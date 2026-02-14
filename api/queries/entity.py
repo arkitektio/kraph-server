@@ -6,12 +6,12 @@ from typing import List
 from kante.types import Info
 import strawberry
 
-from api import types, context, inputs
+from api import types, context, inputs, filters, order, pagination
 from core import models
 from graph_engine import scalars
 
 
-def entities(info, filters: inputs.EntityFilterInput | None = None, order: inputs.EntityOrderInput | None = None) -> List[types.Entity]:
+def entities(info, filters: filters.EntityFilter | None = None, ordering: list[order.EntityOrder] | None = None, pagination: pagination.GraphPaginationInput | None = None) -> List[types.Entity]:
     raise NotImplementedError("This resolver is not implemented yet")
 
 

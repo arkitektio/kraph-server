@@ -5,6 +5,7 @@ This module assembles the complete GraphQL schema from queries,
 mutations, and subscriptions.
 """
 
+from duckdb import description
 from strawberry.schema.config import StrawberryConfig
 from strawberry.extensions import QueryDepthLimiter
 from typing import AsyncGenerator, Optional
@@ -33,6 +34,7 @@ class Query:
     """Root query type for the graph engine API."""
 
     graph: types.Graph = kante.django_field(description="Get a graph by ID")
+    graphs: list[types.Graph] = kante.django_field(description="List of all graphs in the graph engine")
 
     # Schema Operations
     entity_categories: list[types.EntityCategory] = kante.django_field(description="List of all entity categories/schemas")
@@ -40,13 +42,48 @@ class Query:
     structure_categories: list[types.StructureCategory] = kante.django_field(description="List of all structure categories/schemas")
     structure_category: types.StructureCategory = kante.django_field(description="Get a single structure category/schema by ID")
     metric_categories: list[types.MetricCategory] = kante.django_field(description="List of all metric categories/schemas")
+    measurement_categories: list[types.MeasurementCategory] = kante.django_field(description="List of all measurement categories/schemas")
+    measurement_category: types.MeasurementCategory = kante.django_field(description="Get a single measurement category/schema by ID")
     metric_category: types.MetricCategory = kante.django_field(description="Get a single metric category/schema by ID")
     relation_categories: list[types.RelationCategory] = kante.django_field(description="List of all relation categories/schemas")
     relation_category: types.RelationCategory = kante.django_field(description="Get a single relation category/schema by ID")
+    materialized_edges: list[types.MaterializedEdge] = kante.django_field(description="List of all materialized edges in the graph")
+    materialized_edge: types.MaterializedEdge = kante.django_field(description="Get a single materialized edge by ID")
 
+    # Entity queries
     entity = kante.django_field(queries.entity, description="Get an entity by ID")
     structure = kante.django_field(queries.structure, description="Get a structure by ID")
     metric = kante.django_field(queries.metric, description="Get a metric by ID")
+    entities = kante.django_field(queries.entities, description="List of entities with optional filters and ordering")
+
+    # Insights
+    graph_queries: list[types.GraphQuery] = kante.django_field(description="Show all saved graph queries")
+    graph_query: types.GraphQuery = kante.django_field(description="Show a single saved graph query by ID")
+    graph_table_queries: list[types.GraphTableQuery] = kante.django_field(description="Show all saved graph table queries")
+    graph_table_query: types.GraphTableQuery = kante.django_field(description="Show a single saved graph table query by ID")
+    graph_nodes_queries: list[types.GraphNodesQuery] = kante.django_field(description="Show all saved graph nodes queries")
+    graph_node_query: types.GraphNodesQuery = kante.django_field(description="Show a single saved graph node query by ID")
+
+    graph_pairs_queries: list[types.GraphPairsQuery] = kante.django_field(description="Show all saved graph pairs queries")
+    graph_pairs_query: types.GraphPairsQuery = kante.django_field(description="Show a single saved graph pairs query by ID")
+
+    edge_queries: list[types.EdgeQuery] = kante.django_field(description="Show all saved edge queries")
+    edge_query: types.EdgeQuery = kante.django_field(description="Show a single saved edge query by ID")
+    edge_table_queries: list[types.EdgeTableQuery] = kante.django_field(description="Show all saved edge table queries")
+    edge_table_query: types.EdgeTableQuery = kante.django_field(description="Show a single saved edge table query by ID")
+    edge_path_queries: list[types.EdgePathQuery] = kante.django_field(description="Show all saved edge path queries")
+    edge_path_query: types.EdgePathQuery = kante.django_field(description="Show a single saved edge path query by ID")
+    edge_pairs_queries: list[types.EdgePairsQuery] = kante.django_field(description="Show all saved edge pairs queries")
+    edge_pairs_query: types.EdgePairsQuery = kante.django_field(description="Show a single saved edge pairs query by ID")
+
+    node_queries: list[types.NodeQuery] = kante.django_field(description="Show all saved node queries")
+    node_query: types.NodeQuery = kante.django_field(description="Show a single saved node query by ID")
+    node_table_queries: list[types.NodeTableQuery] = kante.django_field(description="Show all saved node table queries")
+    node_table_query: types.NodeTableQuery = kante.django_field(description="Show a single saved node table query by ID")
+    node_pairs_queries: list[types.NodePairsQuery] = kante.django_field(description="Show all saved node pairs queries")
+    node_pairs_query: types.NodePairsQuery = kante.django_field(description="Show a single saved node pairs query by ID")
+    node_path_queries: list[types.NodePathQuery] = kante.django_field(description="Show all saved node path queries")
+    node_path_query: types.NodePathQuery = kante.django_field(description="Show a single saved node path query by ID")
 
 
 @strawberry.type(description="Graph Engine Mutations")
@@ -301,16 +338,31 @@ def create_schema(
                     ),
                     scalars.StructureObject: strawberry.scalar(
                         name="StructureObject",
+                        description="The `StructureObject` scalar type represents a structure object (e.g 1) on a specific identifier)",
+                        serialize=lambda v: v,  # Implement your serialization logic here
+                        parse_value=lambda v: v,  # Implement your parsing logic here
+                    ),
+                    scalars.StructureGlobalID: strawberry.scalar(
+                        name="StructureGlobalID",
+                        description="The `StructureGlobalID` scalar type represents a structure global identifier (e.g. '@mikro/roi:433')",
                         serialize=lambda v: v,  # Implement your serialization logic here
                         parse_value=lambda v: v,  # Implement your parsing logic here
                     ),
                     scalars.StructureIdentifier: strawberry.scalar(
                         name="StructureIdentifier",
+                        description="The `StructureIdentifier` scalar type represents a structure identifier (e.g. '@mikro/roi')",
                         serialize=lambda v: v,  # Implement your serialization logic here
                         parse_value=lambda v: v,  # Implement your parsing logic here
                     ),
                     scalars.AnyScalar: strawberry.scalar(
                         name="AnyScalar",
+                        description="The `AnyScalar` scalar type represents an arbitrary JSON-like value",
+                        serialize=lambda v: v,  # Implement your serialization logic here
+                        parse_value=lambda v: v,  # Implement your parsing logic here
+                    ),
+                    scalars.CypherLiteral: strawberry.scalar(
+                        name="CypherLiteral",
+                        description="The `CypherLiteral` scalar type represents a raw Cypher query or fragment",
                         serialize=lambda v: v,  # Implement your serialization logic here
                         parse_value=lambda v: v,  # Implement your parsing logic here
                     ),

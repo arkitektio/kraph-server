@@ -13,7 +13,8 @@ This module follows the pattern from core/types.py where:
 import strawberry
 from typing import Generic, Optional, List, Type, TypeVar, Union, cast
 from datetime import datetime
-from api import loaders, order
+from api import loaders, order, pagination, filters
+from datalayer.types import MediaStore
 from graph_engine.scalars import AnyScalar, UnixMilliseconds, StructureIdentifier, GlobalID
 from graph_engine.retrieved import RetrievedMetric, RetrievedNode, RetrievedEdge, RetrievedStructure, RetrievedVariable
 from graph_engine import input_models
@@ -21,6 +22,7 @@ import kante
 from core import models
 from graph_engine import retrieved, scalars
 from api import filters
+from core import enums
 
 
 # ===========================================
@@ -38,6 +40,16 @@ class PropertyDefinition:
     description: Optional[str] = strawberry.field(default=None, description="Description of this property")
 
 
+@kante.pydantic_type(input_models.EntityDescriptorInput, description="Input type for creating a new graph query")
+class EntityDescriptor:
+    """Descriptor for an entity, used as input for creating new graph queries."""
+
+    keys: Optional[List[str]] = kante.field(default=None, description="Filter by entity key/label")
+    tags: Optional[List[str]] = kante.field(default=None, description="Filter by tags on the entity")
+    ontotology_terms: Optional[List[str]] = kante.field(default=None, description="Filter by ontology references on the entity (format: 'PREFIX:TERM_ID')")
+    default_category_key: Optional[str] = kante.field(default=None, description="Default category to use for this entity if we aim to create a new one based on this descriptor")
+
+
 @kante.pydantic_type(input_models.ColumnInput, all_fields=True, description="Input type for defining a graph schema")
 class Column:
     """A column definition for a graph schema."""
@@ -53,12 +65,17 @@ class MatchPath:
     """A path definition for matching patterns in the graph."""
 
 
-@kante.pydantic_type(input_models.ReturnInput, all_fields=True, description="Input type for creating a new graph")
-class Return:
-    """A path definition for matching patterns in the graph."""
+@kante.pydantic_type(input_models.ReturnStatementInput, all_fields=True, description="Input type for creating a new graph")
+class ReturnStatement:
+    """A return statement definition for a table query."""
 
 
-@kante.django_type(models.MaterializedEdge, description="A materialized edge representing a relationship in the graph")
+@kante.pydantic_type(input_models.BuilderArgsInput, all_fields=True, description="Input type for creating a new graph query")
+class BuilderArgs:
+    """Arguments for building a graph query."""
+
+
+@kante.django_type(models.MaterializedEdge, filters=filters.MaterializedEdgeFilter, ordering=order.MaterializedEdgeOrder, pagination=True, description="A materialized edge representing a relationship in the graph")
 class MaterializedEdge:
     """A materialized edge representing a relationship in the graph."""
 
@@ -68,7 +85,7 @@ class MaterializedEdge:
     relation: "RelationCategory"
 
 
-@kante.django_type(models.Graph, description="Base interface for graph schemas")
+@kante.django_type(models.Graph, filters=filters.GraphFilter, pagination=True, ordering=order.GraphOrder, description="Base interface for graph schemas")
 class Graph:
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
     graph_id: strawberry.ID = strawberry.field(description="ID of the graph this category belongs to")
@@ -81,14 +98,32 @@ class Graph:
     materialized_edges: List["MaterializedEdge"] = strawberry.field(default_factory=list, description="List of materialized edges in the graph")
 
 
+@kante.django_type(models.CategoryTag, filters=filters.CategoryTagFilter, pagination=True, ordering=order.EntityOrder, description="Base interface for graph nodes representing entities")
+class CategoryTag:
+    id: strawberry.ID = strawberry.field(description="Database ID of the category tag")
+    name: str = strawberry.field(description="Name of the category tag")
+    description: Optional[str] = strawberry.field(default=None, description="Description of the category tag")
+
+
 @kante.django_interface(models.Category, description="Base interface for structure categories/schemas")
 class Category:
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
     label: str = strawberry.field(description="Label/name of the category")
     description: Optional[str] = strawberry.field(default=None, description="Description of the category")
+    age_name: str = strawberry.field(description="The name of the category as used in AGE (e.g. 'Cell', 'ROI')")
     purl: Optional[str] = strawberry.field(default=None, description="Persistent URL for this category")
     color: Optional[List[int]] = strawberry.field(default=None, description="Color as RGBA list (0-255)")
-    tags: List[str] = strawberry.field(default_factory=list, description="List of tags associated with this category")
+    tags: List[CategoryTag] = kante.django_field(description="List of tags associated with this category")
+    image: MediaStore = strawberry.field(description="An image representing this category, for visualization purposes")
     graph: Graph = strawberry.field(description="The graph this category belongs to")
+    relevant_queries: List["GraphQuery"] = strawberry.field(default_factory=list, description="List of relevant queries that use this category as input")
+
+    @kante.django_field(description="The graph this category belongs to")
+    def pinned(self, info: kante.Info) -> bool:
+        """Whether this category is pinned for quick access in the UI."""
+        # In a real implementation, we would check the user's preferences or a pinned categories list.
+        # For this example, we'll return False for simplicity.
+        return cast(models.Category, self).pinned_by.filter(id=info.context.user.id).exists()
 
 
 @kante.django_interface(models.EdgeCategory, description="Base interface for graph schemas")
@@ -96,10 +131,51 @@ class EdgeCategory:
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
     graph_id: strawberry.ID = strawberry.field(description="ID of the graph this category belongs to")
     label: str = strawberry.field(description="Label/name of the category")
+
     description: Optional[str] = strawberry.field(default=None, description="Description of the category")
     purl: Optional[str] = strawberry.field(default=None, description="Persistent URL for this category")
     color: Optional[List[int]] = strawberry.field(default=None, description="Color as RGBA list (0-255)")
-    tags: List[str] = strawberry.field(default_factory=list, description="List of tags associated with this category")
+    relevant_edge_queries: List["EdgeQuery"] = strawberry.field(default_factory=list, description="List of relevant queries that use this category as input")
+
+    @kante.django_field(description="The graph this category belongs to")
+    def source_descriptor(self) -> EntityDescriptor:
+        """Return the source node category definition if this edge category is used in a pairs query."""
+        # In a real implementation, we would check if this edge category is used as a filter in any EdgePairsQuery,
+        # and if so, return the source node category from that query.
+        # For this example, we'll return None for simplicity.
+        return EntityDescriptor.from_pydantic(cast(models.EdgeCategory, self).source_definition_model)
+
+    @kante.django_field(description="The graph this category belongs to")
+    def target_descriptor(self) -> EntityDescriptor:
+        """Return the target node category definition if this edge category is used in a pairs query."""
+        # In a real implementation, we would check if this edge category is used as a filter in any EdgePairsQuery,
+        # and if so, return the target node category from that query.
+        # For this example, we'll return None for simplicity.
+        return EntityDescriptor.from_pydantic(cast(models.EdgeCategory, self).target_definition_model)
+
+    @kante.django_field(description="The graph this category belongs to")
+    def materializable_as(self) -> List[MaterializedEdge]:
+        """Return a list of materialized edges that can be derived for this edge category."""
+        # In a real implementation, we would check if this edge category is used in any GraphPairsQuery,
+        # and if so, return the corresponding materialized edges from the graph.
+        # For this example, we'll return an empty list for simplicity.
+        return []
+
+
+@kante.django_interface(models.NodeCategory, description="Base interface for graph schemas")
+class NodeCategory:
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
+    label: str = strawberry.field(description="Label/name of the category")
+    graph_id: strawberry.ID = strawberry.field(description="ID of the graph this category belongs to")
+    description: Optional[str] = strawberry.field(default=None, description="Description of the category")
+    purl: Optional[str] = strawberry.field(default=None, description="Persistent URL for this category")
+    color: Optional[List[int]] = strawberry.field(default=None, description="Color as RGBA list (0-255)")
+    position_x: float = strawberry.field(description="X coordinate")
+    position_y: float = strawberry.field(description="Y coordinate")
+    position_z: Optional[float] = strawberry.field(default=None, description="Z coordinate (optional)")
+    width: Optional[float] = strawberry.field(default=None, description="Width for visualization (optional)")
+    height: Optional[float] = strawberry.field(default=None, description="Height for visualization (optional)")
+    relevant_node_queries: List["NodeQuery"] = strawberry.field(default_factory=list, description="List of relevant node queries that use this category as input")
 
 
 @kante.django_interface(models.GraphQuery, description="Base interface for entity categories/schemas")
@@ -122,9 +198,15 @@ class GraphTableQuery(GraphQuery):
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
     query: scalars.CypherLiteral = strawberry.field(description="The Cypher query to execute for this table query")
     columns: List[Column] = strawberry.field(description="List of columns to return in the table query result")
-    match_paths: List[MatchPath] = strawberry.field(description="The pattern to match in the graph for this table query")
-    where_clauses: List[WhereClause] = strawberry.field(description="Optional filtering conditions for the table query")
-    returns: List[Return] = strawberry.field(description="The values to return for each matched pattern in the table query")
+    builder_args: Optional[BuilderArgs] = strawberry.field(default=None, description="If this graph was built using a builder function, the arguments used for building it, which can be used for debugging or rebuilding the graph with different parameters")
+
+
+@kante.django_type(models.GraphPairsQuery, description="Base interface for graph schemas")
+class GraphPairsQuery(GraphQuery):
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
+    source_category: "NodeCategory" = strawberry.field(description="The source node category/schema to query")
+    target_category: "NodeCategory" = strawberry.field(description="The target node category/schema to query")
+    edge_category: Optional["EdgeCategory"] = strawberry.field(default=None, description="Optional edge category/schema to filter pairs by")
 
 
 @kante.django_type(models.GraphPathQuery, description="Base interface for graph schemas")
@@ -132,49 +214,33 @@ class GraphPathQuery(GraphQuery):
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
 
 
-@kante.django_type(models.ScatterPlot, description="Result of linking a structure to an entity")
-class ScatterPlot:
-    id: strawberry.ID = strawberry.field(description="Database ID of the category")
-
-
-@kante.django_interface(models.NodeCategory, description="Base interface for graph schemas")
-class NodeCategory:
-    id: strawberry.ID = strawberry.field(description="Database ID of the category")
-    graph_id: strawberry.ID = strawberry.field(description="ID of the graph this category belongs to")
-    description: Optional[str] = strawberry.field(default=None, description="Description of the category")
-    purl: Optional[str] = strawberry.field(default=None, description="Persistent URL for this category")
-    color: Optional[List[int]] = strawberry.field(default=None, description="Color as RGBA list (0-255)")
-    tags: List[str] = strawberry.field(default_factory=list, description="List of tags associated with this category")
-    position_x: float = strawberry.field(description="X coordinate")
-    position_y: float = strawberry.field(description="Y coordinate")
-    position_z: Optional[float] = strawberry.field(default=None, description="Z coordinate (optional)")
-    width: Optional[float] = strawberry.field(default=None, description="Width for visualization (optional)")
-    property_definitions: List[PropertyDefinition] = strawberry.field(default_factory=list, description="List of property definitions for this entity category")
-    relevant_queries: List[GraphQuery] = strawberry.field(default_factory=list, description="List of relevant queries that use this category as input")
-
-
 @kante.django_type(models.EntityCategory, filters=filters.EntityCategoryFilter, pagination=True, ordering=order.EntityCategoryOrder, description="An entity category/schema definition")
 class EntityCategory(NodeCategory, Category):
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
     graph: "Graph" = strawberry.field(description="The graph this category belongs to")
     label: str = strawberry.field(description="Label/name of the category")
+    instance_kind: strawberry.auto = strawberry.field(description="What type of instance, (taking from the universe) 'LOT', 'BIOLOGICAL', 'PHYSICAL'")
+    property_definitions: List[PropertyDefinition] = strawberry.field(default_factory=list, description="List of property definitions for this entity category")
+
+    @kante.django_field(description="The graph this category belongs to")
+    def entities(self, filters: filters.EntityFilter | None = None, ordering: list[order.EntityOrder] | None = None, pagination: pagination.GraphPaginationInput | None = None) -> List["Entity"]:
+        """Fetch the latest entity instance of this category."""
+        # In a real implementation, we would query the graph for the most recently derived entity
+        # that belongs to this category. For this example, we'll return None for simplicity.
+        raise NotImplementedError("Latest entity fetching not implemented yet")
 
 
 @kante.django_type(models.StructureCategory, filters=filters.StructureCategoryFilter, pagination=True, ordering=order.StructureCategoryOrder, description="A structure category/schema definition")
 class StructureCategory(NodeCategory, Category):
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
-    pass
+    identifier: str = kante.django_field(description="The identifier for this structure category, which is used to link structures to entities (e.g. 'Cell', 'ROI', 'Tissue')")
 
 
 @kante.django_type(models.MetricCategory, filters=filters.MetricCategoryFilter, pagination=True, ordering=order.MetricCategoryOrder, description="A metric category/schema definition")
 class MetricCategory(NodeCategory, Category):
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
-    pass
-
-
-@kante.django_type(models.MeasurementCategory, filters=filters.MetricCategoryFilter, pagination=True, ordering=order.MetricCategoryOrder, description="A metric category/schema definition")
-class MeasurementCategory(NodeCategory, Category):
-    id: strawberry.ID = strawberry.field(description="Database ID of the category")
+    value_kind: enums.ValueKind = strawberry.field(description="What type of value, (taking from the universe) 'QUANTITATIVE', 'QUALITATIVE', 'BOOLEAN'")
+    structure_category: StructureCategory = kante.django_field(description="The structure category/schema this metric is relevant for, if applicable")
     pass
 
 
@@ -200,6 +266,12 @@ class NaturalEventCategory(EventCategory, Category):
     pass
 
 
+@kante.django_type(models.MeasurementCategory, filters=filters.MeasurementCategoryFilter, pagination=True, ordering=order.MeasurementCategoryOrder, description="A measurement category/schema definition")
+class MeasurementCategory(EdgeCategory, Category):
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
+    pass
+
+
 @kante.django_type(models.RelationCategory, filters=filters.RelationCategoryFilter, pagination=True, ordering=order.RelationCategoryOrder, description="A relation category/schema definition")
 class RelationCategory(EdgeCategory, Category):
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
@@ -216,9 +288,78 @@ class StructureRelationCategory(EdgeCategory, Category):
     pass
 
 
+@kante.django_interface(models.NodeQuery, description="Base interface for entity categories/schemas")
+class NodeQuery:
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
+    graph: "Graph" = strawberry.field(description="The graph this query belongs to")
+    label: str = strawberry.field(description="Label/name of the category")
+    description: Optional[str] = strawberry.field(default=None, description="Description of the category")
+    relevant_for: List["NodeCategory"] = strawberry.field(default_factory=list, description="List of node categories for which this query is relevant")
+
+
+@kante.django_type(models.NodeTableQuery, description="Base interface for graph schemas")
+class NodeTableQuery(NodeQuery):
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
+    query: scalars.CypherLiteral = strawberry.field(description="The Cypher query to execute for this table query")
+    columns: List[Column] = strawberry.field(description="List of columns to return in the table query result")
+    match_paths: List[MatchPath] = strawberry.field(description="The pattern to match in the graph for this table query")
+    where_clauses: List[WhereClause] = strawberry.field(description="Optional filtering conditions for the table query")
+    return_statements: List[ReturnStatement] = strawberry.field(description="The values to return for each matched pattern in the table query")
+
+
+@kante.django_type(models.NodePairsQuery, description="Base interface for graph schemas")
+class NodePairsQuery(NodeQuery):
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
+    source_category: "NodeCategory" = strawberry.field(description="The source node category/schema to query")
+    target_category: "NodeCategory" = strawberry.field(description="The target node category/schema to query")
+    edge_category: Optional["EdgeCategory"] = strawberry.field(default=None, description="Optional edge category/schema to filter pairs by")
+
+
+@kante.django_type(models.NodePathQuery, description="Base interface for graph schemas")
+class NodePathQuery(NodeQuery):
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
+
+
+@kante.django_interface(models.EdgeQuery, description="Base interface for entity categories/schemas")
+class EdgeQuery:
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
+    graph: "Graph" = strawberry.field(description="The graph this query belongs to")
+    label: str = strawberry.field(description="Label/name of the category")
+    description: Optional[str] = strawberry.field(default=None, description="Description of the category")
+    relevant_for: List["NodeCategory"] = strawberry.field(default_factory=list, description="List of node categories for which this query is relevant")
+
+
+@kante.django_type(models.EdgeTableQuery, description="Base interface for graph schemas")
+class EdgeTableQuery(EdgeQuery):
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
+    query: scalars.CypherLiteral = strawberry.field(description="The Cypher query to execute for this table query")
+    columns: List[Column] = strawberry.field(description="List of columns to return in the table query result")
+    match_paths: List[MatchPath] = strawberry.field(description="The pattern to match in the graph for this table query")
+    where_clauses: List[WhereClause] = strawberry.field(description="Optional filtering conditions for the table query")
+    return_statements: List[ReturnStatement] = strawberry.field(description="The values to return for each matched pattern in the table query")
+
+
+@kante.django_type(models.EdgePairsQuery, description="Base interface for graph schemas")
+class EdgePairsQuery(EdgeQuery):
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
+    source_category: "NodeCategory" = strawberry.field(description="The source node category/schema to query")
+    target_category: "NodeCategory" = strawberry.field(description="The target node category/schema to query")
+    edge_category: Optional["EdgeCategory"] = strawberry.field(default=None, description="Optional edge category/schema to filter pairs by")
+
+
+@kante.django_type(models.EdgePathQuery, description="Base interface for graph schemas")
+class EdgePathQuery(EdgeQuery):
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
+
+
 # ===========================================
 # PROPERTY TYPE
 # ===========================================
+
+
+@kante.django_type(models.ScatterPlot, description="Result of linking a structure to an entity")
+class ScatterPlot:
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
 
 
 @strawberry.type(description="A property/variable from a node")

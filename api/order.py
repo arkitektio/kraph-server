@@ -1,11 +1,35 @@
+from typing import Optional
 from core import models
 from strawberry import auto
 import strawberry_django
+import kante
+from strawberry_django.ordering import Ordering
+import strawberry
+
+
+@kante.input(description="Ordering options for entity queries")
+class EntityOrder:
+    """Ordering options for entity queries."""
+
+    created_at: Optional[Ordering] = kante.field(default=None, description="Order by creation timestamp")
+    category: Optional[Ordering] = kante.field(default=None, description="Order by entity kind/type")
+    id: Optional[Ordering] = kante.field(default=None, description="Order by entity ID")
+
+
+@strawberry_django.order_type(models.Graph)
+class GraphOrder:
+    name: auto
+    id: auto
 
 
 @strawberry_django.order_type(models.Category)
 class CategoryOrder:
     label: auto
+    id: auto
+
+
+@strawberry_django.order_type(models.MaterializedEdge)
+class MaterializedEdgeOrder:
     id: auto
 
 
@@ -51,5 +75,11 @@ class ProtocolEventCategoryOrder(NodeCategoryOrder):
 
 @strawberry_django.order_type(models.RelationCategory)
 class RelationCategoryOrder(EdgeCategoryOrder):
+    label: auto
+    id: auto
+
+
+@strawberry_django.order_type(models.MeasurementCategory)
+class MeasurementCategoryOrder(CategoryOrder):
     label: auto
     id: auto

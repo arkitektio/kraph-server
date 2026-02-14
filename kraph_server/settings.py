@@ -176,18 +176,18 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 
-AUTHENTIKATE = {
-    "ISSUERS": [
-        *conf.get("authentikate", []),
-        {
-            "iss": "lok",
-            "kid": "lok-key-1",
-            "kind": "rsa",
-            "public_key": conf.lok.get("public_key", None),
-        },
-    ],
-    "STATIC_TOKENS": conf.lok.get("static_tokens", {}),
-}
+if conf.get("authentikate", None) is not None:
+    AUTHENTIKATE = {
+        "ISSUERS": [
+            *conf.authentikate.get("issuers", []),
+        ],
+        "STATIC_TOKENS": {**conf.authentikate.get("static_tokens", {})},
+    }
+else:
+    AUTHENTIKATE = {
+        "ISSUERS": [],
+        "STATIC_TOKENS": {},
+    }
 
 # Internationalization
 # https://docs.djangoproject.com/en/4.2/topics/i18n/

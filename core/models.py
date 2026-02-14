@@ -906,6 +906,25 @@ class ProtocolEventCategory(NodeCategory):
         default_related_name = "protocol_event_categories"
 
 
+class Protocol(models.Model):
+    graph = models.ForeignKey(
+        Graph,
+        on_delete=models.CASCADE,
+        related_name="protocols",
+        help_text="The graph this protocol belongs to",
+    )
+    name = models.CharField(max_length=1000, help_text="The name of the protocol")
+    description = models.CharField(
+        max_length=2000,
+        help_text="The description of the protocol",
+        null=True,
+    )
+    plate_children = models.JSONField(
+        default=list,
+        help_text="The steps of the protocol, each step is a dict with the following keys: name, description, event_category, source_entities, target_entities, source_reagents, target_reagents, variables",
+    )
+
+
 class EntityCategory(NodeCategory):
     objects: managers.EntityCategoryManager = managers.EntityCategoryManager()
     """An Entity class is a class that describes a node in the graph which represent
@@ -1056,7 +1075,7 @@ class MetricCategory(NodeCategory):
 
     """
 
-    metric_kind = TextChoicesField(
+    value_kind = TextChoicesField(
         choices_enum=enums.MetricKindChoices,
         help_text="The data type (if a metric)",
         null=True,
@@ -1240,6 +1259,28 @@ class GraphPathQuery(GraphQuery):
     )
 
 
+class GraphPairsQuery(GraphQuery):
+    """A query that is used to materialize a list of paths"""
+
+    # The node category this query is associated with (e.g. if this is a query that materializes the nodes of a certain category, this is the category)
+    left_category = models.ForeignKey(
+        NodeCategory,
+        default=None,
+        null=True,
+        on_delete=models.CASCADE,
+        related_name="pairs_left_queries",
+        help_text="The category this query is associated if its a path_list",
+    )
+    right_category = models.ForeignKey(
+        NodeCategory,
+        default=None,
+        null=True,
+        on_delete=models.CASCADE,
+        related_name="pairs_right_queries",
+        help_text="The category this query is associated if its a path_list",
+    )
+
+
 class GraphTableQuery(GraphQuery):
     """A query that is used to materialize a table"""
 
@@ -1281,7 +1322,7 @@ class NodeQuery(PolymorphicModel):
         help_text="The users that have this query active",
     )
     relevant_for_nodes = models.ManyToManyField(
-        Category,
+        NodeCategory,
         related_name="relevant_node_queries",
         help_text="The entities that this query should be mostly used for",
     )
@@ -1301,7 +1342,74 @@ class NodePathQuery(NodeQuery):
     pass
 
 
+class NodePairsQuery(NodeQuery):
+    pass
+
+
 class NodeTableQuery(NodeQuery):
+    columns = models.JSONField(
+        help_text="The columns (if ViewKind is Table)",
+        default=list,
+        null=True,
+    )
+
+    @property
+    def input_columns(self):
+        from core import inputs
+
+        return [inputs.ColumnInput(**i) for i in self.columns]
+
+
+class EdgeQuery(PolymorphicModel):
+    graph = models.ForeignKey(
+        Graph,
+        on_delete=models.CASCADE,
+        related_name="edge_queries",
+        help_text="The graph this query belongs to",
+    )
+    query = models.CharField(max_length=7000, help_text="The query that is used to materialize the graph")
+    name = models.CharField(max_length=1000, help_text="The name of the materialized graph")
+    description = models.CharField(
+        max_length=1000,
+        help_text="The description of the materialized graph",
+        null=True,
+    )
+    kind = models.CharField(
+        max_length=1000,
+        help_text="The kind of the materialized graph (i.e path, property, etc.)",
+    )
+
+    pinned_by = models.ManyToManyField(
+        get_user_model(),
+        related_name="pinned_edge_queries",
+        help_text="The users that have this query active",
+    )
+    relevant_for_edges = models.ManyToManyField(
+        EdgeCategory,
+        related_name="relevant_edge_queries",
+        help_text="The entities that this query should be mostly used for",
+    )
+
+    @property
+    def input_columns(self):
+        from core import inputs
+
+        return [inputs.ColumnInput(**i) for i in self.columns]
+
+    @classmethod
+    def active_for_user_and_graph(self, user, graph):
+        return self.objects.filter(graph=graph, pinned_by=user).first()
+
+
+class EdgePathQuery(EdgeQuery):
+    pass
+
+
+class EdgePairsQuery(EdgeQuery):
+    pass
+
+
+class EdgeTableQuery(EdgeQuery):
     columns = models.JSONField(
         help_text="The columns (if ViewKind is Table)",
         default=list,

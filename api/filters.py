@@ -1,8 +1,28 @@
+from typing import List, Optional
 import strawberry
-from core import models
+from core import models, enums
 import strawberry_django as kante
 from django.db.models import Q
 import kante
+from graph_engine import scalars
+
+
+@strawberry.input(description="Filter options for querying entities")
+class EntityFilter:
+    """Filter options for entity queries."""
+
+    category: Optional[str] = strawberry.field(default=None, description="Filter by entity kind/type")
+    ids: Optional[List[scalars.GraphID]] = strawberry.field(default=None, description="Filter by specific entity IDs")
+    has_property: Optional[str] = strawberry.field(default=None, description="Filter entities that have a specific property")
+    search: Optional[str] = strawberry.field(default=None, description="Full-text search over entity properties")
+
+
+@strawberry.input(description="Filter options for querying entities")
+class EntityPaginationInput:
+    """Filter options for entity queries."""
+
+    offset: Optional[int] = strawberry.field(default=0, description="Number of items to skip")
+    limit: Optional[int] = strawberry.field(default=100, description="Maximum number of items to return")
 
 
 @kante.filter_type(models.Graph)
@@ -11,12 +31,33 @@ class GraphFilter:
     name: strawberry.auto
     description: strawberry.auto
 
+    @kante.filter_field(description="Filter by list of IDs")
+    def ids(self, value: list[strawberry.ID], prefix: str) -> Q:
+        return Q(**{f"{prefix}__id__in": value})
+
+    @kante.filter_field(description="Filter by list of IDs")
+    def search(self, value: str, prefix: str) -> Q:
+        return Q(**{f"{prefix}name__search": value}) | Q(**{f"{prefix}description__search": value})
+
+
+@kante.filter_type(models.CategoryTag)
+class CategoryTagFilter:
+    id: strawberry.auto
+
+    @kante.filter_field(description="Filter by list of IDs")
+    def search(self, value: str, prefix: str) -> Q:
+        return Q(**{f"{prefix}name__search": value}) | Q(**{f"{prefix}description__search": value})
+
 
 @kante.filter_type(models.Category)
 class CategoryFilter:
     graph: GraphFilter | None
     id: strawberry.auto
     label: strawberry.auto
+
+    @kante.filter_field(description="Filter by list of IDs")
+    def ids(self, value: list[strawberry.ID], prefix: str) -> Q:
+        return Q(**{f"{prefix}__id__in": value})
 
     @kante.filter_field(description="Filter by list of IDs")
     def pinned(self, info: kante.Info, value: bool, prefix: str) -> Q:
@@ -29,16 +70,21 @@ class CategoryFilter:
 
 @kante.filter_type(models.EntityCategory)
 class EntityCategoryFilter(CategoryFilter):
-    instance_kind: strawberry.auto
+    pass
 
 
 @kante.filter_type(models.MetricCategory)
 class MetricCategoryFilter(CategoryFilter):
-    metric_kind: strawberry.auto
+    value_kind: enums.ValueKind
 
 
 @kante.filter_type(models.RelationCategory)
 class RelationCategoryFilter(CategoryFilter):
+    pass
+
+
+@kante.filter_type(models.MeasurementCategory)
+class MeasurementCategoryFilter(CategoryFilter):
     pass
 
 
@@ -59,4 +105,9 @@ class StructureCategoryFilter(CategoryFilter):
 
 @kante.filter_type(models.StructureRelationCategory)
 class StructureRelationCategoryFilter(CategoryFilter):
+    pass
+
+
+@kante.filter_type(models.MaterializedEdge)
+class MaterializedEdgeFilter:
     pass

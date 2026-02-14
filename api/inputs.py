@@ -10,7 +10,7 @@ from typing import Optional, List
 from enum import Enum
 
 from graph_engine import input_models
-from graph_engine.scalars import AnyScalar
+from graph_engine.scalars import AnyScalar, GraphID
 from graph_engine import scalars
 from strawberry.experimental import pydantic
 from typing import Annotated
@@ -573,24 +573,6 @@ class PrefixInput:
 # ==========================================
 
 
-@strawberry.input(description="Filter options for querying entities")
-class EntityFilterInput:
-    """Filter options for entity queries."""
-
-    category: Optional[str] = strawberry.field(default=None, description="Filter by entity kind/type")
-    ids: Optional[List[str]] = strawberry.field(default=None, description="Filter by specific entity IDs")
-    has_property: Optional[str] = strawberry.field(default=None, description="Filter entities that have a specific property")
-
-
-@strawberry.input(description="Filter options for querying entities")
-class EntityOrderInput:
-    """Filter options for entity queries."""
-
-    category: Optional[str] = strawberry.field(default=None, description="Filter by entity kind/type")
-    ids: Optional[List[str]] = strawberry.field(default=None, description="Filter by specific entity IDs")
-    has_property: Optional[str] = strawberry.field(default=None, description="Filter entities that have a specific property")
-
-
 @strawberry.input(description="Filter options for querying structures")
 class StructureFilterInput:
     """Filter options for structure queries."""
@@ -622,6 +604,16 @@ class PaginationInput:
 
 @pydantic.input(model=input_models.SequenceInput, all_fields=True, description="Input for creating a new graph from a schema definition")
 class SequenceInput:
+    pass
+
+
+@pydantic.input(model=input_models.GraphTableQueryInput, all_fields=True, description="Input for creating a new graph from a schema definition")
+class GraphTableQueryInput:
+    pass
+
+
+@pydantic.input(model=input_models.ScatterPlotInput, all_fields=True, description="Input for creating a new graph from a schema definition")
+class ScatterPlotInput:
     pass
 
 
