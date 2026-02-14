@@ -30,12 +30,12 @@ def render_graph_table(
 
     controller = context.get_controller()
 
-    graph_query = models.GraphNodesQuery.objects.get(id=query)  # Validate graph query exists
+    graph_query = models.GraphTableQuery.objects.get(id=query)  # Validate graph query exists
 
     filters_model = filters.to_pydantic() if filters else None
     pagination_model = pagination.to_pydantic() if pagination else None
     order_model = order.to_pydantic() if order else None
 
-    response = controller.render_graph_nodes_query(graph_query, filters=filters_model, pagination=pagination_model, order=order_model)
+    response = controller.render_graph_table_query(graph_query, filters=filters_model, pagination=pagination_model, order=order_model)
 
     return types.GraphTableRender(_value=response)

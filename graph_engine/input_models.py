@@ -440,6 +440,42 @@ class PropertyDefinitionInput(BaseModel):
     index: bool = Field(default=False, description="Whether to create an index on this property for faster queries")
     searchable: bool = Field(default=False, description="Whether this property should be full-text searchable")
 
+    @model_validator(mode="before")
+    @classmethod
+    def populate_value_kind_from_legacy_type(cls, data):
+        if not isinstance(data, dict):
+            return data
+
+        if data.get("value_kind") is not None:
+            return data
+
+        legacy_type = data.get("type")
+        if legacy_type is None:
+            return data
+
+        type_to_value_kind = {
+            PropertyType.FLOAT: enums.ValueKind.FLOAT,
+            PropertyType.INTEGER: enums.ValueKind.INT,
+            PropertyType.DATETIME: enums.ValueKind.DATETIME,
+            PropertyType.STRING: enums.ValueKind.STRING,
+            PropertyType.BOOLEAN: enums.ValueKind.BOOLEAN,
+            PropertyType.POINT_3D: enums.ValueKind.THREE_D_VECTOR,
+        }
+
+        if isinstance(legacy_type, str):
+            try:
+                legacy_type = PropertyType(legacy_type)
+            except ValueError:
+                return data
+
+        mapped_value_kind = type_to_value_kind.get(legacy_type)
+        if mapped_value_kind is None:
+            return data
+
+        normalized = data.copy()
+        normalized["value_kind"] = mapped_value_kind
+        return normalized
+
     @field_validator("derivation")
     @classmethod
     def validate_derivation(cls, v: str) -> str:
@@ -471,9 +507,20 @@ class PropertyDefinitionInput(BaseModel):
         aggregation = self.rule.aggregation
         expected_result_type = AGGREGATION_RESULT_TYPES.get(aggregation)
 
+        value_kind_to_property_type = {
+            enums.ValueKind.FLOAT: PropertyType.FLOAT,
+            enums.ValueKind.INT: PropertyType.INTEGER,
+            enums.ValueKind.DATETIME: PropertyType.DATETIME,
+            enums.ValueKind.STRING: PropertyType.STRING,
+            enums.ValueKind.CATEGORY: PropertyType.STRING,
+            enums.ValueKind.BOOLEAN: PropertyType.BOOLEAN,
+            enums.ValueKind.THREE_D_VECTOR: PropertyType.POINT_3D,
+        }
+        property_type = value_kind_to_property_type.get(self.value_kind)
+
         # If aggregation has a fixed result type, check compatibility
-        if expected_result_type is not None and self.type != expected_result_type:
-            raise ValueError(f"Aggregation '{aggregation.value}' produces type '{expected_result_type.value}', but property is defined as '{self.type.value}'. Change property type to '{expected_result_type.value}'.")
+        if expected_result_type is not None and property_type is not None and property_type != expected_result_type:
+            raise ValueError(f"Aggregation '{aggregation.value}' produces type '{expected_result_type.value}', but property is defined as '{property_type.value}'. Change property type to '{expected_result_type.value}'.")
 
         return self
 
@@ -1229,3 +1276,10 @@ class PinGraphInput(BaseModel):
     pin: bool = Field(..., description="Whether to pin (true) or unpin (false) this graph in the UI for the user making the request")
     color: Optional[List[int]] = Field(default=None, description="Optional RGBA color for this graph (e.g. [255, 0, 0, 128])")
     user: Optional[str] = Field(default=None, description="The ID of the user for whom to set this pin. If not provided, will default to the user making the request.")
+
+
+# Backwards-compatible aliases used by older tests and callsites.
+GraphDefinitionModel = GraphDefinitionInput
+GraphExtensions = GraphExtensionsInput
+EntityDefinition = EntityDefinitionInput
+PropertyDefinition = PropertyDefinitionInput

@@ -37,7 +37,7 @@ async def test_create_graph_from_schema(
                             "properties": [
                                 {
                                     "key": "name",
-                                    "type": "string",
+                                    "valueKind": "STRING",
                                 }
                             ],
                         }

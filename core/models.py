@@ -1641,6 +1641,7 @@ class MaterializedEdge(models.Model):
     )
     edge = models.ForeignKey(
         Category,
+        db_column="relation_id",
         on_delete=models.CASCADE,
         related_name="materialized_edges_as_relation",
         help_text="The relation category of the edge",

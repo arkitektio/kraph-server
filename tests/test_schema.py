@@ -7,7 +7,6 @@ import graph_engine.input_models as models  # Assumes base_models.py exists in t
 # --- TESTS ---
 
 
-@pytest.mark.skip(reason="Validation behavior changed; update expected errors")
 def test_validation_logic_works() -> None:
     """
     Ensures that calling the constructors with bad data still raises errors.

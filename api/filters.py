@@ -7,6 +7,13 @@ import kante
 from graph_engine import scalars
 
 
+@strawberry.input
+class PropertyMatch:
+    key: str = strawberry.field(description="The property matching")
+    operator: enums.WhereOperator = strawberry.field(description="The operator to use")
+    value: scalars.AnyScalar = strawberry.field(description="THe value to filter agains")
+
+
 @strawberry.input(description="Filter options for querying entities")
 class EntityFilter:
     """Filter options for entity queries."""
@@ -15,6 +22,7 @@ class EntityFilter:
     ids: Optional[List[scalars.GraphID]] = strawberry.field(default=None, description="Filter by specific entity IDs")
     has_property: Optional[str] = strawberry.field(default=None, description="Filter entities that have a specific property")
     search: Optional[str] = strawberry.field(default=None, description="Full-text search over entity properties")
+    matches: Optional[List[PropertyMatch]] = strawberry.field(default=None, description="Filter entities that match specific property conditions")
 
 
 @strawberry.input(description="Filter options for querying entities")

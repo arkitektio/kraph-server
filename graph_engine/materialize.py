@@ -70,12 +70,12 @@ def re_materialize_relation_category(graph: models.Graph, relation_category: mod
     sources = relation_category.get_matching_source_entities()
     target = relation_category.get_matching_target_entities()
 
-    models.MaterializedEdge.objects.filter(graph=graph, relation=relation_category).delete()
+    models.MaterializedEdge.objects.filter(graph=graph, edge=relation_category).delete()
 
     for source_cat, target_cat in product(sources, target):
         models.MaterializedEdge.objects.create(
             graph=graph,
-            relation=relation_category,
+            edge=relation_category,
             source=source_cat,
             target=target_cat,
         )
@@ -170,7 +170,7 @@ def materialize(
 
         models.RelationCategory.objects.create(
             graph=graph,
-            age_name=models.RelationCategory.key_to_age_name(relation_def.key),
+            age_name=relation_def.key.upper(),
             key=relation_def.key,
             label=relation_def.key,
             description=getattr(relation_def, "description", None) or "",

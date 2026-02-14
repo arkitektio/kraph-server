@@ -208,7 +208,7 @@ class EdgeCategoryManager(CategoryManager[T], Generic[T]):
         other_defaults: Optional[dict[str, object]] = None,
     ) -> T:
         resolved_age_name = self.key_to_age_name(definition.key)
-        label = definition or definition.key
+        label = definition.label or definition.key
 
         defaults: dict[str, object] = {
             "label": label or definition.key,
@@ -280,6 +280,15 @@ class MetricCategoryManager(NodeCategoryManager["core_models.MetricCategory"]):
     ) -> "core_models.MetricCategory":
         from core import models as core_models
 
+        value_kind_map = {
+            input_models.PropertyType.INTEGER: enums.MetricKindChoices.INT,
+            input_models.PropertyType.FLOAT: enums.MetricKindChoices.FLOAT,
+            input_models.PropertyType.DATETIME: enums.MetricKindChoices.DATETIME,
+            input_models.PropertyType.STRING: enums.MetricKindChoices.STRING,
+            input_models.PropertyType.BOOLEAN: enums.MetricKindChoices.BOOLEAN,
+            input_models.PropertyType.POINT_3D: enums.MetricKindChoices.THREE_D_VECTOR,
+        }
+
         structure = await core_models.StructureCategory.objects.aget(graph=graph, identifier=definition.structure)
 
         category = await super().acreate_from_node_definition(
@@ -287,6 +296,7 @@ class MetricCategoryManager(NodeCategoryManager["core_models.MetricCategory"]):
             definition=definition,
             other_defaults={
                 "structure_category": structure,
+                "value_kind": value_kind_map.get(definition.value_kind),
             },
         )
 

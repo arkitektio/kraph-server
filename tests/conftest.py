@@ -203,7 +203,7 @@ def bio_graph(transactional_db, age_engine, bio_graph_schema, authenticated_cont
 def minimal_schema():
     """A minimal schema for testing."""
     return models.GraphDefinitionModel(
-        system_version="1.0",
+        system_version="1.0.0",
         extensions=models.GraphExtensions(
             entities=[
                 models.EntityDefinition(

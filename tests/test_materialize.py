@@ -167,9 +167,10 @@ def test_relation_category_has_source_target_definitions(transactional_db, age_e
     # Check source/target definitions
     assert rel_cat.source_definition is not None
     assert rel_cat.target_definition is not None
-    assert "types" in rel_cat.source_definition
-    assert "AIS" in rel_cat.source_definition["types"]
-    assert "Soma" in rel_cat.target_definition["types"]
+    assert "keys" in rel_cat.source_definition
+    assert "Cell" in rel_cat.source_definition["keys"]
+    assert "keys" in rel_cat.target_definition
+    assert "Cell" in rel_cat.target_definition["keys"]
 
 
 def test_event_category_has_roles(transactional_db, age_engine, bio_graph_schema, authenticated_context) -> None:
@@ -192,7 +193,7 @@ def test_event_category_has_roles(transactional_db, age_engine, bio_graph_schema
 
 def test_compute_definition_hash_is_deterministic() -> None:
     """Test that compute_definition_hash produces consistent results."""
-    schema = models.GraphDefinitionModel(system_version="1.0", extensions=models.GraphExtensions(entities=[models.EntityDefinition(key="TestEntity", properties=[models.PropertyDefinition(key="name", type=models.PropertyType.STRING)])]))
+    schema = models.GraphDefinitionInput(system_version="1.0.0", extensions=models.GraphExtensionsInput(entities=[models.EntityDefinitionInput(key="TestEntity", properties=[models.PropertyDefinitionInput(key="name", type=models.PropertyType.STRING)])]))
 
     hash1 = compute_definition_hash(schema)
     hash2 = compute_definition_hash(schema)
