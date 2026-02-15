@@ -36,6 +36,6 @@ def render_graph_path(
     pagination_model = pagination.to_pydantic() if pagination else None
     order_model = order.to_pydantic() if order else None
 
-    response = controller.render_graph_path_query(graph_query, filters=filters_model, pagination=pagination_model, order=order_model)
+    response = controller.render_graph_path_query(graph_query, filters=filters_model, pagination=pagination_model, order=order_model, info=info)
 
     return types.GraphPathRender(_value=response)

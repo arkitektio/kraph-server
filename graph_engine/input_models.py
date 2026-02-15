@@ -897,6 +897,14 @@ class CreateGraphTableQueryInput(GraphTableQueryInput):
     cypher: scalars.CypherLiteral = Field(..., description="The Cypher query string that defines this graph query. Can include parameter placeholders (e.g. $param) for dynamic filtering")
 
 
+class CreateGraphTableQueryThroughBuilderInput(GraphTableQueryInput):
+    """Input for creating a graph table query definition using the builder interface."""
+
+    graph: GraphID = Field(..., description="The graph id this table query will belong to")
+    builder_args: BuilderArgsInput = Field(description="Optional additional arguments for the graph query builder to support advanced features like dynamic filtering or pattern matching")
+    column_input: List[ColumnInput] = Field(default_factory=list, description="Definitions for the columns returned by this graph query")
+
+
 class BuildGraphTableQueryInput(BaseModel):
     """Input for a table graph query definition."""
 

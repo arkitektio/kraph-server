@@ -42,6 +42,7 @@ def entities(info, graph: strawberry.ID, filters: filters.EntityFilter | None = 
         filters=filter_model,
         pagination=pagination_model,
         ordering=ordering_models,
+        info=info,
     )
 
     return [types.Entity(_value=entity) for entity in result]
@@ -59,7 +60,7 @@ def entity(info: Info, id: scalars.GraphID) -> types.Entity:
         Entity object
     """
     controller = context.get_controller()
-    response = controller.get_node_for_composite_id(composite_id=id)
+    response = controller.get_node_for_composite_id(composite_id=id, info=info)
     return types.Entity(_value=response)
 
 
@@ -76,11 +77,11 @@ def entities_informed_by(info: Info, id: scalars.GraphID) -> List[types.Entity]:
     """
     controller = context.get_controller()
 
-    graph = context.extract_graph_id(id)
-    identifier = context.extract_node_id(id)
+    graph_id = context.extract_graph_id(id)
+    structure_id = context.extract_node_id(id)
 
-    models.Graph.objects.get(id=graph)  # Validate graph exists
+    graph = context.get_accessible_graph(info, graph_id)
 
-    structures = controller.get_entities_informed_by_structure(graph_id=graph, structure_id=identifier)
+    structures = controller.list_entities_informed_by_structure(graph=graph, structure_id=structure_id, info=info)
 
     return [types.Entity(_value=r) for r in structures]

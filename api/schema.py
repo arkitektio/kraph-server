@@ -52,7 +52,8 @@ class Query:
 
     # Entity queries
     entity = kante.django_field(queries.entity, description="Get an entity by ID")
-    structure = kante.django_field(queries.structure, description="Get a structure by ID")
+    structure = kante.django_field(queries.structure, description="Get a structure by composite graph ID")
+    structure_by_identifier = kante.django_field(queries.structure_by_identifier, description="Get a structure by graph, identifier and object")
     metric = kante.django_field(queries.metric, description="Get a metric by ID")
     entities = kante.django_field(queries.entities, description="List of entities with optional filters and ordering")
 

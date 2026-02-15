@@ -29,9 +29,9 @@ def assertion_for_entity(
     graph_id = context.extract_graph_id(entity_id)
     context.extract_node_id(entity_id)
 
-    graph = models.Graph.objects.get(id=graph_id)  # Validate graph exists
+    graph = context.get_accessible_graph(info, graph_id)
 
-    response = controller.get_assertions_for_entity(graph, entity_id=entity_id)
+    response = controller.get_assertion_for_entity(graph, entity_id=entity_id, info=info)
     if response is None:
         return None
     return types.Assertion(_value=response)

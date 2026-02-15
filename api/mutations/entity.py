@@ -158,6 +158,6 @@ def recalculate_entity(
     graph = context.get_accessible_graph(info, graph_id)
 
     # Get entity first to find its  and kind
-    entity = controller.get_node(graph, entity_id=node_id)
+    entity = controller.get_node(graph, local_id=node_id, info=info)
 
     return types.Entity(_value=entity)

@@ -184,6 +184,47 @@ class GraphController:
             app_id=str(client.id) if client else "unknown",
         )
 
+    def _get_scopes_from_info(self, info: Info) -> list[str]:
+        request = info.context.request
+
+        extension_scopes = request._extensions.get("scopes") if hasattr(request, "_extensions") else None
+        if isinstance(extension_scopes, list):
+            return [str(scope) for scope in extension_scopes]
+        if isinstance(extension_scopes, str):
+            return [scope for scope in extension_scopes.split(" ") if scope]
+
+        token = request._extensions.get("token") if hasattr(request, "_extensions") else None
+        token_scopes = getattr(token, "scopes", None)
+        if isinstance(token_scopes, list):
+            return [str(scope) for scope in token_scopes]
+        if isinstance(token_scopes, str):
+            return [scope for scope in token_scopes.split(" ") if scope]
+
+        return []
+
+    def _ensure_query_access(self, graph: models.Graph, info: Info | None = None) -> None:
+        if info is None:
+            return
+
+        request = info.context.request
+        membership = getattr(request, "membership", None)
+        if membership is None and hasattr(request, "_extensions"):
+            membership = request._extensions.get("membership")
+
+        if membership is None:
+            raise ValueError("No membership found in context")
+
+        scopes = self._get_scopes_from_info(info)
+
+        try:
+            graph.validate_accessible(membership=membership, scopes=scopes)
+        except PermissionError:
+            token = request._extensions.get("token") if hasattr(request, "_extensions") else None
+            if token is not None and token.__class__.__name__ == "StaticToken":
+                graph.validate_accessible(membership=graph.membership, scopes=scopes)
+            else:
+                raise
+
     def _infer_metric_value_kind(self, value: Any) -> input_models.PropertyType:
         if isinstance(value, bool):
             return input_models.PropertyType.BOOLEAN
@@ -236,6 +277,68 @@ class GraphController:
 
         return mcategory
 
+    def _materialize_supporting_evidence(
+        self,
+        graph: models.Graph,
+        supporting_evidence: list[Any],
+        assertion_id: scalars.LocalID,
+        info: Info,
+    ) -> list[tuple[Any, models.StructureCategory, scalars.LocalID]]:
+        materialized_evidence: list[tuple[Any, models.StructureCategory, scalars.LocalID]] = []
+
+        for evidence in supporting_evidence:
+            structure_category = self.ensure_structure_category_or_raise(graph, evidence.identifier, info)
+            structure_vertex_name = structure_category.get_age_vertex_name()
+
+            structure_result = self.engine.execute(
+                graph,
+                f"MERGE (s:{structure_vertex_name} {{object: $obj, identifier: $identifier, category: $sid}}) RETURN id(s) as sid",
+                {
+                    "obj": evidence.object,
+                    "identifier": evidence.identifier,
+                    "sid": structure_category.pk,
+                },
+            )
+            structure_id = scalars.LocalID(structure_result[0]["sid"])
+
+            for measurement in evidence.metrics:
+                metric_category = self.ensure_metric_category_or_raise(
+                    graph=graph,
+                    structure_category=structure_category,
+                    key=measurement.key,
+                    value_kind=self._infer_metric_value_kind(measurement.value),
+                    info=info,
+                )
+
+                metric_params = {
+                    "sid": structure_id,
+                    "aid": assertion_id,
+                    "category": metric_category.pk,
+                    "key": measurement.key,
+                    "value": measurement.value,
+                    "unit": measurement.unit,
+                    "confidence": measurement.confidence,
+                    "confidence_type": measurement.confidence_type,
+                    "timestamp": measurement.timestamp,
+                }
+
+                property_clauses = ", ".join([f"{key}: ${key}" for key in metric_params.keys()])
+
+                measurement_query = f"""
+                    MATCH (s:{structure_vertex_name}) WHERE id(s) = $sid
+                    MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
+
+                    CREATE (m:{vocab.Metric} {{{property_clauses}}})
+                    CREATE (a)-[:{vocab.ASSERTED}]->(m)
+                    CREATE (m)-[:{vocab.DESCRIBES}]->(s)
+                    RETURN id(m) as mid
+                """
+                self.engine.execute(graph, measurement_query, metric_params)
+
+            materialized_evidence.append((evidence, structure_category, structure_id))
+
+        return materialized_evidence
+
     def create_entity(
         self,
         entity_category: models.EntityCategory,
@@ -264,39 +367,12 @@ class GraphController:
         assertion_id = self._create_provenance_node(graph, self._provenance_from_info(info))
 
         # --- Step 3: Handle Evidence & Measurements ---
-        for evidence in supporting_evidence:
-            scategory = self.ensure_structure_category_or_raise(graph, evidence.identifier, info)
-            structure_vertex_name = scategory.get_age_vertex_name()
-
-            # Auto-Create Structure (MERGE) - using 'object' as the external ID
-            result = self.engine.execute(entity_category.graph, f"MERGE (s:{structure_vertex_name} {{object: $obj, identifier: $identifier, category: $sid}}) RETURN id(s) as sid", {"obj": evidence.object, "identifier": evidence.identifier, "sid": scategory.pk})
-            structure_id = result[0]["sid"]
-
-            # Create Metrics
-            for meas in evidence.metrics:
-                inferred_kind = self._infer_metric_value_kind(meas.value)
-                mcategory = self.ensure_metric_category_or_raise(
-                    graph=graph,
-                    structure_category=scategory,
-                    key=meas.key,
-                    value_kind=inferred_kind,
-                    info=info,
-                )
-
-                params = {"sid": structure_id, "aid": assertion_id, "category": mcategory.pk, "key": meas.key, "value": meas.value, "unit": meas.unit, "confidence": meas.confidence, "confidence_type": meas.confidence_type, "timestamp": meas.timestamp}
-
-                property_clauses = ", ".join([f"{k}: ${k}" for k in params.keys()])
-
-                meas_query = f"""
-                    MATCH (s:{structure_vertex_name}) WHERE id(s) = $sid
-                    MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
-                    
-                    CREATE (m:{vocab.Metric} {{{property_clauses}}})
-                    CREATE (a)-[:{vocab.ASSERTED}]->(m)
-                    CREATE (m)-[:{vocab.DESCRIBES}]->(s)
-                    RETURN id(m) as mid
-                """
-                self.engine.execute(entity_category.graph, meas_query, params)
+        materialized_evidence = self._materialize_supporting_evidence(
+            graph=graph,
+            supporting_evidence=supporting_evidence,
+            assertion_id=assertion_id,
+            info=info,
+        )
 
         # --- Step 4: Create Entity (Shell) ---
         # We only set the immutable ID (db_id). All other props come from cache recalculation.
@@ -320,15 +396,7 @@ class GraphController:
         retrieved = RetrievedEntity.from_node(self, entity, graph_name=graph.age_name)
 
         # --- Step 5: Link Entity -> Evidence ---
-        for evidence in supporting_evidence:
-            structure_category = models.StructureCategory.objects.filter(
-                graph=graph,
-                identifier=evidence.identifier,
-            ).first()
-            if structure_category is None:
-                raise ValueError(f"Structure identifier {evidence.identifier} not found in graph schema.")
-
-            evidence_object = evidence.object
+        for evidence, structure_category, _ in materialized_evidence:
             self.engine.execute(
                 entity_category.graph,
                 f"""
@@ -336,7 +404,7 @@ class GraphController:
                 MATCH (s:{structure_category.get_age_vertex_name()} {{object: $obj}})
                 MERGE (s)-[:{vocab.INFORMS}]->(e)
                 """,
-                {"eid": retrieved.local_id, "obj": evidence_object},
+                {"eid": retrieved.local_id, "obj": evidence.object},
             )
 
         # --- Step 6: Recalculate Cached Properties ---
@@ -593,7 +661,7 @@ class GraphController:
             )
             return result[0]["edge_id"] if result else None
 
-    def list_entities_informed_by_structure(self, graph: models.Graph, structure_id: scalars.LocalID) -> List[RetrievedEntity]:
+    def list_entities_informed_by_structure(self, graph: models.Graph, structure_id: scalars.LocalID, info: Info | None = None) -> List[RetrievedEntity]:
         """
         Lists all entities that are informed by a given structure.
 
@@ -604,6 +672,8 @@ class GraphController:
         Returns:
             List of RetrievedEntity objects that are informed by the structure
         """
+        self._ensure_query_access(graph, info)
+
         query = f"""
             MATCH (s)-[:{vocab.INFORMS}]->(e)
             WHERE id(s) = $sid
@@ -618,7 +688,7 @@ class GraphController:
 
         return entities
 
-    def get_node(self, graph: models.Graph, local_id: scalars.LocalID) -> retrieved.RetrievedNode:
+    def get_node(self, graph: models.Graph, local_id: scalars.LocalID, info: Info | None = None) -> retrieved.RetrievedNode:
         """
         Retrieve a raw node by its string ID.
 
@@ -630,6 +700,7 @@ class GraphController:
             graph: The graph to query
             local_id: The internal graph ID of the node to retrieve
         """
+        self._ensure_query_access(graph, info)
 
         query = """
             MATCH (n) WHERE id(n) = $id
@@ -644,8 +715,10 @@ class GraphController:
 
         return RetrievedNode.from_node(self, raw_node, graph_name=graph.age_name)
 
-    def get_node_by_local_id(self, graph: models.Graph, local_id: scalars.LocalID) -> retrieved.RetrievedNode:
+    def get_node_by_local_id(self, graph: models.Graph, local_id: scalars.LocalID, info: Info | None = None) -> retrieved.RetrievedNode:
         """Retrieve a raw node by its internal AGE graph ID."""
+        self._ensure_query_access(graph, info)
+
         query = """
             MATCH (n) WHERE id(n) = $nid
             RETURN n
@@ -658,7 +731,7 @@ class GraphController:
         raw_node = result[0]["n"]
         return RetrievedNode.from_node(self, raw_node, graph_name=graph.age_name)
 
-    def get_node_for_composite_id(self, composite_id: scalars.GraphID) -> retrieved.RetrievedNode:
+    def get_node_for_composite_id(self, composite_id: scalars.GraphID, info: Info | None = None) -> retrieved.RetrievedNode:
         """
         Retrieve a node using a composite global ID (format: {graph_id}:{entity_id}).
 
@@ -681,7 +754,7 @@ class GraphController:
         if graph is None:
             raise ValueError(f"Graph not found for identifier {graph_id}")
 
-        return self.get_node(graph, entity_id)
+        return self.get_node(graph, scalars.LocalID(int(entity_id)), info=info)
 
     def get_entity(
         self,
@@ -766,6 +839,7 @@ class GraphController:
         graph: models.Graph,
         identifier: str,
         object: str,
+        info: Info | None = None,
     ) -> retrieved.RetrievedStructure:
         """
         Retrieves a Structure by identifier and object.
@@ -775,6 +849,8 @@ class GraphController:
             identifier: Schema identifier (e.g. '@mikro/roi')
             object: Object ID of the structure
         """
+        self._ensure_query_access(graph, info)
+
         try:
             scat = models.StructureCategory.objects.get(graph=graph, identifier=identifier)
         except models.StructureCategory.DoesNotExist:
@@ -796,6 +872,7 @@ class GraphController:
         self,
         graph: models.Graph,
         entity_id: str,
+        info: Info | None = None,
     ) -> List[retrieved.RetrievedStructure]:
         """
         Gets all structures that INFORM a given entity.
@@ -804,6 +881,8 @@ class GraphController:
             graph: The graph to query
             entity_id: The entity's string ID
         """
+        self._ensure_query_access(graph, info)
+
         query = f"""
             MATCH (s)-[:{vocab.INFORMS}]->(e)
             WHERE e.id = $eid
@@ -824,10 +903,13 @@ class GraphController:
         graph: models.Graph,
         identifier: str,
         structure_object: str,
+        info: Info | None = None,
     ) -> List[retrieved.RetrievedEntity]:
         """
         Gets all entities that are informed by a given structure.
         """
+        self._ensure_query_access(graph, info)
+
         structure_label = get_label_for_identifier(identifier)
 
         query = f"""
@@ -848,6 +930,7 @@ class GraphController:
         graph: models.Graph,
         identifier: str,
         structure_object: str,
+        info: Info | None = None,
     ) -> List[RetrievedMetric]:
         """
         Gets all measurements that describe a given structure.
@@ -857,6 +940,8 @@ class GraphController:
             identifier: Schema identifier (e.g. '@mikro/roi')
             structure_object: Object ID of the structure
         """
+        self._ensure_query_access(graph, info)
+
         structure_label = get_label_for_identifier(identifier)
 
         query = f"""
@@ -876,6 +961,7 @@ class GraphController:
         self,
         graph: models.Graph,
         entity_id: str,
+        info: Info | None = None,
     ) -> Optional[RetrievedAssertion]:
         """
         Gets the assertion that generated a given entity.
@@ -884,6 +970,8 @@ class GraphController:
             graph: The graph to query
             entity_id: The entity's string ID
         """
+        self._ensure_query_access(graph, info)
+
         query = f"""
             MATCH (a:{vocab.Assertion})-[:{vocab.GENERATED}]->(e)
             WHERE e.id = $eid
@@ -901,6 +989,7 @@ class GraphController:
         self,
         graph: models.Graph,
         assertion_id: scalars.LocalID,
+        info: Info | None = None,
     ) -> List[RetrievedMetric]:
         """
         Gets all measurements asserted by a given assertion.
@@ -909,6 +998,8 @@ class GraphController:
             graph: The graph to query
             assertion_id: The internal graph ID of the assertion
         """
+        self._ensure_query_access(graph, info)
+
         query = f"""
             MATCH (a:{vocab.Assertion})-[:{vocab.ASSERTED}]->(m:{vocab.Metric})
             WHERE id(a) = $aid
@@ -1086,43 +1177,12 @@ class GraphController:
         # Assertion Created but not linked to anything yet - we will link evidence and event after we create them
 
         # --- Step 2: Handle Evidence & Measurements ---
-        for evidence in supporting_evidence:
-            scategory = self.ensure_structure_category_or_raise(graph, evidence.identifier, info)
-
-            structure_vertex_name = scategory.get_age_vertex_name()
-
-            # Auto-Create Structure (MERGE) - using 'object' as the external ID
-            result = self.engine.execute(graph, f"MERGE (s:{structure_vertex_name} {{object: $obj, identifier: $identifier, category: $sid}}) RETURN id(s) as sid", {"obj": evidence.object, "identifier": evidence.identifier, "sid": scategory.pk})
-            structure_id = result[0]["sid"]
-
-            # Create Metrics
-            for meas in evidence.metrics:
-                # meas is a MetricInput with key, value, and optional fields
-
-                mcategory = self.ensure_metric_category_or_raise(
-                    graph=graph,
-                    structure_category=scategory,
-                    key=meas.key,
-                    value_kind=self._infer_metric_value_kind(meas.value),
-                    info=info,
-                )
-
-                params = {"sid": structure_id, "aid": assertion_id, "category": mcategory.pk, "key": meas.key, "value": meas.value, "unit": meas.unit, "confidence": meas.confidence, "confidence_type": meas.confidence_type, "timestamp": meas.timestamp}
-
-                property_clauses = ", ".join([f"{k}: ${k}" for k in params.keys()])
-
-                meas_query = f"""
-                    MATCH (s:{structure_vertex_name}) WHERE id(s) = $sid
-                    MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
-                    
-                    CREATE (m:{vocab.Metric} {{{property_clauses}}})
-                    CREATE (a)-[:{vocab.ASSERTED}]->(m)
-                    CREATE (m)-[:{vocab.DESCRIBES}]->(s)
-                    RETURN id(m) as mid
-                """
-                self.engine.execute(graph, meas_query, params)
-
-                # We have created the metric and linked it to the structure and assertion, so when we later link the structure to the event, the metric will inform the event's properties through the rollup mechanism.
+        self._materialize_supporting_evidence(
+            graph=graph,
+            supporting_evidence=supporting_evidence,
+            assertion_id=assertion_id,
+            info=info,
+        )
 
         # --- Step 4: Create Entity (Shell) ---
         # We only set the immutable ID (db_id). All other props come from cache recalculation.
@@ -1817,16 +1877,19 @@ class GraphController:
         target_entities = self.get_reified_as_target_entities(link_ref_id)
         return source_entities + target_entities
 
-    def render_graph_nodes_query(self, graph_query: models.GraphNodesQuery, filters: input_models.RenderGraphNodesFilter | None = None, pagination: input_models.RenderGraphNodesPagination | None = None, order: input_models.RenderGraphNodesOrder | None = None) -> RetrievedGraphNodesRender:
+    def render_graph_nodes_query(self, graph_query: models.GraphNodesQuery, filters: input_models.RenderGraphNodesFilter | None = None, pagination: input_models.RenderGraphNodesPagination | None = None, order: input_models.RenderGraphNodesOrder | None = None, info: Info | None = None) -> RetrievedGraphNodesRender:
         """Render a set of nodes matching the graph query, with optional filters, pagination, and ordering."""
+        self._ensure_query_access(graph_query.graph, info)
         raise Exception("Not implemented yet")
 
-    def render_graph_path_query(self, graph_query: models.GraphPathQuery, filters: input_models.RenderGraphPathFilter | None = None, pagination: input_models.RenderGraphPathPagination | None = None, order: input_models.RenderGraphPathOrder | None = None) -> RetrievedGraphPathRender:
+    def render_graph_path_query(self, graph_query: models.GraphPathQuery, filters: input_models.RenderGraphPathFilter | None = None, pagination: input_models.RenderGraphPathPagination | None = None, order: input_models.RenderGraphPathOrder | None = None, info: Info | None = None) -> RetrievedGraphPathRender:
         """Render a set of nodes matching the graph query, with optional filters, pagination, and ordering."""
+        self._ensure_query_access(graph_query.graph, info)
         raise Exception("Not implemented yet")
 
-    def render_graph_table_query(self, graph_query: models.GraphTableQuery, filters: input_models.RenderGraphTableFilter | None = None, pagination: input_models.RenderGraphTablePagination | None = None, order: input_models.RenderGraphTableOrder | None = None) -> RetrievedGraphTableRender:
+    def render_graph_table_query(self, graph_query: models.GraphTableQuery, filters: input_models.RenderGraphTableFilter | None = None, pagination: input_models.RenderGraphTablePagination | None = None, order: input_models.RenderGraphTableOrder | None = None, info: Info | None = None) -> RetrievedGraphTableRender:
         """Render a set of nodes matching the graph query, with optional filters, pagination, and ordering."""
+        self._ensure_query_access(graph_query.graph, info)
         raise Exception("Not implemented yet")
 
     def _validate_property_key(self, key: str) -> str:
@@ -1953,7 +2016,9 @@ class GraphController:
         limit = pagination.limit if pagination.limit is not None else 200
         return f"SKIP {offset} LIMIT {limit}"
 
-    def list_entities(self, graph: models.Graph, filters: input_models.EntityFilters | None = None, pagination: input_models.EntityPagination | None = None, ordering: list[input_models.EntityOrder] | None = None) -> List[RetrievedEntity]:
+    def list_entities(self, graph: models.Graph, filters: input_models.EntityFilters | None = None, pagination: input_models.EntityPagination | None = None, ordering: list[input_models.EntityOrder] | None = None, info: Info | None = None) -> List[RetrievedEntity]:
+        self._ensure_query_access(graph, info)
+
         entity_labels = list(models.EntityCategory.objects.filter(graph=graph).values_list("age_name", flat=True))
         if not entity_labels:
             return []
@@ -1976,7 +2041,7 @@ class GraphController:
 
         return [RetrievedEntity.from_node(self, row["e"], graph_name=graph.age_name) for row in result]
 
-    def get_assertion_for_relation(self, graph: models.Graph, edge_id: scalars.LocalID) -> Optional[RetrievedAssertion]:
+    def get_assertion_for_relation(self, graph: models.Graph, edge_id: scalars.LocalID, info: Info | None = None) -> Optional[RetrievedAssertion]:
         """
         Get the Assertion that generated a relation edge.
 
@@ -1989,6 +2054,8 @@ class GraphController:
         Returns:
             RetrievedAssertion or None if not found
         """
+        self._ensure_query_access(graph, info)
+
         # First, get the shadow_link_id stored on the edge
         edge_result = self.engine.execute(
             graph,
