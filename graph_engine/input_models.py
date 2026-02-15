@@ -914,7 +914,7 @@ class GraphTableQueryInput(GraphQueryInput):
 class CreateGraphTableQueryInput(GraphTableQueryInput):
     """Input for creating a graph table query definition."""
 
-    graph: GraphID = Field(..., description="The graph id this table query will belong to")
+    graph: strawberry.ID = Field(..., description="The graph id this table query will belong to")
     column_input: List[ColumnInput] = Field(default_factory=list, description="Definitions for the columns returned by this graph query")
     cypher: scalars.CypherLiteral = Field(..., description="The Cypher query string that defines this graph query. Can include parameter placeholders (e.g. $param) for dynamic filtering")
 
@@ -922,9 +922,29 @@ class CreateGraphTableQueryInput(GraphTableQueryInput):
 class CreateGraphTableQueryThroughBuilderInput(GraphTableQueryInput):
     """Input for creating a graph table query definition using the builder interface."""
 
-    graph: GraphID = Field(..., description="The graph id this table query will belong to")
+    graph: strawberry.ID = Field(..., description="The graph id this table query will belong to")
     builder_args: BuilderArgsInput = Field(description="Optional additional arguments for the graph query builder to support advanced features like dynamic filtering or pattern matching")
     column_input: List[ColumnInput] = Field(default_factory=list, description="Definitions for the columns returned by this graph query")
+
+
+class UpdateGraphTableQueryInput(GraphTableQueryInput):
+    """Input for updating an existing graph table query definition."""
+
+    id: strawberry.ID = Field(..., description="The ID of the graph query to update")
+    column_input: Optional[List[ColumnInput]] = Field(default=None, description="Definitions for the columns returned by this graph query")
+    cypher: Optional[scalars.CypherLiteral] = Field(default=None, description="The Cypher query string that defines this graph query. Can include parameter placeholders (e.g. $param) for dynamic filtering")
+
+
+class DeleteGraphTableQueryInput(BaseModel):
+    """Input for deleting an existing graph table query definition."""
+
+    id: strawberry.ID = Field(..., description="The ID of the graph query to delete")
+
+
+class ArchiveGraphTableQueryInput(BaseModel):
+    """Input for archiving (soft deleting) an existing graph table query definition."""
+
+    id: strawberry.ID = Field(..., description="The ID of the graph query to archive")
 
 
 class BuildGraphTableQueryInput(BaseModel):

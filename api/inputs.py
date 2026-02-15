@@ -651,6 +651,27 @@ class CreateGraphTableQueryThroughBuilderInput:
     pass
 
 
+@pydantic.input(model=input_models.CreateGraphTableQueryInput, all_fields=True, description="Input for creating a new graph table query")
+class CreateGraphTableQueryInput:
+    pass
+
+
+@pydantic.input(model=input_models.UpdateGraphTableQueryInput, all_fields=True, description="Input for updating a graph table query through builder arguments")
+class UpdateGraphTableQueryInput:
+    pass
+
+
+@pydantic.input(model=input_models.DeleteGraphTableQueryInput, all_fields=True, description="Input for deleting a graph table query")
+class DeleteGraphTableQueryInput:
+    id: strawberry.ID = strawberry.field(description="The ID of the graph table query to delete")
+    pass
+
+
+@pydantic.input(model=input_models.ArchiveGraphTableQueryInput, all_fields=True, description="Input for archiving a graph table query")
+class ArchiveGraphTableQueryInput:
+    id: strawberry.ID = strawberry.field(description="The ID of the graph table query to archive")
+
+
 @pydantic.input(model=input_models.BuildGraphTableQueryInput, all_fields=True, description="Input for building a graph table query from builder arguments")
 class BuildGraphTableQueryInput:
     pass
