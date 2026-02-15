@@ -34,6 +34,8 @@ class Query:
     """Root query type for the graph engine API."""
 
     graph: types.Graph = kante.django_field(description="Get a graph by ID")
+    graph_stats: types.GraphStats = kante.django_field(description="Get aggregated stats for graphs with optional filters", resolver=types.GraphStatsResolver)
+
     graphs: list[types.Graph] = kante.django_field(description="List of all graphs in the graph engine")
 
     # Schema Operations

@@ -28,17 +28,26 @@ def _coerce_filter_value(value):
         return value
 
 
-def entities(info, graph: strawberry.ID, filters: filters.EntityFilter | None = None, ordering: list[order.EntityOrder] | None = None, pagination: pagination.EntityPaginationInput | None = None) -> List[types.Entity]:
+def entities(
+    info,
+    entity_category_id: strawberry.ID,
+    filters: filters.EntityFilter | None = None,
+    ordering: list[order.EntityOrder] | None = None,
+    pagination: pagination.EntityPaginationInput | None = None,
+) -> List[types.Entity]:
     controller = context.get_controller()
 
-    graph_model = context.get_accessible_graph(info, str(graph))
+    entity_category = models.EntityCategory.objects.filter(id=entity_category_id).first()
+    if entity_category is None:
+        raise ValueError(f"Entity category {entity_category_id} not found")
 
     filter_model = filters.to_pydantic() if filters else input_models.EntityFilters()
+    filter_model.category = entity_category.age_name
     ordering_models = [order.to_pydantic() for order in ordering] if ordering else []
     pagination_model = pagination.to_pydantic() if pagination else input_models.EntityPagination()
 
     result = controller.list_entities(
-        graph=graph_model,
+        graph=entity_category.graph,
         filters=filter_model,
         pagination=pagination_model,
         ordering=ordering_models,

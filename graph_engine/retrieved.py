@@ -627,6 +627,8 @@ class RetrievedGraphNodesRender:
     """A list of retrieved nodes, with the graph name for context."""
 
     graph_name: str
+    graph_id: int
+    graph_query_id: int
     nodes: List[RetrievedNode]
 
 
@@ -635,6 +637,8 @@ class RetrievedGraphTableRender:
     """A list of retrieved nodes, with the graph name for context."""
 
     graph_name: str
+    graph_id: int
+    graph_query_id: int
     rows: List[Dict[str, Any]]
 
 
@@ -643,6 +647,8 @@ class RetrievedGraphPathRender:
     """A list of retrieved nodes, with the graph name for context."""
 
     graph_name: str
+    graph_id: int
+    graph_query_id: int
     nodes: List[RetrievedNode]
     edges: List[RetrievedEdge]
 
@@ -659,6 +665,8 @@ class RetrievedGraphPairsRender:
     """A list of retrieved node pairs, with the graph name for context."""
 
     graph_name: str
+    graph_id: int
+    graph_query_id: int
     pairs: List[Pairs]
 
 

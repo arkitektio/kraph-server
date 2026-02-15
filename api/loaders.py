@@ -147,6 +147,41 @@ async def graph_loader_func(graph_names: list[PKType]) -> list[models.Graph]:
     return gotten
 
 
+async def load_graphs_by_id(ids: list[PKType]) -> list[models.Graph]:
+    gotten = []
+    for i in ids:
+        gotten.append(await models.Graph.objects.aget(id=i))
+    return gotten
+
+
+async def load_graph_nodes_queries_by_id(ids: list[PKType]) -> list[models.GraphNodesQuery]:
+    gotten = []
+    for i in ids:
+        gotten.append(await models.GraphNodesQuery.objects.aget(id=i))
+    return gotten
+
+
+async def load_graph_path_queries_by_id(ids: list[PKType]) -> list[models.GraphPathQuery]:
+    gotten = []
+    for i in ids:
+        gotten.append(await models.GraphPathQuery.objects.aget(id=i))
+    return gotten
+
+
+async def load_graph_pairs_queries_by_id(ids: list[PKType]) -> list[models.GraphPairsQuery]:
+    gotten = []
+    for i in ids:
+        gotten.append(await models.GraphPairsQuery.objects.aget(id=i))
+    return gotten
+
+
+async def load_graph_table_queries_by_id(ids: list[PKType]) -> list[models.GraphTableQuery]:
+    gotten = []
+    for i in ids:
+        gotten.append(await models.GraphTableQuery.objects.aget(id=i))
+    return gotten
+
+
 node_category_loader = DataLoader(load_fn=load_node_categories)
 entity_category_loader = DataLoader(load_fn=load_entity_categories)
 structure_category_loader = DataLoader(load_fn=load_structure_categories)
@@ -158,4 +193,9 @@ relation_category_loader = DataLoader(load_fn=load_relation_categories)
 structure_relation_category_loader = DataLoader(load_fn=load_structure_relation_categories)
 measurement_category_loader = DataLoader(load_fn=load_measurement_categories)
 graph_loader = DataLoader(load_fn=graph_loader_func)
+graph_by_id_loader = DataLoader(load_fn=load_graphs_by_id)
+graph_nodes_query_by_id_loader = DataLoader(load_fn=load_graph_nodes_queries_by_id)
+graph_path_query_by_id_loader = DataLoader(load_fn=load_graph_path_queries_by_id)
+graph_pairs_query_by_id_loader = DataLoader(load_fn=load_graph_pairs_queries_by_id)
+graph_table_query_by_id_loader = DataLoader(load_fn=load_graph_table_queries_by_id)
 user_loader = DataLoader(load_fn=load_users)

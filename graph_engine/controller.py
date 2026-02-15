@@ -1922,6 +1922,8 @@ class GraphController:
 
         return RetrievedGraphTableRender(
             graph_name=str(graph_query.graph.age_name),
+            graph_id=int(graph_query.graph_id),
+            graph_query_id=int(graph_query.id),
             rows=row_dicts,
         )
 

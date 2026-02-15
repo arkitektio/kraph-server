@@ -23,6 +23,7 @@ from core import models
 from graph_engine import retrieved, scalars
 from api import filters
 from core import enums
+from stats.gen import create_stats_type
 
 
 # ===========================================
@@ -1303,6 +1304,14 @@ class GraphNodesRender:
     def graph_name(self) -> str:
         return self._value.graph_name
 
+    @strawberry.field(description="The graph rendered by this query")
+    async def graph(self) -> Graph:
+        return await loaders.graph_by_id_loader.load(self._value.graph_id)
+
+    @strawberry.field(description="The graph query used for this render")
+    async def query(self) -> GraphNodesQuery:
+        return await loaders.graph_nodes_query_by_id_loader.load(self._value.graph_query_id)
+
 
 @strawberry.type(description="Result of linking a structure to an entity")
 class GraphPathRender:
@@ -1311,6 +1320,14 @@ class GraphPathRender:
     @strawberry.field(description="The graph name used for this render")
     def graph_name(self) -> str:
         return self._value.graph_name
+
+    @strawberry.field(description="The graph rendered by this query")
+    async def graph(self) -> Graph:
+        return await loaders.graph_by_id_loader.load(self._value.graph_id)
+
+    @strawberry.field(description="The graph query used for this render")
+    async def query(self) -> GraphPathQuery:
+        return await loaders.graph_path_query_by_id_loader.load(self._value.graph_query_id)
 
 
 @strawberry.type(description="Result of linking a structure to an entity")
@@ -1321,12 +1338,34 @@ class GraphPairsRender:
     def graph_name(self) -> str:
         return self._value.graph_name
 
+    @strawberry.field(description="The graph rendered by this query")
+    async def graph(self) -> Graph:
+        return await loaders.graph_by_id_loader.load(self._value.graph_id)
+
+    @strawberry.field(description="The graph query used for this render")
+    async def query(self) -> GraphPairsQuery:
+        return await loaders.graph_pairs_query_by_id_loader.load(self._value.graph_query_id)
+
 
 @strawberry.type(description="Result of linking a structure to an entity")
 class GraphTableRender:
     _value: strawberry.Private[retrieved.RetrievedGraphTableRender]
-    rows: List[AnyScalar] = strawberry.field(description="Rows of the rendered table")
-    query: GraphTableQuery = strawberry.field(description="The query used to generate this table")
+
+    @strawberry.field(description="The graph name used for this render")
+    def graph_name(self) -> str:
+        return self._value.graph_name
+
+    @strawberry.field(description="The graph rendered by this query")
+    async def graph(self) -> Graph:
+        return await loaders.graph_by_id_loader.load(self._value.graph_id)
+
+    @strawberry.field(description="The query used to generate this table")
+    async def query(self) -> GraphTableQuery:
+        return await loaders.graph_table_query_by_id_loader.load(self._value.graph_query_id)
+
+    @strawberry.field(description="Rows of the rendered table")
+    def rows(self) -> List[AnyScalar]:
+        return self._value.rows
 
 
 @strawberry.type(description="Result of linking a structure to an entity")
@@ -1381,3 +1420,13 @@ class SetSchemaResult:
     schema: GraphSchemaType = strawberry.field(description="The created schema")
     activated: bool = strawberry.field(description="Whether the schema was activated")
     migration_required: bool = strawberry.field(default=False, description="Whether existing nodes may need migration")
+
+
+GraphStats, GraphStatsResolver = create_stats_type(
+    model=models.Graph,
+    filters=filters.GraphFilter,
+    allowed_fields={
+        "created_at": "created_at",
+    },
+    allowed_datetime_fields={"created_at": "created_at"},
+)

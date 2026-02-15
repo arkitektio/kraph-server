@@ -12,9 +12,14 @@ class PropertyMatch:
     """The condition to match for a specific property when filtering entities."""
 
 
-@kante.pydantic_input(input_models.EntityFilters, all_fields=True, description="Filter options for querying entities")
+@kante.pydantic_input(input_models.EntityFilters, description="Filter options for querying entities")
 class EntityFilter:
     """Filter options for entity queries."""
+
+    ids: Optional[List[scalars.GraphID]] = kante.field(default=None, description="Filter by specific entity IDs")
+    has_property: Optional[str] = kante.field(default=None, description="Filter entities that have a specific property")
+    search: Optional[str] = kante.field(default=None, description="Full-text search over entity properties")
+    matches: Optional[List[PropertyMatch]] = kante.field(default=None, description="Filter entities that match specific property conditions")
 
 
 @kante.pydantic_input(input_models.EntityPagination, all_fields=True, description="Pagination options for querying entities")
@@ -114,22 +119,46 @@ class MaterializedEdgeFilter:
 class GraphQueryFilter:
     pass
 
+    @kante.filter_field(description="Filter by list of IDs")
+    def ids(self, value: list[strawberry.ID], prefix: str) -> Q:
+        return Q(**{f"{prefix}__id__in": value})
+
+    @kante.filter_field(description="Full-text search over label and description")
+    def search(self, value: str, prefix: str) -> Q:
+        return Q(**{f"{prefix}label__search": value}) | Q(**{f"{prefix}description__search": value})
+
 
 @kante.filter_type(models.GraphTableQuery)
-class GraphTableQueryFilter:
+class GraphTableQueryFilter(GraphQueryFilter):
     pass
+
+    @kante.filter_field(description="Full-text search over label and description")
+    def search(self, value: str, prefix: str) -> Q:
+        return Q(**{f"{prefix}label__search": value}) | Q(**{f"{prefix}description__search": value})
 
 
 @kante.filter_type(models.GraphNodesQuery)
-class GraphNodesQueryFilter:
+class GraphNodesQueryFilter(GraphQueryFilter):
     pass
+
+    @kante.filter_field(description="Full-text search over label and description")
+    def search(self, value: str, prefix: str) -> Q:
+        return Q(**{f"{prefix}label__search": value}) | Q(**{f"{prefix}description__search": value})
 
 
 @kante.filter_type(models.GraphPairsQuery)
-class GraphPairsQueryFilter:
+class GraphPairsQueryFilter(GraphQueryFilter):
     pass
+
+    @kante.filter_field(description="Full-text search over label and description")
+    def search(self, value: str, prefix: str) -> Q:
+        return Q(**{f"{prefix}label__search": value}) | Q(**{f"{prefix}description__search": value})
 
 
 @kante.filter_type(models.GraphPathQuery)
-class GraphPathQueryFilter:
+class GraphPathQueryFilter(GraphQueryFilter):
     pass
+
+    @kante.filter_field(description="Full-text search over label and description")
+    def search(self, value: str, prefix: str) -> Q:
+        return Q(**{f"{prefix}label__search": value}) | Q(**{f"{prefix}description__search": value})
