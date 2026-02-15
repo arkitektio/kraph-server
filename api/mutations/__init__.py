@@ -10,6 +10,32 @@ from .structure import create_structure, delete_structure, archive_structure, up
 from .metric import record_metric, create_metric, update_metric, delete_metric, archive_metric
 from .relation import create_relation
 from .schema import *
+from .insights import (
+    create_node_table_query,
+    update_node_table_query,
+    delete_node_table_query,
+    archive_node_table_query,
+    create_node_pairs_query,
+    update_node_pairs_query,
+    delete_node_pairs_query,
+    archive_node_pairs_query,
+    create_node_path_query,
+    update_node_path_query,
+    delete_node_path_query,
+    archive_node_path_query,
+    create_edge_table_query,
+    update_edge_table_query,
+    delete_edge_table_query,
+    archive_edge_table_query,
+    create_edge_pairs_query,
+    update_edge_pairs_query,
+    delete_edge_pairs_query,
+    archive_edge_pairs_query,
+    create_edge_path_query,
+    update_edge_path_query,
+    delete_edge_path_query,
+    archive_edge_path_query,
+)
 
 __all__ = [
     "Mutation",
@@ -36,4 +62,30 @@ __all__ = [
     # Relation mutations
     "create_relation",
     "create_graph_table_query_through_builder",
+    # Insights node query mutations
+    "create_node_table_query",
+    "update_node_table_query",
+    "delete_node_table_query",
+    "archive_node_table_query",
+    "create_node_pairs_query",
+    "update_node_pairs_query",
+    "delete_node_pairs_query",
+    "archive_node_pairs_query",
+    "create_node_path_query",
+    "update_node_path_query",
+    "delete_node_path_query",
+    "archive_node_path_query",
+    # Insights edge query mutations
+    "create_edge_table_query",
+    "update_edge_table_query",
+    "delete_edge_table_query",
+    "archive_edge_table_query",
+    "create_edge_pairs_query",
+    "update_edge_pairs_query",
+    "delete_edge_pairs_query",
+    "archive_edge_pairs_query",
+    "create_edge_path_query",
+    "update_edge_path_query",
+    "delete_edge_path_query",
+    "archive_edge_path_query",
 ]

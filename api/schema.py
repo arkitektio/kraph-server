@@ -183,6 +183,108 @@ class Mutation:
         description="Create or update a graph table query using builder arguments",
         resolver=mutations.create_graph_table_query_through_builder,
     )
+    create_node_table_query = kante.django_mutation(
+        description="Create a node table query",
+        resolver=mutations.create_node_table_query,
+    )
+    update_node_table_query = kante.django_mutation(
+        description="Update a node table query",
+        resolver=mutations.update_node_table_query,
+    )
+    delete_node_table_query = kante.django_mutation(
+        description="Delete a node table query",
+        resolver=mutations.delete_node_table_query,
+    )
+    archive_node_table_query = kante.django_mutation(
+        description="Archive a node table query",
+        resolver=mutations.archive_node_table_query,
+    )
+
+    create_node_pairs_query = kante.django_mutation(
+        description="Create a node pairs query",
+        resolver=mutations.create_node_pairs_query,
+    )
+    update_node_pairs_query = kante.django_mutation(
+        description="Update a node pairs query",
+        resolver=mutations.update_node_pairs_query,
+    )
+    delete_node_pairs_query = kante.django_mutation(
+        description="Delete a node pairs query",
+        resolver=mutations.delete_node_pairs_query,
+    )
+    archive_node_pairs_query = kante.django_mutation(
+        description="Archive a node pairs query",
+        resolver=mutations.archive_node_pairs_query,
+    )
+
+    create_node_path_query = kante.django_mutation(
+        description="Create a node path query",
+        resolver=mutations.create_node_path_query,
+    )
+    update_node_path_query = kante.django_mutation(
+        description="Update a node path query",
+        resolver=mutations.update_node_path_query,
+    )
+    delete_node_path_query = kante.django_mutation(
+        description="Delete a node path query",
+        resolver=mutations.delete_node_path_query,
+    )
+    archive_node_path_query = kante.django_mutation(
+        description="Archive a node path query",
+        resolver=mutations.archive_node_path_query,
+    )
+
+    create_edge_table_query = kante.django_mutation(
+        description="Create an edge table query",
+        resolver=mutations.create_edge_table_query,
+    )
+    update_edge_table_query = kante.django_mutation(
+        description="Update an edge table query",
+        resolver=mutations.update_edge_table_query,
+    )
+    delete_edge_table_query = kante.django_mutation(
+        description="Delete an edge table query",
+        resolver=mutations.delete_edge_table_query,
+    )
+    archive_edge_table_query = kante.django_mutation(
+        description="Archive an edge table query",
+        resolver=mutations.archive_edge_table_query,
+    )
+
+    create_edge_pairs_query = kante.django_mutation(
+        description="Create an edge pairs query",
+        resolver=mutations.create_edge_pairs_query,
+    )
+    update_edge_pairs_query = kante.django_mutation(
+        description="Update an edge pairs query",
+        resolver=mutations.update_edge_pairs_query,
+    )
+    delete_edge_pairs_query = kante.django_mutation(
+        description="Delete an edge pairs query",
+        resolver=mutations.delete_edge_pairs_query,
+    )
+    archive_edge_pairs_query = kante.django_mutation(
+        description="Archive an edge pairs query",
+        resolver=mutations.archive_edge_pairs_query,
+    )
+
+    create_edge_path_query = kante.django_mutation(
+        description="Create an edge path query",
+        resolver=mutations.create_edge_path_query,
+    )
+    update_edge_path_query = kante.django_mutation(
+        description="Update an edge path query",
+        resolver=mutations.update_edge_path_query,
+    )
+    delete_edge_path_query = kante.django_mutation(
+        description="Delete an edge path query",
+        resolver=mutations.delete_edge_path_query,
+    )
+    archive_edge_path_query = kante.django_mutation(
+        description="Archive an edge path query",
+        resolver=mutations.archive_edge_path_query,
+    )
+
     delete_graph = kante.django_mutation(
         description="Delete a graph from the graph engine",
         resolver=mutations.delete_graph,

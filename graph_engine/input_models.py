@@ -900,7 +900,10 @@ class GraphQueryInput(BaseModel):
     """Input for a graph query definition."""
 
     key: str = Field(..., description="Unique key for this graph query, used for referencing in the UI")
-    label: Optional[str] = Field(default=None, description="Human-readable label for this graph query (defaults to 'key' if not provided)")
+    name: Optional[str] = Field(default=None, description="Human-readable name for this graph query (defaults to 'key' if not provided)")
+    description: Optional[str] = Field(default=None, description="Description of this graph query")
+    query: scalars.CypherLiteral = Field(..., description="The Cypher query string that defines this graph query")
+    kind: str = Field(default="TABLE", description="The kind/type of this graph query")
 
 
 class GraphTableQueryInput(GraphQueryInput):
@@ -951,6 +954,150 @@ class BuildGraphTableQueryInput(BaseModel):
     """Input for a table graph query definition."""
 
     builder_args: Optional[BuilderArgsInput] = Field(default=None, description="Optional additional arguments for the graph query builder to support advanced features like dynamic filtering or pattern matching")
+
+
+class NodeQueryInput(BaseModel):
+    key: str = Field(..., description="Unique key for this node query, used for referencing in the UI")
+    name: Optional[str] = Field(default=None, description="Human-readable name for this node query (defaults to 'key' if not provided)")
+    description: Optional[str] = Field(default=None, description="Description of this node query")
+    query: scalars.CypherLiteral = Field(..., description="The Cypher query string that defines this node query")
+    kind: str = Field(default="TABLE", description="The kind/type of the query")
+
+
+class NodeTableQueryInput(NodeQueryInput):
+    column_input: List[ColumnInput] = Field(default_factory=list, description="Definitions for the columns returned by this node table query")
+
+
+class CreateNodeTableQueryInput(NodeTableQueryInput):
+    graph: strawberry.ID = Field(..., description="The graph id this node table query will belong to")
+
+
+class UpdateNodeTableQueryInput(NodeTableQueryInput):
+    id: strawberry.ID = Field(..., description="The ID of the node table query to update")
+    column_input: Optional[List[ColumnInput]] = Field(default=None, description="Definitions for the columns returned by this node table query")
+    query: Optional[scalars.CypherLiteral] = Field(default=None, description="Updated Cypher query string")
+
+
+class DeleteNodeTableQueryInput(BaseModel):
+    id: strawberry.ID = Field(..., description="The ID of the node table query to delete")
+
+
+class ArchiveNodeTableQueryInput(BaseModel):
+    id: strawberry.ID = Field(..., description="The ID of the node table query to archive")
+
+
+class NodePairsQueryInput(NodeQueryInput):
+    pass
+
+
+class CreateNodePairsQueryInput(NodePairsQueryInput):
+    graph: strawberry.ID = Field(..., description="The graph id this node pairs query will belong to")
+
+
+class UpdateNodePairsQueryInput(NodePairsQueryInput):
+    id: strawberry.ID = Field(..., description="The ID of the node pairs query to update")
+    query: Optional[scalars.CypherLiteral] = Field(default=None, description="Updated Cypher query string")
+
+
+class DeleteNodePairsQueryInput(BaseModel):
+    id: strawberry.ID = Field(..., description="The ID of the node pairs query to delete")
+
+
+class ArchiveNodePairsQueryInput(BaseModel):
+    id: strawberry.ID = Field(..., description="The ID of the node pairs query to archive")
+
+
+class NodePathQueryInput(NodeQueryInput):
+    pass
+
+
+class CreateNodePathQueryInput(NodePathQueryInput):
+    graph: strawberry.ID = Field(..., description="The graph id this node path query will belong to")
+
+
+class UpdateNodePathQueryInput(NodePathQueryInput):
+    id: strawberry.ID = Field(..., description="The ID of the node path query to update")
+    query: Optional[scalars.CypherLiteral] = Field(default=None, description="Updated Cypher query string")
+
+
+class DeleteNodePathQueryInput(BaseModel):
+    id: strawberry.ID = Field(..., description="The ID of the node path query to delete")
+
+
+class ArchiveNodePathQueryInput(BaseModel):
+    id: strawberry.ID = Field(..., description="The ID of the node path query to archive")
+
+
+class EdgeQueryInput(BaseModel):
+    key: str = Field(..., description="Unique key for this edge query, used for referencing in the UI")
+    name: Optional[str] = Field(default=None, description="Human-readable name for this edge query (defaults to 'key' if not provided)")
+    description: Optional[str] = Field(default=None, description="Description of this edge query")
+    query: scalars.CypherLiteral = Field(..., description="The Cypher query string that defines this edge query")
+    kind: str = Field(default="TABLE", description="The kind/type of the query")
+
+
+class EdgeTableQueryInput(EdgeQueryInput):
+    column_input: List[ColumnInput] = Field(default_factory=list, description="Definitions for the columns returned by this edge table query")
+
+
+class CreateEdgeTableQueryInput(EdgeTableQueryInput):
+    graph: strawberry.ID = Field(..., description="The graph id this edge table query will belong to")
+
+
+class UpdateEdgeTableQueryInput(EdgeTableQueryInput):
+    id: strawberry.ID = Field(..., description="The ID of the edge table query to update")
+    column_input: Optional[List[ColumnInput]] = Field(default=None, description="Definitions for the columns returned by this edge table query")
+    query: Optional[scalars.CypherLiteral] = Field(default=None, description="Updated Cypher query string")
+
+
+class DeleteEdgeTableQueryInput(BaseModel):
+    id: strawberry.ID = Field(..., description="The ID of the edge table query to delete")
+
+
+class ArchiveEdgeTableQueryInput(BaseModel):
+    id: strawberry.ID = Field(..., description="The ID of the edge table query to archive")
+
+
+class EdgePairsQueryInput(EdgeQueryInput):
+    pass
+
+
+class CreateEdgePairsQueryInput(EdgePairsQueryInput):
+    graph: strawberry.ID = Field(..., description="The graph id this edge pairs query will belong to")
+
+
+class UpdateEdgePairsQueryInput(EdgePairsQueryInput):
+    id: strawberry.ID = Field(..., description="The ID of the edge pairs query to update")
+    query: Optional[scalars.CypherLiteral] = Field(default=None, description="Updated Cypher query string")
+
+
+class DeleteEdgePairsQueryInput(BaseModel):
+    id: strawberry.ID = Field(..., description="The ID of the edge pairs query to delete")
+
+
+class ArchiveEdgePairsQueryInput(BaseModel):
+    id: strawberry.ID = Field(..., description="The ID of the edge pairs query to archive")
+
+
+class EdgePathQueryInput(EdgeQueryInput):
+    pass
+
+
+class CreateEdgePathQueryInput(EdgePathQueryInput):
+    graph: strawberry.ID = Field(..., description="The graph id this edge path query will belong to")
+
+
+class UpdateEdgePathQueryInput(EdgePathQueryInput):
+    id: strawberry.ID = Field(..., description="The ID of the edge path query to update")
+    query: Optional[scalars.CypherLiteral] = Field(default=None, description="Updated Cypher query string")
+
+
+class DeleteEdgePathQueryInput(BaseModel):
+    id: strawberry.ID = Field(..., description="The ID of the edge path query to delete")
+
+
+class ArchiveEdgePathQueryInput(BaseModel):
+    id: strawberry.ID = Field(..., description="The ID of the edge path query to archive")
 
 
 class PlotInput(BaseModel):

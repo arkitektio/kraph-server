@@ -677,6 +677,126 @@ class BuildGraphTableQueryInput:
     pass
 
 
+@pydantic.input(model=input_models.CreateNodeTableQueryInput, all_fields=True, description="Input for creating a new node table query")
+class CreateNodeTableQueryInput:
+    pass
+
+
+@pydantic.input(model=input_models.UpdateNodeTableQueryInput, all_fields=True, description="Input for updating a node table query")
+class UpdateNodeTableQueryInput:
+    pass
+
+
+@pydantic.input(model=input_models.DeleteNodeTableQueryInput, all_fields=True, description="Input for deleting a node table query")
+class DeleteNodeTableQueryInput:
+    id: strawberry.ID = strawberry.field(description="The ID of the node table query to delete")
+
+
+@pydantic.input(model=input_models.ArchiveNodeTableQueryInput, all_fields=True, description="Input for archiving a node table query")
+class ArchiveNodeTableQueryInput:
+    id: strawberry.ID = strawberry.field(description="The ID of the node table query to archive")
+
+
+@pydantic.input(model=input_models.CreateNodePairsQueryInput, all_fields=True, description="Input for creating a new node pairs query")
+class CreateNodePairsQueryInput:
+    pass
+
+
+@pydantic.input(model=input_models.UpdateNodePairsQueryInput, all_fields=True, description="Input for updating a node pairs query")
+class UpdateNodePairsQueryInput:
+    pass
+
+
+@pydantic.input(model=input_models.DeleteNodePairsQueryInput, all_fields=True, description="Input for deleting a node pairs query")
+class DeleteNodePairsQueryInput:
+    id: strawberry.ID = strawberry.field(description="The ID of the node pairs query to delete")
+
+
+@pydantic.input(model=input_models.ArchiveNodePairsQueryInput, all_fields=True, description="Input for archiving a node pairs query")
+class ArchiveNodePairsQueryInput:
+    id: strawberry.ID = strawberry.field(description="The ID of the node pairs query to archive")
+
+
+@pydantic.input(model=input_models.CreateNodePathQueryInput, all_fields=True, description="Input for creating a new node path query")
+class CreateNodePathQueryInput:
+    pass
+
+
+@pydantic.input(model=input_models.UpdateNodePathQueryInput, all_fields=True, description="Input for updating a node path query")
+class UpdateNodePathQueryInput:
+    pass
+
+
+@pydantic.input(model=input_models.DeleteNodePathQueryInput, all_fields=True, description="Input for deleting a node path query")
+class DeleteNodePathQueryInput:
+    id: strawberry.ID = strawberry.field(description="The ID of the node path query to delete")
+
+
+@pydantic.input(model=input_models.ArchiveNodePathQueryInput, all_fields=True, description="Input for archiving a node path query")
+class ArchiveNodePathQueryInput:
+    id: strawberry.ID = strawberry.field(description="The ID of the node path query to archive")
+
+
+@pydantic.input(model=input_models.CreateEdgeTableQueryInput, all_fields=True, description="Input for creating a new edge table query")
+class CreateEdgeTableQueryInput:
+    pass
+
+
+@pydantic.input(model=input_models.UpdateEdgeTableQueryInput, all_fields=True, description="Input for updating an edge table query")
+class UpdateEdgeTableQueryInput:
+    pass
+
+
+@pydantic.input(model=input_models.DeleteEdgeTableQueryInput, all_fields=True, description="Input for deleting an edge table query")
+class DeleteEdgeTableQueryInput:
+    id: strawberry.ID = strawberry.field(description="The ID of the edge table query to delete")
+
+
+@pydantic.input(model=input_models.ArchiveEdgeTableQueryInput, all_fields=True, description="Input for archiving an edge table query")
+class ArchiveEdgeTableQueryInput:
+    id: strawberry.ID = strawberry.field(description="The ID of the edge table query to archive")
+
+
+@pydantic.input(model=input_models.CreateEdgePairsQueryInput, all_fields=True, description="Input for creating a new edge pairs query")
+class CreateEdgePairsQueryInput:
+    pass
+
+
+@pydantic.input(model=input_models.UpdateEdgePairsQueryInput, all_fields=True, description="Input for updating an edge pairs query")
+class UpdateEdgePairsQueryInput:
+    pass
+
+
+@pydantic.input(model=input_models.DeleteEdgePairsQueryInput, all_fields=True, description="Input for deleting an edge pairs query")
+class DeleteEdgePairsQueryInput:
+    id: strawberry.ID = strawberry.field(description="The ID of the edge pairs query to delete")
+
+
+@pydantic.input(model=input_models.ArchiveEdgePairsQueryInput, all_fields=True, description="Input for archiving an edge pairs query")
+class ArchiveEdgePairsQueryInput:
+    id: strawberry.ID = strawberry.field(description="The ID of the edge pairs query to archive")
+
+
+@pydantic.input(model=input_models.CreateEdgePathQueryInput, all_fields=True, description="Input for creating a new edge path query")
+class CreateEdgePathQueryInput:
+    pass
+
+
+@pydantic.input(model=input_models.UpdateEdgePathQueryInput, all_fields=True, description="Input for updating an edge path query")
+class UpdateEdgePathQueryInput:
+    pass
+
+
+@pydantic.input(model=input_models.DeleteEdgePathQueryInput, all_fields=True, description="Input for deleting an edge path query")
+class DeleteEdgePathQueryInput:
+    id: strawberry.ID = strawberry.field(description="The ID of the edge path query to delete")
+
+
+@pydantic.input(model=input_models.ArchiveEdgePathQueryInput, all_fields=True, description="Input for archiving an edge path query")
+class ArchiveEdgePathQueryInput:
+    id: strawberry.ID = strawberry.field(description="The ID of the edge path query to archive")
+
+
 @pydantic.input(model=input_models.ScatterPlotInput, all_fields=True, description="Input for creating a new graph from a schema definition")
 class ScatterPlotInput:
     pass
