@@ -7,6 +7,7 @@ import strawberry
 
 from api import types, inputs, context
 from core import models
+from graph_engine import scalars
 
 
 def create_structure(
@@ -45,7 +46,7 @@ def create_structure(
 def delete_structure(
     info: Info,
     input: inputs.DeleteStructureInput,
-) -> types.Structure:
+) -> scalars.GraphID:
     """
     Delete a structure by its composite ID. Only the owner of the graph or an admin can delete a structure.
 
@@ -65,14 +66,12 @@ def delete_structure(
 
     graph = context.get_accessible_graph(info, graph_id)
 
-    deleted_structure = controller.get_node_by_local_id(graph, local_id=local_id)
-
     controller.delete_structure(
         graph,
         structure_id=local_id,
     )
 
-    return types.Structure(_value=deleted_structure)
+    return model.id
 
 
 def archive_structure(

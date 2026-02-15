@@ -11,7 +11,7 @@ from core import models
 from graph_engine.scalars import GraphID
 
 
-def create_measurement(info: Info, input: inputs.CreateRelationInput) -> types.Measurement:
+def create_measurement(info: Info, input: inputs.CreateMeasurementInput) -> types.Measurement:
     """
     Create a new measurement edge between a structure and an entity.
 
@@ -47,7 +47,40 @@ def create_measurement(info: Info, input: inputs.CreateRelationInput) -> types.M
     return types.Measurement(_value=result)
 
 
-def delete_measurement(info: Info, input: inputs.DeleteRelationInput) -> strawberry.ID:
+def update_measurement(info: Info, input: inputs.UpdateMeasurementInput) -> types.Measurement:
+    """
+    Update a measurement by archiving the current edge and creating a new one in the same category.
+    """
+    controller = context.get_controller()
+
+    model = input.to_pydantic()
+    graph_id = context.extract_graph_id(cast(GraphID, model.id))
+    local_id = context.extract_node_id(cast(GraphID, model.id))
+
+    graph = context.get_accessible_graph(info, graph_id)
+
+    existing = controller.get_relation_by_id(local_id)
+    if existing is None:
+        raise ValueError(f"Measurement not found with ID {model.id}")
+
+    category = models.MeasurementCategory.objects.get(graph=graph, age_name=existing.label)
+
+    controller.archive_relation(
+        graph,
+        relation_id=local_id,
+        info=info,
+    )
+
+    updated = controller.create_relation(
+        category=cast(models.RelationCategory, category),
+        payload=model,
+        info=info,
+    )
+
+    return types.Measurement(_value=updated)
+
+
+def delete_measurement(info: Info, input: inputs.DeleteMeasurementInput) -> GraphID:
     """
     Delete a measurement edge by its composite ID.
     """
@@ -65,10 +98,10 @@ def delete_measurement(info: Info, input: inputs.DeleteRelationInput) -> strawbe
         info=info,
     )
 
-    return strawberry.ID(str(model.id))
+    return cast(GraphID, model.id)
 
 
-def archive_measurement(info: Info, input: inputs.ArchiveRelationInput) -> types.Measurement:
+def archive_measurement(info: Info, input: inputs.ArchiveMeasurementInput) -> types.Measurement:
     """
     Archive (soft delete) a measurement edge by its composite ID.
     """

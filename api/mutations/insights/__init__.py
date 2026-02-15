@@ -40,6 +40,12 @@ from .edge import (
     delete_edge_path_query,
     archive_edge_path_query,
 )
+from .plots import (
+    create_scatter_plot,
+    update_scatter_plot,
+    delete_scatter_plot,
+    archive_scatter_plot,
+)
 
 __all__ = [
     "create_graph_table_query",
@@ -78,4 +84,8 @@ __all__ = [
     "update_edge_path_query",
     "delete_edge_path_query",
     "archive_edge_path_query",
+    "create_scatter_plot",
+    "update_scatter_plot",
+    "delete_scatter_plot",
+    "archive_scatter_plot",
 ]

@@ -8,8 +8,16 @@ from .node import pin_node
 from .entity import create_entity, recalculate_entity, delete_entity, archive_entity, update_entity
 from .structure import create_structure, delete_structure, archive_structure, update_structure, link_structure_to_entity
 from .metric import record_metric, create_metric, update_metric, delete_metric, archive_metric
-from .relation import create_relation, delete_relation, archive_relation
-from .measurement import create_measurement, delete_measurement, archive_measurement
+from .relation import create_relation, update_relation, delete_relation, archive_relation
+from .measurement import create_measurement, update_measurement, delete_measurement, archive_measurement
+from .structure_relation import (
+    create_structure_relation,
+    update_structure_relation,
+    delete_structure_relation,
+    archive_structure_relation,
+)
+from .natural_event import create_natural_event, update_natural_event, delete_natural_event, archive_natural_event
+from .protocol_event import create_protocol_event, update_protocol_event, delete_protocol_event, archive_protocol_event
 from .schema import *
 from .insights import (
     create_graph_table_query,
@@ -48,6 +56,10 @@ from .insights import (
     update_edge_path_query,
     delete_edge_path_query,
     archive_edge_path_query,
+    create_scatter_plot,
+    update_scatter_plot,
+    delete_scatter_plot,
+    archive_scatter_plot,
 )
 
 __all__ = [
@@ -74,11 +86,27 @@ __all__ = [
     "archive_metric",
     # Relation mutations
     "create_relation",
+    "update_relation",
     "create_measurement",
+    "update_measurement",
     "delete_relation",
     "archive_relation",
     "delete_measurement",
     "archive_measurement",
+    "create_structure_relation",
+    "update_structure_relation",
+    "delete_structure_relation",
+    "archive_structure_relation",
+    # Natural event mutations
+    "create_natural_event",
+    "update_natural_event",
+    "delete_natural_event",
+    "archive_natural_event",
+    # Protocol event mutations
+    "create_protocol_event",
+    "update_protocol_event",
+    "delete_protocol_event",
+    "archive_protocol_event",
     "create_graph_table_query_through_builder",
     # Insights graph query subtype mutations
     "create_graph_table_query",
@@ -119,4 +147,8 @@ __all__ = [
     "update_edge_path_query",
     "delete_edge_path_query",
     "archive_edge_path_query",
+    "create_scatter_plot",
+    "update_scatter_plot",
+    "delete_scatter_plot",
+    "archive_scatter_plot",
 ]

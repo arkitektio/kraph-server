@@ -362,6 +362,62 @@ class DeleteNaturalEventInput:
     pass
 
 
+@pydantic.input(model=input_models.CreateProtocolEventInput, all_fields=True, description="Input for creating a new protocol event instance")
+class CreateProtocolEventInput:
+    """Input for creating a new protocol event instance."""
+
+    pass
+
+
+@pydantic.input(model=input_models.UpdateProtocolEventInput, all_fields=True, description="Input for updating an existing protocol event instance")
+class UpdateProtocolEventInput:
+    """Input for updating an existing protocol event instance."""
+
+    pass
+
+
+@pydantic.input(model=input_models.ArchiveProtocolEventInput, all_fields=True, description="Input for archiving (soft deleting) an existing protocol event instance")
+class ArchiveProtocolEventInput:
+    """Input for archiving (soft deleting) an existing protocol event instance."""
+
+    pass
+
+
+@pydantic.input(model=input_models.DeleteProtocolEventInput, all_fields=True, description="Input for deleting an existing protocol event instance")
+class DeleteProtocolEventInput:
+    """Input for deleting an existing protocol event instance."""
+
+    pass
+
+
+@pydantic.input(model=input_models.CreateScatterPlotInput, all_fields=True, description="Input for creating a scatter plot")
+class CreateScatterPlotInput:
+    """Input for creating a scatter plot."""
+
+    pass
+
+
+@pydantic.input(model=input_models.UpdateScatterPlotInput, all_fields=True, description="Input for updating a scatter plot")
+class UpdateScatterPlotInput:
+    """Input for updating a scatter plot."""
+
+    pass
+
+
+@pydantic.input(model=input_models.DeleteScatterPlotInput, all_fields=True, description="Input for deleting a scatter plot")
+class DeleteScatterPlotInput:
+    """Input for deleting a scatter plot."""
+
+    pass
+
+
+@pydantic.input(model=input_models.ArchiveScatterPlotInput, all_fields=True, description="Input for archiving a scatter plot")
+class ArchiveScatterPlotInput:
+    """Input for archiving a scatter plot."""
+
+    pass
+
+
 @pydantic.input(model=input_models.RecordMetricInput, description="Input for creating a new metric")
 class RecordMetricInput(MetricInput):
     """Input for creating a new metric."""
@@ -462,6 +518,41 @@ class ArchiveRelationInput:
     """Input for archiving an existing relation."""
 
     id: scalars.GraphID = strawberry.field(description="The ID of the relation to archive")
+
+    pass
+
+
+@pydantic.input(model=input_models.UpdateRelationInput, all_fields=True, description="Input for updating an existing relation")
+class UpdateRelationInput:
+    """Input for updating an existing relation."""
+
+    pass
+
+
+@pydantic.input(model=input_models.CreateMeasurementInput, all_fields=True, description="Input for creating a new measurement edge")
+class CreateMeasurementInput:
+    """Input for creating a new measurement edge."""
+
+    pass
+
+
+@pydantic.input(model=input_models.UpdateMeasurementInput, all_fields=True, description="Input for updating an existing measurement edge")
+class UpdateMeasurementInput:
+    """Input for updating an existing measurement edge."""
+
+    pass
+
+
+@pydantic.input(model=input_models.DeleteMeasurementInput, all_fields=True, description="Input for deleting an existing measurement edge")
+class DeleteMeasurementInput:
+    """Input for deleting an existing measurement edge."""
+
+    pass
+
+
+@pydantic.input(model=input_models.ArchiveMeasurementInput, all_fields=True, description="Input for archiving an existing measurement edge")
+class ArchiveMeasurementInput:
+    """Input for archiving an existing measurement edge."""
 
     pass
 

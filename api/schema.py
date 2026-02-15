@@ -60,6 +60,12 @@ class Query:
     measurement_category: types.MeasurementCategory = kante.django_field(description="Get a single measurement category/schema by ID")
     relation_categories: list[types.RelationCategory] = kante.django_field(description="List all relation categories/schemas")
     relation_category: types.RelationCategory = kante.django_field(description="Get a single relation category/schema by ID")
+    structure_relation_categories: list[types.StructureRelationCategory] = kante.django_field(description="List all structure relation categories/schemas")
+    structure_relation_category: types.StructureRelationCategory = kante.django_field(description="Get a single structure relation category/schema by ID")
+    natural_event_categories: list[types.NaturalEventCategory] = kante.django_field(description="List all natural event categories/schemas")
+    natural_event_category: types.NaturalEventCategory = kante.django_field(description="Get a single natural event category/schema by ID")
+    protocol_event_categories: list[types.ProtocolEventCategory] = kante.django_field(description="List all protocol event categories/schemas")
+    protocol_event_category: types.ProtocolEventCategory = kante.django_field(description="Get a single protocol event category/schema by ID")
 
     materialized_edges: list[types.MaterializedEdge] = kante.django_field(description="List all materialized edges in the graph")
     materialized_edge: types.MaterializedEdge = kante.django_field(description="Get a single materialized edge by ID")
@@ -182,9 +188,17 @@ class Mutation:
         description="Create a new relation in the graph",
         resolver=mutations.create_relation,
     )
+    update_relation = kante.django_mutation(
+        description="Update an existing relation in the graph",
+        resolver=mutations.update_relation,
+    )
     create_measurement = kante.django_mutation(
         description="Create a new measurement in the graph",
         resolver=mutations.create_measurement,
+    )
+    update_measurement = kante.django_mutation(
+        description="Update an existing measurement in the graph",
+        resolver=mutations.update_measurement,
     )
     delete_measurement = kante.django_mutation(
         description="Delete a measurement from the graph",
@@ -201,6 +215,54 @@ class Mutation:
     archive_relation = kante.django_mutation(
         description="Archive a relation in the graph (soft delete)",
         resolver=mutations.archive_relation,
+    )
+    create_structure_relation = kante.django_mutation(
+        description="Create a new structure relation in the graph",
+        resolver=mutations.create_structure_relation,
+    )
+    update_structure_relation = kante.django_mutation(
+        description="Update an existing structure relation in the graph",
+        resolver=mutations.update_structure_relation,
+    )
+    delete_structure_relation = kante.django_mutation(
+        description="Delete a structure relation from the graph",
+        resolver=mutations.delete_structure_relation,
+    )
+    archive_structure_relation = kante.django_mutation(
+        description="Archive a structure relation in the graph (soft delete)",
+        resolver=mutations.archive_structure_relation,
+    )
+    create_natural_event = kante.django_mutation(
+        description="Create a new natural event in the graph",
+        resolver=mutations.create_natural_event,
+    )
+    update_natural_event = kante.django_mutation(
+        description="Update an existing natural event in the graph",
+        resolver=mutations.update_natural_event,
+    )
+    delete_natural_event = kante.django_mutation(
+        description="Delete a natural event from the graph",
+        resolver=mutations.delete_natural_event,
+    )
+    archive_natural_event = kante.django_mutation(
+        description="Archive a natural event in the graph (soft delete)",
+        resolver=mutations.archive_natural_event,
+    )
+    create_protocol_event = kante.django_mutation(
+        description="Create a new protocol event in the graph",
+        resolver=mutations.create_protocol_event,
+    )
+    update_protocol_event = kante.django_mutation(
+        description="Update an existing protocol event in the graph",
+        resolver=mutations.update_protocol_event,
+    )
+    delete_protocol_event = kante.django_mutation(
+        description="Delete a protocol event from the graph",
+        resolver=mutations.delete_protocol_event,
+    )
+    archive_protocol_event = kante.django_mutation(
+        description="Archive a protocol event in the graph (soft delete)",
+        resolver=mutations.archive_protocol_event,
     )
 
     upload_media = kante.django_mutation(
@@ -370,6 +432,23 @@ class Mutation:
     archive_edge_path_query = kante.django_mutation(
         description="Archive an edge path query",
         resolver=mutations.archive_edge_path_query,
+    )
+
+    create_scatter_plot = kante.django_mutation(
+        description="Create a scatter plot",
+        resolver=mutations.create_scatter_plot,
+    )
+    update_scatter_plot = kante.django_mutation(
+        description="Update a scatter plot",
+        resolver=mutations.update_scatter_plot,
+    )
+    delete_scatter_plot = kante.django_mutation(
+        description="Delete a scatter plot",
+        resolver=mutations.delete_scatter_plot,
+    )
+    archive_scatter_plot = kante.django_mutation(
+        description="Archive a scatter plot",
+        resolver=mutations.archive_scatter_plot,
     )
 
     delete_graph = kante.django_mutation(

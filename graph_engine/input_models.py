@@ -1304,6 +1304,36 @@ class DeleteNaturalEventInput(BaseModel):
     id: GraphID = Field(..., description="The ID of the natural event to delete")
 
 
+class ProtocolEventInput(EventInput):
+    """Input for creating a new protocol event instance."""
+
+    pass
+
+
+class CreateProtocolEventInput(ProtocolEventInput):
+    """Input for creating a new protocol event instance."""
+
+    event_category: GraphID = Field(..., description="The ID of the protocol event category/type to create")
+
+
+class UpdateProtocolEventInput(ProtocolEventInput):
+    """Input for updating an existing protocol event instance. Note: this will not update the event in-place, but rather create a new event and archive the old one to preserve history."""
+
+    id: GraphID = Field(..., description="The ID of the protocol event to update")
+
+
+class ArchiveProtocolEventInput(BaseModel):
+    """Input for archiving (soft deleting) an existing protocol event instance."""
+
+    id: GraphID = Field(..., description="The ID of the protocol event to archive")
+
+
+class DeleteProtocolEventInput(BaseModel):
+    """Input for deleting an existing protocol event instance."""
+
+    id: GraphID = Field(..., description="The ID of the protocol event to delete")
+
+
 class EntityInput(BaseModel):
     """Input for creating a new entity instance."""
 
@@ -1439,6 +1469,70 @@ class DeleteRelationInput(BaseModel):
     """Input for hard deleting an existing metric."""
 
     id: GraphID = Field(..., description="The ID of the metric to delete")
+
+
+class CreateMeasurementInput(RelationInput):
+    """Input for creating a new measurement edge associated with a structure/entity pair."""
+
+    category: str = Field(..., description="The unique ID of the measurement category")
+
+
+class UpdateMeasurementInput(RelationInput):
+    """Input for updating an existing measurement by replacing it with a new edge revision."""
+
+    id: GraphID = Field(..., description="The ID of the measurement to update")
+
+
+class ArchiveMeasurementInput(BaseModel):
+    """Input for archiving (soft deleting) an existing measurement."""
+
+    id: GraphID = Field(..., description="The ID of the measurement to archive")
+
+
+class DeleteMeasurementInput(BaseModel):
+    """Input for hard deleting an existing measurement."""
+
+    id: GraphID = Field(..., description="The ID of the measurement to delete")
+
+
+class ScatterPlotMutationInput(BaseModel):
+    """Base input for scatter plot mutations."""
+
+    name: str = Field(..., description="The display name of the scatter plot")
+    description: Optional[str] = Field(default=None, description="Optional description of the scatter plot")
+    graph_query_id: Optional[int] = Field(default=None, description="Optional graph table query ID used by this scatter plot")
+    node_query_id: Optional[int] = Field(default=None, description="Optional node table query ID used by this scatter plot")
+    path_query_id: Optional[int] = Field(default=None, description="Optional node path query ID used by this scatter plot")
+    id_column: str = Field(..., description="Column key used for point identifiers")
+    x_column: Optional[str] = Field(default=None, description="Column key used for x-axis values")
+    x_id_column: Optional[str] = Field(default=None, description="Column key used for x-axis identifiers")
+    y_column: Optional[str] = Field(default=None, description="Column key used for y-axis values")
+    y_id_column: Optional[str] = Field(default=None, description="Column key used for y-axis identifiers")
+    color_column: Optional[str] = Field(default=None, description="Optional column key used for point color")
+    size_column: Optional[str] = Field(default=None, description="Optional column key used for point size")
+    shape_column: Optional[str] = Field(default=None, description="Optional column key used for point shape")
+
+
+class CreateScatterPlotInput(ScatterPlotMutationInput):
+    """Input for creating a scatter plot."""
+
+
+class UpdateScatterPlotInput(ScatterPlotMutationInput):
+    """Input for updating a scatter plot."""
+
+    id: int = Field(..., description="The database ID of the scatter plot to update")
+
+
+class DeleteScatterPlotInput(BaseModel):
+    """Input for deleting a scatter plot."""
+
+    id: int = Field(..., description="The database ID of the scatter plot to delete")
+
+
+class ArchiveScatterPlotInput(BaseModel):
+    """Input for archiving a scatter plot."""
+
+    id: int = Field(..., description="The database ID of the scatter plot to archive")
 
 
 class UpdateMetricInput(MetricInput):

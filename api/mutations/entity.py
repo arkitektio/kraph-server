@@ -3,6 +3,7 @@ Entity mutation resolvers.
 """
 
 from graph_engine import scalars
+from graph_engine import input_models
 from api import inputs, types, context
 from core import models
 from kante import Info
@@ -123,15 +124,34 @@ def update_entity(
     """
     controller = context.get_controller()
 
-    model = input.to_pydantic()  # Validate input with Pydantic models
+    model = input.to_pydantic()
 
     graph_id = context.extract_graph_id(model.id)
     local_id = context.extract_node_id(model.id)
     graph = context.get_accessible_graph(info, graph_id)
 
-    controller.update_entity(graph, entity_id=local_id)
+    existing = controller.get_node_by_local_id(graph, local_id=local_id, info=info)
+    if not existing.category_id:
+        raise ValueError("Entity does not have a category and cannot be updated")
 
-    return input
+    entity_category = models.EntityCategory.objects.get(id=existing.category_id)
+
+    controller.archive_entity(
+        graph,
+        local_id=local_id,
+        info=info,
+    )
+
+    updated = controller.create_entity(
+        entity_category=entity_category,
+        payload=input_models.CreateEntityInput(
+            entity_category=str(entity_category.pk),
+            supporting_evidence=model.supporting_evidence,
+        ),
+        info=info,
+    )
+
+    return types.Entity(_value=updated)
 
 
 def recalculate_entity(
