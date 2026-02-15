@@ -306,6 +306,34 @@ class ArchiveMetricDefinitionInput:
     pass
 
 
+@pydantic.input(model=input_models.CreateCategoryTagInput, all_fields=True, description="Input for creating a category tag")
+class CreateCategoryTagInput:
+    """Input for creating a category tag."""
+
+    pass
+
+
+@pydantic.input(model=input_models.UpdateCategoryTagInput, all_fields=True, description="Input for updating a category tag")
+class UpdateCategoryTagInput:
+    """Input for updating a category tag."""
+
+    pass
+
+
+@pydantic.input(model=input_models.DeleteCategoryTagInput, all_fields=True, description="Input for deleting a category tag")
+class DeleteCategoryTagInput:
+    """Input for deleting a category tag."""
+
+    pass
+
+
+@pydantic.input(model=input_models.ArchiveCategoryTagInput, all_fields=True, description="Input for archiving a category tag")
+class ArchiveCategoryTagInput:
+    """Input for archiving a category tag."""
+
+    pass
+
+
 @pydantic.input(model=input_models.CreateRelationDefinitionInput, all_fields=True, description="Input for creating a new relation definition in the graph schema")
 class CreateRelationDefinitionInput:
     """Input for creating a new relation definition in the graph schema."""
@@ -330,6 +358,34 @@ class DeleteRelationDefinitionInput:
 @pydantic.input(model=input_models.ArchiveRelationDefinitionInput, all_fields=True, description="Input for archiving (soft deleting) an existing relation definition in the graph schema")
 class ArchiveRelationDefinitionInput:
     """Input for archiving (soft deleting) an existing relation definition in the graph schema."""
+
+    pass
+
+
+@pydantic.input(model=input_models.CreateMeasurementDefinitionInput, all_fields=True, description="Input for creating a new measurement definition in the graph schema")
+class CreateMeasurementDefinitionInput:
+    """Input for creating a new measurement definition in the graph schema."""
+
+    pass
+
+
+@pydantic.input(model=input_models.UpdateMeasurementDefinitionInput, all_fields=True, description="Input for updating an existing measurement definition in the graph schema")
+class UpdateMeasurementDefinitionInput:
+    """Input for updating an existing measurement definition in the graph schema."""
+
+    pass
+
+
+@pydantic.input(model=input_models.DeleteMeasurementDefinitionInput, all_fields=True, description="Input for deleting an existing measurement definition in the graph schema")
+class DeleteMeasurementDefinitionInput:
+    """Input for deleting an existing measurement definition in the graph schema."""
+
+    pass
+
+
+@pydantic.input(model=input_models.ArchiveMeasurementDefinitionInput, all_fields=True, description="Input for archiving (soft deleting) an existing measurement definition in the graph schema")
+class ArchiveMeasurementDefinitionInput:
+    """Input for archiving (soft deleting) an existing measurement definition in the graph schema."""
 
     pass
 
@@ -955,6 +1011,11 @@ class GraphDefinitionInput:
 
 @pydantic.input(model=input_models.CreateGraphFromSchema, all_fields=True, description="Input for creating a new graph from a schema definition")
 class CreateGraphInput:
+    pass
+
+
+@pydantic.input(model=input_models.UpdateGraphInput, all_fields=True, description="Input for updating an existing graph")
+class UpdateGraphInput:
     pass
 
 

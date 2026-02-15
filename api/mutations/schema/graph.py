@@ -35,12 +35,12 @@ def create_graph(
 def delete_graph(
     info: Info,
     input: inputs.DeleteGraphInput,
-) -> types.Graph:
+) -> strawberry.ID:
     """GraphQL mutation wrapper for deleting a graph."""
 
     model = input.to_pydantic()  # Validate input with Pydantic models
 
-    graph = models.Graph.objects.get(id=model.graph_id)
+    graph = models.Graph.objects.get(id=model.id)
 
     # Check permissions - only graph owner or admin can delete
     if not info.context.request.user.is_superuser and graph.owner != info.context.request.user:
@@ -48,7 +48,7 @@ def delete_graph(
 
     graph.delete()
 
-    return types.Graph(id=model.graph_id)
+    return model.id
 
 
 def archive_graph(
@@ -59,7 +59,7 @@ def archive_graph(
 
     model = input.to_pydantic()  # Validate input with Pydantic models
 
-    graph = models.Graph.objects.get(id=model.graph_id)
+    graph = models.Graph.objects.get(id=model.id)
 
     # Check permissions - only graph owner or admin can archive
     if not info.context.request.user.is_superuser and graph.owner != info.context.request.user:
@@ -68,7 +68,32 @@ def archive_graph(
     graph.is_archived = True
     graph.save()
 
-    return types.Graph(id=model.graph_id)
+    return graph
+
+
+def update_graph(
+    info: Info,
+    input: inputs.UpdateGraphInput,
+) -> types.Graph:
+    """GraphQL mutation wrapper for updating a graph."""
+
+    model = input.to_pydantic()
+
+    graph = models.Graph.objects.get(id=model.id)
+
+    if not info.context.request.user.is_superuser and graph.owner != info.context.request.user:
+        raise PermissionError("You do not have permission to update this graph.")
+
+    if model.name is not None:
+        graph.name = model.name
+    if model.description is not None:
+        graph.description = model.description
+    if model.archived is not None:
+        graph.is_archived = model.archived
+
+    graph.save()
+
+    return graph
 
 
 def pin_graph(

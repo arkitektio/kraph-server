@@ -7,11 +7,13 @@ from .relation_category import create_relation_category, update_relation_categor
 from .natural_event_category import create_natural_event_category, update_natural_event_category, delete_natural_event_category
 from .relation_category import create_relation_category, update_relation_category, delete_relation_category
 from .protocol_event_category import create_protocol_event_category, update_protocol_event_category, delete_protocol_event_category
-from .graph import create_graph, delete_graph, archive_graph
+from .category_tag import create_category_tag, update_category_tag, archive_category_tag, delete_category_tag
+from .graph import create_graph, update_graph, delete_graph, archive_graph
 from .graph_table_query import create_graph_table_query_through_builder
 
 __all__ = [
     "create_graph",
+    "update_graph",
     "create_entity_category",
     "update_entity_category",
     "delete_entity_category",
@@ -39,4 +41,8 @@ __all__ = [
     "create_protocol_event_category",
     "update_protocol_event_category",
     "delete_protocol_event_category",
+    "create_category_tag",
+    "update_category_tag",
+    "archive_category_tag",
+    "delete_category_tag",
 ]

@@ -727,6 +727,36 @@ class ArchiveMetricDefinitionInput(BaseModel):
     id: GraphID = Field(..., description="The ID of the metric definition to archive")
 
 
+class CreateCategoryTagInput(BaseModel):
+    """Input for creating a category tag in a graph."""
+
+    graph: GraphID = Field(..., description="The graph ID this category tag belongs to")
+    value: str = Field(..., description="Unique tag value within the graph")
+    name: Optional[str] = Field(default=None, description="Optional human-readable name")
+    description: Optional[str] = Field(default=None, description="Optional category tag description")
+
+
+class UpdateCategoryTagInput(BaseModel):
+    """Input for updating an existing category tag."""
+
+    id: GraphID = Field(..., description="The category tag ID")
+    value: Optional[str] = Field(default=None, description="Updated unique tag value")
+    name: Optional[str] = Field(default=None, description="Updated human-readable name")
+    description: Optional[str] = Field(default=None, description="Updated category tag description")
+
+
+class DeleteCategoryTagInput(BaseModel):
+    """Input for deleting an existing category tag."""
+
+    id: GraphID = Field(..., description="The category tag ID")
+
+
+class ArchiveCategoryTagInput(BaseModel):
+    """Input for archiving an existing category tag."""
+
+    id: GraphID = Field(..., description="The category tag ID")
+
+
 class EventKind(str, Enum):
     """Role type for a node in an event."""
 
@@ -1212,6 +1242,30 @@ class ArchiveRelationDefinitionInput(BaseModel):
     id: GraphID = Field(..., description="The ID of the relation category to archive")
 
 
+class CreateMeasurementDefinitionInput(EntityDefinitionInput):
+    """Input for a measurement definition at the graph level."""
+
+    graph: GraphID = Field(..., description="The graph id this measurement category will belong to")
+
+
+class UpdateMeasurementDefinitionInput(EntityDefinitionInput):
+    """Input for updating an existing measurement definition at the graph level."""
+
+    id: GraphID = Field(..., description="The ID of the measurement category to update")
+
+
+class DeleteMeasurementDefinitionInput(BaseModel):
+    """Input for deleting an existing measurement definition at the graph level."""
+
+    id: GraphID = Field(..., description="The ID of the measurement category to delete")
+
+
+class ArchiveMeasurementDefinitionInput(BaseModel):
+    """Input for archiving (soft deleting) an existing measurement definition at the graph level."""
+
+    id: GraphID = Field(..., description="The ID of the measurement category to archive")
+
+
 class CreateStructureRelationDefinitionInput(EntityDefinitionInput):
     """Input for an entity definition at the graph level (not within an event)."""
 
@@ -1627,6 +1681,15 @@ class CreateGraphFromSchema(BaseModel):
     name: str = Field(..., description="Name of the graph")
     description: Optional[str] = Field(None, description="Description of the graph")
     definition: Optional[GraphDefinitionInput] = Field(default_factory=lambda: GraphDefinitionInput(), description="The complete graph schema definition")
+
+
+class UpdateGraphInput(BaseModel):
+    """Input for updating an existing graph."""
+
+    id: strawberry.ID = Field(..., description="The ID of the graph to update")
+    name: Optional[str] = Field(default=None, description="New graph name")
+    description: Optional[str] = Field(default=None, description="New graph description")
+    archived: Optional[bool] = Field(default=None, description="Optional archived flag update")
 
 
 class DeleteGraphInput(BaseModel):

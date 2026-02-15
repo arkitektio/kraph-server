@@ -787,6 +787,23 @@ class NaturalEvent(VersionedNode):
         assert self._value.category_id is not None, "NaturalEvent must have a category_id to fetch category"
         return cast(NaturalEventCategory, models.NaturalEventCategory.objects.get(id=self._value.category_id))
 
+    @strawberry.field(description="List of properties derived for this entity")
+    async def rich_properties(self) -> List[RichProperty]:
+        """Combine raw properties with schema definitions for a rich view."""
+        # Category lookup and schema merging logic would go here in a real implementation.
+        assert self._value.category_id is not None, "Entity must have a category_id to fetch property definitions"
+        category = await loaders.entity_category_loader.load([self._value.category_id])
+
+        return [RichProperty(_node=self, _key=var, _category=category) for var in self._value.cleaned_properties]
+
+    @strawberry.field(description="List of the current derived properties for this entity")
+    def properties(self) -> AnyScalar:
+        """Return the structures that provide evidence for this entity."""
+        # In a real implementation, we would fetch the linked structures
+        # from the graph and return them as Structure types.
+        # For this example, we'll return an empty list.
+        return self._value.cleaned_properties
+
 
 # ===========================================
 # METRIC TYPE
@@ -854,6 +871,47 @@ class ProtocolEvent(VersionedNode):
     @strawberry.field(description="Category ID linking to ProtocolEventCategory model")
     def category_id(self) -> Optional[str]:
         return self._value.category_id
+
+    @strawberry.field(description="List of the current derived properties for this event")
+    def measured_from(self) -> datetime:
+        """Return the structures that provide evidence for this event."""
+        # In a real implementation, we would fetch the linked structures
+        # from the graph and return them as Structure types.
+        # For this example, we'll return an empty list.
+        return self._value.cleaned_properties
+
+    @kante.django_field(description="The source entity of this relation")
+    def measured_to(self) -> datetime:
+        """Return the structures that provide evidence for this event."""
+        # In a real implementation, we would fetch the linked structures
+        # from the graph and return them as Structure types.
+        # For this example, we'll return an empty list.
+        return self._value.cleaned_properties
+
+    @kante.django_field(description="The source entity of this relation")
+    def category(self) -> ProtocolEventCategory:
+        """Return the category of this natural event."""
+        # In a real implementation, we would fetch the category based on the category_id.
+        # For this example, we'll return None for simplicity.
+        assert self._value.category_id is not None, "NaturalEvent must have a category_id to fetch category"
+        return cast(ProtocolEventCategory, models.ProtocolEventCategory.objects.get(id=self._value.category_id))
+
+    @strawberry.field(description="List of properties derived for this entity")
+    async def rich_properties(self) -> List[RichProperty]:
+        """Combine raw properties with schema definitions for a rich view."""
+        # Category lookup and schema merging logic would go here in a real implementation.
+        assert self._value.category_id is not None, "Entity must have a category_id to fetch property definitions"
+        category = await loaders.entity_category_loader.load([self._value.category_id])
+
+        return [RichProperty(_node=self, _key=var, _category=category) for var in self._value.cleaned_properties]
+
+    @strawberry.field(description="List of the current derived properties for this entity")
+    def properties(self) -> AnyScalar:
+        """Return the structures that provide evidence for this entity."""
+        # In a real implementation, we would fetch the linked structures
+        # from the graph and return them as Structure types.
+        # For this example, we'll return an empty list.
+        return self._value.cleaned_properties
 
 
 # ===========================================

@@ -8,6 +8,13 @@ from core import models
 
 def create_graph_table_query(
     info: Info,
+    input: inputs.CreateGraphTableQueryInput,
+) -> types.GraphTableQuery:
+    raise NotImplementedError("Creating graph queries through builders is not implemented yet")
+
+
+def create_graph_table_query_through_builder(
+    info: Info,
     input: inputs.CreateGraphTableQueryThroughBuilderInput,
 ) -> types.GraphTableQuery:
     raise NotImplementedError("Creating graph queries through builders is not implemented yet")

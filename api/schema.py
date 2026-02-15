@@ -265,9 +265,9 @@ class Mutation:
         resolver=mutations.archive_protocol_event,
     )
 
-    upload_media = kante.django_mutation(
+    request_media_upload = kante.django_mutation(
         description="Upload media and return a URL for access",
-        resolver=datalayer_mutations.upload_media,
+        resolver=datalayer_mutations.request_media_upload,
     )
 
     # =========================
@@ -276,6 +276,14 @@ class Mutation:
     create_graph = kante.django_mutation(
         description="Create a new graph in the graph engine",
         resolver=mutations.create_graph,
+    )
+    update_graph = kante.django_mutation(
+        description="Update an existing graph in the graph engine",
+        resolver=mutations.update_graph,
+    )
+    create_graph_table_query = kante.django_mutation(
+        description="Create a new graph table query",
+        resolver=mutations.create_graph_table_query,
     )
     create_graph_table_query_through_builder = kante.django_mutation(
         description="Create or update a graph table query using builder arguments",
@@ -466,6 +474,22 @@ class Mutation:
     create_entity_category = kante.django_mutation(
         description="Create a new entity category/schema in the graph",
         resolver=mutations.create_entity_category,
+    )
+    create_category_tag = kante.django_mutation(
+        description="Create a new category tag in the graph",
+        resolver=mutations.create_category_tag,
+    )
+    update_category_tag = kante.django_mutation(
+        description="Update an existing category tag in the graph",
+        resolver=mutations.update_category_tag,
+    )
+    archive_category_tag = kante.django_mutation(
+        description="Archive an existing category tag in the graph",
+        resolver=mutations.archive_category_tag,
+    )
+    delete_category_tag = kante.django_mutation(
+        description="Delete an existing category tag from the graph",
+        resolver=mutations.delete_category_tag,
     )
     delete_entity_category = kante.django_mutation(
         description="Delete an entity category/schema from the graph",

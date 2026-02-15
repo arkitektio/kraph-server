@@ -1,8 +1,8 @@
 """Mutations"""
 
-from .upload import upload_media
+from .upload import request_media_upload
 
 
 __all__ = [
-    "upload_media",
+    "request_media_upload",
 ]

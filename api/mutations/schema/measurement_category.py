@@ -9,7 +9,7 @@ from core import models
 
 def create_measurement_category(
     info: Info,
-    input: inputs.CreateRelationDefinitionInput,
+    input: inputs.CreateMeasurementDefinitionInput,
 ) -> types.MeasurementCategory:
     """GraphQL mutation wrapper for creating measurement categories."""
 
@@ -61,7 +61,7 @@ def create_measurement_category(
     return cast(types.MeasurementCategory, category)
 
 
-def update_measurement_category(info: Info, input: inputs.UpdateRelationDefinitionInput) -> types.MeasurementCategory:
+def update_measurement_category(info: Info, input: inputs.UpdateMeasurementDefinitionInput) -> types.MeasurementCategory:
     """GraphQL mutation wrapper for updating measurement categories."""
     model = input.to_pydantic()
 
@@ -99,7 +99,7 @@ def update_measurement_category(info: Info, input: inputs.UpdateRelationDefiniti
 
 def delete_measurement_category(
     info: Info,
-    input: inputs.DeleteRelationDefinitionInput,
+    input: inputs.DeleteMeasurementDefinitionInput,
 ) -> strawberry.ID:
     model = input.to_pydantic()
     item = models.MeasurementCategory.objects.get(id=model.id)
