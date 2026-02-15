@@ -57,6 +57,10 @@ class CategoryTagFilter:
     id: strawberry.auto
 
     @kante.filter_field(description="Filter by list of IDs")
+    def ids(self, value: list[strawberry.ID], prefix: str) -> Q:
+        return Q(**{f"{prefix}__id__in": value})
+
+    @kante.filter_field(description="Filter by list of IDs")
     def search(self, value: str, prefix: str) -> Q:
         return Q(**{f"{prefix}name__search": value}) | Q(**{f"{prefix}description__search": value})
 
@@ -122,7 +126,15 @@ class StructureRelationCategoryFilter(CategoryFilter):
 
 @kante.filter_type(models.MaterializedEdge)
 class MaterializedEdgeFilter:
-    pass
+    id: strawberry.auto
+
+    @kante.filter_field(description="Filter by list of IDs")
+    def ids(self, value: list[strawberry.ID], prefix: str) -> Q:
+        return Q(**{f"{prefix}__id__in": value})
+
+    @kante.filter_field(description="Full-text search over connected category labels")
+    def search(self, value: str, prefix: str) -> Q:
+        return Q(**{f"{prefix}source__label__search": value}) | Q(**{f"{prefix}target__label__search": value}) | Q(**{f"{prefix}edge__label__search": value})
 
 
 @kante.filter_type(models.GraphQuery)
@@ -172,3 +184,69 @@ class GraphPathQueryFilter(GraphQueryFilter):
     @kante.filter_field(description="Full-text search over label and description")
     def search(self, value: str, prefix: str) -> Q:
         return Q(**{f"{prefix}label__search": value}) | Q(**{f"{prefix}description__search": value})
+
+
+@kante.filter_type(models.NodeQuery)
+class NodeQueryFilter:
+    @kante.filter_field(description="Filter by list of IDs")
+    def ids(self, value: list[strawberry.ID], prefix: str) -> Q:
+        return Q(**{f"{prefix}__id__in": value})
+
+    @kante.filter_field(description="Full-text search over label and description")
+    def search(self, value: str, prefix: str) -> Q:
+        return Q(**{f"{prefix}label__search": value}) | Q(**{f"{prefix}description__search": value})
+
+
+@kante.filter_type(models.NodeTableQuery)
+class NodeTableQueryFilter(NodeQueryFilter):
+    pass
+
+
+@kante.filter_type(models.NodePairsQuery)
+class NodePairsQueryFilter(NodeQueryFilter):
+    pass
+
+
+@kante.filter_type(models.NodePathQuery)
+class NodePathQueryFilter(NodeQueryFilter):
+    pass
+
+
+@kante.filter_type(models.EdgeQuery)
+class EdgeQueryFilter:
+    @kante.filter_field(description="Filter by list of IDs")
+    def ids(self, value: list[strawberry.ID], prefix: str) -> Q:
+        return Q(**{f"{prefix}__id__in": value})
+
+    @kante.filter_field(description="Full-text search over label and description")
+    def search(self, value: str, prefix: str) -> Q:
+        return Q(**{f"{prefix}label__search": value}) | Q(**{f"{prefix}description__search": value})
+
+
+@kante.filter_type(models.EdgeTableQuery)
+class EdgeTableQueryFilter(EdgeQueryFilter):
+    pass
+
+
+@kante.filter_type(models.EdgePairsQuery)
+class EdgePairsQueryFilter(EdgeQueryFilter):
+    pass
+
+
+@kante.filter_type(models.EdgePathQuery)
+class EdgePathQueryFilter(EdgeQueryFilter):
+    pass
+
+
+@kante.filter_type(models.ScatterPlot)
+class ScatterPlotFilter:
+    id: strawberry.auto
+    name: strawberry.auto
+
+    @kante.filter_field(description="Filter by list of IDs")
+    def ids(self, value: list[strawberry.ID], prefix: str) -> Q:
+        return Q(**{f"{prefix}__id__in": value})
+
+    @kante.filter_field(description="Full-text search over label and description")
+    def search(self, value: str, prefix: str) -> Q:
+        return Q(**{f"{prefix}name__search": value}) | Q(**{f"{prefix}description__search": value})

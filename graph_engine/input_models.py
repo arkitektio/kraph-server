@@ -241,6 +241,20 @@ class EntityPagination(BaseModel):
     limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
 
 
+class StructureFilters(BaseModel):
+    graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
+    category: Optional[str] = Field(default=None, description="Filter by structure kind/type")
+    ids: Optional[List[scalars.GraphID]] = Field(default=None, description="Filter by specific structure IDs")
+    has_property: Optional[str] = Field(default=None, description="Filter structures that have a specific property")
+    search: Optional[str] = Field(default=None, description="Full-text search over structure properties")
+    matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter structures that match specific property conditions")
+
+
+class StructurePagination(BaseModel):
+    offset: Optional[int] = Field(default=0, description="Number of items to skip")
+    limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
+
+
 class PropertyOrder(BaseModel):
     key: str = Field(description="The property key to order by")
     direction: Ordering = Field(description="The direction to order (ASC or DESC)")
@@ -250,6 +264,13 @@ class EntityOrder(BaseModel):
     created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
     category: Optional[Ordering] = Field(default=None, description="Order by entity kind/type")
     id: Optional[Ordering] = Field(default=None, description="Order by entity ID")
+    property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value (requires 'has_property' filter)")
+
+
+class StructureOrder(BaseModel):
+    created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
+    category: Optional[Ordering] = Field(default=None, description="Order by structure kind/type")
+    id: Optional[Ordering] = Field(default=None, description="Order by structure ID")
     property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value (requires 'has_property' filter)")
 
 

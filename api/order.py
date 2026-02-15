@@ -19,6 +19,11 @@ class EntityOrder:
     """Ordering options for entity queries."""
 
 
+@kante.pydantic_input(input_models.StructureOrder, all_fields=True, description="Ordering options for structure queries")
+class StructureOrder:
+    """Ordering options for structure queries."""
+
+
 @strawberry_django.order_type(models.Graph)
 class GraphOrder:
     name: auto
@@ -28,6 +33,12 @@ class GraphOrder:
 @strawberry_django.order_type(models.Category)
 class CategoryOrder:
     label: auto
+    id: auto
+
+
+@strawberry_django.order_type(models.CategoryTag)
+class CategoryTagOrder:
+    name: auto
     id: auto
 
 
@@ -82,6 +93,12 @@ class RelationCategoryOrder(EdgeCategoryOrder):
     id: auto
 
 
+@strawberry_django.order_type(models.StructureRelationCategory)
+class StructureRelationCategoryOrder(EdgeCategoryOrder):
+    label: auto
+    id: auto
+
+
 @strawberry_django.order_type(models.MeasurementCategory)
 class MeasurementCategoryOrder(CategoryOrder):
     label: auto
@@ -109,4 +126,64 @@ class GraphNodesQueryOrder:
 @strawberry_django.order_type(models.GraphPairsQuery)
 class GraphPairsQueryOrder:
     label: auto
+    id: auto
+
+
+@strawberry_django.order_type(models.GraphPathQuery)
+class GraphPathQueryOrder:
+    label: auto
+    id: auto
+
+
+@strawberry_django.order_type(models.NodeQuery)
+class NodeQueryOrder:
+    label: auto
+    id: auto
+
+
+@strawberry_django.order_type(models.NodeTableQuery)
+class NodeTableQueryOrder:
+    label: auto
+    id: auto
+
+
+@strawberry_django.order_type(models.NodePairsQuery)
+class NodePairsQueryOrder:
+    label: auto
+    id: auto
+
+
+@strawberry_django.order_type(models.NodePathQuery)
+class NodePathQueryOrder:
+    label: auto
+    id: auto
+
+
+@strawberry_django.order_type(models.EdgeQuery)
+class EdgeQueryOrder:
+    label: auto
+    id: auto
+
+
+@strawberry_django.order_type(models.EdgeTableQuery)
+class EdgeTableQueryOrder:
+    label: auto
+    id: auto
+
+
+@strawberry_django.order_type(models.EdgePairsQuery)
+class EdgePairsQueryOrder:
+    label: auto
+    id: auto
+
+
+@strawberry_django.order_type(models.EdgePathQuery)
+class EdgePathQueryOrder:
+    label: auto
+    id: auto
+
+
+@strawberry_django.order_type(models.ScatterPlot)
+class ScatterPlotOrder:
+    name: auto
     id: auto

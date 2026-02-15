@@ -145,7 +145,7 @@ class Graph:
         return cast(models.Graph, self).pinned_by.filter(id=info.context.user.id).exists()
 
 
-@kante.django_type(models.CategoryTag, filters=filters.CategoryTagFilter, pagination=True, ordering=order.EntityOrder, description="Base interface for graph nodes representing entities")
+@kante.django_type(models.CategoryTag, filters=filters.CategoryTagFilter, pagination=True, ordering=order.CategoryTagOrder, description="Base interface for graph nodes representing entities")
 class CategoryTag:
     id: strawberry.ID = strawberry.field(description="Database ID of the category tag")
     name: str = strawberry.field(description="Name of the category tag")
@@ -237,7 +237,7 @@ class GraphTableQuery(GraphQuery, Plottable):
     builder_args: Optional[BuilderArgs] = strawberry.field(default=None, description="If this graph was built using a builder function, the arguments used for building it, which can be used for debugging or rebuilding the graph with different parameters")
 
 
-@kante.django_type(models.GraphPairsQuery, filters=filters.GraphPairsQueryFilter, ordering=order.GraphPairsQueryOrder, description="Base interface for graph schemas")
+@kante.django_type(models.GraphPairsQuery, filters=filters.GraphPairsQueryFilter, pagination=True, ordering=order.GraphPairsQueryOrder, description="Base interface for graph schemas")
 class GraphPairsQuery(GraphQuery):
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
     source_category: "NodeCategory" = strawberry.field(description="The source node category/schema to query")
@@ -245,7 +245,7 @@ class GraphPairsQuery(GraphQuery):
     edge_category: Optional["EdgeCategory"] = strawberry.field(default=None, description="Optional edge category/schema to filter pairs by")
 
 
-@kante.django_type(models.GraphPathQuery, description="Base interface for graph schemas")
+@kante.django_type(models.GraphPathQuery, filters=filters.GraphPathQueryFilter, pagination=True, ordering=order.GraphPathQueryOrder, description="Base interface for graph schemas")
 class GraphPathQuery(GraphQuery):
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
 
@@ -368,7 +368,7 @@ class RelationCategory(EdgeCategory, Category):
     pass
 
 
-@kante.django_type(models.StructureRelationCategory, filters=filters.RelationCategoryFilter, pagination=True, ordering=order.RelationCategoryOrder, description="A relation category/schema definition")
+@kante.django_type(models.StructureRelationCategory, filters=filters.StructureRelationCategoryFilter, pagination=True, ordering=order.StructureRelationCategoryOrder, description="A relation category/schema definition")
 class StructureRelationCategory(EdgeCategory, Category):
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
     """A relation category/schema definition, which defines the type of a relation edge between entities. It can also include property definitions for the relation."""
@@ -400,7 +400,7 @@ class NodeQuery:
     relevant_for: List["NodeCategory"] = strawberry.field(default_factory=list, description="List of node categories for which this query is relevant")
 
 
-@kante.django_type(models.NodeTableQuery, description="Base interface for graph schemas")
+@kante.django_type(models.NodeTableQuery, filters=filters.NodeTableQueryFilter, pagination=True, ordering=order.NodeTableQueryOrder, description="Base interface for graph schemas")
 class NodeTableQuery(NodeQuery, Plottable):
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
     query: scalars.CypherLiteral = strawberry.field(description="The Cypher query to execute for this table query")
@@ -408,7 +408,7 @@ class NodeTableQuery(NodeQuery, Plottable):
     builder_args: Optional[BuilderArgs] = strawberry.field(default=None, description="If this graph was built using a builder function, the arguments used for building it, which can be used for debugging or rebuilding the graph with different parameters")
 
 
-@kante.django_type(models.NodePairsQuery, description="Base interface for graph schemas")
+@kante.django_type(models.NodePairsQuery, filters=filters.NodePairsQueryFilter, pagination=True, ordering=order.NodePairsQueryOrder, description="Base interface for graph schemas")
 class NodePairsQuery(NodeQuery):
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
     source_category: "NodeCategory" = strawberry.field(description="The source node category/schema to query")
@@ -416,7 +416,7 @@ class NodePairsQuery(NodeQuery):
     edge_category: Optional["EdgeCategory"] = strawberry.field(default=None, description="Optional edge category/schema to filter pairs by")
 
 
-@kante.django_type(models.NodePathQuery, description="Base interface for graph schemas")
+@kante.django_type(models.NodePathQuery, filters=filters.NodePathQueryFilter, pagination=True, ordering=order.NodePathQueryOrder, description="Base interface for graph schemas")
 class NodePathQuery(NodeQuery):
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
 
@@ -430,7 +430,7 @@ class EdgeQuery:
     relevant_for: List["NodeCategory"] = strawberry.field(default_factory=list, description="List of node categories for which this query is relevant")
 
 
-@kante.django_type(models.EdgeTableQuery, description="Base interface for graph schemas")
+@kante.django_type(models.EdgeTableQuery, filters=filters.EdgeTableQueryFilter, pagination=True, ordering=order.EdgeTableQueryOrder, description="Base interface for graph schemas")
 class EdgeTableQuery(EdgeQuery, Plottable):
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
     query: scalars.CypherLiteral = strawberry.field(description="The Cypher query to execute for this table query")
@@ -438,7 +438,7 @@ class EdgeTableQuery(EdgeQuery, Plottable):
     builder_args: Optional[BuilderArgs] = strawberry.field(default=None, description="If this graph was built using a builder function, the arguments used for building it, which can be used for debugging or rebuilding the graph with different parameters")
 
 
-@kante.django_type(models.EdgePairsQuery, description="Base interface for graph schemas")
+@kante.django_type(models.EdgePairsQuery, filters=filters.EdgePairsQueryFilter, pagination=True, ordering=order.EdgePairsQueryOrder, description="Base interface for graph schemas")
 class EdgePairsQuery(EdgeQuery):
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
     source_category: "NodeCategory" = strawberry.field(description="The source node category/schema to query")
@@ -446,7 +446,7 @@ class EdgePairsQuery(EdgeQuery):
     edge_category: Optional["EdgeCategory"] = strawberry.field(default=None, description="Optional edge category/schema to filter pairs by")
 
 
-@kante.django_type(models.EdgePathQuery, description="Base interface for graph schemas")
+@kante.django_type(models.EdgePathQuery, filters=filters.EdgePathQueryFilter, pagination=True, ordering=order.EdgePathQueryOrder, description="Base interface for graph schemas")
 class EdgePathQuery(EdgeQuery):
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
 
@@ -456,7 +456,7 @@ class EdgePathQuery(EdgeQuery):
 # ===========================================
 
 
-@kante.django_type(models.ScatterPlot, description="Result of linking a structure to an entity")
+@kante.django_type(models.ScatterPlot, filters=filters.ScatterPlotFilter, pagination=True, ordering=order.ScatterPlotOrder, description="Result of linking a structure to an entity")
 class ScatterPlot:
     label: str = strawberry.field(description="Label/name of the scatter plot definition")
     description: Optional[str] = strawberry.field(default=None, description="Description of the scatter plot definition")

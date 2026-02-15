@@ -6,8 +6,10 @@ from typing import Optional, List
 from kante.types import Info
 import strawberry
 
-from api import types, context
+from api import types, context, filters, order, pagination
+from core import models
 from graph_engine import scalars
+from graph_engine import input_models
 
 
 def structure_by_identifier(
@@ -64,6 +66,36 @@ def structure(
     response = controller.get_node(graph=graph, local_id=local_id, info=info)
 
     return types.Structure(_value=response)
+
+
+def structures(
+    info: Info,
+    structure_category_id: strawberry.ID,
+    filters: filters.StructureFilter | None = None,
+    ordering: list[order.StructureOrder] | None = None,
+    pagination: pagination.StructurePaginationInput | None = None,
+) -> List[types.Structure]:
+    """Fetch structures for a given structure category with optional filters, ordering, and pagination."""
+    controller = context.get_controller()
+
+    structure_category = models.StructureCategory.objects.filter(id=structure_category_id).first()
+    if structure_category is None:
+        raise ValueError(f"Structure category {structure_category_id} not found")
+
+    filter_model = filters.to_pydantic() if filters else input_models.StructureFilters()
+    filter_model.category = structure_category.identifier
+    ordering_models = [order.to_pydantic() for order in ordering] if ordering else []
+    pagination_model = pagination.to_pydantic() if pagination else input_models.StructurePagination()
+
+    result = controller.list_structures(
+        graph=structure_category.graph,
+        filters=filter_model,
+        pagination=pagination_model,
+        ordering=ordering_models,
+        info=info,
+    )
+
+    return [types.Structure(_value=structure) for structure in result]
 
 
 def informing_structures(

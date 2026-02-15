@@ -2136,6 +2136,115 @@ class GraphController:
         limit = pagination.limit if pagination.limit is not None else 200
         return f"SKIP {offset} LIMIT {limit}"
 
+    def _build_structure_where_clause(self, filters: input_models.StructureFilters | None, variable: str = "s") -> tuple[str, dict[str, Any]]:
+        if not filters:
+            return "", {}
+
+        clauses: list[str] = []
+        params: dict[str, Any] = {}
+
+        if filters.ids:
+            local_ids: list[int] = []
+            for gid in filters.ids:
+                local_part = str(gid).split(":")[-1]
+                try:
+                    local_ids.append(int(local_part))
+                except ValueError:
+                    continue
+            if local_ids:
+                clauses.append(f"id({variable}) IN $ids")
+                params["ids"] = local_ids
+
+        if filters.category:
+            clauses.append(f"{variable}.identifier = $category")
+            params["category"] = filters.category
+
+        if filters.has_property:
+            key = self._validate_property_key(filters.has_property)
+            clauses.append(f"exists({variable}.{key})")
+
+        if filters.search:
+            clauses.append(f"toString(properties({variable})) CONTAINS $search")
+            params["search"] = filters.search
+
+        if filters.matches:
+            for index, match in enumerate(filters.matches):
+                key = self._validate_property_key(match.key)
+                operator = (str(match.operator).split(".")[-1] if match.operator is not None else "EQUALS").upper()
+                value_param = f"match_{index}_value"
+                field_expr = f"{variable}.{key}"
+
+                coerced_value = match.value
+                if isinstance(coerced_value, str):
+                    lowered = coerced_value.lower()
+                    if lowered in {"true", "false"}:
+                        coerced_value = lowered == "true"
+                    else:
+                        try:
+                            if "." in coerced_value:
+                                coerced_value = float(coerced_value)
+                            else:
+                                coerced_value = int(coerced_value)
+                        except ValueError:
+                            pass
+
+                params[value_param] = coerced_value
+
+                if operator in {"EQUALS", "EQ", "="}:
+                    clauses.append(f"{field_expr} = ${value_param}")
+                elif operator in {"NOT_EQUALS", "NEQ", "!="}:
+                    clauses.append(f"{field_expr} <> ${value_param}")
+                elif operator in {"GREATER_THAN", "GT", ">"}:
+                    clauses.append(f"{field_expr} > ${value_param}")
+                elif operator in {"LESS_THAN", "LT", "<"}:
+                    clauses.append(f"{field_expr} < ${value_param}")
+                elif operator in {"GREATER_OR_EQUAL", "GREATER_THAN_OR_EQUAL", "GTE", ">="}:
+                    clauses.append(f"{field_expr} >= ${value_param}")
+                elif operator in {"LESS_OR_EQUAL", "LESS_THAN_OR_EQUAL", "LTE", "<="}:
+                    clauses.append(f"{field_expr} <= ${value_param}")
+                elif operator == "CONTAINS":
+                    clauses.append(f"{field_expr} CONTAINS ${value_param}")
+                elif operator == "STARTS_WITH":
+                    clauses.append(f"{field_expr} STARTS WITH ${value_param}")
+                elif operator == "ENDS_WITH":
+                    clauses.append(f"{field_expr} ENDS WITH ${value_param}")
+                elif operator == "IN":
+                    clauses.append(f"{field_expr} IN ${value_param}")
+                elif operator == "NOT_IN":
+                    clauses.append(f"NOT {field_expr} IN ${value_param}")
+                else:
+                    raise ValueError(f"Unsupported filter operator '{operator}'.")
+
+        return ("WHERE " + " AND ".join(clauses)) if clauses else "", params
+
+    def _build_structure_order_clause(self, order: list[input_models.StructureOrder] | None, variable: str = "s") -> str:
+        if not order:
+            return ""
+
+        clauses = []
+        for o in order:
+            if o.property is not None:
+                key = self._validate_property_key(o.property.key)
+                direction = (o.property.direction.value if hasattr(o.property.direction, "value") else str(o.property.direction)).upper()
+                clauses.append(f"{variable}.{key} {direction}")
+            elif o.created_at is not None:
+                direction = (o.created_at.value if hasattr(o.created_at, "value") else str(o.created_at)).upper()
+                clauses.append(f"{variable}.created_at {direction}")
+            elif o.id is not None:
+                direction = (o.id.value if hasattr(o.id, "value") else str(o.id)).upper()
+                clauses.append(f"id({variable}) {direction}")
+        if not clauses:
+            return ""
+        return f"ORDER BY {', '.join(clauses)}"
+
+    def _build_structure_pagination_clause(self, pagination: input_models.StructurePagination | None) -> str:
+        if not pagination:
+            return "SKIP 0 LIMIT 200"
+
+        offset = pagination.offset if pagination.offset is not None else 0
+        limit = pagination.limit if pagination.limit is not None else 200
+        return f"SKIP {offset} LIMIT {limit}"
+
     def list_entities(self, graph: models.Graph, filters: input_models.EntityFilters | None = None, pagination: input_models.EntityPagination | None = None, ordering: list[input_models.EntityOrder] | None = None, info: Info | None = None) -> List[RetrievedEntity]:
         self._ensure_query_access(graph, info)
 
@@ -2160,6 +2269,27 @@ class GraphController:
         result = self.engine.execute(graph, query, params)
 
         return [RetrievedEntity.from_node(self, row["e"], graph_name=graph.age_name) for row in result]
+
+    def list_structures(self, graph: models.Graph, filters: input_models.StructureFilters | None = None, pagination: input_models.StructurePagination | None = None, ordering: list[input_models.StructureOrder] | None = None, info: Info | None = None) -> List[RetrievedStructure]:
+        self._ensure_query_access(graph, info)
+
+        where_clause, filter_params = self._build_structure_where_clause(filters, variable="s")
+        order_clause = self._build_structure_order_clause(ordering, variable="s")
+        pagination_clause = self._build_structure_pagination_clause(pagination)
+
+        query = f"""
+            MATCH (s:{vocab.Structure})
+            WHERE true
+            {("AND " + where_clause[len("WHERE ") :]) if where_clause else ""}
+            RETURN s
+            {order_clause}
+            {pagination_clause}
+        """
+
+        params: dict[str, Any] = {**filter_params}
+        result = self.engine.execute(graph, query, params)
+
+        return [RetrievedStructure.from_node(self, row["s"], graph_name=graph.age_name) for row in result]
 
     def get_assertion_for_relation(self, graph: models.Graph, edge_id: scalars.LocalID, info: Info | None = None) -> Optional[RetrievedAssertion]:
         """

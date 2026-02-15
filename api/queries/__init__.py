@@ -5,7 +5,7 @@ Contains all GraphQL query resolvers for the graph engine.
 """
 
 from .entity import entity, entities_informed_by, entities
-from .structure import structure, structure_by_identifier, informing_structures
+from .structure import structure, structures, structure_by_identifier, informing_structures
 from .metric import metrics_for_structure, metric
 from .assertion import assertion_for_entity
 from .insights.graph_nodes import render_graph_nodes
@@ -21,6 +21,7 @@ __all__ = [
     "entities_informed_by",
     # Structure queries
     "structure",
+    "structures",
     "structure_by_identifier",
     "informing_structures",
     # Metric queries
