@@ -1561,6 +1561,109 @@ class GraphController:
 
         return EntityCreationResult(ref_id=payload.ref_id, db_id=f"{payload.source_id}->{payload.target_id}", graph_id=edge_id)
 
+    def delete_relation(
+        self,
+        graph: models.Graph,
+        relation_id: scalars.LocalID,
+        info: Info,
+    ) -> scalars.LocalID:
+        """Hard delete a relation edge and remove its shadow link if it becomes orphaned."""
+        result = self.engine.execute(
+            graph,
+            """
+            MATCH ()-[r]->() WHERE id(r) = $rid
+            RETURN r.__shadow_link_id as sl_id
+            """,
+            {"rid": relation_id},
+        )
+        if not result:
+            raise ValueError(f"Relation not found with edge ID {relation_id}")
+
+        shadow_link_id = result[0].get("sl_id")
+
+        self.engine.execute(
+            graph,
+            """
+            MATCH ()-[r]->() WHERE id(r) = $rid
+            DELETE r
+            """,
+            {"rid": relation_id},
+        )
+
+        if shadow_link_id is not None:
+            self.engine.execute(
+                graph,
+                f"""
+                MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
+                OPTIONAL MATCH ()-[r]->() WHERE r.__shadow_link_id = $sl_id
+                WITH sl, count(r) as relation_count
+                WHERE relation_count = 0
+                DETACH DELETE sl
+                """,
+                {"sl_id": shadow_link_id},
+            )
+
+        return relation_id
+
+    def archive_relation(
+        self,
+        graph: models.Graph,
+        relation_id: scalars.LocalID,
+        info: Info,
+    ) -> scalars.LocalID:
+        """Soft archive a relation edge and its shadow link provenance chain."""
+        result = self.engine.execute(
+            graph,
+            """
+            MATCH ()-[r]->() WHERE id(r) = $rid
+            RETURN r.__shadow_link_id as sl_id
+            """,
+            {"rid": relation_id},
+        )
+        if not result:
+            raise ValueError(f"Relation not found with edge ID {relation_id}")
+
+        shadow_link_id = result[0].get("sl_id")
+        archived_at = int(time.time() * 1000)
+
+        self.engine.execute(
+            graph,
+            """
+            MATCH ()-[r]->() WHERE id(r) = $rid
+            SET r.__lifecycle_state = $status,
+                r.__archived_at = $archived_at
+            """,
+            {
+                "rid": relation_id,
+                "status": "archived",
+                "archived_at": archived_at,
+            },
+        )
+
+        if shadow_link_id is not None:
+            assertion_id = self._create_provenance_node(graph, self._provenance_from_info(info))
+            self.engine.execute(
+                graph,
+                f"""
+                MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
+                MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
+                CREATE (lc:LifeCycleAssertion {{status: $status, archived_at: $archived_at, timestamp: $timestamp}})
+                CREATE (a)-[:{vocab.ASSERTED}]->(lc)
+                CREATE (lc)-[:{vocab.INFORMS}]->(sl)
+                SET sl.__lifecycle_state = $status,
+                    sl.__archived_at = $archived_at
+                """,
+                {
+                    "aid": assertion_id,
+                    "sl_id": shadow_link_id,
+                    "status": "archived",
+                    "archived_at": archived_at,
+                    "timestamp": archived_at,
+                },
+            )
+
+        return relation_id
+
     # ===================================================================
     # Relation Query Methods
     # ===================================================================
