@@ -528,6 +528,13 @@ class CreateStructureInput:
     pass
 
 
+@pydantic.input(model=input_models.EnsureStructureInput, all_fields=True, description="Input for creating a new entity category/type in the graph schema")
+class EnsureStructureInput:
+    """Input for creating a new structure."""
+
+    pass
+
+
 @pydantic.input(model=input_models.UpdateStructureInput, all_fields=True, description="Input for updating an existing structure")
 class UpdateStructureInput:
     """Input for updating an existing structure."""

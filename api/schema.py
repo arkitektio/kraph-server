@@ -163,6 +163,10 @@ class Mutation:
         description="Create a new structure in the graph",
         resolver=mutations.create_structure,
     )
+    ensure_structure = kante.django_mutation(
+        description="Ensure a structure exists in the graph, creating it if it does not exist",
+        resolver=mutations.ensure_structure,
+    )
     delete_structure = kante.django_mutation(
         description="Delete a structure from the graph",
         resolver=mutations.delete_structure,

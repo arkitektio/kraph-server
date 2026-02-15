@@ -43,6 +43,39 @@ def create_structure(
     return types.Structure(_value=response)
 
 
+def ensure_structure(
+    info: Info,
+    input: inputs.EnsureStructureInput,
+) -> types.Structure:
+    """
+    Create a new structure (or return existing if already exists).
+
+    Structures are idempotent - creating the same structure twice
+    returns the existing one.
+
+    Args:
+        info: Strawberry Info context
+        input: inputs.CreateStructureInput (pydantic-validated)
+
+    Returns:
+        types.Structure object
+    """
+    # Convert strawberry-pydantic input to pydantic model
+    payload = input.to_pydantic()
+
+    controller = context.get_controller()
+
+    structure_category = models.StructureCategory.objects.get(id=payload.category)  # Validate structure category exists
+    context.validate_graph_access(info, structure_category.graph)
+
+    response = controller.create_structure(
+        structure_category=structure_category,
+        payload=payload,
+    )
+
+    return types.Structure(_value=response)
+
+
 def delete_structure(
     info: Info,
     input: inputs.DeleteStructureInput,

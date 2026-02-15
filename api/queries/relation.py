@@ -1,6 +1,6 @@
 """Relation query resolvers."""
 
-from typing import List, Optional
+from typing import List
 
 import strawberry
 from kante.types import Info
@@ -61,7 +61,7 @@ def _append_match_conditions(alias: str, where_clauses: list[str], params: dict,
             where_clauses.append(f"NOT {alias}[$${key_param}] IN $${value_param}".replace("$$", "$"))
 
 
-def relation(info: Info, id: scalars.GraphID) -> Optional[types.Relation]:
+def relation(info: Info, id: scalars.GraphID) -> types.Relation:
     """Fetch a specific relation by composite graph ID."""
     controller = context.get_controller()
 
@@ -79,7 +79,7 @@ def relation(info: Info, id: scalars.GraphID) -> Optional[types.Relation]:
     )
 
     if not result:
-        return None
+        raise ValueError(f"Relation with ID {id} not found")
 
     edge = _to_retrieved_edge(str(graph.age_name), result[0])
     return types.Relation(_value=edge)

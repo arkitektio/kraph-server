@@ -61,7 +61,7 @@ def _append_match_conditions(alias: str, where_clauses: list[str], params: dict,
             where_clauses.append(f"NOT {alias}[$${key_param}] IN $${value_param}".replace("$$", "$"))
 
 
-def structure_relation(info: Info, id: scalars.GraphID) -> Optional[types.StructureRelation]:
+def structure_relation(info: Info, id: scalars.GraphID) -> types.StructureRelation:
     """Fetch a specific structure relation by composite graph ID."""
     controller = context.get_controller()
 
@@ -79,7 +79,7 @@ def structure_relation(info: Info, id: scalars.GraphID) -> Optional[types.Struct
     )
 
     if not result:
-        return None
+        raise ValueError(f"Structure relation with ID {id} not found")
 
     edge = _to_retrieved_edge(str(graph.age_name), result[0])
     return types.StructureRelation(_value=edge)

@@ -1,6 +1,6 @@
 """Measurement query resolvers."""
 
-from typing import List, Optional
+from typing import List
 
 import strawberry
 from kante.types import Info
@@ -61,7 +61,7 @@ def _append_match_conditions(alias: str, where_clauses: list[str], params: dict,
             where_clauses.append(f"NOT {alias}[$${key_param}] IN $${value_param}".replace("$$", "$"))
 
 
-def measurement(info: Info, id: scalars.GraphID) -> Optional[types.Measurement]:
+def measurement(info: Info, id: scalars.GraphID) -> types.Measurement:
     """Fetch a specific measurement by composite graph ID."""
     controller = context.get_controller()
 
@@ -79,7 +79,7 @@ def measurement(info: Info, id: scalars.GraphID) -> Optional[types.Measurement]:
     )
 
     if not result:
-        return None
+        raise ValueError(f"Measurement with ID {id} not found")
 
     edge = _to_retrieved_edge(str(graph.age_name), result[0])
     return types.Measurement(_value=edge)

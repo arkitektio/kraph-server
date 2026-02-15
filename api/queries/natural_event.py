@@ -1,6 +1,6 @@
 """Natural event query resolvers."""
 
-from typing import List, Optional
+from typing import List
 
 import strawberry
 from kante.types import Info
@@ -10,7 +10,7 @@ from core import models
 from graph_engine import input_models, retrieved, scalars
 
 
-def natural_event(info: Info, id: scalars.GraphID) -> Optional[types.NaturalEvent]:
+def natural_event(info: Info, id: scalars.GraphID) -> types.NaturalEvent:
     """Fetch a specific natural event by composite graph ID."""
     controller = context.get_controller()
 
@@ -19,6 +19,8 @@ def natural_event(info: Info, id: scalars.GraphID) -> Optional[types.NaturalEven
 
     graph = context.get_accessible_graph(info, graph_id)
     response = controller.get_node(graph=graph, local_id=local_id, info=info)
+    if response is None:
+        raise ValueError(f"Natural event with ID {id} not found")
 
     return types.NaturalEvent(_value=response)
 

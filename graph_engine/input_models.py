@@ -598,6 +598,7 @@ class BuilderArgsInput(BaseModel):
 class PropertyDefinitionInput(BaseModel):
     """Input for a property definition on a node or relation."""
 
+    label: Optional[str] = Field(default=None, description="Optional human-readable label for this property (defaults to 'key' if not provided)")
     key: str = Field(..., description="Property key/name")
     value_kind: enums.ValueKind = strawberry.field(description="What type of value, (taking from the universe) 'QUANTITATIVE', 'QUALITATIVE', 'BOOLEAN'")
     unit: Optional[str] = Field(default=None, description="Unit of measurement")
@@ -1059,13 +1060,21 @@ class GraphQueryInput(BaseModel):
     name: Optional[str] = Field(default=None, description="Human-readable name for this graph query (defaults to 'key' if not provided)")
     description: Optional[str] = Field(default=None, description="Description of this graph query")
     query: scalars.CypherLiteral = Field(..., description="The Cypher query string that defines this graph query")
-    kind: str = Field(default="TABLE", description="The kind/type of this graph query")
+
+
+class UpdateGraphQueryInput(BaseModel):
+    """Input for updating an existing graph query definition."""
+
+    id: strawberry.ID = Field(..., description="The ID of the graph query to update")
+    key: Optional[str] = Field(default=None, description="Unique key for this graph query, used for referencing in the UI")
+    name: Optional[str] = Field(default=None, description="Human-readable name for this graph query (defaults to 'key' if not provided)")
+    description: Optional[str] = Field(default=None, description="Description of this graph query")
+    query: Optional[scalars.CypherLiteral] = Field(default=None, description="The Cypher query string that defines this graph query")
 
 
 class GraphTableQueryInput(GraphQueryInput):
     """Input for a graph table query definition."""
 
-    key: str = Field(..., description="Unique key for this graph query, used for referencing in the UI")
     name: Optional[str] = Field(default=None, description="Human-readable name for this graph query (defaults to 'key' if not provided)")
     description: Optional[str] = Field(default=None, description="Description of this graph query")
 
@@ -1073,6 +1082,7 @@ class GraphTableQueryInput(GraphQueryInput):
 class CreateGraphTableQueryInput(GraphTableQueryInput):
     """Input for creating a graph table query definition."""
 
+    key: str = Field(..., description="Unique key for this graph query, used for referencing in the UI")
     graph: strawberry.ID = Field(..., description="The graph id this table query will belong to")
     column_input: List[ColumnInput] = Field(default_factory=list, description="Definitions for the columns returned by this graph query")
     cypher: scalars.CypherLiteral = Field(..., description="The Cypher query string that defines this graph query. Can include parameter placeholders (e.g. $param) for dynamic filtering")
@@ -1086,9 +1096,12 @@ class CreateGraphTableQueryThroughBuilderInput(GraphTableQueryInput):
     column_input: List[ColumnInput] = Field(default_factory=list, description="Definitions for the columns returned by this graph query")
 
 
-class UpdateGraphTableQueryInput(GraphTableQueryInput):
+class UpdateGraphTableQueryInput(UpdateGraphQueryInput):
     """Input for updating an existing graph table query definition."""
 
+    key: Optional[str] = Field(default=None, description="Unique key for this graph query, used for referencing in the UI")
+    name: Optional[str] = Field(default=None, description="Human-readable name for this graph query (defaults to 'key' if not provided)")
+    description: Optional[str] = Field(default=None, description="Description of this graph query")
     id: strawberry.ID = Field(..., description="The ID of the graph query to update")
     column_input: Optional[List[ColumnInput]] = Field(default=None, description="Definitions for the columns returned by this graph query")
     cypher: Optional[scalars.CypherLiteral] = Field(default=None, description="The Cypher query string that defines this graph query. Can include parameter placeholders (e.g. $param) for dynamic filtering")
@@ -1572,6 +1585,13 @@ class CreateStructureInput(StructureInput):
 
     category: GraphID = Field(..., description="The ID of the structure category/type to create")
     graph: GraphID = Field(..., description="The graph id this structure will belong to")
+
+
+class EnsureStructureInput(StructureInput):
+    """Input for creating a new structure instance."""
+
+    identifier: scalars.StructureIdentifier = Field(..., description="The unique identifier for this structure")
+    graph: strawberry.ID = Field(..., description="The graph id this structure will belong to")
 
 
 class UpdateStructureInput(StructureInput):
