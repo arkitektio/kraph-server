@@ -26,9 +26,9 @@ def _format_cypher_value(value: object) -> str:
         return "null"
 
     text = str(value)
-    if (text.startswith("\"") and text.endswith("\"")) or (text.startswith("'") and text.endswith("'")):
+    if (text.startswith('"') and text.endswith('"')) or (text.startswith("'") and text.endswith("'")):
         return text
-    escaped = text.replace("\\", "\\\\").replace("\"", "\\\"")
+    escaped = text.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
 
 

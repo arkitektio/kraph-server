@@ -1316,6 +1316,8 @@ class GraphPairsRender:
 @strawberry.type(description="Result of linking a structure to an entity")
 class GraphTableRender:
     _value: strawberry.Private[retrieved.RetrievedGraphTableRender]
+    rows: List[AnyScalar] = strawberry.field(description="Rows of the rendered table")
+    query: GraphTableQuery = strawberry.field(description="The query used to generate this table")
 
 
 @strawberry.type(description="Result of linking a structure to an entity")
