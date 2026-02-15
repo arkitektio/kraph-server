@@ -35,4 +35,5 @@ __all__ = [
     "archive_metric",
     # Relation mutations
     "create_relation",
+    "create_graph_table_query_through_builder",
 ]

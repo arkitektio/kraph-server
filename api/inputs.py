@@ -612,6 +612,41 @@ class GraphTableQueryInput:
     pass
 
 
+@pydantic.input(model=input_models.ColumnInput, all_fields=True, description="Input for a graph table query column")
+class ColumnInput:
+    pass
+
+
+@pydantic.input(model=input_models.MatchPathInput, all_fields=True, description="Input for a graph match path")
+class MatchPathInput:
+    pass
+
+
+@pydantic.input(model=input_models.WhereClauseInput, all_fields=True, description="Input for a where clause in a graph table query builder")
+class WhereClauseInput:
+    pass
+
+
+@pydantic.input(model=input_models.ReturnStatementInput, all_fields=True, description="Input for a return statement in a graph table query builder")
+class ReturnStatementInput:
+    pass
+
+
+@pydantic.input(model=input_models.BuilderArgsInput, all_fields=True, description="Builder arguments for generating a graph table query")
+class BuilderArgsInput:
+    pass
+
+
+@pydantic.input(model=input_models.CreateGraphTableQueryThroughBuilderInput, all_fields=True, description="Input for creating a graph table query through builder arguments")
+class CreateGraphTableQueryThroughBuilderInput:
+    pass
+
+
+@pydantic.input(model=input_models.BuildGraphTableQueryInput, all_fields=True, description="Input for building a graph table query from builder arguments")
+class BuildGraphTableQueryInput:
+    pass
+
+
 @pydantic.input(model=input_models.ScatterPlotInput, all_fields=True, description="Input for creating a new graph from a schema definition")
 class ScatterPlotInput:
     pass
