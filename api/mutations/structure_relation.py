@@ -11,7 +11,7 @@ from core import models
 from graph_engine import scalars
 
 
-def create_structure_relation(info: Info, input: inputs.CreateRelationInput) -> types.StructureRelation:
+def create_structure_relation(info: Info, input: inputs.CreateStructureRelationInput) -> types.StructureRelation:
     payload = input.to_pydantic()
     controller = context.get_controller()
 
@@ -37,7 +37,7 @@ def create_structure_relation(info: Info, input: inputs.CreateRelationInput) -> 
     return types.StructureRelation(_value=created)
 
 
-def update_structure_relation(info: Info, input: inputs.UpdateRelationInput) -> types.StructureRelation:
+def update_structure_relation(info: Info, input: inputs.UpdateStructureRelationInput) -> types.StructureRelation:
     model = input.to_pydantic()
     controller = context.get_controller()
 
@@ -62,7 +62,7 @@ def update_structure_relation(info: Info, input: inputs.UpdateRelationInput) -> 
     return types.StructureRelation(_value=updated)
 
 
-def delete_structure_relation(info: Info, input: inputs.DeleteRelationInput) -> scalars.GraphID:
+def delete_structure_relation(info: Info, input: inputs.DeleteStructureRelationInput) -> scalars.GraphID:
     model = input.to_pydantic()
     controller = context.get_controller()
 
@@ -74,7 +74,7 @@ def delete_structure_relation(info: Info, input: inputs.DeleteRelationInput) -> 
     return model.id
 
 
-def archive_structure_relation(info: Info, input: inputs.ArchiveRelationInput) -> types.StructureRelation:
+def archive_structure_relation(info: Info, input: inputs.ArchiveStructureRelationInput) -> types.StructureRelation:
     model = input.to_pydantic()
     controller = context.get_controller()
 

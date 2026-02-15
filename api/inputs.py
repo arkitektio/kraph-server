@@ -585,6 +585,34 @@ class UpdateRelationInput:
     pass
 
 
+@pydantic.input(model=input_models.CreateStructureRelationInput, all_fields=True, description="Input for creating a new structure relation")
+class CreateStructureRelationInput:
+    """Input for creating a new structure relation."""
+
+    pass
+
+
+@pydantic.input(model=input_models.UpdateStructureRelationInput, all_fields=True, description="Input for updating an existing structure relation")
+class UpdateStructureRelationInput:
+    """Input for updating an existing structure relation."""
+
+    pass
+
+
+@pydantic.input(model=input_models.DeleteStructureRelationInput, all_fields=True, description="Input for deleting an existing structure relation")
+class DeleteStructureRelationInput:
+    """Input for deleting an existing structure relation."""
+
+    pass
+
+
+@pydantic.input(model=input_models.ArchiveStructureRelationInput, all_fields=True, description="Input for archiving an existing structure relation")
+class ArchiveStructureRelationInput:
+    """Input for archiving an existing structure relation."""
+
+    pass
+
+
 @pydantic.input(model=input_models.CreateMeasurementInput, all_fields=True, description="Input for creating a new measurement edge")
 class CreateMeasurementInput:
     """Input for creating a new measurement edge."""

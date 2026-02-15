@@ -274,6 +274,132 @@ class StructureOrder(BaseModel):
     property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value (requires 'has_property' filter)")
 
 
+class MetricFilters(BaseModel):
+    graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
+    category: Optional[str] = Field(default=None, description="Filter by metric category ID")
+    ids: Optional[List[scalars.GraphID]] = Field(default=None, description="Filter by specific metric IDs")
+    has_property: Optional[str] = Field(default=None, description="Filter metrics that have a specific property")
+    search: Optional[str] = Field(default=None, description="Full-text search over metric properties")
+    matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter metrics that match specific property conditions")
+
+
+class MetricPagination(BaseModel):
+    offset: Optional[int] = Field(default=0, description="Number of items to skip")
+    limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
+
+
+class MetricOrder(BaseModel):
+    created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
+    category: Optional[Ordering] = Field(default=None, description="Order by metric category")
+    id: Optional[Ordering] = Field(default=None, description="Order by metric ID")
+    property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value")
+
+
+class NaturalEventFilters(BaseModel):
+    graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
+    category: Optional[str] = Field(default=None, description="Filter by natural event category ID")
+    ids: Optional[List[scalars.GraphID]] = Field(default=None, description="Filter by specific natural event IDs")
+    has_property: Optional[str] = Field(default=None, description="Filter natural events that have a specific property")
+    search: Optional[str] = Field(default=None, description="Full-text search over natural event properties")
+    matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter natural events that match specific property conditions")
+
+
+class NaturalEventPagination(BaseModel):
+    offset: Optional[int] = Field(default=0, description="Number of items to skip")
+    limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
+
+
+class NaturalEventOrder(BaseModel):
+    created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
+    category: Optional[Ordering] = Field(default=None, description="Order by natural event category")
+    id: Optional[Ordering] = Field(default=None, description="Order by natural event ID")
+    property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value")
+
+
+class ProtocolEventFilters(BaseModel):
+    graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
+    category: Optional[str] = Field(default=None, description="Filter by protocol event category ID")
+    ids: Optional[List[scalars.GraphID]] = Field(default=None, description="Filter by specific protocol event IDs")
+    has_property: Optional[str] = Field(default=None, description="Filter protocol events that have a specific property")
+    search: Optional[str] = Field(default=None, description="Full-text search over protocol event properties")
+    matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter protocol events that match specific property conditions")
+
+
+class ProtocolEventPagination(BaseModel):
+    offset: Optional[int] = Field(default=0, description="Number of items to skip")
+    limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
+
+
+class ProtocolEventOrder(BaseModel):
+    created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
+    category: Optional[Ordering] = Field(default=None, description="Order by protocol event category")
+    id: Optional[Ordering] = Field(default=None, description="Order by protocol event ID")
+    property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value")
+
+
+class MeasurementFilters(BaseModel):
+    graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
+    category: Optional[str] = Field(default=None, description="Filter by measurement category ID")
+    ids: Optional[List[scalars.GraphID]] = Field(default=None, description="Filter by specific measurement IDs")
+    has_property: Optional[str] = Field(default=None, description="Filter measurements that have a specific property")
+    search: Optional[str] = Field(default=None, description="Full-text search over measurement properties")
+    matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter measurements that match specific property conditions")
+
+
+class MeasurementPagination(BaseModel):
+    offset: Optional[int] = Field(default=0, description="Number of items to skip")
+    limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
+
+
+class MeasurementOrder(BaseModel):
+    created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
+    category: Optional[Ordering] = Field(default=None, description="Order by measurement category")
+    id: Optional[Ordering] = Field(default=None, description="Order by measurement ID")
+    property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value")
+
+
+class StructureRelationFilters(BaseModel):
+    graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
+    category: Optional[str] = Field(default=None, description="Filter by structure relation category ID")
+    ids: Optional[List[scalars.GraphID]] = Field(default=None, description="Filter by specific structure relation IDs")
+    has_property: Optional[str] = Field(default=None, description="Filter structure relations that have a specific property")
+    search: Optional[str] = Field(default=None, description="Full-text search over structure relation properties")
+    matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter structure relations that match specific property conditions")
+
+
+class StructureRelationPagination(BaseModel):
+    offset: Optional[int] = Field(default=0, description="Number of items to skip")
+    limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
+
+
+class StructureRelationOrder(BaseModel):
+    created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
+    category: Optional[Ordering] = Field(default=None, description="Order by structure relation category")
+    id: Optional[Ordering] = Field(default=None, description="Order by structure relation ID")
+    property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value")
+
+
+class RelationFilters(BaseModel):
+    graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
+    category: Optional[str] = Field(default=None, description="Filter by relation category ID")
+    ids: Optional[List[scalars.GraphID]] = Field(default=None, description="Filter by specific relation IDs")
+    has_property: Optional[str] = Field(default=None, description="Filter relations that have a specific property")
+    search: Optional[str] = Field(default=None, description="Full-text search over relation properties")
+    matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter relations that match specific property conditions")
+
+
+class RelationPagination(BaseModel):
+    offset: Optional[int] = Field(default=0, description="Number of items to skip")
+    limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
+
+
+class RelationOrder(BaseModel):
+    created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
+    category: Optional[Ordering] = Field(default=None, description="Order by relation category")
+    id: Optional[Ordering] = Field(default=None, description="Order by relation ID")
+    property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value")
+
+
 # ==========================================
 # INPUT MODELS
 # ==========================================
@@ -1523,6 +1649,30 @@ class DeleteRelationInput(BaseModel):
     """Input for hard deleting an existing metric."""
 
     id: GraphID = Field(..., description="The ID of the metric to delete")
+
+
+class CreateStructureRelationInput(RelationInput):
+    """Input for creating a new structure relation edge."""
+
+    category: str = Field(..., description="The unique ID of the structure relation category")
+
+
+class UpdateStructureRelationInput(RelationInput):
+    """Input for updating an existing structure relation by replacing it with a new edge revision."""
+
+    id: GraphID = Field(..., description="The ID of the structure relation to update")
+
+
+class ArchiveStructureRelationInput(BaseModel):
+    """Input for archiving (soft deleting) an existing structure relation."""
+
+    id: GraphID = Field(..., description="The ID of the structure relation to archive")
+
+
+class DeleteStructureRelationInput(BaseModel):
+    """Input for hard deleting an existing structure relation."""
+
+    id: GraphID = Field(..., description="The ID of the structure relation to delete")
 
 
 class CreateMeasurementInput(RelationInput):

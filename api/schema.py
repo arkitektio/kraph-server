@@ -41,7 +41,18 @@ class Query:
     structure = kante.django_field(queries.structure, description="Get a structure by composite graph ID")
     structures = kante.django_field(queries.structures, description="List structures with optional filters, ordering, and pagination")
     structure_by_identifier = kante.django_field(queries.structure_by_identifier, description="Get a structure by graph, identifier and object")
+    natural_event = kante.django_field(queries.natural_event, description="Get a natural event by composite graph ID")
+    natural_events = kante.django_field(queries.natural_events, description="List natural events for a natural event category")
+    protocol_event = kante.django_field(queries.protocol_event, description="Get a protocol event by composite graph ID")
+    protocol_events = kante.django_field(queries.protocol_events, description="List protocol events for a protocol event category")
+    measurement = kante.django_field(queries.measurement, description="Get a measurement by composite graph ID")
+    measurements = kante.django_field(queries.measurements, description="List measurements for a measurement category")
+    relation = kante.django_field(queries.relation, description="Get a relation by composite graph ID")
+    relations = kante.django_field(queries.relations, description="List relations for a relation category")
+    structure_relation = kante.django_field(queries.structure_relation, description="Get a structure relation by composite graph ID")
+    structure_relations = kante.django_field(queries.structure_relations, description="List structure relations for a structure relation category")
     metric = kante.django_field(queries.metric, description="Get a metric by ID")
+    metrics = kante.django_field(queries.metrics, description="List metrics for a metric category")
 
     # =========================
     # Schema Section

@@ -37,6 +37,66 @@ class StructureFilter:
     matches: Optional[List[PropertyMatch]] = kante.field(default=None, description="Filter structures that match specific property conditions")
 
 
+@kante.pydantic_input(input_models.MetricFilters, description="Filter options for querying metrics")
+class MetricFilter:
+    """Filter options for metric queries."""
+
+    ids: Optional[List[scalars.GraphID]] = kante.field(default=None, description="Filter by specific metric IDs")
+    has_property: Optional[str] = kante.field(default=None, description="Filter metrics that have a specific property")
+    search: Optional[str] = kante.field(default=None, description="Full-text search over metric properties")
+    matches: Optional[List[PropertyMatch]] = kante.field(default=None, description="Filter metrics that match specific property conditions")
+
+
+@kante.pydantic_input(input_models.NaturalEventFilters, description="Filter options for querying natural events")
+class NaturalEventFilter:
+    """Filter options for natural event queries."""
+
+    ids: Optional[List[scalars.GraphID]] = kante.field(default=None, description="Filter by specific natural event IDs")
+    has_property: Optional[str] = kante.field(default=None, description="Filter natural events that have a specific property")
+    search: Optional[str] = kante.field(default=None, description="Full-text search over natural event properties")
+    matches: Optional[List[PropertyMatch]] = kante.field(default=None, description="Filter natural events that match specific property conditions")
+
+
+@kante.pydantic_input(input_models.ProtocolEventFilters, description="Filter options for querying protocol events")
+class ProtocolEventFilter:
+    """Filter options for protocol event queries."""
+
+    ids: Optional[List[scalars.GraphID]] = kante.field(default=None, description="Filter by specific protocol event IDs")
+    has_property: Optional[str] = kante.field(default=None, description="Filter protocol events that have a specific property")
+    search: Optional[str] = kante.field(default=None, description="Full-text search over protocol event properties")
+    matches: Optional[List[PropertyMatch]] = kante.field(default=None, description="Filter protocol events that match specific property conditions")
+
+
+@kante.pydantic_input(input_models.MeasurementFilters, description="Filter options for querying measurements")
+class MeasurementFilter:
+    """Filter options for measurement queries."""
+
+    ids: Optional[List[scalars.GraphID]] = kante.field(default=None, description="Filter by specific measurement IDs")
+    has_property: Optional[str] = kante.field(default=None, description="Filter measurements that have a specific property")
+    search: Optional[str] = kante.field(default=None, description="Full-text search over measurement properties")
+    matches: Optional[List[PropertyMatch]] = kante.field(default=None, description="Filter measurements that match specific property conditions")
+
+
+@kante.pydantic_input(input_models.StructureRelationFilters, description="Filter options for querying structure relations")
+class StructureRelationFilter:
+    """Filter options for structure relation queries."""
+
+    ids: Optional[List[scalars.GraphID]] = kante.field(default=None, description="Filter by specific structure relation IDs")
+    has_property: Optional[str] = kante.field(default=None, description="Filter structure relations that have a specific property")
+    search: Optional[str] = kante.field(default=None, description="Full-text search over structure relation properties")
+    matches: Optional[List[PropertyMatch]] = kante.field(default=None, description="Filter structure relations that match specific property conditions")
+
+
+@kante.pydantic_input(input_models.RelationFilters, description="Filter options for querying relations")
+class RelationFilter:
+    """Filter options for relation queries."""
+
+    ids: Optional[List[scalars.GraphID]] = kante.field(default=None, description="Filter by specific relation IDs")
+    has_property: Optional[str] = kante.field(default=None, description="Filter relations that have a specific property")
+    search: Optional[str] = kante.field(default=None, description="Full-text search over relation properties")
+    matches: Optional[List[PropertyMatch]] = kante.field(default=None, description="Filter relations that match specific property conditions")
+
+
 @kante.filter_type(models.Graph)
 class GraphFilter:
     id: strawberry.auto
@@ -91,7 +151,12 @@ class EntityCategoryFilter(CategoryFilter):
 
 @kante.filter_type(models.MetricCategory)
 class MetricCategoryFilter(CategoryFilter):
-    value_kind: enums.ValueKind
+    """Filter options for metric category queries."""
+
+    @kante.filter_field(description="Filter by list of IDs")
+    def value_kind(self, info: kante.Info, value: enums.ValueKind, prefix: str) -> Q:
+        """Filter metric categories by the kind of value they represent (e.g. numeric, categorical)."""
+        return Q(**{f"{prefix}__value_kind": value})
 
 
 @kante.filter_type(models.RelationCategory)

@@ -1,11 +1,10 @@
-"""
-Measurement query resolvers.
-"""
+"""Metric query resolvers."""
 
 from typing import List
+import strawberry
 from kante.types import Info
 
-from api import types, context
+from api import types, context, filters, order, pagination
 from graph_engine import scalars
 
 
@@ -32,6 +31,17 @@ def metric(
 
     response = controller.get_node(graph, local_id=local_id, info=info)
     return types.Metric(_value=response)
+
+
+def metrics(
+    info: Info,
+    metric_category_id: strawberry.ID,
+    filters: filters.MetricFilter | None = None,
+    ordering: list[order.MetricOrder] | None = None,
+    pagination: pagination.MetricPaginationInput | None = None,
+) -> List[types.Metric]:
+    """List metrics for a given metric category with typed filter/order/pagination arguments."""
+    raise NotImplementedError("metrics resolver scaffold added; query execution not implemented yet")
 
 
 def metrics_for_structure(

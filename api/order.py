@@ -24,6 +24,36 @@ class StructureOrder:
     """Ordering options for structure queries."""
 
 
+@kante.pydantic_input(input_models.MetricOrder, all_fields=True, description="Ordering options for metric queries")
+class MetricOrder:
+    """Ordering options for metric queries."""
+
+
+@kante.pydantic_input(input_models.NaturalEventOrder, all_fields=True, description="Ordering options for natural event queries")
+class NaturalEventOrder:
+    """Ordering options for natural event queries."""
+
+
+@kante.pydantic_input(input_models.ProtocolEventOrder, all_fields=True, description="Ordering options for protocol event queries")
+class ProtocolEventOrder:
+    """Ordering options for protocol event queries."""
+
+
+@kante.pydantic_input(input_models.MeasurementOrder, all_fields=True, description="Ordering options for measurement queries")
+class MeasurementOrder:
+    """Ordering options for measurement queries."""
+
+
+@kante.pydantic_input(input_models.StructureRelationOrder, all_fields=True, description="Ordering options for structure relation queries")
+class StructureRelationOrder:
+    """Ordering options for structure relation queries."""
+
+
+@kante.pydantic_input(input_models.RelationOrder, all_fields=True, description="Ordering options for relation queries")
+class RelationOrder:
+    """Ordering options for relation queries."""
+
+
 @strawberry_django.order_type(models.Graph)
 class GraphOrder:
     name: auto
