@@ -27,6 +27,16 @@ class EntityPaginationInput:
     """Filter options for entity queries."""
 
 
+@kante.pydantic_input(input_models.StructureFilters, description="Filter options for querying structures")
+class StructureFilter:
+    """Filter options for structure queries."""
+
+    ids: Optional[List[scalars.GraphID]] = kante.field(default=None, description="Filter by specific structure IDs")
+    has_property: Optional[str] = kante.field(default=None, description="Filter structures that have a specific property")
+    search: Optional[str] = kante.field(default=None, description="Full-text search over structure properties")
+    matches: Optional[List[PropertyMatch]] = kante.field(default=None, description="Filter structures that match specific property conditions")
+
+
 @kante.filter_type(models.Graph)
 class GraphFilter:
     id: strawberry.auto
