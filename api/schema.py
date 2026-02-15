@@ -394,6 +394,18 @@ class Mutation:
         description="Update an existing metric category/schema in the graph",
         resolver=mutations.update_metric_category,
     )
+    create_measurement_category = kante.django_mutation(
+        description="Create a new measurement category/schema in the graph",
+        resolver=mutations.create_measurement_category,
+    )
+    delete_measurement_category = kante.django_mutation(
+        description="Delete a measurement category/schema from the graph",
+        resolver=mutations.delete_measurement_category,
+    )
+    update_measurement_category = kante.django_mutation(
+        description="Update an existing measurement category/schema in the graph",
+        resolver=mutations.update_measurement_category,
+    )
     create_relation_category = kante.django_mutation(
         description="Create a new relation category/schema in the graph",
         resolver=mutations.create_relation_category,

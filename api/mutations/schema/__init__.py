@@ -2,6 +2,7 @@ from .entity_category import create_entity_category, update_entity_category, del
 from .structure_category import create_structure_category, update_structure_category, delete_structure_category
 from .structure_relation_category import create_structure_relation_category, update_structure_relation_category, delete_structure_relation_category
 from .metric_category import create_metric_category, update_metric_category, delete_metric_category
+from .measurement_category import create_measurement_category, update_measurement_category, delete_measurement_category
 from .relation_category import create_relation_category, update_relation_category, delete_relation_category
 from .natural_event_category import create_natural_event_category, update_natural_event_category, delete_natural_event_category
 from .relation_category import create_relation_category, update_relation_category, delete_relation_category
@@ -26,6 +27,9 @@ __all__ = [
     "create_metric_category",
     "update_metric_category",
     "delete_metric_category",
+    "create_measurement_category",
+    "update_measurement_category",
+    "delete_measurement_category",
     "create_relation_category",
     "update_relation_category",
     "delete_relation_category",
