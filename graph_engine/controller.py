@@ -3,7 +3,7 @@ import time
 import re
 from typing import Optional, Dict, Any, List
 
-from strawberry import Info
+from kante.types import Info
 from graph_engine import input_models
 from graph_engine.input_models import (
     GraphDefinitionInput,
@@ -170,6 +170,29 @@ class GraphController:
         result = self.engine.execute(graph, query, params)
         return scalars.LocalID(result[0]["assertion_id"])
 
+    def _provenance_from_info(self, info: Info) -> ProvenanceContext:
+        request = info.context.request
+
+        user = getattr(request, "user", None)
+        client = getattr(request, "client", None)
+
+        if not user:
+            raise ValueError("No authenticated user found in context")
+
+        return ProvenanceContext(
+            subject=str(user.id),
+            app_id=str(client.id) if client else "unknown",
+        )
+
+    def _infer_metric_value_kind(self, value: Any) -> input_models.PropertyType:
+        if isinstance(value, bool):
+            return input_models.PropertyType.BOOLEAN
+        if isinstance(value, int):
+            return input_models.PropertyType.INTEGER
+        if isinstance(value, float):
+            return input_models.PropertyType.FLOAT
+        return input_models.PropertyType.STRING
+
     def ensure_structure_category_or_raise(self, graph: models.Graph, identifier: str, info: Info) -> models.StructureCategory:
         """Ensures that a StructureCategory with the given identifier exists in the graph, or raises an error if not found and auto-creation is disabled."""
         scategory = models.StructureCategory.objects.filter(
@@ -178,22 +201,46 @@ class GraphController:
         ).first()
 
         if not scategory:
-            if graph.can_perform_action(info, enums.Action.AUTO_ADD_STRUCTURE):
+            if graph.can_perform_action(info, input_models.Action.AUTO_ADD_STRUCTURES):
                 scategory = models.StructureCategory.objects.create_from_structure_definition(
                     graph=graph,
                     definition=input_models.StructureDefinitionInput(
-                        key=evidence.identifier,
-                        identifier=evidence.identifier,
+                        key=identifier,
+                        identifier=identifier,
                     ),
                 )
             else:
-                raise ValueError(f"Structure identifier {evidence.identifier} not found in graph schema.")
+                raise ValueError(f"Structure identifier {identifier} not found in graph schema.")
+
+        return scategory
+
+    def ensure_metric_category_or_raise(self, graph: models.Graph, structure_category: models.StructureCategory, key: str, value_kind: input_models.PropertyType, info: Info) -> models.MetricCategory:
+        mcategory = models.MetricCategory.objects.filter(
+            graph=graph,
+            key=key,
+            structure_category=structure_category,
+        ).first()
+
+        if not mcategory:
+            if graph.can_perform_action(info, input_models.Action.AUTO_ADD_STRUCTURES):
+                mcategory = models.MetricCategory.objects.create_from_metric_definition(
+                    graph=graph,
+                    definition=input_models.MetricDefinitionInput(
+                        structure=structure_category.identifier,
+                        value_kind=value_kind,
+                        key=key,
+                    ),
+                )
+            else:
+                raise ValueError(f"Metric identifier {key} not found in graph schema for structure {structure_category.identifier}.")
+
+        return mcategory
 
     def create_entity(
         self,
         entity_category: models.EntityCategory,
         payload: inputs.EntityInput,
-        context: ProvenanceContext,
+        info: Info,
     ) -> retrieved.RetrievedEntity:
         """
         Create a new entity with optional supporting evidence structures.
@@ -214,10 +261,11 @@ class GraphController:
         graph: models.Graph = entity_category.graph
 
         # --- Step 2: Create Assertion (Provenance) ---
-        assertion_id = self._create_provenance_node(graph, context)
+        assertion_id = self._create_provenance_node(graph, self._provenance_from_info(info))
 
         # --- Step 3: Handle Evidence & Measurements ---
         for evidence in supporting_evidence:
+            scategory = self.ensure_structure_category_or_raise(graph, evidence.identifier, info)
             structure_vertex_name = scategory.get_age_vertex_name()
 
             # Auto-Create Structure (MERGE) - using 'object' as the external ID
@@ -226,35 +274,14 @@ class GraphController:
 
             # Create Metrics
             for meas in evidence.metrics:
-                # meas is a MetricInput with key, value, and optional fields
-
-                mcategory = models.MetricCategory.objects.filter(
+                inferred_kind = self._infer_metric_value_kind(meas.value)
+                mcategory = self.ensure_metric_category_or_raise(
                     graph=graph,
-                    key=meas.key,
                     structure_category=scategory,
-                ).first()
-
-                if not mcategory:
-                    if graph.allow_auto_adding_metrics:
-                        if isinstance(meas.value, bool):
-                            inferred_kind = input_models.PropertyType.BOOLEAN
-                        elif isinstance(meas.value, int):
-                            inferred_kind = input_models.PropertyType.INTEGER
-                        elif isinstance(meas.value, float):
-                            inferred_kind = input_models.PropertyType.FLOAT
-                        else:
-                            inferred_kind = input_models.PropertyType.STRING
-
-                        mcategory = models.MetricCategory.objects.create_from_metric_definition(
-                            graph=graph,
-                            definition=input_models.MetricDefinitionInput(
-                                structure=scategory.identifier,
-                                value_kind=inferred_kind,
-                                key=meas.key,
-                            ),
-                        )
-                    else:
-                        raise ValueError(f"Metric identifier {meas.key} not found in graph schema for structure {evidence.identifier}.")
+                    key=meas.key,
+                    value_kind=inferred_kind,
+                    info=info,
+                )
 
                 params = {"sid": structure_id, "aid": assertion_id, "category": mcategory.pk, "key": meas.key, "value": meas.value, "unit": meas.unit, "confidence": meas.confidence, "confidence_type": meas.confidence_type, "timestamp": meas.timestamp}
 
@@ -367,7 +394,7 @@ class GraphController:
         raw = result[0]["s"]
         return RetrievedStructure.from_node(self, raw, graph_name=category.graph.age_name)
 
-    def archive_entity(self, graph: models.Graph, local_id: scalars.LocalID, provenance: ProvenanceContext) -> scalars.LocalID:
+    def archive_entity(self, graph: models.Graph, local_id: scalars.LocalID, info: Info) -> scalars.LocalID:
         """
         Archives an entity by its composite ID.
 
@@ -377,7 +404,7 @@ class GraphController:
             graph: The graph to operate on
             entity_id: The composite ID of the entity to delete (e.g., "1-abc123-def456-...")
         """
-        assertion_id = self._create_provenance_node(graph, provenance)
+        assertion_id = self._create_provenance_node(graph, self._provenance_from_info(info))
         archived_at = int(time.time() * 1000)
 
         self.engine.execute(
@@ -936,7 +963,6 @@ class GraphController:
         self,
         graph: models.Graph,
         structure_id: scalars.LocalID,
-        provenance: ProvenanceContext,
     ) -> scalars.LocalID:
         """Hard delete a structure node and all attached relationships."""
         self.engine.execute(
@@ -953,10 +979,10 @@ class GraphController:
         self,
         graph: models.Graph,
         structure_id: scalars.LocalID,
-        provenance: ProvenanceContext,
+        info: Info,
     ) -> RetrievedStructure:
         """Archive a structure by attaching a lifecycle assertion and setting lifecycle state."""
-        assertion_id = self._create_provenance_node(graph, provenance)
+        assertion_id = self._create_provenance_node(graph, self._provenance_from_info(info))
         archived_at = int(time.time() * 1000)
 
         self.engine.execute(
@@ -1004,7 +1030,7 @@ class GraphController:
         graph: models.Graph,
         structure_id: scalars.LocalID,
         payload: inputs.StructureInput,
-        provenance: ProvenanceContext,
+        info: Info,
     ) -> retrieved.RetrievedStructure:
         """Update a structure in-place and optionally append new metrics."""
         node = self.get_node_by_local_id(graph, local_id=structure_id)
@@ -1025,7 +1051,7 @@ class GraphController:
                 graph,
                 structure_id=structure_id,
                 input=metric,
-                provenance=provenance,
+                info=info,
             )
 
         node = x[0]["s"]
@@ -1039,6 +1065,7 @@ class GraphController:
         self,
         category: models.NaturalEventCategory,
         payload: inputs.NaturalEventInput,
+        info: Info,
     ) -> RetrievedNaturalEvent:
         """
         Add a natural event to the graph.
@@ -1054,27 +1081,13 @@ class GraphController:
         graph: models.Graph = category.graph
 
         # --- Step 1: Create Assertion (Provenance) ---
-        prov_dict: Dict[str, Any] = {"subject": self.subject, "app_id": self.app_id}
-        assertion_props = ", ".join([f"{k}: ${k}" for k in prov_dict.keys()])
-        aid_res = self.engine.execute(graph, f"CREATE (a:{vocab.Assertion} {{{assertion_props}}}) RETURN id(a) as aid", prov_dict)
-        assertion_id = aid_res[0]["aid"]
+        assertion_id = self._create_provenance_node(graph, self._provenance_from_info(info))
 
         # Assertion Created but not linked to anything yet - we will link evidence and event after we create them
 
         # --- Step 2: Handle Evidence & Measurements ---
         for evidence in supporting_evidence:
-            if graph.allow_auto_add_structure_definitions:
-                scategory, _ = models.StructureCategory.objects.get_or_create(
-                    graph=graph,
-                    identifier=evidence.identifier,
-                )
-            else:
-                scategory = models.StructureCategory.objects.filter(
-                    graph=graph,
-                    identifier=evidence.identifier,
-                ).first()
-                if not scategory:
-                    raise ValueError(f"Structure identifier {evidence.identifier} not found in graph schema.")
+            scategory = self.ensure_structure_category_or_raise(graph, evidence.identifier, info)
 
             structure_vertex_name = scategory.get_age_vertex_name()
 
@@ -1086,20 +1099,13 @@ class GraphController:
             for meas in evidence.metrics:
                 # meas is a MetricInput with key, value, and optional fields
 
-                if graph.allow_auto_adding_metrics:
-                    mcategory, _ = models.MetricCategory.objects.get_or_create(
-                        graph=graph,
-                        identifier=meas.key,
-                        structure_category=scategory,
-                    )
-                else:
-                    mcategory = models.MetricCategory.objects.filter(
-                        graph=graph,
-                        identifier=meas.key,
-                        structure_category=scategory,
-                    ).first()
-                    if not mcategory:
-                        raise ValueError(f"Metric identifier {meas.key} not found in graph schema for structure {evidence.identifier}.")
+                mcategory = self.ensure_metric_category_or_raise(
+                    graph=graph,
+                    structure_category=scategory,
+                    key=meas.key,
+                    value_kind=self._infer_metric_value_kind(meas.value),
+                    info=info,
+                )
 
                 params = {"sid": structure_id, "aid": assertion_id, "category": mcategory.pk, "key": meas.key, "value": meas.value, "unit": meas.unit, "confidence": meas.confidence, "confidence_type": meas.confidence_type, "timestamp": meas.timestamp}
 
@@ -1179,7 +1185,7 @@ class GraphController:
         graph: models.Graph,
         structure_id: scalars.LocalID,
         input: MetricInput,
-        provenance: "ProvenanceContext",
+        info: Info,
     ) -> RetrievedMetric:
         """
         Add a measurement to an existing structure.
@@ -1188,7 +1194,7 @@ class GraphController:
             graph: The graph to add the measurement to
             structure_id: Internal graph ID of the structure node
             input: The measurement data
-            provenance: Provenance context for this measurement
+            info: Request info used to extract provenance
 
         Returns:
             RetrievedMetric with the created measurement info
@@ -1204,8 +1210,7 @@ class GraphController:
         if not structure_result:
             raise ValueError(f"Structure not found with node ID {structure_id}")
 
-        effective_provenance = self._effective_provenance(provenance)
-        assertion_id = self._create_provenance_node(graph, effective_provenance)
+        assertion_id = self._create_provenance_node(graph, self._provenance_from_info(info))
 
         metric_props: Dict[str, Any] = {
             "key": input.key,
@@ -1254,14 +1259,6 @@ class GraphController:
             graph_name=graph.age_name,
         )
 
-    def _effective_provenance(self, provenance: ProvenanceContext | None = None) -> ProvenanceContext:
-        if provenance is not None:
-            return provenance
-        return ProvenanceContext(
-            subject=self.subject or "unknown",
-            app_id=self.app_id or "unknown",
-        )
-
     def _recalculate_metric_lifecycle_state(
         self,
         graph: models.Graph,
@@ -1285,7 +1282,7 @@ class GraphController:
         self,
         graph: models.Graph,
         metric_id: scalars.LocalID,
-        provenance: ProvenanceContext | None = None,
+        info: Info,
     ) -> scalars.LocalID:
         metric_result = self.engine.execute(
             graph,
@@ -1298,7 +1295,7 @@ class GraphController:
         if not metric_result:
             raise ValueError(f"Metric not found with node ID {metric_id}")
 
-        assertion_id = self._create_provenance_node(graph, self._effective_provenance(provenance))
+        assertion_id = self._create_provenance_node(graph, self._provenance_from_info(info))
         archived_at = int(time.time() * 1000)
 
         self.engine.execute(
@@ -1327,7 +1324,6 @@ class GraphController:
         self,
         graph: models.Graph,
         metric_id: scalars.LocalID,
-        provenance: ProvenanceContext | None = None,
     ) -> scalars.LocalID:
         metric_result = self.engine.execute(
             graph,
@@ -1355,7 +1351,7 @@ class GraphController:
         self,
         graph: models.Graph,
         payload: inputs.UpdateMetricInput,
-        provenance: ProvenanceContext,
+        info: Info,
     ) -> RetrievedMetric:
         metric_local_id = extract_node_id(payload.id)
 
@@ -1372,7 +1368,7 @@ class GraphController:
             raise ValueError(f"Metric not found with node ID {payload.id}")
 
         structure_id = scalars.LocalID(result[0]["sid"])
-        self.archive_metric(graph, metric_id=metric_local_id, provenance=provenance)
+        self.archive_metric(graph, metric_id=metric_local_id, info=info)
 
         metric_input = MetricInput(
             key=payload.key,
@@ -1387,7 +1383,7 @@ class GraphController:
             graph,
             structure_id=structure_id,
             input=metric_input,
-            provenance=provenance,
+            info=info,
         )
 
     def link_structure_to_entity(
@@ -1442,7 +1438,7 @@ class GraphController:
         self,
         category: models.RelationCategory,
         payload: RelationInput,
-        provenance: ProvenanceContext,
+        info: Info,
     ) -> RetrievedRelation:
         """
         Creates a Relationship between two nodes, backed by Evidence.
@@ -1455,7 +1451,7 @@ class GraphController:
         5. (Structure)-[:INFORMS]->(ShadowLink) <-- Evidence attached here
         """
 
-        assertion_id = self._create_provenance_node(category.graph, provenance)
+        assertion_id = self._create_provenance_node(category.graph, self._provenance_from_info(info))
         # --- Step 3: Create Shadow Link & Attach Evidence ---
         # We create a "ShadowLink" node to represent this specific instance of the relationship.
         # This allows us to attach measurements to "the link" rather than the edge itself.
@@ -1482,7 +1478,8 @@ class GraphController:
 
         # Process Evidence attached to the Shadow Link
         for evidence in payload.supporting_evidence:
-            structure_graph_label = get_label_for_identifier(evidence.identifier)
+            structure_category = self.ensure_structure_category_or_raise(category.graph, evidence.identifier, info)
+            structure_graph_label = structure_category.get_age_vertex_name()
 
             # Auto-Create Structure
             self.engine.execute(category.graph, f"MERGE (s:{structure_graph_label} {{object: $obj}})", {"obj": evidence.object})
@@ -1501,6 +1498,13 @@ class GraphController:
 
             # Create Measurements for that Structure
             for meas in evidence.metrics:
+                self.ensure_metric_category_or_raise(
+                    graph=category.graph,
+                    structure_category=structure_category,
+                    key=meas.key,
+                    value_kind=self._infer_metric_value_kind(meas.value),
+                    info=info,
+                )
                 meas_params = meas.model_dump(exclude_none=True)
                 meas_params.update({"obj": evidence.object, "aid": assertion_id})
 

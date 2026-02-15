@@ -7,7 +7,6 @@ from kante.types import Info
 from api import types, inputs, context
 from graph_engine.scalars import GraphID
 from graph_engine import input_models, scalars
-from core import models
 
 
 def record_metric(
@@ -31,41 +30,26 @@ def record_metric(
 
     graph = context.get_accessible_graph(info, model.graph)
 
-    try:
-        s = models.StructureCategory.objects.get(identifier=model.identifier, graph=graph)
-    except models.StructureCategory.DoesNotExist:
-        if graph.allow_auto_add_structure_definitions:
-            s = models.StructureCategory.objects.create_from_structure_definition(
-                graph=graph,
-                definition=input_models.StructureDefinitionInput(
-                    key=model.identifier,
-                    identifier=model.identifier,
-                ),
-            )
-        else:
-            raise ValueError(f"Structure category with identifier '{model.identifier}' does not exist in graph '{model.graph}'")
+    structure_category = controller.ensure_structure_category_or_raise(
+        graph=graph,
+        identifier=model.identifier,
+        info=info,
+    )
+
+    controller.ensure_metric_category_or_raise(
+        graph=graph,
+        structure_category=structure_category,
+        key=model.key,
+        value_kind=model.value_kind,
+        info=info,
+    )
 
     try:
-        m = models.MetricCategory.objects.get(key=model.key, structure_category=s)
-    except models.MetricCategory.DoesNotExist:
-        if graph.allow_auto_add_structure_definitions:
-            m = models.MetricCategory.objects.create_from_metric_definition(
-                graph=graph,
-                definition=input_models.MetricDefinitionInput(
-                    structure=s.identifier,
-                    value_kind=model.value_kind,
-                    key=model.key,
-                ),
-            )
-        else:
-            raise ValueError(f"Metric category with key '{model.key}' does not exist in graph '{model.graph}'")
-
-    try:
-        s = controller.get_structure_by_object(s, model.object)
+        s = controller.get_structure_by_object(structure_category, model.object)
     except ValueError:
         if graph.can_auto_add_structures(info):
             s = controller.create_structure(
-                structure_category=s,
+                structure_category=structure_category,
                 payload=input_models.StructureInput(
                     object=model.object,
                 ),
@@ -77,7 +61,7 @@ def record_metric(
         graph,
         structure_id=s.local_id,
         input=model,
-        provenance=context.get_provenance_from_context(info),
+        info=info,
     )
 
     return types.Metric.from_specific(response)  # Convert to GraphQL type, preserving specific subtype information. If the metric already exists, it will be updated with the new value and timestamp.
@@ -113,7 +97,7 @@ def create_metric(
         graph,
         structure_id=local_id,
         input=model,
-        provenance=context.get_provenance_from_context(info),
+        info=info,
     )
 
     return types.Metric.from_specific(response)  # Convert to GraphQL type, preserving specific subtype information. If the metric already exists,
@@ -146,7 +130,6 @@ def delete_metric(
     controller.delete_metric(
         graph,
         metric_id=node_id,
-        provenance=context.get_provenance_from_context(info),
     )
 
     return model.id
@@ -175,7 +158,7 @@ def update_metric(
     updated = controller.update_metric(
         graph,
         payload=model,
-        provenance=context.get_provenance_from_context(info),
+        info=info,
     )
 
     return types.Metric(_value=updated)
@@ -207,7 +190,7 @@ def archive_metric(
     controller.archive_metric(
         graph,
         metric_id=node_id,
-        provenance=context.get_provenance_from_context(info),
+        info=info,
     )
 
     archived_metric = controller.get_node_by_local_id(graph, local_id=node_id)

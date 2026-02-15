@@ -35,6 +35,7 @@ def create_natural_event(
     response = controller.create_natural_event(
         category=category,
         payload=natural_event,
+        info=info,
     )
 
     return types.NaturalEvent(_value=response)

@@ -70,7 +70,6 @@ def delete_structure(
     controller.delete_structure(
         graph,
         structure_id=local_id,
-        provenance=context.get_provenance_from_context(info),
     )
 
     return types.Structure(_value=deleted_structure)
@@ -102,7 +101,7 @@ def archive_structure(
     structure = controller.archive_structure(
         graph,
         structure_id=local_id,
-        provenance=context.get_provenance_from_context(info),
+        info=info,
     )
 
     return types.Structure(_value=structure)
@@ -160,7 +159,7 @@ def update_structure(
         graph,
         structure_id=local_id,
         payload=model,
-        provenance=context.get_provenance_from_context(info),
+        info=info,
     )
 
     return types.Structure(_value=updated)

@@ -53,7 +53,7 @@ def create_relation(info: Info, input: inputs.CreateRelationInput) -> types.Rela
     result = controller.create_relation(
         category=relation,
         payload=payload,
-        provenance=context.get_provenance_from_context(info),
+        info=info,
     )
 
     return types.Relation(_value=result)
@@ -82,7 +82,7 @@ def delete_relation(info: Info, input: inputs.DeleteRelationInput) -> strawberry
     controller.delete_relation(
         graph,
         relation_id=local_id,
-        provenance=context.get_provenance_from_context(info),
+        info=info,
     )
 
     return model.id
@@ -111,7 +111,7 @@ def archive_relation(info: Info, input: inputs.ArchiveRelationInput) -> types.Re
     controller.archive_relation(
         graph,
         relation_id=local_id,
-        provenance=context.get_provenance_from_context(info),
+        info=info,
     )
 
     return types.Relation(_value=model.id)

@@ -37,7 +37,7 @@ def create_entity(
     result = controller.create_entity(
         entity_category=entity_category,
         payload=input_model,
-        context=context.get_provenance_from_context(info),
+        info=info,
     )
 
     return types.Entity(_value=result)
@@ -98,7 +98,7 @@ def archive_entity(
     controller.archive_entity(
         graph,
         local_id=node_id,
-        provenance=context.get_provenance_from_context(info),
+        info=info,
     )
 
     archived_entity = controller.get_node_by_local_id(graph, local_id=node_id)
