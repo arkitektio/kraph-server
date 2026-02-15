@@ -39,6 +39,7 @@ class Query:
     graphs: list[types.Graph] = kante.django_field(description="List of all graphs in the graph engine")
 
     # Schema Operations
+    category_tags: list[types.CategoryTag] = kante.django_field(description="List of all category tags")
     entity_categories: list[types.EntityCategory] = kante.django_field(description="List of all entity categories/schemas")
     entity_category: types.EntityCategory = kante.django_field(description="Get a single entity category/schema by ID")
     structure_categories: list[types.StructureCategory] = kante.django_field(description="List of all structure categories/schemas")
