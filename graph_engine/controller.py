@@ -2,10 +2,14 @@ import json
 import time
 import re
 from typing import Optional, Dict, Any, List
+
+from strawberry import Info
 from graph_engine import input_models
 from graph_engine.input_models import (
     GraphDefinitionInput,
 )
+import uuid
+
 from graph_engine.input_models import (
     MetricInput,
     ProvenanceContext,
@@ -27,7 +31,7 @@ from graph_engine.retrieved import (
     RetrievedInforms,
 )
 from graph_engine import retrieved
-from core import models
+from core import enums, models
 from graph_engine import input_models as inputs
 from graph_engine import vocab, scalars
 from graph_engine.rollup import build_property_query
@@ -101,14 +105,13 @@ class GraphController:
     """Controller for interacting with the graph database."""
 
     def __init__(self, engine: CypherEngine, subject: str | None = None, app_id: str | None = None) -> None:
+        """The GraphController is initialized with a CypherEngine instance for executing queries, and optional context for provenance tracking."""
         self.engine = engine
         self.subject = subject
         self.app_id = app_id
 
     def create_universal_id(self) -> scalars.GlobalID:
         """Generates a unique reference ID for entities."""
-        import uuid
-
         return scalars.GlobalID(str(uuid.uuid4()))
 
     def _get_entity_category_for_local_id(self, graph: models.Graph, local_id: scalars.LocalID) -> models.EntityCategory:
@@ -133,7 +136,7 @@ class GraphController:
         category = models.EntityCategory.objects.filter(graph=graph, age_name=age_name).first()
 
         if not category:
-            raise ValueError(f"No EntityCategory found for age_name '{age_name}' in graph {graph.id}")
+            raise ValueError(f"No EntityCategory found for age_name '{age_name}' in graph {graph.pk}")
 
         return category
 
@@ -167,6 +170,25 @@ class GraphController:
         result = self.engine.execute(graph, query, params)
         return scalars.LocalID(result[0]["assertion_id"])
 
+    def ensure_structure_category_or_raise(self, graph: models.Graph, identifier: str, info: Info) -> models.StructureCategory:
+        """Ensures that a StructureCategory with the given identifier exists in the graph, or raises an error if not found and auto-creation is disabled."""
+        scategory = models.StructureCategory.objects.filter(
+            graph=graph,
+            identifier=identifier,
+        ).first()
+
+        if not scategory:
+            if graph.can_perform_action(info, enums.Action.AUTO_ADD_STRUCTURE):
+                scategory = models.StructureCategory.objects.create_from_structure_definition(
+                    graph=graph,
+                    definition=input_models.StructureDefinitionInput(
+                        key=evidence.identifier,
+                        identifier=evidence.identifier,
+                    ),
+                )
+            else:
+                raise ValueError(f"Structure identifier {evidence.identifier} not found in graph schema.")
+
     def create_entity(
         self,
         entity_category: models.EntityCategory,
@@ -196,23 +218,6 @@ class GraphController:
 
         # --- Step 3: Handle Evidence & Measurements ---
         for evidence in supporting_evidence:
-            scategory = models.StructureCategory.objects.filter(
-                graph=graph,
-                identifier=evidence.identifier,
-            ).first()
-
-            if not scategory:
-                if graph.allow_auto_add_structure_definitions:
-                    scategory = models.StructureCategory.objects.create_from_structure_definition(
-                        graph=graph,
-                        definition=input_models.StructureDefinitionInput(
-                            key=evidence.identifier,
-                            identifier=evidence.identifier,
-                        ),
-                    )
-                else:
-                    raise ValueError(f"Structure identifier {evidence.identifier} not found in graph schema.")
-
             structure_vertex_name = scategory.get_age_vertex_name()
 
             # Auto-Create Structure (MERGE) - using 'object' as the external ID

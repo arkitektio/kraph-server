@@ -12,6 +12,7 @@ from authentikate.models import Organization, Membership
 from polymorphic.models import PolymorphicModel
 from django.db.models import QuerySet
 from kante.context import Membership as KanteMembership
+from graph_engine import input_models
 # Create your models here.
 
 from graph_engine.input_models import EntityDescriptorInput, StructureDescriptorInput
@@ -92,6 +93,12 @@ class Graph(models.Model):
             counter += 1
         return age_name
 
+    @property
+    def rules_model(self) -> list[input_models.ActionRuleInput]:
+        from graph_engine.input_models import ActionRuleInput
+
+        return [ActionRuleInput(**rule) for rule in self.rules] if self.rules else []
+
     def get_age_name(self) -> str:
         """Get the Apache AGE graph name for this graph, which is used to identify the graph in the AGE database."""
         return self.age_name
@@ -163,58 +170,20 @@ class Graph(models.Model):
         """Whether this graph allows automatically adding structures when recording metrics with new structure identifiers."""
         return self.can_perform_action(info=info, action="AUTO_ADD_STRUCTURES")
 
-    def _extract_request(self, info: Info | Any):
-        if hasattr(info, "context") and getattr(info.context, "request", None) is not None:
-            return info.context.request
-        if hasattr(info, "request"):
-            return info.request
-        raise ValueError("No request found on info object")
-
-    def _extract_request_scopes(self, request: Any) -> set[str]:
-        extension_scopes = request._extensions.get("scopes") if hasattr(request, "_extensions") else None
-        if isinstance(extension_scopes, list):
-            return {str(scope) for scope in extension_scopes}
-        if isinstance(extension_scopes, str):
-            return {scope for scope in extension_scopes.split(" ") if scope}
-
-        token = request._extensions.get("token") if hasattr(request, "_extensions") else None
-        token_scopes = getattr(token, "scopes", None)
-        if isinstance(token_scopes, list):
-            return {str(scope) for scope in token_scopes}
-        if isinstance(token_scopes, str):
-            return {scope for scope in token_scopes.split(" ") if scope}
-
+    def _extract_request_roles(self, info: Info | Any) -> set[str]:
         return set()
 
-    def _rule_filter_matches(self, rule_filter: dict[str, Any], request: Any) -> bool:
-        if not rule_filter:
-            return True
+    def _extract_request_scopes(self, request: Any) -> set[str]:
+        return set()
 
-        user = getattr(request, "user", None) or getattr(request, "_user", None)
-        membership = getattr(request, "membership", None)
-        if membership is None and hasattr(request, "_extensions"):
-            membership = request._extensions.get("membership")
-        organization = getattr(request, "organization", None) or getattr(request, "_organization", None)
-
-        user_id = rule_filter.get("user_id")
-        if user_id is not None:
-            if user is None or str(getattr(user, "id", "")) != str(user_id):
+    def _rule_filter_matches(self, rule_filter: input_models.ActionFilterInput, request: Any) -> bool:
+        required_roles = rule_filter.required_roles if rule_filter else None
+        if required_roles:
+            request_roles = self._extract_request_roles(info=request)
+            if not set(map(str, required_roles)).issubset(request_roles):
                 return False
 
-        membership_id = rule_filter.get("membership_id")
-        if membership_id is not None:
-            if membership is None or str(getattr(membership, "id", "")) != str(membership_id):
-                return False
-
-        organization_id = rule_filter.get("organization_id")
-        if organization_id is not None:
-            org_id = getattr(organization, "id", None)
-            if org_id is None and membership is not None:
-                org_id = getattr(getattr(membership, "organization", None), "id", None)
-            if str(org_id) != str(organization_id):
-                return False
-
-        required_scopes = rule_filter.get("required_scopes") or []
+        required_scopes = rule_filter.required_scopes if rule_filter else None
         if required_scopes:
             request_scopes = self._extract_request_scopes(request)
             if not set(map(str, required_scopes)).issubset(request_scopes):
@@ -222,27 +191,23 @@ class Graph(models.Model):
 
         return True
 
-    def can_perform_action(self, info: Info | Any, action: str) -> bool:
-        request = self._extract_request(info)
-        action_name = str(action)
+    def can_perform_action(self, info: Info | Any, action: input_models.Action) -> bool:
+        # DO NOT CHANGE THIS THIS PART WE WILL ONLY EXTRAX ROLES AND SCOPES HERE AND THEN CHECK THEM IN THE RULES, THIS WAY WE CAN SUPPORT BOTH A FLAT RULE STRUCTURE AND A NESTED ONE WITH ACTIONS AS KEYS
+        scopes = self._extract_request_scopes(info)
+        roles = self._extract_request_roles(info)
+        for rule in self.rules_model:
+            rule_action = rule.action
+            if rule_action and rule_action != action:
+                continue
 
-        raw_rules = self.rules or []
-        action_rules: list[dict[str, Any]] = []
+            rule_filter = rule.filter
+            if not self._rule_filter_matches(rule_filter, info.context.request):
+                continue
 
-        if isinstance(raw_rules, list):
-            action_rules = [rule for rule in raw_rules if str(rule.get("action")) == action_name]
-        elif isinstance(raw_rules, dict):
-            if isinstance(raw_rules.get("actions"), list):
-                action_rules = [rule for rule in raw_rules["actions"] if str(rule.get("action")) == action_name]
-            elif isinstance(raw_rules.get(action_name), list):
-                action_rules = raw_rules[action_name]
-
-        if not action_rules:
-            return True
-
-        for rule in action_rules:
-            if self._rule_filter_matches(rule.get("filter") or {}, request):
-                return bool(rule.get("allow", True))
+            if rule.allow:
+                return True
+            else:
+                return False
 
         return True
 
