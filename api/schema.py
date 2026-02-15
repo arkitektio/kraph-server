@@ -35,6 +35,15 @@ class Query:
 
     graph: types.Graph = kante.django_field(description="Get a graph by ID")
     graph_stats: types.GraphStats = kante.django_field(description="Get aggregated stats for graphs with optional filters", resolver=types.GraphStatsResolver)
+    category_tag_stats: types.CategoryTagStats = kante.django_field(description="Get aggregated stats for category tags with optional filters", resolver=types.CategoryTagStatsResolver)
+    entity_category_stats: types.EntityCategoryStats = kante.django_field(description="Get aggregated stats for entity categories with optional filters", resolver=types.EntityCategoryStatsResolver)
+    structure_category_stats: types.StructureCategoryStats = kante.django_field(description="Get aggregated stats for structure categories with optional filters", resolver=types.StructureCategoryStatsResolver)
+    metric_category_stats: types.MetricCategoryStats = kante.django_field(description="Get aggregated stats for metric categories with optional filters", resolver=types.MetricCategoryStatsResolver)
+    measurement_category_stats: types.MeasurementCategoryStats = kante.django_field(description="Get aggregated stats for measurement categories with optional filters", resolver=types.MeasurementCategoryStatsResolver)
+    relation_category_stats: types.RelationCategoryStats = kante.django_field(description="Get aggregated stats for relation categories with optional filters", resolver=types.RelationCategoryStatsResolver)
+    structure_relation_category_stats: types.StructureRelationCategoryStats = kante.django_field(description="Get aggregated stats for structure relation categories with optional filters", resolver=types.StructureRelationCategoryStatsResolver)
+    protocol_event_category_stats: types.ProtocolEventCategoryStats = kante.django_field(description="Get aggregated stats for protocol event categories with optional filters", resolver=types.ProtocolEventCategoryStatsResolver)
+    natural_event_category_stats: types.NaturalEventCategoryStats = kante.django_field(description="Get aggregated stats for natural event categories with optional filters", resolver=types.NaturalEventCategoryStatsResolver)
 
     graphs: list[types.Graph] = kante.django_field(description="List of all graphs in the graph engine")
 

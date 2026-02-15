@@ -423,16 +423,20 @@ class UpdateStructureInput:
     pass
 
 
-@pydantic.input(model=input_models.DeleteStructureInput, all_fields=True, description="Input for deleting an existing structure")
+@pydantic.input(model=input_models.DeleteStructureInput, description="Input for deleting an existing structure")
 class DeleteStructureInput:
     """Input for deleting an existing structure."""
+
+    id: scalars.GraphID = strawberry.field(description="The composite ID of the structure to delete")
 
     pass
 
 
-@pydantic.input(model=input_models.ArchiveStructureInput, all_fields=True, description="Input for deleting an existing structure")
+@pydantic.input(model=input_models.ArchiveStructureInput, description="Input for deleting an existing structure")
 class ArchiveStructureInput:
     """Input for deleting an existing structure."""
+
+    id: scalars.GraphID = strawberry.field(description="The composite ID of the structure to archive")
 
     pass
 
@@ -444,16 +448,20 @@ class CreateRelationInput:
     pass
 
 
-@pydantic.input(model=input_models.DeleteRelationInput, all_fields=True, description="Input for deleting an existing relation")
+@pydantic.input(model=input_models.DeleteRelationInput, description="Input for deleting an existing relation")
 class DeleteRelationInput:
     """Input for deleting an existing relation."""
+
+    id: scalars.GraphID = strawberry.field(description="The ID of the relation to delete")
 
     pass
 
 
-@pydantic.input(model=input_models.ArchiveRelationInput, all_fields=True, description="Input for archiving an existing relation")
+@pydantic.input(model=input_models.ArchiveRelationInput, description="Input for archiving an existing relation")
 class ArchiveRelationInput:
     """Input for archiving an existing relation."""
+
+    id: scalars.GraphID = strawberry.field(description="The ID of the relation to archive")
 
     pass
 
@@ -473,6 +481,7 @@ class CreateEntityInput:
 
 @pydantic.input(model=input_models.UpdateEntityInput, all_fields=True, description="Input for creating a new entity")
 class EnsureEntityInput:
+    global_id: scalars.GlobalID = strawberry.field(description="The global ID of the entity to ensure exists. If an entity with this global ID already exists, it will be returned. If not, a new entity will be created with this global ID.")
     pass
 
 
@@ -480,21 +489,21 @@ class EnsureEntityInput:
 class DeleteEntityInput:
     """Input for deleting an existing entity."""
 
-    id: strawberry.ID = strawberry.field(description="The ID of the entity to delete")
+    id: scalars.GraphID = strawberry.field(description="The ID of the entity to delete")
 
 
 @pydantic.input(model=input_models.ArchiveEntityInput, description="Input for recalculating an entity's derived properties")
 class ArchiveEntityInput:
     """Input for recalculating an entity's derived properties."""
 
-    id: strawberry.ID = strawberry.field(description="The ID of the entity to recalculate")
+    id: scalars.GraphID = strawberry.field(description="The ID of the entity to recalculate")
 
 
 @strawberry.input(description="Input for recalculating entity properties")
 class RecalculateEntityInput:
     """Input for recalculating an entity's derived properties."""
 
-    graph_id: strawberry.ID = strawberry.field(description="The ID of the graph containing the entity")
+    id: scalars.GraphID = strawberry.field(description="The ID of the graph containing the entity")
     entity_id: str = strawberry.field(description="The entity's string ID")
 
 

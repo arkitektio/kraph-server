@@ -1430,3 +1430,93 @@ GraphStats, GraphStatsResolver = create_stats_type(
     },
     allowed_datetime_fields={"created_at": "created_at"},
 )
+
+
+CategoryTagStats, CategoryTagStatsResolver = create_stats_type(
+    model=models.CategoryTag,
+    filters=filters.CategoryTagFilter,
+    allowed_fields={
+        "created_at": "created_at",
+    },
+    allowed_datetime_fields={"created_at": "created_at"},
+)
+
+
+EntityCategoryStats, EntityCategoryStatsResolver = create_stats_type(
+    model=models.EntityCategory,
+    filters=filters.EntityCategoryFilter,
+    allowed_fields={
+        "created_at": "created_at",
+    },
+    allowed_datetime_fields={"created_at": "created_at"},
+)
+
+
+StructureCategoryStats, StructureCategoryStatsResolver = create_stats_type(
+    model=models.StructureCategory,
+    filters=filters.StructureCategoryFilter,
+    allowed_fields={
+        "created_at": "created_at",
+    },
+    allowed_datetime_fields={"created_at": "created_at"},
+)
+
+
+MetricCategoryStats, MetricCategoryStatsResolver = create_stats_type(
+    model=models.MetricCategory,
+    filters=filters.MetricCategoryFilter,
+    allowed_fields={
+        "created_at": "created_at",
+    },
+    allowed_datetime_fields={"created_at": "created_at"},
+)
+
+
+MeasurementCategoryStats, MeasurementCategoryStatsResolver = create_stats_type(
+    model=models.MeasurementCategory,
+    filters=filters.MeasurementCategoryFilter,
+    allowed_fields={
+        "created_at": "created_at",
+    },
+    allowed_datetime_fields={"created_at": "created_at"},
+)
+
+
+RelationCategoryStats, RelationCategoryStatsResolver = create_stats_type(
+    model=models.RelationCategory,
+    filters=filters.RelationCategoryFilter,
+    allowed_fields={
+        "created_at": "created_at",
+    },
+    allowed_datetime_fields={"created_at": "created_at"},
+)
+
+
+StructureRelationCategoryStats, StructureRelationCategoryStatsResolver = create_stats_type(
+    model=models.StructureRelationCategory,
+    filters=filters.StructureRelationCategoryFilter,
+    allowed_fields={
+        "created_at": "created_at",
+    },
+    allowed_datetime_fields={"created_at": "created_at"},
+)
+
+
+ProtocolEventCategoryStats, ProtocolEventCategoryStatsResolver = create_stats_type(
+    model=models.ProtocolEventCategory,
+    filters=filters.ProtocolEventCategoryFilter,
+    allowed_fields={
+        "created_at": "created_at",
+    },
+    allowed_datetime_fields={"created_at": "created_at"},
+)
+
+
+NaturalEventCategoryStats, NaturalEventCategoryStatsResolver = create_stats_type(
+    model=models.NaturalEventCategory,
+    filters=filters.NaturalEventCategoryFilter,
+    allowed_fields={
+        "created_at": "created_at",
+    },
+    allowed_datetime_fields={"created_at": "created_at"},
+)

@@ -2,9 +2,10 @@
 Entity mutation resolvers.
 """
 
-from kante.types import Info
+from graph_engine import scalars
 from api import inputs, types, context
 from core import models
+from kante import Info
 
 
 def create_entity(
@@ -46,7 +47,7 @@ def create_entity(
 def delete_entity(
     info: Info,
     input: inputs.DeleteEntityInput,
-) -> types.Entity:
+) -> scalars.GraphID:
     """
     Delete an entity by its composite ID.
 
@@ -69,7 +70,7 @@ def delete_entity(
 
     controller.delete_entity(graph, local_id=node_id)
 
-    return types.Entity(_value=deleted_entity)
+    return model.id
 
 
 def archive_entity(
