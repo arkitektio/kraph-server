@@ -950,6 +950,68 @@ class ArchiveGraphTableQueryInput(BaseModel):
     id: strawberry.ID = Field(..., description="The ID of the graph query to archive")
 
 
+class GraphPairsQueryInput(GraphQueryInput):
+    """Input for a graph pairs query definition."""
+
+    pass
+
+
+class CreateGraphPairsQueryInput(GraphPairsQueryInput):
+    """Input for creating a graph pairs query definition."""
+
+    graph: strawberry.ID = Field(..., description="The graph id this graph pairs query will belong to")
+
+
+class UpdateGraphPairsQueryInput(GraphPairsQueryInput):
+    """Input for updating an existing graph pairs query definition."""
+
+    id: strawberry.ID = Field(..., description="The ID of the graph pairs query to update")
+    query: Optional[scalars.CypherLiteral] = Field(default=None, description="Updated Cypher query string")
+
+
+class DeleteGraphPairsQueryInput(BaseModel):
+    """Input for deleting an existing graph pairs query definition."""
+
+    id: strawberry.ID = Field(..., description="The ID of the graph pairs query to delete")
+
+
+class ArchiveGraphPairsQueryInput(BaseModel):
+    """Input for archiving (soft deleting) an existing graph pairs query definition."""
+
+    id: strawberry.ID = Field(..., description="The ID of the graph pairs query to archive")
+
+
+class GraphPathQueryInput(GraphQueryInput):
+    """Input for a graph path query definition."""
+
+    pass
+
+
+class CreateGraphPathQueryInput(GraphPathQueryInput):
+    """Input for creating a graph path query definition."""
+
+    graph: strawberry.ID = Field(..., description="The graph id this graph path query will belong to")
+
+
+class UpdateGraphPathQueryInput(GraphPathQueryInput):
+    """Input for updating an existing graph path query definition."""
+
+    id: strawberry.ID = Field(..., description="The ID of the graph path query to update")
+    query: Optional[scalars.CypherLiteral] = Field(default=None, description="Updated Cypher query string")
+
+
+class DeleteGraphPathQueryInput(BaseModel):
+    """Input for deleting an existing graph path query definition."""
+
+    id: strawberry.ID = Field(..., description="The ID of the graph path query to delete")
+
+
+class ArchiveGraphPathQueryInput(BaseModel):
+    """Input for archiving (soft deleting) an existing graph path query definition."""
+
+    id: strawberry.ID = Field(..., description="The ID of the graph path query to archive")
+
+
 class BuildGraphTableQueryInput(BaseModel):
     """Input for a table graph query definition."""
 
@@ -1424,9 +1486,9 @@ class GraphDefinitionInput(BaseModel):
     and events for a knowledge graph.
     """
 
-    system_version: str = Field(..., description="Semantic version for this schema definition (e.g., '1.0.0')")
+    system_version: str = Field(default="0.0.1", description="Semantic version for this schema definition (e.g., '1.0.0')")
     rules: List[ActionRuleInput] = Field(default_factory=list, description="Action-level allow/deny rules evaluated against request context")
-    extensions: GraphExtensionsInput = Field(..., description="The graph extensions containing all type definitions")
+    extensions: GraphExtensionsInput = Field(default_factory=lambda: GraphExtensionsInput(), description="The graph extensions containing all type definitions")
 
     @field_validator("system_version")
     @classmethod
@@ -1439,7 +1501,7 @@ class GraphInput(BaseModel):
 
     name: str = Field(..., description="Name of the graph")
     description: Optional[str] = Field(None, description="Description of the graph")
-    definition: GraphDefinitionInput = Field(..., description="The complete graph schema definition")
+    definition: GraphDefinitionInput = Field(default_factory=lambda: GraphDefinitionInput(), description="The complete graph schema definition")
 
 
 class SetSchemaPayload(BaseModel):
@@ -1470,7 +1532,7 @@ class CreateGraphFromSchema(BaseModel):
 
     name: str = Field(..., description="Name of the graph")
     description: Optional[str] = Field(None, description="Description of the graph")
-    definition: GraphDefinitionInput = Field(..., description="The complete graph schema definition")
+    definition: Optional[GraphDefinitionInput] = Field(default_factory=lambda: GraphDefinitionInput(), description="The complete graph schema definition")
 
 
 class DeleteGraphInput(BaseModel):

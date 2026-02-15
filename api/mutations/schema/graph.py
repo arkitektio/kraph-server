@@ -6,7 +6,7 @@ from kante.types import Info
 from api import inputs, types
 from api.extensions.cypher import get_current_cypher_engine
 from core import models
-from graph_engine import materialize
+from graph_engine import input_models, materialize
 
 
 def create_graph(
@@ -20,7 +20,7 @@ def create_graph(
     cypher = get_current_cypher_engine()
 
     graph = materialize.materialize(
-        definition=model.definition,
+        definition=model.definition or input_models.GraphDefinitionInput(),
         engine=cypher,
         user=info.context.request.user,
         organization=info.context.request.organization,

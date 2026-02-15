@@ -11,6 +11,18 @@ from .metric import record_metric, create_metric, update_metric, delete_metric, 
 from .relation import create_relation
 from .schema import *
 from .insights import (
+    create_graph_table_query,
+    update_graph_table_query,
+    delete_graph_table_query,
+    archive_graph_table_query,
+    create_graph_pairs_query,
+    update_graph_pairs_query,
+    delete_graph_pairs_query,
+    archive_graph_pairs_query,
+    create_graph_path_query,
+    update_graph_path_query,
+    delete_graph_path_query,
+    archive_graph_path_query,
     create_node_table_query,
     update_node_table_query,
     delete_node_table_query,
@@ -62,6 +74,19 @@ __all__ = [
     # Relation mutations
     "create_relation",
     "create_graph_table_query_through_builder",
+    # Insights graph query subtype mutations
+    "create_graph_table_query",
+    "update_graph_table_query",
+    "delete_graph_table_query",
+    "archive_graph_table_query",
+    "create_graph_pairs_query",
+    "update_graph_pairs_query",
+    "delete_graph_pairs_query",
+    "archive_graph_pairs_query",
+    "create_graph_path_query",
+    "update_graph_path_query",
+    "delete_graph_path_query",
+    "archive_graph_path_query",
     # Insights node query mutations
     "create_node_table_query",
     "update_node_table_query",

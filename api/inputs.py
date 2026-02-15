@@ -677,6 +677,46 @@ class BuildGraphTableQueryInput:
     pass
 
 
+@pydantic.input(model=input_models.CreateGraphPairsQueryInput, all_fields=True, description="Input for creating a graph pairs query")
+class CreateGraphPairsQueryInput:
+    pass
+
+
+@pydantic.input(model=input_models.UpdateGraphPairsQueryInput, all_fields=True, description="Input for updating a graph pairs query")
+class UpdateGraphPairsQueryInput:
+    pass
+
+
+@pydantic.input(model=input_models.DeleteGraphPairsQueryInput, all_fields=True, description="Input for deleting a graph pairs query")
+class DeleteGraphPairsQueryInput:
+    id: strawberry.ID = strawberry.field(description="The ID of the graph pairs query to delete")
+
+
+@pydantic.input(model=input_models.ArchiveGraphPairsQueryInput, all_fields=True, description="Input for archiving a graph pairs query")
+class ArchiveGraphPairsQueryInput:
+    id: strawberry.ID = strawberry.field(description="The ID of the graph pairs query to archive")
+
+
+@pydantic.input(model=input_models.CreateGraphPathQueryInput, all_fields=True, description="Input for creating a graph path query")
+class CreateGraphPathQueryInput:
+    pass
+
+
+@pydantic.input(model=input_models.UpdateGraphPathQueryInput, all_fields=True, description="Input for updating a graph path query")
+class UpdateGraphPathQueryInput:
+    pass
+
+
+@pydantic.input(model=input_models.DeleteGraphPathQueryInput, all_fields=True, description="Input for deleting a graph path query")
+class DeleteGraphPathQueryInput:
+    id: strawberry.ID = strawberry.field(description="The ID of the graph path query to delete")
+
+
+@pydantic.input(model=input_models.ArchiveGraphPathQueryInput, all_fields=True, description="Input for archiving a graph path query")
+class ArchiveGraphPathQueryInput:
+    id: strawberry.ID = strawberry.field(description="The ID of the graph path query to archive")
+
+
 @pydantic.input(model=input_models.CreateNodeTableQueryInput, all_fields=True, description="Input for creating a new node table query")
 class CreateNodeTableQueryInput:
     pass
