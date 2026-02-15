@@ -1877,20 +1877,138 @@ class GraphController:
         target_entities = self.get_reified_as_target_entities(link_ref_id)
         return source_entities + target_entities
 
-    def render_graph_nodes_query(self, graph_query: models.GraphNodesQuery, filters: input_models.RenderGraphNodesFilter | None = None, pagination: input_models.RenderGraphNodesPagination | None = None, order: input_models.RenderGraphNodesOrder | None = None, info: Info | None = None) -> RetrievedGraphNodesRender:
+    def render_graph_nodes_query(
+        self, graph_query: models.GraphNodesQuery, filters: input_models.RenderGraphNodesFilter | None = None, pagination: input_models.RenderGraphNodesPagination | None = None, order: input_models.RenderGraphNodesOrder | None = None, info: Info | None = None
+    ) -> RetrievedGraphNodesRender:
         """Render a set of nodes matching the graph query, with optional filters, pagination, and ordering."""
         self._ensure_query_access(graph_query.graph, info)
         raise Exception("Not implemented yet")
 
-    def render_graph_path_query(self, graph_query: models.GraphPathQuery, filters: input_models.RenderGraphPathFilter | None = None, pagination: input_models.RenderGraphPathPagination | None = None, order: input_models.RenderGraphPathOrder | None = None, info: Info | None = None) -> RetrievedGraphPathRender:
+    def render_graph_path_query(
+        self, graph_query: models.GraphPathQuery, filters: input_models.RenderGraphPathFilter | None = None, pagination: input_models.RenderGraphPathPagination | None = None, order: input_models.RenderGraphPathOrder | None = None, info: Info | None = None
+    ) -> RetrievedGraphPathRender:
         """Render a set of nodes matching the graph query, with optional filters, pagination, and ordering."""
         self._ensure_query_access(graph_query.graph, info)
         raise Exception("Not implemented yet")
 
-    def render_graph_table_query(self, graph_query: models.GraphTableQuery, filters: input_models.RenderGraphTableFilter | None = None, pagination: input_models.RenderGraphTablePagination | None = None, order: input_models.RenderGraphTableOrder | None = None, info: Info | None = None) -> RetrievedGraphTableRender:
+    def render_graph_table_query(
+        self, graph_query: models.GraphTableQuery, filters: input_models.RenderGraphTableFilter | None = None, pagination: input_models.RenderGraphTablePagination | None = None, order: input_models.RenderGraphTableOrder | None = None, info: Info | None = None
+    ) -> RetrievedGraphTableRender:
         """Render a set of nodes matching the graph query, with optional filters, pagination, and ordering."""
         self._ensure_query_access(graph_query.graph, info)
-        raise Exception("Not implemented yet")
+        query, params = self._compose_graph_table_query(
+            graph_query.query,
+            filters=filters,
+            pagination=pagination,
+            order=order,
+        )
+
+        result_rows = self.engine.execute(graph_query.graph, query, params)
+
+        row_dicts: list[dict[str, Any]] = []
+        column_keys = [column.get("key") for column in (graph_query.columns or []) if isinstance(column, dict) and column.get("key")]
+
+        for row in result_rows:
+            if isinstance(row, dict):
+                row_dicts.append(row)
+                continue
+
+            if isinstance(row, (list, tuple)):
+                mapped = {(column_keys[index] if index < len(column_keys) else f"col_{index}"): value for index, value in enumerate(row)}
+                row_dicts.append(mapped)
+                continue
+
+            row_dicts.append({"value": row})
+
+        return RetrievedGraphTableRender(
+            graph_name=str(graph_query.graph.age_name),
+            rows=row_dicts,
+        )
+
+    def _compose_graph_table_query(
+        self,
+        base_query: str,
+        filters: input_models.RenderGraphTableFilter | None = None,
+        pagination: input_models.RenderGraphTablePagination | None = None,
+        order: input_models.RenderGraphTableOrder | None = None,
+    ) -> tuple[str, dict[str, Any]]:
+        query = base_query.strip().rstrip(";")
+        params: dict[str, Any] = {}
+
+        filter_clause, filter_params = self._build_graph_table_filter_clause(filters)
+        params.update(filter_params)
+
+        if filter_clause:
+            query = self._inject_graph_table_filter(query, filter_clause)
+
+        if order:
+            key = self._validate_property_key(order.key)
+            direction = str(order.direction).lower()
+            direction = "DESC" if direction == "desc" else "ASC"
+            query = f"{query}\nORDER BY {key} {direction}"
+
+        if pagination:
+            if pagination.offset is not None and pagination.offset > 0:
+                query = f"{query}\nSKIP {int(pagination.offset)}"
+            if pagination.limit is not None:
+                query = f"{query}\nLIMIT {int(pagination.limit)}"
+
+        return query, params
+
+    def _build_graph_table_filter_clause(
+        self,
+        filters: input_models.RenderGraphTableFilter | None,
+    ) -> tuple[str, dict[str, Any]]:
+        if not filters:
+            return "", {}
+
+        key = self._validate_property_key(filters.key)
+        operator = str(filters.operator).upper()
+        value = self._coerce_filter_value(filters.value)
+        value_param = "graph_table_filter_value"
+
+        params = {value_param: value}
+
+        if operator in {"EQUALS", "EQ", "="}:
+            return f"{key} = ${value_param}", params
+        if operator in {"NOT_EQUALS", "NEQ", "!="}:
+            return f"{key} <> ${value_param}", params
+        if operator in {"GREATER_THAN", "GT", ">"}:
+            return f"{key} > ${value_param}", params
+        if operator in {"LESS_THAN", "LT", "<"}:
+            return f"{key} < ${value_param}", params
+        if operator in {"GREATER_OR_EQUAL", "GREATER_THAN_OR_EQUAL", "GTE", ">="}:
+            return f"{key} >= ${value_param}", params
+        if operator in {"LESS_OR_EQUAL", "LESS_THAN_OR_EQUAL", "LTE", "<="}:
+            return f"{key} <= ${value_param}", params
+        if operator == "CONTAINS":
+            return f"toString({key}) CONTAINS toString(${value_param})", params
+        if operator == "STARTS_WITH":
+            return f"toString({key}) STARTS WITH toString(${value_param})", params
+        if operator == "ENDS_WITH":
+            return f"toString({key}) ENDS WITH toString(${value_param})", params
+        if operator == "IN":
+            return f"{key} IN ${value_param}", params
+        if operator == "NOT_IN":
+            return f"NOT {key} IN ${value_param}", params
+
+        raise ValueError(f"Unsupported filter operator '{operator}'.")
+
+    def _inject_graph_table_filter(self, query: str, filter_clause: str) -> str:
+        return_matches = list(re.finditer(r"\bRETURN\b", query, flags=re.IGNORECASE))
+        if not return_matches:
+            return f"{query}\nWHERE {filter_clause}"
+
+        insert_at = return_matches[-1].start()
+        prefix = query[:insert_at].rstrip()
+        suffix = query[insert_at:].lstrip()
+
+        if re.search(r"\bWHERE\b", prefix, flags=re.IGNORECASE):
+            prefix = f"{prefix}\nAND {filter_clause}"
+        else:
+            prefix = f"{prefix}\nWHERE {filter_clause}"
+
+        return f"{prefix}\n{suffix}"
 
     def _validate_property_key(self, key: str) -> str:
         if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", key):

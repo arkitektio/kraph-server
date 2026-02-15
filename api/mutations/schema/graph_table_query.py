@@ -144,7 +144,11 @@ def create_graph_table_query_through_builder(
     """Create or update a graph table query from builder arguments."""
     model = input.to_pydantic()
 
-    graph = context.get_accessible_graph(info, str(model.graph))
+    graph = context.get_accessible_graph(
+        info,
+        str(model.graph),
+        actions=[input_models.Action.CREATE_BUILDER_ARG],
+    )
     query = _build_graph_table_query(model.builder_args)
 
     graph_table_query, _ = models.GraphTableQuery.objects.update_or_create(

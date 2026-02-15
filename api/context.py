@@ -1,5 +1,6 @@
 from kante.types import Info
 from graph_engine.input_models import ProvenanceContext
+from graph_engine import input_models
 from api.extensions.cypher import cypher_engine
 from graph_engine.controller import GraphController, extract_graph_id as exg, extract_node_id as exn
 from graph_engine.scalars import GraphID, LocalID, GraphName
@@ -93,7 +94,27 @@ def validate_graph_access(info: Info, graph: models.Graph) -> models.Graph:
     return graph
 
 
-def get_accessible_graph(info: Info, identifier: str | GraphName) -> models.Graph:
+def validate_graph_actions(
+    info: Info,
+    graph: models.Graph,
+    actions: list[input_models.Action | str] | None = None,
+) -> models.Graph:
+    """Validate that all requested actions are allowed for the current graph context."""
+    if not actions:
+        return graph
+
+    for action in actions:
+        action_value = action.value if hasattr(action, "value") else str(action)
+        graph.validate_action_allowed(info=info, action=action_value)
+
+    return graph
+
+
+def get_accessible_graph(
+    info: Info,
+    identifier: str | GraphName,
+    actions: list[input_models.Action | str] | None = None,
+) -> models.Graph:
     graph = None
     identifier_str = str(identifier)
 
@@ -105,4 +126,5 @@ def get_accessible_graph(info: Info, identifier: str | GraphName) -> models.Grap
     if graph is None:
         raise ValueError(f"Graph not found for identifier {identifier}")
 
-    return validate_graph_access(info, graph)
+    graph = validate_graph_access(info, graph)
+    return validate_graph_actions(info, graph, actions=actions)
