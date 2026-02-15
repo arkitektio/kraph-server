@@ -8,7 +8,8 @@ from .node import pin_node
 from .entity import create_entity, recalculate_entity, delete_entity, archive_entity, update_entity
 from .structure import create_structure, delete_structure, archive_structure, update_structure, link_structure_to_entity
 from .metric import record_metric, create_metric, update_metric, delete_metric, archive_metric
-from .relation import create_relation
+from .relation import create_relation, delete_relation, archive_relation
+from .measurement import create_measurement, delete_measurement, archive_measurement
 from .schema import *
 from .insights import (
     create_graph_table_query,
@@ -73,6 +74,11 @@ __all__ = [
     "archive_metric",
     # Relation mutations
     "create_relation",
+    "create_measurement",
+    "delete_relation",
+    "archive_relation",
+    "delete_measurement",
+    "archive_measurement",
     "create_graph_table_query_through_builder",
     # Insights graph query subtype mutations
     "create_graph_table_query",

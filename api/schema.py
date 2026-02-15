@@ -31,69 +31,61 @@ from graph_engine import scalars
 
 @strawberry.type(description="Graph Engine Queries")
 class Query:
-    """Root query type for the graph engine API."""
+    """Root query type, grouped by domain sections: Entity Type, Schema, and Insights."""
 
-    graph: types.Graph = kante.django_field(description="Get a graph by ID")
-    graph_stats: types.GraphStats = kante.django_field(description="Get aggregated stats for graphs with optional filters", resolver=types.GraphStatsResolver)
-    category_tag_stats: types.CategoryTagStats = kante.django_field(description="Get aggregated stats for category tags with optional filters", resolver=types.CategoryTagStatsResolver)
-    entity_category_stats: types.EntityCategoryStats = kante.django_field(description="Get aggregated stats for entity categories with optional filters", resolver=types.EntityCategoryStatsResolver)
-    structure_category_stats: types.StructureCategoryStats = kante.django_field(description="Get aggregated stats for structure categories with optional filters", resolver=types.StructureCategoryStatsResolver)
-    metric_category_stats: types.MetricCategoryStats = kante.django_field(description="Get aggregated stats for metric categories with optional filters", resolver=types.MetricCategoryStatsResolver)
-    measurement_category_stats: types.MeasurementCategoryStats = kante.django_field(description="Get aggregated stats for measurement categories with optional filters", resolver=types.MeasurementCategoryStatsResolver)
-    relation_category_stats: types.RelationCategoryStats = kante.django_field(description="Get aggregated stats for relation categories with optional filters", resolver=types.RelationCategoryStatsResolver)
-    structure_relation_category_stats: types.StructureRelationCategoryStats = kante.django_field(description="Get aggregated stats for structure relation categories with optional filters", resolver=types.StructureRelationCategoryStatsResolver)
-    protocol_event_category_stats: types.ProtocolEventCategoryStats = kante.django_field(description="Get aggregated stats for protocol event categories with optional filters", resolver=types.ProtocolEventCategoryStatsResolver)
-    natural_event_category_stats: types.NaturalEventCategoryStats = kante.django_field(description="Get aggregated stats for natural event categories with optional filters", resolver=types.NaturalEventCategoryStatsResolver)
-
-    graphs: list[types.Graph] = kante.django_field(description="List of all graphs in the graph engine")
-
-    # Schema Operations
-    category_tags: list[types.CategoryTag] = kante.django_field(description="List of all category tags")
-    entity_categories: list[types.EntityCategory] = kante.django_field(description="List of all entity categories/schemas")
-    entity_category: types.EntityCategory = kante.django_field(description="Get a single entity category/schema by ID")
-    structure_categories: list[types.StructureCategory] = kante.django_field(description="List of all structure categories/schemas")
-    structure_category: types.StructureCategory = kante.django_field(description="Get a single structure category/schema by ID")
-    metric_categories: list[types.MetricCategory] = kante.django_field(description="List of all metric categories/schemas")
-    measurement_categories: list[types.MeasurementCategory] = kante.django_field(description="List of all measurement categories/schemas")
-    measurement_category: types.MeasurementCategory = kante.django_field(description="Get a single measurement category/schema by ID")
-    metric_category: types.MetricCategory = kante.django_field(description="Get a single metric category/schema by ID")
-    relation_categories: list[types.RelationCategory] = kante.django_field(description="List of all relation categories/schemas")
-    relation_category: types.RelationCategory = kante.django_field(description="Get a single relation category/schema by ID")
-    materialized_edges: list[types.MaterializedEdge] = kante.django_field(description="List of all materialized edges in the graph")
-    materialized_edge: types.MaterializedEdge = kante.django_field(description="Get a single materialized edge by ID")
-
-    # Entity queries
+    # =========================
+    # Entity Type Section
+    # =========================
     entity = kante.django_field(queries.entity, description="Get an entity by ID")
+    entities = kante.django_field(queries.entities, description="List entities with optional filters, ordering, and pagination")
     structure = kante.django_field(queries.structure, description="Get a structure by composite graph ID")
     structures = kante.django_field(queries.structures, description="List structures with optional filters, ordering, and pagination")
     structure_by_identifier = kante.django_field(queries.structure_by_identifier, description="Get a structure by graph, identifier and object")
     metric = kante.django_field(queries.metric, description="Get a metric by ID")
-    entities = kante.django_field(queries.entities, description="List of entities with optional filters and ordering")
 
-    # Insights
+    # =========================
+    # Schema Section
+    # =========================
+    graph: types.Graph = kante.django_field(description="Get a graph by ID")
+    graphs: list[types.Graph] = kante.django_field(description="List all graphs in the graph engine")
+
+    category_tags: list[types.CategoryTag] = kante.django_field(description="List all category tags")
+    entity_categories: list[types.EntityCategory] = kante.django_field(description="List all entity categories/schemas")
+    entity_category: types.EntityCategory = kante.django_field(description="Get a single entity category/schema by ID")
+    structure_categories: list[types.StructureCategory] = kante.django_field(description="List all structure categories/schemas")
+    structure_category: types.StructureCategory = kante.django_field(description="Get a single structure category/schema by ID")
+    metric_categories: list[types.MetricCategory] = kante.django_field(description="List all metric categories/schemas")
+    metric_category: types.MetricCategory = kante.django_field(description="Get a single metric category/schema by ID")
+    measurement_categories: list[types.MeasurementCategory] = kante.django_field(description="List all measurement categories/schemas")
+    measurement_category: types.MeasurementCategory = kante.django_field(description="Get a single measurement category/schema by ID")
+    relation_categories: list[types.RelationCategory] = kante.django_field(description="List all relation categories/schemas")
+    relation_category: types.RelationCategory = kante.django_field(description="Get a single relation category/schema by ID")
+
+    materialized_edges: list[types.MaterializedEdge] = kante.django_field(description="List all materialized edges in the graph")
+    materialized_edge: types.MaterializedEdge = kante.django_field(description="Get a single materialized edge by ID")
+
+    graph_stats: types.GraphStats = kante.django_field(description="Get aggregated graph stats with optional filters", resolver=types.GraphStatsResolver)
+    category_tag_stats: types.CategoryTagStats = kante.django_field(description="Get aggregated category-tag stats with optional filters", resolver=types.CategoryTagStatsResolver)
+    entity_category_stats: types.EntityCategoryStats = kante.django_field(description="Get aggregated entity-category stats with optional filters", resolver=types.EntityCategoryStatsResolver)
+    structure_category_stats: types.StructureCategoryStats = kante.django_field(description="Get aggregated structure-category stats with optional filters", resolver=types.StructureCategoryStatsResolver)
+    metric_category_stats: types.MetricCategoryStats = kante.django_field(description="Get aggregated metric-category stats with optional filters", resolver=types.MetricCategoryStatsResolver)
+    measurement_category_stats: types.MeasurementCategoryStats = kante.django_field(description="Get aggregated measurement-category stats with optional filters", resolver=types.MeasurementCategoryStatsResolver)
+    relation_category_stats: types.RelationCategoryStats = kante.django_field(description="Get aggregated relation-category stats with optional filters", resolver=types.RelationCategoryStatsResolver)
+    structure_relation_category_stats: types.StructureRelationCategoryStats = kante.django_field(description="Get aggregated structure-relation-category stats with optional filters", resolver=types.StructureRelationCategoryStatsResolver)
+    protocol_event_category_stats: types.ProtocolEventCategoryStats = kante.django_field(description="Get aggregated protocol-event-category stats with optional filters", resolver=types.ProtocolEventCategoryStatsResolver)
+    natural_event_category_stats: types.NaturalEventCategoryStats = kante.django_field(description="Get aggregated natural-event-category stats with optional filters", resolver=types.NaturalEventCategoryStatsResolver)
+
+    # =========================
+    # Insights Section
+    # =========================
     graph_queries: list[types.GraphQuery] = kante.django_field(description="Show all saved graph queries")
     graph_query: types.GraphQuery = kante.django_field(description="Show a single saved graph query by ID")
     graph_table_queries: list[types.GraphTableQuery] = kante.django_field(description="Show all saved graph table queries")
     graph_table_query: types.GraphTableQuery = kante.django_field(description="Show a single saved graph table query by ID")
     graph_nodes_queries: list[types.GraphNodesQuery] = kante.django_field(description="Show all saved graph nodes queries")
     graph_node_query: types.GraphNodesQuery = kante.django_field(description="Show a single saved graph node query by ID")
-
     graph_pairs_queries: list[types.GraphPairsQuery] = kante.django_field(description="Show all saved graph pairs queries")
     graph_pairs_query: types.GraphPairsQuery = kante.django_field(description="Show a single saved graph pairs query by ID")
-
-    render_graph_nodes = kante.django_field(queries.render_graph_nodes, description="Render results for a graph nodes query")
-    render_graph_path = kante.django_field(queries.render_graph_path, description="Render results for a graph path query")
-    render_graph_pairs = kante.django_field(queries.render_graph_pairs, description="Render results for a graph pairs query")
-    render_graph_table = kante.django_field(queries.render_graph_table, description="Render results for a graph table query")
-
-    edge_queries: list[types.EdgeQuery] = kante.django_field(description="Show all saved edge queries")
-    edge_query: types.EdgeQuery = kante.django_field(description="Show a single saved edge query by ID")
-    edge_table_queries: list[types.EdgeTableQuery] = kante.django_field(description="Show all saved edge table queries")
-    edge_table_query: types.EdgeTableQuery = kante.django_field(description="Show a single saved edge table query by ID")
-    edge_path_queries: list[types.EdgePathQuery] = kante.django_field(description="Show all saved edge path queries")
-    edge_path_query: types.EdgePathQuery = kante.django_field(description="Show a single saved edge path query by ID")
-    edge_pairs_queries: list[types.EdgePairsQuery] = kante.django_field(description="Show all saved edge pairs queries")
-    edge_pairs_query: types.EdgePairsQuery = kante.django_field(description="Show a single saved edge pairs query by ID")
 
     node_queries: list[types.NodeQuery] = kante.django_field(description="Show all saved node queries")
     node_query: types.NodeQuery = kante.django_field(description="Show a single saved node query by ID")
@@ -104,13 +96,31 @@ class Query:
     node_path_queries: list[types.NodePathQuery] = kante.django_field(description="Show all saved node path queries")
     node_path_query: types.NodePathQuery = kante.django_field(description="Show a single saved node path query by ID")
 
-    # Plots
+    edge_queries: list[types.EdgeQuery] = kante.django_field(description="Show all saved edge queries")
+    edge_query: types.EdgeQuery = kante.django_field(description="Show a single saved edge query by ID")
+    edge_table_queries: list[types.EdgeTableQuery] = kante.django_field(description="Show all saved edge table queries")
+    edge_table_query: types.EdgeTableQuery = kante.django_field(description="Show a single saved edge table query by ID")
+    edge_pairs_queries: list[types.EdgePairsQuery] = kante.django_field(description="Show all saved edge pairs queries")
+    edge_pairs_query: types.EdgePairsQuery = kante.django_field(description="Show a single saved edge pairs query by ID")
+    edge_path_queries: list[types.EdgePathQuery] = kante.django_field(description="Show all saved edge path queries")
+    edge_path_query: types.EdgePathQuery = kante.django_field(description="Show a single saved edge path query by ID")
+
+    render_graph_nodes = kante.django_field(queries.render_graph_nodes, description="Render results for a graph nodes query")
+    render_graph_path = kante.django_field(queries.render_graph_path, description="Render results for a graph path query")
+    render_graph_pairs = kante.django_field(queries.render_graph_pairs, description="Render results for a graph pairs query")
+    render_graph_table = kante.django_field(queries.render_graph_table, description="Render results for a graph table query")
+
     scatter_plots: list[types.ScatterPlot] = kante.django_field(description="Show all saved scatter plots")
     scatter_plot: types.ScatterPlot = kante.django_field(description="Show a single saved scatter plot by ID")
 
 
 @strawberry.type(description="Graph Engine Mutations")
 class Mutation:
+    """Root mutation type, grouped by domain sections: Entity Type, Schema, and Insights."""
+
+    # =========================
+    # Entity Type Section
+    # =========================
     pin_node = kante.django_mutation(
         description="Pin a node in the UI for a user",
         resolver=mutations.pin_node,
@@ -168,13 +178,39 @@ class Mutation:
         description="Update an existing metric in the graph",
         resolver=mutations.update_metric,
     )
+    create_relation = kante.django_mutation(
+        description="Create a new relation in the graph",
+        resolver=mutations.create_relation,
+    )
+    create_measurement = kante.django_mutation(
+        description="Create a new measurement in the graph",
+        resolver=mutations.create_measurement,
+    )
+    delete_measurement = kante.django_mutation(
+        description="Delete a measurement from the graph",
+        resolver=mutations.delete_measurement,
+    )
+    archive_measurement = kante.django_mutation(
+        description="Archive a measurement in the graph (soft delete)",
+        resolver=mutations.archive_measurement,
+    )
+    delete_relation = kante.django_mutation(
+        description="Delete a relation from the graph",
+        resolver=mutations.delete_relation,
+    )
+    archive_relation = kante.django_mutation(
+        description="Archive a relation in the graph (soft delete)",
+        resolver=mutations.archive_relation,
+    )
 
     upload_media = kante.django_mutation(
         description="Upload media and return a URL for access",
         resolver=datalayer_mutations.upload_media,
     )
 
-    #
+    # =========================
+    # Insights Section
+    # =========================
     create_graph = kante.django_mutation(
         description="Create a new graph in the graph engine",
         resolver=mutations.create_graph,
@@ -345,7 +381,9 @@ class Mutation:
         resolver=mutations.archive_graph,
     )
 
-    # Categories/schema mutations
+    # =========================
+    # Schema Section
+    # =========================
     create_entity_category = kante.django_mutation(
         description="Create a new entity category/schema in the graph",
         resolver=mutations.create_entity_category,

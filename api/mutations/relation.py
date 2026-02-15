@@ -4,7 +4,6 @@ Relation mutation resolvers.
 
 from kante.types import Info
 import strawberry
-
 from api import types, inputs, context
 from core import models
 
