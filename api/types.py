@@ -1298,19 +1298,28 @@ def cast_edge_to_graphql_type(edge: RetrievedEdge) -> EdgeSubtype:
 @strawberry.type(description="Result of linking a structure to an entity")
 class GraphNodesRender:
     _value: strawberry.Private[retrieved.RetrievedGraphNodesRender]
-    pass
+
+    @strawberry.field(description="The graph name used for this render")
+    def graph_name(self) -> str:
+        return self._value.graph_name
 
 
 @strawberry.type(description="Result of linking a structure to an entity")
 class GraphPathRender:
     _value: strawberry.Private[retrieved.RetrievedGraphPathRender]
-    pass
+
+    @strawberry.field(description="The graph name used for this render")
+    def graph_name(self) -> str:
+        return self._value.graph_name
 
 
 @strawberry.type(description="Result of linking a structure to an entity")
 class GraphPairsRender:
     _value: strawberry.Private[retrieved.RetrievedGraphPairsRender]
-    pass
+
+    @strawberry.field(description="The graph name used for this render")
+    def graph_name(self) -> str:
+        return self._value.graph_name
 
 
 @strawberry.type(description="Result of linking a structure to an entity")

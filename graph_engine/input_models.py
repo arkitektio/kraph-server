@@ -153,7 +153,7 @@ class PlateChildInput(BaseModel):
 class RenderGraphNodesFilter(BaseModel):
     key: str
     operator: str
-    value: Any
+    value: scalars.AnyScalar
 
 
 class RenderGraphNodesPagination(BaseModel):
@@ -163,13 +163,13 @@ class RenderGraphNodesPagination(BaseModel):
 
 class RenderGraphNodesOrder(BaseModel):
     key: str
-    direction: Literal["asc", "desc"] = "asc"
+    direction: str = "asc"
 
 
 class RenderGraphPathFilter(BaseModel):
     key: str
     operator: str
-    value: Any
+    value: scalars.AnyScalar
 
 
 class RenderGraphPathPagination(BaseModel):
@@ -179,13 +179,13 @@ class RenderGraphPathPagination(BaseModel):
 
 class RenderGraphPathOrder(BaseModel):
     key: str
-    direction: Literal["asc", "desc"] = "asc"
+    direction: str = "asc"
 
 
 class RenderGraphPairsFilter(BaseModel):
     key: str
     operator: str
-    value: Any
+    value: scalars.AnyScalar
 
 
 class RenderGraphPairsPagination(BaseModel):
@@ -195,13 +195,13 @@ class RenderGraphPairsPagination(BaseModel):
 
 class RenderGraphPairsOrder(BaseModel):
     key: str
-    direction: Literal["asc", "desc"] = "asc"
+    direction: str = "asc"
 
 
 class RenderGraphTableFilter(BaseModel):
     key: str
     operator: str
-    value: Any
+    value: scalars.AnyScalar
 
 
 class RenderGraphTablePagination(BaseModel):
@@ -211,7 +211,7 @@ class RenderGraphTablePagination(BaseModel):
 
 class RenderGraphTableOrder(BaseModel):
     key: str
-    direction: Literal["asc", "desc"] = "asc"
+    direction: str = "asc"
 
 
 # ==========================================

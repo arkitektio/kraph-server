@@ -68,6 +68,11 @@ class Query:
     graph_pairs_queries: list[types.GraphPairsQuery] = kante.django_field(description="Show all saved graph pairs queries")
     graph_pairs_query: types.GraphPairsQuery = kante.django_field(description="Show a single saved graph pairs query by ID")
 
+    render_graph_nodes = kante.django_field(queries.render_graph_nodes, description="Render results for a graph nodes query")
+    render_graph_path = kante.django_field(queries.render_graph_path, description="Render results for a graph path query")
+    render_graph_pairs = kante.django_field(queries.render_graph_pairs, description="Render results for a graph pairs query")
+    render_graph_table = kante.django_field(queries.render_graph_table, description="Render results for a graph table query")
+
     edge_queries: list[types.EdgeQuery] = kante.django_field(description="Show all saved edge queries")
     edge_query: types.EdgeQuery = kante.django_field(description="Show a single saved edge query by ID")
     edge_table_queries: list[types.EdgeTableQuery] = kante.django_field(description="Show all saved edge table queries")
