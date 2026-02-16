@@ -17,11 +17,14 @@ from .insights.graph_nodes import render_graph_nodes
 from .insights.graph_path import render_graph_path
 from .insights.graph_pairs import render_graph_pairs
 from .insights.graph_table import render_graph_table
+from .node import node, nodes
 
 __all__ = [
     "Query",
     # Entity queries
     "entity",
+    "node",
+    "nodes",
     "entities",
     "entities_informed_by",
     # Structure queries

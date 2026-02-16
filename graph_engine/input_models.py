@@ -69,6 +69,12 @@ class WhereOperator(str, Enum):
     ENDS_WITH = "ENDS_WITH"
 
 
+class ColumnKind(str, Enum):
+    NODE = "NODE"
+    EDGE = "EDGE"
+    VALUE = "VALUE"
+
+
 # --- Type compatibility mappings for aggregations ---
 
 # Aggregations that require numeric source types
@@ -167,9 +173,10 @@ class RenderGraphNodesOrder(BaseModel):
 
 
 class RenderGraphPathFilter(BaseModel):
-    key: str
-    operator: str
-    value: scalars.AnyScalar
+    key: Optional[str] = None
+    operator: Optional[str] = None
+    value: Optional[scalars.AnyScalar] = None
+    search: Optional[str] = None
 
 
 class RenderGraphPathPagination(BaseModel):
@@ -199,9 +206,10 @@ class RenderGraphPairsOrder(BaseModel):
 
 
 class RenderGraphTableFilter(BaseModel):
-    key: str
-    operator: str
+    key: Optional[str] = None
+    operator: Optional[str] = None
     value: scalars.AnyScalar
+    search: Optional[str] = None
 
 
 class RenderGraphTablePagination(BaseModel):
@@ -241,6 +249,20 @@ class EntityPagination(BaseModel):
     limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
 
 
+class NodeFilters(BaseModel):
+    graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
+    category: Optional[str] = Field(default=None, description="Filter by node kind/type")
+    ids: Optional[List[scalars.GraphID]] = Field(default=None, description="Filter by specific node IDs")
+    has_property: Optional[str] = Field(default=None, description="Filter nodes that have a specific property")
+    search: Optional[str] = Field(default=None, description="Full-text search over node properties")
+    matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter nodes that match specific property conditions")
+
+
+class NodePagination(BaseModel):
+    offset: Optional[int] = Field(default=0, description="Number of items to skip")
+    limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
+
+
 class StructureFilters(BaseModel):
     graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
     category: Optional[str] = Field(default=None, description="Filter by structure kind/type")
@@ -261,6 +283,13 @@ class PropertyOrder(BaseModel):
 
 
 class EntityOrder(BaseModel):
+    created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
+    category: Optional[Ordering] = Field(default=None, description="Order by entity kind/type")
+    id: Optional[Ordering] = Field(default=None, description="Order by entity ID")
+    property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value (requires 'has_property' filter)")
+
+
+class NodeOrder(BaseModel):
     created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
     category: Optional[Ordering] = Field(default=None, description="Order by entity kind/type")
     id: Optional[Ordering] = Field(default=None, description="Order by entity ID")
@@ -551,6 +580,7 @@ class DerivationRuleInput(BaseModel):
 
 
 class ColumnInput(BaseModel):
+    kind: ColumnKind = Field(..., description="The kind of column (e.g., 'property', 'id', 'metadata', 'derived')")
     key: str = Field(..., description="The property key for this column (inside the table query result)")
     type: str = Field(..., description="The property type for this column (e.g., STRING, FLOAT)")
     label: Optional[str] = Field(default=None, description="Optional human-readable label for this column (defaults to 'key' if not provided)")

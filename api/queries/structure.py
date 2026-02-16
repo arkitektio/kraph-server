@@ -17,7 +17,7 @@ def structure_by_identifier(
     graph: strawberry.ID,
     identifier: scalars.StructureIdentifier,
     object: scalars.StructureObject,
-) -> Optional[types.Structure]:
+) -> types.Structure:
     """
     Fetch a specific structure by its identifier and object ID.
 
@@ -46,7 +46,7 @@ def structure_by_identifier(
 def structure(
     info: Info,
     id: scalars.GraphID,
-) -> Optional[types.Structure]:
+) -> types.Structure:
     """
     Fetch a specific structure by composite graph ID.
 

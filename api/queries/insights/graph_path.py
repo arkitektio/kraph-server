@@ -16,7 +16,7 @@ def render_graph_path(
     filters: inputs.RenderGraphPathFilter | None = None,
     pagination: inputs.RenderGraphPathPagination | None = None,
     order: inputs.RenderGraphPathOrder | None = None,
-) -> Optional[types.Assertion]:
+) -> Optional[types.GraphPathRender]:
     """
     Fetch the assertion (provenance) that generated an entity.
 

@@ -213,6 +213,14 @@ class NodeCategory:
 class Plottable:
     columns: List[Column] = strawberry.field(description="List of columns to return in the table query result")
 
+    @kante.django_field(description="The graph this category belongs to")
+    def scatter_plots(self) -> List["ScatterPlot"]:
+        """Return a list of table queries that can be visualized as scatterplots."""
+        # In a real implementation, we would check if this query is used in any GraphTableQuery with a scatterplot visualization,
+        # and if so, return those queries.
+        # For this example, we'll return an empty list for simplicity.
+        return []
+
 
 @kante.django_interface(models.GraphQuery, description="Base interface for entity categories/schemas")
 class GraphQuery:
@@ -595,6 +603,11 @@ class Node(Generic[V]):
     @strawberry.field(description="Tags associated with this node")
     def tags(self) -> List[str]:
         return self._value.tags
+
+    @strawberry.field(description="The timestamp when this entity was materialized (unix ms)")
+    def pinned(self) -> bool:
+        """ """
+        return False
 
     @classmethod
     def to_subtype(cls, value: RetrievedNode) -> "Node":
@@ -1371,9 +1384,23 @@ class GraphNodesRender:
         return await loaders.graph_nodes_query_by_id_loader.load(self._value.graph_query_id)
 
 
+@strawberry.interface(description="Base interface for graph render results")
+class PathLike:
+    nodes: List[Node] = strawberry.field(description="Nodes in the path")
+    edges: List[Edge] = strawberry.field(description="Edges in the path")
+
+
 @strawberry.type(description="Result of linking a structure to an entity")
-class GraphPathRender:
+class GraphPathRender(PathLike):
     _value: strawberry.Private[retrieved.RetrievedGraphPathRender]
+
+    @strawberry.field(description="The graph name used for this render")
+    def nodes(self) -> List[Node]:
+        return [cast_node_to_graphql_type(node) for node in self._value.nodes]
+
+    @strawberry.field(description="The graph name used for this render")
+    def edges(self) -> List[Edge]:
+        return [cast_edge_to_graphql_type(edge) for edge in self._value.edges]
 
     @strawberry.field(description="The graph name used for this render")
     def graph_name(self) -> str:

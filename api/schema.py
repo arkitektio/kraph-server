@@ -36,6 +36,9 @@ class Query:
     # =========================
     # Entity Type Section
     # =========================
+    node = kante.django_field(queries.node, description="Get a node by ID")
+    nodes = kante.django_field(queries.nodes, description="List nodes with optional filters, ordering, and pagination")
+
     entity = kante.django_field(queries.entity, description="Get an entity by ID")
     entities = kante.django_field(queries.entities, description="List entities with optional filters, ordering, and pagination")
     structure = kante.django_field(queries.structure, description="Get a structure by composite graph ID")

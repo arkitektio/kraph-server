@@ -19,6 +19,11 @@ class EntityOrder:
     """Ordering options for entity queries."""
 
 
+@kante.pydantic_input(input_models.NodeOrder, all_fields=True, description="Ordering options for node queries")
+class NodeOrder:
+    """Ordering options for node queries."""
+
+
 @kante.pydantic_input(input_models.StructureOrder, all_fields=True, description="Ordering options for structure queries")
 class StructureOrder:
     """Ordering options for structure queries."""

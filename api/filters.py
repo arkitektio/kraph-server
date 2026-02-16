@@ -27,6 +27,21 @@ class EntityPaginationInput:
     """Filter options for entity queries."""
 
 
+@kante.pydantic_input(input_models.NodeFilters, description="Filter options for querying nodes")
+class NodeFilters:
+    """Filter options for node queries."""
+
+    ids: Optional[List[scalars.GraphID]] = kante.field(default=None, description="Filter by specific node IDs")
+    has_property: Optional[str] = kante.field(default=None, description="Filter nodes that have a specific property")
+    search: Optional[str] = kante.field(default=None, description="Full-text search over node properties")
+    matches: Optional[List[PropertyMatch]] = kante.field(default=None, description="Filter nodes that match specific property conditions")
+
+
+@kante.pydantic_input(input_models.NodePagination, all_fields=True, description="Pagination options for querying nodes")
+class NodePaginationInput:
+    """Filter options for node queries."""
+
+
 @kante.pydantic_input(input_models.StructureFilters, description="Filter options for querying structures")
 class StructureFilter:
     """Filter options for structure queries."""
