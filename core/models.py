@@ -46,7 +46,7 @@ class Graph(models.Model):
         related_name="graphs",
         help_text="The user that this graph belongs to",
     )
-    store = models.ForeignKey(
+    image = models.ForeignKey(
         datalayer_models.MediaStore,
         on_delete=models.CASCADE,
         null=True,
@@ -472,7 +472,7 @@ class Category(PolymorphicModel):
         blank=True,
         help_text="The index of this category (new entities will be created with this index)",
     )
-    store = models.ForeignKey(
+    image = models.ForeignKey(
         datalayer_models.MediaStore,
         on_delete=models.CASCADE,
         null=True,
@@ -1228,7 +1228,7 @@ class GraphQuery(PolymorphicModel):
     graph = models.ForeignKey(
         Graph,
         on_delete=models.CASCADE,
-        related_name="graph_queries",
+        related_name="queries",
         help_text="The graph this query belongs to",
     )
     key = models.CharField(

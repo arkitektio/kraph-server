@@ -142,7 +142,7 @@ class Graph:
         """Whether this category is pinned for quick access in the UI."""
         # In a real implementation, we would check the user's preferences or a pinned categories list.
         # For this example, we'll return False for simplicity.
-        return cast(models.Graph, self).pinned_by.filter(id=info.context.user.id).exists()
+        return cast(models.Graph, self).pinned_by.filter(id=info.context.request.user.id).exists()
 
 
 @kante.django_type(models.CategoryTag, filters=filters.CategoryTagFilter, pagination=True, ordering=order.CategoryTagOrder, description="Base interface for graph nodes representing entities")
