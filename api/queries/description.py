@@ -60,8 +60,8 @@ def _append_match_conditions(alias: str, where_clauses: list[str], params: dict,
             where_clauses.append(f"NOT {alias}[$${key_param}] IN $${value_param}".replace("$$", "$"))
 
 
-def describe(info: Info, id: scalars.GraphID) -> types.Describes:
-    """Fetch a specific describes edge by composite graph ID."""
+def description(info: Info, id: scalars.GraphID) -> types.Description:
+    """Fetch a specific description edge by composite graph ID."""
     controller = context.get_controller()
 
     graph_id = context.extract_graph_id(id)
@@ -79,20 +79,20 @@ def describe(info: Info, id: scalars.GraphID) -> types.Describes:
     )
 
     if not result:
-        raise ValueError(f"Describes edge with ID {id} not found")
+        raise ValueError(f"Description edge with ID {id} not found")
 
     edge = _to_retrieved_edge(str(graph.age_name), result[0])
-    return types.Describes(_value=edge)
+    return types.Description(_value=edge)
 
 
-def describes(
+def descriptions(
     info: Info,
     graph: strawberry.ID,
     filters: filters.RelationFilter | None = None,
     ordering: list[order.RelationOrder] | None = None,
     pagination: pagination.RelationPaginationInput | None = None,
-) -> List[types.Describes]:
-    """Fetch describes edges with optional filters, ordering, and pagination."""
+) -> List[types.Description]:
+    """Fetch description edges with optional filters, ordering, and pagination."""
     controller = context.get_controller()
     graph_model = context.get_accessible_graph(info, graph)
 
@@ -153,4 +153,4 @@ def describes(
         params,
     )
 
-    return [types.Describes(_value=_to_retrieved_edge(str(graph_model.age_name), row)) for row in result]
+    return [types.Description(_value=_to_retrieved_edge(str(graph_model.age_name), row)) for row in result]

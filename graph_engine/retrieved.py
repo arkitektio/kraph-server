@@ -524,6 +524,27 @@ class RetrievedStructure(RetrievedNode):
 
 
 @dataclass
+class RetrievedRelationShadowLink(RetrievedNode):
+    """A retrieved RelationShadowLink node from the AGE graph."""
+
+    pass
+
+
+@dataclass
+class RetrievedStructureRelationShadowLink(RetrievedNode):
+    """A retrieved RelationShadowLink node from the AGE graph."""
+
+    pass
+
+
+@dataclass
+class RetrievedMeasurementShadowLink(RetrievedNode):
+    """A retrieved MeasurementShadowLink node from the AGE graph."""
+
+    pass
+
+
+@dataclass
 class RetrievedEvent(RetrievedNode):
     """A retrieved Event node from the AGE graph."""
 

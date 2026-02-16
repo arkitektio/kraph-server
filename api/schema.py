@@ -50,8 +50,8 @@ class Query:
     protocol_events = kante.django_field(queries.protocol_events, description="List protocol events for a protocol event category")
     measurement = kante.django_field(queries.measurement, description="Get a measurement by composite graph ID")
     measurements = kante.django_field(queries.measurements, description="List measurements for a measurement category")
-    describe = kante.django_field(queries.describe, description="Get a describes edge by composite graph ID")
-    describes = kante.django_field(queries.describes, description="List describes edges in a graph")
+    description = kante.django_field(queries.description, description="Get a description edge by composite graph ID")
+    descriptions = kante.django_field(queries.descriptions, description="List description edges in a graph")
     input_participation = kante.django_field(queries.input_participation, description="Get an input participation edge by composite graph ID")
     input_participations = kante.django_field(queries.input_participations, description="List input participation edges in a graph")
     output_participation = kante.django_field(queries.output_participation, description="Get an output participation edge by composite graph ID")
@@ -672,8 +672,15 @@ def create_schema(
                 types.Structure,
                 types.Metric,
                 types.Activity,
+                types.NaturalEvent,
+                types.ProtocolEvent,
+                # Shadow Types
+                types.RelationShadowLink,
+                types.StructureRelationShadowLink,
+                types.MeasurementShadowLink,
                 # Edge Types
                 types.Measurement,
+                types.Description,
                 types.Assertion,
                 types.Relation,
                 types.StructureRelation,

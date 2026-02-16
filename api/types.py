@@ -556,6 +556,15 @@ T = TypeVar("T", bound="Node")
 V = TypeVar("V", bound=RetrievedNode)
 
 
+@strawberry.interface(description="Interface for edges that track schema version and derivation time")
+class Event:
+    """
+    Base interface for all event types in the graph.
+    """
+
+    kind: str = strawberry.field(description="The event type/kind")
+
+
 @strawberry.interface(description="Base interface for all graph nodes")
 class Node(Generic[V]):
     """
@@ -760,7 +769,7 @@ class Structure(Node[RetrievedStructure]):
 
 
 @strawberry.type(description="A natural event in the knowledge graph")
-class NaturalEvent(VersionedNode):
+class NaturalEvent(VersionedNode, Event):
     """
     A natural event represents a biological/natural occurrence (e.g. Mitosis)
     with properties derived from supporting evidence.
@@ -870,7 +879,7 @@ class Reagent(Node):
 
 
 @strawberry.type(description="A protocol event in the graph")
-class ProtocolEvent(VersionedNode):
+class ProtocolEvent(VersionedNode, Event):
     """
     A protocol event represents a step in an experimental protocol.
     """
@@ -979,13 +988,6 @@ class Edge(Generic[V]):
     def from_specific(cls: Type[T], subtype: V) -> T:
         """Factory method to convert an Edge subtype back to the base Edge interface."""
         return cls(_value=subtype)
-
-
-@strawberry.interface(description="Interface for edges that track schema version and derivation time")
-class Event:
-    """
-    Base interface for all event types in the graph.
-    """
 
 
 @strawberry.type(description="An activity representing provenance information")
@@ -1154,7 +1156,7 @@ class StructureRelation(Edge):
 
 
 @kante.type(description="A natural event category/schema definition")
-class Describes(Edge):
+class Description(Edge):
     pass
 
     @kante.django_field(description="The graph this node belongs to")
@@ -1206,11 +1208,6 @@ class Measurement(Edge):
 
 @kante.type(description="An assertion edge linking provenance activity to asserted graph artifacts")
 class Assertion(Edge):
-    pass
-
-
-@kante.type(description="A natural event category/schema definition")
-class Generated(Edge):
     pass
 
 
@@ -1276,15 +1273,47 @@ class ReifiesAsTarget(Edge):
     pass
 
 
-# ===========================================
-# TYPE MATCHING FUNCTIONS
-# ===========================================
+@strawberry.type(description="A structure that provides evidence for entities")
+class RelationShadowLink(Node[retrieved.RetrievedRelationShadowLink]):
+    """
+    A structure represents an evidence source (e.g. ROI, Image) that
+    can have measurements attached and inform entities.
+    """
+
+    @strawberry.field(description="Schema identifier (e.g. '@mikro/roi')")
+    def reifies(self) -> Relation:
+        raise Exception("This is a shadow link and does not have a real implementation yet")
+
+
+@strawberry.type(description="A structure that provides evidence for entities")
+class StructureRelationShadowLink(Node[retrieved.RetrievedStructureRelationShadowLink]):
+    """
+    A structure represents an evidence source (e.g. ROI, Image) that
+    can have measurements attached and inform entities.
+    """
+
+    @strawberry.field(description="Schema identifier (e.g. '@mikro/roi')")
+    def reifies(self) -> StructureRelation:
+        raise Exception("This is a shadow link and does not have a real implementation yet")
+
+
+@strawberry.type(description="A structure that provides evidence for entities")
+class MeasurementShadowLink(Node[retrieved.RetrievedMeasurementShadowLink]):
+    """
+    A structure represents an evidence source (e.g. ROI, Image) that
+    can have measurements attached and inform entities.
+    """
+
+    @strawberry.field(description="Schema identifier (e.g. '@mikro/roi')")
+    def reifies(self) -> Measurement:
+        raise Exception("This is a shadow link and does not have a real implementation yet")
+
 
 # Union type for all node subtypes
-NodeSubtype = Union[Entity, Structure, NaturalEvent, Metric, Reagent, ProtocolEvent, Activity]
+NodeSubtype = Union[Entity, Structure, NaturalEvent, Metric, Reagent, ProtocolEvent, Activity, RelationShadowLink, StructureRelationShadowLink, MeasurementShadowLink]
 
 # Union type for all edge subtypes
-EdgeSubtype = Union[Relation, StructureRelation, Describes, Measurement, Assertion, Generated, ReifiesAsSource, ReifiesAsTarget, InputParticipation, OutputParticipation]
+EdgeSubtype = Union[Relation, StructureRelation, Description, Measurement, Assertion, ReifiesAsSource, ReifiesAsTarget, InputParticipation, OutputParticipation]
 
 
 def cast_node_to_graphql_type(node: RetrievedNode) -> NodeSubtype:

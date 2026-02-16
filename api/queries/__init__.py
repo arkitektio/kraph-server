@@ -10,7 +10,7 @@ from .metric import metrics_for_structure, metric, metrics
 from .measurement import measurement, measurements
 from .relation import relation, relations
 from .structure_relation import structure_relation, structure_relations
-from .describes import describe, describes
+from .description import description, descriptions
 from .input_participation import input_participation, input_participations
 from .output_participation import output_participation, output_participations
 from .natural_event import natural_event, natural_events
@@ -32,6 +32,8 @@ __all__ = [
     "entities_informed_by",
     # Structure queries
     "structure",
+    "description",
+    "descriptions",
     "structures",
     "structure_by_identifier",
     "informing_structures",
@@ -41,7 +43,7 @@ __all__ = [
     "relation",
     "relations",
     "describe",
-    "describes",
+    "description",
     "input_participation",
     "input_participations",
     "output_participation",
