@@ -10,6 +10,9 @@ from .metric import metrics_for_structure, metric, metrics
 from .measurement import measurement, measurements
 from .relation import relation, relations
 from .structure_relation import structure_relation, structure_relations
+from .describes import describe, describes
+from .input_participation import input_participation, input_participations
+from .output_participation import output_participation, output_participations
 from .natural_event import natural_event, natural_events
 from .protocol_event import protocol_event, protocol_events
 from .assertion import assertion_for_entity
@@ -37,6 +40,12 @@ __all__ = [
     "measurements",
     "relation",
     "relations",
+    "describe",
+    "describes",
+    "input_participation",
+    "input_participations",
+    "output_participation",
+    "output_participations",
     # Structure relation queries
     "structure_relation",
     "structure_relations",

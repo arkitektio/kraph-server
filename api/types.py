@@ -981,9 +981,11 @@ class Edge(Generic[V]):
         return cls(_value=subtype)
 
 
-# ===========================================
-# ASSERTION TYPE (Provenance)
-# ===========================================
+@strawberry.interface(description="Interface for edges that track schema version and derivation time")
+class Event:
+    """
+    Base interface for all event types in the graph.
+    """
 
 
 @strawberry.type(description="An assertion representing provenance information")
@@ -1224,7 +1226,7 @@ class InputParticipation(Edge):
         return self._value.role or "participant"
 
     @kante.django_field(description="The graph this node belongs to")
-    async def target(self) -> NaturalEvent:
+    async def target(self) -> Event:
         """Fetch the graph this node belongs to."""
         # In a real implementation, we would fetch the role property from this participation edge.
         # For this example, we'll return None for simplicity.
