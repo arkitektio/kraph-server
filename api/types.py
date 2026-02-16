@@ -988,20 +988,20 @@ class Event:
     """
 
 
-@strawberry.type(description="An assertion representing provenance information")
-class Assertion(Node):
+@strawberry.type(description="An activity representing provenance information")
+class Activity(Node):
     """
-    An assertion records who made what claims about the graph and when.
-    It links to the measurements it asserted.
+    An activity records who performed what provenance action and when.
+    It links to the graph artifacts it generated or asserted.
     """
 
     _value: strawberry.Private[RetrievedNode]
 
-    @strawberry.field(description="User/subject who made the assertion")
+    @strawberry.field(description="User/subject who performed the activity")
     def subject(self) -> Optional[str]:
         return self._value.subject
 
-    @strawberry.field(description="Application that made the assertion")
+    @strawberry.field(description="Application that performed the activity")
     def app_id(self) -> Optional[str]:
         return self._value.app_id
 
@@ -1017,7 +1017,7 @@ class Assertion(Node):
     def action_args(self) -> Optional[AnyScalar]:
         return self._value.action_args
 
-    @strawberry.field(description="When this assertion was created")
+    @strawberry.field(description="When this activity was created")
     def created_at(self) -> Optional[datetime]:
         return self._value.created_at
 
@@ -1204,8 +1204,8 @@ class Measurement(Edge):
         return self._value.valid_to
 
 
-@kante.type(description="A natural event category/schema definition")
-class Asserted(Edge):
+@kante.type(description="An assertion edge linking provenance activity to asserted graph artifacts")
+class Assertion(Edge):
     pass
 
 
@@ -1281,10 +1281,10 @@ class ReifiesAsTarget(Edge):
 # ===========================================
 
 # Union type for all node subtypes
-NodeSubtype = Union[Entity, Structure, NaturalEvent, Metric, Reagent, ProtocolEvent]
+NodeSubtype = Union[Entity, Structure, NaturalEvent, Metric, Reagent, ProtocolEvent, Activity]
 
 # Union type for all edge subtypes
-EdgeSubtype = Union[Assertion, Relation, StructureRelation, Describes, Measurement, Asserted, Generated, ReifiesAsSource, ReifiesAsTarget, InputParticipation, OutputParticipation]
+EdgeSubtype = Union[Relation, StructureRelation, Describes, Measurement, Assertion, Generated, ReifiesAsSource, ReifiesAsTarget, InputParticipation, OutputParticipation]
 
 
 def cast_node_to_graphql_type(node: RetrievedNode) -> NodeSubtype:
@@ -1315,6 +1315,10 @@ def cast_node_to_graphql_type(node: RetrievedNode) -> NodeSubtype:
             return Reagent(_value=node)
         case "PROTOCOL_EVENT":
             return ProtocolEvent(_value=node)
+        case "ASSERTION":
+            return Activity(_value=node)
+        case "ACTIVITY":
+            return Activity(_value=node)
         case None:
             # Default based on label if type property not set
             label = node.label.upper()
@@ -1339,7 +1343,7 @@ def cast_edge_to_graphql_type(edge: RetrievedEdge) -> EdgeSubtype:
         edge: The retrieved edge from AGE
 
     Returns:
-        The appropriate Strawberry type instance (Measurement, Assertion, etc.)
+        The appropriate Strawberry type instance (Measurement, Assertion edge, etc.)
 
     Raises:
         ValueError: If the edge type is unknown

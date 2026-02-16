@@ -40,6 +40,7 @@ NodeType = Literal[
     "ENTITY",
     "STRUCTURE",
     "MEASUREMENT",
+    "ACTIVITY",
     "ASSERTION",
     "NATURAL_EVENT",
     "METRIC",
@@ -55,6 +56,7 @@ VocabNodeTypeMap: Dict[str, NodeType] = {
     vocab.Metric: "METRIC",
     vocab.ProtocolEvent: "PROTOCOL_EVENT",
     vocab.Assertion: "ASSERTION",
+    "Activity": "ACTIVITY",
 }
 
 
@@ -586,8 +588,43 @@ class RetrievedMetric(RetrievedNode):
 
 
 @dataclass
-class RetrievedAssertion(RetrievedNode):
-    """A retrieved Assertion node from the AGE graph."""
+class RetrievedActivity(RetrievedNode):
+    """A retrieved Activity node from the AGE graph."""
+
+    # === Activity Properties (formerly Assertion) ===
+
+    @property
+    def subject(self) -> Optional[str]:
+        """User/subject who performed the activity."""
+        return self.properties.get("subject")
+
+    @property
+    def app_id(self) -> Optional[str]:
+        """Application that performed the activity."""
+        return self.properties.get("app_id")
+
+    @property
+    def action_id(self) -> Optional[str]:
+        """The action ID in Arkitekt/Kabinet."""
+        return self.properties.get("action_id")
+
+    @property
+    def action_name(self) -> Optional[str]:
+        """Human-readable action name."""
+        return self.properties.get("action_name")
+
+    @property
+    def action_args(self) -> Optional[Dict[str, Any]]:
+        """Action arguments as JSON/dict."""
+        val = self.properties.get("action_args")
+        if val is None:
+            return None
+        return val if isinstance(val, dict) else None
+
+
+@dataclass
+class RetrievedAssertion(RetrievedActivity):
+    """Backward-compatible alias for activity provenance nodes."""
 
     # === Assertion Properties (when node_type == 'ASSERTION') ===
 

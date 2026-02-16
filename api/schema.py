@@ -56,12 +56,16 @@ class Query:
     input_participations = kante.django_field(queries.input_participations, description="List input participation edges in a graph")
     output_participation = kante.django_field(queries.output_participation, description="Get an output participation edge by composite graph ID")
     output_participations = kante.django_field(queries.output_participations, description="List output participation edges in a graph")
+    assertion = kante.django_field(queries.assertion, description="Get an assertion edge by composite graph ID")
+    assertions = kante.django_field(queries.assertions, description="List assertion edges in a graph")
     relation = kante.django_field(queries.relation, description="Get a relation by composite graph ID")
     relations = kante.django_field(queries.relations, description="List relations for a relation category")
     structure_relation = kante.django_field(queries.structure_relation, description="Get a structure relation by composite graph ID")
     structure_relations = kante.django_field(queries.structure_relations, description="List structure relations for a structure relation category")
     metric = kante.django_field(queries.metric, description="Get a metric by ID")
     metrics = kante.django_field(queries.metrics, description="List metrics for a metric category")
+    activity = kante.django_field(queries.activity, description="Get an activity node by composite graph ID")
+    activities = kante.django_field(queries.activities, description="List activities in a graph with optional filters, ordering, and pagination")
 
     # =========================
     # Schema Section
@@ -667,10 +671,10 @@ def create_schema(
                 types.Entity,
                 types.Structure,
                 types.Metric,
-                types.Assertion,
+                types.Activity,
                 # Edge Types
                 types.Measurement,
-                types.Asserted,
+                types.Assertion,
                 types.Relation,
                 types.StructureRelation,
             ],

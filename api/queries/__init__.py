@@ -15,7 +15,8 @@ from .input_participation import input_participation, input_participations
 from .output_participation import output_participation, output_participations
 from .natural_event import natural_event, natural_events
 from .protocol_event import protocol_event, protocol_events
-from .assertion import assertion_for_entity
+from .activity import activity, activities
+from .assertion import assertion, assertions
 from .insights.graph_nodes import render_graph_nodes
 from .insights.graph_path import render_graph_path
 from .insights.graph_pairs import render_graph_pairs
@@ -23,7 +24,6 @@ from .insights.graph_table import render_graph_table
 from .node import node, nodes
 
 __all__ = [
-    "Query",
     # Entity queries
     "entity",
     "node",
@@ -46,6 +46,10 @@ __all__ = [
     "input_participations",
     "output_participation",
     "output_participations",
+    "activity",
+    "activities",
+    "assertion",
+    "assertions",
     # Structure relation queries
     "structure_relation",
     "structure_relations",
@@ -56,11 +60,9 @@ __all__ = [
     "protocol_events",
     # Metric queries
     "metrics_for_structure",
-    "metrics_for_assertion",
     "metric",
     "metrics",
     # Assertion queries
-    "assertion_for_entity",
     # Insight render queries
     "render_graph_nodes",
     "render_graph_path",

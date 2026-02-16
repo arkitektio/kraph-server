@@ -1,24 +1,12 @@
-"""Assertion edge query resolvers."""
+"""Activity node query resolvers."""
 
 from typing import List
 
 import strawberry
 from kante.types import Info
 
-from api import context, types, filters, order, pagination
+from api import context, filters, order, pagination, types
 from graph_engine import input_models, retrieved, scalars
-
-
-def _to_retrieved_edge(graph_name: str, row: dict) -> retrieved.RetrievedEdge:
-    edge_payload = row.get("r") if isinstance(row.get("r"), dict) else {}
-    return retrieved.RetrievedEdge(
-        graph_name=graph_name,
-        id=int(row["id"]),
-        label=str(row.get("label", "UNKNOWN")),
-        left_id=int(row["left_id"]),
-        right_id=int(row["right_id"]),
-        properties=edge_payload.get("properties", {}) if isinstance(edge_payload, dict) else {},
-    )
 
 
 def _order_direction(value: object) -> str:
@@ -60,82 +48,71 @@ def _append_match_conditions(alias: str, where_clauses: list[str], params: dict,
             where_clauses.append(f"NOT {alias}[$${key_param}] IN $${value_param}".replace("$$", "$"))
 
 
-def assertion(info: Info, id: scalars.GraphID) -> types.Assertion:
-    """Fetch a specific assertion edge by composite graph ID."""
+def activity(info: Info, id: scalars.GraphID) -> types.Activity:
+    """Fetch a specific activity node by composite graph ID."""
     controller = context.get_controller()
 
-    graph_id = context.extract_graph_id(id)
-    local_id = context.extract_node_id(id)
-    graph = context.get_accessible_graph(info, graph_id)
+    response = controller.get_node_for_composite_id(composite_id=id, info=info)
+    node_type = str(response.node_type or "").upper()
+    if node_type not in {"ASSERTION", "ACTIVITY"}:
+        raise ValueError(f"Node {id} is not an activity")
 
-    result = controller.engine.execute(
-        graph,
-        """
-        MATCH ()-[r]->()
-        WHERE id(r) = $rid AND (coalesce(r.type, '') = 'ASSERTION' OR toUpper(type(r)) CONTAINS 'ASSERT')
-        RETURN r, type(r) as label, id(r) as id, id(startNode(r)) as left_id, id(endNode(r)) as right_id
-        """,
-        {"rid": local_id},
-    )
-
-    if not result:
-        raise ValueError(f"Assertion edge with ID {id} not found")
-
-    edge = _to_retrieved_edge(str(graph.age_name), result[0])
-    return types.Assertion(_value=edge)
+    return types.Activity(_value=response)
 
 
-def assertions(
+def activities(
     info: Info,
     graph: strawberry.ID,
-    filters: filters.RelationFilter | None = None,
-    ordering: list[order.RelationOrder] | None = None,
-    pagination: pagination.RelationPaginationInput | None = None,
-) -> List[types.Assertion]:
-    """Fetch assertion edges with optional filters, ordering, and pagination."""
+    filters: filters.NodeFilters | None = None,
+    ordering: list[order.NodeOrder] | None = None,
+    pagination: pagination.NodePaginationInput | None = None,
+) -> List[types.Activity]:
+    """Fetch activities in a graph with optional filters, ordering, and pagination."""
     controller = context.get_controller()
     graph_model = context.get_accessible_graph(info, graph)
 
-    filter_model = filters.to_pydantic() if filters else input_models.RelationFilters()
+    filter_model = filters.to_pydantic() if filters else input_models.NodeFilters()
     ordering_models = [entry.to_pydantic() for entry in ordering] if ordering else []
-    pagination_model = pagination.to_pydantic() if pagination else input_models.RelationPagination()
+    pagination_model = pagination.to_pydantic() if pagination else input_models.NodePagination()
 
-    where_clauses = ["(coalesce(r.type, '') = 'ASSERTION' OR toUpper(type(r)) CONTAINS 'ASSERT')"]
+    where_clauses = ["(n:Assertion OR n:Activity OR toUpper(coalesce(n.type, '')) IN ['ASSERTION', 'ACTIVITY'])"]
     params: dict[str, object] = {}
 
     if filter_model.ids:
-        edge_ids: list[int] = []
+        node_ids: list[int] = []
         for graph_id in filter_model.ids:
             if str(context.extract_graph_id(graph_id)) == str(graph_model.age_name):
-                edge_ids.append(int(context.extract_node_id(graph_id)))
-        if not edge_ids:
+                node_ids.append(int(context.extract_node_id(graph_id)))
+        if not node_ids:
             return []
-        params["ids"] = edge_ids
-        where_clauses.append("id(r) IN $ids")
+        params["ids"] = node_ids
+        where_clauses.append("id(n) IN $ids")
 
     if filter_model.has_property:
         params["has_property"] = filter_model.has_property
-        where_clauses.append("r[$has_property] IS NOT NULL")
+        where_clauses.append("n[$has_property] IS NOT NULL")
 
     if filter_model.search:
         params["search"] = filter_model.search
-        where_clauses.append("toString(r) CONTAINS $search")
+        where_clauses.append("toString(n) CONTAINS $search")
 
-    _append_match_conditions("r", where_clauses, params, filter_model.matches)
+    _append_match_conditions("n", where_clauses, params, filter_model.matches)
 
     order_clauses: list[str] = []
     for order_model in ordering_models:
         if order_model.created_at:
-            order_clauses.append(f"coalesce(r.created_at, 0) {_order_direction(order_model.created_at)}")
+            order_clauses.append(f"coalesce(n.created_at, 0) {_order_direction(order_model.created_at)}")
+        if order_model.category:
+            order_clauses.append(f"coalesce(n.category_id, '') {_order_direction(order_model.category)}")
         if order_model.id:
-            order_clauses.append(f"id(r) {_order_direction(order_model.id)}")
+            order_clauses.append(f"id(n) {_order_direction(order_model.id)}")
         if order_model.property:
             property_key = f"order_property_{len(params)}"
             params[property_key] = order_model.property.key
-            order_clauses.append(f"r[$${property_key}] {_order_direction(order_model.property.direction)}".replace("$$", "$"))
+            order_clauses.append(f"n[$${property_key}] {_order_direction(order_model.property.direction)}".replace("$$", "$"))
 
     if not order_clauses:
-        order_clauses.append("id(r) DESC")
+        order_clauses.append("id(n) DESC")
 
     params["offset"] = int(pagination_model.offset or 0)
     params["limit"] = int(pagination_model.limit or 100)
@@ -143,9 +120,9 @@ def assertions(
     result = controller.engine.execute(
         graph_model,
         f"""
-        MATCH ()-[r]->()
+        MATCH (n)
         WHERE {" AND ".join(where_clauses)}
-        RETURN r, type(r) as label, id(r) as id, id(startNode(r)) as left_id, id(endNode(r)) as right_id
+        RETURN n, labels(n)[0] as label, id(n) as id
         ORDER BY {", ".join(order_clauses)}
         SKIP $offset
         LIMIT $limit
@@ -153,4 +130,38 @@ def assertions(
         params,
     )
 
-    return [types.Assertion(_value=_to_retrieved_edge(str(graph_model.age_name), row)) for row in result]
+    nodes = [
+        retrieved.RetrievedNode(
+            controller=controller,
+            graph_name=str(graph_model.age_name),
+            id=int(row["id"]),
+            label=str(row.get("label", "Activity")),
+            properties=(row.get("n") or {}).get("properties", {}) if isinstance(row.get("n"), dict) else {},
+        )
+        for row in result
+    ]
+
+    return [types.Activity(_value=node) for node in nodes]
+
+
+def activities_for_entity(
+    info: Info,
+    entity_id: scalars.GraphID,
+) -> List[types.Activity]:
+    """
+    Fetch the assertion (provenance) that generated an entity.
+
+    Args:
+        info: Strawberry Info context
+        entity_id: The entity's string ID
+
+    Returns:
+        Activity object or None if not found
+    """
+    controller = context.get_controller()
+
+    graph_id = context.extract_graph_id(entity_id)
+    context.extract_node_id(entity_id)
+
+    graph = context.get_accessible_graph(info, graph_id)
+    raise NotImplementedError("activities_for_entity is not implemented yet")
