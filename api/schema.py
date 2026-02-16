@@ -5,7 +5,6 @@ This module assembles the complete GraphQL schema from queries,
 mutations, and subscriptions.
 """
 
-from duckdb import description
 from strawberry.schema.config import StrawberryConfig
 from strawberry.extensions import QueryDepthLimiter
 from typing import AsyncGenerator, Optional
