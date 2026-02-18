@@ -788,11 +788,11 @@ class EntityDefinitionInput(NodeDefinitionInput):
     """Input for an entity definition."""
 
     instance_kind: Optional[str] = Field(default=None, description="Optional instance kind for this entity category (e.g. 'neuron', 'synapse', 'behavior'). This is used for further categorization and filtering of entities within the graph.")
-    properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Property definitions")
+    property_definitions: List[PropertyDefinitionInput] = Field(default_factory=list, description="Property definitions")
 
-    @field_validator("properties")
+    @field_validator("property_definitions")
     @classmethod
-    def validate_properties(cls, v: List[PropertyDefinitionInput]) -> List[PropertyDefinitionInput]:
+    def validate_property_definitions(cls, v: List[PropertyDefinitionInput]) -> List[PropertyDefinitionInput]:
         """Validate that property keys are unique within this entity definition."""
         keys = set()
         for prop in v:
@@ -807,9 +807,9 @@ class UpdateEntityDefinitionInput(UpdateDefinitionInput):
     """Input for updating an existing entity definition."""
 
     instance_kind: Optional[str] = Field(default=None, description="Optional instance kind for this entity category (e.g. 'neuron', 'synapse', 'behavior'). This is used for further categorization and filtering of entities within the graph.")
-    properties: Optional[List[PropertyDefinitionInput]] = Field(default=None, description="Property definitions")
+    property_definitions: Optional[List[PropertyDefinitionInput]] = Field(default=None, description="Property definitions")
 
-    @field_validator("properties")
+    @field_validator("property_definitions")
     @classmethod
     def validate_properties(cls, v: Optional[List[PropertyDefinitionInput]]) -> Optional[List[PropertyDefinitionInput]]:
         """Validate that property keys are unique within this entity definition."""

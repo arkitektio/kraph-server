@@ -2270,6 +2270,26 @@ class GraphController:
 
         return [RetrievedEntity.from_node(self, row["e"], graph_name=graph.age_name) for row in result]
 
+    def list_entities_for_category(self, category: models.EntityCategory, filters: input_models.EntityFilters | None = None, pagination: input_models.EntityPagination | None = None, ordering: list[input_models.EntityOrder] | None = None, info: Info | None = None) -> List[RetrievedEntity]:
+        self._ensure_query_access(category.graph, info)
+
+        where_clause, filter_params = self._build_entity_where_clause(filters, variable="e")
+        order_clause = self._build_entity_order_clause(ordering, variable="e")
+        pagination_clause = self._build_entity_pagination_clause(pagination)
+
+        query = f"""
+            MATCH (e: {category.get_age_vertex_name()})
+            {("AND " + where_clause[len("WHERE ") :]) if where_clause else ""}
+            RETURN e
+            {order_clause}
+            {pagination_clause}
+        """
+
+        params: dict[str, Any] = {**filter_params}
+        result = self.engine.execute(category.graph, query, params)
+
+        return [RetrievedEntity.from_node(self, row["e"], graph_name=category.graph.age_name) for row in result]
+
     def list_structures(self, graph: models.Graph, filters: input_models.StructureFilters | None = None, pagination: input_models.StructurePagination | None = None, ordering: list[input_models.StructureOrder] | None = None, info: Info | None = None) -> List[RetrievedStructure]:
         self._ensure_query_access(graph, info)
 

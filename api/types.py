@@ -17,7 +17,7 @@ from api import loaders, order, pagination, filters
 from datalayer.types import MediaStore
 from graph_engine.scalars import AnyScalar, UnixMilliseconds, StructureIdentifier, GlobalID
 from graph_engine.retrieved import RetrievedMetric, RetrievedNode, RetrievedEdge, RetrievedStructure, RetrievedVariable
-from graph_engine import input_models
+from graph_engine import get_controller, input_models
 import kante
 from core import models
 from graph_engine import retrieved, scalars
@@ -120,7 +120,7 @@ class Graph:
     tags: List[str] = strawberry.field(default_factory=list, description="List of tags associated with this category")
     name: str = strawberry.field(description="Name of the graph")
     materialized_edges: List["MaterializedEdge"] = strawberry.field(default_factory=list, description="List of materialized edges in the graph")
-    image: MediaStore = strawberry.field(description="An image representing this graph, for visualization purposes")
+    image: MediaStore | None = strawberry.field(description="An image representing this graph, for visualization purposes")
     # Schemas
     node_categories: List["NodeCategory"] = strawberry.field(default_factory=list, description="List of node categories/schemas defined in this graph")
     edge_categories: List["EdgeCategory"] = strawberry.field(default_factory=list, description="List of edge categories/schemas defined in this graph")
@@ -161,7 +161,7 @@ class Category:
     purl: Optional[str] = strawberry.field(default=None, description="Persistent URL for this category")
     color: Optional[List[int]] = strawberry.field(default=None, description="Color as RGBA list (0-255)")
     tags: List[CategoryTag] = kante.django_field(description="List of tags associated with this category")
-    image: MediaStore = strawberry.field(description="An image representing this category, for visualization purposes")
+    image: MediaStore | None = strawberry.field(description="An image representing this category, for visualization purposes")
     graph: Graph = strawberry.field(description="The graph this category belongs to")
     relevant_queries: List["GraphQuery"] = strawberry.field(default_factory=list, description="List of relevant queries that use this category as input")
 
@@ -170,7 +170,7 @@ class Category:
         """Whether this category is pinned for quick access in the UI."""
         # In a real implementation, we would check the user's preferences or a pinned categories list.
         # For this example, we'll return False for simplicity.
-        return cast(models.Category, self).pinned_by.filter(id=info.context.user.id).exists()
+        return cast(models.Category, self).pinned_by.filter(id=info.context.request.user.id).exists()
 
 
 @kante.django_interface(models.EdgeCategory, description="Base interface for graph schemas")
@@ -201,8 +201,8 @@ class NodeCategory:
     description: Optional[str] = strawberry.field(default=None, description="Description of the category")
     purl: Optional[str] = strawberry.field(default=None, description="Persistent URL for this category")
     color: Optional[List[int]] = strawberry.field(default=None, description="Color as RGBA list (0-255)")
-    position_x: float = strawberry.field(description="X coordinate")
-    position_y: float = strawberry.field(description="Y coordinate")
+    position_x: float | None = strawberry.field(description="X coordinate")
+    position_y: float | None = strawberry.field(description="Y coordinate")
     position_z: Optional[float] = strawberry.field(default=None, description="Z coordinate (optional)")
     width: Optional[float] = strawberry.field(default=None, description="Width for visualization (optional)")
     height: Optional[float] = strawberry.field(default=None, description="Height for visualization (optional)")
@@ -267,11 +267,23 @@ class EntityCategory(NodeCategory, Category):
     property_definitions: List[PropertyDefinition] = strawberry.field(default_factory=list, description="List of property definitions for this entity category")
 
     @kante.django_field(description="The graph this category belongs to")
-    def entities(self, filters: filters.EntityFilter | None = None, ordering: list[order.EntityOrder] | None = None, pagination: pagination.GraphPaginationInput | None = None) -> List["Entity"]:
+    def entities(self, filters: filters.EntityFilter | None = None, ordering: list[order.EntityOrder] | None = None, pagination: pagination.EntityPaginationInput | None = None) -> List["Entity"]:
         """Fetch the latest entity instance of this category."""
         # In a real implementation, we would query the graph for the most recently derived entity
         # that belongs to this category. For this example, we'll return None for simplicity.
-        raise NotImplementedError("Latest entity fetching not implemented yet")
+        from .context import get_controller
+
+        cat = cast(models.EntityCategory, self)
+
+        con = get_controller()
+        ordering_model = [o.to_pydantic() for o in ordering] if ordering else None
+        pagination_model = pagination.to_pydantic() if pagination else None
+
+        filters_model = filters.to_pydantic() if filters else None
+
+        returned_entities = con.list_entities_for_category(category=cat, filters=filters_model, ordering=ordering_model, pagination=pagination_model)
+
+        return [Entity(_value=v) for v in returned_entities]
 
 
 @kante.django_type(models.StructureCategory, filters=filters.StructureCategoryFilter, pagination=True, ordering=order.StructureCategoryOrder, description="A structure category/schema definition")

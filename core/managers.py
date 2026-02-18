@@ -135,7 +135,7 @@ class EntityCategoryManager(NodeCategoryManager["core_models.EntityCategory"]):
     ) -> "core_models.EntityCategory":
         from graph_engine.materialize import compute_properties_hash
 
-        property_defs = [p.model_dump(mode="json") for p in definition.properties]
+        property_defs = [p.model_dump(mode="json") for p in definition.property_definitions] if definition.property_definitions else []
         props_hash = compute_properties_hash(property_defs)
 
         category = await self.acreate_from_node_definition(

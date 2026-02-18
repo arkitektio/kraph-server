@@ -534,6 +534,9 @@ class Category(PolymorphicModel):
         """Convert an entity key to a valid AGE name by replacing invalid characters."""
         return "".join(e for e in key if e.isalnum()).lower()
 
+    def relevant_queries(self):
+        return GraphQuery.objects.filter(graph=self.graph, relevant_for=self.pk)
+
 
 class Descriptor(models.Model):
     """A descriptor for a category"""
