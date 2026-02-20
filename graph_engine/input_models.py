@@ -1,7 +1,7 @@
 from asyncio import Protocol
 from enum import Enum
 from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import List, Dict, Optional, Any, Literal
+from typing import List, Dict, Optional, Any, Literal, Union
 from datetime import datetime, timezone
 import re
 
@@ -1557,9 +1557,17 @@ class DeleteProtocolEventInput(BaseModel):
     id: GraphID = Field(..., description="The ID of the protocol event to delete")
 
 
+class PropertySet(BaseModel):
+    """Input for a set of properties to associate with an entity or structure."""
+
+    key: str = Field(..., description="The property key/label")
+    value: scalars.AnyScalar = Field(..., description="The property value")
+
+
 class EntityInput(BaseModel):
     """Input for creating a new entity instance."""
 
+    sticky_properties: List[PropertySet] = Field(default_factory=list, description="List of property key-value pairs to associate with this entity")
     supporting_evidence: List[StructureReferenceInput] = Field(default_factory=list, description="List of evidence structures with measurements")
 
 

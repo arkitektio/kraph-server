@@ -264,7 +264,6 @@ class EntityCategory(NodeCategory, Category):
     graph: "Graph" = strawberry.field(description="The graph this category belongs to")
     label: str = strawberry.field(description="Label/name of the category")
     instance_kind: strawberry.auto = strawberry.field(description="What type of instance, (taking from the universe) 'LOT', 'BIOLOGICAL', 'PHYSICAL'")
-    property_definitions: List[PropertyDefinition] = strawberry.field(default_factory=list, description="List of property definitions for this entity category")
 
     @kante.django_field(description="The graph this category belongs to")
     def entities(self, filters: filters.EntityFilter | None = None, ordering: list[order.EntityOrder] | None = None, pagination: pagination.EntityPaginationInput | None = None) -> List["Entity"]:
@@ -284,6 +283,15 @@ class EntityCategory(NodeCategory, Category):
         returned_entities = con.list_entities_for_category(category=cat, filters=filters_model, ordering=ordering_model, pagination=pagination_model)
 
         return [Entity(_value=v) for v in returned_entities]
+
+    @kante.django_field(description="The graph this category belongs to")
+    def property_definitions(self) -> List[PropertyDefinition]:
+        """Return the list of property definitions for this entity category."""
+        # In a real implementation, we would query the database for the property definitions associated with this entity category.
+        # For this example, we'll return an empty list for simplicity.
+        cat = cast(models.EntityCategory, self)
+
+        return cat.defined_properties
 
 
 @kante.django_type(models.StructureCategory, filters=filters.StructureCategoryFilter, pagination=True, ordering=order.StructureCategoryOrder, description="A structure category/schema definition")
@@ -523,7 +531,7 @@ class Property:
 class RichProperty:
     _entity: strawberry.Private[RetrievedNode]
     _key: strawberry.Private[str]
-    _category: strawberry.Private[EntityCategory]
+    _category: strawberry.Private[models.EntityCategory]
 
     @strawberry.field(description="Local AGE graph ID")
     def graph_id(self) -> scalars.GraphID:
@@ -535,7 +543,8 @@ class RichProperty:
         # In a real implementation, we would look up the entity's category,
         # then find the property definition matching this key.
         # For this example, we'll return None for simplicity.
-        return None
+
+        return self._category.property_definitions.filter(name=self._key).first()
 
     @strawberry.field(description="The timestamp when this property was last derived (unix ms)")
     async def key(self) -> Optional[str]:
@@ -703,9 +712,9 @@ class Entity(VersionedNode, Node[RetrievedNode]):
         """Combine raw properties with schema definitions for a rich view."""
         # Category lookup and schema merging logic would go here in a real implementation.
         assert self._value.category_id is not None, "Entity must have a category_id to fetch property definitions"
-        category = await loaders.entity_category_loader.load([self._value.category_id])
+        category = await loaders.entity_category_loader.load(self._value.category_id)
 
-        return [RichProperty(_node=self, _key=var, _category=category) for var in self._value.cleaned_properties]
+        return [RichProperty(_entity=self._value, _key=var, _category=category) for var in self._value.cleaned_properties]
 
     @strawberry.field(description="List of the current derived properties for this entity")
     def properties(self) -> AnyScalar:

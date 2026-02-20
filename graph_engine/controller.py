@@ -377,13 +377,13 @@ class GraphController:
         # --- Step 4: Create Entity (Shell) ---
         # We only set the immutable ID (db_id). All other props come from cache recalculation.
         ref_id = self.create_universal_id()
-        e_params = {"eid": ref_id, "aid": assertion_id}
+        e_params = {"eid": ref_id, "aid": assertion_id, "cid": entity_category.pk}
 
         create_res = self.engine.execute(
             entity_category.graph,
             f"""
             MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
-            CREATE (e:{entity_category.age_name} {{id: $eid}})
+            CREATE (e:{entity_category.age_name} {{id: $eid, category_id: $cid}})
             CREATE (a)-[:{vocab.GENERATED}]->(e)
             RETURN e as entity, id(e) as db_id
             """,

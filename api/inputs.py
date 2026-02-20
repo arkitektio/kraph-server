@@ -16,6 +16,14 @@ from strawberry.experimental import pydantic
 from typing import Annotated
 
 
+@pydantic.input(model=input_models.PropertySet, all_fields=True, description="Input for ensuring an entity exists with a given global ID")
+class PropertySet:
+    """Input for a set of properties to associate with an entity or structure."""
+
+    key: str = strawberry.field(description="The property key/label")
+    value: scalars.AnyScalar = strawberry.field(description="The property value")
+
+
 @pydantic.input(model=input_models.MetricInput, description="Input for creating a new natural event definition in the graph schema")
 class MetricInput:
     key: str = strawberry.field(description="The key/name of the metric")
