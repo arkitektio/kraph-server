@@ -55,7 +55,7 @@ class LinkPairs:
     target_id: str
 
 
-def re_materialize_relation_category(graph: models.Graph, relation_category: models.EdgeCategory) -> models.EdgeCategory:
+def re_materialize_relation_category(graph: models.Graph, relation_category: models.RelationCategory) -> models.RelationCategory:
     """
     Docstring for re_materialize_relation_category
 
@@ -68,6 +68,62 @@ def re_materialize_relation_category(graph: models.Graph, relation_category: mod
     """
 
     sources = relation_category.get_matching_source_entities()
+    target = relation_category.get_matching_target_entities()
+
+    models.MaterializedEdge.objects.filter(graph=graph, edge=relation_category).delete()
+
+    for source_cat, target_cat in product(sources, target):
+        models.MaterializedEdge.objects.create(
+            graph=graph,
+            edge=relation_category,
+            source=source_cat,
+            target=target_cat,
+        )
+
+    return relation_category
+
+
+def re_materialize_structure_relation_category(graph: models.Graph, relation_category: models.StructureRelationCategory) -> models.StructureRelationCategory:
+    """
+    Docstring for re_materialize_relation_category
+
+    :param graph: Description
+    :type graph: models.Graph
+    :param relation_category: Description
+    :type relation_category: models.EdgeCategory
+    :return: Description
+    :rtype: EdgeCategory
+    """
+
+    sources = relation_category.get_matching_source_structures()
+    target = relation_category.get_matching_target_structures()
+
+    models.MaterializedEdge.objects.filter(graph=graph, edge=relation_category).delete()
+
+    for source_cat, target_cat in product(sources, target):
+        models.MaterializedEdge.objects.create(
+            graph=graph,
+            edge=relation_category,
+            source=source_cat,
+            target=target_cat,
+        )
+
+    return relation_category
+
+
+def re_materialize_measurement_relation_category(graph: models.Graph, relation_category: models.MeasurementCategory) -> models.MeasurementCategory:
+    """
+    Docstring for re_materialize_relation_category
+
+    :param graph: Description
+    :type graph: models.Graph
+    :param relation_category: Description
+    :type relation_category: models.EdgeCategory
+    :return: Description
+    :rtype: EdgeCategory
+    """
+
+    sources = relation_category.get_matching_source_structures()
     target = relation_category.get_matching_target_entities()
 
     models.MaterializedEdge.objects.filter(graph=graph, edge=relation_category).delete()
@@ -211,5 +267,8 @@ def materialize(
 
     for category in graph.relation_categories.all():
         re_materialize_relation_category(graph, category)
+
+    for category in graph.structure_relation_categories.all():
+        re_materialize_structure_relation_category(graph, category)
 
     return graph

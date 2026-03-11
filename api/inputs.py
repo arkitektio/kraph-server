@@ -1032,6 +1032,16 @@ class ScatterPlotInput:
     pass
 
 
+@pydantic.input(model=input_models.MeasurementDefinitionInput, all_fields=True, description="Input for creating a new graph from a schema definition")
+class MeasurementDefinitionInput:
+    pass
+
+
+@pydantic.input(model=input_models.StructureRelationDefinitionInput, all_fields=True, description="Input for creating a new graph from a schema definition")
+class StructureRelationDefinitionInput:
+    pass
+
+
 @pydantic.input(model=input_models.GraphExtensionsInput, all_fields=True, description="Input for creating a new graph from a schema definition")
 class GraphExtensionsInput:
     pass

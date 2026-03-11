@@ -251,7 +251,7 @@ class GraphController:
                     ),
                 )
             else:
-                raise ValueError(f"Structure identifier {identifier} not found in graph schema.")
+                raise ValueError(f"Structure identifier {identifier} not found in graph schema. And auto-creation of structure categories is disabled for this graph.")
 
         return scategory
 
@@ -1037,11 +1037,12 @@ class GraphController:
         result = self.engine.execute(
             graph,
             f"""
-            MERGE (s:{structure_label} {{object: $obj}})
+            MERGE (s:{structure_label} {{object: $obj }})
             SET s.identifier = coalesce(s.identifier, $identifier)
+            SET s.category_id = coalesce(s.category_id, $sid)
             RETURN s
             """,
-            {"obj": payload.object, "identifier": structure_category.identifier},
+            {"obj": payload.object, "identifier": structure_category.identifier, "sid": structure_category.pk},
         )
         created_node = result[0]["s"]
         return RetrievedStructure.from_node(

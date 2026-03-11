@@ -149,6 +149,8 @@ class RetrievedNode:
     @property
     def category_id(self) -> Optional[str]:
         """Get the category ID (for linking to Django model)."""
+        if self.properties.get("category_id") is None:
+            raise ValueError(f"Node is missing 'category_id' property {self.properties}")
         return self.properties.get("category_id")
 
     @property

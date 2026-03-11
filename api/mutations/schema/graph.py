@@ -81,15 +81,19 @@ def update_graph(
 
     graph = models.Graph.objects.get(id=model.id)
 
-    if not info.context.request.user.is_superuser and graph.owner != info.context.request.user:
-        raise PermissionError("You do not have permission to update this graph.")
-
     if model.name is not None:
         graph.name = model.name
     if model.description is not None:
         graph.description = model.description
     if model.archived is not None:
+        if not info.context.request.user.is_superuser and graph.owner != info.context.request.user:
+            raise PermissionError("You do not have permission to archive this graph.")
         graph.is_archived = model.archived
+    if model.pin is not None:
+        if model.pin:
+            graph.pinned_by.add(info.context.request.user)
+        else:
+            graph.pinned_by.remove(info.context.request.user)
 
     graph.save()
 

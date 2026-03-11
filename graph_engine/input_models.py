@@ -1083,6 +1083,18 @@ class RelationDefinitionInput(EdgeDefinitionInput):
     properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Derived property definitions")
 
 
+class StructureRelationDefinitionInput(EdgeDefinitionInput):
+    """Input for a relation definition."""
+
+    properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Derived property definitions")
+
+
+class MeasurementDefinitionInput(EdgeDefinitionInput):
+    """Input for a relation definition."""
+
+    properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Derived property definitions")
+
+
 class GraphQueryInput(BaseModel):
     """Input for a graph query definition."""
 
@@ -1411,13 +1423,13 @@ class ArchiveRelationDefinitionInput(BaseModel):
     id: GraphID = Field(..., description="The ID of the relation category to archive")
 
 
-class CreateMeasurementDefinitionInput(EntityDefinitionInput):
+class CreateMeasurementDefinitionInput(MeasurementDefinitionInput):
     """Input for a measurement definition at the graph level."""
 
     graph: GraphID = Field(..., description="The graph id this measurement category will belong to")
 
 
-class UpdateMeasurementDefinitionInput(EntityDefinitionInput):
+class UpdateMeasurementDefinitionInput(MeasurementDefinitionInput):
     """Input for updating an existing measurement definition at the graph level."""
 
     id: GraphID = Field(..., description="The ID of the measurement category to update")
@@ -1816,6 +1828,8 @@ class GraphExtensionsInput(BaseModel):
     prefixes: List[PrefixInput] = Field(default_factory=list, description="Graph prefixes for namespacing")
     entities: List[EntityDefinitionInput] = Field(default_factory=list, description="Entity definitions")
     relations: List[RelationDefinitionInput] = Field(default_factory=list, description="Relation definitions")
+    structure_relations: List[StructureRelationDefinitionInput] = Field(default_factory=list, description="Structure relation definitions")
+    measurements: List[MeasurementDefinitionInput] = Field(default_factory=list, description="Measurement definitions")
     events: List[EventDefinitionInput] = Field(default_factory=list, description="Event definitions")
 
     # insights
@@ -1898,6 +1912,7 @@ class UpdateGraphInput(BaseModel):
     name: Optional[str] = Field(default=None, description="New graph name")
     description: Optional[str] = Field(default=None, description="New graph description")
     archived: Optional[bool] = Field(default=None, description="Optional archived flag update")
+    pin: Optional[bool] = Field(default=None, description="Optional pin flag update for the user making the request")
 
 
 class DeleteGraphInput(BaseModel):

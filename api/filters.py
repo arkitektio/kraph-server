@@ -120,11 +120,11 @@ class GraphFilter:
 
     @kante.filter_field(description="Filter by list of IDs")
     def pinned(self, info: kante.Info, value: bool, prefix: str) -> Q:
-        return Q(**{f"{prefix}__pinned_by": info.context.request.user})
+        return Q(**{f"{prefix}pinned_by": info.context.request.user})
 
     @kante.filter_field(description="Filter by list of IDs")
     def ids(self, value: list[strawberry.ID], prefix: str) -> Q:
-        return Q(**{f"{prefix}__id__in": value})
+        return Q(**{f"{prefix}id__in": value})
 
     @kante.filter_field(description="Filter by list of IDs")
     def search(self, value: str, prefix: str) -> Q:
