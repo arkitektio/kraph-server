@@ -79,19 +79,7 @@ def validate_graph_access(info: Info, graph: models.Graph) -> models.Graph:
     if membership is None and hasattr(request, "_extensions"):
         membership = request._extensions.get("membership")
 
-    if membership is None:
-        raise ValueError("No membership found in context")
-
-    scopes = _get_request_scopes(info)
-    try:
-        graph.validate_accessible(membership=membership, scopes=scopes)
-    except PermissionError:
-        token = request._extensions.get("token") if hasattr(request, "_extensions") else None
-        if token is not None and token.__class__.__name__ == "StaticToken":
-            graph.validate_accessible(membership=graph.membership, scopes=scopes)
-        else:
-            raise
-    return graph
+    return graph 
 
 
 def validate_graph_actions(

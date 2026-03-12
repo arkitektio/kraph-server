@@ -154,6 +154,10 @@ class Mutation:
         description="Pin a node in the UI for a user",
         resolver=mutations.pin_node,
     )
+    
+    
+    
+    # =========================
 
     create_entity = kante.django_mutation(
         description="Create a new entity in the graph",
@@ -171,6 +175,18 @@ class Mutation:
         description="Update an existing entity in the graph",
         resolver=mutations.update_entity,
     )
+    set_entity_property = kante.django_mutation(
+        description="Set a property on an existing entity in the graph",
+        resolver=mutations.set_entity_property,
+    )
+    
+    
+    
+    
+    
+    
+    
+    
     create_structure = kante.django_mutation(
         description="Create a new structure in the graph",
         resolver=mutations.create_structure,
@@ -686,11 +702,6 @@ def create_schema(
             ],
             config=StrawberryConfig(
                 scalar_map={
-                    scalars.AnyScalar: strawberry.scalar(
-                        name="Base64",
-                        serialize=lambda v: v,  # Implement your serialization logic here
-                        parse_value=lambda v: v,  # Implement your parsing logic here
-                    ),
                     scalars.StructureIdentifier: strawberry.scalar(
                         name="StructureIdentifier",
                         serialize=lambda v: v,  # Implement your serialization logic here

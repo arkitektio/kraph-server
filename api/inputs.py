@@ -14,14 +14,24 @@ from graph_engine.scalars import AnyScalar, GraphID
 from graph_engine import scalars
 from strawberry.experimental import pydantic
 from typing import Annotated
+from strawberry.scalars import JSON
 
 
-@pydantic.input(model=input_models.PropertySet, all_fields=True, description="Input for ensuring an entity exists with a given global ID")
+@pydantic.input(model=input_models.SetEntityPropertyInput, description="Input for ensuring an entity exists with a given global ID")
+class SetEntityPropertyInput:
+    """Input for a set of properties to associate with an entity or structure."""
+    entity_id: scalars.GraphID = strawberry.field(description="The composite ID of the entity to set the property on")
+    key: str = strawberry.field(description="The property key/label")
+    value: JSON = strawberry.field(description="The property value")
+
+
+
+@pydantic.input(model=input_models.PropertySet, description="Input for ensuring an entity exists with a given global ID")
 class PropertySet:
     """Input for a set of properties to associate with an entity or structure."""
 
     key: str = strawberry.field(description="The property key/label")
-    value: scalars.AnyScalar = strawberry.field(description="The property value")
+    value: JSON = strawberry.field(description="The property value")
 
 
 @pydantic.input(model=input_models.MetricInput, description="Input for creating a new natural event definition in the graph schema")
@@ -486,7 +496,7 @@ class ArchiveScatterPlotInput:
 class RecordMetricInput(MetricInput):
     """Input for creating a new metric."""
 
-    graph: str = strawberry.field(description="The graph id this metric will belong to")
+    graph: str = strawberry.field(description="The graph id thidds metric will belong to")
     identifier: str = strawberry.field(description="The schema identifier for this metric (e.g. '@mikro/roi_volume')")
     object: str = strawberry.field(description="The unique ID of the object this metric references")
     value_kind: input_models.PropertyType = strawberry.field(description="The kind of value this metric represents")

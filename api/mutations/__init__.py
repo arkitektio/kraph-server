@@ -61,6 +61,7 @@ from .insights import (
     delete_scatter_plot,
     archive_scatter_plot,
 )
+from .entity import set_entity_property
 
 __all__ = [
     "Mutation",
@@ -152,4 +153,5 @@ __all__ = [
     "update_scatter_plot",
     "delete_scatter_plot",
     "archive_scatter_plot",
+    "set_entity_property",
 ]

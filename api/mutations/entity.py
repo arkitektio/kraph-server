@@ -182,3 +182,18 @@ def recalculate_entity(
     entity = controller.get_node(graph, local_id=node_id, info=info)
 
     return types.Entity(_value=entity)
+
+
+
+def set_entity_property(
+    info: Info,
+    input: inputs.SetEntityPropertyInput,
+) -> types.Entity:
+    """
+    Set properties on an entity, replacing any existing values for the specified keys.
+
+    Args:
+        info: Strawberry Info context
+        input: SetEntityPropertiesInput with entity_id and properties to set
+    """
+    raise NotImplementedError("Setting entity properties is not yet implemented")

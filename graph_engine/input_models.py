@@ -1,6 +1,6 @@
 from asyncio import Protocol
 from enum import Enum
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 from typing import List, Dict, Optional, Any, Literal, Union
 from datetime import datetime, timezone
 import re
@@ -12,6 +12,7 @@ from datalayer.scalars import MediaStore, MediaStoreLike
 from graph_engine.scalars import GraphID
 from graph_engine import scalars
 from core import enums
+
 # --- Enums for Strict Typing ---
 
 
@@ -170,6 +171,7 @@ class RenderGraphNodesPagination(BaseModel):
 class RenderGraphNodesOrder(BaseModel):
     key: str
     direction: str = "asc"
+
 
 
 class RenderGraphPathFilter(BaseModel):
@@ -822,6 +824,21 @@ class UpdateEntityDefinitionInput(UpdateDefinitionInput):
             keys.add(prop.key)
 
         return v
+
+
+
+class SetEntityPropertyInput(BaseModel):
+    """Input for setting a property value on an entity."""
+
+    entity_id: GraphID = Field(..., description="The ID of the entity to update")
+    key: str = Field(..., description="The property key to set")
+    value: Any = Field(..., description="The value to set for this property")
+    
+
+
+
+
+
 
 
 class CreateEntityDefinitionInput(EntityDefinitionInput):
@@ -1573,7 +1590,8 @@ class PropertySet(BaseModel):
     """Input for a set of properties to associate with an entity or structure."""
 
     key: str = Field(..., description="The property key/label")
-    value: scalars.AnyScalar = Field(..., description="The property value")
+    value: str | int | float | bool = Field(..., description="The property value")
+    model_config =  ConfigDict(arbitrary_types_allowed=True)
 
 
 class EntityInput(BaseModel):
