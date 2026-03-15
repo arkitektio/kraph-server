@@ -184,7 +184,6 @@ def recalculate_entity(
     return types.Entity(_value=entity)
 
 
-
 def set_entity_property(
     info: Info,
     input: inputs.SetEntityPropertyInput,
@@ -196,4 +195,16 @@ def set_entity_property(
         info: Strawberry Info context
         input: SetEntityPropertiesInput with entity_id and properties to set
     """
+
+    controller = context.get_controller()
+
+    model = input.to_pydantic()
+
+    graph_id = context.extract_graph_id(model.entity_id)
+    local_id = context.extract_node_id(model.entity_id)
+
+    graph = context.get_accessible_graph(info, graph_id)
+
+    entity = controller.get_node(graph, local_id=local_id, info=info)
+
     raise NotImplementedError("Setting entity properties is not yet implemented")

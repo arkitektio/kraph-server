@@ -220,6 +220,85 @@ class MaterializedEdgeFilter:
     def search(self, value: str, prefix: str) -> Q:
         return Q(**{f"{prefix}source__label__search": value}) | Q(**{f"{prefix}target__label__search": value}) | Q(**{f"{prefix}edge__label__search": value})
 
+    @kante.filter_field(description="Filter by list of IDs")
+    def source_identifier(self, info: kante.Info, value: str, prefix: str) -> Q:
+        """Filter measurement categories by the identifier of the source they measure."""
+        return Q(**{f"{prefix}source__identifier": value})
+
+    @kante.filter_field(description="Filter by list of IDs")
+    def target_identifier(self, info: kante.Info, value: str, prefix: str) -> Q:
+        """Filter measurement categories by the identifier of the target they measure."""
+        return Q(**{f"{prefix}target__identifier": value})
+
+
+@kante.filter_type(models.MaterializedEdge)
+class MaterializedEdgeFilter:
+    id: strawberry.auto
+
+    @kante.filter_field(description="Filter by list of IDs")
+    def ids(self, value: list[strawberry.ID], prefix: str) -> Q:
+        return Q(**{f"{prefix}__id__in": value})
+
+    @kante.filter_field(description="Full-text search over connected category labels")
+    def search(self, value: str, prefix: str) -> Q:
+        return Q(**{f"{prefix}source__label__search": value}) | Q(**{f"{prefix}target__label__search": value}) | Q(**{f"{prefix}edge__label__search": value})
+
+    @kante.filter_field(description="Filter by list of IDs")
+    def source_identifier(self, info: kante.Info, value: str, prefix: str) -> Q:
+        """Filter measurement categories by the identifier of the source they measure."""
+        return Q(**{f"{prefix}source__identifier": value})
+
+    @kante.filter_field(description="Filter by list of IDs")
+    def target_identifier(self, info: kante.Info, value: str, prefix: str) -> Q:
+        """Filter measurement categories by the identifier of the target they measure."""
+        return Q(**{f"{prefix}target__identifier": value})
+
+
+@kante.filter_type(models.MaterializedStructureRelationEdge)
+class MaterializedStructureRelationEdgeFilter:
+    id: strawberry.auto
+
+    @kante.filter_field(description="Filter by list of IDs")
+    def ids(self, value: list[strawberry.ID], prefix: str) -> Q:
+        return Q(**{f"{prefix}__id__in": value})
+
+    @kante.filter_field(description="Full-text search over connected category labels")
+    def search(self, value: str, prefix: str) -> Q:
+        return Q(**{f"{prefix}source__label__search": value}) | Q(**{f"{prefix}target__label__search": value}) | Q(**{f"{prefix}edge__label__search": value})
+
+    @kante.filter_field(description="Filter by list of IDs")
+    def source_identifier(self, info: kante.Info, value: str, prefix: str) -> Q:
+        """Filter measurement categories by the identifier of the source they measure."""
+        return Q(**{f"{prefix}source__identifier": value})
+
+    @kante.filter_field(description="Filter by list of IDs")
+    def target_identifier(self, info: kante.Info, value: str, prefix: str) -> Q:
+        """Filter measurement categories by the identifier of the target they measure."""
+        return Q(**{f"{prefix}target__identifier": value})
+
+
+@kante.filter_type(models.MaterializedRelationEdge)
+class MaterializedRelationEdgeFilter:
+    id: strawberry.auto
+
+    @kante.filter_field(description="Filter by list of IDs")
+    def ids(self, value: list[strawberry.ID], prefix: str) -> Q:
+        return Q(**{f"{prefix}__id__in": value})
+
+    @kante.filter_field(description="Full-text search over connected category labels")
+    def search(self, value: str, prefix: str) -> Q:
+        return Q(**{f"{prefix}source__label__search": value}) | Q(**{f"{prefix}target__label__search": value}) | Q(**{f"{prefix}edge__label__search": value})
+
+    @kante.filter_field(description="Filter by list of IDs")
+    def source_identifier(self, info: kante.Info, value: str, prefix: str) -> Q:
+        """Filter measurement categories by the identifier of the source they measure."""
+        return Q(**{f"{prefix}source__identifier": value})
+
+    @kante.filter_field(description="Filter by list of IDs")
+    def target_identifier(self, info: kante.Info, value: str, prefix: str) -> Q:
+        """Filter measurement categories by the identifier of the target they measure."""
+        return Q(**{f"{prefix}target__identifier": value})
+
 
 @kante.filter_type(models.GraphQuery)
 class GraphQueryFilter:

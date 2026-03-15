@@ -5,6 +5,8 @@ from kante.types import Info
 
 from api import inputs, types
 from core import models
+from datalayer import models as dl_models
+from graph_engine.materialize import re_materialize_structure_relation_category
 
 
 def create_structure_relation_category(
@@ -20,14 +22,15 @@ def create_structure_relation_category(
 
     media_store = None
     if model.image:
-        media_store = models.MediaStore.objects.get(id=model.image)
+        media_store = dl_models.MediaStore.objects.get(id=model.image)
 
     vocab, created = models.StructureRelationCategory.objects.update_or_create(
         graph_id=model.graph,
         age_name=model.key,
+        key=model.key,
         defaults=dict(
             description=model.description,
-            store=media_store,
+            image=media_store,
             label=model.label if model.label else model.key,
             property_definitions=[pdef.model_dump() for pdef in model.properties] or [],
         ),
@@ -58,6 +61,8 @@ def create_structure_relation_category(
             vocab.pinned_by.add(info.context.request.user)
         else:
             vocab.pinned_by.remove(info.context.request.user)
+
+    re_materialize_structure_relation_category(vocab.graph, vocab)
 
     return cast(types.StructureRelationCategory, vocab)
 

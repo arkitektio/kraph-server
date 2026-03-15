@@ -98,10 +98,10 @@ def re_materialize_structure_relation_category(graph: models.Graph, relation_cat
     sources = relation_category.get_matching_source_structures()
     target = relation_category.get_matching_target_structures()
 
-    models.MaterializedEdge.objects.filter(graph=graph, edge=relation_category).delete()
+    models.MaterializedStructureRelationEdge.objects.filter(graph=graph, edge=relation_category).delete()
 
     for source_cat, target_cat in product(sources, target):
-        models.MaterializedEdge.objects.create(
+        models.MaterializedStructureRelationEdge.objects.create(
             graph=graph,
             edge=relation_category,
             source=source_cat,

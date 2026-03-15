@@ -20,10 +20,10 @@ from strawberry.scalars import JSON
 @pydantic.input(model=input_models.SetEntityPropertyInput, description="Input for ensuring an entity exists with a given global ID")
 class SetEntityPropertyInput:
     """Input for a set of properties to associate with an entity or structure."""
+
     entity_id: scalars.GraphID = strawberry.field(description="The composite ID of the entity to set the property on")
     key: str = strawberry.field(description="The property key/label")
     value: JSON = strawberry.field(description="The property value")
-
 
 
 @pydantic.input(model=input_models.PropertySet, description="Input for ensuring an entity exists with a given global ID")
@@ -236,6 +236,13 @@ class UpdateEntityDefinitionInput:
 class DeleteEntityDefinitionInput:
     id: strawberry.ID = strawberry.field(description="The ID of the entity definition to delete")
     """Input for deleting an existing entity definition in the graph schema."""
+
+    pass
+
+
+@pydantic.input(model=input_models.StructureDescriptorInput, all_fields=True, description="Input for creating a new structure relation definition in the graph schema")
+class StructureDescriptorInput:
+    """Input for creating a new structure relation definition in the graph schema."""
 
     pass
 

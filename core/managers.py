@@ -157,6 +157,42 @@ class EntityCategoryManager(NodeCategoryManager["core_models.EntityCategory"]):
     ) -> "core_models.EntityCategory":
         return async_to_sync(self.acreate_from_entity_definition)(graph, definition)
 
+    def update_from_entity_definition(
+        self,
+        category: "core_models.EntityCategory",
+        definition: input_models.EntityDefinitionInput,
+    ) -> "core_models.EntityCategory":
+        return async_to_sync(self.aupdate_from_entity_definition)(category, definition)
+
+    async def aupdate_from_entity_definition(
+        self,
+        category: "core_models.EntityCategory",
+        definition: input_models.EntityDefinitionInput,
+    ) -> "core_models.EntityCategory":
+        from graph_engine.materialize import compute_properties_hash
+
+        property_defs = [p.model_dump(mode="json") for p in definition.property_definitions] if definition.property_definitions else []
+        props_hash = compute_properties_hash(property_defs)
+
+        category.label = definition.label or category.label
+        category.description = definition.description or category.description
+        category.instance_kind = definition.instance_kind or category.instance_kind
+        category.property_definitions = property_defs or category.property_definitions
+        category.schema_hash = props_hash or category.schema_hash
+
+        store_id = self._resolve_store_id(definition.image)
+        if store_id is not None:
+            category.image_id = store_id
+        if definition.color is not None:
+            category.color = definition.color
+
+        await category.asave()
+
+        await self._apply_tags(category, definition.tags)
+        await self._apply_ontology_references(category, definition.ontology_references)
+
+        return category
+
 
 class StructureCategoryManager(NodeCategoryManager["core_models.StructureCategory"]):
     """Structure categories are a special type of node category that represent structures in the graph (e.g. regions of interest, etc.) and can be referenced by metric categories to link metrics to specific structures. They have an additional identifier field that is used to link them to the corresponding structure in the AGE data model."""

@@ -1583,30 +1583,61 @@ class ScatterPlot(models.Model):
     )
 
 
-class MaterializedEdge(models.Model):
+class MaterializedEdge(PolymorphicModel):
     graph = models.ForeignKey(
         Graph,
         on_delete=models.CASCADE,
         related_name="materialized_edges",
         help_text="The graph this edge belongs to",
     )
+
+
+class MaterializedRelationEdge(MaterializedEdge):
     source = models.ForeignKey(
-        Category,
+        EntityCategory,
         on_delete=models.CASCADE,
-        related_name="materialized_edges_as_source",
+        related_name="materialized_relation_edges_as_source",
         help_text="The source category of the edge",
     )
     target = models.ForeignKey(
-        Category,
+        EntityCategory,
         on_delete=models.CASCADE,
-        related_name="materialized_edges_as_target",
+        related_name="materialized_relation_edges_as_target",
         help_text="The target category of the edge",
     )
     edge = models.ForeignKey(
-        Category,
+        RelationCategory,
         db_column="relation_id",
         on_delete=models.CASCADE,
-        related_name="materialized_edges_as_relation",
+        related_name="materialized_relation_edges_as_relation",
+        help_text="The relation category of the edge",
+    )
+    role = models.CharField(
+        max_length=1000,
+        null=True,
+        blank=True,
+        help_text="The role of the edge, if its part of a protocol or natural event (e.g. source, target, etc.)",
+    )
+
+
+class MaterializedStructureRelationEdge(MaterializedEdge):
+    source = models.ForeignKey(
+        StructureCategory,
+        on_delete=models.CASCADE,
+        related_name="materialized_structure_relation_edges_as_source",
+        help_text="The source category of the edge",
+    )
+    target = models.ForeignKey(
+        StructureCategory,
+        on_delete=models.CASCADE,
+        related_name="materialized_structure_relation_edges_as_target",
+        help_text="The target category of the edge",
+    )
+    edge = models.ForeignKey(
+        StructureRelationCategory,
+        db_column="relation_id",
+        on_delete=models.CASCADE,
+        related_name="materialized_structure_relation_edges_as_relation",
         help_text="The relation category of the edge",
     )
     role = models.CharField(

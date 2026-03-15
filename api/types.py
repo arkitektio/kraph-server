@@ -108,6 +108,28 @@ class MaterializedEdge:
     graph: "Graph"
 
 
+@kante.django_type(models.MaterializedStructureRelationEdge, filters=filters.MaterializedStructureRelationEdgeFilter, ordering=order.MaterializedStructureRelationEdgeOrder, pagination=True, description="A materialized edge representing a relationship in the graph")
+class MaterializedStructureRelationEdge:
+    """A materialized edge representing a relationship in the graph."""
+
+    id: strawberry.ID = strawberry.field(description="Database ID of the edge")
+    source: "StructureCategory"
+    target: "StructureCategory"
+    edge: "StructureRelationCategory"
+    graph: "Graph"
+
+
+@kante.django_type(models.MaterializedRelationEdge, filters=filters.MaterializedRelationEdgeFilter, ordering=order.MaterializedRelationEdgeOrder, pagination=True, description="A materialized edge representing a relationship in the graph")
+class MaterializedRelationEdge:
+    """A materialized edge representing a relationship in the graph."""
+
+    id: strawberry.ID = strawberry.field(description="Database ID of the edge")
+    source: "EntityCategory"
+    target: "EntityCategory"
+    edge: "StructureRelationCategory"
+    graph: "Graph"
+
+
 @kante.django_type(models.Graph, filters=filters.GraphFilter, pagination=True, ordering=order.GraphOrder, description="Base interface for graph schemas")
 class Graph:
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
@@ -119,8 +141,12 @@ class Graph:
     color: Optional[List[int]] = strawberry.field(default=None, description="Color as RGBA list (0-255)")
     tags: List[str] = strawberry.field(default_factory=list, description="List of tags associated with this category")
     name: str = strawberry.field(description="Name of the graph")
-    materialized_edges: List["MaterializedEdge"] = strawberry.field(default_factory=list, description="List of materialized edges in the graph")
     image: MediaStore | None = strawberry.field(description="An image representing this graph, for visualization purposes")
+
+    # edges
+    materialized_edges: List["MaterializedEdge"] = strawberry.field(default_factory=list, description="List of materialized edges in the graph")
+    materialized_relation_edges: List["MaterializedRelationEdge"] = strawberry.field(default_factory=list, description="List of materialized relation edges in the graph")
+    materialized_structure_relation_edges: List["MaterializedStructureRelationEdge"] = strawberry.field(default_factory=list, description="List of materialized structure relation edges in the graph")
     # Schemas
     node_categories: List["NodeCategory"] = strawberry.field(default_factory=list, description="List of node categories/schemas defined in this graph")
     edge_categories: List["EdgeCategory"] = strawberry.field(default_factory=list, description="List of edge categories/schemas defined in this graph")
@@ -156,6 +182,7 @@ class CategoryTag:
 class Category:
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
     label: str = strawberry.field(description="Label/name of the category")
+    key: str = strawberry.field(description="The unique key/identifier for this category, used for linking to entities or structures (e.g. 'Cell', 'ROI')")
     description: Optional[str] = strawberry.field(default=None, description="Description of the category")
     age_name: str = strawberry.field(description="The name of the category as used in AGE (e.g. 'Cell', 'ROI')")
     purl: Optional[str] = strawberry.field(default=None, description="Persistent URL for this category")

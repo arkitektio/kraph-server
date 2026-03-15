@@ -173,7 +173,6 @@ class RenderGraphNodesOrder(BaseModel):
     direction: str = "asc"
 
 
-
 class RenderGraphPathFilter(BaseModel):
     key: Optional[str] = None
     operator: Optional[str] = None
@@ -826,19 +825,12 @@ class UpdateEntityDefinitionInput(UpdateDefinitionInput):
         return v
 
 
-
 class SetEntityPropertyInput(BaseModel):
     """Input for setting a property value on an entity."""
 
     entity_id: GraphID = Field(..., description="The ID of the entity to update")
     key: str = Field(..., description="The property key to set")
     value: Any = Field(..., description="The value to set for this property")
-    
-
-
-
-
-
 
 
 class CreateEntityDefinitionInput(EntityDefinitionInput):
@@ -1100,10 +1092,15 @@ class RelationDefinitionInput(EdgeDefinitionInput):
     properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Derived property definitions")
 
 
-class StructureRelationDefinitionInput(EdgeDefinitionInput):
+class StructureRelationDefinitionInput(DefinitionInput):
     """Input for a relation definition."""
 
     properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Derived property definitions")
+    ontology_references: List[OntologyReferenceInput] = Field(default_factory=list, description="Ontology references for this event")
+    key: str = Field(..., description="Relation type name/key")
+    source: StructureDescriptorInput = Field(..., description="Source entity type(s)")
+    target: StructureDescriptorInput = Field(..., description="Target entity type(s)")
+    cardinality: Cardinality = Field(default=Cardinality.ONE_TO_ONE, description="Relation cardinality")
 
 
 class MeasurementDefinitionInput(EdgeDefinitionInput):
@@ -1464,7 +1461,7 @@ class ArchiveMeasurementDefinitionInput(BaseModel):
     id: GraphID = Field(..., description="The ID of the measurement category to archive")
 
 
-class CreateStructureRelationDefinitionInput(EntityDefinitionInput):
+class CreateStructureRelationDefinitionInput(StructureRelationDefinitionInput):
     """Input for an entity definition at the graph level (not within an event)."""
 
     graph: GraphID = Field(..., description="The graph id this entitiy will beong to")
@@ -1591,7 +1588,7 @@ class PropertySet(BaseModel):
 
     key: str = Field(..., description="The property key/label")
     value: str | int | float | bool = Field(..., description="The property value")
-    model_config =  ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class EntityInput(BaseModel):

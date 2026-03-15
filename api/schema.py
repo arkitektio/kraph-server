@@ -92,6 +92,10 @@ class Query:
 
     materialized_edges: list[types.MaterializedEdge] = kante.django_field(description="List all materialized edges in the graph")
     materialized_edge: types.MaterializedEdge = kante.django_field(description="Get a single materialized edge by ID")
+    materialized_structure_relation_edges: list[types.MaterializedStructureRelationEdge] = kante.django_field(description="List all materialized structure relation edges in the graph")
+    materialized_structure_relation_edge: types.MaterializedStructureRelationEdge = kante.django_field(description="Get a single materialized structure relation edge by ID")
+    materialized_relation_edges: list[types.MaterializedRelationEdge] = kante.django_field(description="List all materialized relation edges in the graph")
+    materialized_relation_edge: types.MaterializedRelationEdge = kante.django_field(description="Get a single materialized relation edge by ID")
 
     graph_stats: types.GraphStats = kante.django_field(description="Get aggregated graph stats with optional filters", resolver=types.GraphStatsResolver)
     category_tag_stats: types.CategoryTagStats = kante.django_field(description="Get aggregated category-tag stats with optional filters", resolver=types.CategoryTagStatsResolver)
@@ -154,9 +158,7 @@ class Mutation:
         description="Pin a node in the UI for a user",
         resolver=mutations.pin_node,
     )
-    
-    
-    
+
     # =========================
 
     create_entity = kante.django_mutation(
@@ -179,14 +181,7 @@ class Mutation:
         description="Set a property on an existing entity in the graph",
         resolver=mutations.set_entity_property,
     )
-    
-    
-    
-    
-    
-    
-    
-    
+
     create_structure = kante.django_mutation(
         description="Create a new structure in the graph",
         resolver=mutations.create_structure,

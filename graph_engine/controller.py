@@ -672,6 +672,25 @@ class GraphController:
 
         return entities
 
+    def set_entity_property(self, graph: models.Graph, local_id: scalars.LocalID, key: str, value: Any) -> None:
+        """
+        Sets a property on an entity node.
+
+        Args:
+            graph: The graph to operate on
+            local_id: The internal graph ID of the entity node
+            key: The property key to set
+            value: The value to set for the property
+        """
+        self.engine.execute(
+            graph,
+            f"""
+            MATCH (e) WHERE id(e) = $eid
+            SET e[$key] = $value
+            """,
+            {"eid": local_id, "key": key, "value": value},
+        )
+
     def get_node(self, graph: models.Graph, local_id: scalars.LocalID, info: Info | None = None) -> retrieved.RetrievedNode:
         """
         Retrieve a raw node by its string ID.
