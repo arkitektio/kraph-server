@@ -3,7 +3,7 @@ from pydantic import BaseModel
 
 
 class RequestMediaUploadInput(BaseModel):
-    """Requests a pre-signed S3 URL for uploading media files. The client can then use this URL to upload the file directly to S3, and the server can later access it for processing. This is used for uploading files that will be used as properties in graph"""
+    """Request a signed SeaweedFS upload grant for a media object."""
 
     key: str
     datalayer: str

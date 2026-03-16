@@ -85,6 +85,10 @@ AWS_S3_USE_SSL = True
 AWS_S3_SECURE_URLS = False
 
 
+DATALAYER = conf.get("datalayer", {})
+DATALAYER_URL = conf.get("datalayer_url", os.environ.get("DATALAYER_URL", "http://localhost:8888"))
+
+
 CHANNEL_LAYERS = {
     "default": {
         # This example app uses the Redis channel layer implementation channels_redis

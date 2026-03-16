@@ -30,6 +30,7 @@ dependencies = [
     "django-polymorphic>=4.1.0",
     "strawberry-graphql>=0.291",
     "kante>=1.1.0",
+    "pyjwt>=2.12.1",
 ]
 
 [dependency-groups]

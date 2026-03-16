@@ -3,23 +3,29 @@ from django.core.exceptions import ValidationError
 import re
 
 
-def validate_s3(value: str) -> None:
-    """Validate that the given value is a valid S3 path in the format s3://datalayer/bucket_name/object_key"""
-    s3_pattern = r"^s3://.+/.+/.+"
-    if not re.match(s3_pattern, value):
+def validate_store_path(value: str) -> None:
+    """Validate that the value is a supported object-store URI."""
+    pattern = r"^(seaweed|s3)://[^/]+/.+"
+    if not re.match(pattern, value):
         raise ValidationError(
-            "Invalid S3 path format. Should be s3://datalayer/bucket_name/object_key",
+            "Invalid store path format. Expected seaweed://bucket/object_key",
             code="invalid",
         )
 
 
-class S3Field(models.CharField):
-    """A CharField to store S3 paths with validation for the format s3://datalayer/bucket_name/object_key"""
+class StorePathField(models.CharField):
+    """A CharField to store SeaweedFS-backed object paths."""
 
-    description = "CharField to store S3 path for Zarr dataset with validation"
+    description = "CharField to store object-store paths with validation"
 
     def __init__(self, *args, **kwargs) -> None:
-        """Initialize the S3Field with a default max_length of 500 and add the validate_s3 validator to the field validators. The max_length can be overridden by passing a max_length argument when initializing the field."""
+        """Initialize the field with a default max_length of 500."""
         kwargs["max_length"] = kwargs.get("max_length", 500)
+        validators = list(kwargs.get("validators", []))
+        validators.append(validate_store_path)
+        kwargs["validators"] = validators
 
         super().__init__(*args, **kwargs)
+
+
+S3Field = StorePathField
