@@ -50,7 +50,7 @@ def test_signed_upload_round_trip_against_seaweed_filer(backend_stack) -> None:
         "text/plain",
     )
     upload_request = request.Request(
-        upload_grant.url,
+        datalayer.build_external_url(upload_grant),
         data=upload_body,
         headers={"Content-Type": upload_content_type},
         method=upload_grant.method,
@@ -60,9 +60,9 @@ def test_signed_upload_round_trip_against_seaweed_filer(backend_stack) -> None:
         assert response.status in {200, 201, 202, 204}
 
     read_grant = datalayer.generate_file_read_url("media", key)
-    with request.urlopen(request.Request(read_grant.url, method=read_grant.method), timeout=10) as response:
+    with request.urlopen(request.Request(datalayer.build_external_url(read_grant), method=read_grant.method), timeout=10) as response:
         assert response.read() == payload
 
     delete_grant = datalayer.generate_file_delete_url("media", key)
-    with request.urlopen(request.Request(delete_grant.url, method=delete_grant.method), timeout=10) as response:
+    with request.urlopen(request.Request(datalayer.build_external_url(delete_grant), method=delete_grant.method), timeout=10) as response:
         assert response.status in {200, 202, 204}

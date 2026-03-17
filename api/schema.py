@@ -307,6 +307,26 @@ class Mutation:
         description="Upload media and return a URL for access",
         resolver=datalayer_mutations.request_media_upload,
     )
+    finish_media_upload = kante.django_mutation(
+        description="Finalize a media upload after the client has written the object",
+        resolver=datalayer_mutations.finish_media_upload,
+    )
+    request_bigfile_upload = kante.django_mutation(
+        description="Request an upload grant for a big file store",
+        resolver=datalayer_mutations.request_bigfile_upload,
+    )
+    finish_bigfile_upload = kante.django_mutation(
+        description="Finalize a big file upload after the client has written the object",
+        resolver=datalayer_mutations.finish_bigfile_upload,
+    )
+    request_zarr_upload = kante.django_mutation(
+        description="Request an upload grant for a Zarr store",
+        resolver=datalayer_mutations.request_zarr_upload,
+    )
+    finish_zarr_upload = kante.django_mutation(
+        description="Finalize a Zarr upload after the client has written the object",
+        resolver=datalayer_mutations.finish_zarr_upload,
+    )
 
     # =========================
     # Insights Section
