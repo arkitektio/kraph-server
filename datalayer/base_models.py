@@ -16,8 +16,7 @@ class FinishMediaUploadInput(BaseModel):
 
     store_id: str
     valid: bool = True
-    
-    
+
 
 class RequestMediaAccessInput(BaseModel):
     """Request temporary S3 access credentials for a media object."""
@@ -38,7 +37,6 @@ class FinishBigFileUploadInput(BaseModel):
 
     store_id: str
     valid: bool = True
-
 
 
 class RequestBigFileAccessInput(BaseModel):
@@ -111,7 +109,6 @@ class ZarrMetadata(BaseModel):
             return None
 
         return cast(list[int], chunk_shape)
-    
 
 
 class RequestParquetUploadInput(BaseModel):
@@ -126,14 +123,12 @@ class FinishParquetUploadInput(BaseModel):
 
     store_id: str
     valid: bool = True
-    
-    
+
 
 class RequestParquetAccessInput(BaseModel):
     """Request temporary S3 access credentials for a media object."""
 
     store_id: str
-
 
 
 class AccessGrant(BaseModel):
@@ -178,8 +173,27 @@ class BaseUploadGrant(AccessGrant):
     upload_form_field: str = "file"
 
 
-class MediaUploadGrant(BaseUploadGrant):
-    """Temporary S3 credentials for a media upload."""
+class PresignedPutParams(BaseModel):
+    """Decomposed S3v4 presigned PUT query parameters."""
+
+    x_amz_algorithm: str
+    x_amz_credential: str
+    x_amz_date: str
+    x_amz_expires: str
+    x_amz_signed_headers: str
+    x_amz_signature: str
+
+
+class MediaUploadGrant(BaseModel):
+    """A presigned PUT grant for a media upload."""
+
+    status: str = "granted"
+    store: str
+    key: str
+    bucket: str
+    datalayer: str
+    base_url: str
+    presigned_params: PresignedPutParams
 
 
 class BigFileUploadGrant(BaseUploadGrant):

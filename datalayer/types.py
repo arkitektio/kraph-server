@@ -8,12 +8,6 @@ from datalayer import base_models
 from datalayer.datalayer import get_current_datalayer
 
 
-
-
-
-
-
-
 @kante.pydantic_type(base_models.BigFileAccessGrant, description="Temporary S3 credentials for reading a big file.")
 class BigFileAccessGrant:
     """Temporary S3 credentials for a big file."""
@@ -78,26 +72,29 @@ class ParquetAccessGrant:
     store: str | None
 
 
-@kante.pydantic_type(base_models.MediaUploadGrant, description="Temporary S3 credentials for uploading a media object.")
+@kante.pydantic_type(base_models.PresignedPutParams, description="Decomposed S3v4 presigned PUT query parameters.")
+class PresignedPutParams:
+    """Decomposed S3v4 presigned PUT query parameters."""
+
+    x_amz_algorithm: str
+    x_amz_credential: str
+    x_amz_date: str
+    x_amz_expires: str
+    x_amz_signed_headers: str
+    x_amz_signature: str
+
+
+@kante.pydantic_type(base_models.MediaUploadGrant, description="A presigned PUT grant for uploading a media object.")
 class MediaUploadGrant:
-    """Temporary S3 credentials for a media upload."""
+    """A presigned PUT grant for a media upload."""
 
     status: str
-    access_key: str
-    secret_key: str
-    session_token: str
-    bucket: str
-    key: str
-    path: str
-    expires_in: int
-    max_bytes: int
-    datalayer: str
-    original_file_name: str | None
-    upload_file_name: str
-    upload_content_type: str | None
-    upload_form_field: str
     store: str
-
+    key: str
+    bucket: str
+    datalayer: str
+    base_url: str
+    presigned_params: PresignedPutParams
 
 
 @kante.pydantic_type(base_models.BigFileUploadGrant, description="Temporary S3 credentials for uploading a big file.")
@@ -120,6 +117,7 @@ class BigFileUploadGrant:
     upload_form_field: str
     store: str
 
+
 @kante.pydantic_type(base_models.ZarrUploadGrant, description="Temporary S3 credentials for uploading a Zarr store.")
 class ZarrUploadGrant:
     """Temporary S3 credentials for a Zarr upload."""
@@ -141,6 +139,7 @@ class ZarrUploadGrant:
     upload_form_field: str
     store: str
 
+
 @kante.pydantic_type(base_models.ParquetUploadGrant, description="Temporary S3 credentials for uploading a parquet store.")
 class ParquetUploadGrant:
     """Temporary S3 credentials for a parquet upload."""
@@ -161,10 +160,6 @@ class ParquetUploadGrant:
     upload_content_type: str | None
     upload_form_field: str
     store: str
-
-
-
-
 
 
 @kante.django_type(
@@ -207,9 +202,7 @@ class MediaStore:
     original_file_name: str | None
     content_type: str | None
 
-    @kante.django_field(
-        description="Get temporary S3 read credentials for the media object."
-    )
+    @kante.django_field(description="Get temporary S3 read credentials for the media object.")
     def access_grant(self, info: Info, host: str | None = None) -> MediaAccessGrant:
         """Return a signed read grant for the media object."""
         del info, host
@@ -217,15 +210,11 @@ class MediaStore:
         grant = cast(models.MediaStore, self).get_access_grant(datalayer=datalayer)
         return MediaAccessGrant(**grant.model_dump())
 
-    @kante.django_field(
-        description="Compatibility field returning the canonical S3 object path."
-    )
+    @kante.django_field(description="Compatibility field returning the canonical S3 object path.")
     def presigned_url(self, info: Info, host: str | None = None) -> str:
         """Compatibility field returning the canonical S3 object path."""
         datalayer = get_current_datalayer()
-        return cast(models.MediaStore, self).get_presigned_url(
-            datalayer=datalayer, host=host
-        )
+        return cast(models.MediaStore, self).get_presigned_url(datalayer=datalayer, host=host)
 
 
 @kante.django_type(models.ZarrStore)
@@ -236,7 +225,7 @@ class ZarrStore:
     path: str
     bucket: str
     key: str
-    shape: list[int] 
+    shape: list[int]
     chunks: list[int]
     version: str | None
     dtype: str | None
@@ -247,9 +236,7 @@ class ZarrStore:
     chunk_key_encoding: JSON | None
     codecs: JSON | None
 
-    @kante.django_field(
-        description="Get temporary S3 read credentials for the Zarr object."
-    )
+    @kante.django_field(description="Get temporary S3 read credentials for the Zarr object.")
     def access_grant(self, info: Info, host: str | None = None) -> ZarrAccessGrant:
         """Return a signed read grant for the Zarr store."""
         del info, host
@@ -269,9 +256,7 @@ class ParquetStore:
     original_file_name: str | None
     content_type: str | None
 
-    @kante.django_field(
-        description="Get temporary S3 read credentials for the parquet object."
-    )
+    @kante.django_field(description="Get temporary S3 read credentials for the parquet object.")
     def access_grant(self, info: Info, host: str | None = None) -> ParquetAccessGrant:
         """Return a signed read grant for the Zarr store."""
         del info, host
@@ -279,12 +264,8 @@ class ParquetStore:
         grant = cast(models.ParquetStore, self).get_access_grant(datalayer=datalayer)
         return ParquetAccessGrant(**grant.model_dump())
 
-    @kante.django_field(
-        description="Compatibility field returning the canonical S3 object path."
-    )
+    @kante.django_field(description="Compatibility field returning the canonical S3 object path.")
     def presigned_url(self, info: Info, host: str | None = None) -> str:
         """Compatibility field returning the canonical S3 object path."""
         datalayer = get_current_datalayer()
-        return cast(models.ParquetStore, self).get_presigned_url(
-            datalayer=datalayer, host=host
-        )
+        return cast(models.ParquetStore, self).get_presigned_url(datalayer=datalayer, host=host)
