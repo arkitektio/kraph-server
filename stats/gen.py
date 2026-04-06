@@ -2,6 +2,7 @@ import datetime
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
+import kante
 import strawberry
 import strawberry_django
 from strawberry.types import Info
@@ -140,34 +141,34 @@ def create_stats_type(
 
         # --- Fields ---
 
-        @strawberry.field(description="Total number of items in the selection")
+        @kante.django_field(description="Total number of items in the selection")
         def count(self) -> int:
             return self._qs.count()
 
-        @strawberry.field(description="Count of distinct values")
+        @kante.django_field(description="Count of distinct values")
         def distinctCount(self, field: FieldEnum) -> int:  # type: ignore
             return self._get_field_stats(field)["distinctCount"]
 
-        @strawberry.field(description="Maximum value")
+        @kante.django_field(description="Maximum value")
         def max(self, field: FieldEnum) -> Optional[float]:  # type: ignore
             return self._get_field_stats(field)["max"]
 
-        @strawberry.field(description="Minimum value")
+        @kante.django_field(description="Minimum value")
         def min(self, field: FieldEnum) -> Optional[float]:  # type: ignore
             return self._get_field_stats(field)["min"]
 
-        @strawberry.field(description="Average value")
+        @kante.django_field(description="Average value")
         def avg(self, field: FieldEnum) -> Optional[float]:  # type: ignore
             return self._get_field_stats(field)["avg"]
 
-        @strawberry.field(description="Sum of values")
+        @kante.django_field(description="Sum of values")
         def sum(self, field: FieldEnum) -> Optional[float]:  # type: ignore
             return self._get_field_stats(field)["sum"]
 
     # 5. Inject 'series' field only if timestamps are allowed
     if TimestampEnum:
 
-        @strawberry.field(description="Time-bucketed stats over a datetime field.")
+        @kante.django_field(description="Time-bucketed stats over a datetime field.")
         def series(
             self,
             field: FieldEnum,  # type: ignore
@@ -220,7 +221,7 @@ def create_stats_type(
         for name, (func, ret_type, desc) in resolvers.items():
 
             def make_custom_resolver(f=func):
-                @strawberry.field(description=desc)
+                @kante.django_field(description=desc)
                 def _wrapper(self, field: FieldEnum) -> ret_type:  # type: ignore
                     mf = _get_model_field(field)
                     return f(self._qs, mf)

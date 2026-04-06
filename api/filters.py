@@ -152,11 +152,11 @@ class CategoryFilter:
 
     @kante.filter_field(description="Filter by list of IDs")
     def ids(self, value: list[strawberry.ID], prefix: str) -> Q:
-        return Q(**{f"{prefix}__id__in": value})
+        return Q(**{f"{prefix}id__in": value})
 
     @kante.filter_field(description="Filter by list of IDs")
     def pinned(self, info: kante.Info, value: bool, prefix: str) -> Q:
-        return Q(**{f"{prefix}__pinned_by": info.context.request.user})
+        return Q(**{f"{prefix}pinned_by": info.context.request.user})
 
     @kante.filter_field(description="Filter by list of IDs")
     def search(self, value: str, prefix: str) -> Q:
@@ -175,7 +175,7 @@ class MetricCategoryFilter(CategoryFilter):
     @kante.filter_field(description="Filter by list of IDs")
     def value_kind(self, info: kante.Info, value: enums.ValueKind, prefix: str) -> Q:
         """Filter metric categories by the kind of value they represent (e.g. numeric, categorical)."""
-        return Q(**{f"{prefix}__value_kind": value})
+        return Q(**{f"{prefix}value_kind": value})
 
 
 @kante.filter_type(models.RelationCategory)
@@ -214,7 +214,7 @@ class MaterializedEdgeFilter:
 
     @kante.filter_field(description="Filter by list of IDs")
     def ids(self, value: list[strawberry.ID], prefix: str) -> Q:
-        return Q(**{f"{prefix}__id__in": value})
+        return Q(**{f"{prefix}id__in": value})
 
     @kante.filter_field(description="Full-text search over connected category labels")
     def search(self, value: str, prefix: str) -> Q:
@@ -237,7 +237,7 @@ class MaterializedEdgeFilter:
 
     @kante.filter_field(description="Filter by list of IDs")
     def ids(self, value: list[strawberry.ID], prefix: str) -> Q:
-        return Q(**{f"{prefix}__id__in": value})
+        return Q(**{f"{prefix}id__in": value})
 
     @kante.filter_field(description="Full-text search over connected category labels")
     def search(self, value: str, prefix: str) -> Q:
@@ -260,7 +260,7 @@ class MaterializedStructureRelationEdgeFilter:
 
     @kante.filter_field(description="Filter by list of IDs")
     def ids(self, value: list[strawberry.ID], prefix: str) -> Q:
-        return Q(**{f"{prefix}__id__in": value})
+        return Q(**{f"{prefix}id__in": value})
 
     @kante.filter_field(description="Full-text search over connected category labels")
     def search(self, value: str, prefix: str) -> Q:
@@ -283,7 +283,7 @@ class MaterializedRelationEdgeFilter:
 
     @kante.filter_field(description="Filter by list of IDs")
     def ids(self, value: list[strawberry.ID], prefix: str) -> Q:
-        return Q(**{f"{prefix}__id__in": value})
+        return Q(**{f"{prefix}id__in": value})
 
     @kante.filter_field(description="Full-text search over connected category labels")
     def search(self, value: str, prefix: str) -> Q:
@@ -306,7 +306,7 @@ class GraphQueryFilter:
 
     @kante.filter_field(description="Filter by list of IDs")
     def ids(self, value: list[strawberry.ID], prefix: str) -> Q:
-        return Q(**{f"{prefix}__id__in": value})
+        return Q(**{f"{prefix}id__in": value})
 
     @kante.filter_field(description="Full-text search over label and description")
     def search(self, value: str, prefix: str) -> Q:
@@ -353,7 +353,7 @@ class GraphPathQueryFilter(GraphQueryFilter):
 class NodeQueryFilter:
     @kante.filter_field(description="Filter by list of IDs")
     def ids(self, value: list[strawberry.ID], prefix: str) -> Q:
-        return Q(**{f"{prefix}__id__in": value})
+        return Q(**{f"{prefix}id__in": value})
 
     @kante.filter_field(description="Full-text search over label and description")
     def search(self, value: str, prefix: str) -> Q:
@@ -379,7 +379,7 @@ class NodePathQueryFilter(NodeQueryFilter):
 class EdgeQueryFilter:
     @kante.filter_field(description="Filter by list of IDs")
     def ids(self, value: list[strawberry.ID], prefix: str) -> Q:
-        return Q(**{f"{prefix}__id__in": value})
+        return Q(**{f"{prefix}id__in": value})
 
     @kante.filter_field(description="Full-text search over label and description")
     def search(self, value: str, prefix: str) -> Q:
@@ -408,7 +408,7 @@ class ScatterPlotFilter:
 
     @kante.filter_field(description="Filter by list of IDs")
     def ids(self, value: list[strawberry.ID], prefix: str) -> Q:
-        return Q(**{f"{prefix}__id__in": value})
+        return Q(**{f"{prefix}id__in": value})
 
     @kante.filter_field(description="Full-text search over label and description")
     def search(self, value: str, prefix: str) -> Q:
