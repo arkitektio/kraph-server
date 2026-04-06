@@ -29,7 +29,7 @@ def _coerce_filter_value(value):
 
 
 def entities(
-    info,
+    info: Info,
     entity_category_id: strawberry.ID,
     filters: filters.EntityFilter | None = None,
     ordering: list[order.EntityOrder] | None = None,

@@ -29,7 +29,7 @@ def _coerce_filter_value(value):
 
 
 def nodes(
-    info,
+    info: Info,
     graph: strawberry.ID,
     filters: filters.NodeFilters | None = None,
     ordering: list[order.NodeOrder] | None = None,
