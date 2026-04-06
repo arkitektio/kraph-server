@@ -16,11 +16,12 @@ class BigFileAccessGrant:
     access_key: str
     secret_key: str
     session_token: str
+    region: str
+
     bucket: str
     key: str
     path: str
     expires_in: int
-    datalayer: str
     store: str | None
 
 
@@ -32,11 +33,11 @@ class MediaAccessGrant:
     access_key: str
     secret_key: str
     session_token: str
+    region: str
     bucket: str
     key: str
     path: str
     expires_in: int
-    datalayer: str
     store: str | None
 
 
@@ -48,11 +49,12 @@ class ZarrAccessGrant:
     access_key: str
     secret_key: str
     session_token: str
+    region: str
+
     bucket: str
     key: str
     path: str
     expires_in: int
-    datalayer: str
     store: str | None
 
 
@@ -64,43 +66,19 @@ class ParquetAccessGrant:
     access_key: str
     secret_key: str
     session_token: str
+    region: str
     bucket: str
     key: str
     path: str
     expires_in: int
-    datalayer: str
     store: str | None
-
-
-@kante.pydantic_type(base_models.PresignedPutParams, description="Decomposed S3v4 presigned PUT query parameters.")
-class PresignedPutParams:
-    """Decomposed S3v4 presigned PUT query parameters."""
-
-    x_amz_algorithm: str
-    x_amz_credential: str
-    x_amz_date: str
-    x_amz_expires: str
-    x_amz_signed_headers: str
-    x_amz_signature: str
 
 
 @kante.pydantic_type(base_models.MediaUploadGrant, description="A presigned PUT grant for uploading a media object.")
 class MediaUploadGrant:
     """A presigned PUT grant for a media upload."""
 
-    status: str
-    store: str
-    key: str
-    bucket: str
-    datalayer: str
-    base_url: str
-    presigned_params: PresignedPutParams
-
-
-@kante.pydantic_type(base_models.BigFileUploadGrant, description="Temporary S3 credentials for uploading a big file.")
-class BigFileUploadGrant:
-    """Temporary S3 credentials for a big file upload."""
-
+    region: str
     status: str
     access_key: str
     secret_key: str
@@ -110,7 +88,27 @@ class BigFileUploadGrant:
     path: str
     expires_in: int
     max_bytes: int
-    datalayer: str
+    original_file_name: str | None
+    upload_file_name: str
+    upload_content_type: str | None
+    upload_form_field: str
+    store: str
+
+
+@kante.pydantic_type(base_models.BigFileUploadGrant, description="Temporary S3 credentials for uploading a big file.")
+class BigFileUploadGrant:
+    """Temporary S3 credentials for a big file upload."""
+
+    region: str
+    status: str
+    access_key: str
+    secret_key: str
+    session_token: str
+    bucket: str
+    key: str
+    path: str
+    expires_in: int
+    max_bytes: int
     original_file_name: str | None
     upload_file_name: str
     upload_content_type: str | None
@@ -132,7 +130,6 @@ class ZarrUploadGrant:
     action: str
     expires_in: int
     max_bytes: int
-    datalayer: str
     original_file_name: str | None
     upload_file_name: str
     upload_content_type: str | None
@@ -154,7 +151,6 @@ class ParquetUploadGrant:
     action: str
     expires_in: int
     max_bytes: int
-    datalayer: str
     original_file_name: str | None
     upload_file_name: str
     upload_content_type: str | None

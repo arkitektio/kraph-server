@@ -8,7 +8,6 @@ from django.db import models
 from polymorphic.models import PolymorphicModel
 from datalayer import base_models
 from datalayer.datalayer import AccessGrant, Datalayer
-from datalayer.fields import StorePathField
 
 if TYPE_CHECKING:
     from types_boto3_s3.type_defs import FileobjTypeDef
@@ -30,9 +29,10 @@ def build_opaque_storage_key(original_file_name: str, generator: Callable[[], st
 
 class DatalayerStore(PolymorphicModel):
     """An object stored behind the S3-backed datalayer."""
+
     objects: models.Manager["DatalayerStore"]  # type: ignore[assignment]
 
-    path = StorePathField(null=True, blank=True, help_text="The object-store URI of the file", unique=True)
+    path = models.CharField(max_length=1000, null=True, blank=True, help_text="The object-store URI of the file", unique=True)
     key = models.CharField(max_length=1000, help_text="The object key/path within the datalayer bucket.")
     bucket = models.CharField(max_length=1000, help_text="The datalayer bucket/service this store belongs to.")
     original_file_name = models.CharField(max_length=1000, null=True, blank=True, help_text="The original client-provided file name.")
@@ -78,6 +78,7 @@ class DatalayerStore(PolymorphicModel):
 
 class BigFileStore(DatalayerStore):
     """A large file stored behind the S3-backed datalayer."""
+
     objects: models.Manager["BigFileStore"]  # type: ignore[assignment]
 
     def grant_read_access(self, datalayer: Datalayer, host: str | None = None) -> base_models.BigFileAccessGrant:
@@ -107,7 +108,8 @@ class BigFileStore(DatalayerStore):
 
 class MediaStore(DatalayerStore):
     """Media objects stored behind the S3-backed datalayer."""
-    objects: models.Manager["MediaStore"]  # type: ignore[assignment]   
+
+    objects: models.Manager["MediaStore"]  # type: ignore[assignment]
 
     def grant_read_access(self, datalayer: Datalayer, host: str | None = None) -> base_models.MediaAccessGrant:
         """Return temporary credentials for reading this media object."""
@@ -142,6 +144,7 @@ class MediaStore(DatalayerStore):
 
 class ZarrStore(DatalayerStore):
     """Zarr objects stored behind the S3-backed datalayer."""
+
     objects: models.Manager["ZarrStore"]  # type: ignore[assignment]
 
     shape = models.JSONField(null=True, blank=True, help_text="The shape of the Zarr array stored at this location.")
@@ -201,8 +204,7 @@ class ZarrStore(DatalayerStore):
                 "populated",
             ]
         )
-        
-        
+
     @property
     def c_size(self) -> int:
         """Return the regular chunk shape for callers using the legacy field name."""
@@ -217,22 +219,21 @@ class ZarrStore(DatalayerStore):
     def z_size(self) -> int:
         """Return the regular chunk shape for callers using the legacy field name."""
         return self.shape[2]
-    
+
     @property
     def y_size(self) -> int:
         """Return the regular chunk shape for callers using the legacy field name."""
         return self.shape[3]
-    
+
     @property
     def x_size(self) -> int:
         """Return the regular chunk shape for callers using the legacy field name."""
         return self.shape[4]
 
-        
-
 
 class ParquetStore(DatalayerStore):
     """Parquet objects stored behind the S3-backed datalayer."""
+
     objects: models.Manager["ParquetStore"]  # type: ignore[assignment]
 
     def grant_read_access(self, datalayer: Datalayer, host: str | None = None) -> base_models.ParquetAccessGrant:

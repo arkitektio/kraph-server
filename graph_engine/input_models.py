@@ -8,7 +8,7 @@ import re
 import strawberry
 from strawberry_django import Ordering
 
-from datalayer.scalars import MediaStore, MediaStoreLike
+from datalayer.scalars import MediaLike
 from graph_engine.scalars import GraphID
 from graph_engine import scalars
 from core import enums
@@ -738,7 +738,7 @@ class DefinitionInput(BaseModel):
     ontology_references: List[OntologyReferenceInput] = Field(default_factory=list, description="Ontology references for this event")
     tags: List[str] = Field(default_factory=list, description="Optional tags for this node role (e.g. 'cell_body', 'dendrite', 'axon')")
     color: Optional[List[int]] = Field(default=None, description="Optional RGBA color for this node role (e.g. [255, 0, 0, 128])")
-    image: Optional[MediaStoreLike] = Field(default=None, description="Optional media store ID for an image representing this node role")
+    image: Optional[str] = Field(default=None, description="Optional media store ID for an image representing this node role")
     label: Optional[str] = Field(default=None, description="Optional human-readable label for this node role (defaults to 'key' if not provided)")
     pin: Optional[bool] = Field(default=None, description="Whether to pin this node role in the UI")
 
@@ -751,7 +751,7 @@ class UpdateDefinitionInput(BaseModel):
     ontology_references: Optional[List[OntologyReferenceInput]] = Field(default=None, description="Ontology references for this event")
     tags: Optional[List[str]] = Field(default=None, description="Optional tags for this node role (e.g. 'cell_body', 'dendrite', 'axon')")
     color: Optional[List[int]] = Field(default=None, description="Optional RGBA color for this node role (e.g. [255, 0, 0, 128])")
-    image: Optional[MediaStoreLike] = Field(default=None, description="Optional media store ID for an image representing this node role")
+    image: Optional[str] = Field(default=None, description="Optional media store ID for an image representing this node role")
     label: Optional[str] = Field(default=None, description="Optional human-readable label for this node role (defaults to 'key' if not provided)")
     pin: Optional[bool] = Field(default=None, description="Whether to pin this node role in the UI")
 

@@ -1,18 +1,14 @@
-from typing import Any, Callable, NewType
-from pydantic import GetCoreSchemaHandler
-from pydantic_core import CoreSchema, core_schema
+from typing import NewType
 from datalayer import models
 import strawberry
 
 
-MediaStore = NewType("MediaStore", str)
+MediaLike = strawberry.scalar(
+    NewType("MediaLike", str),
+    description="A type representing a media store reference, which can be either a string ID or a more complex object.",
+    serialize=lambda v: v,  # Implement your serialization logic here
+    parse_value=lambda v: v,  # Implement your parsing logic here
+)
 
 
-scalar_map = {
-    MediaStore: strawberry.scalar(
-        name="MediaStore",
-        description="A type representing a media store reference, which can be either a string ID or a more complex object.",
-        serialize=lambda v: v,  # Implement your serialization logic here
-        parse_value=lambda v: v,  # Implement your parsing logic here
-    ),
-}
+scalar_map = {MediaLike: MediaLike}
