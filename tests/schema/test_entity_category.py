@@ -29,8 +29,8 @@ async def test_entity_category_search(test_graph: Graph, authenticated_context: 
     )
 
     query: str = """
-        query SearchEntityCategories($instanceKind: String!) {
-            entityCategories(filters: {instanceKind: $instanceKind}) {
+        query SearchEntityCategories($label: String!) {
+            entityCategories(filters: {label: $label}) {
                 id
                 label
             }
@@ -39,7 +39,7 @@ async def test_entity_category_search(test_graph: Graph, authenticated_context: 
 
     result = await schema.execute(
         query,
-        variable_values={"instanceKind": "neuron"},
+        variable_values={"label": "Neuron"},
         context_value=authenticated_context,
     )
 

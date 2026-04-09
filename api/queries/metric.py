@@ -1,12 +1,10 @@
-"""
-Measurement query resolvers.
-"""
+"""Metric query resolvers."""
 
 from typing import List
+import strawberry
 from kante.types import Info
 
-from api import types, context
-from core import models
+from api import types, context, filters, order, pagination
 from graph_engine import scalars
 
 
@@ -29,15 +27,26 @@ def metric(
     graph_id = context.extract_graph_id(metric_id)
     local_id = context.extract_node_id(metric_id)
 
-    graph = models.Graph.objects.get(id=graph_id)
+    graph = context.get_accessible_graph(info, graph_id)
 
-    response = controller.get_node(local_id=local_id)
+    response = controller.get_node(graph, local_id=local_id, info=info)
     return types.Metric(_value=response)
+
+
+def metrics(
+    info: Info,
+    metric_category_id: strawberry.ID,
+    filters: filters.MetricFilter | None = None,
+    ordering: list[order.MetricOrder] | None = None,
+    pagination: pagination.MetricPaginationInput | None = None,
+) -> List[types.Metric]:
+    """List metrics for a given metric category with typed filter/order/pagination arguments."""
+    raise NotImplementedError("metrics resolver scaffold added; query execution not implemented yet")
 
 
 def metrics_for_structure(
     info: Info,
-    structure_id: str,
+    structure_id: scalars.GraphID,
 ) -> List[types.Metric]:
     """
     Fetch all measurements attached to a structure.
@@ -51,9 +60,22 @@ def metrics_for_structure(
         List of Measurement objects
     """
     controller = context.get_controller()
-    responses = controller.get_measurements_for_structure(
-        identifier=identifier,
-        structure_object=object,
+    graph_id = context.extract_graph_id(structure_id)
+    local_id = context.extract_node_id(structure_id)
+
+    graph = context.get_accessible_graph(info, graph_id)
+    structure_node = controller.get_node(graph, local_id=local_id, info=info)
+    structure_identifier = structure_node.properties.get("identifier")
+    structure_object = structure_node.properties.get("object")
+
+    if structure_identifier is None or structure_object is None:
+        raise ValueError("Structure is missing identifier/object properties")
+
+    responses = controller.get_metrics_for_structure(
+        graph=graph,
+        identifier=structure_identifier,
+        structure_object=structure_object,
+        info=info,
     )
     return [types.Metric(_value=r) for r in responses]
 

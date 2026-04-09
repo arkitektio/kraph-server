@@ -6,13 +6,55 @@ from typing import List
 from kante.types import Info
 import strawberry
 
-from api import types, context, inputs
+from api import types, context, inputs, filters, order, pagination
 from core import models
 from graph_engine import scalars
+from graph_engine import input_models
 
 
-def entities(info, filters: inputs.EntityFilterInput | None = None, order: inputs.EntityOrderInput | None = None) -> List[types.Entity]:
-    raise NotImplementedError("This resolver is not implemented yet")
+def _coerce_filter_value(value):
+    if not isinstance(value, str):
+        return value
+
+    lowered = value.lower()
+    if lowered in {"true", "false"}:
+        return lowered == "true"
+
+    try:
+        if "." in value:
+            return float(value)
+        return int(value)
+    except ValueError:
+        return value
+
+
+def entities(
+    info: Info,
+    entity_category_id: strawberry.ID,
+    filters: filters.EntityFilter | None = None,
+    ordering: list[order.EntityOrder] | None = None,
+    pagination: pagination.EntityPaginationInput | None = None,
+) -> List[types.Entity]:
+    controller = context.get_controller()
+
+    entity_category = models.EntityCategory.objects.filter(id=entity_category_id).first()
+    if entity_category is None:
+        raise ValueError(f"Entity category {entity_category_id} not found")
+
+    filter_model = filters.to_pydantic() if filters else input_models.EntityFilters()
+    filter_model.category = entity_category.age_name
+    ordering_models = [order.to_pydantic() for order in ordering] if ordering else []
+    pagination_model = pagination.to_pydantic() if pagination else input_models.EntityPagination()
+
+    result = controller.list_entities(
+        graph=entity_category.graph,
+        filters=filter_model,
+        pagination=pagination_model,
+        ordering=ordering_models,
+        info=info,
+    )
+
+    return [types.Entity(_value=entity) for entity in result]
 
 
 def entity(info: Info, id: scalars.GraphID) -> types.Entity:
@@ -27,7 +69,7 @@ def entity(info: Info, id: scalars.GraphID) -> types.Entity:
         Entity object
     """
     controller = context.get_controller()
-    response = controller.get_node_for_composite_id(composite_id=id)
+    response = controller.get_node_for_composite_id(composite_id=id, info=info)
     return types.Entity(_value=response)
 
 
@@ -44,11 +86,11 @@ def entities_informed_by(info: Info, id: scalars.GraphID) -> List[types.Entity]:
     """
     controller = context.get_controller()
 
-    graph = context.extract_graph_id(id)
-    identifier = context.extract_node_id(id)
+    graph_id = context.extract_graph_id(id)
+    structure_id = context.extract_node_id(id)
 
-    models.Graph.objects.get(id=graph)  # Validate graph exists
+    graph = context.get_accessible_graph(info, graph_id)
 
-    structures = controller.get_entities_informed_by_structure(graph_id=graph, structure_id=identifier)
+    structures = controller.list_entities_informed_by_structure(graph=graph, structure_id=structure_id, info=info)
 
     return [types.Entity(_value=r) for r in structures]

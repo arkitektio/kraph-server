@@ -42,7 +42,7 @@ class ProtocolStepKind(str, Enum):
 
 
 @strawberry.enum
-class MetricKind(str, Enum):
+class ValueKind(str, Enum):
     INT = "INT"
     FLOAT = "FLOAT"
     DATETIME = "DATETIME"

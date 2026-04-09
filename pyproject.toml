@@ -12,7 +12,7 @@ dependencies = [
     "daphne>=4.0.0,<5",
     "channels-redis>=4.1.0,<5",
     "django-choices-field>=2.2.2,<3",
-    "authentikate>=0.32",
+    "authentikate>=1.0",
     "namegenerator>=1.0.6,<2",
     "ujson>=5.8.0,<6",
     "aioredis>=2.0.1,<3",
@@ -29,6 +29,8 @@ dependencies = [
     "django-health-check>=3.20.0",
     "django-polymorphic>=4.1.0",
     "strawberry-graphql>=0.291",
+    "kante>=1.1.1",
+    "pyjwt>=2.12.1",
 ]
 
 [dependency-groups]
@@ -41,6 +43,7 @@ dev = [
     "pytest-asyncio>=1.1.0",
     "pytest-django>=4.11.1",
     "types-boto3[essential,sts]>=1.42.46",
+    "zarr>=3.1.5",
 ]
 
 [tool.django-stubs]

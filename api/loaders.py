@@ -21,7 +21,7 @@ async def load_metric_categories(ids: list[PKType]) -> list[models.MetricCategor
 
 async def load_users(ids: list[PKType]) -> list[User]:
     """Loader function to fetch User objects by their IDs."""
-    
+
     gotten = []
     for i in ids:
         gotten.append(
@@ -39,6 +39,19 @@ async def load_entity_categories(ids: list[PKType]) -> list[models.EntityCategor
     for i in ids:
         gotten.append(
             await models.EntityCategory.objects.aget(
+                id=i,
+            )
+        )
+
+    return gotten
+
+
+async def load_node_categories(ids: list[PKType]) -> list[models.NodeCategory]:
+    """Loader function to fetch EntityCategory objects by their IDs."""
+    gotten = []
+    for i in ids:
+        gotten.append(
+            await models.NodeCategory.objects.aget(
                 id=i,
             )
         )
@@ -73,7 +86,7 @@ async def load_natural_event_categories(ids: list[PKType]) -> list[models.Natura
 
 
 async def load_protocol_event_categories(ids: list[PKType]) -> list[models.ProtocolEventCategory]:
-    """ Loader function to fetch ProtocolEventCategory objects by their IDs. """
+    """Loader function to fetch ProtocolEventCategory objects by their IDs."""
     gotten = []
     for i in ids:
         gotten.append(
@@ -124,9 +137,8 @@ async def load_structure_relation_categories(ids: list[PKType]) -> list[models.S
     return gotten
 
 
-
 async def graph_loader_func(graph_names: list[PKType]) -> list[models.Graph]:
-    """ Loader function to fetch Graph objects by their names. """
+    """Loader function to fetch Graph objects by their names."""
     gotten = []
 
     for i in graph_names:
@@ -135,6 +147,42 @@ async def graph_loader_func(graph_names: list[PKType]) -> list[models.Graph]:
     return gotten
 
 
+async def load_graphs_by_id(ids: list[PKType]) -> list[models.Graph]:
+    gotten = []
+    for i in ids:
+        gotten.append(await models.Graph.objects.aget(id=i))
+    return gotten
+
+
+async def load_graph_nodes_queries_by_id(ids: list[PKType]) -> list[models.GraphNodesQuery]:
+    gotten = []
+    for i in ids:
+        gotten.append(await models.GraphNodesQuery.objects.aget(id=i))
+    return gotten
+
+
+async def load_graph_path_queries_by_id(ids: list[PKType]) -> list[models.GraphPathQuery]:
+    gotten = []
+    for i in ids:
+        gotten.append(await models.GraphPathQuery.objects.aget(id=i))
+    return gotten
+
+
+async def load_graph_pairs_queries_by_id(ids: list[PKType]) -> list[models.GraphPairsQuery]:
+    gotten = []
+    for i in ids:
+        gotten.append(await models.GraphPairsQuery.objects.aget(id=i))
+    return gotten
+
+
+async def load_graph_table_queries_by_id(ids: list[PKType]) -> list[models.GraphTableQuery]:
+    gotten = []
+    for i in ids:
+        gotten.append(await models.GraphTableQuery.objects.aget(id=i))
+    return gotten
+
+
+node_category_loader = DataLoader(load_fn=load_node_categories)
 entity_category_loader = DataLoader(load_fn=load_entity_categories)
 structure_category_loader = DataLoader(load_fn=load_structure_categories)
 natural_event_category_loader = DataLoader(load_fn=load_natural_event_categories)
@@ -145,4 +193,9 @@ relation_category_loader = DataLoader(load_fn=load_relation_categories)
 structure_relation_category_loader = DataLoader(load_fn=load_structure_relation_categories)
 measurement_category_loader = DataLoader(load_fn=load_measurement_categories)
 graph_loader = DataLoader(load_fn=graph_loader_func)
+graph_by_id_loader = DataLoader(load_fn=load_graphs_by_id)
+graph_nodes_query_by_id_loader = DataLoader(load_fn=load_graph_nodes_queries_by_id)
+graph_path_query_by_id_loader = DataLoader(load_fn=load_graph_path_queries_by_id)
+graph_pairs_query_by_id_loader = DataLoader(load_fn=load_graph_pairs_queries_by_id)
+graph_table_query_by_id_loader = DataLoader(load_fn=load_graph_table_queries_by_id)
 user_loader = DataLoader(load_fn=load_users)

@@ -1,0 +1,65 @@
+from typing import Optional
+import kante
+from graph_engine import input_models
+
+
+@kante.pydantic_input(input_models.EntityPagination, all_fields=True, description="Pagination options for querying entities")
+class EntityPaginationInput:
+    """Filter options for entity queries."""
+
+    limit: Optional[int] = kante.field(default=100, description="Maximum number of items to return")
+    offset: Optional[int] = kante.field(default=0, description="Number of items to skip before starting to collect the result set")
+
+
+@kante.pydantic_input(input_models.NodePagination, all_fields=True, description="Pagination options for querying nodes")
+class NodePaginationInput:
+    """Filter options for node queries."""
+
+    limit: Optional[int] = kante.field(default=100, description="Maximum number of items to return")
+    offset: Optional[int] = kante.field(default=0, description="Number of items to skip before starting to collect the result set")
+
+
+@kante.pydantic_input(input_models.StructurePagination, all_fields=True, description="Pagination options for querying structures")
+class StructurePaginationInput:
+    """Filter options for structure queries."""
+
+    limit: Optional[int] = kante.field(default=100, description="Maximum number of items to return")
+    offset: Optional[int] = kante.field(default=0, description="Number of items to skip before starting to collect the result set")
+
+
+@kante.pydantic_input(input_models.MetricPagination, all_fields=True, description="Pagination options for querying metrics")
+class MetricPaginationInput:
+    """Pagination options for metric queries."""
+
+
+@kante.pydantic_input(input_models.NaturalEventPagination, all_fields=True, description="Pagination options for querying natural events")
+class NaturalEventPaginationInput:
+    """Pagination options for natural event queries."""
+
+
+@kante.pydantic_input(input_models.ProtocolEventPagination, all_fields=True, description="Pagination options for querying protocol events")
+class ProtocolEventPaginationInput:
+    """Pagination options for protocol event queries."""
+
+
+@kante.pydantic_input(input_models.MeasurementPagination, all_fields=True, description="Pagination options for querying measurements")
+class MeasurementPaginationInput:
+    """Pagination options for measurement queries."""
+
+
+@kante.pydantic_input(input_models.StructureRelationPagination, all_fields=True, description="Pagination options for querying structure relations")
+class StructureRelationPaginationInput:
+    """Pagination options for structure relation queries."""
+
+
+@kante.pydantic_input(input_models.RelationPagination, all_fields=True, description="Pagination options for querying relations")
+class RelationPaginationInput:
+    """Pagination options for relation queries."""
+
+
+@kante.input(description="Pagination options for graph queries")
+class GraphPaginationInput:
+    """Pagination options for graph queries."""
+
+    limit: Optional[int] = kante.field(default=100, description="Maximum number of items to return")
+    offset: Optional[int] = kante.field(default=0, description="Number of items to skip before starting to collect the result set")

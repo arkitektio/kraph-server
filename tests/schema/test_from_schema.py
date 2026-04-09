@@ -14,8 +14,8 @@ async def test_create_graph_from_schema(
     authenticated_context: HttpContext,
 ) -> None:
     query: str = """
-        mutation CreateGraphFromSchema($input: CreateGraphFromSchemaInput!) {
-            createGraphFromSchema(input: $input) {
+        mutation CreateGraph($input: CreateGraphInput!) {
+            createGraph(input: $input) {
                 id
                 name
             }
@@ -37,7 +37,7 @@ async def test_create_graph_from_schema(
                             "properties": [
                                 {
                                     "key": "name",
-                                    "type": "string",
+                                    "valueKind": "STRING",
                                 }
                             ],
                         }
@@ -55,4 +55,4 @@ async def test_create_graph_from_schema(
 
     assert sub.data, sub.errors
 
-    assert sub.data["createGraphFromSchema"]["name"] == "Test Model"
+    assert sub.data["createGraph"]["name"] == "Test Model"

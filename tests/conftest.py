@@ -117,7 +117,7 @@ def bio_graph_schema() -> models.GraphDefinitionInput:
                     key="IS_CONNECTED_TO",
                     source=models.EntityDescriptorInput(keys=["Cell"]),
                     target=models.EntityDescriptorInput(keys=["Cell"]),
-                    cardinality="1:1",
+                    cardinality=models.Cardinality.ONE_TO_ONE,
                     properties=[models.PropertyDefinitionInput(key="distance", type=models.PropertyType.FLOAT, derivation=models.DerivationType.ROLLUP, rule=models.DerivationRuleInput(source_node="ROI", key="centroid", aggregation=models.AggregationFunction.EUCLIDEAN_RANGE))],
                 ),
                 models.RelationDefinitionInput(key="PART_OF", source=models.EntityDescriptorInput(keys=["AIS", "Soma"]), target=models.EntityDescriptorInput(keys=["Cell"])),
@@ -203,7 +203,7 @@ def bio_graph(transactional_db, age_engine, bio_graph_schema, authenticated_cont
 def minimal_schema():
     """A minimal schema for testing."""
     return models.GraphDefinitionModel(
-        system_version="1.0",
+        system_version="1.0.0",
         extensions=models.GraphExtensions(
             entities=[
                 models.EntityDefinition(

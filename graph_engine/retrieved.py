@@ -7,9 +7,13 @@ as core/age.py's RetrievedEntity and RetrievedRelation.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, Optional, Type, TypeVar
+from typing import Any, Dict, List, Literal, Optional, Type, TypeVar, TYPE_CHECKING
 from datetime import datetime
-from graph_engine import vocab
+from graph_engine import vocab, scalars
+
+if TYPE_CHECKING:
+    from graph_engine.controller import GraphController
+
 
 # Reserved property keys that should not be exposed as user properties
 RESERVED_PROPERTY_KEYS = frozenset(
@@ -26,6 +30,7 @@ RESERVED_PROPERTY_KEYS = frozenset(
         "object",
         "schema_version",
         "last_derived",
+        "lyfecyle_status",
     }
 )
 
@@ -35,6 +40,7 @@ NodeType = Literal[
     "ENTITY",
     "STRUCTURE",
     "MEASUREMENT",
+    "ACTIVITY",
     "ASSERTION",
     "NATURAL_EVENT",
     "METRIC",
@@ -50,6 +56,7 @@ VocabNodeTypeMap: Dict[str, NodeType] = {
     vocab.Metric: "METRIC",
     vocab.ProtocolEvent: "PROTOCOL_EVENT",
     vocab.Assertion: "ASSERTION",
+    "Activity": "ACTIVITY",
 }
 
 
@@ -72,7 +79,8 @@ class RetrievedVariable:
     key: str
     value: Any
 
-    def __hash__(self):
+    def __hash__(self) -> int:
+        """A hash"""
         return hash(self.key)
 
 
@@ -95,6 +103,7 @@ class RetrievedNode:
         properties: Raw properties dictionary from AGE
     """
 
+    controller: "GraphController"
     graph_name: str
     id: int
     label: str
@@ -104,29 +113,44 @@ class RetrievedNode:
 
     @property
     def unique_id(self) -> str:
-        """Global unique identifier: 'graph_name:id'"""
+        """Global unique identifier in format 'graph_name:graph_id'."""
         return f"{self.graph_name}:{self.id}"
+
+    @property
+    def lifecycle(self) -> Optional[str]:
+        """Current lifecycle state of the node."""
+        return self.properties.get("__lifecycle_state") or self.properties.get("lifecycle_status")
+
+    @property
+    def lifecycle_status(self) -> Optional[str]:
+        """Get the lifecycle status of the node, if present."""
+        return self.properties.get("lifecycle_status")
 
     @property
     def global_id(self) -> str:
         """Alias for unique_id."""
-        return self.unique_id
+        if not self.properties.get("global_id"):
+            raise ValueError("Node is missing 'global_id' property")
+
+        return scalars.GlobalID(self.properties["global_id"])
 
     @property
-    def local_id(self) -> int:
+    def local_id(self) -> scalars.LocalID:
         """Local AGE graph ID."""
-        return self.id
+        return scalars.LocalID(self.id)
 
     @property
-    def graph_id(self) -> int:
+    def graph_id(self) -> scalars.GraphID:
         """Alias for local_id - the AGE graph ID."""
-        return self.id
+        return scalars.GraphID(f"{self.graph_name}:{self.id}")
 
     # === Type Discrimination ===
 
     @property
     def category_id(self) -> Optional[str]:
         """Get the category ID (for linking to Django model)."""
+        if self.properties.get("category_id") is None:
+            raise ValueError(f"Node is missing 'category_id' property {self.properties}")
         return self.properties.get("category_id")
 
     @property
@@ -208,33 +232,6 @@ class RetrievedNode:
         """External object ID the structure references."""
         return self.properties.get("object")
 
-    # === Assertion Properties (when node_type == 'ASSERTION') ===
-
-    @property
-    def subject(self) -> Optional[str]:
-        """User/subject who made the assertion."""
-        return self.properties.get("subject")
-
-    @property
-    def app_id(self) -> Optional[str]:
-        """Application that made the assertion."""
-        return self.properties.get("app_id")
-
-    @property
-    def action_id(self) -> Optional[str]:
-        """Action identifier."""
-        return self.properties.get("action_id")
-
-    @property
-    def action_name(self) -> Optional[str]:
-        """Human-readable action name."""
-        return self.properties.get("action_name")
-
-    @property
-    def action_args(self) -> Optional[Any]:
-        """Action arguments as JSON."""
-        return self.properties.get("action_args")
-
     # === Property Access Methods ===
 
     def get_property(self, key: str, default: Any = None) -> Any:
@@ -266,9 +263,10 @@ class RetrievedNode:
         return self.graph_name == other.graph_name and self.id == other.id
 
     @classmethod
-    def from_node(cls: Type[T], node: Dict[str, Any], graph_name: str = "default_graph") -> T:
+    def from_node(cls: Type[T], controller: "GraphController", node: Dict[str, Any], graph_name: str = "default_graph") -> T:
         """Factory method to create a RetrievedNode from raw AGE node data."""
         return cls(
+            controller=controller,
             graph_name=graph_name,
             id=node.get("id", 0),
             label=node.get("label", "Unknown"),
@@ -354,9 +352,12 @@ class RetrievedEdge:
         return self.properties.get("type")
 
     @property
-    def category_id(self) -> Optional[str]:
+    def category_id(self) -> str:
         """Get the category ID (for linking to Django model)."""
-        return self.properties.get("category_id")
+        cat = self.properties.get("category_id")
+        if cat is None:
+            raise ValueError("Edge is missing 'category_id' property")
+        return cat
 
     # === Measurement Properties (when edge_type == 'MEASUREMENT') ===
 
@@ -475,6 +476,27 @@ class RetrievedRelation(RetrievedEdge):
 
 
 @dataclass
+class RetrievedInforms(RetrievedEdge):
+    """A retrieved Relation edge from the AGE graph."""
+
+    pass
+
+
+@dataclass
+class RetrievedDescribes(RetrievedEdge):
+    """A retrieved Metric edge from the AGE graph."""
+
+    pass
+
+
+@dataclass
+class RetrievedAsserts(RetrievedEdge):
+    """A retrieved Metric edge from the AGE graph."""
+
+    pass
+
+
+@dataclass
 class RetrievedReifiesAsSource(RetrievedEdge):
     """A retrieved edge that reifies a structure as a source."""
 
@@ -504,8 +526,43 @@ class RetrievedStructure(RetrievedNode):
 
 
 @dataclass
+class RetrievedRelationShadowLink(RetrievedNode):
+    """A retrieved RelationShadowLink node from the AGE graph."""
+
+    pass
+
+
+@dataclass
+class RetrievedStructureRelationShadowLink(RetrievedNode):
+    """A retrieved RelationShadowLink node from the AGE graph."""
+
+    pass
+
+
+@dataclass
+class RetrievedMeasurementShadowLink(RetrievedNode):
+    """A retrieved MeasurementShadowLink node from the AGE graph."""
+
+    pass
+
+
+@dataclass
 class RetrievedEvent(RetrievedNode):
     """A retrieved Event node from the AGE graph."""
+
+    pass
+
+
+@dataclass
+class RetrievedShadowLink(RetrievedNode):
+    """A retrieved ShadowLink node from the AGE graph."""
+
+    pass
+
+
+@dataclass
+class RetrievedMeasurementLink(RetrievedNode):
+    """A retrieved MeasurementLink node from the AGE graph."""
 
     pass
 
@@ -525,17 +582,99 @@ class RetrievedProtocolEvent(RetrievedNode):
 
 
 @dataclass
+class RetrievedMeasurement(RetrievedEdge):
+    """A retrieved Measurement edge from the AGE graph."""
+
+    pass
+
+    @property
+    def role(self) -> Optional[str]:
+        """The measurement role (i.e as input to a structure, as a property of an entity, etc)."""
+        return self.properties.get("role")
+
+    @property
+    def supporting_links(self) -> List[RetrievedShadowLink]:
+        """List of shadow link IDs that support this measurement."""
+        raise NotImplementedError("This method is not implemented yet. It would require additional queries to fetch linked shadow links based on the shadow_link_id property.")
+
+
+@dataclass
 class RetrievedMetric(RetrievedNode):
     """A retrieved Metric node from the AGE graph."""
 
     pass
 
+    @property
+    def value(self) -> Any:
+        """The metric value."""
+        return self.properties.get("value")
+
 
 @dataclass
-class RetrievedAssertion(RetrievedNode):
-    """A retrieved Assertion node from the AGE graph."""
+class RetrievedActivity(RetrievedNode):
+    """A retrieved Activity node from the AGE graph."""
 
-    pass
+    # === Activity Properties (formerly Assertion) ===
+
+    @property
+    def subject(self) -> Optional[str]:
+        """User/subject who performed the activity."""
+        return self.properties.get("subject")
+
+    @property
+    def app_id(self) -> Optional[str]:
+        """Application that performed the activity."""
+        return self.properties.get("app_id")
+
+    @property
+    def action_id(self) -> Optional[str]:
+        """The action ID in Arkitekt/Kabinet."""
+        return self.properties.get("action_id")
+
+    @property
+    def action_name(self) -> Optional[str]:
+        """Human-readable action name."""
+        return self.properties.get("action_name")
+
+    @property
+    def action_args(self) -> Optional[Dict[str, Any]]:
+        """Action arguments as JSON/dict."""
+        val = self.properties.get("action_args")
+        if val is None:
+            return None
+        return val if isinstance(val, dict) else None
+
+
+@dataclass
+class RetrievedAssertion(RetrievedActivity):
+    """Backward-compatible alias for activity provenance nodes."""
+
+    # === Assertion Properties (when node_type == 'ASSERTION') ===
+
+    @property
+    def subject(self) -> Optional[str]:
+        """User/subject who made the assertion."""
+        return self.properties.get("subject")
+
+    @property
+    def app_id(self) -> Optional[str]:
+        """Application that made the assertion."""
+        return self.properties.get("app_id")
+
+    @property
+    def action_id(self) -> Optional[str]:
+        """Action identifier."""
+        return self.properties.get("action_id")
+
+    @property
+    def action_name(self) -> Optional[str]:
+        """Human-readable action name."""
+        return self.properties.get("action_name")
+
+    @property
+    def action_args(self) -> Optional[Any]:
+        """Action arguments as JSON."""
+        return self.properties.get("action_args")
 
 
 # ==========================================
@@ -548,6 +687,8 @@ class RetrievedGraphNodesRender:
     """A list of retrieved nodes, with the graph name for context."""
 
     graph_name: str
+    graph_id: int
+    graph_query_id: int
     nodes: List[RetrievedNode]
 
 
@@ -556,6 +697,8 @@ class RetrievedGraphTableRender:
     """A list of retrieved nodes, with the graph name for context."""
 
     graph_name: str
+    graph_id: int
+    graph_query_id: int
     rows: List[Dict[str, Any]]
 
 
@@ -564,6 +707,8 @@ class RetrievedGraphPathRender:
     """A list of retrieved nodes, with the graph name for context."""
 
     graph_name: str
+    graph_id: int
+    graph_query_id: int
     nodes: List[RetrievedNode]
     edges: List[RetrievedEdge]
 
@@ -580,6 +725,8 @@ class RetrievedGraphPairsRender:
     """A list of retrieved node pairs, with the graph name for context."""
 
     graph_name: str
+    graph_id: int
+    graph_query_id: int
     pairs: List[Pairs]
 
 

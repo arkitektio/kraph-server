@@ -2,9 +2,11 @@
 Entity mutation resolvers.
 """
 
-from kante.types import Info
+from graph_engine import scalars
+from graph_engine import input_models
 from api import inputs, types, context
 from core import models
+from kante import Info
 
 
 def create_entity(
@@ -28,6 +30,7 @@ def create_entity(
     input_model = input.to_pydantic()  # Validate input with Pydantic models
 
     entity_category = models.EntityCategory.objects.get(id=input_model.entity_category)  # Validate graph exists
+    context.validate_graph_access(info, entity_category.graph)
 
     # Get controller for the specified graph (includes provenance from context)
     controller = context.get_controller()
@@ -36,7 +39,7 @@ def create_entity(
     result = controller.create_entity(
         entity_category=entity_category,
         payload=input_model,
-        context=context.get_provenance_from_context(info),
+        info=info,
     )
 
     return types.Entity(_value=result)
@@ -45,7 +48,7 @@ def create_entity(
 def delete_entity(
     info: Info,
     input: inputs.DeleteEntityInput,
-) -> types.Entity:
+) -> scalars.GraphID:
     """
     Delete an entity by its composite ID.
 
@@ -62,11 +65,13 @@ def delete_entity(
     graph_id = context.extract_graph_id(model.id)
     node_id = context.extract_node_id(model.id)
 
-    graph = models.Graph.objects.get(id=graph_id)  # Validate graph exists
+    graph = context.get_accessible_graph(info, graph_id)
 
-    controller.delete_entity(graph, entity_id=node_id)
+    deleted_entity = controller.get_node_by_local_id(graph, local_id=node_id)
 
-    return input
+    controller.delete_entity(graph, local_id=node_id)
+
+    return model.id
 
 
 def archive_entity(
@@ -85,14 +90,68 @@ def archive_entity(
     """
     controller = context.get_controller()
 
-    graph_id = context.extract_graph_id(input.id)
-    node_id = context.extract_node_id(input.id)
+    model = input.to_pydantic()
 
-    graph = models.Graph.objects.get(id=graph_id)  # Validate graph exists
+    graph_id = context.extract_graph_id(model.id)
+    node_id = context.extract_node_id(model.id)
 
-    controller.archive_entity(graph, entity_id=node_id)
+    graph = context.get_accessible_graph(info, graph_id)
 
-    return input
+    controller.archive_entity(
+        graph,
+        local_id=node_id,
+        info=info,
+    )
+
+    archived_entity = controller.get_node_by_local_id(graph, local_id=node_id)
+
+    return types.Entity(_value=archived_entity)
+
+
+def update_entity(
+    info: Info,
+    input: inputs.UpdateEntityInput,
+) -> types.Entity:
+    """
+    Archive (soft delete) an entity by its composite ID.
+
+    Args:
+        info: Strawberry Info context
+        input: Composite ID of the entity to archive (e.g., "1-abc123-def456-...")
+
+    Returns:
+        The ID of the archived entity
+    """
+    controller = context.get_controller()
+
+    model = input.to_pydantic()
+
+    graph_id = context.extract_graph_id(model.id)
+    local_id = context.extract_node_id(model.id)
+    graph = context.get_accessible_graph(info, graph_id)
+
+    existing = controller.get_node_by_local_id(graph, local_id=local_id, info=info)
+    if not existing.category_id:
+        raise ValueError("Entity does not have a category and cannot be updated")
+
+    entity_category = models.EntityCategory.objects.get(id=existing.category_id)
+
+    controller.archive_entity(
+        graph,
+        local_id=local_id,
+        info=info,
+    )
+
+    updated = controller.create_entity(
+        entity_category=entity_category,
+        payload=input_models.CreateEntityInput(
+            entity_category=str(entity_category.pk),
+            supporting_evidence=model.supporting_evidence,
+        ),
+        info=info,
+    )
+
+    return types.Entity(_value=updated)
 
 
 def recalculate_entity(
@@ -117,9 +176,35 @@ def recalculate_entity(
     graph_id = context.extract_graph_id(input.entity_id)
     node_id = context.extract_node_id(input.entity_id)
 
-    graph = models.Graph.objects.get(id=graph_id)  # Validate graph exists
+    graph = context.get_accessible_graph(info, graph_id)
 
     # Get entity first to find its  and kind
-    entity = controller.get_node(graph, entity_id=node_id)
+    entity = controller.get_node(graph, local_id=node_id, info=info)
 
     return types.Entity(_value=entity)
+
+
+def set_entity_property(
+    info: Info,
+    input: inputs.SetEntityPropertyInput,
+) -> types.Entity:
+    """
+    Set properties on an entity, replacing any existing values for the specified keys.
+
+    Args:
+        info: Strawberry Info context
+        input: SetEntityPropertiesInput with entity_id and properties to set
+    """
+
+    controller = context.get_controller()
+
+    model = input.to_pydantic()
+
+    graph_id = context.extract_graph_id(model.entity_id)
+    local_id = context.extract_node_id(model.entity_id)
+
+    graph = context.get_accessible_graph(info, graph_id)
+
+    entity = controller.get_node(graph, local_id=local_id, info=info)
+
+    raise NotImplementedError("Setting entity properties is not yet implemented")

@@ -1,6 +1,8 @@
 import random
+from typing import Any
 from django.db import models
 from django.contrib.auth import get_user_model
+from kante import Info
 from core import enums
 from core import managers
 from koherent.fields import ProvenanceField
@@ -9,10 +11,11 @@ from datalayer import models as datalayer_models
 from authentikate.models import Organization, Membership
 from polymorphic.models import PolymorphicModel
 from django.db.models import QuerySet
-
+from kante.context import Membership as KanteMembership
+from graph_engine import input_models
 # Create your models here.
 
-from graph_engine.input_models import EntityDescriptorInput
+from graph_engine.input_models import EntityDescriptorInput, StructureDescriptorInput
 
 
 class Graph(models.Model):
@@ -24,6 +27,8 @@ class Graph(models.Model):
     to their name.s
 
     """
+
+    objects: managers.GraphManager = managers.GraphManager()
 
     node_deletion_allowed = models.BooleanField(
         default=True,
@@ -41,7 +46,7 @@ class Graph(models.Model):
         related_name="graphs",
         help_text="The user that this graph belongs to",
     )
-    store = models.ForeignKey(
+    image = models.ForeignKey(
         datalayer_models.MediaStore,
         on_delete=models.CASCADE,
         null=True,
@@ -66,6 +71,11 @@ class Graph(models.Model):
         related_name="pinned_graphs",
         help_text="The users that have this query active",
     )
+    rules = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Action-level allow/deny rules evaluated against request context",
+    )
 
     @classmethod
     def get_for_node_global_id(cls, node_id: str):
@@ -82,6 +92,12 @@ class Graph(models.Model):
             age_name = f"{base_name}_{org_slug}_{counter}"
             counter += 1
         return age_name
+
+    @property
+    def rules_model(self) -> list[input_models.ActionRuleInput]:
+        from graph_engine.input_models import ActionRuleInput
+
+        return [ActionRuleInput(**rule) for rule in self.rules] if self.rules else []
 
     def get_age_name(self) -> str:
         """Get the Apache AGE graph name for this graph, which is used to identify the graph in the AGE database."""
@@ -136,22 +152,70 @@ class Graph(models.Model):
         return ReagentCategory.objects.filter(graph=self)
 
     @property
-    def active_schema(self) -> "GraphSchema":
-        """Get the currently active schema for this graph."""
-        return self.schemas.filter(is_active=True).first()
-
-    @property
     def definition(self):
         """Get the GraphDefinitionModel from the active schema."""
-        from graph_engine.base_models import GraphDefinitionModel
+        from graph_engine.input_models import GraphDefinitionModel
 
         schema = self.active_schema
         if schema:
             return GraphDefinitionModel.model_validate(schema.definition)
         return None
 
+    def can_auto_add_structures(self, info: Info) -> bool:
+        """Whether this graph allows automatically adding structures when recording metrics with new structure identifiers."""
+        return self.can_perform_action(info=info, action="AUTO_ADD_STRUCTURES")
+
+    def _extract_request_roles(self, info: Info | Any) -> set[str]:
+        return set()
+
+    def _extract_request_scopes(self, request: Any) -> set[str]:
+        return set()
+
+    def _rule_filter_matches(self, rule_filter: input_models.ActionFilterInput, request: Any) -> bool:
+        required_roles = rule_filter.required_roles if rule_filter else None
+        if required_roles:
+            request_roles = self._extract_request_roles(info=request)
+            if not set(map(str, required_roles)).issubset(request_roles):
+                return False
+
+        required_scopes = rule_filter.required_scopes if rule_filter else None
+        if required_scopes:
+            request_scopes = self._extract_request_scopes(request)
+            if not set(map(str, required_scopes)).issubset(request_scopes):
+                return False
+
+        return True
+
+    def can_perform_action(self, info: Info | Any, action: input_models.Action) -> bool:
+        # DO NOT CHANGE THIS THIS PART WE WILL ONLY EXTRAX ROLES AND SCOPES HERE AND THEN CHECK THEM IN THE RULES, THIS WAY WE CAN SUPPORT BOTH A FLAT RULE STRUCTURE AND A NESTED ONE WITH ACTIONS AS KEYS
+        scopes = self._extract_request_scopes(info)
+        roles = self._extract_request_roles(info)
+        for rule in self.rules_model:
+            rule_action = rule.action
+            if rule_action and rule_action != action:
+                continue
+
+            rule_filter = rule.filter
+            if not self._rule_filter_matches(rule_filter, info.context.request):
+                continue
+
+            if rule.allow:
+                return True
+            else:
+                return False
+
+        return True
+
+    def validate_action_allowed(self, info: Info | Any, action: str) -> None:
+        if not self.can_perform_action(info=info, action=action):
+            raise PermissionError(f"Action {action} is not allowed in this graph for the current user context")
+
     @property
     def allow_adding_structure_definitions(self) -> bool:
+        return True
+
+    @property
+    def allow_auto_add_structures(self) -> bool:
         return True
 
     @property
@@ -168,6 +232,13 @@ class Graph(models.Model):
 
     @property
     def allow_auto_adding_metrics(self) -> bool:
+        return True
+
+    def validate_accessible(self, membership: Membership, scopes: list[str]):
+        """Validate if the graph is accessible for a given membership and scopes."""
+        if self.membership.organization != membership.organization:
+            raise PermissionError("You do are not allowed to access this graph")
+        # Here you can add additional scope checks if needed
         return True
 
 
@@ -396,7 +467,7 @@ class Category(PolymorphicModel):
         blank=True,
         help_text="The index of this category (new entities will be created with this index)",
     )
-    store = models.ForeignKey(
+    image = models.ForeignKey(
         datalayer_models.MediaStore,
         on_delete=models.CASCADE,
         null=True,
@@ -462,6 +533,9 @@ class Category(PolymorphicModel):
     def key_to_age_name(cls, key: str) -> str:
         """Convert an entity key to a valid AGE name by replacing invalid characters."""
         return "".join(e for e in key if e.isalnum()).lower()
+
+    def relevant_queries(self):
+        return GraphQuery.objects.filter(graph=self.graph, relevant_for=self.pk)
 
 
 class Descriptor(models.Model):
@@ -581,52 +655,6 @@ class EdgeCategory(Category):
         raise NotImplementedError("Not implemented needs to be implemented")
 
     @property
-    def source_definition_model(self) -> EntityDescriptorInput:
-        return EntityDescriptorInput(**self.source_definition)
-
-    @property
-    def target_definition_model(self) -> EntityDescriptorInput:
-        return EntityDescriptorInput(**self.target_definition)
-
-    def matches_source(self, entity: "EntityCategory") -> bool:
-        """Check if an entity matches the source definition of this edge category."""
-        return self.source_definition_model.matches(entity)
-
-    def matches_target(self, entity: "EntityCategory") -> bool:
-        """Check if an entity matches the target definition of this edge category."""
-        return self.target_definition_model.matches(entity)
-
-    def get_matching_source_entities(self) -> QuerySet["EntityCategory"]:
-        """Get all entities in the graph that match the source definition of this edge category."""
-        """Get all entities in the graph that match the target definition of this edge category."""
-        kwargs = {}
-        if self.source_definition_model.keys:
-            kwargs["key__in"] = self.source_definition_model.keys
-
-        if self.source_definition_model.categories:
-            kwargs["id__in"] = self.source_definition_model.categories
-        if self.source_definition_model.tags:
-            kwargs["tags__value__in"] = self.source_definition_model.tags
-        if self.source_definition_model.ontotology_terms:
-            kwargs["ontology_references__name__in"] = self.source_definition_model.ontotology_terms
-
-        return self.graph.entity_categories.filter(**kwargs).distinct()
-
-    def get_matching_target_entities(self) -> QuerySet["EntityCategory"]:
-        """Get all entities in the graph that match the target definition of this edge category."""
-        kwargs = {}
-        if self.target_definition_model.keys:
-            kwargs["key__in"] = self.target_definition_model.keys
-        if self.target_definition_model.categories:
-            kwargs["id__in"] = self.target_definition_model.categories
-        if self.target_definition_model.tags:
-            kwargs["tags__value__in"] = self.target_definition_model.tags
-        if self.target_definition_model.ontotology_terms:
-            kwargs["ontology_references__name__in"] = self.target_definition_model.ontotology_terms
-
-        return self.graph.entity_categories.filter(**kwargs).distinct()
-
-    @property
     def defined_properties(self):
         from graph_engine.base_models import PropertyDefinition
 
@@ -665,10 +693,13 @@ class StructureCategory(NodeCategory):
     )
 
     def get_age_vertex_name(self):
-        return self.age_name
+        return "Structure"
 
     def get_age_type_name(self) -> str:
         return "STRUCTURE"
+
+    def get_age_identifier(self):
+        return self.identifier
 
     class Meta:
         default_related_name = "structure_categories"
@@ -707,7 +738,7 @@ class NaturalEventCategory(NodeCategory):
     def get_outrole_vertex_name(self, role):
         return role
 
-    def get_age_vertex_name(self):
+    def get_age_vertex_name(self) -> str:
         return self.age_name
 
     def get_age_type_name(self) -> str:
@@ -790,6 +821,25 @@ class ProtocolEventCategory(NodeCategory):
 
     class Meta:
         default_related_name = "protocol_event_categories"
+
+
+class Protocol(models.Model):
+    graph = models.ForeignKey(
+        Graph,
+        on_delete=models.CASCADE,
+        related_name="protocols",
+        help_text="The graph this protocol belongs to",
+    )
+    name = models.CharField(max_length=1000, help_text="The name of the protocol")
+    description = models.CharField(
+        max_length=2000,
+        help_text="The description of the protocol",
+        null=True,
+    )
+    plate_children = models.JSONField(
+        default=list,
+        help_text="The steps of the protocol, each step is a dict with the following keys: name, description, event_category, source_entities, target_entities, source_reagents, target_reagents, variables",
+    )
 
 
 class EntityCategory(NodeCategory):
@@ -942,7 +992,7 @@ class MetricCategory(NodeCategory):
 
     """
 
-    metric_kind = TextChoicesField(
+    value_kind = TextChoicesField(
         choices_enum=enums.MetricKindChoices,
         help_text="The data type (if a metric)",
         null=True,
@@ -993,6 +1043,47 @@ class MeasurementCategory(EdgeCategory):
     def get_age_type_name(self) -> str:
         return "MEASUREMENT"
 
+    @property
+    def source_definition_model(self) -> StructureDescriptorInput:
+        return StructureDescriptorInput(**self.source_definition)
+
+    @property
+    def target_definition_model(self) -> EntityDescriptorInput:
+        return EntityDescriptorInput(**self.target_definition)
+
+    def matches_source(self, entity: "StructureCategory") -> bool:
+        """Check if an entity matches the source definition of this edge category."""
+        return self.source_definition_model.matches(entity)
+
+    def matches_target(self, entity: "EntityCategory") -> bool:
+        """Check if an entity matches the target definition of this edge category."""
+        return self.target_definition_model.matches(entity)
+
+    def get_matching_source_structures(self) -> QuerySet["StructureCategory"]:
+        """Get all structures in the graph that match the source definition of this edge category."""
+        """Get all entities in the graph that match the target definition of this edge category."""
+        kwargs = {}
+        if self.source_definition_model.keys:
+            kwargs["key__in"] = self.source_definition_model.keys
+        if self.source_definition_model.tags:
+            kwargs["tags__value__in"] = self.source_definition_model.tags
+        if self.source_definition_model.ontotology_terms:
+            kwargs["ontology_references__name__in"] = self.source_definition_model.ontotology_terms
+
+        return self.graph.structure_categories.filter(**kwargs).distinct()
+
+    def get_matching_target_entities(self) -> QuerySet["EntityCategory"]:
+        """Get all entities in the graph that match the target definition of this edge category."""
+        kwargs = {}
+        if self.target_definition_model.keys:
+            kwargs["key__in"] = self.target_definition_model.keys
+        if self.target_definition_model.tags:
+            kwargs["tags__value__in"] = self.target_definition_model.tags
+        if self.target_definition_model.ontotology_terms:
+            kwargs["ontology_references__name__in"] = self.target_definition_model.ontotology_terms
+
+        return self.graph.entity_categories.filter(**kwargs).distinct()
+
     class Meta:
         default_related_name = "measurement_categories"
 
@@ -1006,6 +1097,47 @@ class RelationCategory(EdgeCategory):
         help_text="The description of category",
         null=True,
     )
+
+    @property
+    def source_definition_model(self) -> EntityDescriptorInput:
+        return EntityDescriptorInput(**self.source_definition)
+
+    @property
+    def target_definition_model(self) -> EntityDescriptorInput:
+        return EntityDescriptorInput(**self.target_definition)
+
+    def matches_source(self, entity: "EntityCategory") -> bool:
+        """Check if an entity matches the source definition of this edge category."""
+        return self.source_definition_model.matches(entity)
+
+    def matches_target(self, entity: "EntityCategory") -> bool:
+        """Check if an entity matches the target definition of this edge category."""
+        return self.target_definition_model.matches(entity)
+
+    def get_matching_source_entities(self) -> QuerySet["EntityCategory"]:
+        """Get all entities in the graph that match the source definition of this edge category."""
+        """Get all entities in the graph that match the target definition of this edge category."""
+        kwargs = {}
+        if self.source_definition_model.keys:
+            kwargs["key__in"] = self.source_definition_model.keys
+        if self.source_definition_model.tags:
+            kwargs["tags__value__in"] = self.source_definition_model.tags
+        if self.source_definition_model.ontotology_terms:
+            kwargs["ontology_references__name__in"] = self.source_definition_model.ontotology_terms
+
+        return self.graph.entity_categories.filter(**kwargs).distinct()
+
+    def get_matching_target_entities(self) -> QuerySet["EntityCategory"]:
+        """Get all entities in the graph that match the target definition of this edge category."""
+        kwargs = {}
+        if self.target_definition_model.keys:
+            kwargs["key__in"] = self.target_definition_model.keys
+        if self.target_definition_model.tags:
+            kwargs["tags__value__in"] = self.target_definition_model.tags
+        if self.target_definition_model.ontotology_terms:
+            kwargs["ontology_references__name__in"] = self.target_definition_model.ontotology_terms
+
+        return self.graph.entity_categories.filter(**kwargs).distinct()
 
     def get_age_edge_name(self):
         return self.age_name
@@ -1035,6 +1167,51 @@ class StructureRelationCategory(EdgeCategory):
         null=True,
     )
 
+    @property
+    def source_definition_model(self) -> StructureDescriptorInput:
+        return StructureDescriptorInput(**self.source_definition)
+
+    @property
+    def target_definition_model(self) -> StructureDescriptorInput:
+        return StructureDescriptorInput(**self.target_definition)
+
+    def matches_source(self, entity: "StructureCategory") -> bool:
+        """Check if a structure matches the source definition of this edge category."""
+        return self.source_definition_model.matches(entity)
+
+    def matches_target(self, entity: "StructureCategory") -> bool:
+        """Check if a structure matches the target definition of this edge category."""
+        return self.target_definition_model.matches(entity)
+
+    def get_matching_source_structures(self) -> QuerySet["StructureCategory"]:
+        """Get all structures in the graph that match the source definition of this edge category."""
+        """Get all structures in the graph that match the target definition of this edge category."""
+        kwargs = {}
+        if self.source_definition_model.keys:
+            kwargs["key__in"] = self.source_definition_model.keys
+        if self.source_definition_model.tags:
+            kwargs["tags__value__in"] = self.source_definition_model.tags
+        if self.source_definition_model.ontotology_terms:
+            kwargs["ontology_references__name__in"] = self.source_definition_model.ontotology_terms
+        if self.source_definition_model.identifiers:
+            kwargs["identifier__in"] = self.source_definition_model.identifiers
+
+        return self.graph.structure_categories.filter(**kwargs).distinct()
+
+    def get_matching_target_structures(self) -> QuerySet["StructureCategory"]:
+        """Get all structures in the graph that match the target definition of this edge category."""
+        kwargs = {}
+        if self.target_definition_model.keys:
+            kwargs["key__in"] = self.target_definition_model.keys
+        if self.target_definition_model.tags:
+            kwargs["tags__value__in"] = self.target_definition_model.tags
+        if self.target_definition_model.ontotology_terms:
+            kwargs["ontology_references__name__in"] = self.target_definition_model.ontotology_terms
+        if self.target_definition_model.identifiers:
+            kwargs["identifier__in"] = self.target_definition_model.identifiers
+
+        return self.graph.structure_categories.filter(**kwargs).distinct()
+
     def get_age_edge_name(self):
         return self.age_name
 
@@ -1049,8 +1226,12 @@ class GraphQuery(PolymorphicModel):
     graph = models.ForeignKey(
         Graph,
         on_delete=models.CASCADE,
-        related_name="graph_queries",
+        related_name="queries",
         help_text="The graph this query belongs to",
+    )
+    key = models.CharField(
+        max_length=1000,
+        help_text="The key of the query, used for referencing the query in the frontend and for pinning it",
     )
     query = models.CharField(max_length=7000, help_text="The query that is used to materialize the graph")
     name = models.CharField(max_length=1000, help_text="The name of the materialized graph")
@@ -1089,6 +1270,12 @@ class GraphQuery(PolymorphicModel):
         null=True,
     )
 
+    class Meta(PolymorphicModel.Meta):
+        """Some Meta options for the GraphQuery model"""
+
+        default_related_name = "graph_queries"
+        unique_together = ("graph", "key")
+
 
 class GraphNodesQuery(GraphQuery):
     """A query that is used to materialize a list of nodes"""
@@ -1126,6 +1313,28 @@ class GraphPathQuery(GraphQuery):
     )
 
 
+class GraphPairsQuery(GraphQuery):
+    """A query that is used to materialize a list of paths"""
+
+    # The node category this query is associated with (e.g. if this is a query that materializes the nodes of a certain category, this is the category)
+    left_category = models.ForeignKey(
+        NodeCategory,
+        default=None,
+        null=True,
+        on_delete=models.CASCADE,
+        related_name="pairs_left_queries",
+        help_text="The category this query is associated if its a path_list",
+    )
+    right_category = models.ForeignKey(
+        NodeCategory,
+        default=None,
+        null=True,
+        on_delete=models.CASCADE,
+        related_name="pairs_right_queries",
+        help_text="The category this query is associated if its a path_list",
+    )
+
+
 class GraphTableQuery(GraphQuery):
     """A query that is used to materialize a table"""
 
@@ -1149,6 +1358,10 @@ class NodeQuery(PolymorphicModel):
         related_name="node_queries",
         help_text="The graph this query belongs to",
     )
+    key = models.CharField(
+        max_length=1000,
+        help_text="The key of the query, used for referencing the query in the frontend and for pinning it",
+    )
     query = models.CharField(max_length=7000, help_text="The query that is used to materialize the graph")
     name = models.CharField(max_length=1000, help_text="The name of the materialized graph")
     description = models.CharField(
@@ -1167,7 +1380,7 @@ class NodeQuery(PolymorphicModel):
         help_text="The users that have this query active",
     )
     relevant_for_nodes = models.ManyToManyField(
-        Category,
+        NodeCategory,
         related_name="relevant_node_queries",
         help_text="The entities that this query should be mostly used for",
     )
@@ -1182,12 +1395,95 @@ class NodeQuery(PolymorphicModel):
     def active_for_user_and_graph(self, user, graph):
         return self.objects.filter(graph=graph, pinned_by=user).first()
 
+    class Meta(PolymorphicModel.Meta):
+        """Some Meta options for the GraphQuery model"""
+
+        default_related_name = "node_queries"
+        unique_together = ("graph", "key")
+
 
 class NodePathQuery(NodeQuery):
     pass
 
 
+class NodePairsQuery(NodeQuery):
+    pass
+
+
 class NodeTableQuery(NodeQuery):
+    columns = models.JSONField(
+        help_text="The columns (if ViewKind is Table)",
+        default=list,
+        null=True,
+    )
+
+    @property
+    def input_columns(self):
+        from core import inputs
+
+        return [inputs.ColumnInput(**i) for i in self.columns]
+
+
+class EdgeQuery(PolymorphicModel):
+    graph = models.ForeignKey(
+        Graph,
+        on_delete=models.CASCADE,
+        related_name="edge_queries",
+        help_text="The graph this query belongs to",
+    )
+    key = models.CharField(
+        max_length=1000,
+        help_text="The key of the query, used for referencing the query in the frontend and for pinning it",
+    )
+    query = models.CharField(max_length=7000, help_text="The query that is used to materialize the graph")
+    name = models.CharField(max_length=1000, help_text="The name of the materialized graph")
+    description = models.CharField(
+        max_length=1000,
+        help_text="The description of the materialized graph",
+        null=True,
+    )
+    kind = models.CharField(
+        max_length=1000,
+        help_text="The kind of the materialized graph (i.e path, property, etc.)",
+    )
+
+    pinned_by = models.ManyToManyField(
+        get_user_model(),
+        related_name="pinned_edge_queries",
+        help_text="The users that have this query active",
+    )
+    relevant_for_edges = models.ManyToManyField(
+        EdgeCategory,
+        related_name="relevant_edge_queries",
+        help_text="The entities that this query should be mostly used for",
+    )
+
+    @property
+    def input_columns(self):
+        from core import inputs
+
+        return [inputs.ColumnInput(**i) for i in self.columns]
+
+    @classmethod
+    def active_for_user_and_graph(self, user, graph):
+        return self.objects.filter(graph=graph, pinned_by=user).first()
+
+    class Meta(PolymorphicModel.Meta):
+        """Some Meta options for the GraphQuery model"""
+
+        default_related_name = "edge_queries"
+        unique_together = ("graph", "key")
+
+
+class EdgePathQuery(EdgeQuery):
+    pass
+
+
+class EdgePairsQuery(EdgeQuery):
+    pass
+
+
+class EdgeTableQuery(EdgeQuery):
     columns = models.JSONField(
         help_text="The columns (if ViewKind is Table)",
         default=list,
@@ -1233,19 +1529,29 @@ class MaterializedView(models.Model):
 
 
 class ScatterPlot(models.Model):
-    query = models.ForeignKey(
-        GraphQuery,
+    graph_query = models.ForeignKey(
+        GraphTableQuery,
         on_delete=models.CASCADE,
+        null=True,
+        blank=True,
         related_name="scatter_plots",
         help_text="The query this scatter plot was trained on",
     )
-    view = models.ForeignKey(
-        MaterializedView,
-        null=True,
-        blank=True,
+    node_query = models.ForeignKey(
+        NodeTableQuery,
         on_delete=models.CASCADE,
         related_name="scatter_plots",
-        help_text="If this scatter plot is based on a materialized view, this is the view",
+        null=True,
+        blank=True,
+        help_text="The node query this scatter plot was trained on",
+    )
+    path_query = models.ForeignKey(
+        NodePathQuery,
+        on_delete=models.CASCADE,
+        related_name="scatter_plots",
+        null=True,
+        blank=True,
+        help_text="The path query this scatter plot was trained on",
     )
     name = models.CharField(max_length=1000, help_text="The name of the scatter plot")
     description = models.CharField(
@@ -1277,29 +1583,61 @@ class ScatterPlot(models.Model):
     )
 
 
-class MaterializedEdge(models.Model):
+class MaterializedEdge(PolymorphicModel):
     graph = models.ForeignKey(
         Graph,
         on_delete=models.CASCADE,
         related_name="materialized_edges",
         help_text="The graph this edge belongs to",
     )
+
+
+class MaterializedRelationEdge(MaterializedEdge):
     source = models.ForeignKey(
-        Category,
+        EntityCategory,
         on_delete=models.CASCADE,
-        related_name="materialized_edges_as_source",
+        related_name="materialized_relation_edges_as_source",
         help_text="The source category of the edge",
     )
     target = models.ForeignKey(
-        Category,
+        EntityCategory,
         on_delete=models.CASCADE,
-        related_name="materialized_edges_as_target",
+        related_name="materialized_relation_edges_as_target",
         help_text="The target category of the edge",
     )
-    relation = models.ForeignKey(
-        Category,
+    edge = models.ForeignKey(
+        RelationCategory,
+        db_column="relation_id",
         on_delete=models.CASCADE,
-        related_name="materialized_edges_as_relation",
+        related_name="materialized_relation_edges_as_relation",
+        help_text="The relation category of the edge",
+    )
+    role = models.CharField(
+        max_length=1000,
+        null=True,
+        blank=True,
+        help_text="The role of the edge, if its part of a protocol or natural event (e.g. source, target, etc.)",
+    )
+
+
+class MaterializedStructureRelationEdge(MaterializedEdge):
+    source = models.ForeignKey(
+        StructureCategory,
+        on_delete=models.CASCADE,
+        related_name="materialized_structure_relation_edges_as_source",
+        help_text="The source category of the edge",
+    )
+    target = models.ForeignKey(
+        StructureCategory,
+        on_delete=models.CASCADE,
+        related_name="materialized_structure_relation_edges_as_target",
+        help_text="The target category of the edge",
+    )
+    edge = models.ForeignKey(
+        StructureRelationCategory,
+        db_column="relation_id",
+        on_delete=models.CASCADE,
+        related_name="materialized_structure_relation_edges_as_relation",
         help_text="The relation category of the edge",
     )
     role = models.CharField(

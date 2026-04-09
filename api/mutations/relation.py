@@ -3,10 +3,9 @@ Relation mutation resolvers.
 """
 
 from kante.types import Info
-import strawberry
-
 from api import types, inputs, context
 from core import models
+from graph_engine import scalars
 
 
 def create_relation(info: Info, input: inputs.CreateRelationInput) -> types.Relation:
@@ -41,20 +40,25 @@ def create_relation(info: Info, input: inputs.CreateRelationInput) -> types.Rela
     context.extract_node_id(payload.source_id)
     context.extract_node_id(payload.target_id)
 
+    source_graph = context.get_accessible_graph(info, graph1)
+    target_graph = context.get_accessible_graph(info, graph2)
+    assert source_graph.id == target_graph.id, "Source and target entities must belong to the same graph"
+
     relation = models.RelationCategory.objects.get(id=payload.category)  # Validate relation category exists
+    context.validate_graph_access(info, relation.graph)
 
     assert relation.graph.get_age_name() == graph1, "Relation category must belong to the same graph as the entities"
 
     result = controller.create_relation(
         category=relation,
         payload=payload,
-        provenance=context.get_provenance_from_context(info),
+        info=info,
     )
 
     return types.Relation(_value=result)
 
 
-def delete_relation(info: Info, input: inputs.DeleteRelationInput) -> strawberry.ID:
+def delete_relation(info: Info, input: inputs.DeleteRelationInput) -> scalars.GraphID:
     """
     Delete a relation by its composite ID. Only the owner of the graph or an admin can delete a relation.
 
@@ -72,15 +76,48 @@ def delete_relation(info: Info, input: inputs.DeleteRelationInput) -> strawberry
     graph_id = context.extract_graph_id(model.id)
     local_id = context.extract_node_id(model.id)
 
-    graph = models.Graph.objects.get(id=graph_id)  # Validate graph exists
+    graph = context.get_accessible_graph(info, graph_id)
 
     controller.delete_relation(
         graph,
         relation_id=local_id,
-        provenance=context.get_provenance_from_context(info),
+        info=info,
     )
 
     return model.id
+
+
+def update_relation(info: Info, input: inputs.UpdateRelationInput) -> types.Relation:
+    """
+    Update a relation by archiving the current edge and creating a new one in the same category.
+    """
+    controller = context.get_controller()
+
+    model = input.to_pydantic()
+    graph_id = context.extract_graph_id(model.id)
+    local_id = context.extract_node_id(model.id)
+
+    graph = context.get_accessible_graph(info, graph_id)
+
+    existing = controller.get_relation_by_id(local_id)
+    if existing is None:
+        raise ValueError(f"Relation not found with ID {model.id}")
+
+    category = models.RelationCategory.objects.get(graph=graph, age_name=existing.label)
+
+    controller.archive_relation(
+        graph,
+        relation_id=local_id,
+        info=info,
+    )
+
+    updated = controller.create_relation(
+        category=category,
+        payload=model,
+        info=info,
+    )
+
+    return types.Relation(_value=updated)
 
 
 def archive_relation(info: Info, input: inputs.ArchiveRelationInput) -> types.Relation:
@@ -101,12 +138,15 @@ def archive_relation(info: Info, input: inputs.ArchiveRelationInput) -> types.Re
     graph_id = context.extract_graph_id(model.id)
     local_id = context.extract_node_id(model.id)
 
-    graph = models.Graph.objects.get(id=graph_id)  # Validate graph exists
+    graph = context.get_accessible_graph(info, graph_id)
 
     controller.archive_relation(
         graph,
         relation_id=local_id,
-        provenance=context.get_provenance_from_context(info),
+        info=info,
     )
 
-    return types.Relation(_value=model.id)
+    archived = controller.get_relation_by_id(local_id)
+    assert archived is not None, "Relation was archived but could not be loaded"
+
+    return types.Relation(_value=archived)

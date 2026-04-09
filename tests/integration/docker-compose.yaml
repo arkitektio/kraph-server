@@ -17,7 +17,18 @@ services:
       image: redis
       ports:
          - 6666:6379
+   seaweedfs:
+      image: chrislusf/seaweedfs:latest
+      user: '0:0'
+      entrypoint: /bin/sh
+      command:
+         - -lc
+         - mkdir -p /tmp/seaweed && exec /usr/bin/weed server -ip=seaweedfs -ip.bind=0.0.0.0 -dir=/tmp/seaweed -volume.max=0 -master.volumeSizeLimitMB=1024 -filer=true -filer.port=8888
+      volumes:
+         - ./configs/seaweed.toml:/etc/seaweedfs/security.toml
+      ports:
+         - 18888:8888
+      
 
 volumes:
    chroma_data:
-   data:

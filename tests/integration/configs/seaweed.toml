@@ -1,0 +1,16 @@
+# security.toml
+
+# This key is used for Filer HTTP operations (the most common use case)
+[jwt.filer_signing]
+key = "a_very_long_random_secret_string_12345"
+expires_after_seconds = 3600 # 1 hour
+
+# This key is for read operations specifically
+[jwt.filer_signing.read]
+key = "a_very_long_random_secret_string_12345"
+expires_after_seconds = 3600
+
+# This key is used for raw Volume Server operations
+[jwt.signing]
+key = "a_very_long_random_secret_string_12345"
+expires_after_seconds = 3600

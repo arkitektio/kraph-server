@@ -19,7 +19,7 @@ async def test_metric_category_filter_by_metric_kind(test_graph: Graph, authenti
 
     await core_models.MetricCategory.objects.acreate_from_metric_definition(
         graph=test_graph,
-        definition=input_models.MetricDefinitionInput(key="Intensity", label="Intensity", value_kind=input_models.PropertyType.FLOAT, structure=structure_category.identifier),
+        definition=input_models.MetricDefinitionInput(key="Intensity", label="Intensity", value_kind=input_models.PropertyType.INTEGER, structure=structure_category.identifier),
     )
 
     await core_models.MetricCategory.objects.acreate_from_metric_definition(
@@ -33,8 +33,8 @@ async def test_metric_category_filter_by_metric_kind(test_graph: Graph, authenti
     )
 
     query: str = """
-        query SearchMetricCategories($metricKind: MetricKindChoices!) {
-            metricCategories(filters: {metricKind: $metricKind}) {
+        query SearchMetricCategories($valueKind: ValueKind!) {
+            metricCategories(filters: {valueKind: $valueKind}) {
                 id
                 label
             }
@@ -43,7 +43,7 @@ async def test_metric_category_filter_by_metric_kind(test_graph: Graph, authenti
 
     result = await schema.execute(
         query,
-        variable_values={"metricKind": "INT"},
+        variable_values={"valueKind": "INT"},
         context_value=authenticated_context,
     )
 
