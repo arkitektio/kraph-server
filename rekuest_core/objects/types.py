@@ -1,6 +1,5 @@
 import datetime
-from typing import Optional
-
+from typing import Annotated, Optional
 import strawberry
 import strawberry_django
 from pydantic import BaseModel
@@ -18,9 +17,12 @@ class ChoiceModel(BaseModel):
     description: str | None
 
 
-@pydantic.type(models.ChoiceModel, fields=["label", "value", "image", "description"])
+@pydantic.type(models.ChoiceModel)
 class Choice:
-    pass
+    label: str
+    value: str
+    image: str | None
+    description: str | None
 
 
 @pydantic.interface(models.AssignWidgetModel)
@@ -47,19 +49,17 @@ class CustomAssignWidget(AssignWidget):
     ward: str
 
 
-@pydantic.type(models.SearchAssignWidgetModel)
-class SearchAssignWidget(AssignWidget):
-    query: str
-    ward: str
-    filters: Optional[list[LazyType["Port", __name__]]] = None
-    dependencies: list[str] | None = None
-
-    # this took me a while to figure out should be more obvious
+@pydantic.type(models.StateAccessorModel)
+class StateAccessor:
+    option_key: enums.OptionKey
+    sub_path: str | None = None
 
 
 @pydantic.type(models.StateChoiceAssignWidgetModel)
 class StateChoiceAssignWidget(AssignWidget):
-    state_choices: str
+    state_path: str
+    dependency: str | None
+    state_accessors: list[StateAccessor] | None
 
 
 @pydantic.type(models.StringWidgetModel)
@@ -107,29 +107,6 @@ class HideEffect(Effect):
     fade: bool = True
 
 
-@pydantic.type(models.BindsModel)
-class Binds:
-    implementations: list[strawberry.ID]
-    clients: list[strawberry.ID]
-    desired_instances: int
-
-
-@pydantic.type(models.DescriptorMatchModel)
-class DescriptorMatch:
-    key: str | None = strawberry.field(
-        default=None,
-        description="The key of the descriptor to match. ",
-    )
-    value: str | None = strawberry.field(
-        default=None,
-        description="The value of the descriptor to match. ",
-    )
-    operator: enums.DescriptorOperator | None = strawberry.field(
-        default=None,
-        description="The operator to use for matching. ",
-    )
-
-
 @pydantic.type(models.PortMatchModel)
 class PortMatch:
     at: int | None = strawberry.field(
@@ -152,13 +129,9 @@ class PortMatch:
         default=None,
         description="Whether the port is nullable. ",
     )
-    children: list[LazyType["PortMatch", __name__]] | None = strawberry.field(
+    children: list[Annotated["PortMatch", strawberry.lazy(__name__)]] | None = strawberry.field(
         default=None,
         description="Child ports to match. ",
-    )
-    descriptors: list[DescriptorMatch] | None = strawberry.field(
-        default=None,
-        description="Descriptors to match. ",
     )
 
 
@@ -179,14 +152,22 @@ class Validator:
     error_message: str | None = None
 
 
-@pydantic.type(models.DescriptorModel)
-class Descriptor:
+@pydantic.type(models.RequiresModel)
+class Requires:
     key: str = strawberry.field(description="The key of the descriptor. This is used to uniquely identify the descriptor")
     value: scalars.Arg = strawberry.field(description="The value of the descriptor. This can be any JSON serializable value")
+    operator: enums.RequiresOperator = strawberry.field(description="The operator to use for matching the descriptor. This is used when searching for actions based on their descriptors. The operator can be EQUALS, NOT_EQUALS, EXISTS, NOT_EXISTS, GREATER_THAN, LESS_THAN, INCLUDES, NOT_INCLUDES")
 
 
-@pydantic.type(models.PortModel)
-class Port:
+@pydantic.type(models.ProvidesModel)
+class Provides:
+    key: str = strawberry.field(description="The key of the descriptor. This is used to uniquely identify the descriptor")
+    value: scalars.Arg = strawberry.field(description="The value of the descriptor. This can be any JSON serializable value")
+    operator: enums.ProvidesOperator = strawberry.field(description="The operator to use for matching the descriptor. This is used when searching for actions based on their descriptors. The operator can be EQUALS, NOT_EQUALS, EXISTS, NOT_EXISTS, GREATER_THAN, LESS_THAN, INCLUDES, NOT_INCLUDES")
+
+
+@pydantic.type(models.ArgPortModel)
+class ArgPort:
     identifier: scalars.Identifier | None = strawberry.field(
         default=None,
         description="The identifier of the port. Identifier are used to give meaning to structure ports",
@@ -198,12 +179,48 @@ class Port:
     label: str | None
     description: str | None
     effects: list[Effect] | None = None
-    children: list[LazyType["Port", __name__]] | None = None
+    children: list[Annotated["ArgPort", strawberry.lazy(__name__)]] | None = None
     choices: list[Choice] | None = None
-    assign_widget: AssignWidget | None = None
-    return_widget: ReturnWidget | None = None
+    widget: AssignWidget | None = None
     validators: list[Validator] | None = None
-    descriptors: list[Descriptor] | None = None
+    requires: list[Requires] | None = None
+
+
+@pydantic.type(models.ReturnPortModel)
+class ReturnPort:
+    identifier: scalars.Identifier | None = strawberry.field(
+        default=None,
+        description="The identifier of the port. Identifier are used to give meaning to structure ports",
+    )
+    default: scalars.AnyDefault | None
+    kind: enums.PortKind
+    key: str
+    nullable: bool
+    label: str | None
+    description: str | None
+    effects: list[Effect] | None = None
+    children: list[Annotated["ReturnPort", strawberry.lazy(__name__)]] | None = None
+    choices: list[Choice] | None = None
+    widget: ReturnWidget | None = None
+    provides: list[Provides] | None = None
+
+
+@pydantic.type(models.SearchAssignWidgetModel)
+class SearchAssignWidget(AssignWidget):
+    query: str
+    ward: str
+    filters: list[ArgPort] | None = None
+    dependencies: list[str] | None = None
+
+
+# TODO: Should be saved and made accessible
+@pydantic.type(models.OptimisticModel)
+class Optimistic:
+    """An optimistic is used to optimistically set state values when the action is assigned. This is used to provide a better user experience by optimistically setting state values when the action is assigned, instead of waiting for the action to be executed and the state to be updated. This will only ever happen on the frontend."""
+
+    state: str
+    path: str
+    accessor: str | None = None
 
 
 @pydantic.type(models.DefinitionModel)
@@ -223,9 +240,9 @@ class Definition:
     is_dev: bool
 
     @strawberry_django.field()
-    def args(self) -> list[Port]:
-        return [models.PortModel(**i) for i in self.args]
+    def args(self) -> list[ArgPort]:
+        return [models.ArgPortModel(**i) for i in self.args]
 
     @strawberry_django.field()
-    def returns(self) -> list[Port]:
-        return [models.PortModel(**i) for i in self.returns]
+    def returns(self) -> list[ReturnPort]:
+        return [models.ReturnPortModel(**i) for i in self.returns]
