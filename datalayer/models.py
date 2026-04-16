@@ -105,6 +105,10 @@ class BigFileStore(DatalayerStore):
         del host
         return self.build_store_path(datalayer)
 
+    def calculate_size(self, datalayer: Datalayer) -> int:
+        """Calculate the size of the big file by querying the datalayer."""
+        return datalayer.get_object_size(self.bucket, self.key)
+
 
 class MediaStore(DatalayerStore):
     """Media objects stored behind the S3-backed datalayer."""

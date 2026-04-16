@@ -24,6 +24,12 @@ class RequestMediaAccessInput(BaseModel):
     store_id: str
 
 
+class RequestGeneralMediaAccessInput(BaseModel):
+    """Request temporary S3 access credentials for media objects in the organization."""
+
+    expires_in: Optional[int] = None
+
+
 class RequestBigFileUploadInput(BaseModel):
     """Request temporary S3 upload credentials for a big file."""
 
@@ -156,6 +162,22 @@ class AccessGrant(BaseModel):
     path: str
     expires_in: int
     store: str | None = None
+
+
+class GeneralAccessGrant(BaseModel):
+    """Temporary S3 credentials for an existing media object, without a store reference."""
+
+    status: str = "granted"
+    access_key: str
+    secret_key: str
+    session_token: str
+    region: str
+    bucket: str
+    expires_in: int
+
+
+class GeneralMediaAccessGrant(GeneralAccessGrant):
+    """Temporary S3 credentials for an existing media object, without a store reference."""
 
 
 class BigFileAccessGrant(AccessGrant):
