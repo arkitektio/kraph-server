@@ -41,6 +41,21 @@ class MediaAccessGrant:
     store: str | None
 
 
+@kante.pydantic_type(base_models.GeneralMediaAccessGrant, description="Temporary S3 credentials for reading a media object.")
+class GeneralMediaAccessGrant:
+    """Temporary S3 credentials for a media object."""
+
+    status: str
+    access_key: str
+    secret_key: str
+    session_token: str
+    region: str
+    bucket: str
+    path: str
+    expires_in: int
+    store: str | None
+
+
 @kante.pydantic_type(base_models.ZarrAccessGrant, description="Temporary S3 credentials for reading a Zarr store.")
 class ZarrAccessGrant:
     """Temporary S3 credentials for a Zarr store."""

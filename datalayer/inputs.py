@@ -19,10 +19,20 @@ class FinishMediaUploadInput:
 
     pass
 
+
 @pydantic.input(model=base_models.RequestMediaAccessInput, all_fields=True)
 class RequestMediaAccessInput:
     """
     Docstring for RequestMediaAccessInput
+    """
+
+    pass
+
+
+@pydantic.input(model=base_models.RequestGeneralMediaAccessInput, all_fields=True)
+class RequestGeneralMediaAccessInput:
+    """
+    Docstring for RequestGeneralMediaAccessInput
     """
 
     pass
@@ -44,6 +54,7 @@ class FinishBigFileUploadInput:
     """
 
     pass
+
 
 @pydantic.input(model=base_models.RequestBigFileAccessInput, all_fields=True)
 class RequestBigFileAccessInput:
