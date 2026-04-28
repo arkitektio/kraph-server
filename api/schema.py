@@ -682,7 +682,6 @@ def create_schema(
     extensions = [
         QueryDepthLimiter(max_depth=max_depth),
         AuthentikateExtension(),
-        DatalayerExtension(),
     ]
 
     # Add CypherEngineExtension if an engine is provided
