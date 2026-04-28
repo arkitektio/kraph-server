@@ -14,7 +14,6 @@ from .extensions.cypher import CypherEngineExtension
 import kante
 from graph_engine.engine.age_engine import AgeEngine
 from graph_engine.engine.protocol import CypherEngine
-from datalayer.extension import DatalayerExtension
 
 
 import strawberry
