@@ -13,52 +13,15 @@ def create_measurement_category(
 ) -> types.MeasurementCategory:
     """GraphQL mutation wrapper for creating measurement categories."""
 
-    model = input.to_pydantic()
+    model = input.to_pydantic()  # Validate input with Pydantic models
 
-    if model.color:
-        assert len(model.color) == 3 or len(model.color) == 4, "Color must be a list of 3 or 4 values RGBA"
+    graph = models.Graph.objects.get(id=model.graph)
 
-    media_store = None
-    if model.image:
-        media_store = models.MediaStore.objects.get(id=model.image)
-
-    category, _ = models.MeasurementCategory.objects.update_or_create(
-        graph_id=model.graph,
-        age_name=model.key,
-        defaults=dict(
-            description=model.description,
-            store=media_store,
-            label=model.label if model.label else model.key,
-            property_definitions=[pdef.model_dump() for pdef in model.properties] or [],
-        ),
+    ent = models.MeasurementCategory.objects.create_from_measurement_definition(
+        graph,
+        definition=model,
     )
-
-    for ref in model.ontology_references:
-        if ref.prefix:
-            if not models.GraphOntology.objects.filter(prefix=ref.prefix).exists():
-                raise ValueError(f"Ontology with prefix {ref.prefix} not found in database.")
-
-            models.OntologyReference.objects.get_or_create(
-                ontology=models.GraphOntology.objects.get(prefix=ref.prefix),
-                graph_id=model.graph,
-                category_key=model.key,
-            )
-        else:
-            raise ValueError("Each ontology reference must have either an ontology_id or ontology_url.")
-
-    if model.tags:
-        category.tags.clear()
-        for tag in model.tags:
-            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag, graph=category.graph.id)
-            category.tags.add(tag_obj)
-
-    if model.pin is not None:
-        if model.pin:
-            category.pinned_by.add(info.context.request.user)
-        else:
-            category.pinned_by.remove(info.context.request.user)
-
-    return cast(types.MeasurementCategory, category)
+    return cast(types.MeasurementCategory, ent)
 
 
 def update_measurement_category(info: Info, input: inputs.UpdateMeasurementDefinitionInput) -> types.MeasurementCategory:

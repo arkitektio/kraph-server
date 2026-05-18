@@ -1620,6 +1620,28 @@ class MaterializedRelationEdge(MaterializedEdge):
     )
 
 
+class MaterializedMeasurementEdge(MaterializedEdge):
+    source = models.ForeignKey(
+        StructureCategory,
+        on_delete=models.CASCADE,
+        related_name="materialized_measurement_edges_as_source",
+        help_text="The source category of the edge",
+    )
+    target = models.ForeignKey(
+        EntityCategory,
+        on_delete=models.CASCADE,
+        related_name="materialized_measurement_edges_as_target",
+        help_text="The target category of the edge",
+    )
+    edge = models.ForeignKey(
+        MeasurementCategory,
+        db_column="measurement_id",
+        on_delete=models.CASCADE,
+        related_name="materialized_measurement_edges_as_measurement",
+        help_text="The measurement category of the edge",
+    )
+
+
 class MaterializedStructureRelationEdge(MaterializedEdge):
     source = models.ForeignKey(
         StructureCategory,

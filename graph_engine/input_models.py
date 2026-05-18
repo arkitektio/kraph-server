@@ -1106,6 +1106,8 @@ class StructureRelationDefinitionInput(DefinitionInput):
 class MeasurementDefinitionInput(EdgeDefinitionInput):
     """Input for a relation definition."""
 
+    source: StructureDescriptorInput = Field(..., description="Source entity type(s)")
+    target: EntityDescriptorInput = Field(..., description="Target entity type(s)")
     properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Derived property definitions")
 
 

@@ -686,7 +686,7 @@ class GraphController:
             graph,
             f"""
             MATCH (e) WHERE id(e) = $eid
-            SET e[$key] = $value
+            SET e = $value
             """,
             {"eid": local_id, "key": key, "value": value},
         )

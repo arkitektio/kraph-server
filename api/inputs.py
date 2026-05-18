@@ -182,6 +182,11 @@ class SequenceMappingInput:
     pass
 
 
+@pydantic.input(model=input_models.StructureDefinitionInput, all_fields=True, description="Definition of a structure type in the graph schema")
+class StructureDefinitionInput:
+    """Definition of a structure type in the graph schema."""
+
+
 @pydantic.input(model=input_models.CreateNaturalEventDefinitionInput, all_fields=True, description="Input for creating a new natural event definition in the graph schema")
 class CreateNaturalEventDefinitionInput:
     pass

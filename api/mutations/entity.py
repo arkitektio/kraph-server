@@ -200,11 +200,30 @@ def set_entity_property(
 
     model = input.to_pydantic()
 
-    graph_id = context.extract_graph_id(model.entity_id)
-    local_id = context.extract_node_id(model.entity_id)
+    graph_id = context.extract_graph_id(input.entity_id)
+    node_id = context.extract_node_id(input.entity_id)
 
     graph = context.get_accessible_graph(info, graph_id)
 
-    entity = controller.get_node(graph, local_id=local_id, info=info)
+    entity = controller.get_node_by_local_id(graph, local_id=node_id, info=info)
+    if not entity.category_id:
+        raise ValueError("Entity does not have a category and cannot be updated")
 
-    raise NotImplementedError("Setting entity properties is not yet implemented")
+    entity_category = models.EntityCategory.objects.get(id=entity.category_id)
+    property_definition = entity_category.property_map.get(model.key)
+    if property_definition is None:
+        raise ValueError(f"Property '{model.key}' is not defined for entity category '{entity_category.key}'")
+
+    if property_definition.derivation != input_models.DerivationType.LATEST:
+        raise ValueError('only "latest" properties can be actively set')
+
+    controller.set_entity_property(
+        graph,
+        local_id=node_id,
+        key=model.key,
+        value=model.value,
+    )
+    controller._recalculate_entity(entity_category, node_id)
+
+    updated_entity = controller.get_node(graph, local_id=node_id, info=info)
+    return types.Entity(_value=updated_entity)
