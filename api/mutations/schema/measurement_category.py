@@ -5,6 +5,7 @@ from kante.types import Info
 
 from api import inputs, types
 from core import models
+from graph_engine import input_models, materialize
 
 
 def create_measurement_category(
@@ -21,6 +22,9 @@ def create_measurement_category(
         graph,
         definition=model,
     )
+
+    materialize.re_materialize_measurement_relation_category(graph, ent)
+
     return cast(types.MeasurementCategory, ent)
 
 
@@ -57,6 +61,8 @@ def update_measurement_category(info: Info, input: inputs.UpdateMeasurementDefin
 
     item.save()
 
+    materialize.re_materialize_measurement_relation_category(item.graph, item)
+
     return item
 
 
@@ -67,4 +73,5 @@ def delete_measurement_category(
     model = input.to_pydantic()
     item = models.MeasurementCategory.objects.get(id=model.id)
     item.delete()
+    materialize.re_materialize_measurement_relation_category(item.graph, item)
     return model.id

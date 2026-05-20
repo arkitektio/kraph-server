@@ -95,6 +95,8 @@ class Query:
     materialized_structure_relation_edge: types.MaterializedStructureRelationEdge = kante.django_field(description="Get a single materialized structure relation edge by ID")
     materialized_relation_edges: list[types.MaterializedRelationEdge] = kante.django_field(description="List all materialized relation edges in the graph")
     materialized_relation_edge: types.MaterializedRelationEdge = kante.django_field(description="Get a single materialized relation edge by ID")
+    materialized_measurement_edges: list[types.MaterializedMeasurementEdge] = kante.django_field(description="List all materialized measurement edges in the graph")
+    materialized_measurement_edge: types.MaterializedMeasurementEdge = kante.django_field(description="Get a single materialized measurement edge by ID")
 
     graph_stats: types.GraphStats = kante.django_field(description="Get aggregated graph stats with optional filters", resolver=types.GraphStatsResolver)
     category_tag_stats: types.CategoryTagStats = kante.django_field(description="Get aggregated category-tag stats with optional filters", resolver=types.CategoryTagStatsResolver)

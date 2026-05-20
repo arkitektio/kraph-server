@@ -271,4 +271,7 @@ def materialize(
     for category in graph.structure_relation_categories.all():
         re_materialize_structure_relation_category(graph, category)
 
+    for category in graph.measurement_categories.all():
+        re_materialize_measurement_relation_category(graph, category)
+
     return graph

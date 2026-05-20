@@ -119,6 +119,17 @@ class MaterializedStructureRelationEdge:
     graph: "Graph"
 
 
+@kante.django_type(models.MaterializedMeasurementEdge, filters=filters.MaterializedMeasurementEdgeFilter, ordering=order.MaterializedMeasurementEdgeOrder, pagination=True, description="A materialized edge representing a relationship in the graph")
+class MaterializedMeasurementEdge:
+    """A materialized edge representing a relationship in the graph."""
+
+    id: strawberry.ID = strawberry.field(description="Database ID of the edge")
+    source: "StructureCategory"
+    target: "EntityCategory"
+    edge: "MeasurementCategory"
+    graph: "Graph"
+
+
 @kante.django_type(models.MaterializedRelationEdge, filters=filters.MaterializedRelationEdgeFilter, ordering=order.MaterializedRelationEdgeOrder, pagination=True, description="A materialized edge representing a relationship in the graph")
 class MaterializedRelationEdge:
     """A materialized edge representing a relationship in the graph."""
