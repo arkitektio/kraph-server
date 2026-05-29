@@ -27,7 +27,9 @@ class BucketConfig(BaseModel):
     """Resolved bucket configuration for one datalayer store type."""
 
     bucket: str = Field(..., validation_alias=AliasChoices("PATH", "path"))
-    subpath: str | None = Field(None, validation_alias=AliasChoices("SUBPATH", "subpath"))
+    subpath: str | None = Field(
+        None, validation_alias=AliasChoices("SUBPATH", "subpath")
+    )
     default_max_bytes: int = Field(
         100 * 1024 * 1024,
         validation_alias=AliasChoices("DEFAULT_MAX_BYTES", "default_max_bytes"),
@@ -39,19 +41,57 @@ class BucketConfig(BaseModel):
 class DatalayerConfig(BaseModel):
     """Runtime configuration loaded from ``settings.DATALAYER``."""
 
-    role_arn: str | None = Field(None, validation_alias=AliasChoices("ROLE_ARN", "role_arn"))
-    external_id: str | None = Field(None, validation_alias=AliasChoices("EXTERNAL_ID", "external_id"))
+    role_arn: str | None = Field(
+        None, validation_alias=AliasChoices("ROLE_ARN", "role_arn")
+    )
+    external_id: str | None = Field(
+        None, validation_alias=AliasChoices("EXTERNAL_ID", "external_id")
+    )
     session_duration_seconds: int = Field(
         3600,
-        validation_alias=AliasChoices("SESSION_DURATION_SECONDS", "session_duration_seconds"),
+        validation_alias=AliasChoices(
+            "SESSION_DURATION_SECONDS", "session_duration_seconds"
+        ),
     )
-    access_key: str | None = Field(None, validation_alias=AliasChoices("AWS_ACCESS_KEY_ID", "aws_access_key_id", "access_key"))
-    secret_key: str | None = Field(None, validation_alias=AliasChoices("AWS_SECRET_ACCESS_KEY", "aws_secret_access_key", "secret_key"))
-    session_token: str | None = Field(None, validation_alias=AliasChoices("AWS_SESSION_TOKEN", "aws_session_token", "session_token"))
-    host: str | None = Field(None, validation_alias=AliasChoices("AWS_S3_ENDPOINT_URL", "aws_s3_endpoint_url", "host"))
-    region: str = Field("us-east-1", validation_alias=AliasChoices("AWS_S3_REGION_NAME", "aws_s3_region_name", "region"))
-    port: int | None = Field(None, validation_alias=AliasChoices("AWS_S3_PORT", "aws_s3_port", "port"))
-    protocol: str = Field("https", validation_alias=AliasChoices("AWS_S3_URL_PROTOCOL", "aws_s3_url_protocol", "protocol"))
+    access_key: str | None = Field(
+        None,
+        validation_alias=AliasChoices(
+            "AWS_ACCESS_KEY_ID", "aws_access_key_id", "access_key"
+        ),
+    )
+    secret_key: str | None = Field(
+        None,
+        validation_alias=AliasChoices(
+            "AWS_SECRET_ACCESS_KEY", "aws_secret_access_key", "secret_key"
+        ),
+    )
+    session_token: str | None = Field(
+        None,
+        validation_alias=AliasChoices(
+            "AWS_SESSION_TOKEN", "aws_session_token", "session_token"
+        ),
+    )
+    host: str | None = Field(
+        None,
+        validation_alias=AliasChoices(
+            "AWS_S3_ENDPOINT_URL", "aws_s3_endpoint_url", "host"
+        ),
+    )
+    region: str = Field(
+        "us-east-1",
+        validation_alias=AliasChoices(
+            "AWS_S3_REGION_NAME", "aws_s3_region_name", "region"
+        ),
+    )
+    port: int | None = Field(
+        None, validation_alias=AliasChoices("AWS_S3_PORT", "aws_s3_port", "port")
+    )
+    protocol: str = Field(
+        "https",
+        validation_alias=AliasChoices(
+            "AWS_S3_URL_PROTOCOL", "aws_s3_url_protocol", "protocol"
+        ),
+    )
 
     bigfile: Optional[BucketConfig] = None
     media: Optional[BucketConfig] = None
@@ -79,6 +119,7 @@ class Datalayer:
         The datalayer reads all connection and bucket configuration from
         ``settings.DATALAYER``.
         """
+        print("Here")
         self.config = DatalayerConfig(**getattr(settings, "DATALAYER", {}))
 
         client_kwargs = {
@@ -93,6 +134,7 @@ class Datalayer:
 
         self._s3 = boto3.client("s3", **client_kwargs)
         self._sts = boto3.client("sts", **client_kwargs)
+        print("There 2")
 
     def get_bucket_config(self, bucket_key: str) -> BucketConfig:
         """Return bucket configuration for a known datalayer store.
@@ -111,7 +153,9 @@ class Datalayer:
             return conf
 
         else:
-            raise ValueError(f"Service/Bucket '{bucket_key}' not configured in datalayer.")
+            raise ValueError(
+                f"Service/Bucket '{bucket_key}' not configured in datalayer."
+            )
 
     def build_object_key(self, bucket_key: str, object_path: str) -> str:
         """Build the concrete S3 key for a logical object path.
@@ -195,23 +239,35 @@ class Datalayer:
         bucket_name, prefix = self._parse_s3_path(path)
         metadata_key = prefix.rstrip("/") + "/zarr.json"
 
-        print(f"Fetching Zarr metadata from bucket '{bucket_name}' with key '{metadata_key}'")
+        print(
+            f"Fetching Zarr metadata from bucket '{bucket_name}' with key '{metadata_key}'"
+        )
         try:
             zarr_file = self._s3.get_object(Bucket=bucket_name, Key=metadata_key)
         except Exception as exc:
-            raise FileNotFoundError(f"Could not find Zarr v3 metadata for store {store.pk or store.key}.") from exc
+            raise FileNotFoundError(
+                f"Could not find Zarr v3 metadata for store {store.pk or store.key}."
+            ) from exc
 
         metadata = json.loads(zarr_file["Body"].read().decode("utf-8"))
         print(f"Retrieved Zarr metadata: {metadata}")
         if metadata.get("zarr_format") == 2:
-            raise ValueError("Zarr v2 is not supported. Only Zarr v3 stores are supported.")
+            raise ValueError(
+                "Zarr v2 is not supported. Only Zarr v3 stores are supported."
+            )
         if metadata.get("node_type") != "array":
-            raise ValueError("Only Zarr v3 ARRAY stores are supported. You may be trying to load metadata for a Zarr group or a non-Zarr object.")
+            raise ValueError(
+                "Only Zarr v3 ARRAY stores are supported. You may be trying to load metadata for a Zarr group or a non-Zarr object."
+            )
 
         shape = metadata.get("shape")
-        chunk_shape = metadata.get("chunk_grid", {}).get("configuration", {}).get("chunk_shape")
+        chunk_shape = (
+            metadata.get("chunk_grid", {}).get("configuration", {}).get("chunk_shape")
+        )
         if shape is None or chunk_shape is None:
-            raise ValueError("Malformed zarr.json metadata: missing shape or chunk shape.")
+            raise ValueError(
+                "Malformed zarr.json metadata: missing shape or chunk shape."
+            )
 
         return base_models.ZarrMetadata(
             zarr_format=metadata["zarr_format"],
@@ -227,7 +283,9 @@ class Datalayer:
             dimension_names=metadata.get("dimension_names"),
         )
 
-    def _object_resources(self, bucket_key: str, object_path: str) -> tuple[str, list[str], bool]:
+    def _object_resources(
+        self, bucket_key: str, object_path: str
+    ) -> tuple[str, list[str], bool]:
         """Resolve S3 resources covered by a grant.
 
         Args:
@@ -244,7 +302,9 @@ class Datalayer:
             return full_key, [prefix, f"{prefix}/*"], True
         return full_key, [full_key], False
 
-    def _build_policy(self, bucket_name: str, bucket_key: str, object_path: str, action: str) -> dict[str, object]:
+    def _build_policy(
+        self, bucket_name: str, bucket_key: str, object_path: str, action: str
+    ) -> dict[str, object]:
         """Build an inline session policy for an assumed role.
 
         Args:
@@ -257,7 +317,9 @@ class Datalayer:
             An IAM policy document scoped to the requested object resources.
         """
         _, resources, allow_list = self._object_resources(bucket_key, object_path)
-        s3_resources = [f"arn:aws:s3:::{bucket_name}/{resource}" for resource in resources]
+        s3_resources = [
+            f"arn:aws:s3:::{bucket_name}/{resource}" for resource in resources
+        ]
         action_map = {
             "read": ["s3:GetObject"],
             "upload": ["s3:PutObject", "s3:AbortMultipartUpload"],
@@ -297,7 +359,9 @@ class Datalayer:
 
         return {"Version": "2012-10-17", "Statement": statements}
 
-    def _issue_temporary_credentials(self, bucket_key: str, object_path: str, action: str, expires_in: int) -> tuple[str, str, str]:
+    def _issue_temporary_credentials(
+        self, bucket_key: str, object_path: str, action: str, expires_in: int
+    ) -> tuple[str, str, str]:
         """Issue temporary credentials for a store action.
 
         Args:
@@ -317,7 +381,9 @@ class Datalayer:
                 "RoleArn": self.config.role_arn,
                 "RoleSessionName": f"mikro-{action}-{uuid.uuid4().hex[:8]}",
                 "DurationSeconds": duration,
-                "Policy": json.dumps(self._build_policy(conf.bucket, bucket_key, object_path, action)),
+                "Policy": json.dumps(
+                    self._build_policy(conf.bucket, bucket_key, object_path, action)
+                ),
             }
             if self.config.external_id:
                 assume_role_kwargs["ExternalId"] = self.config.external_id
@@ -332,7 +398,9 @@ class Datalayer:
                 pass
 
         try:
-            credentials = self._sts.get_session_token(DurationSeconds=duration)["Credentials"]
+            credentials = self._sts.get_session_token(DurationSeconds=duration)[
+                "Credentials"
+            ]
             return (
                 credentials["AccessKeyId"],
                 credentials["SecretAccessKey"],
@@ -345,7 +413,9 @@ class Datalayer:
                 self.config.session_token or "",
             )
 
-    def _issue_temporary_user_access_credentials(self, bucket_key: str, organization_id: str, user_id: str, expires_in: int) -> tuple[str, str, str]:
+    def _issue_temporary_user_access_credentials(
+        self, bucket_key: str, organization_id: str, user_id: str, expires_in: int
+    ) -> tuple[str, str, str]:
         """Issue temporary credentials for a store action.
 
         Args:
@@ -380,7 +450,9 @@ class Datalayer:
                 pass
 
         try:
-            credentials = self._sts.get_session_token(DurationSeconds=duration)["Credentials"]
+            credentials = self._sts.get_session_token(DurationSeconds=duration)[
+                "Credentials"
+            ]
             return (
                 credentials["AccessKeyId"],
                 credentials["SecretAccessKey"],
@@ -393,7 +465,9 @@ class Datalayer:
                 self.config.session_token or "",
             )
 
-    def generate_media_upload_grant(self, input: base_models.RequestMediaUploadInput) -> base_models.MediaUploadGrant:
+    def generate_media_upload_grant(
+        self, input: base_models.RequestMediaUploadInput
+    ) -> base_models.MediaUploadGrant:
         """Create a media store and a presigned PUT URL for upload.
 
         The presigned URL is generated against the internal S3 endpoint, then
@@ -413,7 +487,9 @@ class Datalayer:
 
         ttl = self._session_duration()
 
-        access_key, secret_key, session_token = self._issue_temporary_credentials("media", store.key, "upload", ttl)
+        access_key, secret_key, session_token = self._issue_temporary_credentials(
+            "media", store.key, "upload", ttl
+        )
         full_key = self.build_object_key("media", store.key)
 
         return base_models.MediaUploadGrant(
@@ -434,7 +510,9 @@ class Datalayer:
             store=str(store.pk),
         )
 
-    def generate_bigfile_upload_grant(self, input: base_models.RequestBigFileUploadInput) -> base_models.BigFileUploadGrant:
+    def generate_bigfile_upload_grant(
+        self, input: base_models.RequestBigFileUploadInput
+    ) -> base_models.BigFileUploadGrant:
         """Create a big file store and upload grant."""
         from datalayer import models
 
@@ -450,7 +528,9 @@ class Datalayer:
 
         ttl = self._session_duration()
 
-        access_key, secret_key, session_token = self._issue_temporary_credentials("bigfile", store.key, "upload", ttl)
+        access_key, secret_key, session_token = self._issue_temporary_credentials(
+            "bigfile", store.key, "upload", ttl
+        )
         full_key = self.build_object_key("bigfile", store.key)
 
         return base_models.BigFileUploadGrant(
@@ -471,7 +551,9 @@ class Datalayer:
             store=str(store.pk),
         )
 
-    def generate_zarr_upload_grant(self, input: base_models.RequestZarrUploadInput) -> base_models.ZarrUploadGrant:
+    def generate_zarr_upload_grant(
+        self, input: base_models.RequestZarrUploadInput
+    ) -> base_models.ZarrUploadGrant:
         """Create a Zarr store and upload grant."""
         from datalayer import models
 
@@ -487,7 +569,9 @@ class Datalayer:
         )
 
         ttl = self._session_duration()
-        access_key, secret_key, session_token = self._issue_temporary_credentials("zarr", store.key, "upload", ttl)
+        access_key, secret_key, session_token = self._issue_temporary_credentials(
+            "zarr", store.key, "upload", ttl
+        )
         full_key = self.build_object_key("zarr", store.key)
 
         return base_models.ZarrUploadGrant(
@@ -508,7 +592,9 @@ class Datalayer:
             store=str(store.pk),
         )
 
-    def generate_parquet_upload_grant(self, input: base_models.RequestParquetUploadInput) -> base_models.ParquetUploadGrant:
+    def generate_parquet_upload_grant(
+        self, input: base_models.RequestParquetUploadInput
+    ) -> base_models.ParquetUploadGrant:
         """Create a parquet store and upload grant."""
         from datalayer import models
 
@@ -523,7 +609,9 @@ class Datalayer:
         )
 
         ttl = self._session_duration()
-        access_key, secret_key, session_token = self._issue_temporary_credentials("parquet", store.key, "upload", ttl)
+        access_key, secret_key, session_token = self._issue_temporary_credentials(
+            "parquet", store.key, "upload", ttl
+        )
         full_key = self.build_object_key("parquet", store.key)
 
         return base_models.ParquetUploadGrant(
@@ -544,7 +632,9 @@ class Datalayer:
             store=str(store.pk),
         )
 
-    def _finish_store_upload(self, model_class: type[StoreModel], store_id: str, valid: bool) -> StoreModel:
+    def _finish_store_upload(
+        self, model_class: type[StoreModel], store_id: str, valid: bool
+    ) -> StoreModel:
         """Finalize a created store after upload completion.
 
         Args:
@@ -563,7 +653,9 @@ class Datalayer:
             store.save(update_fields=["populated"])
         return cast(StoreModel, store)
 
-    def finish_media_upload(self, input: base_models.FinishMediaUploadInput) -> "models.MediaStore":
+    def finish_media_upload(
+        self, input: base_models.FinishMediaUploadInput
+    ) -> "models.MediaStore":
         """Mark a media upload as complete.
 
         Args:
@@ -576,7 +668,9 @@ class Datalayer:
 
         return self._finish_store_upload(models.MediaStore, input.store_id, input.valid)
 
-    def finish_bigfile_upload(self, input: base_models.FinishBigFileUploadInput) -> "models.BigFileStore":
+    def finish_bigfile_upload(
+        self, input: base_models.FinishBigFileUploadInput
+    ) -> "models.BigFileStore":
         """Mark a big file upload as complete.
 
         Args:
@@ -587,9 +681,13 @@ class Datalayer:
         """
         from datalayer import models
 
-        return self._finish_store_upload(models.BigFileStore, input.store_id, input.valid)
+        return self._finish_store_upload(
+            models.BigFileStore, input.store_id, input.valid
+        )
 
-    def finish_zarr_upload(self, input: base_models.FinishZarrUploadInput) -> "models.ZarrStore":
+    def finish_zarr_upload(
+        self, input: base_models.FinishZarrUploadInput
+    ) -> "models.ZarrStore":
         """Mark a Zarr upload as complete.
 
         Args:
@@ -602,7 +700,9 @@ class Datalayer:
 
         return self._finish_store_upload(models.ZarrStore, input.store_id, input.valid)
 
-    def finish_parquet_upload(self, input: base_models.FinishParquetUploadInput) -> "models.ParquetStore":
+    def finish_parquet_upload(
+        self, input: base_models.FinishParquetUploadInput
+    ) -> "models.ParquetStore":
         """Mark a parquet upload as complete.
 
         Args:
@@ -613,7 +713,9 @@ class Datalayer:
         """
         from datalayer import models
 
-        return self._finish_store_upload(models.ParquetStore, input.store_id, input.valid)
+        return self._finish_store_upload(
+            models.ParquetStore, input.store_id, input.valid
+        )
 
     def get_object_size(self, bucket_name: str, object_key: str) -> int:
         """Get the size of an object in bytes.
@@ -632,7 +734,9 @@ class Datalayer:
             response = self._s3.head_object(Bucket=bucket_config.bucket, Key=object_key)
             return response["ContentLength"]
         except Exception as exc:
-            raise FileNotFoundError(f"Could not retrieve object size for s3://{bucket_name}/{object_key}.") from exc
+            raise FileNotFoundError(
+                f"Could not retrieve object size for s3://{bucket_name}/{object_key}."
+            ) from exc
 
     def generate_file_read_url(
         self,
@@ -655,7 +759,9 @@ class Datalayer:
         """
         conf = self.get_bucket_config(bucket_key)
         ttl = self._session_duration(expires_in)
-        access_key, secret_key, session_token = self._issue_temporary_credentials(bucket_key, object_path, "read", ttl)
+        access_key, secret_key, session_token = self._issue_temporary_credentials(
+            bucket_key, object_path, "read", ttl
+        )
         full_key = self.build_object_key(bucket_key, object_path)
         return base_models.AccessGrant(
             access_key=access_key,
@@ -692,7 +798,9 @@ class Datalayer:
         """
         conf = self.get_bucket_config(bucket_key)
         ttl = self._session_duration(expires_in)
-        access_key, secret_key, session_token = self._issue_temporary_credentials(bucket_key, object_path, "delete", ttl)
+        access_key, secret_key, session_token = self._issue_temporary_credentials(
+            bucket_key, object_path, "delete", ttl
+        )
         full_key = self.build_object_key(bucket_key, object_path)
         return base_models.AccessGrant(
             access_key=access_key,
@@ -727,7 +835,9 @@ class Datalayer:
         store_id = str(store.pk) if store.pk is not None else None
         conf = self.get_bucket_config("bigfile")
         ttl = self._session_duration(expires_in)
-        access_key, secret_key, session_token = self._issue_temporary_credentials("bigfile", object_path, "read", ttl)
+        access_key, secret_key, session_token = self._issue_temporary_credentials(
+            "bigfile", object_path, "read", ttl
+        )
         full_key = self.build_object_key("bigfile", object_path)
         return base_models.BigFileAccessGrant(
             access_key=access_key,
@@ -763,7 +873,9 @@ class Datalayer:
         store_id = str(store.pk) if store.pk is not None else None
         conf = self.get_bucket_config("media")
         ttl = self._session_duration(expires_in)
-        access_key, secret_key, session_token = self._issue_temporary_credentials("media", object_path, "read", ttl)
+        access_key, secret_key, session_token = self._issue_temporary_credentials(
+            "media", object_path, "read", ttl
+        )
         full_key = self.build_object_key("media", object_path)
         return base_models.MediaAccessGrant(
             access_key=access_key,
@@ -798,7 +910,11 @@ class Datalayer:
         conf = self.get_bucket_config("media")
         ttl = self._session_duration(expires_in)
         # TODO: FIX ORGANIZATION SCOPED MEDIA GRANTS
-        access_key, secret_key, session_token = self._issue_temporary_user_access_credentials("media", organization_id, user_id, ttl)
+        access_key, secret_key, session_token = (
+            self._issue_temporary_user_access_credentials(
+                "media", organization_id, user_id, ttl
+            )
+        )
         return base_models.GeneralMediaAccessGrant(
             access_key=access_key,
             secret_key=secret_key,
@@ -830,7 +946,9 @@ class Datalayer:
         store_id = str(store.pk) if store.pk is not None else None
         conf = self.get_bucket_config("zarr")
         ttl = self._session_duration(expires_in)
-        access_key, secret_key, session_token = self._issue_temporary_credentials("zarr", object_path, "read", ttl)
+        access_key, secret_key, session_token = self._issue_temporary_credentials(
+            "zarr", object_path, "read", ttl
+        )
         full_key = self.build_object_key("zarr", object_path)
         return base_models.ZarrAccessGrant(
             access_key=access_key,
@@ -866,7 +984,9 @@ class Datalayer:
         store_id = str(store.pk) if store.pk is not None else None
         conf = self.get_bucket_config("parquet")
         ttl = self._session_duration(expires_in)
-        access_key, secret_key, session_token = self._issue_temporary_credentials("parquet", object_path, "read", ttl)
+        access_key, secret_key, session_token = self._issue_temporary_credentials(
+            "parquet", object_path, "read", ttl
+        )
         full_key = self.build_object_key("parquet", object_path)
         return base_models.ParquetAccessGrant(
             access_key=access_key,
@@ -883,7 +1003,13 @@ class Datalayer:
             store=str(store_id) if store_id is not None else None,
         )
 
-    def put_file(self, bucket_key: str, object_path: str, payload: bytes, content_type: str | None = None) -> None:
+    def put_file(
+        self,
+        bucket_key: str,
+        object_path: str,
+        payload: bytes,
+        content_type: str | None = None,
+    ) -> None:
         """Upload a single object with service credentials.
 
         Args:

@@ -87,6 +87,11 @@ class MaterializedStructureRelationEdgeOrder:
     id: auto
 
 
+@strawberry_django.order_type(models.MaterializedMeasurementEdge)
+class MaterializedMeasurementEdgeOrder:
+    id: auto
+
+
 @strawberry_django.order_type(models.MaterializedRelationEdge)
 class MaterializedRelationEdgeOrder:
     id: auto

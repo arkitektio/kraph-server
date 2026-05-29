@@ -245,13 +245,19 @@ class EdgeCategoryManager(CategoryManager[T], Generic[T]):
     ) -> T:
         resolved_age_name = self.key_to_age_name(definition.key)
         label = definition.label or definition.key
+        property_definitions = getattr(definition, "properties", None)
 
         defaults: dict[str, object] = {
             "label": label or definition.key,
             "description": definition.description,
             "age_name": resolved_age_name,
+            "source_definition": definition.source.model_dump(mode="json"),
+            "target_definition": definition.target.model_dump(mode="json"),
             **(other_defaults or {}),
         }
+
+        if property_definitions is not None:
+            defaults["property_definitions"] = [prop.model_dump(mode="json") for prop in property_definitions]
 
         store_id = self._resolve_store_id(definition.image)
         if store_id is not None:
@@ -304,6 +310,29 @@ class RelationCategoryManager(EdgeCategoryManager["core_models.RelationCategory"
 
 class MeasurementCategoryManager(EdgeCategoryManager["core_models.MeasurementCategory"]):
     pass
+
+    async def acreate_from_measurement_definition(
+        self,
+        graph: "core_models.Graph",
+        definition: input_models.MeasurementDefinitionInput,
+    ) -> "core_models.MeasurementCategory":
+        from graph_engine.materialize import re_materialize_measurement_relation_category
+
+        category = await super().acreate_from_edge_definition(
+            graph=graph,
+            definition=definition,
+        )
+
+        await sync_to_async(re_materialize_measurement_relation_category)(graph, category)
+
+        return category
+
+    def create_from_measurement_definition(
+        self,
+        graph: "core_models.Graph",
+        definition: input_models.MeasurementDefinitionInput,
+    ) -> "core_models.MeasurementCategory":
+        return async_to_sync(self.acreate_from_measurement_definition)(graph, definition)
 
 
 class MetricCategoryManager(NodeCategoryManager["core_models.MetricCategory"]):

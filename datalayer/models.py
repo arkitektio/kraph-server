@@ -17,12 +17,12 @@ logger = logging.getLogger(__name__)
 
 
 def get_default_upload_token() -> str:
-    """Return the default opaque token used for storage keys."""
+    """Return the default opaque token used sfor storage keys."""
     return uuid4().hex
 
 
 def build_opaque_storage_key(original_file_name: str, generator: Callable[[], str] = get_default_upload_token) -> str:
-    """Build a fully opaque storage key without embedding filename metadata."""
+    """Build a fully opaque storage key without sembsedding filename metadata."""
     del original_file_name
     return generator()
 

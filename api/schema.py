@@ -14,7 +14,6 @@ from .extensions.cypher import CypherEngineExtension
 import kante
 from graph_engine.engine.age_engine import AgeEngine
 from graph_engine.engine.protocol import CypherEngine
-from datalayer.extension import DatalayerExtension
 
 
 import strawberry
@@ -96,6 +95,8 @@ class Query:
     materialized_structure_relation_edge: types.MaterializedStructureRelationEdge = kante.django_field(description="Get a single materialized structure relation edge by ID")
     materialized_relation_edges: list[types.MaterializedRelationEdge] = kante.django_field(description="List all materialized relation edges in the graph")
     materialized_relation_edge: types.MaterializedRelationEdge = kante.django_field(description="Get a single materialized relation edge by ID")
+    materialized_measurement_edges: list[types.MaterializedMeasurementEdge] = kante.django_field(description="List all materialized measurement edges in the graph")
+    materialized_measurement_edge: types.MaterializedMeasurementEdge = kante.django_field(description="Get a single materialized measurement edge by ID")
 
     graph_stats: types.GraphStats = kante.django_field(description="Get aggregated graph stats with optional filters", resolver=types.GraphStatsResolver)
     category_tag_stats: types.CategoryTagStats = kante.django_field(description="Get aggregated category-tag stats with optional filters", resolver=types.CategoryTagStatsResolver)
@@ -339,6 +340,11 @@ class Mutation:
         description="Update an existing graph in the graph engine",
         resolver=mutations.update_graph,
     )
+    update_graph_visual = kante.django_mutation(
+        description="Update the visual configuration of a graph in the graph engine",
+        resolver=mutations.update_graph_visual,
+    )
+
     create_graph_table_query = kante.django_mutation(
         description="Create a new graph table query",
         resolver=mutations.create_graph_table_query,
@@ -682,7 +688,6 @@ def create_schema(
     extensions = [
         QueryDepthLimiter(max_depth=max_depth),
         AuthentikateExtension(),
-        DatalayerExtension(),
     ]
 
     # Add CypherEngineExtension if an engine is provided

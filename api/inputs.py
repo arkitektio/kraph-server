@@ -26,6 +26,20 @@ class SetEntityPropertyInput:
     value: JSON = strawberry.field(description="The property value")
 
 
+@pydantic.input(model=input_models.CategoryNodePositionInput, all_fields=True, description="Input for specifying the position of a node in the graph visualization")
+class CategoryNodePositionInput:
+    """Input for specifying the position of a node in the graph visualization. This can be used to set or update the x and y coordinates of a node for layout purposes."""
+
+    pass
+
+
+@pydantic.input(model=input_models.UpdateGraphVisuals, all_fields=True, description="Input for updating the visual properties of a graph element")
+class UpdateGraphVisualInput:
+    """Input for updating the visual properties of a graph element, such as a node or edge. This can include properties like color, size, shape, etc. The specific visual properties that can be updated will depend on the implementation of the graph rendering on the frontend."""
+
+    pass
+
+
 @pydantic.input(model=input_models.PropertySet, description="Input for ensuring an entity exists with a given global ID")
 class PropertySet:
     """Input for a set of properties to associate with an entity or structure."""
@@ -169,6 +183,10 @@ class OntologyReferenceInput:
 
 @pydantic.input(model=input_models.EntityDescriptorInput, all_fields=True, description="Input for creating a new natural event definition in the graph schema")
 class EntityDescriptorInput:
+    keys: List[str] | None = strawberry.field(default=None, description="The list of keys/identifiers that define this entity descriptor")
+    tags: List[str] | None = strawberry.field(default=None, description="The list of category tags associated with this entity descriptor")
+    ontology_terms: List[str] | None = strawberry.field(default=None, description="The list of ontology terms associated with this entity descriptor")
+
     pass
 
 
@@ -180,6 +198,11 @@ class EventRoleInput:
 @pydantic.input(model=input_models.SequenceMappingInput, all_fields=True, description="Input for creating a new natural event definition in the graph schema")
 class SequenceMappingInput:
     pass
+
+
+@pydantic.input(model=input_models.StructureDefinitionInput, all_fields=True, description="Definition of a structure type in the graph schema")
+class StructureDefinitionInput:
+    """Definition of a structure type in the graph schema."""
 
 
 @pydantic.input(model=input_models.CreateNaturalEventDefinitionInput, all_fields=True, description="Input for creating a new natural event definition in the graph schema")
@@ -243,6 +266,10 @@ class DeleteEntityDefinitionInput:
 @pydantic.input(model=input_models.StructureDescriptorInput, all_fields=True, description="Input for creating a new structure relation definition in the graph schema")
 class StructureDescriptorInput:
     """Input for creating a new structure relation definition in the graph schema."""
+
+    keys: List[str] | None = strawberry.field(default=None, description="The list of keys/identifiers that define this entity descriptor")
+    tags: List[str] | None = strawberry.field(default=None, description="The list of category tags associated with this entity descriptor")
+    identifiers: List[str] | None = strawberry.field(default=None, description="The list of ontology terms associated with this entity descriptor")
 
     pass
 
