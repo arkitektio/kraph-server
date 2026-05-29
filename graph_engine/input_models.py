@@ -1613,6 +1613,23 @@ class EnsureEntityInput(EntityInput):
     universal_id: scalars.GlobalID = Field(..., description="A universal ID to use for this entity. If an existing entity with this universal ID exists, it will be returned instead of creating a new one.")
 
 
+class CategoryNodePositionInput(BaseModel):
+    """Input for specifying the position of a node in the graph visualization."""
+
+    category: strawberry.ID = Field(..., description="The category of the node")
+    position_x: float = Field(..., description="The x-coordinate of the node position")
+    position_y: float = Field(..., description="The y-coordinate of the node position")
+    width: Optional[float] = Field(default=None, description="Optional width for the node (for visualization purposes)")
+    height: Optional[float] = Field(default=None, description="Optional height for the node (for visualization purposes)")
+
+
+class UpdateGraphVisuals(BaseModel):
+    """Input for updating the visual properties of a graph element (node or edge)."""
+
+    id: GraphID = Field(..., description="The ID of the graph element to update")
+    node_positions: list[CategoryNodePositionInput] = Field(default_factory=list, description="List of node positions to update")
+
+
 class UpdateEntityInput(EntityInput):
     """Input for updating an existing entity instance. Note: this will not update the entity in-place, but rather create a new entity and archive the old one to preserve history."""
 

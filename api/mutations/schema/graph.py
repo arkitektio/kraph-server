@@ -1,5 +1,3 @@
-from typing import cast
-
 import strawberry
 from kante.types import Info
 
@@ -96,6 +94,24 @@ def update_graph(
             graph.pinned_by.remove(info.context.request.user)
 
     graph.save()
+
+    return graph
+
+
+def update_graph_visual(info: Info, input: inputs.UpdateGraphVisualInput) -> types.Graph:
+    """GraphQL mutation wrapper for updating a graph's visual representation."""
+
+    model = input.to_pydantic()  # Validate input with Pydantic models
+
+    graph = models.Graph.objects.get(id=model.id)
+
+    for node_position in model.node_positions:
+        categories = graph.categories.get(id=node_position.category)
+        categories.position_x = node_position.position_x
+        categories.position_y = node_position.position_y
+        categories.width = node_position.width
+        categories.height = node_position.height
+        categories.save()
 
     return graph
 

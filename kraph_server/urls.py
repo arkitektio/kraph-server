@@ -21,7 +21,7 @@ from kante.path import dynamicpath
 from health_check.views import MainView
 from django.views.decorators.csrf import csrf_exempt
 
-url = "ssss"
+url = "sssdss"
 
 urlpatterns = [
     dynamicpath("admin/", admin.site.urls),

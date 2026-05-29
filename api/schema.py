@@ -340,6 +340,11 @@ class Mutation:
         description="Update an existing graph in the graph engine",
         resolver=mutations.update_graph,
     )
+    update_graph_visual = kante.django_mutation(
+        description="Update the visual configuration of a graph in the graph engine",
+        resolver=mutations.update_graph_visual,
+    )
+
     create_graph_table_query = kante.django_mutation(
         description="Create a new graph table query",
         resolver=mutations.create_graph_table_query,
