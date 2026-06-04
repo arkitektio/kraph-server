@@ -38,7 +38,7 @@ def create_measurement(info: Info, input: inputs.CreateMeasurementInput) -> type
 
     assert measurement.graph.get_age_name() == graph1, "Measurement category must belong to the same graph as the nodes"
 
-    result = controller.create_relation(
+    result = controller.create_measurement(
         category=cast(models.RelationCategory, measurement),
         payload=payload,
         info=info,
@@ -64,12 +64,6 @@ def update_measurement(info: Info, input: inputs.UpdateMeasurementInput) -> type
         raise ValueError(f"Measurement not found with ID {model.id}")
 
     category = models.MeasurementCategory.objects.get(graph=graph, age_name=existing.label)
-
-    controller.archive_relation(
-        graph,
-        relation_id=local_id,
-        info=info,
-    )
 
     updated = controller.create_relation(
         category=cast(models.RelationCategory, category),

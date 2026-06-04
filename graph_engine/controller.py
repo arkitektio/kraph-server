@@ -1625,6 +1625,133 @@ class GraphController:
 
         return EntityCreationResult(ref_id=payload.ref_id, db_id=f"{payload.source_id}->{payload.target_id}", graph_id=edge_id)
 
+    def create_measurement(
+        self,
+        category: models.MeasurementCategory,
+        payload: RelationInput,
+        info: Info,
+    ) -> RetrievedRelation:
+        """
+        Creates a Relationship between two nodes, backed by Evidence.
+
+        Graph Structure Created:
+        1. (Source)-[RELATION]->(Target)  <-- The actual edge
+        2. (ShadowLink)                   <-- The reified node holding history
+        3. (ShadowLink)-[:REIFIES]->(Source)
+        4. (ShadowLink)-[:REIFIES]->(Target)
+        5. (Structure)-[:INFORMS]->(ShadowLink) <-- Evidence attached here
+        """
+
+        assertion_id = self._create_provenance_node(category.graph, self._provenance_from_info(info))
+        # --- Step 3: Create Shadow Link & Attach Evidence ---
+        # We create a "ShadowLink" node to represent this specific instance of the relationship.
+        # This allows us to attach measurements to "the link" rather than the edge itself.
+
+        ref_id = self.create_universal_id()
+
+        shadow_params = {"link_id": ref_id, "aid": assertion_id}
+
+        # TODO: Check if a relation already exists between these nodes in this direction, and if so,
+        # either prevent creation or create a new ShadowLink and overwrite the existing edge to point to the new ShadowLink.
+        # This allows us to maintain history of changes to the relationship over time, while still enforcing that only one "active"
+        # relationship exists between any two nodes in a given direction.
+        shadow_res = self.engine.execute(
+            category.graph,
+            f"""
+            MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
+            MERGE (sl:{vocab.ShadowLink} {{id: $link_id, ref_id: $link_id}})
+            CREATE (a)-[:{vocab.GENERATED}]->(sl)
+            RETURN id(sl) as shadow_graph_id
+            """,
+            shadow_params,
+        )
+        shadow_graph_id = shadow_res[0]["shadow_graph_id"]
+
+        # Process Evidence attached to the Shadow Link
+        for evidence in payload.supporting_evidence:
+            structure_category = self.ensure_structure_category_or_raise(category.graph, evidence.identifier, info)
+            structure_graph_label = structure_category.get_age_vertex_name()
+
+            # Auto-Create Structure
+            self.engine.execute(category.graph, f"MERGE (s:{structure_graph_label} {{object: $obj}})", {"obj": evidence.object})
+
+            # Link Structure -> Shadow Link (INFORMS)
+            # This says: "This structure (e.g. ROI Overlap) informs this relationship"
+            self.engine.execute(
+                category.graph,
+                f"""
+                MATCH (s:{structure_graph_label} {{object: $obj}})
+                MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
+                MERGE (s)-[:{vocab.INFORMS}]->(sl)
+                """,
+                {"obj": evidence.object, "sl_id": shadow_graph_id},
+            )
+
+            # Create Measurements for that Structure
+            for meas in evidence.metrics:
+                self.ensure_metric_category_or_raise(
+                    graph=category.graph,
+                    structure_category=structure_category,
+                    key=meas.key,
+                    value_kind=self._infer_metric_value_kind(meas.value),
+                    info=info,
+                )
+                meas_params = meas.model_dump(exclude_none=True)
+                meas_params.update({"obj": evidence.object, "aid": assertion_id})
+
+                prop_clauses = ["key: $key", "value: $value"]
+                for optional_key in ["unit", "confidence", "confidence_type", "timestamp"]:
+                    if optional_key in meas_params:
+                        prop_clauses.append(f"{optional_key}: ${optional_key}")
+
+                meas_query = f"""
+                    MATCH (s:{structure_graph_label} {{object: $obj}})
+                    MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
+                    
+                    CREATE (m:{vocab.Metric} {{{", ".join(prop_clauses)}}})
+                    CREATE (a)-[:{vocab.ASSERTED}]->(m)
+                    CREATE (m)-[:{vocab.DESCRIBES}]->(s)
+                """
+                self.engine.execute(category.graph, meas_query, meas_params)
+
+        # --- Step 4: Create the Physical Edge ---
+        edge_params = {"src": payload.source_id, "tgt": payload.target_id, "aid": assertion_id, "sl_id": shadow_graph_id}
+
+        # Note: AGE doesn't allow creating relationships TO relationships,
+        # so we connect the assertion to the ShadowLink instead.
+        # The ShadowLink already has (Assertion)-[:GENERATED]->(ShadowLink)
+        create_shadow_links = self.engine.execute(
+            category.graph,
+            f"""
+            MATCH (source) WHERE source.id = $src
+            MATCH (target) WHERE target.id = $tgt
+            MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
+            MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
+
+            
+            // Connect Shadow Link to nodes for traversability
+            CREATE (sl)-[:{vocab.REIFIES_AS_SOURCE}]->(source)
+            CREATE (sl)-[:{vocab.REIFIES_AS_TARGET}]->(target)
+            
+            RETURN id(sl) as shadow_id
+            """,
+            edge_params,
+        )
+
+        if not create_shadow_links:
+            raise ValueError(f"Could not create relation. Source {payload.source_id} or Target {payload.target_id} not found.")
+
+        shadow_link_id = create_shadow_links[0]["shadow_id"]
+
+        # --- Step 5: Recalculate Relation Properties ---
+        # Rolls up values from the ShadowLink evidence onto the Edge itself
+        edge_id = self._recalculate_relation(relation_category=category, local_id=shadow_link_id)
+
+        if edge_id is None:
+            raise ValueError(f"Failed to create relation edge for {relation_name}")
+
+        return EntityCreationResult(ref_id=payload.ref_id, db_id=f"{payload.source_id}->{payload.target_id}", graph_id=edge_id)
+
     def delete_relation(
         self,
         graph: models.Graph,

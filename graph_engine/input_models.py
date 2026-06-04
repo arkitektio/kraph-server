@@ -1731,6 +1731,24 @@ class RelationInput(BaseModel):
     supporting_evidence: List[StructureReferenceInput] = Field(default_factory=list, description="List of evidence structures with measurements")
 
 
+class EventBaseInput(BaseModel):
+    valid_from: Optional[datetime] = Field(default=None, description="Optional start time for the validity of this event (for temporal reasoning)")
+    valid_to: Optional[datetime] = Field(default=None, description="Optional end time for the validity of this event (for temporal reasoning)")
+
+
+class ValidateMeasurementInput(BaseModel, EventBaseInput):
+    """Input for supporting evidence that a measurement exists between a source structure and a target entity."""
+
+    source_structure_id: str = Field(description="The ID of the source structure (if different from source_id)")
+    source_structure_identifier: scalars.StructureIdentifier = Field(description="The schema identifier for the source structure (e.g. '@mikro/roi_volume')")
+    target_entity_id: str = Field(description="The ID of the target entity")
+    supporting_evidence: List[StructureReferenceInput] = Field(
+        default_factory=list,
+        description="Are you basing this measurmenet exists based on evidence other evidence? i.e. did you look at another sample to make this claim that this sample actually measures the entity? If so, include them here to have them automatically linked to the measurement edge",
+    )
+    confidence: Optional[float] = Field(default=None, description="Optional confidence score for this measurement (between 0 and 1)")
+
+
 class CreateRelationInput(RelationInput):
     """Input for creating a new relation associated with a structure."""
 
