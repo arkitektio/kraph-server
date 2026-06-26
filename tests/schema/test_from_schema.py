@@ -34,7 +34,7 @@ async def test_create_graph_from_schema(
                             "key": "TestEntity",
                             "label": "Test Entity",
                             "description": "Entity used for schema creation tests",
-                            "properties": [
+                            "propertyDefinitions": [
                                 {
                                     "key": "name",
                                     "valueKind": "STRING",

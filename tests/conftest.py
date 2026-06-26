@@ -97,15 +97,15 @@ def bio_graph_schema() -> models.GraphDefinitionInput:
             entities=[
                 models.EntityDefinitionInput(
                     key="AIS",
-                    properties=[
+                    property_definitions=[
                         models.PropertyDefinitionInput(key="avg_length", type=models.PropertyType.FLOAT, derivation=models.DerivationType.ROLLUP, rule=models.DerivationRuleInput(source_node="ROI", key="vector_length", aggregation=models.AggregationFunction.MEAN)),
                         models.PropertyDefinitionInput(key="name", type=models.PropertyType.STRING, derivation=models.DerivationType.ROLLUP, rule=models.DerivationRuleInput(source_node="ToldYouSo", key="name", aggregation=models.AggregationFunction.LATEST)),
                     ],
                 ),
-                models.EntityDefinitionInput(key="Soma", properties=[models.PropertyDefinitionInput(key="centroid", type=models.PropertyType.POINT_3D, derivation=models.DerivationType.LATEST, rule=models.DerivationRuleInput(source_node="ROI", key="centroid"))]),
+                models.EntityDefinitionInput(key="Soma", property_definitions=[models.PropertyDefinitionInput(key="centroid", type=models.PropertyType.POINT_3D, derivation=models.DerivationType.LATEST, rule=models.DerivationRuleInput(source_node="ROI", key="centroid"))]),
                 models.EntityDefinitionInput(
                     key="Cell",
-                    properties=[
+                    property_definitions=[
                         models.PropertyDefinitionInput(key="id", type=models.PropertyType.STRING),
                         models.PropertyDefinitionInput(key="mitosis_count", type=models.PropertyType.INTEGER, derivation=models.DerivationType.ROLLUP, rule=models.DerivationRuleInput(key=None, source_node="Mitosis", aggregation=models.AggregationFunction.COUNT)),
                         models.PropertyDefinitionInput(key="ais_length_summary", type=models.PropertyType.FLOAT, derivation=models.DerivationType.ROLLUP, rule=models.DerivationRuleInput(key=None, source_node="AIS", aggregation=models.AggregationFunction.LATEST)),

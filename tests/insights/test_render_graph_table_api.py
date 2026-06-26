@@ -29,6 +29,7 @@ async def test_create_and_render_graph_table_query_via_api(
                 "name": "Table Render API Test",
                 "columnInput": [
                     {
+                        "kind": "VALUE",
                         "key": "node_value",
                         "type": "string",
                         "valueKind": "STRING",
