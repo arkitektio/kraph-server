@@ -1149,6 +1149,9 @@ class CreateGraphTableQueryInput(GraphTableQueryInput):
 class CreateGraphTableQueryThroughBuilderInput(GraphTableQueryInput):
     """Input for creating a graph table query definition using the builder interface."""
 
+    # The Cypher query is generated from ``builder_args`` by the resolver, so it
+    # must not be required as input here (unlike the base GraphQueryInput).
+    query: Optional[scalars.CypherLiteral] = Field(default=None, description="Ignored; the query is generated from the builder arguments")
     graph: strawberry.ID = Field(..., description="The graph id this table query will belong to")
     builder_args: BuilderArgsInput = Field(description="Optional additional arguments for the graph query builder to support advanced features like dynamic filtering or pattern matching")
     column_input: List[ColumnInput] = Field(default_factory=list, description="Definitions for the columns returned by this graph query")
