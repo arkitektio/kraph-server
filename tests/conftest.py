@@ -10,6 +10,7 @@ from graph_engine.engine.age_engine import AgeEngine
 from api.schema import create_schema
 from authentikate.models import Client, Organization, User, Membership
 from kante.context import HttpContext, UniversalRequest
+from strawberry.http.temporal_response import TemporalResponse
 from dokker import local
 from graph_engine import input_models as models
 from graph_engine.materialize import materialize
@@ -76,7 +77,7 @@ def authenticated_context(db, backend_stack):
     )
     request.set_membership(membership)  # type: ignore
 
-    return HttpContext(request=request, headers={"Authorization": "Bearer test"}, type="http")
+    return HttpContext(request=request, response=TemporalResponse(), headers={"Authorization": "Bearer test"}, type="http")
 
 
 @pytest.fixture(scope="session")
@@ -269,4 +270,4 @@ def simple_api_context(db, backend_stack) -> HttpContext:
     )
     request.set_membership(membership)  # type: ignore
 
-    return HttpContext(request=request, headers={"Authorization": "Bearer test"}, type="http")
+    return HttpContext(request=request, response=TemporalResponse(), headers={"Authorization": "Bearer test"}, type="http")

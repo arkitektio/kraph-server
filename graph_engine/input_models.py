@@ -1736,7 +1736,7 @@ class EventBaseInput(BaseModel):
     valid_to: Optional[datetime] = Field(default=None, description="Optional end time for the validity of this event (for temporal reasoning)")
 
 
-class ValidateMeasurementInput(BaseModel, EventBaseInput):
+class ValidateMeasurementInput(EventBaseInput):
     """Input for supporting evidence that a measurement exists between a source structure and a target entity."""
 
     source_structure_id: str = Field(description="The ID of the source structure (if different from source_id)")

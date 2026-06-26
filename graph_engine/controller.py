@@ -684,11 +684,11 @@ class GraphController:
         """
         self.engine.execute(
             graph,
-            f"""
+            """
             MATCH (e) WHERE id(e) = $eid
-            SET e = $value
+            SET e += $props
             """,
-            {"eid": local_id, "key": key, "value": value},
+            {"eid": local_id, "props": {key: value}},
         )
 
     def get_node(self, graph: models.Graph, local_id: scalars.LocalID, info: Info | None = None) -> retrieved.RetrievedNode:

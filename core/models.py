@@ -152,6 +152,11 @@ class Graph(models.Model):
         return ReagentCategory.objects.filter(graph=self)
 
     @property
+    def active_schema(self) -> "GraphSchema | None":
+        """Get the currently active schema for this graph, if any."""
+        return self.schemas.filter(is_active=True).first()
+
+    @property
     def definition(self):
         """Get the GraphDefinitionModel from the active schema."""
         from graph_engine.input_models import GraphDefinitionModel
