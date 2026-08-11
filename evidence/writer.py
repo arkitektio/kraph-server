@@ -128,7 +128,7 @@ def ensure_structure(
     structure is the one recorded — later references are not re-attributions.
     """
     identifier = category.identifier or category.key
-    structure, _ = evidence_models.Structure.all_objects.get_or_create(
+    structure, _ = evidence_models.Structure.objects.for_organization(organization).get_or_create(
         organization=organization,
         identifier=identifier,
         object=object,

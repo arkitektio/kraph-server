@@ -161,7 +161,15 @@ class RetrievedNode:
 
     @property
     def global_id(self) -> str:
-        """Alias for unique_id."""
+        """A globally unique identifier for this node.
+
+        For an evidence row the primary key already *is* globally unique, so
+        there is nothing to look up. Only projected AGE nodes carry a separate
+        `global_id` property.
+        """
+        if self.row_id is not None:
+            return scalars.GlobalID(self.row_id)
+
         if not self.properties.get("global_id"):
             raise ValueError("Node is missing 'global_id' property")
 

@@ -889,7 +889,7 @@ class GraphController:
                 assertion=assertion,
             )
             for metric in payload.metrics or []:
-                self._record_metric(organization, structure, metric, info=info, assertion=assertion)
+                self._record_metric(organization, structure, metric, graph=graph, info=info, assertion=assertion)
 
         return RetrievedStructure.from_row(self, structure, graph_name=graph.age_name)
 
@@ -913,11 +913,46 @@ class GraphController:
         if not Membership.objects.filter(user=user, organization=organization, blocked=False).exists():
             raise PermissionError("You are not allowed to access this organization's evidence")
 
+    def get_structure_for_identifier(
+        self,
+        graph: models.Graph,
+        identifier: str,
+        object: str,
+        info: Info | None = None,
+    ) -> evidence_models.Structure:
+        """Resolve a structure row by its organization-scoped identity."""
+        structure = (
+            evidence_models.Structure.objects.for_organization(graph.organization)
+            .filter(identifier=identifier, object=object)
+            .first()
+        )
+        if structure is None:
+            raise ValueError(f"Structure not found for {identifier}:{object}")
+        return structure
+
+    def _structure_category_for(
+        self,
+        graph: models.Graph,
+        structure: evidence_models.Structure,
+        info: Info,
+    ) -> models.StructureCategory:
+        """The acting graph's term for this structure's kind.
+
+        A shared structure carries whichever graph's category first created it,
+        but a metric recorded through graph B has to resolve against B's schema.
+        Falls back to the structure's own category when the acting graph is the
+        one that created it, which is the common case.
+        """
+        if structure.category.graph_id == graph.pk:
+            return structure.category
+        return self.ensure_structure_category_or_raise(graph, structure.identifier, info)
+
     def _resolve_structure(self, structure_id: str, info: Info | None = None) -> evidence_models.Structure:
         """Fetch a structure by evidence primary key, then authorize against its organization."""
-        # all_objects, not objects: the organization is what we are *looking up*,
-        # so it cannot also be the filter. The access check below is what makes
-        # this safe, and is the only place in the codebase allowed to do this.
+        # all_objects, not objects: the organization is what we are *looking up*
+        # here, so it cannot also be the filter. The `_assert_can_access` call
+        # below is what makes that safe, and no use of `all_objects` is
+        # acceptable without one.
         structure = evidence_models.Structure.all_objects.filter(pk=structure_id).first()
         if structure is None:
             raise ValueError(f"Structure not found with id {structure_id}")
@@ -930,18 +965,24 @@ class GraphController:
         structure: evidence_models.Structure,
         metric_input: MetricInput,
         *,
+        graph: models.Graph,
         info: Info,
         assertion: evidence_models.Assertion,
     ) -> evidence_models.Metric:
         """Append one measurement, resolving its category from the schema.
 
-        The schema still hangs off a graph, so the graph is derived from the
-        structure's own category rather than passed in — callers that only know
-        an organization should not have to invent one.
+        `graph` is the graph *recording* the measurement, and must be passed in
+        rather than read off `structure.category.graph`. Structures dedupe on
+        `(organization, identifier, object)` and keep whichever category first
+        created the row, so a structure introduced by graph A and measured by
+        graph B would otherwise resolve B's metric against A's schema — gating on
+        A's permissions and filing any auto-created MetricCategory under A, where
+        B cannot see it. That only bites once evidence is genuinely shared across
+        graphs, which is exactly what M1 enables.
         """
         metric_category = self.ensure_metric_category_or_raise(
-            graph=structure.category.graph,
-            structure_category=structure.category,
+            graph=graph,
+            structure_category=self._structure_category_for(graph, structure, info),
             key=metric_input.key,
             value_kind=self._infer_metric_value_kind(metric_input.value),
             info=info,
@@ -1019,7 +1060,9 @@ class GraphController:
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             for metric in payload.metrics or []:
-                self._record_metric(organization, structure, metric, info=info, assertion=assertion)
+                self._record_metric(
+                    organization, structure, metric, graph=structure.category.graph, info=info, assertion=assertion
+                )
 
         return RetrievedStructure.from_row(self, structure)
 
@@ -1122,6 +1165,7 @@ class GraphController:
         structure_id: str,
         input: MetricInput,
         info: Info,
+        graph: models.Graph | None = None,
     ) -> RetrievedMetric:
         """
         Append a measurement to an existing structure.
@@ -1136,10 +1180,11 @@ class GraphController:
         """
         structure = self._resolve_structure(structure_id, info)
         organization = structure.organization
+        acting_graph = graph or structure.category.graph
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            metric = self._record_metric(organization, structure, input, info=info, assertion=assertion)
+            metric = self._record_metric(organization, structure, input, graph=acting_graph, info=info, assertion=assertion)
 
         return RetrievedMetric.from_row(self, metric)
 
@@ -1158,6 +1203,27 @@ class GraphController:
     def get_structure_by_id(self, structure_id: str, info: Info | None = None) -> RetrievedStructure:
         """Read a single structure by its evidence primary key."""
         return RetrievedStructure.from_row(self, self._resolve_structure(structure_id, info))
+
+    def get_metrics_for_structure_id(self, structure_id: str, info: Info | None = None) -> List[RetrievedMetric]:
+        """Every un-retracted metric describing a structure, by the structure's id."""
+        structure = self._resolve_structure(structure_id, info)
+        metrics = writer.active_metrics_for_structures(structure.organization, [structure.pk])
+        return [RetrievedMetric.from_row(self, row) for row in metrics]
+
+    def get_metrics_for_assertion_id(self, assertion_id: str, info: Info | None = None) -> List[RetrievedMetric]:
+        """Every metric recorded under one assertion, by the assertion's id.
+
+        Unanswerable before M1: an assertion was an AGE vertex, so its id alone
+        did not say which graph to look in. Organization-scoped rows have
+        globally unique keys, which is what makes this a real query.
+        """
+        assertion = evidence_models.Assertion.all_objects.filter(pk=assertion_id).first()
+        if assertion is None:
+            raise ValueError(f"Assertion not found with id {assertion_id}")
+        self._assert_can_access(assertion.organization, info)
+
+        metrics = evidence_models.Metric.objects.for_organization(assertion.organization).filter(assertion_id=assertion.pk)
+        return [RetrievedMetric.from_row(self, row) for row in metrics]
 
     def archive_metric(
         self,
@@ -1215,7 +1281,9 @@ class GraphController:
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             writer.archive(organization, metric, assertion)
-            replacement = self._record_metric(organization, structure, metric_input, info=info, assertion=assertion)
+            replacement = self._record_metric(
+                organization, structure, metric_input, graph=metric.category.graph, info=info, assertion=assertion
+            )
 
         return RetrievedMetric.from_row(self, replacement)
 

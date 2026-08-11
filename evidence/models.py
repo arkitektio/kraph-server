@@ -47,32 +47,6 @@ class LifecycleStatus(models.TextChoices):
     ARCHIVED = "archived", "Archived"
 
 
-class EvidenceModel(models.Model):
-    """Base for every evidence table: uuid primary key, organization scope.
-
-    ``objects`` refuses to produce a queryset unless an organization is named
-    (see :mod:`evidence.managers`). ``all_objects`` is the unrestricted escape
-    hatch, and is also what Django's own machinery uses — hence the
-    ``base_manager_name`` / ``default_manager_name`` overrides, without which
-    cascade deletes and reverse accessors would hit the raising manager.
-    """
-
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey(
-        Organization,
-        on_delete=models.CASCADE,
-        help_text="The tenant this evidence belongs to. The scope boundary — never a graph.",
-    )
-
-    objects = OrganizationScopedManager()
-    all_objects = models.Manager()
-
-    class Meta:
-        abstract = True
-        base_manager_name = "all_objects"
-        default_manager_name = "all_objects"
-
-
 class Assertion(models.Model):
     """Who claimed something, with what tool, and when they claimed it.
 
@@ -326,11 +300,20 @@ class Metric(models.Model):
 
     @property
     def value(self) -> Any:
-        """The metric's value, read from whichever column its kind selects."""
+        """The metric's value, read from whichever column its kind selects.
+
+        INT shares ``value_num`` with FLOAT so that numeric aggregation stays a
+        single-column database operation, so it has to be narrowed back on the
+        way out — otherwise a cell count of 3 reads back as 3.0 through the API.
+        """
         column = self.VALUE_COLUMN_FOR_KIND.get(self.value_kind)
         if column is None:
             raise ValueError(f"Metric {self.pk} has unknown value_kind {self.value_kind!r}")
-        return getattr(self, column)
+
+        raw = getattr(self, column)
+        if self.value_kind == ValueKind.INT.value and raw is not None:
+            return int(raw)
+        return raw
 
     def __str__(self) -> str:
         return f"{self.key}={self.value}"

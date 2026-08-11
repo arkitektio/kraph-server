@@ -748,12 +748,20 @@ class RecalculateEntityInput:
 
 @strawberry.input(description="Input for linking a structure to an entity")
 class LinkStructureInput:
-    """Input for linking an existing structure to an entity."""
+    """Input for asserting that a structure is evidence for an entity.
 
-    structure_identifier: str = strawberry.field(description="Structure identifier")
+    Identified by `(identifier, object)` rather than by primary key, because that
+    pair is what a caller naturally has — the ROI they just analysed — and it is
+    the structure's identity within the organization anyway.
+
+    The old `recalculate` flag is gone: linking records a claim, and deciding
+    which entities need re-deriving as a result is the projector's job (M3), not
+    something a client should be toggling per call.
+    """
+
+    structure_identifier: str = strawberry.field(description="Structure identifier, e.g. '@mikro/roi'")
     structure_object: str = strawberry.field(description="Structure object ID")
-    entity_id: str = strawberry.field(description="Entity ID to link to")
-    recalculate: Optional[bool] = strawberry.field(default=True, description="Whether to recalculate entity properties after linking")
+    entity_id: str = strawberry.field(description="Composite ID of the entity this structure informs")
 
 
 @pydantic.input(model=input_models.EntityDefinitionInput, all_fields=True, description="Definition of an entity type in the graph schema")

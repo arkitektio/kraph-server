@@ -6,7 +6,7 @@ Contains all GraphQL mutation resolvers for the graph engine.
 
 from .node import pin_node
 from .entity import create_entity, delete_entity, archive_entity, update_entity
-from .structure import create_structure, delete_structure, archive_structure, update_structure, ensure_structure
+from .structure import create_structure, delete_structure, archive_structure, update_structure, ensure_structure, link_structure_to_entity
 from .metric import record_metric, create_metric, update_metric, delete_metric, archive_metric
 from .relation import delete_relation, archive_relation
 from .measurement import delete_measurement, archive_measurement
@@ -77,6 +77,7 @@ __all__ = [
     "delete_structure",
     "archive_structure",
     "update_structure",
+    "link_structure_to_entity",
     "ensure_structure",
     # Metric mutations
     "record_metric",

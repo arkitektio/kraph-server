@@ -42,6 +42,7 @@ class Query:
     structure = kante.django_field(queries.structure, description="Get a structure by composite graph ID")
     structures = kante.django_field(queries.structures, description="List structures with optional filters, ordering, and pagination")
     structure_by_identifier = kante.django_field(queries.structure_by_identifier, description="Get a structure by graph, identifier and object")
+    informing_structures = kante.django_field(queries.informing_structures, description="List the structures that are evidence for an entity")
     natural_event = kante.django_field(queries.natural_event, description="Get a natural event by composite graph ID")
     natural_events = kante.django_field(queries.natural_events, description="List natural events for a natural event category")
     protocol_event = kante.django_field(queries.protocol_event, description="Get a protocol event by composite graph ID")
@@ -62,6 +63,8 @@ class Query:
     structure_relations = kante.django_field(queries.structure_relations, description="List structure relations for a structure relation category")
     metric = kante.django_field(queries.metric, description="Get a metric by ID")
     metrics = kante.django_field(queries.metrics, description="List metrics for a metric category")
+    metrics_for_structure = kante.django_field(queries.metrics_for_structure, description="List every un-retracted metric describing a structure")
+    measurements_for_assertion = kante.django_field(queries.measurements_for_assertion, description="List every metric recorded under one assertion")
     activity = kante.django_field(queries.activity, description="Get an activity node by composite graph ID")
     activities = kante.django_field(queries.activities, description="List activities in a graph with optional filters, ordering, and pagination")
 
@@ -195,6 +198,10 @@ class Mutation:
     archive_structure = kante.django_mutation(
         description="Archive a structure in the graph (soft delete)",
         resolver=mutations.archive_structure,
+    )
+    link_structure_to_entity = kante.django_mutation(
+        description="Assert that a structure is evidence for an entity",
+        resolver=mutations.link_structure_to_entity,
     )
     update_structure = kante.django_mutation(
         description="Update an existing structure in the graph",

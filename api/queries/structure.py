@@ -48,24 +48,26 @@ def structure(
     id: scalars.GraphID,
 ) -> types.Structure:
     """
-    Fetch a specific structure by composite graph ID.
+    Fetch a specific structure by its evidence ID.
+
+    Structures live in the relational evidence base and are scoped to the
+    organization, so the id is a bare primary key with no graph component to
+    split out. The controller resolves the row and then authorizes the caller
+    against that row's organization.
 
     Args:
         info: Strawberry Info context
-        id: Composite graph id (format: "graph_id:node_id")
+        id: The structure's evidence primary key
 
     Returns:
-        Structure object or None if not found
+        Structure object
+
+    Raises:
+        ValueError: if no structure has that id
     """
     controller = context.get_controller()
 
-    graph_id = context.extract_graph_id(id)
-    local_id = context.extract_node_id(id)
-
-    graph = context.get_accessible_graph(info, graph_id)
-    response = controller.get_node(graph=graph, local_id=local_id, info=info)
-
-    return types.Structure(_value=response)
+    return types.Structure(_value=controller.get_structure_by_id(str(id), info))
 
 
 def structures(
@@ -114,10 +116,9 @@ def informing_structures(
     """
     controller = context.get_controller()
 
-    graph_id = context.extract_graph_id(entity_id)
-    context.extract_node_id(entity_id)
-
-    graph = context.get_accessible_graph(info, graph_id)
+    # Entities are still projected into AGE, so their ids remain composite —
+    # unlike the structures this returns.
+    graph = context.get_accessible_graph(info, context.extract_graph_id(entity_id))
 
     responses = controller.get_informing_structures(graph, entity_id=entity_id, info=info)
     return [types.Structure(_value=r) for r in responses]

@@ -624,15 +624,26 @@ class Node(Generic[V]):
     def __hash__(self):
         return hash(self._value)
 
-    @strawberry.field(description="Local AGE graph ID")
-    def graph_id(self) -> int:
-        return self._value.id
+    @strawberry.field(description="Local AGE graph ID, or null for evidence rows that are not projected into a graph")
+    def graph_id(self) -> Optional[int]:
+        """The AGE vertex id.
 
-    @kante.django_field(description="The graph this node belongs to")
-    def graph(self) -> Graph:
-        """Fetch the graph this node belongs to."""
-        # In a real implementation, we would fetch the graph based on the node's graph_id.
-        # For this example, we'll return None for simplicity.
+        Null for structures, metrics and assertions: they live in the relational
+        evidence base, not in any graph, so there is no vertex id to report.
+        Returning 0 would have been a lie that sorts and compares.
+        """
+        return None if self._value.is_row_backed else self._value.id
+
+    @kante.django_field(description="The graph this node belongs to, or null for organization-scoped evidence")
+    def graph(self) -> Optional[Graph]:
+        """Fetch the graph this node belongs to.
+
+        Evidence is organization-scoped and shared across every projection over
+        that organization, so asking which graph a structure belongs to has no
+        single answer. Null is the honest one.
+        """
+        if self._value.is_row_backed or not self._value.graph_name:
+            return None
         return cast(Graph, models.Graph.objects.get_graph_from_graph_name(self._value.graph_name))
 
     @strawberry.field(description="Global identifier in format 'graph_name:graph_id'")

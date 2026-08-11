@@ -15,22 +15,22 @@ def metric(
     """
     Fetch a single metric by ID.
 
+    Metrics live in the relational evidence base, so the id is a bare primary
+    key rather than a `{graph}:{node}` composite.
+
     Args:
         info: Strawberry Info context
-        metric_id: The metric's graph ID
+        metric_id: The metric's evidence primary key
 
     Returns:
         A Metric object
+
+    Raises:
+        ValueError: if no metric has that id
     """
     controller = context.get_controller()
 
-    graph_id = context.extract_graph_id(metric_id)
-    local_id = context.extract_node_id(metric_id)
-
-    graph = context.get_accessible_graph(info, graph_id)
-
-    response = controller.get_node(graph, local_id=local_id, info=info)
-    return types.Metric(_value=response)
+    return types.Metric(_value=controller.get_metric(str(metric_id), info))
 
 
 def metrics(
@@ -53,50 +53,37 @@ def metrics_for_structure(
 
     Args:
         info: Strawberry Info context
-        identifier: Structure identifier (e.g. '@mikro/roi')
-        object: Structure object ID
+        structure_id: The structure's evidence primary key
 
     Returns:
-        List of Measurement objects
+        List of Metric objects
     """
     controller = context.get_controller()
-    graph_id = context.extract_graph_id(structure_id)
-    local_id = context.extract_node_id(structure_id)
 
-    graph = context.get_accessible_graph(info, graph_id)
-    structure_node = controller.get_node(graph, local_id=local_id, info=info)
-    structure_identifier = structure_node.properties.get("identifier")
-    structure_object = structure_node.properties.get("object")
-
-    if structure_identifier is None or structure_object is None:
-        raise ValueError("Structure is missing identifier/object properties")
-
-    responses = controller.get_metrics_for_structure(
-        graph=graph,
-        identifier=structure_identifier,
-        structure_object=structure_object,
-        info=info,
-    )
+    responses = controller.get_metrics_for_structure_id(str(structure_id), info)
     return [types.Metric(_value=r) for r in responses]
 
 
 def measurements_for_assertion(
     info: Info,
-    assertion_id: int,
+    assertion_id: scalars.GraphID,
 ) -> List[types.Metric]:
     """
     Fetch all measurements that were asserted by a given assertion.
 
+    This used to be unimplementable: an assertion was an AGE vertex, so its id
+    alone did not say which graph to look in. Assertions are organization-scoped
+    rows now and their primary key is globally unique, which is what makes the
+    query answerable at all.
+
     Args:
         info: Strawberry Info context
-        assertion_id: The assertion's graph ID
+        assertion_id: The assertion's evidence primary key
 
     Returns:
-        List of Measurement objects
+        List of Metric objects
     """
-    # For assertion queries, we need to extract the graph from the assertion_id
-    # This is a temporary solution - ideally assertion_id would include graph prefix
-    # For now, we'll need to handle this differently or require graph_id as parameter
-    # TODO: This needs graph_id - assertion_id alone doesn't contain it
-    # This might need refactoring to include graph context
-    raise NotImplementedError("measurements_for_assertion needs graph_id context")
+    controller = context.get_controller()
+
+    responses = controller.get_metrics_for_assertion_id(str(assertion_id), info)
+    return [types.Metric(_value=r) for r in responses]

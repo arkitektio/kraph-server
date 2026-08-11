@@ -205,3 +205,6 @@ def test_value_kind_selects_the_value_column(organization: Organization, roi_cat
         )
         metric.refresh_from_db()
         assert metric.value == expected, f"{kind.value} did not round-trip"
+        # `==` is not enough for INT: it shares `value_num` with FLOAT, and
+        # `3.0 == 3` would let an integer metric silently come back as a float.
+        assert type(metric.value) is type(expected), f"{kind.value} round-tripped as {type(metric.value).__name__}"

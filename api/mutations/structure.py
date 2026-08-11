@@ -145,3 +145,45 @@ def update_structure(
     )
 
     return types.Structure(_value=updated)
+
+
+def link_structure_to_entity(
+    info: Info,
+    input: inputs.LinkStructureInput,
+) -> types.Structure:
+    """
+    Assert that a structure is evidence for an entity.
+
+    This is a pure evidence write: it records the claim that a given ROI (or
+    image, or file) justifies a given entity, as an `INFORMS` link under a fresh
+    assertion. Which structures support an entity is a statement about the world,
+    so it outlives any particular graph projected from it.
+
+    It does **not** recompute the entity's properties. That is the projector's
+    job and arrives in M3 — see `GraphController._recalculate_entity`, which
+    raises rather than pretending otherwise.
+
+    Args:
+        info: Strawberry Info context
+        input: The structure to link and the entity to link it to
+
+    Returns:
+        The structure, unchanged apart from now having one more link pointing at it
+    """
+    controller = context.get_controller()
+
+    graph = context.get_accessible_graph(info, context.extract_graph_id(input.entity_id))
+    structure = controller.get_structure_for_identifier(
+        graph=graph,
+        identifier=input.structure_identifier,
+        object=input.structure_object,
+        info=info,
+    )
+
+    linked = controller.link_structure_to_entity(
+        structure_id=str(structure.pk),
+        entity_id=input.entity_id,
+        info=info,
+    )
+
+    return types.Structure(_value=linked)
