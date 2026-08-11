@@ -154,36 +154,6 @@ def update_entity(
     return types.Entity(_value=updated)
 
 
-def recalculate_entity(
-    info: Info,
-    input: inputs.RecalculateEntityInput,
-) -> types.Entity:
-    """
-    Force recalculation of an entity's derived properties.
-
-    This is useful after batch linking operations where
-    recalculate was set to False.
-
-    Args:
-        info: Strawberry Info context
-        input: RecalculateEntityInput with graph_id and entity_id
-
-    Returns:
-        Updated Entity with recalculated properties
-    """
-    controller = context.get_controller()
-
-    graph_id = context.extract_graph_id(input.entity_id)
-    node_id = context.extract_node_id(input.entity_id)
-
-    graph = context.get_accessible_graph(info, graph_id)
-
-    # Get entity first to find its  and kind
-    entity = controller.get_node(graph, local_id=node_id, info=info)
-
-    return types.Entity(_value=entity)
-
-
 def set_entity_property(
     info: Info,
     input: inputs.SetEntityPropertyInput,
@@ -223,7 +193,10 @@ def set_entity_property(
         key=model.key,
         value=model.value,
     )
-    controller._recalculate_entity(entity_category, node_id)
+    # Only the system metadata is refreshed. The value was written directly and
+    # is not derived from evidence, so there is nothing to recompute — and
+    # `_recalculate_entity` deliberately raises until the projector lands in M3.
+    controller._stamp_projection(entity_category, node_id)
 
     updated_entity = controller.get_node(graph, local_id=node_id, info=info)
     return types.Entity(_value=updated_entity)

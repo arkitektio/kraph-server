@@ -1874,9 +1874,8 @@ class GraphExtensionsInput(BaseModel):
     """
     Input for graph extensions (the main schema content).
 
-    Note: Structures are no longer defined in the schema. They are
-    dynamically resolved via get_label_for_identifier() from the
-    IDENTIFIER_MAP in graph_engine.base_models.
+    Note: Structures are no longer defined in the schema. They are resolved
+    dynamically from the structure identifier at write time.
     """
 
     sequences: List[SequenceInput] = Field(default_factory=list, description="Graph sequences for ordering entities")

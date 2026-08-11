@@ -18,7 +18,18 @@ class MockCypherEngine:
         self.log: List[tuple] = []  # Stores (graph, query, params) tuples
         self.return_values: List[List[Dict[str, Any]]] = []  # Stack of fake results to pop
         self._next_id = 844424930131969  # Start with a realistic AGE ID
-    
+        self.created_graphs: List[str] = []
+        self.dropped_graphs: List[str] = []
+
+    def create_graph(self, age_name: str) -> None:
+        """Record graph creation. Satisfies CypherEngine."""
+        self.created_graphs.append(age_name)
+
+    def drop_graph(self, age_name: str, cascade: bool = True) -> None:
+        """Record graph deletion. Satisfies CypherEngine."""
+        self.dropped_graphs.append(age_name)
+
+
     @property
     def query_log(self) -> List[tuple]:
         """Alias for log for better readability in tests."""
@@ -35,7 +46,7 @@ class MockCypherEngine:
         
         # Normalize whitespace for easier testing comparison
         clean_query = " ".join(query.split())
-        self.log.append((graph.age_name if graph else None, clean_query, params))
+        self.log.append((graph.get_age_name() if graph else None, clean_query, params))
         
         # Return user-provided values first
         if self.return_values:

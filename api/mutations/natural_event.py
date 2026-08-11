@@ -3,34 +3,34 @@ Natural event mutation resolvers.
 """
 
 from kante.types import Info
-import time
 
 from api import types, inputs, context
 from core import models
+from evidence import writer
 from graph_engine import scalars
 
 
 def _archive_natural_event_by_local_id(controller, graph, local_id: scalars.LocalID, info: Info) -> None:
-    assertion_id = controller._create_provenance_node(graph, controller._provenance_from_info(info))
-    archived_at = int(time.time() * 1000)
+    # The retraction is an assertion about instance data, so it goes to the
+    # evidence lifecycle log. The previous version created a LifeCycleAssertion
+    # vertex hanging off an `(a:Assertion)` match that no longer resolves after
+    # M1 — the CREATE simply never fired and the archive was silently dropped.
+    assertion = controller._create_assertion(graph.organization, controller._provenance_from_info(info))
+
+    writer.archive_ref(
+        graph.organization,
+        target_type="event",
+        target_id=f"{graph.age_name}:{local_id}",
+        assertion=assertion,
+    )
 
     controller.engine.execute(
         graph,
         """
-        MATCH (a:Assertion) WHERE id(a) = $aid
         MATCH (e) WHERE id(e) = $eid
-        CREATE (lc:LifeCycleAssertion {status: $status, archived_at: $archived_at, timestamp: $timestamp})
-        CREATE (a)-[:ASSERTED]->(lc)
-        CREATE (lc)-[:INFORMS]->(e)
-        RETURN id(lc) as lifecycle_id
+        SET e.__lifecycle_state = $status
         """,
-        {
-            "aid": assertion_id,
-            "eid": local_id,
-            "status": "archived",
-            "archived_at": archived_at,
-            "timestamp": archived_at,
-        },
+        {"eid": local_id, "status": "archived"},
     )
 
 

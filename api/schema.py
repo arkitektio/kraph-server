@@ -139,9 +139,6 @@ class Query:
     edge_path_queries: list[types.EdgePathQuery] = kante.django_field(description="Show all saved edge path queries")
     edge_path_query: types.EdgePathQuery = kante.django_field(description="Show a single saved edge path query by ID")
 
-    render_graph_nodes = kante.django_field(queries.render_graph_nodes, description="Render results for a graph nodes query")
-    render_graph_path = kante.django_field(queries.render_graph_path, description="Render results for a graph path query")
-    render_graph_pairs = kante.django_field(queries.render_graph_pairs, description="Render results for a graph pairs query")
     render_graph_table = kante.django_field(queries.render_graph_table, description="Render results for a graph table query")
 
     scatter_plots: list[types.ScatterPlot] = kante.django_field(description="Show all saved scatter plots")
@@ -222,22 +219,6 @@ class Mutation:
     update_metric = kante.django_mutation(
         description="Update an existing metric in the graph",
         resolver=mutations.update_metric,
-    )
-    create_relation = kante.django_mutation(
-        description="Create a new relation in the graph",
-        resolver=mutations.create_relation,
-    )
-    update_relation = kante.django_mutation(
-        description="Update an existing relation in the graph",
-        resolver=mutations.update_relation,
-    )
-    create_measurement = kante.django_mutation(
-        description="Create a new measurement in the graph",
-        resolver=mutations.create_measurement,
-    )
-    update_measurement = kante.django_mutation(
-        description="Update an existing measurement in the graph",
-        resolver=mutations.update_measurement,
     )
     delete_measurement = kante.django_mutation(
         description="Delete a measurement from the graph",

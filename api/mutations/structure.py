@@ -38,6 +38,7 @@ def create_structure(
     response = controller.create_structure(
         structure_category=structure_category,
         payload=payload,
+        info=info,
     )
 
     return types.Structure(_value=response)
@@ -73,6 +74,7 @@ def ensure_structure(
     response = controller.create_structure(
         structure_category=structure_category,
         payload=payload,
+        info=info,
     )
 
     return types.Structure(_value=response)
@@ -95,15 +97,9 @@ def delete_structure(
     controller = context.get_controller()
 
     model = input.to_pydantic()  # Validate input with Pydantic models
-    # Extract graph ID and local ID from composite ID
-    graph_id = context.extract_graph_id(model.id)
-    local_id = context.extract_node_id(model.id)
-
-    graph = context.get_accessible_graph(info, graph_id)
-
     controller.delete_structure(
-        graph,
-        structure_id=local_id,
+        structure_id=str(model.id),
+        info=info,
     )
 
     return model.id
@@ -126,54 +122,12 @@ def archive_structure(
     controller = context.get_controller()
 
     model = input.to_pydantic()  # Validate input with Pydantic models
-    # Extract graph ID and local ID from composite ID
-    graph_id = context.extract_graph_id(model.id)
-    local_id = context.extract_node_id(model.id)
-
-    graph = context.get_accessible_graph(info, graph_id)
-
     structure = controller.archive_structure(
-        graph,
-        structure_id=local_id,
+        structure_id=str(model.id),
         info=info,
     )
 
     return types.Structure(_value=structure)
-
-
-def link_structure_to_entity(
-    info: Info,
-    input: inputs.LinkStructureInput,
-) -> types.Measurement:
-    """
-    Link an existing structure to an existing entity.
-
-    This creates an INFORMS relationship, allowing the structure's
-    measurements to contribute to the entity's derived properties.
-
-    By default, entity properties are recalculated after linking.
-    Set recalculate=False for batch operations.
-
-    Args:
-        info: Strawberry Info context
-        input: LinkStructureInput
-
-    Returns:
-        types.Informs object representing the new relationship
-    """
-
-    controller = context.get_controller()
-
-    entity_response = controller.link_structure_to_entity(
-        structure_identifier=input.structure_identifier,
-        structure_object=input.structure_object,
-        entity_id=input.entity_id,
-        recalculate=input.recalculate if input.recalculate is not None else True,
-    )
-
-    return types.Measurement(
-        _value=entity_response,
-    )
 
 
 def update_structure(
@@ -184,14 +138,8 @@ def update_structure(
     controller = context.get_controller()
 
     model = input.to_pydantic()
-    graph_id = context.extract_graph_id(model.id)
-    local_id = context.extract_node_id(model.id)
-
-    graph = context.get_accessible_graph(info, graph_id)
-
     updated = controller.update_structure(
-        graph,
-        structure_id=local_id,
+        structure_id=str(model.id),
         payload=model,
         info=info,
     )

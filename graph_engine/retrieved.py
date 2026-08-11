@@ -15,7 +15,15 @@ if TYPE_CHECKING:
     from graph_engine.controller import GraphController
 
 
-# Reserved property keys that should not be exposed as user properties
+# Reserved property keys that should not be exposed as user properties.
+#
+# Two separate rules apply, and conflating them is what previously leaked internals:
+#   1. These named keys carry node identity/metadata rather than user data.
+#   2. Any key prefixed with `__` is written by the projection layer
+#      (`__schema_version`, `__last_derived`, `__lifecycle_state`, `__measured__*`,
+#      `__shadow_link_id`) and is never user data. Filtering by prefix means new
+#      internal keys are excluded automatically instead of leaking until someone
+#      remembers to extend this set.
 RESERVED_PROPERTY_KEYS = frozenset(
     {
         "type",
@@ -28,11 +36,15 @@ RESERVED_PROPERTY_KEYS = frozenset(
         "pinned_by",
         "identifier",
         "object",
-        "schema_version",
-        "last_derived",
-        "lyfecyle_status",
     }
 )
+
+INTERNAL_PROPERTY_PREFIX = "__"
+
+
+def is_internal_property_key(key: str) -> bool:
+    """Whether a raw node property key is engine-internal rather than user data."""
+    return key in RESERVED_PROPERTY_KEYS or key.startswith(INTERNAL_PROPERTY_PREFIX)
 
 
 # Type literals for node discrimination
@@ -108,12 +120,33 @@ class RetrievedNode:
     id: int
     label: str
     properties: Dict[str, Any] = field(default_factory=dict)
+    row_id: Optional[str] = None
+    """Primary key when this node is backed by a relational evidence row.
+
+    Structures, metrics and assertions live in Postgres, not in AGE, so they have
+    a real SQL primary key and no meaningful AGE vertex id. When this is set it
+    is the node's identity and `id`/`graph_name` carry no information. Everything
+    still projected into AGE — entities, events, relation edges — leaves it None
+    and keeps the composite `{graph_name}:{id}` form unchanged.
+    """
 
     # === Core ID Properties ===
 
     @property
+    def is_row_backed(self) -> bool:
+        """Whether this node came from the evidence tables rather than from AGE."""
+        return self.row_id is not None
+
+    @property
     def unique_id(self) -> str:
-        """Global unique identifier in format 'graph_name:graph_id'."""
+        """Global unique identifier.
+
+        `{graph_name}:{id}` for projected nodes, the bare primary key for
+        evidence rows — which are organization-scoped and so cannot be named by a
+        graph without lying about where they live.
+        """
+        if self.row_id is not None:
+            return self.row_id
         return f"{self.graph_name}:{self.id}"
 
     @property
@@ -142,7 +175,7 @@ class RetrievedNode:
     @property
     def graph_id(self) -> scalars.GraphID:
         """Alias for local_id - the AGE graph ID."""
-        return scalars.GraphID(f"{self.graph_name}:{self.id}")
+        return scalars.GraphID(self.unique_id)
 
     # === Type Discrimination ===
 
@@ -238,17 +271,13 @@ class RetrievedNode:
         """Get a single property value by key."""
         return self.cleaned_properties.get(key, default)
 
-    def get_all_variables(self) -> List["RetrievedVariable"]:
-        """Get all user-facing properties as RetrievedVariable objects."""
-        return [RetrievedVariable(key=k, value=v) for k, v in self.cleaned_properties.items()]
-
     @property
     def cleaned_properties(self) -> Dict[str, Any]:
         """
         Get properties with reserved keys filtered out.
         These are the user-facing properties.
         """
-        return {k: v for k, v in self.properties.items() if k not in RESERVED_PROPERTY_KEYS}
+        return {k: v for k, v in self.properties.items() if not is_internal_property_key(k)}
 
     # === Hash/Equality ===
 
@@ -442,7 +471,7 @@ class RetrievedEdge:
         Get properties with reserved keys filtered out.
         These are the user-facing properties.
         """
-        return {k: v for k, v in self.properties.items() if k not in RESERVED_PROPERTY_KEYS}
+        return {k: v for k, v in self.properties.items() if not is_internal_property_key(k)}
 
     @property
     def shadow_link_id(self) -> Optional[int]:
@@ -507,10 +536,9 @@ class RetrievedReifiesAsSource(RetrievedEdge):
 class RetrievedEntity(RetrievedNode):
     """A retrieved Entity node from the AGE graph."""
 
-    @property
-    def schema_hash(self) -> Optional[str]:
-        """The schema hash of the entity."""
-        return self.properties.get("schema_hash")
+    # NOTE: there is no `schema_hash` accessor here. The projection layer writes
+    # `__schema_version`, never `schema_hash`, so the old accessor always returned
+    # None. Use the inherited `schema_version` property instead.
 
     @property
     def entity_id(self) -> Optional[str]:
@@ -520,9 +548,30 @@ class RetrievedEntity(RetrievedNode):
 
 @dataclass
 class RetrievedStructure(RetrievedNode):
-    """A retrieved Structure node from the AGE graph."""
+    """A structure, read from the relational evidence base.
 
-    pass
+    Structures stopped being AGE vertices in M1. This stays a `RetrievedNode`
+    rather than becoming a strawberry-django type so that `api/types.py` keeps
+    working untouched — rewriting that layer is M5's job, and doing it here would
+    mean doing it twice.
+    """
+
+    @classmethod
+    def from_row(cls, controller: "GraphController", row: Any, graph_name: str = "") -> "RetrievedStructure":
+        """Adapt an `evidence.models.Structure` row to the node-shaped API surface."""
+        return cls(
+            controller=controller,
+            graph_name=graph_name,
+            id=0,
+            label=vocab.Structure,
+            row_id=str(row.pk),
+            properties={
+                "identifier": row.identifier,
+                "object": row.object,
+                "category_id": str(row.category_id),
+                "__lifecycle_state": row.status,
+            },
+        )
 
 
 @dataclass
@@ -600,14 +649,47 @@ class RetrievedMeasurement(RetrievedEdge):
 
 @dataclass
 class RetrievedMetric(RetrievedNode):
-    """A retrieved Metric node from the AGE graph."""
-
-    pass
+    """A metric, read from the relational evidence base."""
 
     @property
     def value(self) -> Any:
         """The metric value."""
         return self.properties.get("value")
+
+    @property
+    def measured_at(self) -> Optional[datetime]:
+        """When the world was observed."""
+        return self.properties.get("__measured_at")
+
+    @property
+    def asserted_at(self) -> Optional[datetime]:
+        """When this measurement was claimed."""
+        return self.properties.get("__asserted_at")
+
+    @classmethod
+    def from_row(cls, controller: "GraphController", row: Any, graph_name: str = "") -> "RetrievedMetric":
+        """Adapt an `evidence.models.Metric` row to the node-shaped API surface."""
+        properties: Dict[str, Any] = {
+            "key": row.key,
+            "value": row.value,
+            "category_id": str(row.category_id),
+            "__measured_at": row.measured_at,
+            "__asserted_at": row.asserted_at,
+            "__lifecycle_state": row.status,
+        }
+        for optional_key in ("unit", "confidence", "confidence_type"):
+            value = getattr(row, optional_key, None)
+            if value is not None:
+                properties[optional_key] = value
+
+        return cls(
+            controller=controller,
+            graph_name=graph_name,
+            id=0,
+            label=vocab.Metric,
+            row_id=str(row.pk),
+            properties=properties,
+        )
 
 
 @dataclass
@@ -675,6 +757,26 @@ class RetrievedAssertion(RetrievedActivity):
     def action_args(self) -> Optional[Any]:
         """Action arguments as JSON."""
         return self.properties.get("action_args")
+
+    @classmethod
+    def from_row(cls, controller: "GraphController", row: Any, graph_name: str = "") -> "RetrievedAssertion":
+        """Adapt an `evidence.models.Assertion` row to the node-shaped API surface."""
+        return cls(
+            controller=controller,
+            graph_name=graph_name,
+            id=0,
+            label=vocab.Assertion,
+            row_id=str(row.pk),
+            properties={
+                "subject": row.subject,
+                "app_id": row.app_id,
+                "action_name": row.action_name,
+                "action_args": row.action_args,
+                "__asserted_at": row.asserted_at,
+                # Kept for the GraphQL `timestamp` surface, which still speaks ms epoch.
+                "timestamp": int(row.asserted_at.timestamp() * 1000),
+            },
+        )
 
 
 # ==========================================
@@ -746,47 +848,3 @@ class RetrievedNodeTableRender:
     rows: List[Dict[str, Any]]
 
 
-def node_from_age_result(
-    graph_name: str,
-    vertex_data: Dict[str, Any],
-) -> RetrievedNode:
-    """
-    Create a RetrievedNode from raw AGE vertex data.
-
-    Args:
-        graph_name: The AGE graph name
-        vertex_data: Raw vertex data from AGE query result
-
-    Returns:
-        RetrievedNode instance
-    """
-    return RetrievedNode(
-        graph_name=graph_name,
-        id=vertex_data.get("id", 0),
-        label=vertex_data.get("label", "Unknown"),
-        properties=vertex_data.get("properties", {}),
-    )
-
-
-def edge_from_age_result(
-    graph_name: str,
-    edge_data: Dict[str, Any],
-) -> RetrievedEdge:
-    """
-    Create a RetrievedEdge from raw AGE edge data.
-
-    Args:
-        graph_name: The AGE graph name
-        edge_data: Raw edge data from AGE query result
-
-    Returns:
-        RetrievedEdge instance
-    """
-    return RetrievedEdge(
-        graph_name=graph_name,
-        id=edge_data.get("id", 0),
-        label=edge_data.get("label", "Unknown"),
-        left_id=edge_data.get("start_id", 0),
-        right_id=edge_data.get("end_id", 0),
-        properties=edge_data.get("properties", {}),
-    )

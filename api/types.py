@@ -16,7 +16,7 @@ from datetime import datetime
 from api import loaders, order, pagination, filters
 from datalayer.types import MediaStore
 from graph_engine.scalars import AnyScalar, UnixMilliseconds, StructureIdentifier, GlobalID
-from graph_engine.retrieved import RetrievedMetric, RetrievedNode, RetrievedEdge, RetrievedStructure, RetrievedVariable
+from graph_engine.retrieved import RetrievedMetric, RetrievedNode, RetrievedEdge, RetrievedStructure
 from graph_engine import get_controller, input_models
 import kante
 from core import models
@@ -550,26 +550,12 @@ class ScatterPlot:
             raise ValueError("ScatterPlot must have either a graph_query, node_query, or path_query")
 
 
-@strawberry.type(description="A property/variable from a node")
-class Property:
-    """A single property with key and value from a graph node."""
-
-    _value: strawberry.Private[RetrievedVariable]
-
-    @strawberry.field(description="The property key/name")
-    def key(self) -> str:
-        return self._value.key
-
-    @strawberry.field(description="The property value")
-    def value(self) -> AnyScalar:
-        return self._value.value
-
-
 @strawberry.type(description="A rich property with metadata from schema and graph")
 class RichProperty:
-    _entity: strawberry.Private[RetrievedNode]
+    # Both NodeCategory and EdgeCategory expose `property_map`; the base Category does not.
+    _entity: strawberry.Private[RetrievedNode | RetrievedEdge]
     _key: strawberry.Private[str]
-    _category: strawberry.Private[models.EntityCategory]
+    _category: strawberry.Private["models.NodeCategory | models.EdgeCategory"]
 
     @strawberry.field(description="Local AGE graph ID")
     def graph_id(self) -> scalars.GraphID:
@@ -577,12 +563,14 @@ class RichProperty:
 
     @strawberry.field(description="The property key/name")
     async def definition(self) -> Optional[PropertyDefinition]:
-        """Fetch the property definition from the schema based on the key."""
-        # In a real implementation, we would look up the entity's category,
-        # then find the property definition matching this key.
-        # For this example, we'll return None for simplicity.
-
-        return self._category.property_definitions.filter(name=self._key).first()
+        """Fetch the property definition for this key from the category's schema."""
+        # `property_definitions` is a JSON list, not a related manager — `property_map`
+        # rehydrates it into pydantic models keyed by property key. No DB access here,
+        # which is what keeps this safe to call from an async resolver.
+        definition = self._category.property_map.get(self._key)
+        if definition is None:
+            return None
+        return PropertyDefinition.from_pydantic(definition)
 
     @strawberry.field(description="The timestamp when this property was last derived (unix ms)")
     async def key(self) -> Optional[str]:
@@ -873,9 +861,9 @@ class NaturalEvent(VersionedNode, Event):
         """Combine raw properties with schema definitions for a rich view."""
         # Category lookup and schema merging logic would go here in a real implementation.
         assert self._value.category_id is not None, "Entity must have a category_id to fetch property definitions"
-        category = await loaders.entity_category_loader.load([self._value.category_id])
+        category = await loaders.natural_event_category_loader.load(self._value.category_id)
 
-        return [RichProperty(_node=self, _key=var, _category=category) for var in self._value.cleaned_properties]
+        return [RichProperty(_entity=self._value, _key=var, _category=category) for var in self._value.cleaned_properties]
 
     @strawberry.field(description="List of the current derived properties for this entity")
     def properties(self) -> AnyScalar:
@@ -982,9 +970,9 @@ class ProtocolEvent(VersionedNode, Event):
         """Combine raw properties with schema definitions for a rich view."""
         # Category lookup and schema merging logic would go here in a real implementation.
         assert self._value.category_id is not None, "Entity must have a category_id to fetch property definitions"
-        category = await loaders.entity_category_loader.load([self._value.category_id])
+        category = await loaders.protocol_event_category_loader.load(self._value.category_id)
 
-        return [RichProperty(_node=self, _key=var, _category=category) for var in self._value.cleaned_properties]
+        return [RichProperty(_entity=self._value, _key=var, _category=category) for var in self._value.cleaned_properties]
 
     @strawberry.field(description="List of the current derived properties for this entity")
     def properties(self) -> AnyScalar:
@@ -1144,17 +1132,12 @@ class Relation(Edge[retrieved.RetrievedEdge]):
         return await loaders.relation_category_loader.load(self._value.category_id)
 
     @strawberry.field(description="List of properties derived for this entity")
-    def rich_properties(self) -> List[RichProperty]:
+    async def rich_properties(self) -> List[RichProperty]:
         """Combine raw properties with schema definitions for a rich view."""
-        # In a real implementation, we would fetch the schema definitions
-        # for this entity's category and merge them with the raw properties.
-        # For this example, we'll just return the raw properties as RichProperties.
-        return [
-            RichProperty(
-                _value,
-            )
-            for var in self._value.cleaned_properties
-        ]
+        assert self._value.category_id is not None, "Relation must have a category_id to fetch property definitions"
+        category = await loaders.relation_category_loader.load(self._value.category_id)
+
+        return [RichProperty(_entity=self._value, _key=var, _category=category) for var in self._value.cleaned_properties]
 
     @strawberry.field(description="List of the current derived properties for this entity")
     def properties(self) -> AnyScalar:

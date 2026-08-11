@@ -6,7 +6,7 @@ Defines the protocols (interfaces) for graph engines and graph contexts.
 from typing import Any, Dict, List, Protocol, runtime_checkable, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from graph_engine.base_models import GraphDefinitionModel
+    from graph_engine.input_models import GraphDefinitionModel
 
 
 @runtime_checkable
@@ -34,11 +34,15 @@ class SimpleGraph:
             raise ValueError("definition cannot be None")
         self._age_name = age_name
         self._definition = definition
-    
+
+    def get_age_name(self) -> str:
+        """The Apache AGE graph name. Satisfies GraphProtocol."""
+        return self._age_name
+
     @property
     def age_name(self) -> str:
         return self._age_name
-    
+
     @property
     def definition(self) -> "GraphDefinitionModel":
         return self._definition
@@ -78,10 +82,27 @@ class CypherEngine(Protocol):
         age_name: str,
     ) -> None:
         """
-        Create a new graph in the database based on the provided definition.
-        
+        Create a new graph in the database, if it does not already exist.
+
         Args:
-            graph: The Graph model instance representing the graph to create
-            definition: The GraphDefinitionModel defining the schema
+            age_name: The Apache AGE graph name to create
+        """
+        ...
+
+    def drop_graph(
+        self,
+        age_name: str,
+        cascade: bool = True,
+    ) -> None:
+        """
+        Drop a graph and everything in it.
+
+        The projection tier is disposable by design, so dropping and replaying is a
+        routine operation, not an exceptional one. Test teardown and `reproject` both
+        rely on this being part of the seam.
+
+        Args:
+            age_name: The Apache AGE graph name to drop
+            cascade: Whether to drop dependent objects as well
         """
         ...

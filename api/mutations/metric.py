@@ -1,12 +1,17 @@
 """
-Measurement mutation resolvers.
+Metric mutation resolvers.
+
+Metrics live in the relational evidence base and are scoped to the organization,
+not to a graph. Their IDs are therefore bare primary keys: there is no composite
+`{graph}:{id}` to pull a graph out of, so the controller resolves the row first
+and then authorizes the caller against *its* organization.
 """
 
 from kante.types import Info
 
 from api import types, inputs, context
 from graph_engine.scalars import GraphID
-from graph_engine import input_models, scalars
+from graph_engine import input_models
 
 
 def record_metric(
@@ -53,13 +58,13 @@ def record_metric(
                 payload=input_models.StructureInput(
                     object=model.object,
                 ),
+                info=info,
             )
         else:
             raise ValueError(f"Structure with object '{model.object}' does not exist in graph '{model.graph}' and auto-adding structures is not allowed")
 
     response = controller.create_metric(
-        graph,
-        structure_id=s.local_id,
+        structure_id=s.unique_id,
         input=model,
         info=info,
     )
@@ -74,33 +79,24 @@ def create_metric(
     """
     Add a measurement to an existing structure.
 
-    If the structure doesn't exist, it will be created automatically.
-
     Args:
         info: Strawberry Info context
-        input: AddMeasurementInput
+        input: CreateMetricInput, where `structure` is an evidence primary key
 
     Returns:
-        Created Measurement object
+        Created Metric object
     """
     controller = context.get_controller()
 
-    # Convert strawberry-pydantic inputs to pydantic models
     model = input.to_pydantic()
 
-    graph_id = context.extract_graph_id(model.structure)
-    local_id = context.extract_node_id(model.structure)
-
-    graph = context.get_accessible_graph(info, graph_id)
-
     response = controller.create_metric(
-        graph,
-        structure_id=local_id,
+        structure_id=str(model.structure),
         input=model,
         info=info,
     )
 
-    return types.Metric.from_specific(response)  # Convert to GraphQL type, preserving specific subtype information. If the metric already exists,
+    return types.Metric.from_specific(response)
 
 
 def delete_metric(
@@ -108,12 +104,14 @@ def delete_metric(
     input: inputs.DeleteMetricInput,
 ) -> GraphID:
     """
-    Delete a measurement by its composite ID.
-    Only the owner of the graph or an admin can delete a measurement.
+    Hard delete a measurement by its ID.
+
+    Prefer `archiveMetric`: evidence is append-only, and deleting destroys the
+    record of what a derived value was once computed from.
 
     Args:
         info: Strawberry Info context
-        input: Composite ID of the measurement to delete (e.g., "1-abc123-def456-...")
+        input: The evidence ID of the measurement to delete
 
     Returns:
         The ID of the deleted measurement
@@ -122,14 +120,9 @@ def delete_metric(
 
     model = input.to_pydantic()
 
-    graph_id = context.extract_graph_id(model.id)
-    node_id = context.extract_node_id(model.id)
-
-    graph = context.get_accessible_graph(info, graph_id)
-
     controller.delete_metric(
-        graph,
-        metric_id=node_id,
+        metric_id=str(model.id),
+        info=info,
     )
 
     return model.id
@@ -140,7 +133,7 @@ def update_metric(
     input: inputs.UpdateMetricInput,
 ) -> types.Metric:
     """
-    Update a metric by creating a new metric and archiving the previous one.
+    Update a metric by archiving the previous one and asserting a new one.
 
     Args:
         info: Strawberry Info context
@@ -152,11 +145,8 @@ def update_metric(
     controller = context.get_controller()
 
     model = input.to_pydantic()
-    graph_id = context.extract_graph_id(model.id)
-    graph = context.get_accessible_graph(info, graph_id)
 
     updated = controller.update_metric(
-        graph,
         payload=model,
         info=info,
     )
@@ -169,30 +159,27 @@ def archive_metric(
     input: inputs.ArchiveMetricInput,
 ) -> types.Metric:
     """
-    Archive (soft delete) a measurement by its composite ID.
+    Archive (retract) a measurement by its ID.
+
+    The metric stays readable afterwards — a derived value that stopped counting
+    it still has to be explainable.
 
     Args:
         info: Strawberry Info context
-        input: Composite ID of the measurement to archive (e.g., "1-abc123-def456-...")
+        input: The evidence ID of the measurement to archive
 
     Returns:
-        The ID of the archived measurement
+        The archived measurement
     """
     controller = context.get_controller()
 
-    model = input.to_pydantic()  # Validate input with Pydantic models
-
-    graph_id = context.extract_graph_id(model.id)
-    node_id = context.extract_node_id(model.id)
-
-    graph = context.get_accessible_graph(info, graph_id)
+    model = input.to_pydantic()
 
     controller.archive_metric(
-        graph,
-        metric_id=node_id,
+        metric_id=str(model.id),
         info=info,
     )
 
-    archived_metric = controller.get_node_by_local_id(graph, local_id=node_id)
+    archived_metric = controller.get_metric(str(model.id), info)
 
     return types.Metric(_value=archived_metric)

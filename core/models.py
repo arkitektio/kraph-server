@@ -76,6 +76,19 @@ class Graph(models.Model):
         blank=True,
         help_text="Action-level allow/deny rules evaluated against request context",
     )
+    selector = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=(
+            "Declarative definition of which of the organization's evidence this graph "
+            "projects. A graph is a view now, not a silo: membership is evaluated from "
+            "this selector into a droppable cache, never maintained on write — otherwise "
+            "every ingest would have to know about every projection. "
+            "Shape: {category_keys: [...], assertion_filter: {subjects, app_ids, "
+            "action_names}, as_of: timestamp, observed_window: [from, to]}. "
+            "Consumed by the projector in M3; inert until then."
+        ),
+    )
 
     @classmethod
     def get_for_node_global_id(cls, node_id: str):
@@ -317,13 +330,6 @@ class GraphSchema(models.Model):
         GraphSchema.objects.filter(graph=self.graph).update(is_active=False)
         self.is_active = True
         self.save(update_fields=["is_active"])
-
-    def get_definition_model(self):
-        """Parse the stored JSON into a GraphDefinitionModel."""
-        from graph_engine.base_models import GraphDefinitionModel
-
-        return GraphDefinitionModel.model_validate(self.definition)
-
 
 def random_color():
     levels = range(32, 256, 32)
@@ -661,9 +667,9 @@ class EdgeCategory(Category):
 
     @property
     def defined_properties(self):
-        from graph_engine.base_models import PropertyDefinition
+        from graph_engine.input_models import PropertyDefinitionInput
 
-        return [PropertyDefinition(**p) for p in self.property_definitions] if self.property_definitions else []
+        return [PropertyDefinitionInput(**p) for p in self.property_definitions] if self.property_definitions else []
 
     @property
     def property_map(self):

@@ -31,10 +31,13 @@ from graph_engine.retrieved import (
     RetrievedInforms,
 )
 from graph_engine import retrieved
+from authentikate.models import Membership
 from core import enums, models
 from graph_engine import input_models as inputs
 from graph_engine import vocab, scalars
-from graph_engine.rollup import build_property_query
+from django.db import transaction
+from evidence import models as evidence_models
+from evidence import writer
 
 
 def extract_node_id(composite_id: str | scalars.GraphID) -> scalars.LocalID:
@@ -148,27 +151,19 @@ class GraphController:
     ) -> RetrievedEntity:
         raise NotImplementedError("Ensure entity is not implemented yet. Use create_entity for now.")
 
-    def _create_provenance_node(self, graph: models.Graph, context: ProvenanceContext) -> scalars.LocalID:
-        """
-        Creates an Assertion node for provenance tracking and returns its internal graph ID.
+    def _create_assertion(self, organization: Any, context: ProvenanceContext) -> evidence_models.Assertion:
+        """Record who is making this change, in the relational evidence base.
 
-        Args:
-            graph: The graph to create the assertion in
-            context: The provenance context with subject and app_id
-        Returns:
-            The internal graph ID of the created assertion node
+        Assertions used to be AGE vertices, one per graph, which meant the same
+        claim had to be re-asserted in every projection that wanted to see it.
+        They are organization-scoped rows now; the graph is only how we learn
+        which organization the request is acting for.
         """
-        query = f"""
-            CREATE (a:{vocab.Assertion} {{subject: $subject, app_id: $app_id, timestamp: $timestamp}})
-            RETURN id(a) as assertion_id
-        """
-        params = {
-            "subject": context.subject,
-            "app_id": context.app_id,
-            "timestamp": int(time.time() * 1000),
-        }
-        result = self.engine.execute(graph, query, params)
-        return scalars.LocalID(result[0]["assertion_id"])
+        return writer.create_assertion(
+            organization,
+            subject=context.subject,
+            app_id=context.app_id,
+        )
 
     def _provenance_from_info(self, info: Info) -> ProvenanceContext:
         request = info.context.request
@@ -265,25 +260,26 @@ class GraphController:
         self,
         graph: models.Graph,
         supporting_evidence: list[Any],
-        assertion_id: scalars.LocalID,
+        assertion: evidence_models.Assertion,
         info: Info,
-    ) -> list[tuple[Any, models.StructureCategory, scalars.LocalID]]:
-        materialized_evidence: list[tuple[Any, models.StructureCategory, scalars.LocalID]] = []
+    ) -> list[tuple[Any, models.StructureCategory, evidence_models.Structure]]:
+        """Write the structures and metrics backing a creation into Postgres.
+
+        The shared path for `create_entity` and `create_natural_event`. Nothing
+        here touches AGE any more: structures and metrics are the base relation,
+        and the caller separately projects whatever it needs into the graph.
+        """
+        organization = graph.organization
+        materialized_evidence: list[tuple[Any, models.StructureCategory, evidence_models.Structure]] = []
 
         for evidence in supporting_evidence:
             structure_category = self.ensure_structure_category_or_raise(graph, evidence.identifier, info)
-            structure_vertex_name = structure_category.get_age_vertex_name()
-
-            structure_result = self.engine.execute(
-                graph,
-                f"MERGE (s:{structure_vertex_name} {{object: $obj, identifier: $identifier, category: $sid}}) RETURN id(s) as sid",
-                {
-                    "obj": evidence.object,
-                    "identifier": evidence.identifier,
-                    "sid": structure_category.pk,
-                },
+            structure = writer.ensure_structure(
+                organization,
+                category=structure_category,
+                object=evidence.object,
+                assertion=assertion,
             )
-            structure_id = scalars.LocalID(structure_result[0]["sid"])
 
             for measurement in evidence.metrics:
                 metric_category = self.ensure_metric_category_or_raise(
@@ -293,33 +289,20 @@ class GraphController:
                     value_kind=self._infer_metric_value_kind(measurement.value),
                     info=info,
                 )
+                writer.record_metric(
+                    organization,
+                    structure,
+                    metric_category,
+                    key=measurement.key,
+                    value=measurement.value,
+                    assertion=assertion,
+                    unit=measurement.unit,
+                    confidence=measurement.confidence,
+                    confidence_type=measurement.confidence_type,
+                    measured_at=measurement.timestamp,
+                )
 
-                metric_params = {
-                    "sid": structure_id,
-                    "aid": assertion_id,
-                    "category": metric_category.pk,
-                    "key": measurement.key,
-                    "value": measurement.value,
-                    "unit": measurement.unit,
-                    "confidence": measurement.confidence,
-                    "confidence_type": measurement.confidence_type,
-                    "timestamp": measurement.timestamp,
-                }
-
-                property_clauses = ", ".join([f"{key}: ${key}" for key in metric_params.keys()])
-
-                measurement_query = f"""
-                    MATCH (s:{structure_vertex_name}) WHERE id(s) = $sid
-                    MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
-
-                    CREATE (m:{vocab.Metric} {{{property_clauses}}})
-                    CREATE (a)-[:{vocab.ASSERTED}]->(m)
-                    CREATE (m)-[:{vocab.DESCRIBES}]->(s)
-                    RETURN id(m) as mid
-                """
-                self.engine.execute(graph, measurement_query, metric_params)
-
-            materialized_evidence.append((evidence, structure_category, structure_id))
+            materialized_evidence.append((evidence, structure_category, structure))
 
         return materialized_evidence
 
@@ -346,59 +329,53 @@ class GraphController:
         """
         supporting_evidence = payload.supporting_evidence or []
         graph: models.Graph = entity_category.graph
+        organization = graph.organization
 
-        # --- Step 2: Create Assertion (Provenance) ---
-        assertion_id = self._create_provenance_node(graph, self._provenance_from_info(info))
-
-        # --- Step 3: Handle Evidence & Measurements ---
-        materialized_evidence = self._materialize_supporting_evidence(
-            graph=graph,
-            supporting_evidence=supporting_evidence,
-            assertion_id=assertion_id,
-            info=info,
-        )
-
-        # --- Step 4: Create Entity (Shell) ---
-        # We only set the immutable ID (db_id). All other props come from cache recalculation.
-        ref_id = self.create_universal_id()
-        e_params = {"eid": ref_id, "aid": assertion_id, "cid": entity_category.pk}
-
-        create_res = self.engine.execute(
-            entity_category.graph,
-            f"""
-            MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
-            CREATE (e:{entity_category.age_name} {{id: $eid, category_id: $cid}})
-            CREATE (a)-[:{vocab.GENERATED}]->(e)
-            RETURN e as entity, id(e) as db_id
-            """,
-            e_params,
-        )
-
-        str(create_res[0]["db_id"])
-        entity = create_res[0]["entity"]
-
-        retrieved = RetrievedEntity.from_node(self, entity, graph_name=graph.age_name)
-
-        # --- Step 5: Link Entity -> Evidence ---
-        for evidence, structure_category, _ in materialized_evidence:
-            self.engine.execute(
-                entity_category.graph,
-                f"""
-                MATCH (e:{entity_category.age_name}) WHERE id(e) = $eid
-                MATCH (s:{structure_category.get_age_vertex_name()} {{object: $obj}})
-                MERGE (s)-[:{vocab.INFORMS}]->(e)
-                """,
-                {"eid": retrieved.local_id, "obj": evidence.object},
+        # Evidence first, in one transaction. AGE cannot join a Django
+        # transaction — the engine runs on independent cursors — so the two
+        # stores commit separately by construction. That asymmetry is deliberate
+        # rather than a bug to compensate for: evidence is the source of truth,
+        # so a failure after this commit leaves durable evidence with no
+        # projection, and `reproject` (M3) picks it up. Do not "fix" this by
+        # deleting the evidence when the AGE write fails.
+        with transaction.atomic():
+            assertion = self._create_assertion(organization, self._provenance_from_info(info))
+            materialized_evidence = self._materialize_supporting_evidence(
+                graph=graph,
+                supporting_evidence=supporting_evidence,
+                assertion=assertion,
+                info=info,
             )
 
-        # --- Step 6: Recalculate Cached Properties ---
-        # This is where the magic happens: Properties flow from Evidence -> Entity
-        self._recalculate_entity(
-            entity_category,
-            retrieved.local_id,
+        # The entity itself is still projected into AGE. It carries only its
+        # immutable identity; every derived property is the projector's job.
+        ref_id = self.create_universal_id()
+        create_res = self.engine.execute(
+            graph,
+            f"""
+            CREATE (e:{entity_category.age_name} {{id: $eid, category_id: $cid}})
+            RETURN e as entity, id(e) as db_id
+            """,
+            {"eid": ref_id, "cid": entity_category.pk},
         )
 
-        return retrieved
+        entity = create_res[0]["entity"]
+        retrieved_entity = RetrievedEntity.from_node(self, entity, graph_name=graph.age_name)
+
+        # The INFORMS relationship is evidence, not projection: which structures
+        # justify this entity is a claim about the world and outlives any graph
+        # built from it.
+        for _, _, structure in materialized_evidence:
+            writer.create_link(
+                organization,
+                kind=evidence_models.Link.Kind.INFORMS,
+                source_ref=str(structure.pk),
+                target_ref=str(retrieved_entity.graph_id),
+                assertion=assertion,
+            )
+
+        self._stamp_projection(entity_category, retrieved_entity.local_id)
+        return retrieved_entity
 
     def delete_entity(self, graph: models.Graph, local_id: scalars.LocalID) -> scalars.LocalID:
         """
@@ -432,249 +409,156 @@ class GraphController:
         Returns:
             A RetrievedStructure if found, or None if no matching structure exists
         """
-        result = self.engine.execute(
-            category.graph,
-            f"""
-            MATCH (s:{category.get_age_vertex_name()} {{object: $obj, category: $sid,  identifier: $identifier}})
-            RETURN s, id(s) as sid
-            """,
-            {"obj": object, "sid": category.pk, "identifier": category.identifier},
+        organization = category.graph.organization
+        structure = (
+            evidence_models.Structure.objects.for_organization(organization)
+            .filter(identifier=category.identifier, object=object)
+            .first()
         )
-
-        if not result:
+        if structure is None:
             raise ValueError(f"No structure found with object '{object}' in category '{category.identifier}'")
-        raw = result[0]["s"]
-        return RetrievedStructure.from_node(self, raw, graph_name=category.graph.age_name)
+
+        return RetrievedStructure.from_row(self, structure, graph_name=category.graph.age_name)
 
     def archive_entity(self, graph: models.Graph, local_id: scalars.LocalID, info: Info) -> scalars.LocalID:
         """
         Archives an entity by its composite ID.
 
-        This performs a soft delete, setting the 'archived' flag and recording provenance.
+        This performs a soft delete, recording the retraction in the evidence
+        lifecycle log and refreshing the projected node's cached state.
 
         Args:
             graph: The graph to operate on
-            entity_id: The composite ID of the entity to delete (e.g., "1-abc123-def456-...")
+            local_id: The AGE node id of the entity to archive
         """
-        assertion_id = self._create_provenance_node(graph, self._provenance_from_info(info))
-        archived_at = int(time.time() * 1000)
+        organization = graph.organization
+        assertion = self._create_assertion(organization, self._provenance_from_info(info))
 
-        self.engine.execute(
-            graph,
-            f"""
-            MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
-            MATCH (e) WHERE id(e) = $eid
-            CREATE (lc:LifeCycleAssertion {{status: $status, archived_at: $archived_at, timestamp: $timestamp}})
-            CREATE (a)-[:{vocab.ASSERTED}]->(lc)
-            CREATE (lc)-[:{vocab.INFORMS}]->(e)
-            RETURN id(lc) as lifecycle_id
-            """,
-            {
-                "aid": assertion_id,
-                "eid": local_id,
-                "status": "archived",
-                "archived_at": archived_at,
-                "timestamp": archived_at,
-            },
+        writer.archive_ref(
+            organization,
+            target_type="entity",
+            target_id=f"{graph.age_name}:{local_id}",
+            assertion=assertion,
         )
 
         entity_category = self._get_entity_category_for_local_id(graph, local_id)
-        self._recalculate_entity(entity_category, local_id)
+        self._stamp_projection(entity_category, local_id)
 
         return local_id
 
-    def _recalculate_entity(self, entity_category: models.EntityCategory, local_id: scalars.LocalID) -> None:
+    def _stamp_projection(self, entity_category: models.EntityCategory, local_id: scalars.LocalID) -> None:
+        """Write the system metadata every projected node carries.
+
+        Split out of the old `_recalculate_entity` because these three facts —
+        which schema version produced this node, when, and whether it is
+        retracted — are knowable without any derivation at all. Keeping them
+        working means entity creation still functions while derived *values* are
+        dark between M1 and M3.
         """
-        Scans schema rules and updates the Entity's cached properties based on connected evidence.
+        updates: Dict[str, Any] = {
+            "__lifecycle_state": self._lifecycle_state_for_entity(entity_category.graph, local_id),
+            "__schema_version": entity_category.schema_hash,
+            "__last_derived": int(time.time() * 1000),
+        }
 
-        Uses the rollup module to generate appropriate Cypher queries for each property's
-        derivation type and aggregation function.
-        """
-        entity_def = entity_category
+        # Property keys are interpolated into Cypher, not bound, so they must be
+        # validated as identifiers.
+        set_clause = ", ".join([f"e.{self._validate_property_key(k)} = $u_{k}" for k in updates])
+        update_params: Dict[str, Any] = {f"u_{k}": v for k, v in updates.items()}
+        update_params["local_id"] = local_id
 
-        updates: Dict[str, Any] = {}
-
-        for prop_def in entity_def.defined_properties:
-            # Skip the 'id' property - it's immutable
-            if prop_def.key == "id":
-                continue
-
-            # Build the query using the rollup utilities
-            rollup_query = build_property_query(entity_category.age_name, prop_def.key, prop_def)
-
-            if rollup_query:
-                # Add entity id to params
-                params = {**rollup_query.params, "eid": local_id}
-
-                result = self.engine.execute(entity_category.graph, rollup_query.query, params)
-
-                if result and result[0].get("val") is not None:
-                    updates[prop_def.key] = result[0]["val"]
-
-        lifecycle_result = self.engine.execute(
+        self.engine.execute(
             entity_category.graph,
             f"""
-            MATCH (lc:LifeCycleAssertion)-[:{vocab.INFORMS}]->(e:{entity_category.age_name})
-            WHERE id(e) = $eid
-            RETURN lc.status as status
-            ORDER BY coalesce(lc.archived_at, lc.timestamp, 0) DESC
-            LIMIT 1
+            MATCH (e:{entity_category.age_name}) WHERE id(e) = $local_id
+            SET {set_clause}
             """,
-            {"eid": local_id},
+            update_params,
         )
 
-        updates["__lifecycle_state"] = lifecycle_result[0]["status"] if lifecycle_result else "active"
-        updates["__measured__from"] = None  # Placeholder - real logic would determine the earliest timestamp from connected evidence and set this property
-        updates["__measured__to"] = None  # Placeholder - real logic would determine the latest timestamp from connected evidence and set this property
-        updates["__measured__at"] = None  # Placeholder - real logic would determine the timestamp of the measurement, if ONLY one piece of evidence is connected, and set this property
+    def _lifecycle_state_for_entity(self, graph: models.Graph, local_id: scalars.LocalID) -> str:
+        """The current lifecycle state of a projected entity, from the evidence log."""
+        entity_ref = f"{graph.age_name}:{local_id}"
+        latest = (
+            evidence_models.LifecycleEvent.objects.for_organization(graph.organization)
+            .filter(target_type="entity", target_id=entity_ref)
+            .order_by("-at")
+            .first()
+        )
+        return latest.status if latest else evidence_models.LifecycleStatus.ACTIVE
 
-        # Add System Metadata
-        updates["__schema_version"] = entity_category.schema_hash
-        updates["__last_derived"] = int(time.time() * 1000)
+    def _recalculate_entity(self, entity_category: models.EntityCategory, local_id: scalars.LocalID) -> None:
+        """Derive an entity's cached properties from its supporting evidence.
 
-        if updates:
-            set_clause = ", ".join([f"e.{k} = $u_{k}" for k in updates.keys()])
-            update_params = {f"u_{k}": v for k, v in updates.items()}
-            update_params["local_id"] = local_id
+        **Not implemented between M1 and M3, deliberately.**
 
-            self.engine.execute(
-                entity_category.graph,
-                f"""
-                MATCH (e:{entity_category.age_name}) WHERE id(e) = $local_id
-                SET {set_clause}
-                """,
-                update_params,
-            )
+        Metrics moved from AGE into Postgres, so the rollup Cypher this used to
+        run (`MATCH (m:Metric)-[:DESCRIBES]->(s)`) now matches nothing. Leaving
+        it in place would silently write `null` over every derived property,
+        which is far worse than failing: a null derived value is
+        indistinguishable from "no evidence yet", so the breakage would be
+        invisible until someone noticed their numbers were gone.
 
-    # ===================================================================
-    # MIGRATION METHODS
-    # ===================================================================
-
-    def _recalculate_relation(self, relation_category: models.RelationCategory, local_id: scalars.LocalID) -> Optional[scalars.LocalID]:
+        This costs nothing that previously worked. `create_metric` never
+        re-derived, `link_structure_to_entity` raised a `NameError` before
+        reaching this, and relations never executed at all — derivation was
+        already non-functional. The replacement is the state vector (M2) plus
+        the projector (M3), and this raise is what makes the gap between here
+        and there impossible to ship by accident.
         """
-        Updates Edge properties based on measurements connected via the ShadowLink.
-
-        A relation can only exist once per direction between source and target.
-        This method uses MERGE to ensure uniqueness.
-
-        Returns:
-            The edge ID of the created/updated relation edge
-        """
-
-        rel_def = relation_category.defined_properties
-        # No materialization config - just create the edge without properties
-        # Still store the shadow link id for provenance tracking
-
-        result = self.engine.execute(
-            relation_category.graph,
-            f"""
-            MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
-            MATCH (sl)-[:{vocab.REIFIES_AS_SOURCE}]->(source)
-            MATCH (sl)-[:{vocab.REIFIES_AS_TARGET}]->(target)
-            MERGE (source)-[r:{relation_label}]->(target)
-            SET r.__shadow_link_id = $sl_id
-            RETURN id(r) as edge_id
-            """,
-            {"sl_id": shadow_link_id},
+        raise NotImplementedError(
+            "Derived properties are not computed between M1 and M3. Metrics now live in "
+            "the relational evidence base, and the projector that reads them lands in M3. "
+            "See docs/ARCHITECTURE.md."
         )
 
-        updates = {"__shadow_link_id": shadow_link_id}
-
-        for prop_def in rel_def.materialization.properties:
-            # Logic: (ShadowLink) <-[INFORMS]- (Structure) <-[DESCRIBES]- (Measurement)
-            if prop_def.derivation == "ROLLUP" and prop_def.rule:
-                rule = prop_def.rule
-
-                agg_func = "avg"
-                if rule.aggregation == "MAX":
-                    agg_func = "max"
-                elif rule.aggregation == "MIN":
-                    agg_func = "min"
-                elif rule.aggregation == "SUM":
-                    agg_func = "sum"
-                elif rule.aggregation == "COUNT":
-                    agg_func = "count"
-
-                target_var = "m" if rule.aggregation == "COUNT" else "m.value"
-
-                query = f"""
-                    MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
-                    MATCH (sl)<-[:{vocab.INFORMS}]-(s)
-                    MATCH (m:{vocab.Measurement})-[:{vocab.DESCRIBES}]->(s)
-                    WHERE m.key = $key
-                    RETURN {agg_func}({target_var}) as val
-                """
-
-                result = self.engine.execute(self.graph, query, {"sl_id": shadow_link_id, "key": rule.key or prop_def.key})
-
-                if result and result[0]["val"] is not None:
-                    updates[prop_def.key] = result[0]["val"]
-
-        # Use MERGE to ensure the relation exists only once per direction
-        # Then SET the aggregated properties
-        if updates:
-            set_clause = ", ".join([f"r.{k} = $u_{k}" for k in updates.keys()])
-            update_params = {f"u_{k}": v for k, v in updates.items()}
-            update_params["sl_id"] = shadow_link_id
-
-            result = self.engine.execute(
-                self.graph,
-                f"""
-                MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
-                MATCH (sl)-[:{vocab.REIFIES_AS_SOURCE}]->(source)
-                MATCH (sl)-[:{vocab.REIFIES_AS_TARGET}]->(target)
-                MERGE (source)-[r:{relation_label}]->(target)
-                SET {set_clause}
-                RETURN id(r) as edge_id
-                """,
-                update_params,
-            )
-            return result[0]["edge_id"] if result else None
-        else:
-            # No properties to set, just ensure the edge exists
-            result = self.engine.execute(
-                self.graph,
-                f"""
-                MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
-                MATCH (sl)-[:{vocab.REIFIES_AS_SOURCE}]->(source)
-                MATCH (sl)-[:{vocab.REIFIES_AS_TARGET}]->(target)
-                MERGE (source)-[r:{relation_label}]->(target)
-                RETURN id(r) as edge_id
-                """,
-                {"sl_id": shadow_link_id},
-            )
-            return result[0]["edge_id"] if result else None
-
-    def list_entities_informed_by_structure(self, graph: models.Graph, structure_id: scalars.LocalID, info: Info | None = None) -> List[RetrievedEntity]:
+    def list_entities_informed_by_structure(self, graph: models.Graph, structure_id: str, info: Info | None = None) -> List[RetrievedEntity]:
         """
         Lists all entities that are informed by a given structure.
 
+        The INFORMS traversal is a SQL lookup now — the links are evidence, not
+        projection — followed by fetching the named entities out of AGE. Entities
+        are still projection-scoped, so this stays restricted to one graph.
+
         Args:
             graph: The graph to query
-            structure_id: The internal graph ID of the structure node
-
-        Returns:
-            List of RetrievedEntity objects that are informed by the structure
+            structure_id: The evidence primary key of the structure
         """
         self._ensure_query_access(graph, info)
 
-        query = f"""
-            MATCH (s)-[:{vocab.INFORMS}]->(e)
-            WHERE id(s) = $sid
-            RETURN e, labels(e) as lbls
-        """
-        result = self.engine.execute(graph, query, {"sid": structure_id})
+        links = evidence_models.Link.objects.for_organization(graph.organization).filter(
+            kind=evidence_models.Link.Kind.INFORMS,
+            source_ref=str(structure_id),
+            status=evidence_models.LifecycleStatus.ACTIVE,
+        )
 
-        entities = []
-        for row in result:
-            raw = row["e"]
-            entities.append(RetrievedEntity.from_node(self, raw, graph_name=graph.age_name))
+        local_ids = []
+        for link in links:
+            graph_name, _, node_id = link.target_ref.partition(":")
+            if graph_name == graph.age_name and node_id:
+                local_ids.append(int(node_id))
 
-        return entities
+        if not local_ids:
+            return []
+
+        result = self.engine.execute(
+            graph,
+            """
+            MATCH (e) WHERE id(e) IN $eids
+            RETURN e
+            """,
+            {"eids": local_ids},
+        )
+        return [RetrievedEntity.from_node(self, row["e"], graph_name=graph.age_name) for row in result]
 
     def set_entity_property(self, graph: models.Graph, local_id: scalars.LocalID, key: str, value: Any) -> None:
         """
-        Sets a property on an entity node.
+        Sets a property directly on a projected entity node.
+
+        A write straight into the projection, bypassing evidence entirely — which
+        makes it exactly the kind of un-derivable state that `reproject` cannot
+        reconstruct. It survives M1 because it is live and tested; M3 removes it
+        once the projector owns entity properties.
 
         Args:
             graph: The graph to operate on
@@ -763,20 +647,15 @@ class GraphController:
         self,
         entity_category: models.EntityCategory,
         id: str,
-        auto_migrate: bool = True,
     ) -> retrieved.RetrievedEntity:
         """
         Retrieves an Entity by ID.
         Dynamically detects the 'kind' from the Node Labels and returns
         a RetrievedEntity with the raw graph data.
 
-        If the entity's schema version doesn't match the current schema,
-        and auto_migrate is True, the entity will be migrated automatically.
-
         Args:
             id: The entity's unique string ID
             entity_category: The entity category (used to access the graph and schema)
-            auto_migrate: Whether to auto-migrate if schema version mismatch
 
         Returns:
             RetrievedEntity with the node's data
@@ -826,16 +705,7 @@ class GraphController:
             "label": detected_kind,
             "properties": node_props,
         }
-        entity = RetrievedEntity.from_node(self, normalized_node, graph_name=graph.age_name)
-
-        if entity.schema_hash != entity_category.schema_hash and auto_migrate:
-            # Perform migration
-            self._migrate_entity(entity, entity_category)
-
-            # Refetch the node after migration to get updated properties
-            return self.get_entity(entity_category, id, auto_migrate=False)
-
-        return entity
+        return RetrievedEntity.from_node(self, normalized_node, graph_name=graph.age_name)
 
     def get_structure(
         self,
@@ -854,22 +724,15 @@ class GraphController:
         """
         self._ensure_query_access(graph, info)
 
-        try:
-            scat = models.StructureCategory.objects.get(graph=graph, identifier=identifier)
-        except models.StructureCategory.DoesNotExist:
+        structure = (
+            evidence_models.Structure.objects.for_organization(graph.organization)
+            .filter(identifier=identifier, object=object)
+            .first()
+        )
+        if structure is None:
             raise ValueError(f"Structure not found with identifier {identifier} and object {object}")
 
-        query = f"""
-            MATCH (s:{scat.get_age_vertex_name()} {{object: $obj}})
-            RETURN s, labels(s) as lbls
-        """
-        result = self.engine.execute(graph, query, {"obj": object})
-
-        if not result:
-            raise ValueError(f"Structure not found with identifier {identifier} and object {object}")
-
-        raw = result[0]["s"]
-        return retrieved.RetrievedStructure.from_node(self, raw, graph_name=graph.age_name)
+        return retrieved.RetrievedStructure.from_row(self, structure, graph_name=graph.age_name)
 
     def get_informing_structures(
         self,
@@ -882,24 +745,23 @@ class GraphController:
 
         Args:
             graph: The graph to query
-            entity_id: The entity's string ID
+            entity_id: The entity's composite graph ID
         """
         self._ensure_query_access(graph, info)
 
-        query = f"""
-            MATCH (s)-[:{vocab.INFORMS}]->(e)
-            WHERE e.id = $eid
-            RETURN s
-        """
-        result = self.engine.execute(graph, query, {"eid": entity_id})
+        organization = graph.organization
+        structure_ids = (
+            evidence_models.Link.objects.for_organization(organization)
+            .filter(
+                kind=evidence_models.Link.Kind.INFORMS,
+                target_ref=str(entity_id),
+                status=evidence_models.LifecycleStatus.ACTIVE,
+            )
+            .values_list("source_ref", flat=True)
+        )
 
-        structures = []
-        for row in result:
-            raw = row["s"]
-
-            structures.append(retrieved.RetrievedStructure.from_node(self, raw, graph_name=graph.age_name))
-
-        return structures
+        structures = evidence_models.Structure.objects.for_organization(organization).filter(pk__in=list(structure_ids))
+        return [retrieved.RetrievedStructure.from_row(self, row, graph_name=graph.age_name) for row in structures]
 
     def get_entities_informed_by(
         self,
@@ -913,20 +775,15 @@ class GraphController:
         """
         self._ensure_query_access(graph, info)
 
-        structure_label = get_label_for_identifier(identifier)
+        structure = (
+            evidence_models.Structure.objects.for_organization(graph.organization)
+            .filter(identifier=identifier, object=structure_object)
+            .first()
+        )
+        if structure is None:
+            return []
 
-        query = f"""
-            MATCH (s:{structure_label} {{object: $obj}})-[:{vocab.INFORMS}]->(e)
-            RETURN e, labels(e) as lbls
-        """
-        result = self.engine.execute(graph, query, {"obj": structure_object})
-
-        entities = []
-        for row in result:
-            raw = row["e"]
-            entities.append(RetrievedEntity.from_node(self, raw, graph_name=graph.age_name))
-
-        return entities
+        return self.list_entities_informed_by_structure(graph, str(structure.pk), info=info)
 
     def get_metrics_for_structure(
         self,
@@ -945,20 +802,17 @@ class GraphController:
         """
         self._ensure_query_access(graph, info)
 
-        structure_label = get_label_for_identifier(identifier)
+        organization = graph.organization
+        structure = (
+            evidence_models.Structure.objects.for_organization(organization)
+            .filter(identifier=identifier, object=structure_object)
+            .first()
+        )
+        if structure is None:
+            return []
 
-        query = f"""
-            MATCH (m:{vocab.Metric})-[:{vocab.DESCRIBES}]->(s:{structure_label} {{object: $obj}})
-            RETURN m
-        """
-        result = self.engine.execute(graph, query, {"obj": structure_object})
-
-        measurements = []
-        for row in result:
-            raw = row["m"]
-            measurements.append(RetrievedMetric.from_node(self, raw, graph_name=graph.age_name))
-
-        return measurements
+        metrics = writer.active_metrics_for_structures(organization, [structure.pk])
+        return [RetrievedMetric.from_row(self, row, graph_name=graph.age_name) for row in metrics]
 
     def get_assertion_for_entity(
         self,
@@ -967,31 +821,30 @@ class GraphController:
         info: Info | None = None,
     ) -> Optional[RetrievedAssertion]:
         """
-        Gets the assertion that generated a given entity.
+        Gets the assertion that introduced a given entity.
 
         Args:
             graph: The graph to query
-            entity_id: The entity's string ID
+            entity_id: The entity's composite graph ID
         """
         self._ensure_query_access(graph, info)
 
-        query = f"""
-            MATCH (a:{vocab.Assertion})-[:{vocab.GENERATED}]->(e)
-            WHERE e.id = $eid
-            RETURN a, id(a) as aid
-        """
-        result = self.engine.execute(graph, query, {"eid": entity_id})
-
-        if not result:
+        link = (
+            evidence_models.Link.objects.for_organization(graph.organization)
+            .filter(kind=evidence_models.Link.Kind.INFORMS, target_ref=str(entity_id))
+            .select_related("assertion")
+            .order_by("created_at")
+            .first()
+        )
+        if link is None:
             return None
 
-        raw = result[0]["a"]
-        return RetrievedAssertion.from_node(self, raw, graph_name=graph.age_name)
+        return RetrievedAssertion.from_row(self, link.assertion, graph_name=graph.age_name)
 
     def get_metrics_for_assertion(
         self,
         graph: models.Graph,
-        assertion_id: scalars.LocalID,
+        assertion_id: str,
         info: Info | None = None,
     ) -> List[RetrievedMetric]:
         """
@@ -999,162 +852,176 @@ class GraphController:
 
         Args:
             graph: The graph to query
-            assertion_id: The internal graph ID of the assertion
+            assertion_id: The evidence primary key of the assertion
         """
         self._ensure_query_access(graph, info)
 
-        query = f"""
-            MATCH (a:{vocab.Assertion})-[:{vocab.ASSERTED}]->(m:{vocab.Metric})
-            WHERE id(a) = $aid
-            RETURN m
-        """
-        result = self.engine.execute(graph, query, {"aid": assertion_id})
-
-        measurements = []
-        for row in result:
-            raw = row["m"]
-            measurements.append(RetrievedMetric.from_node(self, raw, graph_name=graph.age_name))
-
-        return measurements
+        metrics = evidence_models.Metric.objects.for_organization(graph.organization).filter(
+            assertion_id=assertion_id
+        )
+        return [RetrievedMetric.from_row(self, row, graph_name=graph.age_name) for row in metrics]
 
     def create_structure(
         self,
         structure_category: models.StructureCategory,
         payload: inputs.StructureInput,
+        info: Info,
     ) -> RetrievedStructure:
         """
-        Create a new structure node.
+        Create a structure, or return the existing one for the same datum.
 
-        Args:
-            graph: The graph to create the structure in
-            identifier: Schema identifier (e.g. '@mikro/roi')
-            object: Unique ID of the object this structure references
+        Idempotent by `(identifier, object)` within the organization, so two
+        projections that reference the same external object converge on one row
+        instead of each getting a private copy.
 
         Returns:
             RetrievedStructure with the created structure info
         """
-        structure_label = structure_category.get_age_vertex_name()
         graph = structure_category.graph
+        organization = graph.organization
 
-        # MERGE to create or match existing, return the graph id
-        result = self.engine.execute(
-            graph,
-            f"""
-            MERGE (s:{structure_label} {{object: $obj }})
-            SET s.identifier = coalesce(s.identifier, $identifier)
-            SET s.category_id = coalesce(s.category_id, $sid)
-            RETURN s
-            """,
-            {"obj": payload.object, "identifier": structure_category.identifier, "sid": structure_category.pk},
+        with transaction.atomic():
+            assertion = self._create_assertion(organization, self._provenance_from_info(info))
+            structure = writer.ensure_structure(
+                organization,
+                category=structure_category,
+                object=payload.object,
+                assertion=assertion,
+            )
+            for metric in payload.metrics or []:
+                self._record_metric(organization, structure, metric, info=info, assertion=assertion)
+
+        return RetrievedStructure.from_row(self, structure, graph_name=graph.age_name)
+
+    def _assert_can_access(self, organization: Any, info: Info | None) -> None:
+        """Check the caller may act for this organization.
+
+        Evidence rows are identified by a globally unique primary key, so the
+        client never has to name a tenant — but that means authorization cannot
+        come from the request either. It comes from the row: find what the id
+        points at, then check the caller belongs to *its* organization. Skipping
+        this is a cross-tenant read, which is precisely the guarantee we gave up
+        by leaving per-graph AGE namespaces.
+        """
+        if info is None:
+            return
+
+        user = getattr(info.context.request, "user", None)
+        if user is None:
+            raise PermissionError("Cannot access evidence without an authenticated user")
+
+        if not Membership.objects.filter(user=user, organization=organization, blocked=False).exists():
+            raise PermissionError("You are not allowed to access this organization's evidence")
+
+    def _resolve_structure(self, structure_id: str, info: Info | None = None) -> evidence_models.Structure:
+        """Fetch a structure by evidence primary key, then authorize against its organization."""
+        # all_objects, not objects: the organization is what we are *looking up*,
+        # so it cannot also be the filter. The access check below is what makes
+        # this safe, and is the only place in the codebase allowed to do this.
+        structure = evidence_models.Structure.all_objects.filter(pk=structure_id).first()
+        if structure is None:
+            raise ValueError(f"Structure not found with id {structure_id}")
+        self._assert_can_access(structure.organization, info)
+        return structure
+
+    def _record_metric(
+        self,
+        organization: Any,
+        structure: evidence_models.Structure,
+        metric_input: MetricInput,
+        *,
+        info: Info,
+        assertion: evidence_models.Assertion,
+    ) -> evidence_models.Metric:
+        """Append one measurement, resolving its category from the schema.
+
+        The schema still hangs off a graph, so the graph is derived from the
+        structure's own category rather than passed in — callers that only know
+        an organization should not have to invent one.
+        """
+        metric_category = self.ensure_metric_category_or_raise(
+            graph=structure.category.graph,
+            structure_category=structure.category,
+            key=metric_input.key,
+            value_kind=self._infer_metric_value_kind(metric_input.value),
+            info=info,
         )
-        created_node = result[0]["s"]
-        return RetrievedStructure.from_node(
-            self,
-            created_node,
-            graph_name=graph.age_name,
+        return writer.record_metric(
+            organization,
+            structure,
+            metric_category,
+            key=metric_input.key,
+            value=metric_input.value,
+            assertion=assertion,
+            unit=metric_input.unit,
+            confidence=metric_input.confidence,
+            confidence_type=metric_input.confidence_type,
+            measured_at=metric_input.timestamp,
         )
 
     def delete_structure(
         self,
-        graph: models.Graph,
-        structure_id: scalars.LocalID,
-    ) -> scalars.LocalID:
-        """Hard delete a structure node and all attached relationships."""
-        self.engine.execute(
-            graph,
-            """
-            MATCH (s) WHERE id(s) = $sid
-            DETACH DELETE s
-            """,
-            {"sid": structure_id},
-        )
+        structure_id: str,
+        info: Info | None = None,
+    ) -> str:
+        """Hard delete a structure and its metrics.
+
+        Prefer `archive_structure`. Evidence is append-only by design, and a hard
+        delete destroys the record of what a derived value was once computed
+        from. This exists for genuine mistakes — an ingest that pointed at the
+        wrong object entirely — not for retraction.
+        """
+        structure = self._resolve_structure(structure_id, info)
+        structure.delete()
         return structure_id
 
     def archive_structure(
         self,
-        graph: models.Graph,
-        structure_id: scalars.LocalID,
+        structure_id: str,
         info: Info,
     ) -> RetrievedStructure:
-        """Archive a structure by attaching a lifecycle assertion and setting lifecycle state."""
-        assertion_id = self._create_provenance_node(graph, self._provenance_from_info(info))
-        archived_at = int(time.time() * 1000)
+        """Retract a structure by writing a lifecycle event against it."""
+        structure = self._resolve_structure(structure_id, info)
+        organization = structure.organization
 
-        self.engine.execute(
-            graph,
-            f"""
-            MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
-            MATCH (s) WHERE id(s) = $sid
-            CREATE (lc:LifeCycleAssertion {{status: $status, archived_at: $archived_at, timestamp: $timestamp}})
-            CREATE (a)-[:{vocab.ASSERTED}]->(lc)
-            CREATE (lc)-[:{vocab.INFORMS}]->(s)
-            RETURN id(lc) as lifecycle_id
-            """,
-            {
-                "aid": assertion_id,
-                "sid": structure_id,
-                "status": "archived",
-                "archived_at": archived_at,
-                "timestamp": archived_at,
-            },
-        )
+        with transaction.atomic():
+            assertion = self._create_assertion(organization, self._provenance_from_info(info))
+            writer.archive(organization, structure, assertion)
 
-        x = self.engine.execute(
-            graph,
-            """
-            MATCH (lc:LifeCycleAssertion)-[:INFORMS]->(s)
-            WHERE id(s) = $sid
-            WITH s, lc
-            ORDER BY coalesce(lc.archived_at, lc.timestamp, 0) DESC
-            WITH s, collect(lc)[0] as latest
-            SET s.__lifecycle_state = latest.status
-            RETURN s
-            """,
-            {"sid": structure_id},
-        )
-        archived_node = x[0]["s"]
-
-        return retrieved.RetrievedStructure.from_node(
-            self,
-            archived_node,
-            graph_name=graph.age_name,
-        )
+        return retrieved.RetrievedStructure.from_row(self, structure)
 
     def update_structure(
         self,
-        graph: models.Graph,
-        structure_id: scalars.LocalID,
+        structure_id: str,
         payload: inputs.StructureInput,
         info: Info,
     ) -> retrieved.RetrievedStructure:
-        """Update a structure in-place and optionally append new metrics."""
-        node = self.get_node_by_local_id(graph, local_id=structure_id)
-        label = node.label
+        """Append metrics to an existing structure.
 
-        x = self.engine.execute(
-            graph,
-            f"""
-            MATCH (s:{label}) WHERE id(s) = $sid
-            SET s.object = $obj
-            RETURN s
-            """,
-            {"sid": structure_id, "obj": payload.object},
-        )
+        A structure's `(identifier, object)` is its identity, so `object` is
+        **immutable** and repointing it is rejected. The original plan called for
+        a supersede assertion here, but a supersede is incoherent under the
+        uniqueness constraint: a row with a different `object` is not a new
+        version of this datum, it is a different datum. Pointing at the wrong ROI
+        is fixed by creating the right structure and archiving the wrong one,
+        which keeps both facts on the record.
+        """
+        structure = self._resolve_structure(structure_id, info)
+        organization = structure.organization
 
-        for metric in payload.metrics or []:
-            self.create_metric(
-                graph,
-                structure_id=structure_id,
-                input=metric,
-                info=info,
+        if payload.object and payload.object != structure.object:
+            raise ValueError(
+                f"A structure's object is immutable: {structure.identifier}:{structure.object} "
+                f"cannot become {structure.identifier}:{payload.object}. Create the correct "
+                f"structure and archive this one instead."
             )
 
-        node = x[0]["s"]
-        return RetrievedStructure.from_node(
-            self,
-            node=node,
-            graph_name=graph.age_name,
-        )
+        with transaction.atomic():
+            assertion = self._create_assertion(organization, self._provenance_from_info(info))
+            for metric in payload.metrics or []:
+                self._record_metric(organization, structure, metric, info=info, assertion=assertion)
+
+        return RetrievedStructure.from_row(self, structure)
 
     def create_natural_event(
         self,
@@ -1174,38 +1041,39 @@ class GraphController:
         """
         supporting_evidence = payload.supporting_evidence or []
         graph: models.Graph = category.graph
+        organization = graph.organization
 
-        # --- Step 1: Create Assertion (Provenance) ---
-        assertion_id = self._create_provenance_node(graph, self._provenance_from_info(info))
-
-        # Assertion Created but not linked to anything yet - we will link evidence and event after we create them
-
-        # --- Step 2: Handle Evidence & Measurements ---
-        self._materialize_supporting_evidence(
-            graph=graph,
-            supporting_evidence=supporting_evidence,
-            assertion_id=assertion_id,
-            info=info,
-        )
-
-        # --- Step 4: Create Entity (Shell) ---
-        # We only set the immutable ID (db_id). All other props come from cache recalculation.
-        e_params = {"eid": self.create_universal_id(), "aid": assertion_id}
+        # Evidence first, in one transaction. See the note in `create_entity`
+        # about why the AGE write deliberately sits outside it.
+        with transaction.atomic():
+            assertion = self._create_assertion(organization, self._provenance_from_info(info))
+            materialized_evidence = self._materialize_supporting_evidence(
+                graph=graph,
+                supporting_evidence=supporting_evidence,
+                assertion=assertion,
+                info=info,
+            )
 
         event_vertex_name = category.get_age_vertex_name()
-
         create_res = self.engine.execute(
             graph,
             f"""
-            MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
-            CREATE (e:{event_vertex_name} {{id: $eid}})
-            CREATE (a)-[:{vocab.GENERATED}]->(e)
+            CREATE (e:{event_vertex_name} {{id: $eid, category_id: $cid}})
             RETURN id(e) as event_id
             """,
-            e_params,
+            {"eid": self.create_universal_id(), "cid": category.pk},
         )
 
         event_id = create_res[0]["event_id"]
+
+        for _, _, structure in materialized_evidence:
+            writer.create_link(
+                organization,
+                kind=evidence_models.Link.Kind.INFORMS,
+                source_ref=str(structure.pk),
+                target_ref=f"{graph.age_name}:{event_id}",
+                assertion=assertion,
+            )
 
         # We have created the event node, now we link the roles and evidence to it, and then recalculate properties based on the evidence.
 
@@ -1239,200 +1107,101 @@ class GraphController:
                 {"eid": event_id, "entity_id": graph_local_entity},
             )
 
-        # --- Step 6: Recalculate Cached Properties ---
-
-        # This is where the magic happens: Properties flow from Evidence -> Entity
-        return self.get_event_by_graph_id(graph, event_id)
+        result = self.engine.execute(
+            graph,
+            """
+            MATCH (e) WHERE id(e) = $eid
+            RETURN e
+            """,
+            {"eid": event_id},
+        )
+        return RetrievedNaturalEvent.from_node(self, result[0]["e"], graph_name=graph.age_name)
 
     def create_metric(
         self,
-        graph: models.Graph,
-        structure_id: scalars.LocalID,
+        structure_id: str,
         input: MetricInput,
         info: Info,
     ) -> RetrievedMetric:
         """
-        Add a measurement to an existing structure.
+        Append a measurement to an existing structure.
 
         Args:
-            graph: The graph to add the measurement to
-            structure_id: Internal graph ID of the structure node
+            structure_id: The evidence primary key of the structure
             input: The measurement data
             info: Request info used to extract provenance
 
         Returns:
             RetrievedMetric with the created measurement info
         """
-        structure_result = self.engine.execute(
-            graph,
-            """
-            MATCH (s) WHERE id(s) = $sid
-            RETURN s
-            """,
-            {"sid": structure_id},
-        )
-        if not structure_result:
-            raise ValueError(f"Structure not found with node ID {structure_id}")
+        structure = self._resolve_structure(structure_id, info)
+        organization = structure.organization
 
-        assertion_id = self._create_provenance_node(graph, self._provenance_from_info(info))
+        with transaction.atomic():
+            assertion = self._create_assertion(organization, self._provenance_from_info(info))
+            metric = self._record_metric(organization, structure, input, info=info, assertion=assertion)
 
-        metric_props: Dict[str, Any] = {
-            "key": input.key,
-            "value": input.value,
-        }
-        for optional_key in ["unit", "confidence", "confidence_type", "timestamp"]:
-            val = getattr(input, optional_key, None)
-            if val is not None:
-                metric_props[optional_key] = val
+        return RetrievedMetric.from_row(self, metric)
 
-        metric_params = {**metric_props, "sid": structure_id, "aid": assertion_id}
+    def _resolve_metric(self, metric_id: str, info: Info | None = None) -> evidence_models.Metric:
+        """Fetch a metric by evidence primary key, then authorize against its organization."""
+        metric = evidence_models.Metric.all_objects.filter(pk=metric_id).first()
+        if metric is None:
+            raise ValueError(f"Metric not found with id {metric_id}")
+        self._assert_can_access(metric.organization, info)
+        return metric
 
-        prop_clauses = ["key: $key", "value: $value"]
-        for optional_key in ["unit", "confidence", "confidence_type", "timestamp"]:
-            if optional_key in metric_props:
-                prop_clauses.append(f"{optional_key}: ${optional_key}")
+    def get_metric(self, metric_id: str, info: Info | None = None) -> RetrievedMetric:
+        """Read a single metric by its evidence primary key."""
+        return RetrievedMetric.from_row(self, self._resolve_metric(metric_id, info))
 
-        metric_query = f"""
-            MATCH (s) WHERE id(s) = $sid
-            MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
-            CREATE (m:{vocab.Metric} {{{", ".join(prop_clauses)}}})
-            CREATE (a)-[:{vocab.ASSERTED}]->(m)
-            CREATE (m)-[:{vocab.DESCRIBES}]->(s)
-            RETURN id(m) as mid
-        """
-        result = self.engine.execute(graph, metric_query, metric_params)
-        graph_id = result[0]["mid"]
-        raw_metric = self.engine.execute(
-            graph,
-            """
-            MATCH (m) WHERE id(m) = $mid
-            RETURN m
-            """,
-            {"mid": graph_id},
-        )
-        if raw_metric:
-            return RetrievedMetric.from_node(self, raw_metric[0]["m"], graph_name=graph.age_name)
-
-        return RetrievedMetric.from_node(
-            self,
-            {
-                "id": graph_id,
-                "label": vocab.Metric,
-                "properties": metric_props,
-            },
-            graph_name=graph.age_name,
-        )
-
-    def _recalculate_metric_lifecycle_state(
-        self,
-        graph: models.Graph,
-        metric_id: scalars.LocalID,
-    ) -> None:
-        self.engine.execute(
-            graph,
-            """
-            MATCH (m) WHERE id(m) = $mid
-            OPTIONAL MATCH (lc:LifeCycleAssertion)-[:INFORMS]->(m)
-            WITH m, lc
-            ORDER BY coalesce(lc.archived_at, lc.timestamp, 0) DESC
-            WITH m, collect(lc)[0] as latest
-            SET m.__lifecycle_state = coalesce(latest.status, m.__lifecycle_state)
-            RETURN m
-            """,
-            {"mid": metric_id},
-        )
+    def get_structure_by_id(self, structure_id: str, info: Info | None = None) -> RetrievedStructure:
+        """Read a single structure by its evidence primary key."""
+        return RetrievedStructure.from_row(self, self._resolve_structure(structure_id, info))
 
     def archive_metric(
         self,
-        graph: models.Graph,
-        metric_id: scalars.LocalID,
+        metric_id: str,
         info: Info,
-    ) -> scalars.LocalID:
-        metric_result = self.engine.execute(
-            graph,
-            """
-            MATCH (m) WHERE id(m) = $mid
-            RETURN m
-            """,
-            {"mid": metric_id},
-        )
-        if not metric_result:
-            raise ValueError(f"Metric not found with node ID {metric_id}")
+    ) -> str:
+        """Retract a measurement without destroying it.
 
-        assertion_id = self._create_provenance_node(graph, self._provenance_from_info(info))
-        archived_at = int(time.time() * 1000)
+        The metric stays readable afterwards, which is the point: a derived value
+        that stopped counting this measurement still has to be explainable.
+        """
+        metric = self._resolve_metric(metric_id, info)
+        organization = metric.organization
 
-        self.engine.execute(
-            graph,
-            f"""
-            MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
-            MATCH (m:{vocab.Metric}) WHERE id(m) = $mid
-            CREATE (lc:LifeCycleAssertion {{status: $status, archived_at: $archived_at, timestamp: $timestamp}})
-            CREATE (a)-[:{vocab.ASSERTED}]->(lc)
-            CREATE (lc)-[:{vocab.INFORMS}]->(m)
-            RETURN id(lc) as lifecycle_id
-            """,
-            {
-                "aid": assertion_id,
-                "mid": metric_id,
-                "status": "archived",
-                "archived_at": archived_at,
-                "timestamp": archived_at,
-            },
-        )
+        with transaction.atomic():
+            assertion = self._create_assertion(organization, self._provenance_from_info(info))
+            writer.archive(organization, metric, assertion)
 
-        self._recalculate_metric_lifecycle_state(graph, metric_id)
         return metric_id
 
     def delete_metric(
         self,
-        graph: models.Graph,
-        metric_id: scalars.LocalID,
-    ) -> scalars.LocalID:
-        metric_result = self.engine.execute(
-            graph,
-            """
-            MATCH (m) WHERE id(m) = $mid
-            RETURN m
-            """,
-            {"mid": metric_id},
-        )
-        if not metric_result:
-            raise ValueError(f"Metric not found with node ID {metric_id}")
-
-        self.engine.execute(
-            graph,
-            """
-            MATCH (m) WHERE id(m) = $mid
-            DETACH DELETE m
-            """,
-            {"mid": metric_id},
-        )
-
+        metric_id: str,
+        info: Info | None = None,
+    ) -> str:
+        """Hard delete a measurement. Prefer `archive_metric` — see `delete_structure`."""
+        metric = self._resolve_metric(metric_id, info)
+        metric.delete()
         return metric_id
 
     def update_metric(
         self,
-        graph: models.Graph,
         payload: inputs.UpdateMetricInput,
         info: Info,
     ) -> RetrievedMetric:
-        metric_local_id = extract_node_id(payload.id)
+        """Correct a measurement by retracting it and asserting a new one.
 
-        result = self.engine.execute(
-            graph,
-            f"""
-            MATCH (m:{vocab.Metric})-[:{vocab.DESCRIBES}]->(s)
-            WHERE id(m) = $mid
-            RETURN id(s) as sid
-            """,
-            {"mid": metric_local_id},
-        )
-        if not result:
-            raise ValueError(f"Metric not found with node ID {payload.id}")
-
-        structure_id = scalars.LocalID(result[0]["sid"])
-        self.archive_metric(graph, metric_id=metric_local_id, info=info)
+        Never an in-place edit. Both the original claim and the correction stay
+        on the record, under separate assertions, so `as_of` can still recover
+        what was believed before the revision.
+        """
+        metric = self._resolve_metric(str(payload.id), info)
+        organization = metric.organization
+        structure = metric.structure
 
         metric_input = MetricInput(
             key=payload.key,
@@ -1443,314 +1212,43 @@ class GraphController:
             timestamp=payload.timestamp,
         )
 
-        return self.create_metric(
-            graph,
-            structure_id=structure_id,
-            input=metric_input,
-            info=info,
-        )
+        with transaction.atomic():
+            assertion = self._create_assertion(organization, self._provenance_from_info(info))
+            writer.archive(organization, metric, assertion)
+            replacement = self._record_metric(organization, structure, metric_input, info=info, assertion=assertion)
+
+        return RetrievedMetric.from_row(self, replacement)
 
     def link_structure_to_entity(
         self,
-        structure_identifier: str,
-        structure_object: str,
-        entity_id: str,
-        recalculate: bool = True,
-    ) -> RetrievedInforms:
-        """
-        Link an existing structure to an existing entity.
-
-        This creates an INFORMS relationship from the structure to the entity,
-        allowing the structure's measurements to contribute to the entity's
-        derived properties.
-
-        Args:
-            structure_identifier: Schema identifier of the structure (e.g. '@mikro/roi')
-            structure_object: Object ID of the structure
-            entity_id: The string ID of the entity to link to
-            recalculate: Whether to recalculate entity properties after linking (default True)
-            schema: Optional schema to use for recalculation
-
-        Returns:
-            RetrievedEntity with the updated entity info
-        """
-        effective_schema = schema or self.graph.definition
-        structure_label = get_label_for_identifier(structure_identifier)
-
-        # First, get the entity to find its graph_id and kind
-        entity = self.get_entity(entity_id, schema=effective_schema)
-
-        # Create the INFORMS relationship
-        self.engine.execute(
-            self.graph,
-            f"""
-            MATCH (s:{structure_label} {{object: $obj}})
-            MATCH (e) WHERE e.id = $eid
-            MERGE (s)-[:{vocab.INFORMS}]->(e)
-            """,
-            {"obj": structure_object, "eid": entity_id},
-        )
-
-        # Recalculate entity properties if requested
-        if recalculate:
-            self._recalculate_entity(entity.local_id, entity.kind, effective_schema)
-
-        # Return the updated entity
-        return self.get_entity(entity_id, schema=effective_schema)
-
-    def create_relation(
-        self,
-        category: models.RelationCategory,
-        payload: RelationInput,
+        structure_id: str,
+        entity_id: scalars.GraphID,
         info: Info,
-    ) -> RetrievedRelation:
+    ) -> RetrievedStructure:
+        """Assert that a structure is evidence for an entity.
+
+        Reinstated here as a *pure evidence write* — it was removed from the
+        schema in M0 because the old implementation raised a `NameError` before
+        doing anything. Which structures justify an entity is a claim about the
+        world, so the link is evidence and outlives any graph projected from it.
+
+        No derivation is triggered. Recomputing the entity's properties from its
+        new evidence is the projector's job and lands in M3.
         """
-        Creates a Relationship between two nodes, backed by Evidence.
+        structure = self._resolve_structure(structure_id, info)
+        organization = structure.organization
 
-        Graph Structure Created:
-        1. (Source)-[RELATION]->(Target)  <-- The actual edge
-        2. (ShadowLink)                   <-- The reified node holding history
-        3. (ShadowLink)-[:REIFIES]->(Source)
-        4. (ShadowLink)-[:REIFIES]->(Target)
-        5. (Structure)-[:INFORMS]->(ShadowLink) <-- Evidence attached here
-        """
-
-        assertion_id = self._create_provenance_node(category.graph, self._provenance_from_info(info))
-        # --- Step 3: Create Shadow Link & Attach Evidence ---
-        # We create a "ShadowLink" node to represent this specific instance of the relationship.
-        # This allows us to attach measurements to "the link" rather than the edge itself.
-
-        ref_id = self.create_universal_id()
-
-        shadow_params = {"link_id": ref_id, "aid": assertion_id}
-
-        # TODO: Check if a relation already exists between these nodes in this direction, and if so,
-        # either prevent creation or create a new ShadowLink and overwrite the existing edge to point to the new ShadowLink.
-        # This allows us to maintain history of changes to the relationship over time, while still enforcing that only one "active"
-        # relationship exists between any two nodes in a given direction.
-        shadow_res = self.engine.execute(
-            category.graph,
-            f"""
-            MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
-            MERGE (sl:{vocab.ShadowLink} {{id: $link_id, ref_id: $link_id}})
-            CREATE (a)-[:{vocab.GENERATED}]->(sl)
-            RETURN id(sl) as shadow_graph_id
-            """,
-            shadow_params,
-        )
-        shadow_graph_id = shadow_res[0]["shadow_graph_id"]
-
-        # Process Evidence attached to the Shadow Link
-        for evidence in payload.supporting_evidence:
-            structure_category = self.ensure_structure_category_or_raise(category.graph, evidence.identifier, info)
-            structure_graph_label = structure_category.get_age_vertex_name()
-
-            # Auto-Create Structure
-            self.engine.execute(category.graph, f"MERGE (s:{structure_graph_label} {{object: $obj}})", {"obj": evidence.object})
-
-            # Link Structure -> Shadow Link (INFORMS)
-            # This says: "This structure (e.g. ROI Overlap) informs this relationship"
-            self.engine.execute(
-                category.graph,
-                f"""
-                MATCH (s:{structure_graph_label} {{object: $obj}})
-                MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
-                MERGE (s)-[:{vocab.INFORMS}]->(sl)
-                """,
-                {"obj": evidence.object, "sl_id": shadow_graph_id},
+        with transaction.atomic():
+            assertion = self._create_assertion(organization, self._provenance_from_info(info))
+            writer.create_link(
+                organization,
+                kind=evidence_models.Link.Kind.INFORMS,
+                source_ref=str(structure.pk),
+                target_ref=str(entity_id),
+                assertion=assertion,
             )
 
-            # Create Measurements for that Structure
-            for meas in evidence.metrics:
-                self.ensure_metric_category_or_raise(
-                    graph=category.graph,
-                    structure_category=structure_category,
-                    key=meas.key,
-                    value_kind=self._infer_metric_value_kind(meas.value),
-                    info=info,
-                )
-                meas_params = meas.model_dump(exclude_none=True)
-                meas_params.update({"obj": evidence.object, "aid": assertion_id})
-
-                prop_clauses = ["key: $key", "value: $value"]
-                for optional_key in ["unit", "confidence", "confidence_type", "timestamp"]:
-                    if optional_key in meas_params:
-                        prop_clauses.append(f"{optional_key}: ${optional_key}")
-
-                meas_query = f"""
-                    MATCH (s:{structure_graph_label} {{object: $obj}})
-                    MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
-                    
-                    CREATE (m:{vocab.Metric} {{{", ".join(prop_clauses)}}})
-                    CREATE (a)-[:{vocab.ASSERTED}]->(m)
-                    CREATE (m)-[:{vocab.DESCRIBES}]->(s)
-                """
-                self.engine.execute(category.graph, meas_query, meas_params)
-
-        # --- Step 4: Create the Physical Edge ---
-        edge_params = {"src": payload.source_id, "tgt": payload.target_id, "aid": assertion_id, "sl_id": shadow_graph_id}
-
-        # Note: AGE doesn't allow creating relationships TO relationships,
-        # so we connect the assertion to the ShadowLink instead.
-        # The ShadowLink already has (Assertion)-[:GENERATED]->(ShadowLink)
-        create_shadow_links = self.engine.execute(
-            category.graph,
-            f"""
-            MATCH (source) WHERE source.id = $src
-            MATCH (target) WHERE target.id = $tgt
-            MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
-            MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
-
-            
-            // Connect Shadow Link to nodes for traversability
-            CREATE (sl)-[:{vocab.REIFIES_AS_SOURCE}]->(source)
-            CREATE (sl)-[:{vocab.REIFIES_AS_TARGET}]->(target)
-            
-            RETURN id(sl) as shadow_id
-            """,
-            edge_params,
-        )
-
-        if not create_shadow_links:
-            raise ValueError(f"Could not create relation. Source {payload.source_id} or Target {payload.target_id} not found.")
-
-        shadow_link_id = create_shadow_links[0]["shadow_id"]
-
-        # --- Step 5: Recalculate Relation Properties ---
-        # Rolls up values from the ShadowLink evidence onto the Edge itself
-        edge_id = self._recalculate_relation(relation_category=category, local_id=shadow_link_id)
-
-        if edge_id is None:
-            raise ValueError(f"Failed to create relation edge for {relation_name}")
-
-        return EntityCreationResult(ref_id=payload.ref_id, db_id=f"{payload.source_id}->{payload.target_id}", graph_id=edge_id)
-
-    def create_measurement(
-        self,
-        category: models.MeasurementCategory,
-        payload: RelationInput,
-        info: Info,
-    ) -> RetrievedRelation:
-        """
-        Creates a Relationship between two nodes, backed by Evidence.
-
-        Graph Structure Created:
-        1. (Source)-[RELATION]->(Target)  <-- The actual edge
-        2. (ShadowLink)                   <-- The reified node holding history
-        3. (ShadowLink)-[:REIFIES]->(Source)
-        4. (ShadowLink)-[:REIFIES]->(Target)
-        5. (Structure)-[:INFORMS]->(ShadowLink) <-- Evidence attached here
-        """
-
-        assertion_id = self._create_provenance_node(category.graph, self._provenance_from_info(info))
-        # --- Step 3: Create Shadow Link & Attach Evidence ---
-        # We create a "ShadowLink" node to represent this specific instance of the relationship.
-        # This allows us to attach measurements to "the link" rather than the edge itself.
-
-        ref_id = self.create_universal_id()
-
-        shadow_params = {"link_id": ref_id, "aid": assertion_id}
-
-        # TODO: Check if a relation already exists between these nodes in this direction, and if so,
-        # either prevent creation or create a new ShadowLink and overwrite the existing edge to point to the new ShadowLink.
-        # This allows us to maintain history of changes to the relationship over time, while still enforcing that only one "active"
-        # relationship exists between any two nodes in a given direction.
-        shadow_res = self.engine.execute(
-            category.graph,
-            f"""
-            MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
-            MERGE (sl:{vocab.ShadowLink} {{id: $link_id, ref_id: $link_id}})
-            CREATE (a)-[:{vocab.GENERATED}]->(sl)
-            RETURN id(sl) as shadow_graph_id
-            """,
-            shadow_params,
-        )
-        shadow_graph_id = shadow_res[0]["shadow_graph_id"]
-
-        # Process Evidence attached to the Shadow Link
-        for evidence in payload.supporting_evidence:
-            structure_category = self.ensure_structure_category_or_raise(category.graph, evidence.identifier, info)
-            structure_graph_label = structure_category.get_age_vertex_name()
-
-            # Auto-Create Structure
-            self.engine.execute(category.graph, f"MERGE (s:{structure_graph_label} {{object: $obj}})", {"obj": evidence.object})
-
-            # Link Structure -> Shadow Link (INFORMS)
-            # This says: "This structure (e.g. ROI Overlap) informs this relationship"
-            self.engine.execute(
-                category.graph,
-                f"""
-                MATCH (s:{structure_graph_label} {{object: $obj}})
-                MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
-                MERGE (s)-[:{vocab.INFORMS}]->(sl)
-                """,
-                {"obj": evidence.object, "sl_id": shadow_graph_id},
-            )
-
-            # Create Measurements for that Structure
-            for meas in evidence.metrics:
-                self.ensure_metric_category_or_raise(
-                    graph=category.graph,
-                    structure_category=structure_category,
-                    key=meas.key,
-                    value_kind=self._infer_metric_value_kind(meas.value),
-                    info=info,
-                )
-                meas_params = meas.model_dump(exclude_none=True)
-                meas_params.update({"obj": evidence.object, "aid": assertion_id})
-
-                prop_clauses = ["key: $key", "value: $value"]
-                for optional_key in ["unit", "confidence", "confidence_type", "timestamp"]:
-                    if optional_key in meas_params:
-                        prop_clauses.append(f"{optional_key}: ${optional_key}")
-
-                meas_query = f"""
-                    MATCH (s:{structure_graph_label} {{object: $obj}})
-                    MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
-                    
-                    CREATE (m:{vocab.Metric} {{{", ".join(prop_clauses)}}})
-                    CREATE (a)-[:{vocab.ASSERTED}]->(m)
-                    CREATE (m)-[:{vocab.DESCRIBES}]->(s)
-                """
-                self.engine.execute(category.graph, meas_query, meas_params)
-
-        # --- Step 4: Create the Physical Edge ---
-        edge_params = {"src": payload.source_id, "tgt": payload.target_id, "aid": assertion_id, "sl_id": shadow_graph_id}
-
-        # Note: AGE doesn't allow creating relationships TO relationships,
-        # so we connect the assertion to the ShadowLink instead.
-        # The ShadowLink already has (Assertion)-[:GENERATED]->(ShadowLink)
-        create_shadow_links = self.engine.execute(
-            category.graph,
-            f"""
-            MATCH (source) WHERE source.id = $src
-            MATCH (target) WHERE target.id = $tgt
-            MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
-            MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
-
-            
-            // Connect Shadow Link to nodes for traversability
-            CREATE (sl)-[:{vocab.REIFIES_AS_SOURCE}]->(source)
-            CREATE (sl)-[:{vocab.REIFIES_AS_TARGET}]->(target)
-            
-            RETURN id(sl) as shadow_id
-            """,
-            edge_params,
-        )
-
-        if not create_shadow_links:
-            raise ValueError(f"Could not create relation. Source {payload.source_id} or Target {payload.target_id} not found.")
-
-        shadow_link_id = create_shadow_links[0]["shadow_id"]
-
-        # --- Step 5: Recalculate Relation Properties ---
-        # Rolls up values from the ShadowLink evidence onto the Edge itself
-        edge_id = self._recalculate_relation(relation_category=category, local_id=shadow_link_id)
-
-        if edge_id is None:
-            raise ValueError(f"Failed to create relation edge for {relation_name}")
-
-        return EntityCreationResult(ref_id=payload.ref_id, db_id=f"{payload.source_id}->{payload.target_id}", graph_id=edge_id)
+        return RetrievedStructure.from_row(self, structure)
 
     def delete_relation(
         self,
@@ -1832,24 +1330,29 @@ class GraphController:
         )
 
         if shadow_link_id is not None:
-            assertion_id = self._create_provenance_node(graph, self._provenance_from_info(info))
+            # The retraction is recorded in the evidence lifecycle log; only the
+            # cached state on the projected shadow link is written to AGE. The
+            # old version tried to `MATCH (a:Assertion)` in the graph, which
+            # after M1 matches nothing — so the whole CREATE silently did not
+            # happen and the archive was lost.
+            assertion = self._create_assertion(graph.organization, self._provenance_from_info(info))
+            writer.archive_ref(
+                graph.organization,
+                target_type="shadow_link",
+                target_id=f"{graph.age_name}:{shadow_link_id}",
+                assertion=assertion,
+            )
             self.engine.execute(
                 graph,
                 f"""
-                MATCH (a:{vocab.Assertion}) WHERE id(a) = $aid
                 MATCH (sl:{vocab.ShadowLink}) WHERE id(sl) = $sl_id
-                CREATE (lc:LifeCycleAssertion {{status: $status, archived_at: $archived_at, timestamp: $timestamp}})
-                CREATE (a)-[:{vocab.ASSERTED}]->(lc)
-                CREATE (lc)-[:{vocab.INFORMS}]->(sl)
                 SET sl.__lifecycle_state = $status,
                     sl.__archived_at = $archived_at
                 """,
                 {
-                    "aid": assertion_id,
                     "sl_id": shadow_link_id,
                     "status": "archived",
                     "archived_at": archived_at,
-                    "timestamp": archived_at,
                 },
             )
 
@@ -2007,20 +1510,6 @@ class GraphController:
         source_entities = self.get_reified_as_source_entities(link_ref_id)
         target_entities = self.get_reified_as_target_entities(link_ref_id)
         return source_entities + target_entities
-
-    def render_graph_nodes_query(
-        self, graph_query: models.GraphNodesQuery, filters: input_models.RenderGraphNodesFilter | None = None, pagination: input_models.RenderGraphNodesPagination | None = None, order: input_models.RenderGraphNodesOrder | None = None, info: Info | None = None
-    ) -> RetrievedGraphNodesRender:
-        """Render a set of nodes matching the graph query, with optional filters, pagination, and ordering."""
-        self._ensure_query_access(graph_query.graph, info)
-        raise Exception("Not implemented yet")
-
-    def render_graph_path_query(
-        self, graph_query: models.GraphPathQuery, filters: input_models.RenderGraphPathFilter | None = None, pagination: input_models.RenderGraphPathPagination | None = None, order: input_models.RenderGraphPathOrder | None = None, info: Info | None = None
-    ) -> RetrievedGraphPathRender:
-        """Render a set of nodes matching the graph query, with optional filters, pagination, and ordering."""
-        self._ensure_query_access(graph_query.graph, info)
-        raise Exception("Not implemented yet")
 
     def render_graph_table_query(
         self, graph_query: models.GraphTableQuery, filters: input_models.RenderGraphTableFilter | None = None, pagination: input_models.RenderGraphTablePagination | None = None, order: input_models.RenderGraphTableOrder | None = None, info: Info | None = None
@@ -2267,115 +1756,6 @@ class GraphController:
         limit = pagination.limit if pagination.limit is not None else 200
         return f"SKIP {offset} LIMIT {limit}"
 
-    def _build_structure_where_clause(self, filters: input_models.StructureFilters | None, variable: str = "s") -> tuple[str, dict[str, Any]]:
-        if not filters:
-            return "", {}
-
-        clauses: list[str] = []
-        params: dict[str, Any] = {}
-
-        if filters.ids:
-            local_ids: list[int] = []
-            for gid in filters.ids:
-                local_part = str(gid).split(":")[-1]
-                try:
-                    local_ids.append(int(local_part))
-                except ValueError:
-                    continue
-            if local_ids:
-                clauses.append(f"id({variable}) IN $ids")
-                params["ids"] = local_ids
-
-        if filters.category:
-            clauses.append(f"{variable}.identifier = $category")
-            params["category"] = filters.category
-
-        if filters.has_property:
-            key = self._validate_property_key(filters.has_property)
-            clauses.append(f"exists({variable}.{key})")
-
-        if filters.search:
-            clauses.append(f"toString(properties({variable})) CONTAINS $search")
-            params["search"] = filters.search
-
-        if filters.matches:
-            for index, match in enumerate(filters.matches):
-                key = self._validate_property_key(match.key)
-                operator = (str(match.operator).split(".")[-1] if match.operator is not None else "EQUALS").upper()
-                value_param = f"match_{index}_value"
-                field_expr = f"{variable}.{key}"
-
-                coerced_value = match.value
-                if isinstance(coerced_value, str):
-                    lowered = coerced_value.lower()
-                    if lowered in {"true", "false"}:
-                        coerced_value = lowered == "true"
-                    else:
-                        try:
-                            if "." in coerced_value:
-                                coerced_value = float(coerced_value)
-                            else:
-                                coerced_value = int(coerced_value)
-                        except ValueError:
-                            pass
-
-                params[value_param] = coerced_value
-
-                if operator in {"EQUALS", "EQ", "="}:
-                    clauses.append(f"{field_expr} = ${value_param}")
-                elif operator in {"NOT_EQUALS", "NEQ", "!="}:
-                    clauses.append(f"{field_expr} <> ${value_param}")
-                elif operator in {"GREATER_THAN", "GT", ">"}:
-                    clauses.append(f"{field_expr} > ${value_param}")
-                elif operator in {"LESS_THAN", "LT", "<"}:
-                    clauses.append(f"{field_expr} < ${value_param}")
-                elif operator in {"GREATER_OR_EQUAL", "GREATER_THAN_OR_EQUAL", "GTE", ">="}:
-                    clauses.append(f"{field_expr} >= ${value_param}")
-                elif operator in {"LESS_OR_EQUAL", "LESS_THAN_OR_EQUAL", "LTE", "<="}:
-                    clauses.append(f"{field_expr} <= ${value_param}")
-                elif operator == "CONTAINS":
-                    clauses.append(f"{field_expr} CONTAINS ${value_param}")
-                elif operator == "STARTS_WITH":
-                    clauses.append(f"{field_expr} STARTS WITH ${value_param}")
-                elif operator == "ENDS_WITH":
-                    clauses.append(f"{field_expr} ENDS WITH ${value_param}")
-                elif operator == "IN":
-                    clauses.append(f"{field_expr} IN ${value_param}")
-                elif operator == "NOT_IN":
-                    clauses.append(f"NOT {field_expr} IN ${value_param}")
-                else:
-                    raise ValueError(f"Unsupported filter operator '{operator}'.")
-
-        return ("WHERE " + " AND ".join(clauses)) if clauses else "", params
-
-    def _build_structure_order_clause(self, order: list[input_models.StructureOrder] | None, variable: str = "s") -> str:
-        if not order:
-            return ""
-
-        clauses = []
-        for o in order:
-            if o.property is not None:
-                key = self._validate_property_key(o.property.key)
-                direction = (o.property.direction.value if hasattr(o.property.direction, "value") else str(o.property.direction)).upper()
-                clauses.append(f"{variable}.{key} {direction}")
-            elif o.created_at is not None:
-                direction = (o.created_at.value if hasattr(o.created_at, "value") else str(o.created_at)).upper()
-                clauses.append(f"{variable}.created_at {direction}")
-            elif o.id is not None:
-                direction = (o.id.value if hasattr(o.id, "value") else str(o.id)).upper()
-                clauses.append(f"id({variable}) {direction}")
-        if not clauses:
-            return ""
-        return f"ORDER BY {', '.join(clauses)}"
-
-    def _build_structure_pagination_clause(self, pagination: input_models.StructurePagination | None) -> str:
-        if not pagination:
-            return "SKIP 0 LIMIT 200"
-
-        offset = pagination.offset if pagination.offset is not None else 0
-        limit = pagination.limit if pagination.limit is not None else 200
-        return f"SKIP {offset} LIMIT {limit}"
-
     def list_entities(self, graph: models.Graph, filters: input_models.EntityFilters | None = None, pagination: input_models.EntityPagination | None = None, ordering: list[input_models.EntityOrder] | None = None, info: Info | None = None) -> List[RetrievedEntity]:
         self._ensure_query_access(graph, info)
 
@@ -2422,25 +1802,114 @@ class GraphController:
         return [RetrievedEntity.from_node(self, row["e"], graph_name=category.graph.age_name) for row in result]
 
     def list_structures(self, graph: models.Graph, filters: input_models.StructureFilters | None = None, pagination: input_models.StructurePagination | None = None, ordering: list[input_models.StructureOrder] | None = None, info: Info | None = None) -> List[RetrievedStructure]:
+        """List structures from the evidence base.
+
+        Scoped to the organization, not to the graph: a structure is a pointer to
+        an external datum and is shared by every projection over that
+        organization's evidence.
+        """
         self._ensure_query_access(graph, info)
 
-        where_clause, filter_params = self._build_structure_where_clause(filters, variable="s")
-        order_clause = self._build_structure_order_clause(ordering, variable="s")
-        pagination_clause = self._build_structure_pagination_clause(pagination)
+        queryset = evidence_models.Structure.objects.for_organization(graph.organization)
+        queryset = self._apply_structure_filters(queryset, filters)
+        queryset = queryset.order_by(*self._structure_ordering(ordering))
 
-        query = f"""
-            MATCH (s:{vocab.Structure})
-            WHERE true
-            {("AND " + where_clause[len("WHERE ") :]) if where_clause else ""}
-            RETURN s
-            {order_clause}
-            {pagination_clause}
+        offset = pagination.offset if pagination and pagination.offset is not None else 0
+        limit = pagination.limit if pagination and pagination.limit is not None else 200
+
+        return [
+            RetrievedStructure.from_row(self, row, graph_name=graph.age_name)
+            for row in queryset[offset : offset + limit]
+        ]
+
+    def _apply_structure_filters(self, queryset: Any, filters: input_models.StructureFilters | None) -> Any:
+        """Translate structure filters into ORM predicates.
+
+        Property filters resolve against *metrics*, because a structure carries
+        no values of its own — it is only the thing measurements are about.
         """
+        if not filters:
+            return queryset
 
-        params: dict[str, Any] = {**filter_params}
-        result = self.engine.execute(graph, query, params)
+        if filters.ids:
+            queryset = queryset.filter(pk__in=[str(gid).split(":")[-1] for gid in filters.ids])
 
-        return [RetrievedStructure.from_node(self, row["s"], graph_name=graph.age_name) for row in result]
+        if filters.category:
+            queryset = queryset.filter(identifier=filters.category)
+
+        if filters.search:
+            queryset = queryset.filter(object__icontains=filters.search)
+
+        if filters.has_property:
+            queryset = queryset.filter(metrics__key=filters.has_property)
+
+        for match in filters.matches or []:
+            operator = (str(match.operator).split(".")[-1] if match.operator is not None else "EQUALS").upper()
+            if operator == "NOT_IN":
+                queryset = queryset.exclude(
+                    metrics__key=match.key, **self._metric_value_predicate("IN", match.value)
+                )
+            else:
+                queryset = queryset.filter(metrics__key=match.key, **self._metric_value_predicate(operator, match.value))
+
+        return queryset.distinct()
+
+    _MATCH_LOOKUPS: Dict[str, str] = {
+        "EQUALS": "", "EQ": "", "=": "",
+        "GREATER_THAN": "__gt", "GT": "__gt", ">": "__gt",
+        "LESS_THAN": "__lt", "LT": "__lt", "<": "__lt",
+        "GREATER_OR_EQUAL": "__gte", "GREATER_THAN_OR_EQUAL": "__gte", "GTE": "__gte", ">=": "__gte",
+        "LESS_OR_EQUAL": "__lte", "LESS_THAN_OR_EQUAL": "__lte", "LTE": "__lte", "<=": "__lte",
+        "CONTAINS": "__contains",
+        "STARTS_WITH": "__startswith",
+        "ENDS_WITH": "__endswith",
+        "IN": "__in",
+    }
+
+    def _metric_value_predicate(self, operator: str, value: Any) -> Dict[str, Any]:
+        """Build the ORM predicate for a metric value comparison.
+
+        Picks the typed column from the value's own type. Text operators are only
+        meaningful against `value_txt`, and ordering operators only against
+        `value_num`, so a mismatch is rejected rather than silently matching
+        nothing.
+        """
+        coerced = self._coerce_filter_value(value)
+        column = "value_txt" if isinstance(coerced, str) else "value_bool" if isinstance(coerced, bool) else "value_num"
+
+        if operator not in self._MATCH_LOOKUPS:
+            raise ValueError(f"Unsupported filter operator '{operator}'.")
+
+        lookup = self._MATCH_LOOKUPS[operator]
+        if lookup in {"__contains", "__startswith", "__endswith"} and column != "value_txt":
+            raise ValueError(f"Operator '{operator}' needs a string value, got {type(coerced).__name__}.")
+
+        return {f"metrics__{column}{lookup}": coerced}
+
+    def _structure_ordering(self, ordering: list[input_models.StructureOrder] | None) -> List[str]:
+        """Translate structure ordering into ORM order_by terms."""
+        if not ordering:
+            return ["created_at"]
+
+        terms: List[str] = []
+        for order in ordering:
+            if order.created_at is not None:
+                direction = order.created_at
+                field = "created_at"
+            elif order.id is not None:
+                direction = order.id
+                field = "id"
+            elif order.property is not None:
+                # Structures hold no properties of their own; the closest honest
+                # ordering is by the datum they point at.
+                direction = order.property.direction
+                field = "object"
+            else:
+                continue
+            descending = (direction.value if hasattr(direction, "value") else str(direction)).upper() == "DESC"
+            terms.append(f"-{field}" if descending else field)
+
+        return terms or ["created_at"]
 
     def get_assertion_for_relation(self, graph: models.Graph, edge_id: scalars.LocalID, info: Info | None = None) -> Optional[RetrievedAssertion]:
         """
@@ -2472,19 +1941,20 @@ class GraphController:
 
         shadow_link_id = edge_result[0]["sl_id"]
 
-        # Now get the assertion that GENERATED the ShadowLink
-        result = self.engine.execute(
-            graph,
-            f"""
-            MATCH (a:{vocab.Assertion})-[:{vocab.GENERATED}]->(sl:{vocab.ShadowLink})
-            WHERE id(sl) = $sl_id
-            RETURN a, id(a) as graph_id
-            """,
-            {"sl_id": shadow_link_id},
+        # The assertion behind a relation lives in the evidence base now. Relations
+        # themselves are rebuilt on `evidence_link` in M3, so until then there is
+        # no link row to look through and this correctly returns None rather than
+        # querying AGE for an Assertion vertex that no longer exists.
+        link = (
+            evidence_models.Link.objects.for_organization(graph.organization)
+            .filter(
+                kind=evidence_models.Link.Kind.RELATION,
+                source_ref=f"{graph.age_name}:{shadow_link_id}",
+            )
+            .select_related("assertion")
+            .first()
         )
-
-        if not result:
+        if link is None:
             return None
 
-        row = result[0]
-        return RetrievedAssertion.from_node(self, row["a"], graph_name=graph.age_name)
+        return RetrievedAssertion.from_row(self, link.assertion, graph_name=graph.age_name)

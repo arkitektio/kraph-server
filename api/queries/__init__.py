@@ -17,9 +17,6 @@ from .natural_event import natural_event, natural_events
 from .protocol_event import protocol_event, protocol_events
 from .activity import activity, activities
 from .assertion import assertion, assertions
-from .insights.graph_nodes import render_graph_nodes
-from .insights.graph_path import render_graph_path
-from .insights.graph_pairs import render_graph_pairs
 from .insights.graph_table import render_graph_table
 from .node import node, nodes
 
@@ -66,8 +63,5 @@ __all__ = [
     "metrics",
     # Assertion queries
     # Insight render queries
-    "render_graph_nodes",
-    "render_graph_path",
-    "render_graph_pairs",
     "render_graph_table",
 ]

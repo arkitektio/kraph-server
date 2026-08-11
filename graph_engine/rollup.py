@@ -218,10 +218,17 @@ def build_rollup_query(
         RollupQuery with the Cypher query and base parameters
 
     Raises:
-        ValueError: If the aggregation function is not supported
+        ValueError: If the aggregation function is not supported, or if the rule has
+            no metric key.
     """
     if rule.aggregation is None:
         raise ValueError("Rollup rule must have an aggregation function")
+
+    if rule.key is None:
+        # Every builder below emits `WHERE m.key = $key`. With key=None that renders as
+        # `WHERE m.key = null`, which is never true in Cypher, so the rollup silently
+        # returns nothing and the property silently stays unset. Fail instead.
+        raise ValueError(f"Rollup rule over source '{rule.source_node}' with aggregation {rule.aggregation.value} has no metric key; a rollup must name the metric key it aggregates")
 
     if rule.aggregation == AggregationFunction.LATEST:
         return build_rollup_latest_query(entity_label, rule)
@@ -272,32 +279,12 @@ def build_property_query(
 
         return build_derivation_latest_query(entity_label, source_node, key)
 
-    elif prop_def.derivation == DerivationType.PRIORITY_LATEST:
-        # Same as LATEST for now, could be extended with priority logic
-        source_node = "Structure"
-        key = prop_name
-
-        if prop_def.rule:
-            if prop_def.rule.source_node:
-                source_node = prop_def.rule.source_node
-            if prop_def.rule.key:
-                key = prop_def.rule.key
-
-        return build_derivation_latest_query(entity_label, source_node, key)
-
-    elif prop_def.derivation == DerivationType.LATEST_ASSERTION_TOOL:
-        # This would need special handling for tool-based assertions
-        # For now, fall back to LATEST behavior
-        source_node = "Structure"
-        key = prop_name
-
-        if prop_def.rule:
-            if prop_def.rule.source_node:
-                source_node = prop_def.rule.source_node
-            if prop_def.rule.key:
-                key = prop_def.rule.key
-
-        return build_derivation_latest_query(entity_label, source_node, key)
+    elif prop_def.derivation in (DerivationType.PRIORITY_LATEST, DerivationType.LATEST_ASSERTION_TOOL):
+        # These previously aliased plain LATEST, silently ignoring the subject priority
+        # / tool scoping the schema asked for. Failing loudly is better than returning a
+        # value derived under rules the caller did not request. Implemented alongside
+        # ConflictPolicy, once assertions carry subject and app priority.
+        raise NotImplementedError(f"Derivation type {prop_def.derivation.value} is not implemented yet")
 
     else:
         raise ValueError(f"Unsupported derivation type: {prop_def.derivation}")
