@@ -1769,35 +1769,15 @@ class GraphController:
     def indexed_property_keys(self, category: models.Category) -> set[str]:
         """Which of a category's properties are actually stored on the node.
 
-        A property that is not derived at all (no rule, set directly) is always
-        stored, so it stays filterable. Only *derived* properties are subject to
-        the indexed/derived-on-read split.
+        A property written directly is always stored, so it stays filterable.
+        Only *derived* properties are subject to the indexed/derived-on-read
+        split, and `projector.is_derived` is the one definition of that — the
+        read path diffs the two sets, so a second opinion here would silently
+        misclassify properties.
         """
-        from graph_engine.input_models import DerivationType
+        from graph_engine.projector import is_derived
 
-        keys: set[str] = set()
-        for prop in category.defined_properties or []:
-            # `derivation` defaults to LATEST, so the enum alone does not say
-            # whether a property is computed — a plain property carries LATEST and
-            # no rule, and is written directly. What makes a property derived is
-            # having a rule that names a source, which is also exactly the
-            # condition `derive_properties` requires before it computes anything.
-            rule = getattr(prop, "rule", None)
-            is_derived = (
-                prop.derivation
-                in (
-                    DerivationType.ROLLUP,
-                    DerivationType.LATEST,
-                    DerivationType.PRIORITY_LATEST,
-                    DerivationType.LATEST_ASSERTION_TOOL,
-                )
-                and rule is not None
-                and getattr(rule, "source_node", None)
-            )
-
-            if not is_derived or getattr(prop, "index", False):
-                keys.add(prop.key)
-        return keys
+        return {prop.key for prop in (category.defined_properties or []) if not is_derived(prop) or getattr(prop, "index", False)}
 
     def _assert_indexed(self, key: str, indexed_keys: set[str] | None) -> str:
         """Reject filtering or sorting on a property that is not on the node.

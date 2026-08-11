@@ -36,23 +36,71 @@ def category_with_both(test_graph: core_models.Graph) -> core_models.EntityCateg
     )
 
 
+@pytest.fixture
+def measured_ref(test_graph: core_models.Graph, category_with_both: core_models.EntityCategory) -> str:
+    """An entity ref with real measurements behind it.
+
+    Both declared properties read the same metric key through different
+    aggregations — MEAN for the indexed one, MAX for the other — so a test that
+    confuses them produces visibly different numbers rather than two empty dicts.
+    """
+    from evidence import models as evidence_models
+    from evidence import state as state_module
+    from evidence import writer
+
+    organization = test_graph.organization
+    assertion = writer.create_assertion(organization, subject="tester", app_id="pytest")
+    roi = core_models.StructureCategory.objects.create(graph=test_graph, key="ROI", identifier="ROI", age_name="roi_idx")
+    metric_category = core_models.MetricCategory.objects.create(graph=test_graph, structure_category=roi, key="vector_length", age_name="vl_idx")
+
+    structure = writer.ensure_structure(organization, roi, "roi-indexed", assertion)
+    ref = f"{test_graph.age_name}:11111111-0000-0000-0000-000000000001"
+    writer.create_link(
+        organization,
+        kind=evidence_models.Link.Kind.INFORMS,
+        source_ref=str(structure.pk),
+        target_ref=ref,
+        assertion=assertion,
+    )
+
+    for value in (10.0, 30.0):
+        metric = writer.record_metric(organization, structure, metric_category, key="vector_length", value=value, assertion=assertion)
+        state_module.merge(metric, [ref])
+
+    return ref
+
+
 @pytest.mark.django_db(transaction=True)
 def test_only_the_indexed_property_is_projected(
     test_graph: core_models.Graph,
     category_with_both: core_models.EntityCategory,
+    measured_ref: str,
 ) -> None:
-    """`indexed_only` is what the projector writes to the graph."""
-    everything = projector.derive_properties(test_graph, "ref", category_with_both)
-    indexed = projector.derive_properties(test_graph, "ref", category_with_both, indexed_only=True)
+    """Both properties compute; only the indexed one is written to the graph.
 
-    # Neither has evidence, so both are empty here; the point is which *keys* each
-    # would consider. Assert through the declared set instead.
-    considered_all = {prop.key for prop in projector._derived_properties(category_with_both)}
-    considered_indexed = {prop.key for prop in projector._derived_properties(category_with_both) if prop.index}
+    Asserted against real derived values, not against empty dicts. An earlier
+    version of this test ran with no evidence and ended up asserting `{} == {}`
+    — the same vacuous-pass shape this whole transition has been removing.
+    """
+    everything = projector.derive_properties(test_graph, measured_ref, category_with_both)
+    indexed = projector.derive_properties(test_graph, measured_ref, category_with_both, indexed_only=True)
 
-    assert considered_all == {"indexed_length", "quiet_length"}
-    assert considered_indexed == {"indexed_length"}
-    assert everything == indexed == {}
+    assert everything == {"indexed_length": pytest.approx(20.0), "quiet_length": pytest.approx(30.0)}, "Both properties must derive: MEAN of 10 and 30 is 20, MAX is 30"
+    assert indexed == {"indexed_length": pytest.approx(20.0)}, "Only the indexed property reaches the graph"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_the_split_is_computed_in_one_pass(
+    test_graph: core_models.Graph,
+    category_with_both: core_models.EntityCategory,
+    measured_ref: str,
+) -> None:
+    """`split_properties` returns both halves without deriving twice."""
+    indexed, on_read = projector.split_properties(test_graph, measured_ref, category_with_both)
+
+    assert indexed == {"indexed_length": pytest.approx(20.0)}
+    assert on_read == {"quiet_length": pytest.approx(30.0)}
+    assert not set(indexed) & set(on_read), "A property belongs to exactly one half"
 
 
 @pytest.mark.django_db(transaction=True)

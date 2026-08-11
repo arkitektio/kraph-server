@@ -52,9 +52,24 @@ EVIDENCE_DERIVATIONS = (
 )
 
 
+def is_derived(prop: Any) -> bool:
+    """Whether a property is computed from evidence rather than written directly.
+
+    The single definition. `derivation` defaults to LATEST, so the enum alone
+    does not distinguish a computed property from a plain one — what makes a
+    property derived is a rule naming a source, which is also the condition
+    `derive_properties` requires before computing anything. The controller reads
+    this too, because `_derive_unindexed` diffs the two and they have to agree.
+    """
+    if prop.key == "id" or prop.derivation not in EVIDENCE_DERIVATIONS:
+        return False
+    rule = getattr(prop, "rule", None)
+    return rule is not None and bool(getattr(rule, "source_node", None))
+
+
 def _derived_properties(category: core_models.Category) -> list[Any]:
     """The property definitions on a category that come from evidence."""
-    return [prop for prop in (category.defined_properties or []) if prop.derivation in EVIDENCE_DERIVATIONS and prop.key != "id"]
+    return [prop for prop in (category.defined_properties or []) if is_derived(prop)]
 
 
 def _structure_ids_informing(graph: core_models.Graph, entity_ref: str) -> list[Any]:
@@ -128,6 +143,25 @@ def _structure_category_for_rule(graph: core_models.Graph, rule: Any) -> core_mo
     if not rule or not rule.source_node:
         return None
     return core_models.StructureCategory.objects.filter(graph=graph, identifier=rule.source_node).first() or core_models.StructureCategory.objects.filter(graph=graph, key=rule.source_node).first()
+
+
+def split_properties(
+    graph: core_models.Graph,
+    entity_ref: str,
+    category: core_models.Category,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Derive every property once, returned as (indexed, derived_on_read).
+
+    One pass. The read path used to call `derive_properties` twice and subtract,
+    which doubled the state-vector lookups on every entity read — an odd way to
+    pay for a milestone whose point was making properties cheaper.
+    """
+    everything = derive_properties(graph, entity_ref, category)
+    indexed_keys = {prop.key for prop in _derived_properties(category) if getattr(prop, "index", False)}
+
+    indexed = {key: value for key, value in everything.items() if key in indexed_keys}
+    on_read = {key: value for key, value in everything.items() if key not in indexed_keys}
+    return indexed, on_read
 
 
 def derive_properties(

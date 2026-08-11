@@ -741,10 +741,8 @@ def _derive_unindexed(node: RetrievedNode) -> dict:
         return {}
     category = category.get_real_instance()
 
-    graph = category.graph
-    everything = projector.derive_properties(graph, node.durable_ref, category)
-    indexed = projector.derive_properties(graph, node.durable_ref, category, indexed_only=True)
-    return {key: value for key, value in everything.items() if key not in indexed}
+    _, on_read = projector.split_properties(category.graph, node.durable_ref, category)
+    return on_read
 
 
 def _structure_category_for(graph: Any, rule: Any) -> Any:
@@ -1048,12 +1046,17 @@ class NaturalEvent(VersionedNode, Event):
         return [RichProperty(_entity=self._value, _key=var, _category=category) for var in self._value.cleaned_properties]
 
     @strawberry.field(description="List of the current derived properties for this entity")
-    def properties(self) -> AnyScalar:
-        """Return the structures that provide evidence for this entity."""
-        # In a real implementation, we would fetch the linked structures
-        # from the graph and return them as Structure types.
-        # For this example, we'll return an empty list.
-        return self._value.cleaned_properties
+    async def properties(self) -> AnyScalar:
+        """Every derived property, indexed or not.
+
+        Same merge as `Entity.properties`. Events derive properties exactly as
+        entities do — the bio schema's `Mitosis.cell_count` is one — so reading
+        only the stored keys here would have made every non-indexed event
+        property invisible.
+        """
+        stored = self._value.cleaned_properties
+        derived = await _derive_unindexed(self._value)
+        return {**derived, **stored}
 
 
 # ===========================================
@@ -1181,12 +1184,17 @@ class ProtocolEvent(VersionedNode, Event):
         return [RichProperty(_entity=self._value, _key=var, _category=category) for var in self._value.cleaned_properties]
 
     @strawberry.field(description="List of the current derived properties for this entity")
-    def properties(self) -> AnyScalar:
-        """Return the structures that provide evidence for this entity."""
-        # In a real implementation, we would fetch the linked structures
-        # from the graph and return them as Structure types.
-        # For this example, we'll return an empty list.
-        return self._value.cleaned_properties
+    async def properties(self) -> AnyScalar:
+        """Every derived property, indexed or not.
+
+        Same merge as `Entity.properties`. Events derive properties exactly as
+        entities do — the bio schema's `Mitosis.cell_count` is one — so reading
+        only the stored keys here would have made every non-indexed event
+        property invisible.
+        """
+        stored = self._value.cleaned_properties
+        derived = await _derive_unindexed(self._value)
+        return {**derived, **stored}
 
 
 # ===========================================
@@ -1346,12 +1354,17 @@ class Relation(Edge[retrieved.RetrievedEdge]):
         return [RichProperty(_entity=self._value, _key=var, _category=category) for var in self._value.cleaned_properties]
 
     @strawberry.field(description="List of the current derived properties for this entity")
-    def properties(self) -> AnyScalar:
-        """Return the structures that provide evidence for this entity."""
-        # In a real implementation, we would fetch the linked structures
-        # from the graph and return them as Structure types.
-        # For this example, we'll return an empty list.
-        return self._value.cleaned_properties
+    async def properties(self) -> AnyScalar:
+        """Every derived property, indexed or not.
+
+        Same merge as `Entity.properties`. Events derive properties exactly as
+        entities do — the bio schema's `Mitosis.cell_count` is one — so reading
+        only the stored keys here would have made every non-indexed event
+        property invisible.
+        """
+        stored = self._value.cleaned_properties
+        derived = await _derive_unindexed(self._value)
+        return {**derived, **stored}
 
 
 # ===========================================
