@@ -1,201 +1,145 @@
-from strawberry.dataloader import DataLoader
-from core import models
-from authentikate.models import User
+"""Per-operation batching loaders.
 
+These were fifteen module-level `DataLoader` instances, each with three separate
+problems:
+
+- **A process-lifetime cache shared across tenants.** A `DataLoader` caches
+  everything it has ever loaded. Created at import time, that cache outlives
+  every request, so one organization's category could be served to another's
+  query — the exact leak the evidence scoping guard exists to prevent, arriving
+  through the back door.
+- **No batching at all.** Every load function was `for i in ids: await
+  Model.objects.aget(i)`, which is N queries. A DataLoader that does not batch is
+  a cache with extra steps.
+- **One miss failed the whole batch.** `aget` raises `DoesNotExist`, so a single
+  dangling id took down every other id loaded alongside it.
+
+Loaders are now built per operation and bound through a ContextVar, mirroring
+`CypherEngineExtension`. Each does one `filter(id__in=...)` and returns `None`
+for ids it could not find, so a dangling reference resolves to null instead of
+erroring the query.
+"""
+
+from __future__ import annotations
+
+from contextvars import ContextVar
+from typing import Any, Callable, Iterable
+
+from authentikate.models import User
+from strawberry.dataloader import DataLoader
+from strawberry.extensions import SchemaExtension
+
+from core import models
 
 PKType = int | str
 
-
-async def load_metric_categories(ids: list[PKType]) -> list[models.MetricCategory]:
-    """Loader function to fetch MetricCategory objects by their IDs."""
-    gotten = []
-    for i in ids:
-        gotten.append(
-            await models.MetricCategory.objects.aget(
-                id=i,
-            )
-        )
-
-    return gotten
+_loaders: ContextVar[dict[str, DataLoader] | None] = ContextVar("api_loaders", default=None)
 
 
-async def load_users(ids: list[PKType]) -> list[User]:
-    """Loader function to fetch User objects by their IDs."""
+def _batch_by_pk(model: type, field: str = "id") -> Callable[[list[PKType]], Any]:
+    """A load function that fetches every requested row in one query.
 
-    gotten = []
-    for i in ids:
-        gotten.append(
-            await User.objects.aget(
-                id=i,
-            )
-        )
+    Returns results in the order asked for, with `None` where a row is missing —
+    DataLoader requires positional correspondence, and returning the queryset's
+    own order would silently mis-assign every result after the first gap.
+    """
 
-    return gotten
+    async def load(keys: list[PKType]) -> list[Any]:
+        found = {}
+        async for instance in model.objects.filter(**{f"{field}__in": list(keys)}):
+            found[str(getattr(instance, field))] = instance
+        return [found.get(str(key)) for key in keys]
 
-
-async def load_entity_categories(ids: list[PKType]) -> list[models.EntityCategory]:
-    """Loader function to fetch EntityCategory objects by their IDs."""
-    gotten = []
-    for i in ids:
-        gotten.append(
-            await models.EntityCategory.objects.aget(
-                id=i,
-            )
-        )
-
-    return gotten
+    return load
 
 
-async def load_node_categories(ids: list[PKType]) -> list[models.NodeCategory]:
-    """Loader function to fetch EntityCategory objects by their IDs."""
-    gotten = []
-    for i in ids:
-        gotten.append(
-            await models.NodeCategory.objects.aget(
-                id=i,
-            )
-        )
-
-    return gotten
-
-
-async def load_structure_categories(ids: list[PKType]) -> list[models.StructureCategory]:
-    """Loader function to fetch StructureCategory objects by their IDs."""
-    gotten = []
-    for i in ids:
-        gotten.append(
-            await models.StructureCategory.objects.aget(
-                id=i,
-            )
-        )
-
-    return gotten
+_LOADER_SPECS: dict[str, tuple[type, str]] = {
+    "node_category": (models.NodeCategory, "id"),
+    "entity_category": (models.EntityCategory, "id"),
+    "structure_category": (models.StructureCategory, "id"),
+    "natural_event_category": (models.NaturalEventCategory, "id"),
+    "metric_category": (models.MetricCategory, "id"),
+    "protocol_event_category": (models.ProtocolEventCategory, "id"),
+    "relation_category": (models.RelationCategory, "id"),
+    "structure_relation_category": (models.StructureRelationCategory, "id"),
+    "measurement_category": (models.MeasurementCategory, "id"),
+    "graph_by_id": (models.Graph, "id"),
+    "graph": (models.Graph, "age_name"),
+    "graph_nodes_query_by_id": (models.GraphNodesQuery, "id"),
+    "graph_path_query_by_id": (models.GraphPathQuery, "id"),
+    "graph_pairs_query_by_id": (models.GraphPairsQuery, "id"),
+    "graph_table_query_by_id": (models.GraphTableQuery, "id"),
+    "user": (User, "id"),
+}
 
 
-async def load_natural_event_categories(ids: list[PKType]) -> list[models.NaturalEventCategory]:
-    """Loader function to fetch NaturalEventCategory objects by their IDs."""
-    gotten = []
-    for i in ids:
-        gotten.append(
-            await models.NaturalEventCategory.objects.aget(
-                id=i,
-            )
-        )
-
-    return gotten
+def build_loaders() -> dict[str, DataLoader]:
+    """A fresh set of loaders for one operation."""
+    return {name: DataLoader(load_fn=_batch_by_pk(model, field)) for name, (model, field) in _LOADER_SPECS.items()}
 
 
-async def load_protocol_event_categories(ids: list[PKType]) -> list[models.ProtocolEventCategory]:
-    """Loader function to fetch ProtocolEventCategory objects by their IDs."""
-    gotten = []
-    for i in ids:
-        gotten.append(
-            await models.ProtocolEventCategory.objects.aget(
-                id=i,
-            )
-        )
+class _LoaderProxy:
+    """Resolves to the current operation's loader at call time.
 
-    return gotten
+    Call sites read `loaders.entity_category_loader.load(id)` as module state, so
+    this keeps that spelling while the instance underneath is per-operation.
+    Rewriting two dozen resolvers to thread a context object would be a larger
+    change than the bug warrants.
+    """
 
+    def __init__(self, name: str) -> None:
+        self._name = name
 
-async def load_measurement_categories(ids: list[PKType]) -> list[models.MeasurementCategory]:
-    """Loader function to fetch MeasurementCategory objects by their IDs."""
-    gotten = []
-    for i in ids:
-        gotten.append(
-            await models.MeasurementCategory.objects.aget(
-                id=i,
-            )
-        )
+    def _current(self) -> DataLoader:
+        active = _loaders.get()
+        if active is None:
+            # Outside an operation — a management command, a test calling a
+            # resolver directly. A throwaway loader is correct here: there is no
+            # request to scope a cache to, so caching across the call would be
+            # the bug rather than the optimisation.
+            model, field = _LOADER_SPECS[self._name]
+            return DataLoader(load_fn=_batch_by_pk(model, field))
+        return active[self._name]
 
-    return gotten
+    def load(self, key: PKType) -> Any:
+        """Load one key, returning None if it does not exist."""
+        return self._current().load(key)
 
-
-async def load_relation_categories(ids: list[PKType]) -> list[models.RelationCategory]:
-    """Loader function to fetch RelationCategory objects by their IDs."""
-    gotten = []
-    for i in ids:
-        gotten.append(
-            await models.RelationCategory.objects.aget(
-                id=i,
-            )
-        )
-
-    return gotten
+    def load_many(self, keys: Iterable[PKType]) -> Any:
+        """Load several keys in one batch."""
+        return self._current().load_many(list(keys))
 
 
-async def load_structure_relation_categories(ids: list[PKType]) -> list[models.StructureRelationCategory]:
-    """Loader function to fetch StructureRelationCategory objects by their IDs."""
-    gotten = []
-    for i in ids:
-        gotten.append(
-            await models.StructureRelationCategory.objects.aget(
-                id=i,
-            )
-        )
+class LoaderExtension(SchemaExtension):
+    """Bind a fresh set of loaders for the duration of each operation.
 
-    return gotten
+    Mirrors `CypherEngineExtension`. Without this the loaders never get reset,
+    and a DataLoader that is never reset is a cache with no eviction and no
+    tenant boundary.
+    """
 
-
-async def graph_loader_func(graph_names: list[PKType]) -> list[models.Graph]:
-    """Loader function to fetch Graph objects by their names."""
-    gotten = []
-
-    for i in graph_names:
-        gotten.append(await models.Graph.objects.aget(age_name=i))
-
-    return gotten
+    def on_operation(self):
+        """Install per-operation loaders, then discard them."""
+        token = _loaders.set(build_loaders())
+        try:
+            yield
+        finally:
+            _loaders.reset(token)
 
 
-async def load_graphs_by_id(ids: list[PKType]) -> list[models.Graph]:
-    gotten = []
-    for i in ids:
-        gotten.append(await models.Graph.objects.aget(id=i))
-    return gotten
-
-
-async def load_graph_nodes_queries_by_id(ids: list[PKType]) -> list[models.GraphNodesQuery]:
-    gotten = []
-    for i in ids:
-        gotten.append(await models.GraphNodesQuery.objects.aget(id=i))
-    return gotten
-
-
-async def load_graph_path_queries_by_id(ids: list[PKType]) -> list[models.GraphPathQuery]:
-    gotten = []
-    for i in ids:
-        gotten.append(await models.GraphPathQuery.objects.aget(id=i))
-    return gotten
-
-
-async def load_graph_pairs_queries_by_id(ids: list[PKType]) -> list[models.GraphPairsQuery]:
-    gotten = []
-    for i in ids:
-        gotten.append(await models.GraphPairsQuery.objects.aget(id=i))
-    return gotten
-
-
-async def load_graph_table_queries_by_id(ids: list[PKType]) -> list[models.GraphTableQuery]:
-    gotten = []
-    for i in ids:
-        gotten.append(await models.GraphTableQuery.objects.aget(id=i))
-    return gotten
-
-
-node_category_loader = DataLoader(load_fn=load_node_categories)
-entity_category_loader = DataLoader(load_fn=load_entity_categories)
-structure_category_loader = DataLoader(load_fn=load_structure_categories)
-natural_event_category_loader = DataLoader(load_fn=load_natural_event_categories)
-metric_category_loader = DataLoader(load_fn=load_metric_categories)
-protocol_event_category_loader = DataLoader(load_fn=load_protocol_event_categories)
-
-relation_category_loader = DataLoader(load_fn=load_relation_categories)
-structure_relation_category_loader = DataLoader(load_fn=load_structure_relation_categories)
-measurement_category_loader = DataLoader(load_fn=load_measurement_categories)
-graph_loader = DataLoader(load_fn=graph_loader_func)
-graph_by_id_loader = DataLoader(load_fn=load_graphs_by_id)
-graph_nodes_query_by_id_loader = DataLoader(load_fn=load_graph_nodes_queries_by_id)
-graph_path_query_by_id_loader = DataLoader(load_fn=load_graph_path_queries_by_id)
-graph_pairs_query_by_id_loader = DataLoader(load_fn=load_graph_pairs_queries_by_id)
-graph_table_query_by_id_loader = DataLoader(load_fn=load_graph_table_queries_by_id)
-user_loader = DataLoader(load_fn=load_users)
+node_category_loader = _LoaderProxy("node_category")
+entity_category_loader = _LoaderProxy("entity_category")
+structure_category_loader = _LoaderProxy("structure_category")
+natural_event_category_loader = _LoaderProxy("natural_event_category")
+metric_category_loader = _LoaderProxy("metric_category")
+protocol_event_category_loader = _LoaderProxy("protocol_event_category")
+relation_category_loader = _LoaderProxy("relation_category")
+structure_relation_category_loader = _LoaderProxy("structure_relation_category")
+measurement_category_loader = _LoaderProxy("measurement_category")
+graph_loader = _LoaderProxy("graph")
+graph_by_id_loader = _LoaderProxy("graph_by_id")
+graph_nodes_query_by_id_loader = _LoaderProxy("graph_nodes_query_by_id")
+graph_path_query_by_id_loader = _LoaderProxy("graph_path_query_by_id")
+graph_pairs_query_by_id_loader = _LoaderProxy("graph_pairs_query_by_id")
+graph_table_query_by_id_loader = _LoaderProxy("graph_table_query_by_id")
+user_loader = _LoaderProxy("user")

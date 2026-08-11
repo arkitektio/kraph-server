@@ -11,6 +11,7 @@ from typing import AsyncGenerator, Optional
 from authentikate.strawberry.extension import AuthentikateExtension
 
 from .extensions.cypher import CypherEngineExtension
+from .loaders import LoaderExtension
 import kante
 from graph_engine.engine.age_engine import AgeEngine
 from graph_engine.engine.protocol import CypherEngine
@@ -672,6 +673,9 @@ def create_schema(
     extensions = [
         QueryDepthLimiter(max_depth=max_depth),
         AuthentikateExtension(),
+        # Loaders are per-operation. Left as module-level instances they became a
+        # process-lifetime cache shared across every tenant.
+        LoaderExtension(),
     ]
 
     # Add CypherEngineExtension if an engine is provided

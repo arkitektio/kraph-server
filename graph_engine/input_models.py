@@ -26,6 +26,27 @@ class DerivationType(str, Enum):
     LATEST_ASSERTION_TOOL = "LATEST_ASSERTION_TOOL"
 
 
+class ConflictPolicy(str, Enum):
+    """How to resolve two subjects disagreeing about the same property.
+
+    Aggregation answers "combine these measurements"; conflict policy answers
+    "these measurements should not be combined, because they come from sources
+    that disagree". A human annotator and a segmentation model both reporting a
+    cell's length are not two samples of one quantity — averaging them produces a
+    number neither of them claimed.
+    """
+
+    #: Fold everything together regardless of who asserted it. The default,
+    #: because it is what the aggregation functions already do.
+    COMBINE = "COMBINE"
+    #: Take the most recent claim from the highest-priority subject.
+    SUBJECT_PRIORITY = "SUBJECT_PRIORITY"
+    #: Take the most recent claim from the tool that made it, ignoring others.
+    LATEST_TOOL = "LATEST_TOOL"
+    #: Do not resolve. Surface that the sources disagree and let a human decide.
+    FLAG = "FLAG"
+
+
 class AggregationFunction(str, Enum):
     MEAN = "MEAN"
     SUM = "SUM"
@@ -581,6 +602,23 @@ class DerivationRuleInput(BaseModel):
     source_node: Optional[str] = Field(default=None, description="The label of the describing structure to read from")
     key: Optional[str] = Field(default=None, description="The property key on the source node")
     aggregation: Optional[AggregationFunction] = Field(default=None, description="Aggregation function (MEAN, SUM, MAX, MIN, COUNT, etc.)")
+
+    conflict_policy: ConflictPolicy = Field(
+        default=ConflictPolicy.COMBINE,
+        description="How to resolve disagreement between subjects. COMBINE folds everything together.",
+    )
+    subject_priority: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Subjects in descending order of trust, for PRIORITY_LATEST. The first subject with any "
+            "measurement wins; subjects not listed are considered only if none of the listed ones "
+            "have measured."
+        ),
+    )
+    tool_priority: List[str] = Field(
+        default_factory=list,
+        description="App ids in descending order of trust, for LATEST_ASSERTION_TOOL.",
+    )
 
 
 class ColumnInput(BaseModel):

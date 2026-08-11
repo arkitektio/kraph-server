@@ -39,9 +39,88 @@ def dirty(graph: core_models.Graph, structure_ids: Iterable[Any]) -> list[str]:
     return selector_module.entity_refs_informed_by(graph, list(structure_ids))
 
 
+#: Every derivation that reads from evidence. All four are handled — leaving
+#: PRIORITY_LATEST and LATEST_ASSERTION_TOOL out would make properties using them
+#: silently never populate, which is the failure mode this transition exists to
+#: remove. They previously aliased plain LATEST, quietly ignoring the priority
+#: the schema asked for.
+EVIDENCE_DERIVATIONS = (
+    DerivationType.ROLLUP,
+    DerivationType.LATEST,
+    DerivationType.PRIORITY_LATEST,
+    DerivationType.LATEST_ASSERTION_TOOL,
+)
+
+
 def _derived_properties(category: core_models.Category) -> list[Any]:
     """The property definitions on a category that come from evidence."""
-    return [prop for prop in (category.defined_properties or []) if prop.derivation in (DerivationType.ROLLUP, DerivationType.LATEST) and prop.key != "id"]
+    return [prop for prop in (category.defined_properties or []) if prop.derivation in EVIDENCE_DERIVATIONS and prop.key != "id"]
+
+
+def _structure_ids_informing(graph: core_models.Graph, entity_ref: str) -> list[Any]:
+    """The structure primary keys whose measurements reach this entity."""
+    import uuid as uuid_module
+
+    refs = selector_module.informs_links_for(graph).filter(target_ref=entity_ref).values_list("source_ref", flat=True)
+
+    parsed = []
+    for ref in refs:
+        try:
+            parsed.append(uuid_module.UUID(str(ref)))
+        except ValueError:
+            # Not a structure — a relation link, say. Not evidence for a rollup.
+            continue
+    return parsed
+
+
+def _priority_scoped_value(
+    graph: core_models.Graph,
+    entity_ref: str,
+    source_category: Any,
+    key: str,
+    prop: Any,
+) -> Any:
+    """The latest value from the most-trusted source that has one.
+
+    PRIORITY_LATEST and LATEST_ASSERTION_TOOL cannot read the state vector: its
+    grain is `(entity, source_category, key)` with no subject discriminator, and
+    adding one would multiply every row by the number of sources that ever
+    measured. These query the metrics directly instead — more expensive, but
+    correct, and properties declared this way have few contributors by
+    construction.
+
+    An unlisted source can never outrank a listed one: the fallback to "anyone"
+    applies only when the rule names no priorities at all. Falling through would
+    make the priority advisory, which is not what "priority" means.
+    """
+    from evidence import models as evidence_models
+
+    rule = prop.rule
+    by_tool = prop.derivation == DerivationType.LATEST_ASSERTION_TOOL
+    ordering = list(getattr(rule, "tool_priority", []) if by_tool else getattr(rule, "subject_priority", []))
+    field = "assertion__app_id" if by_tool else "assertion__subject"
+
+    structure_ids = _structure_ids_informing(graph, entity_ref)
+    if not structure_ids:
+        return None
+
+    base = evidence_models.Metric.objects.for_organization(graph.organization).filter(
+        structure_id__in=structure_ids,
+        structure__category=source_category,
+        key=key,
+        status=evidence_models.LifecycleStatus.ACTIVE,
+    )
+
+    for source in ordering:
+        latest = base.filter(**{field: source}).order_by("-measured_at").first()
+        if latest is not None:
+            return latest.value
+
+    if ordering:
+        return None
+
+    latest = base.order_by("-measured_at").first()
+    return latest.value if latest else None
 
 
 def _structure_category_for_rule(graph: core_models.Graph, rule: Any) -> core_models.StructureCategory | None:
@@ -71,19 +150,56 @@ def derive_properties(graph: core_models.Graph, entity_ref: str, category: core_
             continue
 
         key = rule.key if rule and rule.key else prop.key
-        state = state_module.state_for(organization, entity_ref, source_category, key)
 
-        aggregation = rule.aggregation if rule and rule.aggregation else None
-        if prop.derivation == DerivationType.LATEST and aggregation is None:
-            from graph_engine.input_models import AggregationFunction
+        if prop.derivation in (DerivationType.PRIORITY_LATEST, DerivationType.LATEST_ASSERTION_TOOL):
+            value = _priority_scoped_value(graph, entity_ref, source_category, key, prop)
+        else:
+            state = state_module.state_for(organization, entity_ref, source_category, key)
 
-            aggregation = AggregationFunction.LATEST
+            aggregation = rule.aggregation if rule and rule.aggregation else None
+            if prop.derivation == DerivationType.LATEST and aggregation is None:
+                from graph_engine.input_models import AggregationFunction
 
-        value = aggregate.apply(aggregation, state) if aggregation else None
+                aggregation = AggregationFunction.LATEST
+
+            value = aggregate.apply(aggregation, state) if aggregation else None
+
         if value is not None:
             values[prop.key] = value
 
     return values
+
+
+def _observation_window(graph: core_models.Graph, entity_ref: str) -> dict[str, Any]:
+    """When the evidence behind this node was observed.
+
+    `valid_from` and `valid_to` are read by six GraphQL fields that have always
+    returned null, because nothing ever wrote them. They are the observation
+    window of the contributing measurements — `measured_at`, not `asserted_at`:
+    a node is valid over the period the world was actually looked at, regardless
+    of when somebody got round to saying so.
+    """
+    from django.db.models import Max, Min
+
+    from evidence import models as evidence_models
+
+    structure_ids = _structure_ids_informing(graph, entity_ref)
+    if not structure_ids:
+        return {"valid_from": None, "valid_to": None}
+
+    window = (
+        evidence_models.Metric.objects.for_organization(graph.organization)
+        .filter(
+            structure_id__in=structure_ids,
+            status=evidence_models.LifecycleStatus.ACTIVE,
+        )
+        .aggregate(earliest=Min("measured_at"), latest=Max("measured_at"))
+    )
+
+    return {
+        "valid_from": window["earliest"].isoformat() if window["earliest"] else None,
+        "valid_to": window["latest"].isoformat() if window["latest"] else None,
+    }
 
 
 def _lifecycle_state(graph: core_models.Graph, entity_ref: str) -> str:
@@ -122,6 +238,7 @@ def project(
         # projection silently derives nothing.
         category = node.category.get_real_instance()
         values = derive_properties(graph, entity_ref, category)
+        values.update(_observation_window(graph, entity_ref))
         values["__lifecycle_state"] = _lifecycle_state(graph, entity_ref)
         values["__schema_version"] = schema_version
         values["__last_derived"] = int(time.time() * 1000)

@@ -10,8 +10,11 @@ This module follows the pattern from core/types.py where:
 3. Fields access the private _value for their data
 """
 
+import uuid
+
 import strawberry
-from typing import Generic, Optional, List, Type, TypeVar, Union, cast
+from asgiref.sync import sync_to_async
+from typing import Any, Generic, Optional, List, Type, TypeVar, Union, cast
 from datetime import datetime
 from api import loaders, order, pagination, filters
 from datalayer.types import MediaStore
@@ -586,13 +589,128 @@ class RichProperty:
 
         return value
 
+    @strawberry.field(description="How many measurements contribute to this value")
+    async def n_evidence(self) -> Optional[int]:
+        """The number of metrics folded into this property's value."""
+        state = await self._state()
+        return state.n if state else None
+
+    @strawberry.field(description="Spread of the contributing measurements (max - min), where numeric")
+    async def spread(self) -> Optional[float]:
+        """How far apart the supporting measurements are.
+
+        A mean of 45.2 derived from three measurements spanning 2µm means
+        something different from the same mean spanning 40µm, and the difference
+        is invisible in the value alone.
+        """
+        state = await self._state()
+        if state is None or state.min is None or state.max is None:
+            return None
+        return state.max - state.min
+
+    @strawberry.field(description="When the earliest contributing measurement was observed")
+    async def measured_from(self) -> Optional[datetime]:
+        """Start of the observation window this value summarises."""
+        state = await self._state()
+        return state.first_ts if state else None
+
+    @strawberry.field(description="When the latest contributing measurement was observed")
+    async def measured_to(self) -> Optional[datetime]:
+        """End of the observation window this value summarises."""
+        state = await self._state()
+        return state.last_ts if state else None
+
+    @strawberry.field(description="The assertions whose measurements contribute to this value")
+    async def contributing_assertions(self) -> List["Assertion"]:
+        """Who claimed the measurements behind this number.
+
+        The provenance half of the BIOLOGIST.md sentence: not just "45.2µm" but
+        "derived from ROI #555, asserted by AI_Model_X on Jan 15th".
+        """
+        rows = await self._contributing_metrics()
+        controller = self._entity.controller
+        seen: dict[str, Any] = {}
+        for metric in rows:
+            seen.setdefault(str(metric.assertion_id), metric.assertion)
+        return [Assertion(_value=retrieved.RetrievedAssertion.from_row(controller, row)) for row in seen.values()]
+
     @strawberry.field(description="Supporting evidence for this property, in form of metrics derived from observations/measurements")
     async def supporting_evidence(self) -> List["Metric"]:
-        """Return the supporting evidence structures that contributed to this property."""
-        # In a real implementation, we would query the graph for the structures
-        # that have measurements linked to this entity and property key.
-        # For this example, we'll return None for simplicity.
-        return []
+        """The measurements this property's value was derived from.
+
+        Previously a hardcoded empty list, which made every derived value
+        unexplainable — you could see the number but never what produced it.
+        """
+        rows = await self._contributing_metrics()
+        controller = self._entity.controller
+        return [Metric(_value=retrieved.RetrievedMetric.from_row(controller, row)) for row in rows]
+
+    # --- internals ---
+
+    def _rule(self) -> Any:
+        definition = self._category.property_map.get(self._key)
+        return getattr(definition, "rule", None) if definition else None
+
+    @sync_to_async
+    def _state(self) -> Any:
+        """The state vector behind this property, or None if it has no evidence."""
+        from evidence import state as state_module
+
+        rule = self._rule()
+        graph = self._category.graph
+        source = _structure_category_for(graph, rule)
+        if source is None:
+            return None
+
+        key = rule.key if rule and rule.key else self._key
+        return state_module.state_for(graph.organization, self._entity.durable_ref, source, key)
+
+    @sync_to_async
+    def _contributing_metrics(self) -> list:
+        """Every active metric folded into this property's value."""
+        from evidence import models as evidence_models
+
+        rule = self._rule()
+        graph = self._category.graph
+        source = _structure_category_for(graph, rule)
+        if source is None:
+            return []
+
+        key = rule.key if rule and rule.key else self._key
+        structure_ids = list(
+            evidence_models.Link.objects.for_organization(graph.organization)
+            .filter(
+                kind=evidence_models.Link.Kind.INFORMS,
+                target_ref=self._entity.durable_ref,
+                status=evidence_models.LifecycleStatus.ACTIVE,
+            )
+            .values_list("source_ref", flat=True)
+        )
+        parsed = []
+        for ref in structure_ids:
+            try:
+                parsed.append(uuid.UUID(str(ref)))
+            except ValueError:
+                continue
+
+        return list(
+            evidence_models.Metric.objects.for_organization(graph.organization)
+            .filter(
+                structure_id__in=parsed,
+                structure__category=source,
+                key=key,
+                status=evidence_models.LifecycleStatus.ACTIVE,
+            )
+            .select_related("assertion", "structure")
+            .order_by("measured_at")
+        )
+
+
+def _structure_category_for(graph: Any, rule: Any) -> Any:
+    """Resolve a derivation rule's source to a structure category of this graph."""
+    if rule is None or not getattr(rule, "source_node", None):
+        return None
+    return models.StructureCategory.objects.filter(graph=graph, identifier=rule.source_node).first() or models.StructureCategory.objects.filter(graph=graph, key=rule.source_node).first()
 
 
 # ===========================================
@@ -903,6 +1021,30 @@ class Metric(Node[RetrievedMetric]):
     @strawberry.field(description="The metric value")
     def value(self) -> AnyScalar:
         return self._value.value
+
+    @strawberry.field(description="The measurement key")
+    def key(self) -> Optional[str]:
+        return self._value.properties.get("key")
+
+    @strawberry.field(description="Unit of measurement, where the source gave one")
+    def unit(self) -> Optional[str]:
+        return self._value.properties.get("unit")
+
+    @strawberry.field(description="How confident the source is in this measurement")
+    def confidence(self) -> Optional[float]:
+        return self._value.properties.get("confidence")
+
+    @strawberry.field(description="What kind of confidence this is")
+    def confidence_type(self) -> Optional[str]:
+        return self._value.properties.get("confidence_type")
+
+    @strawberry.field(description="When the world was observed")
+    def measured_at(self) -> Optional[datetime]:
+        return self._value.properties.get("__measured_at")
+
+    @strawberry.field(description="When this measurement was claimed")
+    def asserted_at(self) -> Optional[datetime]:
+        return self._value.properties.get("__asserted_at")
 
     @kante.django_field(description="The source entity of this relation")
     def category(self) -> MetricCategory:
@@ -1261,7 +1403,28 @@ class Measurement(Edge):
 
 @kante.type(description="An assertion edge linking provenance activity to asserted graph artifacts")
 class Assertion(Edge):
-    pass
+    """Who claimed something, with what tool, and when.
+
+    The provenance half of the BIOLOGIST.md sentence. These fields have been in
+    the evidence base since M1 but were not reachable through the API, so a
+    derived value could name no source.
+    """
+
+    @strawberry.field(description="Who made the claim — a user id, or an automated agent")
+    def subject(self) -> Optional[str]:
+        return self._value.properties.get("subject")
+
+    @strawberry.field(description="Which application made the claim")
+    def app_id(self) -> Optional[str]:
+        return self._value.properties.get("app_id")
+
+    @strawberry.field(description="Human-readable name of the action that produced this assertion")
+    def action_name(self) -> Optional[str]:
+        return self._value.properties.get("action_name")
+
+    @strawberry.field(description="When the claim was made — belief time, the axis `as_of` filters on")
+    def asserted_at(self) -> Optional[datetime]:
+        return self._value.properties.get("__asserted_at")
 
 
 @kante.type(description="A natural event category/schema definition")

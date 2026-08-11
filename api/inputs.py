@@ -52,7 +52,10 @@ class PropertySet:
 class MetricInput:
     key: str = strawberry.field(description="The key/name of the metric")
     value: AnyScalar = strawberry.field(description="The value of the metric, which can be any scalar type (string, number, boolean)")
-    pass
+    unit: Optional[str] = strawberry.field(default=None, description="Unit of measurement, e.g. 'um'")
+    confidence: Optional[float] = strawberry.field(default=None, description="How confident the source is in this measurement, 0-1")
+    confidence_type: Optional[str] = strawberry.field(default=None, description="What kind of confidence this is (e.g. a model score)")
+    timestamp: Optional[int] = strawberry.field(default=None, description="When the measurement was observed, unix epoch milliseconds")
 
 
 @pydantic.input(model=input_models.PlateChildInput, description="Input for requesting media upload credentials")

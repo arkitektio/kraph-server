@@ -8,7 +8,7 @@ as core/age.py's RetrievedEntity and RetrievedRelation.
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Type, TypeVar, TYPE_CHECKING
-from datetime import datetime
+from datetime import datetime, timezone
 from graph_engine import vocab, scalars
 
 if TYPE_CHECKING:
@@ -40,6 +40,26 @@ RESERVED_PROPERTY_KEYS = frozenset(
 )
 
 INTERNAL_PROPERTY_PREFIX = "__"
+
+
+def _as_datetime(value: Any) -> Optional[datetime]:
+    """Read a validity bound out of a node property.
+
+    Handles both spellings because both are in the wild: the projector writes ISO
+    strings, and older nodes carry epoch numbers. `valid_from` used to parse only
+    numbers while `valid_to` parsed only strings, so whichever one you wrote, one
+    of the pair broke.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(float(value), tz=timezone.utc)
+    try:
+        return datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
 
 
 def is_internal_property_key(key: str) -> bool:
@@ -185,6 +205,24 @@ class RetrievedNode:
         """Alias for local_id - the AGE graph ID."""
         return scalars.GraphID(self.unique_id)
 
+    @property
+    def durable_ref(self) -> str:
+        """The identity evidence uses to refer to this node.
+
+        `{graph_name}:{uuid}`, keyed on the node's own `id` property rather than
+        on its Apache AGE vertex id. Vertex ids are reassigned when a graph is
+        dropped and replayed, so anything stored against one dangles after a
+        `reproject` — which is why every evidence link, state vector and
+        lifecycle row uses this instead.
+
+        Falls back to `unique_id` for nodes with no uuid (evidence rows, which
+        already have a durable primary key of their own).
+        """
+        node_uuid = self.properties.get("id")
+        if node_uuid is None:
+            return self.unique_id
+        return f"{self.graph_name}:{node_uuid}"
+
     # === Type Discrimination ===
 
     @property
@@ -243,23 +281,13 @@ class RetrievedNode:
 
     @property
     def valid_from(self) -> Optional[datetime]:
-        """When this entity became valid. This is set when a measurement is added, its the
-        range of all measurements that contribute to this entity."""
-        val = self.properties.get("valid_from")
-        if val is None:
-            return None
-        return datetime.fromtimestamp(float(val))
+        """Start of the observation window this node's evidence covers."""
+        return _as_datetime(self.properties.get("valid_from"))
 
     @property
     def valid_to(self) -> Optional[datetime]:
-        """When this entity became valid. This is set when a measurement is added, its the
-        range of all measurements that contribute to this entity."""
-        val = self.properties.get("valid_to")
-        if val is None:
-            return None
-        if isinstance(val, str):
-            return datetime.fromisoformat(val)
-        return val
+        """End of the observation window this node's evidence covers."""
+        return _as_datetime(self.properties.get("valid_to"))
 
     # === Structure Properties (when node_type == 'STRUCTURE') ===
 

@@ -505,10 +505,14 @@ class GraphController:
         organization = graph.organization
         assertion = self._create_assertion(organization, self._provenance_from_info(info))
 
+        # The durable ref, not `{age_name}:{vertex_id}`. The lifecycle log is read
+        # back by the projector, which only knows nodes by their uuid — a
+        # vertex-id ref would record an archive nothing could ever find.
+        node = self.get_node_by_local_id(graph, local_id=local_id)
         writer.archive_ref(
             organization,
             target_type="entity",
-            target_id=f"{graph.age_name}:{local_id}",
+            target_id=node.durable_ref,
             assertion=assertion,
         )
 
@@ -554,7 +558,8 @@ class GraphController:
 
     def _lifecycle_state_for_entity(self, graph: models.Graph, local_id: scalars.LocalID) -> str:
         """The current lifecycle state of a projected entity, from the evidence log."""
-        entity_ref = f"{graph.age_name}:{local_id}"
+        node = self.get_node_by_local_id(graph, local_id=local_id)
+        entity_ref = node.durable_ref
         latest = (
             evidence_models.LifecycleEvent.objects.for_organization(graph.organization)
             .filter(target_type="entity", target_id=entity_ref)
