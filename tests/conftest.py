@@ -1,4 +1,3 @@
-import subprocess
 import time
 from typing import Generator
 import pytest
@@ -46,44 +45,9 @@ def create_bucket2(s3) -> None:
     s3.create_bucket(Bucket="cabanana")
 
 
-def _remove_stale_dokker_stacks() -> None:
-    """Tear down stacks left behind by earlier, interrupted runs.
-
-    `dokker` names each session's compose project `dokker-test-<hash>`, so
-    `e.down()` only removes *this* session's stack — which does not exist yet on
-    the first call. A run killed partway through therefore leaves containers
-    holding 5555/6666/18888, and every subsequent run dies with "port is already
-    allocated" before a single test executes.
-
-    Volumes go too. A surviving `_db_data` volume carries the previous run's
-    `django_content_type` rows into a fresh database, which surfaces as a
-    duplicate-key error during test setup rather than as anything resembling its
-    cause.
-
-    Best-effort: if docker is unavailable the stack bring-up below will fail with
-    a better message than anything raised here.
-    """
-    for kind, list_cmd in (("container", ["docker", "ps", "-aq", "--filter", "name=dokker-test-"]), ("volume", ["docker", "volume", "ls", "-q"])):
-        try:
-            found = subprocess.run(list_cmd, capture_output=True, text=True, timeout=30).stdout.split()
-        except (OSError, subprocess.SubprocessError):
-            return
-        if kind == "volume":
-            found = [name for name in found if name.startswith("dokker-test-")]
-        if not found:
-            continue
-        remove = ["docker", "rm", "-f", *found] if kind == "container" else ["docker", "volume", "rm", *found]
-        try:
-            subprocess.run(remove, capture_output=True, timeout=120)
-        except (OSError, subprocess.SubprocessError):
-            pass
-
-
 @pytest.fixture(scope="session")
 def backend_stack():
     docker_compose_path = os.path.join(os.path.dirname(__file__), "integration", "docker-compose.yaml")
-
-    _remove_stale_dokker_stacks()
 
     with local(docker_compose_path) as e:
         e.inspect()

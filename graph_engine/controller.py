@@ -37,6 +37,7 @@ from graph_engine import input_models as inputs
 from graph_engine import vocab, scalars
 from django.db import transaction
 from evidence import models as evidence_models
+from evidence import state as state_module
 from evidence import writer
 
 
@@ -262,7 +263,7 @@ class GraphController:
         supporting_evidence: list[Any],
         assertion: evidence_models.Assertion,
         info: Info,
-    ) -> list[tuple[Any, models.StructureCategory, evidence_models.Structure]]:
+    ) -> tuple[list[tuple[Any, models.StructureCategory, evidence_models.Structure]], list[evidence_models.Metric]]:
         """Write the structures and metrics backing a creation into Postgres.
 
         The shared path for `create_entity` and `create_natural_event`. Nothing
@@ -271,6 +272,7 @@ class GraphController:
         """
         organization = graph.organization
         materialized_evidence: list[tuple[Any, models.StructureCategory, evidence_models.Structure]] = []
+        recorded_metrics: list[evidence_models.Metric] = []
 
         for evidence in supporting_evidence:
             structure_category = self.ensure_structure_category_or_raise(graph, evidence.identifier, info)
@@ -289,7 +291,7 @@ class GraphController:
                     value_kind=self._infer_metric_value_kind(measurement.value),
                     info=info,
                 )
-                writer.record_metric(
+                metric = writer.record_metric(
                     organization,
                     structure,
                     metric_category,
@@ -301,10 +303,15 @@ class GraphController:
                     confidence_type=measurement.confidence_type,
                     measured_at=measurement.timestamp,
                 )
+                recorded_metrics.append(metric)
 
             materialized_evidence.append((evidence, structure_category, structure))
 
-        return materialized_evidence
+        # Deliberately not folded into the state vector here. These metrics roll
+        # up through INFORMS links that the caller has not created yet — the
+        # entity does not exist at this point — so folding now would find no
+        # entity to attribute them to and silently derive nothing.
+        return materialized_evidence, recorded_metrics
 
     def create_entity(
         self,
@@ -340,7 +347,7 @@ class GraphController:
         # deleting the evidence when the AGE write fails.
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            materialized_evidence = self._materialize_supporting_evidence(
+            materialized_evidence, recorded_metrics = self._materialize_supporting_evidence(
                 graph=graph,
                 supporting_evidence=supporting_evidence,
                 assertion=assertion,
@@ -362,20 +369,84 @@ class GraphController:
         entity = create_res[0]["entity"]
         retrieved_entity = RetrievedEntity.from_node(self, entity, graph_name=graph.age_name)
 
-        # The INFORMS relationship is evidence, not projection: which structures
-        # justify this entity is a claim about the world and outlives any graph
-        # built from it.
-        for _, _, structure in materialized_evidence:
-            writer.create_link(
-                organization,
-                kind=evidence_models.Link.Kind.INFORMS,
-                source_ref=str(structure.pk),
-                target_ref=str(retrieved_entity.graph_id),
+        # Refs key on the entity's own uuid, never on the AGE vertex id. Vertex
+        # ids are assigned by AGE and change when a graph is dropped and
+        # replayed, so keying evidence on them would leave every link dangling
+        # after precisely the operation `reproject` performs.
+        entity_ref = f"{graph.age_name}:{ref_id}"
+
+        with transaction.atomic():
+            # That an entity exists is itself a claim, so it is evidence. Without
+            # this row an entity with no metrics yet would simply vanish on
+            # rebuild, and `reproject` could not honestly reconstruct the graph.
+            evidence_models.Node.objects.create_for_organization(
+                organization=organization,
+                ref=entity_ref,
+                kind=evidence_models.Node.Kind.ENTITY,
+                category=entity_category,
                 assertion=assertion,
             )
 
-        self._stamp_projection(entity_category, retrieved_entity.local_id)
-        return retrieved_entity
+            # Which structures justify this entity is a claim about the world and
+            # outlives any graph built from it, so the INFORMS link is evidence.
+            for _, _, structure in materialized_evidence:
+                writer.create_link(
+                    organization,
+                    kind=evidence_models.Link.Kind.INFORMS,
+                    source_ref=str(structure.pk),
+                    target_ref=entity_ref,
+                    assertion=assertion,
+                )
+
+            # Now that the links exist, the metrics have somewhere to roll up to.
+            for metric in recorded_metrics:
+                state_module.merge(metric, [entity_ref])
+
+        self.project_entities(graph, [entity_ref])
+        return self.get_entity_by_ref(graph, entity_ref) or retrieved_entity
+
+
+    # ===================================================================
+    # Projection
+    # ===================================================================
+
+    def project_entities(self, graph: models.Graph, entity_refs: List[str]) -> int:
+        """Recompute derived properties for the named entities.
+
+        The replacement for the old per-fact recalculation. Batched by design: a
+        bulk ingest emits one dirty set and one projection pass, where the
+        previous scheme re-derived once per metric.
+        """
+        from graph_engine import projector
+
+        return projector.project(self, graph, entity_refs)
+
+    def project_from_structures(self, graph: models.Graph, structure_ids: List[Any]) -> int:
+        """Recompute every entity the given structures are evidence for."""
+        from graph_engine import projector
+
+        return projector.project(self, graph, projector.dirty(graph, structure_ids))
+
+    def rebuild_projection(self, graph: models.Graph) -> Dict[str, int]:
+        """Drop this graph's AGE namespace and replay it from evidence."""
+        from graph_engine import projector
+
+        return projector.rebuild(self, graph)
+
+    def get_entity_by_ref(self, graph: models.Graph, entity_ref: str) -> Optional[RetrievedEntity]:
+        """Read an entity by its durable ref rather than by AGE vertex id."""
+        _, _, node_uuid = entity_ref.partition(":")
+        result = self.engine.execute(
+            graph,
+            """
+            MATCH (e) WHERE e.id = $node_uuid
+            RETURN e
+            """,
+            {"node_uuid": node_uuid},
+        )
+        if not result:
+            return None
+        return RetrievedEntity.from_node(self, result[0]["e"], graph_name=graph.age_name)
 
     def delete_entity(self, graph: models.Graph, local_id: scalars.LocalID) -> scalars.LocalID:
         """
@@ -487,30 +558,18 @@ class GraphController:
         )
         return latest.status if latest else evidence_models.LifecycleStatus.ACTIVE
 
-    def _recalculate_entity(self, entity_category: models.EntityCategory, local_id: scalars.LocalID) -> None:
-        """Derive an entity's cached properties from its supporting evidence.
+    def recalculate_entity(self, graph: models.Graph, entity_ref: str) -> int:
+        """Recompute one entity's derived properties from its evidence.
 
-        **Not implemented between M1 and M3, deliberately.**
+        The M1-M3 gap is closed: this used to raise, because metrics had moved to
+        Postgres and the rollup Cypher matched nothing. It now reads state vectors
+        and writes the results onto the projection.
 
-        Metrics moved from AGE into Postgres, so the rollup Cypher this used to
-        run (`MATCH (m:Metric)-[:DESCRIBES]->(s)`) now matches nothing. Leaving
-        it in place would silently write `null` over every derived property,
-        which is far worse than failing: a null derived value is
-        indistinguishable from "no evidence yet", so the breakage would be
-        invisible until someone noticed their numbers were gone.
-
-        This costs nothing that previously worked. `create_metric` never
-        re-derived, `link_structure_to_entity` raised a `NameError` before
-        reaching this, and relations never executed at all — derivation was
-        already non-functional. The replacement is the state vector (M2) plus
-        the projector (M3), and this raise is what makes the gap between here
-        and there impossible to ship by accident.
+        Note it takes a durable entity *ref*, not an AGE vertex id. The old
+        signature took `(entity_category, local_id)`, which could not survive a
+        rebuild — vertex ids are reassigned when a graph is replayed.
         """
-        raise NotImplementedError(
-            "Derived properties are not computed between M1 and M3. Metrics now live in "
-            "the relational evidence base, and the projector that reads them lands in M3. "
-            "See docs/ARCHITECTURE.md."
-        )
+        return self.project_entities(graph, [entity_ref])
 
     def list_entities_informed_by_structure(self, graph: models.Graph, structure_id: str, info: Info | None = None) -> List[RetrievedEntity]:
         """
@@ -987,7 +1046,7 @@ class GraphController:
             value_kind=self._infer_metric_value_kind(metric_input.value),
             info=info,
         )
-        return writer.record_metric(
+        metric = writer.record_metric(
             organization,
             structure,
             metric_category,
@@ -999,6 +1058,14 @@ class GraphController:
             confidence_type=metric_input.confidence_type,
             measured_at=metric_input.timestamp,
         )
+
+        # Fold into the statistics immediately. This is O(1) and does not read
+        # prior metrics, so it stays cheap under bulk ingest; writing the derived
+        # value onto the graph is a separate, batched step.
+        from graph_engine import projector
+
+        state_module.merge(metric, projector.dirty(graph, [structure.pk]))
+        return metric
 
     def delete_structure(
         self,
@@ -1090,7 +1157,7 @@ class GraphController:
         # about why the AGE write deliberately sits outside it.
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            materialized_evidence = self._materialize_supporting_evidence(
+            materialized_evidence, recorded_metrics = self._materialize_supporting_evidence(
                 graph=graph,
                 supporting_evidence=supporting_evidence,
                 assertion=assertion,
@@ -1098,25 +1165,41 @@ class GraphController:
             )
 
         event_vertex_name = category.get_age_vertex_name()
+        event_uuid = self.create_universal_id()
         create_res = self.engine.execute(
             graph,
             f"""
             CREATE (e:{event_vertex_name} {{id: $eid, category_id: $cid}})
             RETURN id(e) as event_id
             """,
-            {"eid": self.create_universal_id(), "cid": category.pk},
+            {"eid": event_uuid, "cid": category.pk},
         )
 
         event_id = create_res[0]["event_id"]
+        # Keyed on the uuid, not the AGE vertex id, for the same reason entities
+        # are: vertex ids do not survive the drop-and-replay `reproject` performs.
+        event_ref = f"{graph.age_name}:{event_uuid}"
 
-        for _, _, structure in materialized_evidence:
-            writer.create_link(
-                organization,
-                kind=evidence_models.Link.Kind.INFORMS,
-                source_ref=str(structure.pk),
-                target_ref=f"{graph.age_name}:{event_id}",
+        with transaction.atomic():
+            evidence_models.Node.objects.create_for_organization(
+                organization=organization,
+                ref=event_ref,
+                kind=evidence_models.Node.Kind.NATURAL_EVENT,
+                category=category,
                 assertion=assertion,
             )
+
+            for _, _, structure in materialized_evidence:
+                writer.create_link(
+                    organization,
+                    kind=evidence_models.Link.Kind.INFORMS,
+                    source_ref=str(structure.pk),
+                    target_ref=event_ref,
+                    assertion=assertion,
+                )
+
+            for metric in recorded_metrics:
+                state_module.merge(metric, [event_ref])
 
         # We have created the event node, now we link the roles and evidence to it, and then recalculate properties based on the evidence.
 
@@ -1186,6 +1269,11 @@ class GraphController:
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             metric = self._record_metric(organization, structure, input, graph=acting_graph, info=info, assertion=assertion)
 
+        # Refresh the projection for whatever this structure is evidence for.
+        # Separate from the fold above because it is batched: a bulk ingest of a
+        # thousand metrics folds a thousand times (O(1) each) but projects once.
+        self.project_from_structures(acting_graph, [structure.pk])
+
         return RetrievedMetric.from_row(self, metric)
 
     def _resolve_metric(self, metric_id: str, info: Info | None = None) -> evidence_models.Metric:
@@ -1237,11 +1325,20 @@ class GraphController:
         """
         metric = self._resolve_metric(metric_id, info)
         organization = metric.organization
+        graph = metric.structure.category.graph
+
+        from graph_engine import projector
+
+        entity_refs = projector.dirty(graph, [metric.structure_id])
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             writer.archive(organization, metric, assertion)
+            # Remove the contribution from the statistics too, or the derived
+            # value would keep counting evidence that has been retracted.
+            state_module.retract(metric, entity_refs)
 
+        self.project_entities(graph, entity_refs)
         return metric_id
 
     def delete_metric(
@@ -1278,13 +1375,19 @@ class GraphController:
             timestamp=payload.timestamp,
         )
 
+        from graph_engine import projector
+
+        entity_refs = projector.dirty(metric.category.graph, [structure.pk])
+
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             writer.archive(organization, metric, assertion)
-            replacement = self._record_metric(
-                organization, structure, metric_input, graph=metric.category.graph, info=info, assertion=assertion
-            )
+            # The old value stops counting, so its contribution has to come out of
+            # the statistics before the replacement goes in.
+            state_module.retract(metric, entity_refs)
+            replacement = self._record_metric(organization, structure, metric_input, graph=metric.category.graph, info=info, assertion=assertion)
 
+        self.project_from_structures(metric.category.graph, [structure.pk])
         return RetrievedMetric.from_row(self, replacement)
 
     def link_structure_to_entity(
@@ -1300,11 +1403,15 @@ class GraphController:
         doing anything. Which structures justify an entity is a claim about the
         world, so the link is evidence and outlives any graph projected from it.
 
-        No derivation is triggered. Recomputing the entity's properties from its
-        new evidence is the projector's job and lands in M3.
+        Attaching evidence after the fact must move the derived value, so the
+        structure's existing metrics are folded into the entity's statistics and
+        the entity is re-projected. Without that, the link would be recorded and
+        the value would silently stay where it was until something else touched
+        it.
         """
         structure = self._resolve_structure(structure_id, info)
         organization = structure.organization
+        graph = structure.category.graph
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
@@ -1316,6 +1423,10 @@ class GraphController:
                 assertion=assertion,
             )
 
+            for metric in writer.active_metrics_for_structures(organization, [structure.pk]):
+                state_module.merge(metric, [str(entity_id)])
+
+        self.project_entities(graph, [str(entity_id)])
         return RetrievedStructure.from_row(self, structure)
 
     def delete_relation(

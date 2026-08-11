@@ -533,3 +533,73 @@ class State(models.Model):
 
     def __str__(self) -> str:
         return f"{self.entity_ref}/{self.key} (n={self.n})"
+
+
+class Node(models.Model):
+    """A projected node this organization asserted into existence.
+
+    Entities and events are not derivable from measurements — somebody claimed
+    "there is a cell here", and that claim is evidence like any other. Without a
+    row for it, an entity carrying no metrics yet would vanish on rebuild, and
+    ``reproject`` could not honestly claim to reconstruct the projection.
+
+    ``ref`` is the opaque, *durable* identity: ``{age_name}:{uuid}``. Note it is
+    the uuid, not the Apache AGE vertex id. Vertex ids are assigned by AGE and
+    change when a graph is dropped and replayed, so keying evidence on them would
+    make every link dangle after exactly the operation this table exists to
+    support. The graph name is embedded in the ref rather than stored as a
+    column, which keeps the no-graph-foreign-key rule intact and makes M7 a
+    matter of dropping the prefix.
+    """
+
+    class Kind(models.TextChoices):
+        ENTITY = "entity", "Entity"
+        NATURAL_EVENT = "natural_event", "Natural event"
+        PROTOCOL_EVENT = "protocol_event", "Protocol event"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name="projected_nodes",
+    )
+    ref = models.CharField(
+        max_length=1000,
+        help_text="Opaque durable identity, '{age_name}:{uuid}'. Do not parse outside the projector.",
+    )
+    kind = models.CharField(max_length=32, choices=Kind.choices)
+    category = models.ForeignKey(
+        "core.Category",
+        on_delete=models.CASCADE,
+        related_name="projected_nodes",
+        help_text="The ontology term this node instantiates.",
+    )
+    assertion = models.ForeignKey(
+        Assertion,
+        on_delete=models.PROTECT,
+        related_name="projected_nodes",
+        help_text="The assertion that claimed this node exists.",
+    )
+    status = models.CharField(
+        max_length=32,
+        choices=LifecycleStatus.choices,
+        default=LifecycleStatus.ACTIVE,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = OrganizationScopedManager()
+    all_objects = models.Manager()
+
+    class Meta:
+        base_manager_name = "all_objects"
+        default_manager_name = "all_objects"
+        constraints = [
+            models.UniqueConstraint(fields=["organization", "ref"], name="unique_node_ref_per_organization")
+        ]
+        indexes = [
+            models.Index(fields=["organization", "kind"]),
+            models.Index(fields=["organization", "category"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.kind}:{self.ref}"

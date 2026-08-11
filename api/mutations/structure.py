@@ -159,9 +159,8 @@ def link_structure_to_entity(
     assertion. Which structures support an entity is a statement about the world,
     so it outlives any particular graph projected from it.
 
-    It does **not** recompute the entity's properties. That is the projector's
-    job and arrives in M3 — see `GraphController._recalculate_entity`, which
-    raises rather than pretending otherwise.
+    Recording the link also refreshes the entity it now supports, so a structure
+    attached after the fact still flows into the derived values.
 
     Args:
         info: Strawberry Info context

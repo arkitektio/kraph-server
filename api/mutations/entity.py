@@ -193,9 +193,9 @@ def set_entity_property(
         key=model.key,
         value=model.value,
     )
-    # Only the system metadata is refreshed. The value was written directly and
-    # is not derived from evidence, so there is nothing to recompute — and
-    # `_recalculate_entity` deliberately raises until the projector lands in M3.
+    # Only the system metadata is refreshed. The value was written directly
+    # rather than derived from evidence, so there is nothing for the projector to
+    # recompute — and running it here would overwrite the value just set.
     controller._stamp_projection(entity_category, node_id)
 
     updated_entity = controller.get_node(graph, local_id=node_id, info=info)
