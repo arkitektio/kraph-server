@@ -32,8 +32,8 @@ VALUES = [10.0, 30.0, 20.0]
 @pytest.fixture
 def measured_entity(
     organization: Organization,
-    roi_category_a: core_models.StructureCategory,
-    length_category: core_models.MetricCategory,
+    roi_category_a: evidence_models.StructureKind,
+    length_category: evidence_models.MetricKind,
     assertion: evidence_models.Assertion,
 ) -> evidence_models.State:
     """Three measurements folded into one state vector."""

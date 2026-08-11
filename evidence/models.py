@@ -34,6 +34,7 @@ import uuid
 from typing import Any
 
 from authentikate.models import Organization
+from datalayer import models as datalayer_models
 from django.db import models
 
 from core.enums import ValueKind
@@ -70,6 +71,13 @@ class Assertion(models.Model):
         max_length=1000,
         help_text="Which application made the claim.",
     )
+    action_id = models.CharField(
+        max_length=1000,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Identity of the action that produced this assertion, where there was one. `ProvenanceContext` has always carried this; the first version of this model dropped it, which left provenance unable to name what actually ran.",
+    )
     action_name = models.CharField(
         max_length=1000,
         null=True,
@@ -105,6 +113,122 @@ class Assertion(models.Model):
         return f"Assertion by {self.subject} via {self.app_id} at {self.asserted_at}"
 
 
+class StructureKind(models.Model):
+    """A kind of external datum this organization knows about — a Mikro ROI, an image.
+
+    Organization vocabulary, not schema. Three things distinguish it from the
+    `core.Category` hierarchy it used to live in:
+
+    - ``materialize()`` never created one. ``GraphExtensionsInput`` has no
+      ``structures`` field and says so: structures are resolved dynamically from
+      their identifier at write time.
+    - It has no Apache AGE presence. Structures have been relational rows since
+      the evidence base landed, and the old ``get_age_vertex_name()`` returned the
+      constant ``"Structure"`` regardless.
+    - ``identifier`` is owned by another service. ``@mikro/roi`` is not a per-graph
+      concept, so N copies of it — one per graph — was duplication with no meaning.
+
+    Being organization-scoped is what lets a measurement be recorded without
+    naming a graph at all.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name="structure_kinds",
+    )
+    identifier = models.CharField(
+        max_length=1000,
+        help_text="The structure identifier, e.g. '@mikro/roi'. Owned by the service that produces the datum.",
+    )
+    label = models.CharField(max_length=1000, null=True, blank=True)
+    description = models.CharField(max_length=1000, null=True, blank=True)
+    purl = models.CharField(
+        max_length=1000,
+        null=True,
+        blank=True,
+        help_text="Persistent URL, where this kind corresponds to a published ontology term.",
+    )
+    color = models.JSONField(max_length=1000, null=True, blank=True, help_text="Display colour as RGBA.")
+    image = models.ForeignKey(
+        datalayer_models.MediaStore,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = OrganizationScopedManager()
+    all_objects = models.Manager()
+
+    class Meta:
+        base_manager_name = "all_objects"
+        default_manager_name = "all_objects"
+        constraints = [models.UniqueConstraint(fields=["organization", "identifier"], name="unique_structure_kind_per_organization")]
+
+    def __str__(self) -> str:
+        return self.identifier
+
+
+class MetricKind(models.Model):
+    """A kind of measurement that can be made about a structure kind.
+
+    Identity is ``(organization, structure_kind, key)``: `vector_length` on an ROI
+    and on a Mask are separate terms, because they are separate quantities. The
+    old model enforced ``(graph, key)`` while looking up by
+    ``(graph, key, structure_category)``, so two metrics named `area` on different
+    structures collided.
+
+    Provenance is deliberately **not** part of this identity. Which tool measured
+    something lives on the :class:`Assertion` of each metric row, and "only what
+    AI_Model_X measured" is answered at read time by a conflict policy or a graph
+    selector — reversibly. Folding it into the term instead would fragment the
+    aggregation grain, so `MEAN` over a key would stop existing and become one mean
+    per tool with nothing to combine them.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name="metric_kinds",
+    )
+    structure_kind = models.ForeignKey(
+        StructureKind,
+        on_delete=models.CASCADE,
+        related_name="metric_kinds",
+        help_text="The kind of structure this measurement describes.",
+    )
+    key = models.CharField(max_length=1000, help_text="The measurement key, e.g. 'vector_length'.")
+    value_kind = models.CharField(
+        max_length=32,
+        choices=[(k.value, k.value) for k in ValueKind],
+        help_text="What type of value this measurement carries. Non-null: a term whose type is unknown cannot say which column its values belong in.",
+    )
+    label = models.CharField(max_length=1000, null=True, blank=True)
+    description = models.CharField(max_length=1000, null=True, blank=True)
+    purl = models.CharField(max_length=1000, null=True, blank=True)
+    color = models.JSONField(max_length=1000, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = OrganizationScopedManager()
+    all_objects = models.Manager()
+
+    class Meta:
+        base_manager_name = "all_objects"
+        default_manager_name = "all_objects"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization", "structure_kind", "key"],
+                name="unique_metric_kind_per_structure_kind",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.structure_kind.identifier}.{self.key}"
+
+
 class Structure(models.Model):
     """A pointer to an external datum — a Mikro ROI, an image, a file.
 
@@ -126,11 +250,11 @@ class Structure(models.Model):
         on_delete=models.CASCADE,
         related_name="structures",
     )
-    category = models.ForeignKey(
-        "core.StructureCategory",
+    kind = models.ForeignKey(
+        StructureKind,
         on_delete=models.CASCADE,
-        related_name="evidence_structures",
-        help_text="The ontology term for this kind of structure.",
+        related_name="structures",
+        help_text="The organization's term for this kind of structure.",
     )
     identifier = models.CharField(
         max_length=1000,
@@ -167,7 +291,7 @@ class Structure(models.Model):
             )
         ]
         indexes = [
-            models.Index(fields=["organization", "category"]),
+            models.Index(fields=["organization", "kind"]),
         ]
 
     def __str__(self) -> str:
@@ -200,11 +324,11 @@ class Metric(models.Model):
         related_name="metrics",
         help_text="The structure this metric describes.",
     )
-    category = models.ForeignKey(
-        "core.MetricCategory",
+    kind = models.ForeignKey(
+        MetricKind,
         on_delete=models.CASCADE,
-        related_name="evidence_metrics",
-        help_text="The ontology term for this kind of measurement.",
+        related_name="metrics",
+        help_text="The organization's term for this kind of measurement.",
     )
     key = models.CharField(
         max_length=1000,
@@ -272,7 +396,7 @@ class Metric(models.Model):
         indexes = [
             # The rollup access path: every metric for a structure under one key.
             models.Index(fields=["organization", "structure", "key"]),
-            models.Index(fields=["organization", "category"]),
+            models.Index(fields=["organization", "kind"]),
             models.Index(fields=["organization", "asserted_at"]),
         ]
 
@@ -442,7 +566,7 @@ class State(models.Model):
     MEAN to MAX therefore changes what the next read returns without writing
     anything at all, which is the whole claim being made here.
 
-    **Grain: `(entity_ref, source_category, key)` over metrics. Nothing else.**
+    **Grain: `(entity_ref, source_kind, key)` over metrics. Nothing else.**
     A rule may only aggregate measurements reaching an entity through the
     documented ``(Metric)-[DESCRIBES]->(Structure)-[INFORMS]->(Entity)`` path.
     Aggregating over *related entities or events* — "count this cell's mitosis
@@ -473,8 +597,8 @@ class State(models.Model):
         max_length=1000,
         help_text="Opaque reference to the entity this statistic describes. Do not parse.",
     )
-    source_category = models.ForeignKey(
-        "core.StructureCategory",
+    source_kind = models.ForeignKey(
+        StructureKind,
         on_delete=models.CASCADE,
         related_name="states",
         help_text="The kind of structure the measurements came through.",
@@ -522,8 +646,8 @@ class State(models.Model):
         default_manager_name = "all_objects"
         constraints = [
             models.UniqueConstraint(
-                fields=["organization", "entity_ref", "source_category", "key"],
-                name="unique_state_per_entity_source_key",
+                fields=["organization", "entity_ref", "source_kind", "key"],
+                name="unique_state_per_entity_source_kind_key",
             )
         ]
         indexes = [
@@ -593,9 +717,7 @@ class Node(models.Model):
     class Meta:
         base_manager_name = "all_objects"
         default_manager_name = "all_objects"
-        constraints = [
-            models.UniqueConstraint(fields=["organization", "ref"], name="unique_node_ref_per_organization")
-        ]
+        constraints = [models.UniqueConstraint(fields=["organization", "ref"], name="unique_node_ref_per_organization")]
         indexes = [
             models.Index(fields=["organization", "kind"]),
             models.Index(fields=["organization", "category"]),

@@ -30,8 +30,8 @@ OBSERVED = datetime(2025, 6, 1, tzinfo=timezone.utc)
 def revised_measurement(
     organization: Organization,
     graph_a: core_models.Graph,
-    roi_category_a: core_models.StructureCategory,
-    length_category: core_models.MetricCategory,
+    roi_category_a: evidence_models.StructureKind,
+    length_category: evidence_models.MetricKind,
 ) -> core_models.Graph:
     """One observation, measured once and then corrected.
 
@@ -98,8 +98,8 @@ def test_a_projection_can_be_scoped_to_one_source(organization: Organization, re
 def test_an_observation_window_selects_by_measured_at(
     organization: Organization,
     revised_measurement: core_models.Graph,
-    roi_category_a: core_models.StructureCategory,
-    length_category: core_models.MetricCategory,
+    roi_category_a: evidence_models.StructureKind,
+    length_category: evidence_models.MetricKind,
 ) -> None:
     """The other axis, filtered independently.
 

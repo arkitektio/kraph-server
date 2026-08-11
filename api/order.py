@@ -1,6 +1,7 @@
 from typing import Optional
 
 from core import models
+from evidence import models as evidence_models
 from strawberry import auto
 import strawberry_django
 import kante
@@ -113,15 +114,23 @@ class EntityCategoryOrder(NodeCategoryOrder):
     id: auto
 
 
-@strawberry_django.order_type(models.StructureCategory)
-class StructureCategoryOrder(NodeCategoryOrder):
+@strawberry_django.order_type(evidence_models.StructureKind)
+class StructureKindOrder:
+    """Standalone: a kind has no graph-scoped layout to order by."""
+
     label: auto
+    identifier: auto
+    created_at: auto
     id: auto
 
 
-@strawberry_django.order_type(models.MetricCategory)
-class MetricCategoryOrder(NodeCategoryOrder):
+@strawberry_django.order_type(evidence_models.MetricKind)
+class MetricKindOrder:
+    """Standalone: a kind has no graph-scoped layout to order by."""
+
     label: auto
+    key: auto
+    created_at: auto
     id: auto
 
 

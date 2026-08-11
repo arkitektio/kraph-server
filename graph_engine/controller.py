@@ -205,57 +205,42 @@ class GraphController:
         request = info.context.request
         return True
 
-    def _infer_metric_value_kind(self, value: Any) -> input_models.PropertyType:
-        if isinstance(value, bool):
-            return input_models.PropertyType.BOOLEAN
-        if isinstance(value, int):
-            return input_models.PropertyType.INTEGER
-        if isinstance(value, float):
-            return input_models.PropertyType.FLOAT
-        return input_models.PropertyType.STRING
+    def _infer_metric_value_kind(self, value: Any) -> enums.ValueKind:
+        """Guess a value's kind, in the canonical vocabulary.
 
-    def ensure_structure_category_or_raise(self, graph: models.Graph, identifier: str, info: Info) -> models.StructureCategory:
-        """Ensures that a StructureCategory with the given identifier exists in the graph, or raises an error if not found and auto-creation is disabled."""
-        scategory = models.StructureCategory.objects.filter(
-            graph=graph,
-            identifier=identifier,
-        ).first()
+        `ValueKind`, not `PropertyType`. Kinds store the canonical spelling, so
+        returning `PropertyType.FLOAT` ("float") here produced terms whose
+        `value_kind` did not match any column mapping — `writer.value_columns`
+        rejected them outright.
+        """
+        from evidence.writer import infer_value_kind
 
-        if not scategory:
-            if graph.can_perform_action(info, input_models.Action.AUTO_ADD_STRUCTURES):
-                scategory = models.StructureCategory.objects.create_from_structure_definition(
-                    graph=graph,
-                    definition=input_models.StructureDefinitionInput(
-                        key=identifier,
-                        identifier=identifier,
-                    ),
-                )
-            else:
-                raise ValueError(f"Structure identifier {identifier} not found in graph schema. And auto-creation of structure categories is disabled for this graph.")
+        return infer_value_kind(value)
 
-        return scategory
+    def ensure_structure_kind(self, organization: Any, identifier: str) -> evidence_models.StructureKind:
+        """The organization's term for a kind of external datum.
 
-    def ensure_metric_category_or_raise(self, graph: models.Graph, structure_category: models.StructureCategory, key: str, value_kind: input_models.PropertyType, info: Info) -> models.MetricCategory:
-        mcategory = models.MetricCategory.objects.filter(
-            graph=graph,
-            key=key,
-            structure_category=structure_category,
-        ).first()
+        Takes no graph and consults no permission. `@mikro/roi` is an identifier
+        owned by the service that produced the datum, so there is nothing here to
+        approve — and refusing a measurement because no graph had declared the
+        term would be refusing a fact about the world on a bookkeeping
+        technicality.
+        """
+        return writer.ensure_structure_kind(organization, identifier)
 
-        if not mcategory:
-            if graph.can_perform_action(info, input_models.Action.AUTO_ADD_STRUCTURES):
-                mcategory = models.MetricCategory.objects.create_from_metric_definition(
-                    graph=graph,
-                    definition=input_models.MetricDefinitionInput(
-                        structure=structure_category.identifier,
-                        value_kind=value_kind,
-                        key=key,
-                    ),
-                )
-            else:
-                raise ValueError(f"Metric identifier {key} not found in graph schema for structure {structure_category.identifier}.")
+    def ensure_metric_kind(
+        self,
+        organization: Any,
+        structure_kind: evidence_models.StructureKind,
+        key: str,
+        value_kind: Any,
+    ) -> evidence_models.MetricKind:
+        """The organization's term for a kind of measurement.
 
-        return mcategory
+        Raises when this contradicts an existing declaration — see
+        `writer.ensure_metric_kind`.
+        """
+        return writer.ensure_metric_kind(organization, structure_kind, key, value_kind)
 
     def _materialize_supporting_evidence(
         self,
@@ -263,7 +248,7 @@ class GraphController:
         supporting_evidence: list[Any],
         assertion: evidence_models.Assertion,
         info: Info,
-    ) -> tuple[list[tuple[Any, models.StructureCategory, evidence_models.Structure]], list[evidence_models.Metric]]:
+    ) -> tuple[list[tuple[Any, evidence_models.StructureKind, evidence_models.Structure]], list[evidence_models.Metric]]:
         """Write the structures and metrics backing a creation into Postgres.
 
         The shared path for `create_entity` and `create_natural_event`. Nothing
@@ -271,30 +256,29 @@ class GraphController:
         and the caller separately projects whatever it needs into the graph.
         """
         organization = graph.organization
-        materialized_evidence: list[tuple[Any, models.StructureCategory, evidence_models.Structure]] = []
+        materialized_evidence: list[tuple[Any, evidence_models.StructureKind, evidence_models.Structure]] = []
         recorded_metrics: list[evidence_models.Metric] = []
 
         for evidence in supporting_evidence:
-            structure_category = self.ensure_structure_category_or_raise(graph, evidence.identifier, info)
+            structure_kind = self.ensure_structure_kind(organization, evidence.identifier)
             structure = writer.ensure_structure(
                 organization,
-                category=structure_category,
+                kind=structure_kind,
                 object=evidence.object,
                 assertion=assertion,
             )
 
             for measurement in evidence.metrics:
-                metric_category = self.ensure_metric_category_or_raise(
-                    graph=graph,
-                    structure_category=structure_category,
-                    key=measurement.key,
-                    value_kind=self._infer_metric_value_kind(measurement.value),
-                    info=info,
+                metric_kind = self.ensure_metric_kind(
+                    organization,
+                    structure_kind,
+                    measurement.key,
+                    self._infer_metric_value_kind(measurement.value),
                 )
                 metric = writer.record_metric(
                     organization,
                     structure,
-                    metric_category,
+                    metric_kind,
                     key=measurement.key,
                     value=measurement.value,
                     assertion=assertion,
@@ -305,7 +289,7 @@ class GraphController:
                 )
                 recorded_metrics.append(metric)
 
-            materialized_evidence.append((evidence, structure_category, structure))
+            materialized_evidence.append((evidence, structure_kind, structure))
 
         # Deliberately not folded into the state vector here. These metrics roll
         # up through INFORMS links that the caller has not created yet — the
@@ -420,11 +404,24 @@ class GraphController:
 
         return projector.project(self, graph, entity_refs)
 
-    def project_from_structures(self, graph: models.Graph, structure_ids: List[Any]) -> int:
-        """Recompute every entity the given structures are evidence for."""
+    def project_from_structures(self, organization: Any, structure_ids: List[Any]) -> int:
+        """Recompute every entity in the organization these structures are evidence for.
+
+        Spans graphs deliberately. Evidence is shared, so a measurement has to
+        reach every projection that reads it — refreshing only the graph the
+        caller happened to name is what left second projections stale.
+        """
         from graph_engine import projector
 
-        return projector.project(self, graph, projector.dirty(graph, structure_ids))
+        projected = 0
+        for age_name, entity_refs in projector.dirty_across_organization(organization, structure_ids).items():
+            graph = models.Graph.objects.filter(age_name=age_name, organization=organization).first()
+            if graph is None:
+                # A ref naming a graph that no longer exists. The links outlive the
+                # projection by design, so this is expected after a graph is deleted.
+                continue
+            projected += projector.project(self, graph, entity_refs)
+        return projected
 
     def rebuild_projection(self, graph: models.Graph) -> Dict[str, int]:
         """Drop this graph's AGE namespace and replay it from evidence."""
@@ -468,23 +465,26 @@ class GraphController:
 
         return local_id
 
-    def get_structure_by_object(self, category: models.StructureCategory, object: scalars.StructureObject) -> retrieved.RetrievedStructure:
+    def get_structure_by_object(self, organization: Any, identifier: str, object: scalars.StructureObject) -> retrieved.RetrievedStructure:
         """
-        Retrieves a structure by its object identifier.
+        Retrieve a structure by the external datum it points at.
 
         Args:
-            category: The StructureCategory to search within
+            organization: The tenant to look within
+            identifier: The structure identifier, e.g. '@mikro/roi'
             object: The unique object identifier of the structure
 
         Returns:
-            A RetrievedStructure if found, or None if no matching structure exists
-        """
-        organization = category.graph.organization
-        structure = evidence_models.Structure.objects.for_organization(organization).filter(identifier=category.identifier, object=object).first()
-        if structure is None:
-            raise ValueError(f"No structure found with object '{object}' in category '{category.identifier}'")
+            A RetrievedStructure
 
-        return RetrievedStructure.from_row(self, structure, graph_name=category.graph.age_name)
+        Raises:
+            ValueError: if no structure points at that object
+        """
+        structure = evidence_models.Structure.objects.for_organization(organization).filter(identifier=identifier, object=object).first()
+        if structure is None:
+            raise ValueError(f"No structure found for {identifier}:{object}")
+
+        return RetrievedStructure.from_row(self, structure)
 
     def archive_entity(self, graph: models.Graph, local_id: scalars.LocalID, info: Info) -> scalars.LocalID:
         """
@@ -878,7 +878,8 @@ class GraphController:
 
     def create_structure(
         self,
-        structure_category: models.StructureCategory,
+        organization: Any,
+        identifier: str,
         payload: inputs.StructureInput,
         info: Info,
     ) -> RetrievedStructure:
@@ -892,21 +893,20 @@ class GraphController:
         Returns:
             RetrievedStructure with the created structure info
         """
-        graph = structure_category.graph
-        organization = graph.organization
-
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
+            structure_kind = self.ensure_structure_kind(organization, identifier)
             structure = writer.ensure_structure(
                 organization,
-                category=structure_category,
+                kind=structure_kind,
                 object=payload.object,
                 assertion=assertion,
             )
             for metric in payload.metrics or []:
-                self._record_metric(organization, structure, metric, graph=graph, info=info, assertion=assertion)
+                self._record_metric(organization, structure, metric, info=info, assertion=assertion)
 
-        return RetrievedStructure.from_row(self, structure, graph_name=graph.age_name)
+        self.project_from_structures(organization, [structure.pk])
+        return RetrievedStructure.from_row(self, structure)
 
     def _assert_can_access(self, organization: Any, info: Info | None) -> None:
         """Check the caller may act for this organization.
@@ -930,33 +930,15 @@ class GraphController:
 
     def get_structure_for_identifier(
         self,
-        graph: models.Graph,
+        organization: Any,
         identifier: str,
         object: str,
-        info: Info | None = None,
     ) -> evidence_models.Structure:
         """Resolve a structure row by its organization-scoped identity."""
-        structure = evidence_models.Structure.objects.for_organization(graph.organization).filter(identifier=identifier, object=object).first()
+        structure = evidence_models.Structure.objects.for_organization(organization).filter(identifier=identifier, object=object).first()
         if structure is None:
             raise ValueError(f"Structure not found for {identifier}:{object}")
         return structure
-
-    def _structure_category_for(
-        self,
-        graph: models.Graph,
-        structure: evidence_models.Structure,
-        info: Info,
-    ) -> models.StructureCategory:
-        """The acting graph's term for this structure's kind.
-
-        A shared structure carries whichever graph's category first created it,
-        but a metric recorded through graph B has to resolve against B's schema.
-        Falls back to the structure's own category when the acting graph is the
-        one that created it, which is the common case.
-        """
-        if structure.category.graph_id == graph.pk:
-            return structure.category
-        return self.ensure_structure_category_or_raise(graph, structure.identifier, info)
 
     def _resolve_structure(self, structure_id: str, info: Info | None = None) -> evidence_models.Structure:
         """Fetch a structure by evidence primary key, then authorize against its organization."""
@@ -976,32 +958,26 @@ class GraphController:
         structure: evidence_models.Structure,
         metric_input: MetricInput,
         *,
-        graph: models.Graph,
         info: Info,
         assertion: evidence_models.Assertion,
     ) -> evidence_models.Metric:
-        """Append one measurement, resolving its category from the schema.
+        """Append one measurement, resolving its term from the organization.
 
-        `graph` is the graph *recording* the measurement, and must be passed in
-        rather than read off `structure.category.graph`. Structures dedupe on
-        `(organization, identifier, object)` and keep whichever category first
-        created the row, so a structure introduced by graph A and measured by
-        graph B would otherwise resolve B's metric against A's schema — gating on
-        A's permissions and filing any auto-created MetricCategory under A, where
-        B cannot see it. That only bites once evidence is genuinely shared across
-        graphs, which is exactly what M1 enables.
+        No graph. The question this used to have to answer — "whose schema does a
+        metric recorded through graph B resolve against, when graph A introduced
+        the structure?" — stops existing once the term belongs to the
+        organization. There is one term, and both graphs see it.
         """
-        metric_category = self.ensure_metric_category_or_raise(
-            graph=graph,
-            structure_category=self._structure_category_for(graph, structure, info),
-            key=metric_input.key,
-            value_kind=self._infer_metric_value_kind(metric_input.value),
-            info=info,
+        metric_kind = self.ensure_metric_kind(
+            organization,
+            structure.kind,
+            metric_input.key,
+            self._infer_metric_value_kind(metric_input.value),
         )
         metric = writer.record_metric(
             organization,
             structure,
-            metric_category,
+            metric_kind,
             key=metric_input.key,
             value=metric_input.value,
             assertion=assertion,
@@ -1011,12 +987,14 @@ class GraphController:
             measured_at=metric_input.timestamp,
         )
 
-        # Fold into the statistics immediately. This is O(1) and does not read
-        # prior metrics, so it stays cheap under bulk ingest; writing the derived
-        # value onto the graph is a separate, batched step.
+        # Fold into the statistics immediately. O(1), reads no prior metrics, and
+        # spans every graph in the organization that has an entity this structure
+        # informs — writing the derived values onto those graphs is a separate,
+        # batched step.
         from graph_engine import projector
 
-        state_module.merge(metric, projector.dirty(graph, [structure.pk]))
+        fan_out = projector.dirty_across_organization(organization, [structure.pk])
+        state_module.merge(metric, [ref for refs in fan_out.values() for ref in refs])
         return metric
 
     def delete_structure(
@@ -1075,8 +1053,9 @@ class GraphController:
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             for metric in payload.metrics or []:
-                self._record_metric(organization, structure, metric, graph=structure.category.graph, info=info, assertion=assertion)
+                self._record_metric(organization, structure, metric, info=info, assertion=assertion)
 
+        self.project_from_structures(organization, [structure.pk])
         return RetrievedStructure.from_row(self, structure)
 
     def create_natural_event(
@@ -1194,7 +1173,6 @@ class GraphController:
         structure_id: str,
         input: MetricInput,
         info: Info,
-        graph: models.Graph | None = None,
     ) -> RetrievedMetric:
         """
         Append a measurement to an existing structure.
@@ -1209,16 +1187,15 @@ class GraphController:
         """
         structure = self._resolve_structure(structure_id, info)
         organization = structure.organization
-        acting_graph = graph or structure.category.graph
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            metric = self._record_metric(organization, structure, input, graph=acting_graph, info=info, assertion=assertion)
+            metric = self._record_metric(organization, structure, input, info=info, assertion=assertion)
 
-        # Refresh the projection for whatever this structure is evidence for.
-        # Separate from the fold above because it is batched: a bulk ingest of a
-        # thousand metrics folds a thousand times (O(1) each) but projects once.
-        self.project_from_structures(acting_graph, [structure.pk])
+        # Refresh every projection this structure is evidence for. Separate from
+        # the fold above because it is batched: a bulk ingest of a thousand
+        # metrics folds a thousand times (O(1) each) but projects once.
+        self.project_from_structures(organization, [structure.pk])
 
         return RetrievedMetric.from_row(self, metric)
 
@@ -1271,11 +1248,11 @@ class GraphController:
         """
         metric = self._resolve_metric(metric_id, info)
         organization = metric.organization
-        graph = metric.structure.category.graph
 
         from graph_engine import projector
 
-        entity_refs = projector.dirty(graph, [metric.structure_id])
+        fan_out = projector.dirty_across_organization(organization, [metric.structure_id])
+        entity_refs = [ref for refs in fan_out.values() for ref in refs]
 
         already_archived = metric.status == evidence_models.LifecycleStatus.ARCHIVED
 
@@ -1288,7 +1265,7 @@ class GraphController:
                 # Guarded, because archiving twice must not subtract twice.
                 state_module.retract(metric, entity_refs)
 
-        self.project_entities(graph, entity_refs)
+        self.project_from_structures(organization, [metric.structure_id])
         return metric_id
 
     def delete_metric(
@@ -1327,7 +1304,8 @@ class GraphController:
 
         from graph_engine import projector
 
-        entity_refs = projector.dirty(metric.category.graph, [structure.pk])
+        fan_out = projector.dirty_across_organization(organization, [structure.pk])
+        entity_refs = [ref for refs in fan_out.values() for ref in refs]
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
@@ -1335,9 +1313,9 @@ class GraphController:
             # The old value stops counting, so its contribution has to come out of
             # the statistics before the replacement goes in.
             state_module.retract(metric, entity_refs)
-            replacement = self._record_metric(organization, structure, metric_input, graph=metric.category.graph, info=info, assertion=assertion)
+            replacement = self._record_metric(organization, structure, metric_input, info=info, assertion=assertion)
 
-        self.project_from_structures(metric.category.graph, [structure.pk])
+        self.project_from_structures(organization, [structure.pk])
         return RetrievedMetric.from_row(self, replacement)
 
     def link_structure_to_entity(
@@ -1361,7 +1339,6 @@ class GraphController:
         """
         structure = self._resolve_structure(structure_id, info)
         organization = structure.organization
-        graph = structure.category.graph
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
@@ -1376,7 +1353,7 @@ class GraphController:
             for metric in writer.active_metrics_for_structures(organization, [structure.pk]):
                 state_module.merge(metric, [str(entity_id)])
 
-        self.project_entities(graph, [str(entity_id)])
+        self.project_from_structures(organization, [structure.pk])
         return RetrievedStructure.from_row(self, structure)
 
     def delete_relation(
@@ -1976,23 +1953,21 @@ class GraphController:
 
         return [RetrievedEntity.from_node(self, row["e"], graph_name=category.graph.age_name) for row in result]
 
-    def list_structures(self, graph: models.Graph, filters: input_models.StructureFilters | None = None, pagination: input_models.StructurePagination | None = None, ordering: list[input_models.StructureOrder] | None = None, info: Info | None = None) -> List[RetrievedStructure]:
+    def list_structures(self, organization: Any, filters: input_models.StructureFilters | None = None, pagination: input_models.StructurePagination | None = None, ordering: list[input_models.StructureOrder] | None = None, info: Info | None = None) -> List[RetrievedStructure]:
         """List structures from the evidence base.
 
-        Scoped to the organization, not to the graph: a structure is a pointer to
-        an external datum and is shared by every projection over that
-        organization's evidence.
+        Takes an organization, not a graph. A structure points at an external
+        datum and is shared by every projection over that organization's
+        evidence, so scoping the list to one graph would have been arbitrary.
         """
-        self._ensure_query_access(graph, info)
-
-        queryset = evidence_models.Structure.objects.for_organization(graph.organization)
+        queryset = evidence_models.Structure.objects.for_organization(organization)
         queryset = self._apply_structure_filters(queryset, filters)
         queryset = queryset.order_by(*self._structure_ordering(ordering))
 
         offset = pagination.offset if pagination and pagination.offset is not None else 0
         limit = pagination.limit if pagination and pagination.limit is not None else 200
 
-        return [RetrievedStructure.from_row(self, row, graph_name=graph.age_name) for row in queryset[offset : offset + limit]]
+        return [RetrievedStructure.from_row(self, row) for row in queryset[offset : offset + limit]]
 
     def _apply_structure_filters(self, queryset: Any, filters: input_models.StructureFilters | None) -> Any:
         """Translate structure filters into ORM predicates.

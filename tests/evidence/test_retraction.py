@@ -29,8 +29,8 @@ ENTITY_REF = "graph_a_evidence_org:844424930131971"
 @pytest.fixture
 def measured(
     organization: Organization,
-    roi_category_a: core_models.StructureCategory,
-    length_category: core_models.MetricCategory,
+    roi_category_a: evidence_models.StructureKind,
+    length_category: evidence_models.MetricKind,
     assertion: evidence_models.Assertion,
 ) -> tuple[evidence_models.Structure, list[evidence_models.Metric]]:
     """Three measurements — 10, 30, 20 — where 30 is both the max and not the latest."""
@@ -103,7 +103,7 @@ def test_retracting_a_middling_value_does_not_flag_the_row(
     extra = writer.record_metric(
         organization,
         structure,
-        metrics[0].category,
+        metrics[0].kind,
         key="vector_length",
         value=15.0,
         assertion=metrics[0].assertion,
@@ -143,7 +143,7 @@ def test_recompute_restores_correctness_after_a_flagged_retraction(
 
 def test_reading_a_stale_row_rebuilds_it_first(
     organization: Organization,
-    roi_category_a: core_models.StructureCategory,
+    roi_category_a: evidence_models.StructureKind,
     measured: tuple[evidence_models.Structure, list[evidence_models.Metric]],
 ) -> None:
     """A caller must never see a value the evidence no longer supports.

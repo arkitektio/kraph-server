@@ -60,6 +60,23 @@ def get_active_organization(info: Info):
     return organization
 
 
+def assert_can_access_organization(info: Info, organization) -> None:
+    """Check the caller may act for this organization.
+
+    Kinds are identified by a globally unique primary key, so the client never
+    names a tenant — which means authorization comes from the row rather than
+    from the request. Same shape as `GraphController._assert_can_access`.
+    """
+    from authentikate.models import Membership
+
+    user = getattr(info.context.request, "user", None)
+    if user is None:
+        raise PermissionError("Cannot access organization vocabulary without an authenticated user")
+
+    if not Membership.objects.filter(user=user, organization=organization, blocked=False).exists():
+        raise PermissionError("You are not allowed to access this organization's vocabulary")
+
+
 def get_controller() -> GraphController:
     """
     Get a default GraphController without a specific graph context.

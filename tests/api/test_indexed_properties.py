@@ -44,14 +44,15 @@ def measured_ref(test_graph: core_models.Graph, category_with_both: core_models.
     aggregations — MEAN for the indexed one, MAX for the other — so a test that
     confuses them produces visibly different numbers rather than two empty dicts.
     """
+    from core.enums import ValueKind
     from evidence import models as evidence_models
     from evidence import state as state_module
     from evidence import writer
 
     organization = test_graph.organization
     assertion = writer.create_assertion(organization, subject="tester", app_id="pytest")
-    roi = core_models.StructureCategory.objects.create(graph=test_graph, key="ROI", identifier="ROI", age_name="roi_idx")
-    metric_category = core_models.MetricCategory.objects.create(graph=test_graph, structure_category=roi, key="vector_length", age_name="vl_idx")
+    roi = writer.ensure_structure_kind(organization, "ROI")
+    metric_category = writer.ensure_metric_kind(organization, roi, "vector_length", ValueKind.FLOAT)
 
     structure = writer.ensure_structure(organization, roi, "roi-indexed", assertion)
     ref = f"{test_graph.age_name}:11111111-0000-0000-0000-000000000001"

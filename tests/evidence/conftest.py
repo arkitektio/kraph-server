@@ -13,6 +13,7 @@ import pytest
 from authentikate.models import Membership, Organization, User
 
 from core import models as core_models
+from core.enums import ValueKind
 from evidence import models as evidence_models
 
 
@@ -67,35 +68,36 @@ def graph_b(organization: Organization, user: User) -> core_models.Graph:
 
 
 @pytest.fixture
-def roi_category_a(graph_a: core_models.Graph) -> core_models.StructureCategory:
-    """The ROI term as declared by graph A."""
-    return core_models.StructureCategory.objects.create(
-        graph=graph_a,
+def roi_kind(organization: Organization) -> evidence_models.StructureKind:
+    """The ROI term. One per organization — there is no per-graph variant to have."""
+    return evidence_models.StructureKind.all_objects.create(
+        organization=organization,
         identifier="@mikro/roi",
-        key="roi",
-        age_name="roi",
     )
 
 
+# Both graphs now reach the *same* term. Kept as separate fixture names so tests
+# that used to assert two categories can assert one, which is the point.
 @pytest.fixture
-def roi_category_b(graph_b: core_models.Graph) -> core_models.StructureCategory:
-    """The same real-world term, reached through a different projection."""
-    return core_models.StructureCategory.objects.create(
-        graph=graph_b,
-        identifier="@mikro/roi",
-        key="roi",
-        age_name="roi",
-    )
+def roi_category_a(roi_kind: evidence_models.StructureKind) -> evidence_models.StructureKind:
+    """The ROI term as reached from graph A."""
+    return roi_kind
 
 
 @pytest.fixture
-def length_category(graph_a: core_models.Graph, roi_category_a: core_models.StructureCategory) -> core_models.MetricCategory:
+def roi_category_b(roi_kind: evidence_models.StructureKind) -> evidence_models.StructureKind:
+    """The same term, reached from graph B. Deliberately identical to `roi_category_a`."""
+    return roi_kind
+
+
+@pytest.fixture
+def length_category(organization: Organization, roi_kind: evidence_models.StructureKind) -> evidence_models.MetricKind:
     """A float-valued measurement term describing an ROI."""
-    return core_models.MetricCategory.objects.create(
-        graph=graph_a,
-        structure_category=roi_category_a,
+    return evidence_models.MetricKind.all_objects.create(
+        organization=organization,
+        structure_kind=roi_kind,
         key="vector_length",
-        age_name="vector_length",
+        value_kind=ValueKind.FLOAT.value,
     )
 
 

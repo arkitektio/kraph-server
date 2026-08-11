@@ -18,6 +18,23 @@ from graph_engine import input_models
 from graph_engine.input_models import EntityDescriptorInput, StructureDescriptorInput
 
 
+def _matching_structure_kinds(organization, descriptor) -> "QuerySet":
+    """Structure kinds in an organization that a descriptor selects.
+
+    Only `identifiers` survives the move to organization vocabulary. A
+    `StructureKind` has no `key`, no tag many-to-many and no ontology references,
+    so `keys` / `tags` / `ontotology_terms` cannot be matched — and rather than
+    quietly selecting nothing, `StructureDescriptorInput` now rejects them at
+    validation. See `graph_engine.input_models.StructureDescriptorInput`.
+    """
+    from evidence.models import StructureKind
+
+    kinds = StructureKind.objects.for_organization(organization)
+    if descriptor.identifiers:
+        kinds = kinds.filter(identifier__in=descriptor.identifiers)
+    return kinds.distinct()
+
+
 class Graph(models.Model):
     """An Graph is a collection of Entities.
 
@@ -129,10 +146,6 @@ class Graph(models.Model):
         return cls.objects.filter(user=user).first()
 
     @property
-    def structure_categories(self):
-        return StructureCategory.objects.filter(graph=self)
-
-    @property
     def entity_categories(self):
         return EntityCategory.objects.filter(graph=self)
 
@@ -147,10 +160,6 @@ class Graph(models.Model):
     @property
     def measurement_categories(self):
         return MeasurementCategory.objects.filter(graph=self)
-
-    @property
-    def metric_categories(self):
-        return MetricCategory.objects.filter(graph=self)
 
     @property
     def protocol_event_categories(self):
@@ -373,6 +382,7 @@ class GraphSchema(models.Model):
     def active_for(cls, graph: "Graph") -> "GraphSchema | None":
         """The graph's current schema, or None if it has never been materialized."""
         return cls.objects.filter(graph=graph, is_active=True).first()
+
 
 def random_color():
     levels = range(32, 256, 32)
@@ -724,41 +734,6 @@ class EdgeCategory(Category):
         return "".join(e for e in key if e.isalnum()).upper()
 
 
-class StructureCategory(NodeCategory):
-    objects: managers.StructureCategoryManager = managers.StructureCategoryManager()
-    """A Structure class is a class represents a datapoint in your graph and
-    will relate metrics (like Intensity, Area, etc.) to it and then in turn
-    relate temporally to a bioentity. It therefore is one element in the
-
-    (b: Metric) -[d: describes] -> (a: Structure) -> [m: measures] -> (c: Bioentity) path.
-
-    Structure are just datapoints in the graph and should be considered inspectable links
-    to the data that was analysed, e.g. the image that was taken, metrics hold the actual
-    information about that image (e.g. the cell count in the image, the maximum intensity and
-    so forth).
-
-    """
-
-    identifier = models.CharField(
-        max_length=1000,
-        help_text="The structure identifier that the node relates to",
-        null=True,
-        blank=True,
-    )
-
-    def get_age_vertex_name(self):
-        return "Structure"
-
-    def get_age_type_name(self) -> str:
-        return "STRUCTURE"
-
-    def get_age_identifier(self):
-        return self.identifier
-
-    class Meta:
-        default_related_name = "structure_categories"
-
-
 class NaturalEventCategory(NodeCategory):
     objects: managers.NaturalEventCategoryManager = managers.NaturalEventCategoryManager()
     """A natural event class is a class that describes a natural event that happened
@@ -1026,67 +1001,6 @@ class ReagentCategory(NodeCategory):
         default_related_name = "reagent_categories"
 
 
-class MetricCategory(NodeCategory):
-    objects: managers.MetricCategoryManager = managers.MetricCategoryManager()
-    """A Metric class is an analticay statement that describes a structure.
-
-    Metric classes are used to describe a kind of  metric that described a certain measurment
-    (e.g. intensity, area, etc.) and will always be attached to a structure that in turn
-    measures a bioentity. It therefore is one element in the
-
-    (b: Metric) -[d: describes] -> (a: Structure) -> [m: measures] -> (c: Bioentity) path.
-
-    Kraph will always enfore that metrics are linked to a structure category first
-    and disallow liking them directly to a bioentity. This is to ensure that the graph
-    is temporally consistent (e.g. multiple same structures can measure the same bioentity at the different times)
-
-    While this may no seem obvious at first clance, it is important to understand that
-    the graph is not a static representation of your world but a dynamic representation
-    of the world that is constantly changing.
-
-    """
-
-    value_kind = TextChoicesField(
-        choices_enum=enums.MetricKindChoices,
-        help_text="The data type (if a metric)",
-        null=True,
-        blank=True,
-    )
-    structure_category = models.ForeignKey(
-        StructureCategory,
-        on_delete=models.CASCADE,
-        related_name="metric_categories",
-        help_text="The structure category that this metric describes",
-    )
-
-    def validate_input(self, value):
-        if self.metric_kind == enums.MetricKind.INT:
-            try:
-                return int(value)
-            except ValueError:
-                raise ValueError(f"Value {value} is not an integer")
-        elif self.metric_kind == enums.MetricKind.FLOAT:
-            try:
-                return float(value)
-            except ValueError:
-                raise ValueError(f"Value {value} is not a float")
-        elif self.metric_kind == enums.MetricKind.BOOLEAN:
-            if value not in [True, False, "true", "false", "True", "False", 1, 0, "1", "0"]:
-                raise ValueError(f"Value {value} is not a boolean")
-            return value in [True, "true", "True", 1, "1"]
-        # STRING and CATEGORICAL do not need validation
-        return value
-
-    def get_age_vertex_name(self):
-        return self.age_name
-
-    def get_age_type_name(self) -> str:
-        return "METRIC"
-
-    class Meta:
-        default_related_name = "metric_categories"
-
-
 class MeasurementCategory(EdgeCategory):
     objects = managers.MeasurementCategoryManager()
     """A Measurement class is a class that describes an edge with a value"""
@@ -1105,7 +1019,7 @@ class MeasurementCategory(EdgeCategory):
     def target_definition_model(self) -> EntityDescriptorInput:
         return EntityDescriptorInput(**self.target_definition)
 
-    def matches_source(self, entity: "StructureCategory") -> bool:
+    def matches_source(self, entity: "StructureKind") -> bool:
         """Check if an entity matches the source definition of this edge category."""
         return self.source_definition_model.matches(entity)
 
@@ -1113,18 +1027,9 @@ class MeasurementCategory(EdgeCategory):
         """Check if an entity matches the target definition of this edge category."""
         return self.target_definition_model.matches(entity)
 
-    def get_matching_source_structures(self) -> QuerySet["StructureCategory"]:
-        """Get all structures in the graph that match the source definition of this edge category."""
-        """Get all entities in the graph that match the target definition of this edge category."""
-        kwargs = {}
-        if self.source_definition_model.keys:
-            kwargs["key__in"] = self.source_definition_model.keys
-        if self.source_definition_model.tags:
-            kwargs["tags__value__in"] = self.source_definition_model.tags
-        if self.source_definition_model.ontotology_terms:
-            kwargs["ontology_references__name__in"] = self.source_definition_model.ontotology_terms
-
-        return self.graph.structure_categories.filter(**kwargs).distinct()
+    def get_matching_source_structures(self) -> QuerySet["StructureKind"]:
+        """Structure kinds this edge category's source definition selects."""
+        return _matching_structure_kinds(self.graph.organization, self.source_definition_model)
 
     def get_matching_target_entities(self) -> QuerySet["EntityCategory"]:
         """Get all entities in the graph that match the target definition of this edge category."""
@@ -1229,42 +1134,21 @@ class StructureRelationCategory(EdgeCategory):
     def target_definition_model(self) -> StructureDescriptorInput:
         return StructureDescriptorInput(**self.target_definition)
 
-    def matches_source(self, entity: "StructureCategory") -> bool:
+    def matches_source(self, entity: "StructureKind") -> bool:
         """Check if a structure matches the source definition of this edge category."""
         return self.source_definition_model.matches(entity)
 
-    def matches_target(self, entity: "StructureCategory") -> bool:
+    def matches_target(self, entity: "StructureKind") -> bool:
         """Check if a structure matches the target definition of this edge category."""
         return self.target_definition_model.matches(entity)
 
-    def get_matching_source_structures(self) -> QuerySet["StructureCategory"]:
-        """Get all structures in the graph that match the source definition of this edge category."""
-        """Get all structures in the graph that match the target definition of this edge category."""
-        kwargs = {}
-        if self.source_definition_model.keys:
-            kwargs["key__in"] = self.source_definition_model.keys
-        if self.source_definition_model.tags:
-            kwargs["tags__value__in"] = self.source_definition_model.tags
-        if self.source_definition_model.ontotology_terms:
-            kwargs["ontology_references__name__in"] = self.source_definition_model.ontotology_terms
-        if self.source_definition_model.identifiers:
-            kwargs["identifier__in"] = self.source_definition_model.identifiers
+    def get_matching_source_structures(self) -> QuerySet["StructureKind"]:
+        """Structure kinds this edge category's source definition selects."""
+        return _matching_structure_kinds(self.graph.organization, self.source_definition_model)
 
-        return self.graph.structure_categories.filter(**kwargs).distinct()
-
-    def get_matching_target_structures(self) -> QuerySet["StructureCategory"]:
-        """Get all structures in the graph that match the target definition of this edge category."""
-        kwargs = {}
-        if self.target_definition_model.keys:
-            kwargs["key__in"] = self.target_definition_model.keys
-        if self.target_definition_model.tags:
-            kwargs["tags__value__in"] = self.target_definition_model.tags
-        if self.target_definition_model.ontotology_terms:
-            kwargs["ontology_references__name__in"] = self.target_definition_model.ontotology_terms
-        if self.target_definition_model.identifiers:
-            kwargs["identifier__in"] = self.target_definition_model.identifiers
-
-        return self.graph.structure_categories.filter(**kwargs).distinct()
+    def get_matching_target_structures(self) -> QuerySet["StructureKind"]:
+        """Structure kinds this edge category's target definition selects."""
+        return _matching_structure_kinds(self.graph.organization, self.target_definition_model)
 
     def get_age_edge_name(self):
         return self.age_name
@@ -1675,11 +1559,14 @@ class MaterializedRelationEdge(MaterializedEdge):
 
 
 class MaterializedMeasurementEdge(MaterializedEdge):
+    # Materialized edges are derived rows, rebuilt by `re_materialize_*`, so the
+    # migration that re-points this simply deletes them rather than backfilling.
     source = models.ForeignKey(
-        StructureCategory,
+        "evidence.StructureKind",
         on_delete=models.CASCADE,
+        null=True,
         related_name="materialized_measurement_edges_as_source",
-        help_text="The source category of the edge",
+        help_text="The source structure kind of the edge",
     )
     target = models.ForeignKey(
         EntityCategory,
@@ -1698,16 +1585,18 @@ class MaterializedMeasurementEdge(MaterializedEdge):
 
 class MaterializedStructureRelationEdge(MaterializedEdge):
     source = models.ForeignKey(
-        StructureCategory,
+        "evidence.StructureKind",
         on_delete=models.CASCADE,
+        null=True,
         related_name="materialized_structure_relation_edges_as_source",
-        help_text="The source category of the edge",
+        help_text="The source structure kind of the edge",
     )
     target = models.ForeignKey(
-        StructureCategory,
+        "evidence.StructureKind",
         on_delete=models.CASCADE,
+        null=True,
         related_name="materialized_structure_relation_edges_as_target",
-        help_text="The target category of the edge",
+        help_text="The target structure kind of the edge",
     )
     edge = models.ForeignKey(
         StructureRelationCategory,

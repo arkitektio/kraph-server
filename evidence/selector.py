@@ -50,9 +50,10 @@ def metric_filter(selector: dict[str, Any] | None) -> Q:
     if not selector:
         return predicate
 
+    # Structure identifiers, not category keys — a structure kind has no key.
     category_keys = selector.get("category_keys")
     if category_keys:
-        predicate &= Q(structure__category__key__in=category_keys) | Q(structure__identifier__in=category_keys)
+        predicate &= Q(structure__identifier__in=category_keys)
 
     assertion_filter = selector.get("assertion_filter") or {}
     for field, column in (("subjects", "assertion__subject__in"), ("app_ids", "assertion__app_id__in"), ("action_names", "assertion__action_name__in")):
@@ -75,7 +76,7 @@ def metric_filter(selector: dict[str, Any] | None) -> Q:
 
 def metrics_for(graph: Any) -> QuerySet[Any]:
     """Every active metric this graph projects, in observation order."""
-    return evidence_models.Metric.objects.for_organization(graph.organization).filter(metric_filter(graph.selector), status=evidence_models.LifecycleStatus.ACTIVE).select_related("structure", "structure__category", "assertion").order_by("measured_at")
+    return evidence_models.Metric.objects.for_organization(graph.organization).filter(metric_filter(graph.selector), status=evidence_models.LifecycleStatus.ACTIVE).select_related("structure", "structure__kind", "assertion").order_by("measured_at")
 
 
 def informs_links_for(graph: Any) -> QuerySet[Any]:

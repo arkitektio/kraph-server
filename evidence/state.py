@@ -57,7 +57,7 @@ def merge(
         state, _ = evidence_models.State.all_objects.select_for_update().get_or_create(
             organization=metric.organization,
             entity_ref=entity_ref,
-            source_category=metric.structure.category,
+            source_kind=metric.structure.kind,
             key=metric.key,
         )
 
@@ -105,7 +105,7 @@ def retract(
             .filter(
                 organization=metric.organization,
                 entity_ref=entity_ref,
-                source_category=metric.structure.category,
+                source_kind=metric.structure.kind,
                 key=metric.key,
             )
             .first()
@@ -138,7 +138,7 @@ def recompute(state: evidence_models.State) -> evidence_models.State:
     be confident a monoid was implemented rather than merely described.
     """
     metrics = evidence_models.Metric.objects.for_organization(state.organization).filter(
-        structure__category=state.source_category,
+        structure__kind=state.source_kind,
         key=state.key,
         status=evidence_models.LifecycleStatus.ACTIVE,
         structure__in=_structures_informing(state),
@@ -208,11 +208,11 @@ def recompute_stale(organization: Any, limit: int | None = None) -> int:
 def state_for(
     organization: Any,
     entity_ref: str,
-    source_category: Any,
+    source_kind: Any,
     key: str,
 ) -> evidence_models.State | None:
     """Read one state vector, recomputing it first if a retraction left it stale."""
-    state = evidence_models.State.objects.for_organization(organization).filter(entity_ref=entity_ref, source_category=source_category, key=key).first()
+    state = evidence_models.State.objects.for_organization(organization).filter(entity_ref=entity_ref, source_kind=source_kind, key=key).first()
     if state is not None and state.needs_recompute:
         recompute(state)
     return state

@@ -30,41 +30,22 @@ def record_metric(
 
     controller = context.get_controller()
 
-    # Convert strawberry-pydantic inputs to pydantic models
     model = input.to_pydantic()
+    organization = context.get_active_organization(info)
 
-    graph = context.get_accessible_graph(info, model.graph)
-
-    structure_category = controller.ensure_structure_category_or_raise(
-        graph=graph,
+    # The structure is created if it is new. Refusing a measurement because no
+    # graph had declared the identifier would be refusing a fact about the world
+    # on a bookkeeping technicality — and the identifier belongs to the service
+    # that produced the datum anyway.
+    structure = controller.create_structure(
+        organization=organization,
         identifier=model.identifier,
+        payload=input_models.StructureInput(object=model.object),
         info=info,
     )
-
-    controller.ensure_metric_category_or_raise(
-        graph=graph,
-        structure_category=structure_category,
-        key=model.key,
-        value_kind=model.value_kind,
-        info=info,
-    )
-
-    try:
-        s = controller.get_structure_by_object(structure_category, model.object)
-    except ValueError:
-        if graph.can_auto_add_structures(info):
-            s = controller.create_structure(
-                structure_category=structure_category,
-                payload=input_models.StructureInput(
-                    object=model.object,
-                ),
-                info=info,
-            )
-        else:
-            raise ValueError(f"Structure with object '{model.object}' does not exist in graph '{model.graph}' and auto-adding structures is not allowed")
 
     response = controller.create_metric(
-        structure_id=s.unique_id,
+        structure_id=structure.unique_id,
         input=model,
         info=info,
     )

@@ -78,10 +78,12 @@ class Query:
     category_tags: list[types.CategoryTag] = kante.django_field(description="List all category tags")
     entity_categories: list[types.EntityCategory] = kante.django_field(description="List all entity categories/schemas")
     entity_category: types.EntityCategory = kante.django_field(description="Get a single entity category/schema by ID")
-    structure_categories: list[types.StructureCategory] = kante.django_field(description="List all structure categories/schemas")
-    structure_category: types.StructureCategory = kante.django_field(description="Get a single structure category/schema by ID")
-    metric_categories: list[types.MetricCategory] = kante.django_field(description="List all metric categories/schemas")
-    metric_category: types.MetricCategory = kante.django_field(description="Get a single metric category/schema by ID")
+    # Explicit resolvers: kinds have no graph, so `CategoryFilter.graph` — which
+    # was the only thing scoping these before — no longer exists to fence them.
+    structure_kinds = kante.django_field(queries.structure_kinds, description="List the organization's structure kinds")
+    structure_kind = kante.django_field(queries.structure_kind, description="Get one structure kind by ID")
+    metric_kinds = kante.django_field(queries.metric_kinds, description="List the organization's metric kinds")
+    metric_kind = kante.django_field(queries.metric_kind, description="Get one metric kind by ID")
     measurement_categories: list[types.MeasurementCategory] = kante.django_field(description="List all measurement categories/schemas")
     measurement_category: types.MeasurementCategory = kante.django_field(description="Get a single measurement category/schema by ID")
     relation_categories: list[types.RelationCategory] = kante.django_field(description="List all relation categories/schemas")
@@ -105,8 +107,8 @@ class Query:
     graph_stats: types.GraphStats = kante.django_field(description="Get aggregated graph stats with optional filters", resolver=types.GraphStatsResolver)
     category_tag_stats: types.CategoryTagStats = kante.django_field(description="Get aggregated category-tag stats with optional filters", resolver=types.CategoryTagStatsResolver)
     entity_category_stats: types.EntityCategoryStats = kante.django_field(description="Get aggregated entity-category stats with optional filters", resolver=types.EntityCategoryStatsResolver)
-    structure_category_stats: types.StructureCategoryStats = kante.django_field(description="Get aggregated structure-category stats with optional filters", resolver=types.StructureCategoryStatsResolver)
-    metric_category_stats: types.MetricCategoryStats = kante.django_field(description="Get aggregated metric-category stats with optional filters", resolver=types.MetricCategoryStatsResolver)
+    structure_kind_stats: types.StructureKindStats = kante.django_field(description="Aggregated structure-kind stats", resolver=types.StructureKindStatsResolver)
+    metric_kind_stats: types.MetricKindStats = kante.django_field(description="Aggregated metric-kind stats", resolver=types.MetricKindStatsResolver)
     measurement_category_stats: types.MeasurementCategoryStats = kante.django_field(description="Get aggregated measurement-category stats with optional filters", resolver=types.MeasurementCategoryStatsResolver)
     relation_category_stats: types.RelationCategoryStats = kante.django_field(description="Get aggregated relation-category stats with optional filters", resolver=types.RelationCategoryStatsResolver)
     structure_relation_category_stats: types.StructureRelationCategoryStats = kante.django_field(description="Get aggregated structure-relation-category stats with optional filters", resolver=types.StructureRelationCategoryStatsResolver)
@@ -548,17 +550,15 @@ class Mutation:
         description="Update an existing entity category/schema in the graph",
         resolver=mutations.update_entity_category,
     )
-    create_structure_category = kante.django_mutation(
-        description="Create a new structure category/schema in the graph",
-        resolver=mutations.create_structure_category,
+    # No `create`: structure kinds are minted lazily by `ensure_structure_kind`
+    # the first time a measurement names an identifier.
+    delete_structure_kind = kante.django_mutation(
+        description="Retire a structure kind and the evidence recorded under it",
+        resolver=mutations.delete_structure_kind,
     )
-    delete_structure_category = kante.django_mutation(
-        description="Delete a structure category/schema from the graph",
-        resolver=mutations.delete_structure_category,
-    )
-    update_structure_category = kante.django_mutation(
-        description="Update an existing structure category/schema in the graph",
-        resolver=mutations.update_structure_category,
+    update_structure_kind = kante.django_mutation(
+        description="Update a structure kind's label, description or colour",
+        resolver=mutations.update_structure_kind,
     )
     create_structure_relation_category = kante.django_mutation(
         description="Create a new structure relation category/schema in the graph",
@@ -572,17 +572,15 @@ class Mutation:
         description="Update an existing structure relation category/schema in the graph",
         resolver=mutations.update_structure_relation_category,
     )
-    create_metric_category = kante.django_mutation(
-        description="Create a new metric category/schema in the graph",
-        resolver=mutations.create_metric_category,
+    # No `create`: metric kinds are minted by the write that first records one,
+    # because that write is what knows the value kind.
+    delete_metric_kind = kante.django_mutation(
+        description="Retire a metric kind and the measurements recorded under it",
+        resolver=mutations.delete_metric_kind,
     )
-    delete_metric_category = kante.django_mutation(
-        description="Delete a metric category/schema from the graph",
-        resolver=mutations.delete_metric_category,
-    )
-    update_metric_category = kante.django_mutation(
-        description="Update an existing metric category/schema in the graph",
-        resolver=mutations.update_metric_category,
+    update_metric_kind = kante.django_mutation(
+        description="Update a metric kind's label, description or colour",
+        resolver=mutations.update_metric_kind,
     )
     create_measurement_category = kante.django_mutation(
         description="Create a new measurement category/schema in the graph",

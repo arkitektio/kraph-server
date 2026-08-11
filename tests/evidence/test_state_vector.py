@@ -43,7 +43,7 @@ ALL_AGGREGATIONS = [
 def _record(
     organization: Organization,
     structure: evidence_models.Structure,
-    category: core_models.MetricCategory,
+    category: evidence_models.MetricKind,
     assertion: evidence_models.Assertion,
     value: float,
     offset_minutes: int,
@@ -62,7 +62,7 @@ def _record(
 @pytest.fixture
 def linked_structure(
     organization: Organization,
-    roi_category_a: core_models.StructureCategory,
+    roi_category_a: evidence_models.StructureKind,
     assertion: evidence_models.Assertion,
 ) -> evidence_models.Structure:
     """A structure that informs one entity, so its metrics have somewhere to roll up to."""
@@ -82,7 +82,7 @@ def test_incremental_merge_equals_full_recompute(
     seed: int,
     organization: Organization,
     linked_structure: evidence_models.Structure,
-    length_category: core_models.MetricCategory,
+    length_category: evidence_models.MetricKind,
     assertion: evidence_models.Assertion,
 ) -> None:
     """Folding one at a time must land where rebuilding from scratch lands.
@@ -98,7 +98,7 @@ def test_incremental_merge_equals_full_recompute(
         metric = _record(organization, linked_structure, length_category, assertion, value, offset)
         state_module.merge(metric, [ENTITY_REF])
 
-    incremental = evidence_models.State.objects.for_organization(organization).get(entity_ref=ENTITY_REF, source_category=linked_structure.category, key="vector_length")
+    incremental = evidence_models.State.objects.for_organization(organization).get(entity_ref=ENTITY_REF, source_kind=linked_structure.kind, key="vector_length")
     incremental_reads = {agg: aggregate.apply(agg, incremental) for agg in ALL_AGGREGATIONS}
 
     rebuilt = state_module.recompute(incremental)
@@ -115,7 +115,7 @@ def test_incremental_merge_equals_full_recompute(
 def test_last_value_follows_observation_time_not_arrival(
     organization: Organization,
     linked_structure: evidence_models.Structure,
-    length_category: core_models.MetricCategory,
+    length_category: evidence_models.MetricKind,
     assertion: evidence_models.Assertion,
 ) -> None:
     """A backfilled old measurement must not become LATEST.
@@ -138,7 +138,7 @@ def test_last_value_follows_observation_time_not_arrival(
 def test_count_counts_non_numeric_values_too(
     organization: Organization,
     linked_structure: evidence_models.Structure,
-    length_category: core_models.MetricCategory,
+    length_category: evidence_models.MetricKind,
     assertion: evidence_models.Assertion,
 ) -> None:
     """A string measurement contributes to COUNT and LATEST but not to SUM.
@@ -178,7 +178,7 @@ def test_no_evidence_reads_as_none_for_every_aggregation() -> None:
 def test_euclidean_range_is_dimension_agnostic(
     organization: Organization,
     linked_structure: evidence_models.Structure,
-    length_category: core_models.MetricCategory,
+    length_category: evidence_models.MetricKind,
     assertion: evidence_models.Assertion,
 ) -> None:
     """Distance between first and last point, for any vector length.

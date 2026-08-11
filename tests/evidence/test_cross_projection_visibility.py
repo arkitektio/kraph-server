@@ -19,7 +19,7 @@ from core import models as core_models
 MEASURED_AT = datetime(2026, 3, 3, 10, 0, tzinfo=timezone.utc)
 
 
-def test_a_metric_recorded_under_one_graph_is_readable_under_another(organization: Organization, roi_category_a: core_models.StructureCategory, roi_category_b: core_models.StructureCategory, length_category: core_models.MetricCategory, assertion: evidence_models.Assertion) -> None:
+def test_a_metric_recorded_under_one_graph_is_readable_under_another(organization: Organization, roi_category_a: evidence_models.StructureKind, roi_category_b: evidence_models.StructureKind, length_category: evidence_models.MetricKind, assertion: evidence_models.Assertion) -> None:
     """The win that does not need entity identity.
 
     Experiment A records a length for an ROI. A projection built for experiment
@@ -28,7 +28,7 @@ def test_a_metric_recorded_under_one_graph_is_readable_under_another(organizatio
     """
     structure = evidence_models.Structure.objects.create_for_organization(
         organization=organization,
-        category=roi_category_a,
+        kind=roi_category_a,
         identifier="@mikro/roi",
         object="roi-42",
         assertion=assertion,
@@ -36,7 +36,7 @@ def test_a_metric_recorded_under_one_graph_is_readable_under_another(organizatio
     evidence_models.Metric.objects.create_for_organization(
         organization=organization,
         structure=structure,
-        category=length_category,
+        kind=length_category,
         key="vector_length",
         value_kind=ValueKind.FLOAT.value,
         value_num=45.2,
@@ -56,7 +56,7 @@ def test_a_metric_recorded_under_one_graph_is_readable_under_another(organizatio
     assert [m.value for m in seen_from_b.metrics.all()] == [45.2]
 
 
-def test_provenance_scoping_is_a_filter_not_a_fork(organization: Organization, roi_category_a: core_models.StructureCategory, length_category: core_models.MetricCategory) -> None:
+def test_provenance_scoping_is_a_filter_not_a_fork(organization: Organization, roi_category_a: evidence_models.StructureKind, length_category: evidence_models.MetricKind) -> None:
     """'Only what AI_Model_X asserted before March 3rd' is a WHERE clause.
 
     Under per-graph silos this needed a separate graph. Over shared evidence it
@@ -72,7 +72,7 @@ def test_provenance_scoping_is_a_filter_not_a_fork(organization: Organization, r
 
     structure = evidence_models.Structure.objects.create_for_organization(
         organization=organization,
-        category=roi_category_a,
+        kind=roi_category_a,
         identifier="@mikro/roi",
         object="roi-42",
         assertion=trusted,
@@ -81,7 +81,7 @@ def test_provenance_scoping_is_a_filter_not_a_fork(organization: Organization, r
         evidence_models.Metric.objects.create_for_organization(
             organization=organization,
             structure=structure,
-            category=length_category,
+            kind=length_category,
             key="vector_length",
             value_kind=ValueKind.FLOAT.value,
             value_num=value,

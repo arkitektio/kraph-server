@@ -28,7 +28,7 @@ BASE_TIME = datetime(2026, 1, 1, tzinfo=timezone.utc)
 def two_entities_one_structure(
     organization: Organization,
     graph_a: core_models.Graph,
-    roi_category_a: core_models.StructureCategory,
+    roi_category_a: evidence_models.StructureKind,
     assertion: evidence_models.Assertion,
 ) -> tuple[evidence_models.Structure, list[str]]:
     """One ROI that is evidence for two different entities."""
@@ -104,8 +104,8 @@ def test_dirty_excludes_retracted_links(
 def test_bulk_ingest_folds_per_metric_but_projects_once(
     organization: Organization,
     graph_a: core_models.Graph,
-    roi_category_a: core_models.StructureCategory,
-    length_category: core_models.MetricCategory,
+    roi_category_a: evidence_models.StructureKind,
+    length_category: evidence_models.MetricKind,
     assertion: evidence_models.Assertion,
 ) -> None:
     """The regression guard.

@@ -6,6 +6,7 @@ Contains all GraphQL query resolvers for the graph engine.
 
 from .entity import entity, entities_informed_by, entities
 from .structure import structure, structures, structure_by_identifier, informing_structures
+from .kinds import structure_kinds, structure_kind, metric_kinds, metric_kind
 from .metric import metrics_for_structure, metric, metrics, measurements_for_assertion
 from .measurement import measurement, measurements
 from .relation import relation, relations
@@ -34,6 +35,10 @@ __all__ = [
     "structures",
     "structure_by_identifier",
     "informing_structures",
+    "structure_kinds",
+    "structure_kind",
+    "metric_kinds",
+    "metric_kind",
     # Edge queries
     "measurement",
     "measurements",

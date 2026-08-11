@@ -8,6 +8,7 @@ import strawberry
 
 from api import types, context, filters, order, pagination
 from core import models
+from evidence import models as evidence_models
 from graph_engine import scalars
 from graph_engine import input_models
 
@@ -72,25 +73,33 @@ def structure(
 
 def structures(
     info: Info,
-    structure_category_id: strawberry.ID,
+    structure_kind_id: strawberry.ID | None = None,
     filters: filters.StructureFilter | None = None,
     ordering: list[order.StructureOrder] | None = None,
     pagination: pagination.StructurePaginationInput | None = None,
 ) -> List[types.Structure]:
-    """Fetch structures for a given structure category with optional filters, ordering, and pagination."""
-    controller = context.get_controller()
+    """List structures in the organization, optionally narrowed to one kind.
 
-    structure_category = models.StructureCategory.objects.filter(id=structure_category_id).first()
-    if structure_category is None:
-        raise ValueError(f"Structure category {structure_category_id} not found")
+    `structure_kind_id` is optional now. Structures belong to the organization,
+    so listing them does not need a kind any more than it needs a graph — and the
+    old signature reached `structure_category.graph` to pick a projection to
+    query, which no longer exists.
+    """
+    controller = context.get_controller()
+    organization = context.get_active_organization(info)
 
     filter_model = filters.to_pydantic() if filters else input_models.StructureFilters()
-    filter_model.category = structure_category.identifier
+    if structure_kind_id is not None:
+        kind = evidence_models.StructureKind.objects.for_organization(organization).filter(id=structure_kind_id).first()
+        if kind is None:
+            raise ValueError(f"Structure kind {structure_kind_id} not found")
+        filter_model.category = kind.identifier
+
     ordering_models = [order.to_pydantic() for order in ordering] if ordering else []
     pagination_model = pagination.to_pydantic() if pagination else input_models.StructurePagination()
 
     result = controller.list_structures(
-        graph=structure_category.graph,
+        organization=organization,
         filters=filter_model,
         pagination=pagination_model,
         ordering=ordering_models,

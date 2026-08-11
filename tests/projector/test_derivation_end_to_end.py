@@ -76,7 +76,6 @@ async def test_recording_a_metric_updates_the_derived_value(
         RECORD_METRIC,
         variable_values={
             "input": {
-                "graph": str(test_graph.pk),
                 "identifier": "ROI",
                 "object": object_id,
                 "key": "vector_length",

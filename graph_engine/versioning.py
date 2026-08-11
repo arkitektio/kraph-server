@@ -94,18 +94,12 @@ def snapshot_definition(graph: core_models.Graph) -> dict[str, Any]:
         for category in graph.natural_event_categories.order_by("key")
     ]
 
-    structures = [{"key": category.key, "identifier": category.identifier} for category in graph.structure_categories.order_by("key")]
-
-    metrics = [{"key": category.key, "structure": category.structure_category.identifier, "value_kind": category.value_kind} for category in graph.metric_categories.select_related("structure_category").order_by("key")]
-
     return {
         "system_version": version,
         "extensions": {
             "entities": entities,
             "relations": relations,
             "events": events,
-            "structures": structures,
-            "metrics": metrics,
         },
     }
 
@@ -192,13 +186,15 @@ def connect() -> None:
 
     from core import models as models_module
 
+    # Structure and metric kinds are deliberately absent: they are organization
+    # vocabulary, not schema, so there is no graph whose version changed when one
+    # appears. They are also created lazily on every write, which would have
+    # emitted a schema version per ingest.
     for model in (
         models_module.EntityCategory,
         models_module.RelationCategory,
         models_module.MeasurementCategory,
-        models_module.StructureCategory,
         models_module.StructureRelationCategory,
-        models_module.MetricCategory,
         models_module.NaturalEventCategory,
         models_module.ProtocolEventCategory,
         models_module.ReagentCategory,

@@ -52,11 +52,11 @@ def test_scoped_access_returns_a_queryset(model: type[models.Model], organizatio
     assert isinstance(model.objects.for_organization(organization), models.QuerySet)
 
 
-def test_structures_of_one_organization_are_invisible_to_another(organization: Organization, other_organization: Organization, roi_category_a: core_models.StructureCategory, assertion: evidence_models.Assertion) -> None:
+def test_structures_of_one_organization_are_invisible_to_another(organization: Organization, other_organization: Organization, roi_category_a: evidence_models.StructureKind, assertion: evidence_models.Assertion) -> None:
     """The leak this whole mechanism exists to prevent."""
     evidence_models.Structure.objects.create_for_organization(
         organization=organization,
-        category=roi_category_a,
+        kind=roi_category_a,
         identifier="@mikro/roi",
         object="roi-1",
         assertion=assertion,
@@ -66,7 +66,7 @@ def test_structures_of_one_organization_are_invisible_to_another(organization: O
     assert evidence_models.Structure.objects.for_organization(other_organization).count() == 0
 
 
-def test_all_objects_is_the_only_unrestricted_path(organization: Organization, roi_category_a: core_models.StructureCategory, assertion: evidence_models.Assertion) -> None:
+def test_all_objects_is_the_only_unrestricted_path(organization: Organization, roi_category_a: evidence_models.StructureKind, assertion: evidence_models.Assertion) -> None:
     """The escape hatch exists and is deliberately awkward to reach for.
 
     Django's own internals (cascade deletion, reverse descriptors) need an
@@ -76,7 +76,7 @@ def test_all_objects_is_the_only_unrestricted_path(organization: Organization, r
     """
     evidence_models.Structure.objects.create_for_organization(
         organization=organization,
-        category=roi_category_a,
+        kind=roi_category_a,
         identifier="@mikro/roi",
         object="roi-1",
         assertion=assertion,
@@ -85,7 +85,7 @@ def test_all_objects_is_the_only_unrestricted_path(organization: Organization, r
     assert evidence_models.Structure.all_objects.count() == 1
 
 
-def test_django_internals_use_the_unrestricted_manager(organization: Organization, roi_category_a: core_models.StructureCategory, assertion: evidence_models.Assertion) -> None:
+def test_django_internals_use_the_unrestricted_manager(organization: Organization, roi_category_a: evidence_models.StructureKind, assertion: evidence_models.Assertion) -> None:
     """Reverse accessors must not trip the guard.
 
     If `_base_manager` / `_default_manager` resolved to the raising manager, this
@@ -94,7 +94,7 @@ def test_django_internals_use_the_unrestricted_manager(organization: Organizatio
     """
     structure = evidence_models.Structure.objects.create_for_organization(
         organization=organization,
-        category=roi_category_a,
+        kind=roi_category_a,
         identifier="@mikro/roi",
         object="roi-1",
         assertion=assertion,

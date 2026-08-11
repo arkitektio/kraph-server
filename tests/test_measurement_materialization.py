@@ -3,21 +3,18 @@ from asgiref.sync import sync_to_async
 import pytest
 
 from core import models as core_models
+from evidence import models as evidence_models
 from core.models import Graph
+from evidence import writer
 from graph_engine import input_models
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_measurement_category_create_and_delete_materializes_edges(test_graph: Graph) -> None:
-    structure = await core_models.StructureCategory.objects.acreate_from_structure_definition(
-        graph=test_graph,
-        definition=input_models.StructureDefinitionInput(
-            key="ROI_TEST",
-            label="ROI_TEST",
-            identifier="@mikro/roi_test",
-        ),
-    )
+    # Structure kinds are organization vocabulary now, created by the write that
+    # first names an identifier rather than declared per graph.
+    structure = await sync_to_async(writer.ensure_structure_kind)(test_graph.organization, "@mikro/roi_test")
     entity = await core_models.EntityCategory.objects.acreate_from_entity_definition(
         graph=test_graph,
         definition=input_models.EntityDefinitionInput(
@@ -31,7 +28,7 @@ async def test_measurement_category_create_and_delete_materializes_edges(test_gr
         definition=input_models.MeasurementDefinitionInput(
             key="MEASURES_TEST",
             label="MEASURES_TEST",
-            source=input_models.StructureDescriptorInput(keys=[structure.key]),
+            source=input_models.StructureDescriptorInput(identifiers=[structure.identifier]),
             target=input_models.EntityDescriptorInput(keys=[entity.key]),
         ),
     )

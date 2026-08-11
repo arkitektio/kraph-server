@@ -1000,20 +1000,29 @@ class StructureDescriptorInput(BaseModel):
     """Input for filtering entities when linking to a structure. This only contains relativ fields
     that can be used for filtering, not absolute references like 'id'."""
 
-    keys: Optional[List[str]] = Field(default=None, description="Filter by entity key/label")
-    tags: Optional[List[str]] = Field(default=None, description="Filter by tags on the entity")
-    ontotology_terms: Optional[List[str]] = Field(default=None, description="Filter by ontology references on the entity (format: 'PREFIX:TERM_ID')")
+    keys: Optional[List[str]] = Field(default=None, description="REMOVED — structure kinds have no key. Use `identifiers`.")
+    tags: Optional[List[str]] = Field(default=None, description="REMOVED — structure kinds carry no tags. Use `identifiers`.")
+    ontotology_terms: Optional[List[str]] = Field(default=None, description="REMOVED — structure kinds carry no ontology references. Use `identifiers`.")
     default_category_key: Optional[str] = Field(default=None, description="Default category to link to if no entities match the filters")
-    identifiers: Optional[list[scalars.StructureIdentifier]] = Field(default=None, description="Optional structure identifier to filter by (e.g. '@mikro/roi')")
+    identifiers: Optional[list[scalars.StructureIdentifier]] = Field(default=None, description="Structure identifiers to filter by (e.g. '@mikro/roi')")
+
+    @model_validator(mode="after")
+    def reject_unmatchable_filters(self) -> "StructureDescriptorInput":
+        """Refuse filters a structure kind cannot answer.
+
+        Structures became organization vocabulary, so a `StructureKind` has an
+        identifier and nothing else to match on — no key, no tags, no ontology
+        references. Accepting these fields and matching nothing would be the
+        silent-zero-result failure this codebase keeps having to remove, so say
+        so instead.
+        """
+        unusable = [name for name in ("keys", "tags", "ontotology_terms") if getattr(self, name)]
+        if unusable:
+            raise ValueError(f"Structure descriptors can only filter by `identifiers`; {', '.join(unusable)} {'is' if len(unusable) == 1 else 'are'} not expressible against a structure kind, which has no key, tags or ontology references.")
+        return self
 
     def matches(self, entity: StructureCategoryProtocol) -> bool:
-        """Check if a given entity matches this descriptor."""
-        if self.keys and entity.key not in self.keys:
-            return False
-        if self.tags and not set(self.tags).issubset(set(entity.tags)):
-            return False
-        if self.ontotology_terms and not set(self.ontotology_terms).issubset(set(map(lambda x: x.uri, entity.ontology_references))):
-            return False
+        """Whether a structure kind matches this descriptor."""
         if self.identifiers and entity.identifier not in self.identifiers:
             return False
         return True
@@ -1697,17 +1706,20 @@ class PinNodeInput(BaseModel):
 
 
 class CreateStructureInput(StructureInput):
-    """Input for creating a new structure instance."""
+    """Input for creating a new structure instance.
 
-    category: GraphID = Field(..., description="The ID of the structure category/type to create")
-    graph: GraphID = Field(..., description="The graph id this structure will belong to")
+    No graph. A structure points at an external datum owned by another service,
+    so it belongs to the organization, and naming a projection to record one was
+    always incidental.
+    """
+
+    identifier: scalars.StructureIdentifier = Field(..., description="The structure identifier, e.g. '@mikro/roi'")
 
 
 class EnsureStructureInput(StructureInput):
-    """Input for creating a new structure instance."""
+    """Input for creating a new structure instance, or returning the existing one."""
 
-    identifier: scalars.StructureIdentifier = Field(..., description="The unique identifier for this structure")
-    graph: strawberry.ID = Field(..., description="The graph id this structure will belong to")
+    identifier: scalars.StructureIdentifier = Field(..., description="The structure identifier, e.g. '@mikro/roi'")
 
 
 class UpdateStructureInput(StructureInput):
@@ -1729,9 +1741,13 @@ class DeleteStructureInput(BaseModel):
 
 
 class RecordMetricInput(MetricInput):
-    """Input for creating a new metric associated with a structure."""
+    """Input for recording a measurement.
 
-    graph: GraphID = Field(..., description="The graph id this metric will belong to")
+    Takes no graph. A measurement is a fact about an external datum, scoped to
+    the organization; which projections read it is decided by their selectors,
+    not by the writer.
+    """
+
     identifier: scalars.StructureIdentifier = Field(..., description="The schema identifier for this metric (e.g. '@mikro/roi_volume')")
     object: scalars.StructureObject = Field(..., description="The unique ID of the object this metric references")
     value_kind: PropertyType = Field(..., description="The kind of value this metric represents (e.g. 'float', 'integer', 'string', etc.)")

@@ -533,7 +533,6 @@ class ArchiveScatterPlotInput:
 class RecordMetricInput(MetricInput):
     """Input for creating a new metric."""
 
-    graph: str = strawberry.field(description="The graph id thidds metric will belong to")
     identifier: str = strawberry.field(description="The schema identifier for this metric (e.g. '@mikro/roi_volume')")
     object: str = strawberry.field(description="The unique ID of the object this metric references")
     value_kind: input_models.PropertyType = strawberry.field(description="The kind of value this metric represents")

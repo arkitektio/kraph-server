@@ -1,6 +1,7 @@
 from typing import List, Optional
 import strawberry
 from core import models, enums
+from evidence import models as evidence_models
 import strawberry_django as kante
 from django.db.models import Q
 import kante
@@ -174,14 +175,28 @@ class EntityCategoryFilter(CategoryFilter):
         return Q(**{f"{prefix}key__in": value.keys})
 
 
-@kante.filter_type(models.MetricCategory)
-class MetricCategoryFilter(CategoryFilter):
-    """Filter options for metric category queries."""
+@kante.filter_type(evidence_models.MetricKind)
+class MetricKindFilter:
+    """Filter options for metric kind queries.
 
-    @kante.filter_field(description="Filter by list of IDs")
+    Standalone, deliberately not a `CategoryFilter`: subclassing would re-introduce
+    `graph` and `pinned`, neither of which a kind has, and `graph` in particular
+    was the only tenant fence the old root fields had. Scoping is now the
+    resolver's job.
+    """
+
+    ids: Optional[List[strawberry.ID]] = kante.filter_field(default=None, description="Filter by list of IDs")
+    search: Optional[str] = kante.filter_field(default=None, description="Search label and key")
+
+    @kante.filter_field(description="Filter by the kind of value this measurement carries")
     def value_kind(self, info: kante.Info, value: enums.ValueKind, prefix: str) -> Q:
-        """Filter metric categories by the kind of value they represent (e.g. numeric, categorical)."""
+        """Filter metric kinds by the kind of value they represent."""
         return Q(**{f"{prefix}value_kind": value})
+
+    @kante.filter_field(description="Filter by the structure kind this describes")
+    def structure_kind(self, info: kante.Info, value: strawberry.ID, prefix: str) -> Q:
+        """Filter metric kinds by the structure kind they describe."""
+        return Q(**{f"{prefix}structure_kind_id": value})
 
 
 @kante.filter_type(models.RelationCategory)
@@ -207,13 +222,21 @@ class ProtocolEventCategoryFilter(CategoryFilter):
     pass
 
 
-@kante.filter_type(models.StructureCategory)
-class StructureCategoryFilter(CategoryFilter):
-    pass
+@kante.filter_type(evidence_models.StructureKind)
+class StructureKindFilter:
+    """Filter options for structure kind queries. Standalone — see `MetricKindFilter`."""
 
-    @kante.filter_field(description="Filter by list of IDs")
+    ids: Optional[List[strawberry.ID]] = kante.filter_field(default=None, description="Filter by list of IDs")
+    search: Optional[str] = kante.filter_field(default=None, description="Search label and identifier")
+
+    @kante.filter_field(description="Filter by structure identifiers")
+    def identifiers(self, info: kante.Info, value: List[str], prefix: str) -> Q:
+        """Filter structure kinds by identifier."""
+        return Q(**{f"{prefix}identifier__in": value})
+
+    @kante.filter_field(description="Filter by whether the kind matches a descriptor")
     def matches_descriptor(self, info: kante.Info, value: inputs.StructureDescriptorInput, prefix: str) -> Q:
-        """Filter entity categories by whether they match a specific identifier pattern."""
+        """Filter structure kinds by identifier pattern."""
         return Q(**{f"{prefix}identifier__in": value.identifiers})
 
 

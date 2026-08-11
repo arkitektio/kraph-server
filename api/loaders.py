@@ -30,6 +30,7 @@ from strawberry.dataloader import DataLoader
 from strawberry.extensions import SchemaExtension
 
 from core import models
+from evidence import models as evidence_models
 
 PKType = int | str
 
@@ -44,9 +45,14 @@ def _batch_by_pk(model: type, field: str = "id") -> Callable[[list[PKType]], Any
     own order would silently mis-assign every result after the first gap.
     """
 
+    manager = getattr(model, "all_objects", None) or model.objects
+
     async def load(keys: list[PKType]) -> list[Any]:
+        # `all_objects` where the model has one: evidence models raise on an
+        # unscoped `objects`, and a loader is keyed by primary key, which is
+        # already globally unique. Authorization happens at the resolver.
         found = {}
-        async for instance in model.objects.filter(**{f"{field}__in": list(keys)}):
+        async for instance in manager.filter(**{f"{field}__in": list(keys)}):
             found[str(getattr(instance, field))] = instance
         return [found.get(str(key)) for key in keys]
 
@@ -56,9 +62,9 @@ def _batch_by_pk(model: type, field: str = "id") -> Callable[[list[PKType]], Any
 _LOADER_SPECS: dict[str, tuple[type, str]] = {
     "node_category": (models.NodeCategory, "id"),
     "entity_category": (models.EntityCategory, "id"),
-    "structure_category": (models.StructureCategory, "id"),
+    "structure_kind": (evidence_models.StructureKind, "id"),
     "natural_event_category": (models.NaturalEventCategory, "id"),
-    "metric_category": (models.MetricCategory, "id"),
+    "metric_kind": (evidence_models.MetricKind, "id"),
     "protocol_event_category": (models.ProtocolEventCategory, "id"),
     "relation_category": (models.RelationCategory, "id"),
     "structure_relation_category": (models.StructureRelationCategory, "id"),
@@ -129,9 +135,9 @@ class LoaderExtension(SchemaExtension):
 
 node_category_loader = _LoaderProxy("node_category")
 entity_category_loader = _LoaderProxy("entity_category")
-structure_category_loader = _LoaderProxy("structure_category")
+structure_kind_loader = _LoaderProxy("structure_kind")
 natural_event_category_loader = _LoaderProxy("natural_event_category")
-metric_category_loader = _LoaderProxy("metric_category")
+metric_kind_loader = _LoaderProxy("metric_kind")
 protocol_event_category_loader = _LoaderProxy("protocol_event_category")
 relation_category_loader = _LoaderProxy("relation_category")
 structure_relation_category_loader = _LoaderProxy("structure_relation_category")

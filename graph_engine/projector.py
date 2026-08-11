@@ -19,6 +19,7 @@ bulk ingest linear rather than O(metrics x projections).
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any, Iterable
 
@@ -28,6 +29,8 @@ from evidence import selector as selector_module
 from evidence import state as state_module
 from graph_engine import aggregate
 from graph_engine.input_models import DerivationType
+
+logger = logging.getLogger(__name__)
 
 
 def dirty(graph: core_models.Graph, structure_ids: Iterable[Any]) -> list[str]:
@@ -67,6 +70,38 @@ def is_derived(prop: Any) -> bool:
     return rule is not None and bool(getattr(rule, "source_node", None))
 
 
+def dirty_across_organization(organization: Any, structure_ids: Iterable[Any]) -> dict[str, list[str]]:
+    """Every entity in the organization these structures are evidence for, by graph.
+
+    Ingest names no graph, so a measurement has to reach every projection that
+    cares about it. Grouping the entity refs by their `{age_name}:` prefix means
+    only graphs that actually have an informed entity appear — normally one — and
+    the caller resolves each `Graph` once.
+
+    This is also a bug fix. `dirty()` filters links by a single graph's prefix, so
+    recording a metric only ever refreshed the graph you named; a second
+    projection over the same shared evidence stayed stale until somebody
+    reprojected it. That contradicted the point of sharing the evidence.
+    """
+    refs = (
+        evidence_models.Link.objects.for_organization(organization)
+        .filter(
+            kind=evidence_models.Link.Kind.INFORMS,
+            source_ref__in=[str(structure_id) for structure_id in structure_ids],
+            status=evidence_models.LifecycleStatus.ACTIVE,
+        )
+        .values_list("target_ref", flat=True)
+        .distinct()
+    )
+
+    grouped: dict[str, list[str]] = {}
+    for ref in refs:
+        age_name, separator, _ = str(ref).partition(":")
+        if separator:
+            grouped.setdefault(age_name, []).append(str(ref))
+    return grouped
+
+
 def _derived_properties(category: core_models.Category) -> list[Any]:
     """The property definitions on a category that come from evidence."""
     return [prop for prop in (category.defined_properties or []) if is_derived(prop)]
@@ -91,7 +126,7 @@ def _structure_ids_informing(graph: core_models.Graph, entity_ref: str) -> list[
 def _priority_scoped_value(
     graph: core_models.Graph,
     entity_ref: str,
-    source_category: Any,
+    source_kind: Any,
     key: str,
     prop: Any,
 ) -> Any:
@@ -121,7 +156,7 @@ def _priority_scoped_value(
 
     base = evidence_models.Metric.objects.for_organization(graph.organization).filter(
         structure_id__in=structure_ids,
-        structure__category=source_category,
+        structure__kind=source_kind,
         key=key,
         status=evidence_models.LifecycleStatus.ACTIVE,
     )
@@ -138,11 +173,16 @@ def _priority_scoped_value(
     return latest.value if latest else None
 
 
-def _structure_category_for_rule(graph: core_models.Graph, rule: Any) -> core_models.StructureCategory | None:
-    """Resolve a rule's `source_node` to a structure category of this graph."""
+def _structure_kind_for_rule(graph: core_models.Graph, rule: Any) -> Any:
+    """Resolve a rule's `source_node` to one of the organization's structure kinds.
+
+    Identifier only. The old lookup also fell back to `key`, which a structure
+    kind does not have — an organization's vocabulary of external data types is
+    keyed by the identifier the producing service owns.
+    """
     if not rule or not rule.source_node:
         return None
-    return core_models.StructureCategory.objects.filter(graph=graph, identifier=rule.source_node).first() or core_models.StructureCategory.objects.filter(graph=graph, key=rule.source_node).first()
+    return evidence_models.StructureKind.objects.for_organization(graph.organization).filter(identifier=rule.source_node).first()
 
 
 def split_properties(
@@ -189,20 +229,28 @@ def derive_properties(
         if indexed_only and not getattr(prop, "index", False):
             continue
         rule = prop.rule
-        source_category = _structure_category_for_rule(graph, rule)
-        if source_category is None:
-            # The schema names a structure kind this graph has never seen. Not an
-            # error — structures are resolved dynamically at write time, so the
-            # category simply does not exist yet and there is no evidence to
-            # aggregate.
+        source_kind = _structure_kind_for_rule(graph, rule)
+        if source_kind is None:
+            # The rule names a structure kind this organization has never seen.
+            # Usually benign — kinds are created lazily at write time, so it
+            # simply has no evidence yet. But a rule written against a *key*
+            # rather than an identifier now lands here permanently and would
+            # otherwise be skipped in silence, so say something.
+            logger.warning(
+                "%s.%s: no structure kind matches source %r in organization %s; the property will not derive. Rules resolve by structure identifier (e.g. '@mikro/roi'), not by category key.",
+                getattr(category, "key", "?"),
+                prop.key,
+                getattr(rule, "source_node", None),
+                graph.organization_id,
+            )
             continue
 
         key = rule.key if rule and rule.key else prop.key
 
         if prop.derivation in (DerivationType.PRIORITY_LATEST, DerivationType.LATEST_ASSERTION_TOOL):
-            value = _priority_scoped_value(graph, entity_ref, source_category, key, prop)
+            value = _priority_scoped_value(graph, entity_ref, source_kind, key, prop)
         else:
-            state = state_module.state_for(organization, entity_ref, source_category, key)
+            state = state_module.state_for(organization, entity_ref, source_kind, key)
 
             aggregation = rule.aggregation if rule and rule.aggregation else None
             if prop.derivation == DerivationType.LATEST and aggregation is None:

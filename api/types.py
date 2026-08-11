@@ -23,6 +23,7 @@ from graph_engine.retrieved import RetrievedMetric, RetrievedNode, RetrievedEdge
 from graph_engine import get_controller, input_models
 import kante
 from core import models
+from evidence import models as evidence_models
 from graph_engine import retrieved, scalars
 from api import filters
 from core import enums
@@ -116,8 +117,8 @@ class MaterializedStructureRelationEdge:
     """A materialized edge representing a relationship in the graph."""
 
     id: strawberry.ID = strawberry.field(description="Database ID of the edge")
-    source: "StructureCategory"
-    target: "StructureCategory"
+    source: "StructureKind"
+    target: "StructureKind"
     edge: "StructureRelationCategory"
     graph: "Graph"
 
@@ -127,7 +128,7 @@ class MaterializedMeasurementEdge:
     """A materialized edge representing a relationship in the graph."""
 
     id: strawberry.ID = strawberry.field(description="Database ID of the edge")
-    source: "StructureCategory"
+    source: "StructureKind"
     target: "EntityCategory"
     edge: "MeasurementCategory"
     graph: "Graph"
@@ -167,8 +168,6 @@ class Graph:
 
     measurement_categories: List["MeasurementCategory"] = strawberry.field(default_factory=list, description="List of measurement categories/schemas defined in this graph")
     entity_categories: List["EntityCategory"] = strawberry.field(default_factory=list, description="List of entity categories/schemas defined in this graph")
-    structure_categories: List["StructureCategory"] = strawberry.field(default_factory=list, description="List of structure categories/schemas defined in this graph")
-    metric_categories: List["MetricCategory"] = strawberry.field(default_factory=list, description="List of metric categories/schemas defined in this graph")
     protocol_event_categories: List["ProtocolEventCategory"] = strawberry.field(default_factory=list, description="List of protocol event categories/schemas defined in this graph")
     natural_event_categories: List["NaturalEventCategory"] = strawberry.field(default_factory=list, description="List of natural event categories/schemas defined in this graph")
     relation_categories: List["RelationCategory"] = strawberry.field(default_factory=list, description="List of relation categories/schemas defined in this graph")
@@ -335,18 +334,41 @@ class EntityCategory(NodeCategory, Category):
         return cat.defined_properties
 
 
-@kante.django_type(models.StructureCategory, filters=filters.StructureCategoryFilter, pagination=True, ordering=order.StructureCategoryOrder, description="A structure category/schema definition")
-class StructureCategory(NodeCategory, Category):
-    id: strawberry.ID = strawberry.field(description="Database ID of the category")
-    identifier: str = kante.django_field(description="The identifier for this structure category, which is used to link structures to entities (e.g. 'Cell', 'ROI', 'Tissue')")
+@kante.django_type(evidence_models.StructureKind, filters=filters.StructureKindFilter, pagination=True, ordering=order.StructureKindOrder, description="A kind of external datum this organization knows about")
+class StructureKind:
+    """Organization vocabulary, not schema.
+
+    Deliberately does **not** implement `Category` or `NodeCategory`. It has no
+    graph, no key, no tags, no ontology references and no layout coordinates —
+    per-graph position is meaningless for a term shared across every projection.
+    The type was renamed from `StructureCategory` rather than quietly losing ten
+    inherited fields, so a client that has not been updated fails once and
+    obviously instead of field by field.
+    """
+
+    id: strawberry.ID = strawberry.field(description="Database ID of the kind")
+    identifier: str = kante.django_field(description="The structure identifier, e.g. '@mikro/roi'")
+    label: Optional[str] = kante.django_field(description="Human-readable name")
+    description: Optional[str] = kante.django_field(description="What this kind of datum is")
+    purl: Optional[str] = kante.django_field(description="Persistent URL, where this corresponds to a published term")
+    color: Optional[List[int]] = kante.django_field(description="Display colour as RGBA")
+    image: Optional[MediaStore] = kante.django_field(description="Illustrative image, if any")
+    created_at: datetime = kante.django_field(description="When this organization first saw this kind")
 
 
-@kante.django_type(models.MetricCategory, filters=filters.MetricCategoryFilter, pagination=True, ordering=order.MetricCategoryOrder, description="A metric category/schema definition")
-class MetricCategory(NodeCategory, Category):
-    id: strawberry.ID = strawberry.field(description="Database ID of the category")
-    value_kind: enums.ValueKind = strawberry.field(description="What type of value, (taking from the universe) 'QUANTITATIVE', 'QUALITATIVE', 'BOOLEAN'")
-    structure_category: StructureCategory = kante.django_field(description="The structure category/schema this metric is relevant for, if applicable")
-    pass
+@kante.django_type(evidence_models.MetricKind, filters=filters.MetricKindFilter, pagination=True, ordering=order.MetricKindOrder, description="A kind of measurement that can be made about a structure kind")
+class MetricKind:
+    """Organization vocabulary. Identity is (organization, structure kind, key)."""
+
+    id: strawberry.ID = strawberry.field(description="Database ID of the kind")
+    key: str = kante.django_field(description="The measurement key, e.g. 'vector_length'")
+    value_kind: enums.ValueKind = strawberry.field(description="What type of value this measurement carries")
+    structure_kind: StructureKind = kante.django_field(description="The kind of structure this measurement describes")
+    label: Optional[str] = kante.django_field(description="Human-readable name")
+    description: Optional[str] = kante.django_field(description="What this measurement is")
+    purl: Optional[str] = kante.django_field(description="Persistent URL, where this corresponds to a published term")
+    color: Optional[List[int]] = kante.django_field(description="Display colour as RGBA")
+    created_at: datetime = kante.django_field(description="When this organization first saw this kind")
 
 
 @kante.django_interface(models.NaturalEventCategory, description="Base interface for event categories/schemas")
@@ -672,7 +694,7 @@ class RichProperty:
 
         rule = self._rule()
         graph = self._category.graph
-        source = _structure_category_for(graph, rule)
+        source = _structure_kind_for(graph, rule)
         if source is None:
             return None
 
@@ -686,7 +708,7 @@ class RichProperty:
 
         rule = self._rule()
         graph = self._category.graph
-        source = _structure_category_for(graph, rule)
+        source = _structure_kind_for(graph, rule)
         if source is None:
             return []
 
@@ -711,7 +733,7 @@ class RichProperty:
             evidence_models.Metric.objects.for_organization(graph.organization)
             .filter(
                 structure_id__in=parsed,
-                structure__category=source,
+                structure__kind=source,
                 key=key,
                 status=evidence_models.LifecycleStatus.ACTIVE,
             )
@@ -745,11 +767,11 @@ def _derive_unindexed(node: RetrievedNode) -> dict:
     return on_read
 
 
-def _structure_category_for(graph: Any, rule: Any) -> Any:
-    """Resolve a derivation rule's source to a structure category of this graph."""
+def _structure_kind_for(graph: Any, rule: Any) -> Any:
+    """Resolve a derivation rule's source to one of the organization's structure kinds."""
     if rule is None or not getattr(rule, "source_node", None):
         return None
-    return models.StructureCategory.objects.filter(graph=graph, identifier=rule.source_node).first() or models.StructureCategory.objects.filter(graph=graph, key=rule.source_node).first()
+    return evidence_models.StructureKind.objects.for_organization(graph.organization).filter(identifier=rule.source_node).first()
 
 
 # ===========================================
@@ -975,14 +997,14 @@ class Structure(Node[RetrievedStructure]):
     def object(self) -> str:
         return self._value.object or ""
 
-    @strawberry.field(description="Category ID linking to StructureCategory model")
-    def category_id(self) -> str:
+    @strawberry.field(description="ID of the structure kind this instantiates")
+    def kind_id(self) -> str:
         return self._value.category_id
 
-    @kante.django_field(description="The graph this node belongs to")
-    async def category(self) -> "StructureCategory":
-        """Fetch the graph this node belongs to."""
-        return await loaders.structure_category_loader.load(self._value.category_id)
+    @kante.django_field(description="The organization's term for this kind of structure")
+    async def kind(self) -> Optional["StructureKind"]:
+        """The structure kind, resolved through the per-operation loader."""
+        return await loaders.structure_kind_loader.load(self._value.category_id)
 
     @kante.django_field(description="The graph this node belongs to")
     async def metrics(self) -> List["Metric"]:
@@ -1070,8 +1092,8 @@ class Metric(Node[RetrievedMetric]):
     A metric represents a computed or aggregated value in the graph.
     """
 
-    @strawberry.field(description="Category ID linking to MetricCategory model")
-    def category_id(self) -> Optional[str]:
+    @strawberry.field(description="ID of the metric kind this instantiates")
+    def kind_id(self) -> Optional[str]:
         return self._value.category_id
 
     @strawberry.field(description="The metric value")
@@ -1102,13 +1124,15 @@ class Metric(Node[RetrievedMetric]):
     def asserted_at(self) -> Optional[datetime]:
         return self._value.properties.get("__asserted_at")
 
-    @kante.django_field(description="The source entity of this relation")
-    def category(self) -> MetricCategory:
-        """Return the category of this natural event."""
-        # In a real implementation, we would fetch the category based on the category_id.
-        # For this example, we'll return None for simplicity.
-        assert self._value.category_id is not None, "NaturalEvent must have a category_id to fetch category"
-        return cast(MetricCategory, models.MetricCategory.objects.get(id=self._value.category_id))
+    @kante.django_field(description="The organization's term for this kind of measurement")
+    async def kind(self) -> Optional["MetricKind"]:
+        """The metric kind, resolved through the per-operation loader.
+
+        Previously a synchronous `.objects.get()` inside an async resolver, which
+        is both a `SynchronousOnlyOperation` waiting to happen and — now that
+        kinds use a raising default manager — an unscoped access.
+        """
+        return await loaders.metric_kind_loader.load(self._value.category_id)
 
 
 # ===========================================
@@ -1854,9 +1878,9 @@ EntityCategoryStats, EntityCategoryStatsResolver = create_stats_type(
 )
 
 
-StructureCategoryStats, StructureCategoryStatsResolver = create_stats_type(
-    model=models.StructureCategory,
-    filters=filters.StructureCategoryFilter,
+StructureKindStats, StructureKindStatsResolver = create_stats_type(
+    model=evidence_models.StructureKind,
+    filters=filters.StructureKindFilter,
     allowed_fields={
         "created_at": "created_at",
     },
@@ -1864,9 +1888,9 @@ StructureCategoryStats, StructureCategoryStatsResolver = create_stats_type(
 )
 
 
-MetricCategoryStats, MetricCategoryStatsResolver = create_stats_type(
-    model=models.MetricCategory,
-    filters=filters.MetricCategoryFilter,
+MetricKindStats, MetricKindStatsResolver = create_stats_type(
+    model=evidence_models.MetricKind,
+    filters=filters.MetricKindFilter,
     allowed_fields={
         "created_at": "created_at",
     },

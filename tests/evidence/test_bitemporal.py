@@ -25,14 +25,14 @@ YESTERDAY = datetime(2026, 8, 10, 9, 0, tzinfo=timezone.utc)
 
 def _structure(
     organization: Organization,
-    category: core_models.StructureCategory,
+    category: evidence_models.StructureKind,
     assertion: evidence_models.Assertion,
     object_id: str = "roi-1",
 ) -> evidence_models.Structure:
     """A structure to hang measurements off."""
     return evidence_models.Structure.objects.create_for_organization(
         organization=organization,
-        category=category,
+        kind=category,
         identifier="@mikro/roi",
         object=object_id,
         assertion=assertion,
@@ -42,7 +42,7 @@ def _structure(
 def _metric(
     organization: Organization,
     structure: evidence_models.Structure,
-    category: core_models.MetricCategory,
+    category: evidence_models.MetricKind,
     assertion: evidence_models.Assertion,
     *,
     value: float,
@@ -53,7 +53,7 @@ def _metric(
     return evidence_models.Metric.objects.create_for_organization(
         organization=organization,
         structure=structure,
-        category=category,
+        kind=category,
         key="vector_length",
         value_kind=ValueKind.FLOAT.value,
         value_num=value,
@@ -63,7 +63,7 @@ def _metric(
     )
 
 
-def test_the_two_axes_are_independently_settable(organization: Organization, roi_category_a: core_models.StructureCategory, length_category: core_models.MetricCategory, assertion: evidence_models.Assertion) -> None:
+def test_the_two_axes_are_independently_settable(organization: Organization, roi_category_a: evidence_models.StructureKind, length_category: evidence_models.MetricKind, assertion: evidence_models.Assertion) -> None:
     """A claim made today about something observed last year."""
     structure = _structure(organization, roi_category_a, assertion)
     metric = _metric(
@@ -81,7 +81,7 @@ def test_the_two_axes_are_independently_settable(organization: Organization, roi
     assert metric.asserted_at == TODAY
 
 
-def test_as_of_selects_by_belief_time_not_observation_time(organization: Organization, roi_category_a: core_models.StructureCategory, length_category: core_models.MetricCategory, assertion: evidence_models.Assertion) -> None:
+def test_as_of_selects_by_belief_time_not_observation_time(organization: Organization, roi_category_a: evidence_models.StructureKind, length_category: evidence_models.MetricKind, assertion: evidence_models.Assertion) -> None:
     """The query `as_of` will be built on.
 
     Two claims about the *same* observation, one correcting the other. Filtering
@@ -117,7 +117,7 @@ def test_as_of_selects_by_belief_time_not_observation_time(organization: Organiz
     assert believed_now.first().value == 47.9
 
 
-def test_observation_window_selects_by_measured_at(organization: Organization, roi_category_a: core_models.StructureCategory, length_category: core_models.MetricCategory, assertion: evidence_models.Assertion) -> None:
+def test_observation_window_selects_by_measured_at(organization: Organization, roi_category_a: evidence_models.StructureKind, length_category: evidence_models.MetricKind, assertion: evidence_models.Assertion) -> None:
     """The other axis: 'measurements taken during last year's run'.
 
     Both rows below were asserted at the same instant, so only `measured_at`
@@ -149,7 +149,7 @@ def test_observation_window_selects_by_measured_at(organization: Organization, r
     assert [m.value for m in observed_last_year] == [1.0]
 
 
-def test_recorded_at_is_not_asserted_at(organization: Organization, roi_category_a: core_models.StructureCategory, length_category: core_models.MetricCategory, assertion: evidence_models.Assertion) -> None:
+def test_recorded_at_is_not_asserted_at(organization: Organization, roi_category_a: evidence_models.StructureKind, length_category: evidence_models.MetricKind, assertion: evidence_models.Assertion) -> None:
     """Ingest time is a third thing, and must not be mistaken for belief time.
 
     `recorded_at` is auto-stamped when the row is stored. Backfilling a year of
@@ -173,7 +173,7 @@ def test_recorded_at_is_not_asserted_at(organization: Organization, roi_category
     assert assertion.recorded_at > assertion.asserted_at
 
 
-def test_value_kind_selects_the_value_column(organization: Organization, roi_category_a: core_models.StructureCategory, length_category: core_models.MetricCategory, assertion: evidence_models.Assertion) -> None:
+def test_value_kind_selects_the_value_column(organization: Organization, roi_category_a: evidence_models.StructureKind, length_category: evidence_models.MetricKind, assertion: evidence_models.Assertion) -> None:
     """Each ValueKind reads back through the column its kind designates.
 
     The typed-column split is what keeps numeric aggregation in the database
@@ -195,7 +195,7 @@ def test_value_kind_selects_the_value_column(organization: Organization, roi_cat
         metric = evidence_models.Metric.objects.create_for_organization(
             organization=organization,
             structure=structure,
-            category=length_category,
+            kind=length_category,
             key=f"probe_{kind.value}",
             value_kind=kind.value,
             measured_at=LAST_YEAR,

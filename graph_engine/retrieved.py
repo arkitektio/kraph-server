@@ -604,7 +604,7 @@ class RetrievedStructure(RetrievedNode):
             properties={
                 "identifier": row.identifier,
                 "object": row.object,
-                "category_id": str(row.category_id),
+                "category_id": str(row.kind_id),
                 "__lifecycle_state": row.status,
             },
         )
@@ -708,7 +708,7 @@ class RetrievedMetric(RetrievedNode):
         properties: Dict[str, Any] = {
             "key": row.key,
             "value": row.value,
-            "category_id": str(row.category_id),
+            "category_id": str(row.kind_id),
             "__measured_at": row.measured_at,
             "__asserted_at": row.asserted_at,
             "__lifecycle_state": row.status,

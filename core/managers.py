@@ -194,33 +194,6 @@ class EntityCategoryManager(NodeCategoryManager["core_models.EntityCategory"]):
         return category
 
 
-class StructureCategoryManager(NodeCategoryManager["core_models.StructureCategory"]):
-    """Structure categories are a special type of node category that represent structures in the graph (e.g. regions of interest, etc.) and can be referenced by metric categories to link metrics to specific structures. They have an additional identifier field that is used to link them to the corresponding structure in the AGE data model."""
-
-    async def acreate_from_structure_definition(
-        self,
-        graph: "core_models.Graph",
-        definition: input_models.StructureDefinitionInput,
-    ) -> "core_models.StructureCategory":
-        category = await super().acreate_from_node_definition(
-            graph=graph,
-            definition=definition,
-        )
-
-        if definition.identifier is not None:
-            category.identifier = definition.identifier
-            await sync_to_async(category.save)(update_fields=["identifier"])
-
-        return category
-
-    def create_from_structure_definition(
-        self,
-        graph: "core_models.Graph",
-        definition: input_models.StructureDefinitionInput,
-    ) -> "core_models.StructureCategory":
-        return async_to_sync(self.acreate_from_structure_definition)(graph, definition)
-
-
 class NaturalEventCategoryManager(NodeCategoryManager["core_models.NaturalEventCategory"]):
     pass
 
@@ -333,48 +306,3 @@ class MeasurementCategoryManager(EdgeCategoryManager["core_models.MeasurementCat
         definition: input_models.MeasurementDefinitionInput,
     ) -> "core_models.MeasurementCategory":
         return async_to_sync(self.acreate_from_measurement_definition)(graph, definition)
-
-
-def _metric_kind_for(value_kind: Any) -> "enums.MetricKindChoices | None":
-    """The stored metric kind for a declared value kind, matched by name."""
-    if value_kind is None:
-        return None
-    name = getattr(value_kind, "name", str(value_kind)).upper()
-    # PropertyType still spells these INTEGER and POINT_3D on the input surface.
-    name = {"INTEGER": "INT", "POINT_3D": "THREE_D_VECTOR"}.get(name, name)
-    return getattr(enums.MetricKindChoices, name, None)
-
-
-class MetricCategoryManager(NodeCategoryManager["core_models.MetricCategory"]):
-    """Metric categories are a special type of node category that represent metrics in the graph and have additional fields to link them to specific structures and define the kind of metric they represent (e.g. float, int, etc.)."""
-
-    async def acreate_from_metric_definition(
-        self,
-        graph: "core_models.Graph",
-        definition: input_models.MetricDefinitionInput,
-    ) -> "core_models.MetricCategory":
-        from core import models as core_models
-
-        # No conversion table. `MetricKindChoices` declares exactly the same
-        # members as `ValueKind`, so the canonical kind maps across by name. The
-        # table this replaces went through PropertyType and silently lost
-        # CATEGORY and every vector kind except 3D.
-        structure = await core_models.StructureCategory.objects.aget(graph=graph, identifier=definition.structure)
-
-        category = await super().acreate_from_node_definition(
-            graph=graph,
-            definition=definition,
-            other_defaults={
-                "structure_category": structure,
-                "value_kind": _metric_kind_for(definition.value_kind),
-            },
-        )
-
-        return category
-
-    def create_from_metric_definition(
-        self,
-        graph: "core_models.Graph",
-        definition: input_models.MetricDefinitionInput,
-    ) -> "core_models.MetricCategory":
-        return async_to_sync(self.acreate_from_metric_definition)(graph, definition)

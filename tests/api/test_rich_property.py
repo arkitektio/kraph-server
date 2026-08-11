@@ -88,7 +88,6 @@ async def _entity_with_measurements(
             RECORD_METRIC,
             variable_values={
                 "input": {
-                    "graph": str(test_graph.pk),
                     "identifier": "ROI",
                     "object": object_id,
                     "key": "vector_length",

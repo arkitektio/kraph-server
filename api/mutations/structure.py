@@ -27,16 +27,14 @@ def create_structure(
     Returns:
         types.Structure object
     """
-    # Convert strawberry-pydantic input to pydantic model
     payload = input.to_pydantic()
 
     controller = context.get_controller()
-
-    structure_category = models.StructureCategory.objects.get(id=payload.category)  # Validate structure category exists
-    context.validate_graph_access(info, structure_category.graph)
+    organization = context.get_active_organization(info)
 
     response = controller.create_structure(
-        structure_category=structure_category,
+        organization=organization,
+        identifier=payload.identifier,
         payload=payload,
         info=info,
     )
@@ -61,18 +59,14 @@ def ensure_structure(
     Returns:
         types.Structure object
     """
-    # Convert strawberry-pydantic input to pydantic model
     payload = input.to_pydantic()
 
     controller = context.get_controller()
+    organization = context.get_active_organization(info)
 
-    graph = models.Graph.objects.get(id=payload.graph)  # Validate graph exists and is accessible
-
-    structure_category = controller.ensure_structure_category_or_raise(graph, payload.identifier, info)  # Validate structure category exists and is accessible
-
-    # TODO: Maybe make this on function?
     response = controller.create_structure(
-        structure_category=structure_category,
+        organization=organization,
+        identifier=payload.identifier,
         payload=payload,
         info=info,
     )
@@ -171,12 +165,11 @@ def link_structure_to_entity(
     """
     controller = context.get_controller()
 
-    graph = context.get_accessible_graph(info, context.extract_graph_id(input.entity_id))
+    organization = context.get_active_organization(info)
     structure = controller.get_structure_for_identifier(
-        graph=graph,
+        organization=organization,
         identifier=input.structure_identifier,
         object=input.structure_object,
-        info=info,
     )
 
     linked = controller.link_structure_to_entity(
