@@ -609,11 +609,7 @@ class DerivationRuleInput(BaseModel):
     )
     subject_priority: List[str] = Field(
         default_factory=list,
-        description=(
-            "Subjects in descending order of trust, for PRIORITY_LATEST. The first subject with any "
-            "measurement wins; subjects not listed are considered only if none of the listed ones "
-            "have measured."
-        ),
+        description=("Subjects in descending order of trust, for PRIORITY_LATEST. The first subject with any measurement wins; subjects not listed are considered only if none of the listed ones have measured."),
     )
     tool_priority: List[str] = Field(
         default_factory=list,
@@ -752,11 +748,7 @@ class PropertyDefinitionInput(BaseModel):
         # collapse together there, and every vector kind but 3D has no
         # representation at all — so the check was weaker than it looked.
         if expected_result_type is not None and self.value_kind is not None and self.value_kind != expected_result_type:
-            raise ValueError(
-                f"Aggregation '{aggregation.value}' produces {expected_result_type.value}, "
-                f"but the property is declared as {self.value_kind.value}. "
-                f"Declare it as {expected_result_type.value}."
-            )
+            raise ValueError(f"Aggregation '{aggregation.value}' produces {expected_result_type.value}, but the property is declared as {self.value_kind.value}. Declare it as {expected_result_type.value}.")
 
         return self
 

@@ -882,5 +882,3 @@ class RetrievedNodeTableRender:
 
     graph_name: str
     rows: List[Dict[str, Any]]
-
-

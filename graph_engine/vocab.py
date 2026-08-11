@@ -1,9 +1,7 @@
-
-
 # Measurement
-DESCRIBES = "DESCRIBES" # Relationship indicating that an Measurement describes an Structure
-INFORMS = "INFORMS"   # Relationship indicating that a Structure informs an Entity / Event
-ASSERTED = "ASSERTED" # Relationship indicating that an Assertion supports a Measurment / Observation
+DESCRIBES = "DESCRIBES"  # Relationship indicating that an Measurement describes an Structure
+INFORMS = "INFORMS"  # Relationship indicating that a Structure informs an Entity / Event
+ASSERTED = "ASSERTED"  # Relationship indicating that an Assertion supports a Measurment / Observation
 
 # Provenance
 GENERATED = "GENERATED"  # Relationship indicating that an Assertion generated a  Measurement / Observation
@@ -18,7 +16,7 @@ ShadowLink = "ShadowLink"  # A link representing a shadow relationship between n
 Structure = "Structure"
 Metric = "Metric"
 
-# 
+#
 Assertion = "Assertion"
 # An assertion about what happend when to the graph, and who was responsible for it
 

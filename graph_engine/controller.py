@@ -405,7 +405,6 @@ class GraphController:
         self.project_entities(graph, [entity_ref])
         return self.get_entity_by_ref(graph, entity_ref) or retrieved_entity
 
-
     # ===================================================================
     # Projection
     # ===================================================================
@@ -481,11 +480,7 @@ class GraphController:
             A RetrievedStructure if found, or None if no matching structure exists
         """
         organization = category.graph.organization
-        structure = (
-            evidence_models.Structure.objects.for_organization(organization)
-            .filter(identifier=category.identifier, object=object)
-            .first()
-        )
+        structure = evidence_models.Structure.objects.for_organization(organization).filter(identifier=category.identifier, object=object).first()
         if structure is None:
             raise ValueError(f"No structure found with object '{object}' in category '{category.identifier}'")
 
@@ -560,12 +555,7 @@ class GraphController:
         """The current lifecycle state of a projected entity, from the evidence log."""
         node = self.get_node_by_local_id(graph, local_id=local_id)
         entity_ref = node.durable_ref
-        latest = (
-            evidence_models.LifecycleEvent.objects.for_organization(graph.organization)
-            .filter(target_type="entity", target_id=entity_ref)
-            .order_by("-at")
-            .first()
-        )
+        latest = evidence_models.LifecycleEvent.objects.for_organization(graph.organization).filter(target_type="entity", target_id=entity_ref).order_by("-at").first()
         return latest.status if latest else evidence_models.LifecycleStatus.ACTIVE
 
     def recalculate_entity(self, graph: models.Graph, entity_ref: str) -> int:
@@ -769,11 +759,7 @@ class GraphController:
         """
         self._ensure_query_access(graph, info)
 
-        structure = (
-            evidence_models.Structure.objects.for_organization(graph.organization)
-            .filter(identifier=identifier, object=object)
-            .first()
-        )
+        structure = evidence_models.Structure.objects.for_organization(graph.organization).filter(identifier=identifier, object=object).first()
         if structure is None:
             raise ValueError(f"Structure not found with identifier {identifier} and object {object}")
 
@@ -820,11 +806,7 @@ class GraphController:
         """
         self._ensure_query_access(graph, info)
 
-        structure = (
-            evidence_models.Structure.objects.for_organization(graph.organization)
-            .filter(identifier=identifier, object=structure_object)
-            .first()
-        )
+        structure = evidence_models.Structure.objects.for_organization(graph.organization).filter(identifier=identifier, object=structure_object).first()
         if structure is None:
             return []
 
@@ -848,11 +830,7 @@ class GraphController:
         self._ensure_query_access(graph, info)
 
         organization = graph.organization
-        structure = (
-            evidence_models.Structure.objects.for_organization(organization)
-            .filter(identifier=identifier, object=structure_object)
-            .first()
-        )
+        structure = evidence_models.Structure.objects.for_organization(organization).filter(identifier=identifier, object=structure_object).first()
         if structure is None:
             return []
 
@@ -874,13 +852,7 @@ class GraphController:
         """
         self._ensure_query_access(graph, info)
 
-        link = (
-            evidence_models.Link.objects.for_organization(graph.organization)
-            .filter(kind=evidence_models.Link.Kind.INFORMS, target_ref=str(entity_id))
-            .select_related("assertion")
-            .order_by("created_at")
-            .first()
-        )
+        link = evidence_models.Link.objects.for_organization(graph.organization).filter(kind=evidence_models.Link.Kind.INFORMS, target_ref=str(entity_id)).select_related("assertion").order_by("created_at").first()
         if link is None:
             return None
 
@@ -901,9 +873,7 @@ class GraphController:
         """
         self._ensure_query_access(graph, info)
 
-        metrics = evidence_models.Metric.objects.for_organization(graph.organization).filter(
-            assertion_id=assertion_id
-        )
+        metrics = evidence_models.Metric.objects.for_organization(graph.organization).filter(assertion_id=assertion_id)
         return [RetrievedMetric.from_row(self, row, graph_name=graph.age_name) for row in metrics]
 
     def create_structure(
@@ -966,11 +936,7 @@ class GraphController:
         info: Info | None = None,
     ) -> evidence_models.Structure:
         """Resolve a structure row by its organization-scoped identity."""
-        structure = (
-            evidence_models.Structure.objects.for_organization(graph.organization)
-            .filter(identifier=identifier, object=object)
-            .first()
-        )
+        structure = evidence_models.Structure.objects.for_organization(graph.organization).filter(identifier=identifier, object=object).first()
         if structure is None:
             raise ValueError(f"Structure not found for {identifier}:{object}")
         return structure
@@ -1104,18 +1070,12 @@ class GraphController:
         organization = structure.organization
 
         if payload.object and payload.object != structure.object:
-            raise ValueError(
-                f"A structure's object is immutable: {structure.identifier}:{structure.object} "
-                f"cannot become {structure.identifier}:{payload.object}. Create the correct "
-                f"structure and archive this one instead."
-            )
+            raise ValueError(f"A structure's object is immutable: {structure.identifier}:{structure.object} cannot become {structure.identifier}:{payload.object}. Create the correct structure and archive this one instead.")
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             for metric in payload.metrics or []:
-                self._record_metric(
-                    organization, structure, metric, graph=structure.category.graph, info=info, assertion=assertion
-                )
+                self._record_metric(organization, structure, metric, graph=structure.category.graph, info=info, assertion=assertion)
 
         return RetrievedStructure.from_row(self, structure)
 
@@ -1806,6 +1766,66 @@ class GraphController:
             raise ValueError(f"Invalid property key '{key}'.")
         return key
 
+    def indexed_property_keys(self, category: models.Category) -> set[str]:
+        """Which of a category's properties are actually stored on the node.
+
+        A property that is not derived at all (no rule, set directly) is always
+        stored, so it stays filterable. Only *derived* properties are subject to
+        the indexed/derived-on-read split.
+        """
+        from graph_engine.input_models import DerivationType
+
+        keys: set[str] = set()
+        for prop in category.defined_properties or []:
+            # `derivation` defaults to LATEST, so the enum alone does not say
+            # whether a property is computed — a plain property carries LATEST and
+            # no rule, and is written directly. What makes a property derived is
+            # having a rule that names a source, which is also exactly the
+            # condition `derive_properties` requires before it computes anything.
+            rule = getattr(prop, "rule", None)
+            is_derived = (
+                prop.derivation
+                in (
+                    DerivationType.ROLLUP,
+                    DerivationType.LATEST,
+                    DerivationType.PRIORITY_LATEST,
+                    DerivationType.LATEST_ASSERTION_TOOL,
+                )
+                and rule is not None
+                and getattr(rule, "source_node", None)
+            )
+
+            if not is_derived or getattr(prop, "index", False):
+                keys.add(prop.key)
+        return keys
+
+    def _assert_indexed(self, key: str, indexed_keys: set[str] | None) -> str:
+        """Reject filtering or sorting on a property that is not on the node.
+
+        Non-indexed properties are derived on read and never written to Apache
+        AGE, so a Cypher predicate against one matches nothing. Silently
+        returning an empty result would be indistinguishable from "no entity
+        satisfies this", which is a different and much more misleading answer
+        than an error.
+        """
+        validated = self._validate_property_key(key)
+        if indexed_keys is not None and validated not in indexed_keys:
+            raise ValueError(f"Cannot filter or sort on '{key}': it is not an indexed property, so it is not stored on the node. Mark it `index: true` in the schema to make it filterable. Indexed properties: {sorted(indexed_keys) or '(none)'}.")
+        return validated
+
+    def _validate_direction(self, direction: Any) -> str:
+        """Whitelist a sort direction before it is interpolated into Cypher.
+
+        `.upper()` is not validation. The direction reaches this from a GraphQL
+        variable and lands directly in the query text, so anything other than an
+        exact ASC/DESC is a Cypher injection — the same hole `_validate_property_key`
+        closes for keys, left open for the clause right next to them.
+        """
+        value = (direction.value if hasattr(direction, "value") else str(direction)).upper()
+        if value not in {"ASC", "DESC"}:
+            raise ValueError(f"Invalid sort direction '{direction}'. Expected ASC or DESC.")
+        return value
+
     def _coerce_filter_value(self, value: Any) -> Any:
         if not isinstance(value, str):
             return value
@@ -1821,7 +1841,7 @@ class GraphController:
         except ValueError:
             return value
 
-    def _build_entity_where_clause(self, filters: input_models.EntityFilters | None, variable: str = "e") -> tuple[str, dict[str, Any]]:
+    def _build_entity_where_clause(self, filters: input_models.EntityFilters | None, variable: str = "e", indexed_keys: set[str] | None = None) -> tuple[str, dict[str, Any]]:
         params: dict[str, Any] = {}
         clauses: list[str] = []
 
@@ -1841,12 +1861,12 @@ class GraphController:
             clauses.append(f"{variable}.label CONTAINS $filter_search")
 
         if filters.has_property:
-            key = self._validate_property_key(filters.has_property)
+            key = self._assert_indexed(filters.has_property, indexed_keys)
             clauses.append(f"{variable}.{key} IS NOT NULL")
 
         if filters.matches:
             for index, match in enumerate(filters.matches):
-                key = self._validate_property_key(match.key)
+                key = self._assert_indexed(match.key, indexed_keys)
                 operator = match.operator.value if hasattr(match.operator, "value") else str(match.operator)
                 operator = operator.upper()
 
@@ -1897,21 +1917,21 @@ class GraphController:
 
         return ("WHERE " + " AND ".join(clauses)) if clauses else "", params
 
-    def _build_entity_order_clause(self, order: list[input_models.EntityOrder] | None, variable: str = "e") -> str:
+    def _build_entity_order_clause(self, order: list[input_models.EntityOrder] | None, variable: str = "e", indexed_keys: set[str] | None = None) -> str:
         if not order:
             return ""
 
         clauses = []
         for o in order:
             if o.property is not None:
-                key = self._validate_property_key(o.property.key)
-                direction = (o.property.direction.value if hasattr(o.property.direction, "value") else str(o.property.direction)).upper()
+                key = self._assert_indexed(o.property.key, indexed_keys)
+                direction = self._validate_direction(o.property.direction)
                 clauses.append(f"{variable}.{key} {direction}")
             elif o.created_at is not None:
-                direction = (o.created_at.value if hasattr(o.created_at, "value") else str(o.created_at)).upper()
+                direction = self._validate_direction(o.created_at)
                 clauses.append(f"{variable}.created_at {direction}")
             elif o.id is not None:
-                direction = (o.id.value if hasattr(o.id, "value") else str(o.id)).upper()
+                direction = self._validate_direction(o.id)
                 clauses.append(f"id({variable}) {direction}")
         if not clauses:
             return ""
@@ -1953,12 +1973,18 @@ class GraphController:
     def list_entities_for_category(self, category: models.EntityCategory, filters: input_models.EntityFilters | None = None, pagination: input_models.EntityPagination | None = None, ordering: list[input_models.EntityOrder] | None = None, info: Info | None = None) -> List[RetrievedEntity]:
         self._ensure_query_access(category.graph, info)
 
-        where_clause, filter_params = self._build_entity_where_clause(filters, variable="e")
-        order_clause = self._build_entity_order_clause(ordering, variable="e")
+        indexed_keys = self.indexed_property_keys(category)
+        where_clause, filter_params = self._build_entity_where_clause(filters, variable="e", indexed_keys=indexed_keys)
+        order_clause = self._build_entity_order_clause(ordering, variable="e", indexed_keys=indexed_keys)
         pagination_clause = self._build_entity_pagination_clause(pagination)
 
+        # `WHERE true` so the filter can be appended with AND, exactly as
+        # `list_entities` does. Without it this emitted `MATCH (e:X) AND ...`,
+        # which is a Cypher syntax error — so filtering by category has never
+        # worked, and no test passed a filter here to find out.
         query = f"""
             MATCH (e: {category.get_age_vertex_name()})
+            WHERE true
             {("AND " + where_clause[len("WHERE ") :]) if where_clause else ""}
             RETURN e
             {order_clause}
@@ -1986,10 +2012,7 @@ class GraphController:
         offset = pagination.offset if pagination and pagination.offset is not None else 0
         limit = pagination.limit if pagination and pagination.limit is not None else 200
 
-        return [
-            RetrievedStructure.from_row(self, row, graph_name=graph.age_name)
-            for row in queryset[offset : offset + limit]
-        ]
+        return [RetrievedStructure.from_row(self, row, graph_name=graph.age_name) for row in queryset[offset : offset + limit]]
 
     def _apply_structure_filters(self, queryset: Any, filters: input_models.StructureFilters | None) -> Any:
         """Translate structure filters into ORM predicates.
@@ -2015,20 +2038,30 @@ class GraphController:
         for match in filters.matches or []:
             operator = (str(match.operator).split(".")[-1] if match.operator is not None else "EQUALS").upper()
             if operator == "NOT_IN":
-                queryset = queryset.exclude(
-                    metrics__key=match.key, **self._metric_value_predicate("IN", match.value)
-                )
+                queryset = queryset.exclude(metrics__key=match.key, **self._metric_value_predicate("IN", match.value))
             else:
                 queryset = queryset.filter(metrics__key=match.key, **self._metric_value_predicate(operator, match.value))
 
         return queryset.distinct()
 
     _MATCH_LOOKUPS: Dict[str, str] = {
-        "EQUALS": "", "EQ": "", "=": "",
-        "GREATER_THAN": "__gt", "GT": "__gt", ">": "__gt",
-        "LESS_THAN": "__lt", "LT": "__lt", "<": "__lt",
-        "GREATER_OR_EQUAL": "__gte", "GREATER_THAN_OR_EQUAL": "__gte", "GTE": "__gte", ">=": "__gte",
-        "LESS_OR_EQUAL": "__lte", "LESS_THAN_OR_EQUAL": "__lte", "LTE": "__lte", "<=": "__lte",
+        "EQUALS": "",
+        "EQ": "",
+        "=": "",
+        "GREATER_THAN": "__gt",
+        "GT": "__gt",
+        ">": "__gt",
+        "LESS_THAN": "__lt",
+        "LT": "__lt",
+        "<": "__lt",
+        "GREATER_OR_EQUAL": "__gte",
+        "GREATER_THAN_OR_EQUAL": "__gte",
+        "GTE": "__gte",
+        ">=": "__gte",
+        "LESS_OR_EQUAL": "__lte",
+        "LESS_THAN_OR_EQUAL": "__lte",
+        "LTE": "__lte",
+        "<=": "__lte",
         "CONTAINS": "__contains",
         "STARTS_WITH": "__startswith",
         "ENDS_WITH": "__endswith",

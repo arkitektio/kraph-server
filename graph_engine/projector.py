@@ -130,16 +130,30 @@ def _structure_category_for_rule(graph: core_models.Graph, rule: Any) -> core_mo
     return core_models.StructureCategory.objects.filter(graph=graph, identifier=rule.source_node).first() or core_models.StructureCategory.objects.filter(graph=graph, key=rule.source_node).first()
 
 
-def derive_properties(graph: core_models.Graph, entity_ref: str, category: core_models.Category) -> dict[str, Any]:
+def derive_properties(
+    graph: core_models.Graph,
+    entity_ref: str,
+    category: core_models.Category,
+    indexed_only: bool = False,
+) -> dict[str, Any]:
     """Compute one entity's derived properties from its state vectors.
 
     Reads only statistics. No metric is scanned, no Cypher is run, and switching
     a property's aggregation changes the answer without touching storage.
+
+    With ``indexed_only``, returns just the properties marked ``index=True``.
+    Those are the ones that have to live on the Apache AGE node, because
+    filtering and sorting happen in Cypher against stored properties. Everything
+    else is resolved on read from the state vector, which is what makes adding a
+    non-indexed property free: no backfill, no projection write, nothing to go
+    stale.
     """
     organization = graph.organization
     values: dict[str, Any] = {}
 
     for prop in _derived_properties(category):
+        if indexed_only and not getattr(prop, "index", False):
+            continue
         rule = prop.rule
         source_category = _structure_category_for_rule(graph, rule)
         if source_category is None:
@@ -237,7 +251,10 @@ def project(
         # instance — which has no `defined_properties`. Downcast, or every
         # projection silently derives nothing.
         category = node.category.get_real_instance()
-        values = derive_properties(graph, entity_ref, category)
+        # Only indexed properties are written to the projection. A property that
+        # is never filtered or sorted on has no reason to be materialized, and
+        # materializing it is what created the staleness class in the first place.
+        values = derive_properties(graph, entity_ref, category, indexed_only=True)
         values.update(_observation_window(graph, entity_ref))
         values["__lifecycle_state"] = _lifecycle_state(graph, entity_ref)
         values["__schema_version"] = schema_version

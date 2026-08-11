@@ -167,7 +167,6 @@ def re_materialize_from_entity_category(graph: models.Graph, entity_category: mo
         re_materialize_relation_category(graph, relation_category)
 
 
-
 def validate_derivation_rules(definition: GraphDefinitionInput) -> None:
     """Reject derived properties the state vector cannot compute.
 

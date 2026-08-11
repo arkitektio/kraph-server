@@ -582,12 +582,26 @@ class RichProperty:
 
     @strawberry.field(description="The property value")
     async def value(self) -> AnyScalar | None:
-        """Return the value of the property."""
-        # In a real implementation, we would fetch the value from the entity's properties.
-        # For this example, we'll return None for simplicity.
-        value = self._entity.get_property(self._key)
+        """The property's current value.
 
-        return value
+        Read off the projected node when the property is indexed, and computed
+        from the state vector when it is not. Which of the two happened is not
+        something a caller should have to know.
+        """
+        stored = self._entity.get_property(self._key)
+        if stored is not None:
+            return stored
+
+        return await self._derived_value()
+
+    @sync_to_async
+    def _derived_value(self) -> Any:
+        """Compute this property from evidence, for properties that are not projected."""
+        from graph_engine import projector
+
+        graph = self._category.graph
+        values = projector.derive_properties(graph, self._entity.durable_ref, self._category)
+        return values.get(self._key)
 
     @strawberry.field(description="How many measurements contribute to this value")
     async def n_evidence(self) -> Optional[int]:
@@ -704,6 +718,33 @@ class RichProperty:
             .select_related("assertion", "structure")
             .order_by("measured_at")
         )
+
+
+@sync_to_async
+def _derive_unindexed(node: RetrievedNode) -> dict:
+    """Compute the properties that were deliberately not projected.
+
+    The read half of the indexed/derived split. Cheap because it reads state
+    vectors rather than metrics, and skipped entirely for nodes with no category.
+    """
+    from graph_engine import projector
+
+    try:
+        category_id = node.category_id
+    except ValueError:
+        return {}
+    if category_id is None:
+        return {}
+
+    category = models.Category.objects.filter(id=category_id).first()
+    if category is None:
+        return {}
+    category = category.get_real_instance()
+
+    graph = category.graph
+    everything = projector.derive_properties(graph, node.durable_ref, category)
+    indexed = projector.derive_properties(graph, node.durable_ref, category, indexed_only=True)
+    return {key: value for key, value in everything.items() if key not in indexed}
 
 
 def _structure_category_for(graph: Any, rule: Any) -> Any:
@@ -869,15 +910,27 @@ class Entity(VersionedNode, Node[RetrievedNode]):
         assert self._value.category_id is not None, "Entity must have a category_id to fetch property definitions"
         category = await loaders.entity_category_loader.load(self._value.category_id)
 
-        return [RichProperty(_entity=self._value, _key=var, _category=category) for var in self._value.cleaned_properties]
+        # Enumerated from the schema, not from the node's stored keys. Only
+        # indexed properties live on the node now, so iterating those would hide
+        # every derived-on-read property — exactly the ones this type exists to
+        # explain.
+        declared = list(category.property_map.keys())
+        stored = [key for key in self._value.cleaned_properties if key not in declared]
+        return [RichProperty(_entity=self._value, _key=key, _category=category) for key in declared + stored]
 
-    @strawberry.field(description="List of the current derived properties for this entity")
-    def properties(self) -> AnyScalar:
-        """Return the structures that provide evidence for this entity."""
-        # In a real implementation, we would fetch the linked structures
-        # from the graph and return them as Structure types.
-        # For this example, we'll return an empty list.
-        return self._value.cleaned_properties
+    @strawberry.field(description="The current derived properties for this entity")
+    async def properties(self) -> AnyScalar:
+        """Every derived property, indexed or not.
+
+        Indexed properties are read straight off the projected node. The rest are
+        computed here from the state vector, because they were deliberately never
+        written to the graph — see `projector.derive_properties`. A caller should
+        not be able to tell which is which, only that adding a non-indexed
+        property costs nothing.
+        """
+        stored = self._value.cleaned_properties
+        derived = await _derive_unindexed(self._value)
+        return {**derived, **stored}
 
     @kante.django_field(description="The source entity of this relation")
     def measured_by(self) -> List["Measurement"]:

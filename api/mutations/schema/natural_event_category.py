@@ -12,16 +12,16 @@ def create_natural_event_category(
     input: inputs.CreateNaturalEventDefinitionInput,
 ) -> types.NaturalEventCategory:
     """GraphQL mutation wrapper for creating natural event categories."""
-    
+
     model = input.to_pydantic()  # Validate input with Pydantic models
-    
+
     if model.color:
         assert len(model.color) == 3 or len(model.color) == 4, "Color must be a list of 3 or 4 values RGBA"
 
     media_store = None
     if model.image:
         media_store = models.MediaStore.objects.get(id=model.image)
-    
+
     vocab, created = models.NodeCategory.objects.update_or_create(
         graph_id=model.graph,
         age_name=model.key,
@@ -30,16 +30,15 @@ def create_natural_event_category(
             store=media_store,
             label=model.label if model.label else model.key,
             property_definitions=[pdef.model_dump() for pdef in model.properties] or [],
-            
         ),
     )
-    
+
     for ref in model.ontology_references:
         if ref.prefix:
             # Validate ontology reference exists in the database
             if not models.GraphOntology.objects.filter(prefix=ref.prefix).exists():
                 raise ValueError(f"Ontology with prefix {ref.prefix} not found in database.")
-            
+
             models.OntologyReference.objects.get_or_create(
                 ontology=models.GraphOntology.objects.get(prefix=ref.prefix),
                 graph_id=model.graph,
@@ -60,16 +59,13 @@ def create_natural_event_category(
         else:
             vocab.pinned_by.remove(info.context.request.user)
 
-
     return cast(types.NaturalEventCategory, vocab)
-    
-    
-    
+
 
 def update_natural_event_category(info: Info, input: inputs.UpdateNaturalEventDefinitionInput) -> types.NaturalEventCategory:
-    """ GraphQL mutation wrapper for updating event categories."""
+    """GraphQL mutation wrapper for updating event categories."""
     model = input.to_pydantic()  # Validate input with Pydantic models
-    
+
     item = models.NaturalEventCategory.objects.get(id=model.id)
     if model.color:
         assert len(model.color) == 3 or len(model.color) == 4, "Color must be a list of 3 or 4 values RGBA"

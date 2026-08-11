@@ -2,7 +2,6 @@
 Protocol event mutation resolvers.
 """
 
-
 from kante.types import Info
 
 from api import context, inputs, types
