@@ -11,7 +11,7 @@ import json
 from typing import Optional
 from pydantic import BaseModel, Field
 
-from .input_models import GraphDefinitionInput
+from .input_models import DerivationType, GraphDefinitionInput
 from .engine.protocol import CypherEngine
 from core import models
 from itertools import product
@@ -149,6 +149,58 @@ def re_materialize_from_entity_category(graph: models.Graph, entity_category: mo
         re_materialize_relation_category(graph, relation_category)
 
 
+
+def validate_derivation_rules(definition: GraphDefinitionInput) -> None:
+    """Reject derived properties the state vector cannot compute.
+
+    Runs before anything is written, so an unsatisfiable schema fails at
+    materialization rather than producing categories whose properties silently
+    never populate. That silence is the failure mode this whole milestone exists
+    to remove: rules with no metric key used to render as `WHERE m.key = null`,
+    which never matches, so the property stayed unset and any test asserting on it
+    passed vacuously.
+
+    Structure kinds are collected from the rules themselves rather than from a
+    declared list, because structures are resolved dynamically at write time and
+    the schema never enumerates them. That means this catches missing keys and
+    malformed rules; naming an entity kind as a source is caught when the rule is
+    evaluated against the graph's actual structure categories.
+    """
+    from graph_engine.aggregate import UnsupportedRule, validate_rule
+
+    entity_and_event_keys = {entity.key for entity in definition.extensions.entities}
+    entity_and_event_keys |= {event.key for event in definition.extensions.events}
+
+    problems: list[str] = []
+
+    def check(owner: str, property_definitions: list) -> None:
+        for prop in property_definitions:
+            if prop.derivation != DerivationType.ROLLUP or prop.rule is None:
+                continue
+            try:
+                validate_rule(prop.rule, structure_identifiers=set())
+            except UnsupportedRule as error:
+                problems.append(f"{owner}.{prop.key}: {error}")
+                continue
+            if prop.rule.source_node in entity_and_event_keys:
+                problems.append(
+                    f"{owner}.{prop.key}: rollup source '{prop.rule.source_node}' is an entity or event "
+                    f"kind, not a structure kind. Derived properties aggregate measurements that reach an "
+                    f"entity through a structure; counting or summarising related entities and events is "
+                    f"not expressible and is deliberately not silently accepted."
+                )
+
+    for entity in definition.extensions.entities:
+        check(entity.key, entity.property_definitions)
+    for relation in definition.extensions.relations:
+        check(relation.key, relation.properties)
+    for event in definition.extensions.events:
+        check(event.key, event.properties)
+
+    if problems:
+        raise ValueError("Schema has derivation rules that cannot be computed:\n  - " + "\n  - ".join(problems))
+
+
 def materialize(
     definition: GraphDefinitionInput,
     engine: CypherEngine,
@@ -180,6 +232,10 @@ def materialize(
     Returns:
         The materialized Graph instance with all related models created
     """
+
+    # Fail before writing anything if the schema asks for a derivation that
+    # cannot be computed.
+    validate_derivation_rules(definition)
 
     # Compute schema hash for versioning
     schema_hash = compute_definition_hash(definition)

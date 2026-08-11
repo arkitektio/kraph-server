@@ -1,3 +1,4 @@
+import subprocess
 import time
 from typing import Generator
 import pytest
@@ -45,9 +46,44 @@ def create_bucket2(s3) -> None:
     s3.create_bucket(Bucket="cabanana")
 
 
+def _remove_stale_dokker_stacks() -> None:
+    """Tear down stacks left behind by earlier, interrupted runs.
+
+    `dokker` names each session's compose project `dokker-test-<hash>`, so
+    `e.down()` only removes *this* session's stack — which does not exist yet on
+    the first call. A run killed partway through therefore leaves containers
+    holding 5555/6666/18888, and every subsequent run dies with "port is already
+    allocated" before a single test executes.
+
+    Volumes go too. A surviving `_db_data` volume carries the previous run's
+    `django_content_type` rows into a fresh database, which surfaces as a
+    duplicate-key error during test setup rather than as anything resembling its
+    cause.
+
+    Best-effort: if docker is unavailable the stack bring-up below will fail with
+    a better message than anything raised here.
+    """
+    for kind, list_cmd in (("container", ["docker", "ps", "-aq", "--filter", "name=dokker-test-"]), ("volume", ["docker", "volume", "ls", "-q"])):
+        try:
+            found = subprocess.run(list_cmd, capture_output=True, text=True, timeout=30).stdout.split()
+        except (OSError, subprocess.SubprocessError):
+            return
+        if kind == "volume":
+            found = [name for name in found if name.startswith("dokker-test-")]
+        if not found:
+            continue
+        remove = ["docker", "rm", "-f", *found] if kind == "container" else ["docker", "volume", "rm", *found]
+        try:
+            subprocess.run(remove, capture_output=True, timeout=120)
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+
 @pytest.fixture(scope="session")
 def backend_stack():
     docker_compose_path = os.path.join(os.path.dirname(__file__), "integration", "docker-compose.yaml")
+
+    _remove_stale_dokker_stacks()
 
     with local(docker_compose_path) as e:
         e.inspect()
@@ -107,9 +143,11 @@ def bio_graph_schema() -> models.GraphDefinitionInput:
     Note: Structures (ROI, ToldYouSo) are no longer defined in the schema.
     They are dynamically resolved from the structure identifier at write time.
 
-    Every rollup rule here names an explicit metric key. A rule without one renders as
-    `WHERE m.key = null`, which never matches, so the property silently stays unset and
-    any test asserting on it passes vacuously. `build_rollup_query` now rejects that.
+    Every rollup rule here names an explicit metric key and a *structure* source.
+    Both are now enforced: `materialize.validate_derivation_rules` rejects a rule with
+    no key, and rejects one whose source is an entity or event kind. Before that, such
+    rules rendered as `WHERE m.key = null`, which never matches — so the property
+    silently stayed unset and any test asserting on it passed vacuously.
     """
     return models.GraphDefinitionInput(
         system_version="1.0.1",
@@ -128,10 +166,13 @@ def bio_graph_schema() -> models.GraphDefinitionInput:
                     key="Cell",
                     property_definitions=[
                         models.PropertyDefinitionInput(key="id", type=models.PropertyType.STRING),
-                        # These two express counting/summarising evidence attached via another
-                        # node kind (a Mitosis event, an AIS entity). The current rollup shape is
-                        # strictly (Metric)-[DESCRIBES]->(Structure)-[INFORMS]->(Entity), so they
-                        # are modelled here as metric keys on the supporting structure.
+                        # These originally counted/summarised evidence reached through
+                        # another node kind (a Mitosis event, an AIS entity). The state
+                        # vector's grain is (entity, source_category, key) over metrics
+                        # reached via (Metric)-[DESCRIBES]->(Structure)-[INFORMS]->(Entity),
+                        # so cross-entity rollups are not expressible — and are now
+                        # rejected at materialization rather than silently never computing.
+                        # Modelled here as metric keys on the supporting structure.
                         models.PropertyDefinitionInput(key="mitosis_count", type=models.PropertyType.INTEGER, derivation=models.DerivationType.ROLLUP, rule=models.DerivationRuleInput(key="mitosis_event", source_node="ROI", aggregation=models.AggregationFunction.COUNT)),
                         models.PropertyDefinitionInput(key="ais_length_summary", type=models.PropertyType.FLOAT, derivation=models.DerivationType.ROLLUP, rule=models.DerivationRuleInput(key="vector_length", source_node="ROI", aggregation=models.AggregationFunction.LATEST)),
                     ],

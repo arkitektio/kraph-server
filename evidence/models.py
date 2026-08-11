@@ -428,3 +428,108 @@ class LifecycleEvent(models.Model):
 
     def __str__(self) -> str:
         return f"{self.target_type}:{self.target_id} -> {self.status}"
+
+
+class State(models.Model):
+    """Sufficient statistics for one derived property, kept incrementally.
+
+    This is the table that makes schema iteration stop implying a backfill.
+
+    Every member of ``AggregationFunction`` — MEAN, SUM, MAX, MIN, COUNT, RANGE,
+    EUCLIDEAN_RANGE, LATEST — is a monoid over the columns below, so each is O(1)
+    to maintain as a metric arrives and O(1) to read. Crucially, none of them is
+    *stored*: the row holds statistics, not an answer. Switching a property from
+    MEAN to MAX therefore changes what the next read returns without writing
+    anything at all, which is the whole claim being made here.
+
+    **Grain: `(entity_ref, source_category, key)` over metrics. Nothing else.**
+    A rule may only aggregate measurements reaching an entity through the
+    documented ``(Metric)-[DESCRIBES]->(Structure)-[INFORMS]->(Entity)`` path.
+    Aggregating over *related entities or events* — "count this cell's mitosis
+    events" — is deliberately **not** expressible, because it is not a fold over
+    measured values at all: it is a graph cardinality question with no sum, no
+    min and no max, and it would have to be maintained on entity creation rather
+    than on metric arrival. `graph_engine.aggregate.validate_rule` rejects such
+    rules when the schema is validated, so their author is told, instead of the
+    property silently never computing.
+
+    ``entity_ref`` is opaque and carries the projection implicitly (it is the
+    composite AGE id while entities remain projection-scoped). Two projections
+    over the same evidence therefore maintain two rows differing only in
+    ``entity_ref``, and the uniqueness constraint below is correct as written.
+    Do not read it as "one row shared organization-wide" — that only becomes true
+    at M7, when ``entity_ref`` becomes a foreign key to an entity table. Keeping
+    it opaque at every call site is what makes that a re-point rather than a
+    re-architecture.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name="states",
+    )
+    entity_ref = models.CharField(
+        max_length=1000,
+        help_text="Opaque reference to the entity this statistic describes. Do not parse.",
+    )
+    source_category = models.ForeignKey(
+        "core.StructureCategory",
+        on_delete=models.CASCADE,
+        related_name="states",
+        help_text="The kind of structure the measurements came through.",
+    )
+    key = models.CharField(max_length=1000, help_text="The measurement key being folded.")
+
+    # --- The monoid ---
+    n = models.PositiveIntegerField(default=0, help_text="Count of contributing metrics. COUNT reads this.")
+    sum = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Running sum of numeric values. MEAN is sum/n; SUM reads it directly.",
+    )
+    min = models.FloatField(null=True, blank=True)
+    max = models.FloatField(null=True, blank=True)
+
+    first_ts = models.DateTimeField(null=True, blank=True, help_text="measured_at of the earliest contributing metric.")
+    last_ts = models.DateTimeField(null=True, blank=True, help_text="measured_at of the latest contributing metric.")
+    first_value = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Value at first_ts. JSON rather than typed because LATEST is defined over strings and vectors too, and EUCLIDEAN_RANGE reads this as a point — which is why there is no separate first_pt column duplicating it.",
+    )
+    last_value = models.JSONField(null=True, blank=True, help_text="Value at last_ts. LATEST reads this.")
+
+    high_water_assertion = models.ForeignKey(
+        Assertion,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="high_water_states",
+        help_text="The latest assertion folded in. Lets a retraction arriving mid-backfill be ordered against what has already been counted.",
+    )
+    needs_recompute = models.BooleanField(
+        default=False,
+        help_text="Set when a retraction invalidated an order-dependent statistic (MIN/MAX/LATEST and friends cannot be un-merged). Read as: this row is stale until `recompute` runs.",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = OrganizationScopedManager()
+    all_objects = models.Manager()
+
+    class Meta:
+        base_manager_name = "all_objects"
+        default_manager_name = "all_objects"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization", "entity_ref", "source_category", "key"],
+                name="unique_state_per_entity_source_key",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["organization", "entity_ref"]),
+            models.Index(fields=["organization", "needs_recompute"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.entity_ref}/{self.key} (n={self.n})"
