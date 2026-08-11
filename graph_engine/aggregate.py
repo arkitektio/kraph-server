@@ -121,7 +121,7 @@ class UnsupportedRule(ValueError):
     """A derivation rule the state vector's grain cannot express."""
 
 
-def validate_rule(rule: DerivationRuleInput, structure_identifiers: set[str]) -> None:
+def validate_rule(rule: DerivationRuleInput, forbidden_sources: set[str] | None = None) -> None:
     """Reject rules the state vector cannot compute, at schema-validation time.
 
     The grain is `(entity, source_category, key)` over *metrics*, reached through
@@ -141,10 +141,14 @@ def validate_rule(rule: DerivationRuleInput, structure_identifiers: set[str]) ->
     if not rule.key:
         raise UnsupportedRule(f"Rollup over '{rule.source_node}' with aggregation {rule.aggregation.value} names no metric key. A rollup folds measurements, so it has to say which measurement.")
 
-    if rule.source_node and structure_identifiers and rule.source_node not in structure_identifiers:
+    # A positive list of structure kinds cannot be checked here: structures are
+    # resolved dynamically at write time and a schema never enumerates them. The
+    # caller passes the *entity and event* kinds it does know about, which is the
+    # mistake worth catching.
+    if rule.source_node and forbidden_sources and rule.source_node in forbidden_sources:
         raise UnsupportedRule(
-            f"Rollup source '{rule.source_node}' is not a structure kind. Derived properties aggregate "
-            f"measurements reaching an entity through a structure; counting or summarising *related "
-            f"entities or events* is not expressible and is not silently supported. "
-            f"Known structure kinds: {sorted(structure_identifiers) or '(none declared)'}."
+            f"Rollup source '{rule.source_node}' is an entity or event kind, not a structure kind. "
+            f"Derived properties aggregate measurements reaching an entity through a structure; "
+            f"counting or summarising *related entities or events* is not expressible, and is "
+            f"rejected here rather than silently never computing."
         )

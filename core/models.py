@@ -10,7 +10,7 @@ from django_choices_field import TextChoicesField
 from datalayer import models as datalayer_models
 from authentikate.models import Organization, Membership
 from polymorphic.models import PolymorphicModel
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from kante.context import Membership as KanteMembership
 from graph_engine import input_models
 # Create your models here.
@@ -310,26 +310,69 @@ class GraphSchema(models.Model):
         help_text="Description of changes in this schema version",
     )
 
+    hash = models.CharField(
+        max_length=64,
+        default="",
+        db_index=True,
+        help_text=(
+            "Content hash of `definition`. This is the identity a projected node stamps as its "
+            "`__schema_version`, so a derived value can be told apart from one computed under an "
+            "older schema. Distinct from `NodeCategory.schema_hash`, which hashes one category's "
+            "properties rather than the whole graph definition."
+        ),
+    )
+
     class Meta:
-        unique_together = [("graph", "index"), ("graph", "version")]
+        # `index` is the sequence; `version` is the *semantic* version of the
+        # schema format. Many revisions legitimately share one semantic version —
+        # every edit to a 1.0.1 schema is still 1.0.1 — so uniqueness belongs on
+        # the index alone. `(graph, version)` was harmless only while there was
+        # exactly one schema per graph, and blocks per-change versioning outright.
+        unique_together = [("graph", "index")]
         ordering = ["-index"]
+        constraints = [
+            # One active schema per graph, enforced by the database rather than by
+            # convention. `activate()` deactivating siblings is not enough on its
+            # own: two concurrent activations would each see the other as
+            # inactive, and a graph with two active schemas has no answer to
+            # "which version derived this value".
+            models.UniqueConstraint(
+                fields=["graph"],
+                condition=Q(is_active=True),
+                name="one_active_schema_per_graph",
+            )
+        ]
 
     def __str__(self) -> str:
         active_marker = " (active)" if self.is_active else ""
         return f"{self.graph.name} v{self.version}{active_marker}"
 
     def save(self, *args, **kwargs) -> None:
-        # Auto-increment index if not set
+        """Assign the next index and content hash before saving."""
         if self.index is None:
             last_schema = GraphSchema.objects.filter(graph=self.graph).order_by("-index").first()
             self.index = (last_schema.index + 1) if last_schema else 1
+        if not self.hash and self.definition:
+            from graph_engine.materialize import compute_definition_hash
+
+            self.hash = compute_definition_hash(self.definition)
         super().save(*args, **kwargs)
 
     def activate(self) -> None:
-        """Set this schema as the active one, deactivating others."""
-        GraphSchema.objects.filter(graph=self.graph).update(is_active=False)
+        """Make this the graph's active schema.
+
+        The only supported way to set `is_active`. Deactivating siblings first is
+        required by the partial unique constraint above — writing `is_active=True`
+        directly on a second schema is a database error, which is the point.
+        """
+        GraphSchema.objects.filter(graph=self.graph).exclude(pk=self.pk).update(is_active=False)
         self.is_active = True
         self.save(update_fields=["is_active"])
+
+    @classmethod
+    def active_for(cls, graph: "Graph") -> "GraphSchema | None":
+        """The graph's current schema, or None if it has never been materialized."""
+        return cls.objects.filter(graph=graph, is_active=True).first()
 
 def random_color():
     levels = range(32, 256, 32)

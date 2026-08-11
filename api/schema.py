@@ -178,10 +178,6 @@ class Mutation:
         description="Update an existing entity in the graph",
         resolver=mutations.update_entity,
     )
-    set_entity_property = kante.django_mutation(
-        description="Set a property on an existing entity in the graph",
-        resolver=mutations.set_entity_property,
-    )
 
     create_structure = kante.django_mutation(
         description="Create a new structure in the graph",

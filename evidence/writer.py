@@ -244,6 +244,19 @@ def archive(
     if target_type is None:
         raise TypeError(f"{type(target).__name__} is not archivable evidence")
 
+    if target.status == evidence_models.LifecycleStatus.ARCHIVED:
+        # Archiving twice must be a no-op, not a second retraction. The caller
+        # un-folds the metric's contribution from the state vector alongside
+        # this, so a second archive would subtract a value that has already been
+        # taken out — an error nothing would surface, because `recompute` fixes
+        # `n` and the drift would only show on aggregations that never recompute.
+        return (
+            evidence_models.LifecycleEvent.objects.for_organization(organization)
+            .filter(target_type=target_type, target_id=str(target.pk))
+            .order_by("-at")
+            .first()
+        )
+
     event = archive_ref(
         organization,
         target_type=target_type,

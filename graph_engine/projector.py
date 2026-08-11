@@ -106,6 +106,12 @@ def project(
     """
     projected = 0
 
+    # The graph's active schema is the version that derived these values.
+    # `NodeCategory.schema_hash` hashes one category's properties, which is a
+    # different question and cannot identify the schema a value came from.
+    active_schema = core_models.GraphSchema.active_for(graph)
+    schema_version = active_schema.hash if active_schema else None
+
     for entity_ref in entity_refs:
         node = evidence_models.Node.objects.for_organization(graph.organization).filter(ref=entity_ref).first()
         if node is None:
@@ -117,7 +123,7 @@ def project(
         category = node.category.get_real_instance()
         values = derive_properties(graph, entity_ref, category)
         values["__lifecycle_state"] = _lifecycle_state(graph, entity_ref)
-        values["__schema_version"] = getattr(category, "schema_hash", None)
+        values["__schema_version"] = schema_version
         values["__last_derived"] = int(time.time() * 1000)
 
         _write_properties(controller, graph, entity_ref, category, values)

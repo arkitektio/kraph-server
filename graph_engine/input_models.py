@@ -111,15 +111,18 @@ AGGREGATION_SOURCE_TYPES: Dict[AggregationFunction, Optional[set]] = {
 }
 
 # Map aggregation -> result type (None means same as source)
-AGGREGATION_RESULT_TYPES: Dict[AggregationFunction, Optional[PropertyType]] = {
-    AggregationFunction.MEAN: PropertyType.FLOAT,  # Mean always produces float
-    AggregationFunction.SUM: None,  # Same as source (int->int, float->float)
-    AggregationFunction.MIN: None,  # Same as source
-    AggregationFunction.MAX: None,  # Same as source
-    AggregationFunction.COUNT: PropertyType.INTEGER,  # Count produces integer
-    AggregationFunction.LATEST: None,  # Same as source
-    AggregationFunction.RANGE: PropertyType.FLOAT,  # Range produces float (for datetime too)
-    AggregationFunction.EUCLIDEAN_RANGE: PropertyType.FLOAT,  # Distance is float
+# What each aggregation produces, in the canonical vocabulary. `None` means "the
+# same kind as the values it reads" — SUM of integers is an integer, LATEST of a
+# string is a string.
+AGGREGATION_RESULT_TYPES: Dict[AggregationFunction, Optional[enums.ValueKind]] = {
+    AggregationFunction.MEAN: enums.ValueKind.FLOAT,
+    AggregationFunction.SUM: None,
+    AggregationFunction.MIN: None,
+    AggregationFunction.MAX: None,
+    AggregationFunction.COUNT: enums.ValueKind.INT,
+    AggregationFunction.LATEST: None,
+    AggregationFunction.RANGE: enums.ValueKind.FLOAT,  # true for datetimes too
+    AggregationFunction.EUCLIDEAN_RANGE: enums.ValueKind.FLOAT,  # a distance
 }
 
 # --- 1. Property & Derivation Rules ---
@@ -706,20 +709,16 @@ class PropertyDefinitionInput(BaseModel):
         aggregation = self.rule.aggregation
         expected_result_type = AGGREGATION_RESULT_TYPES.get(aggregation)
 
-        value_kind_to_property_type = {
-            enums.ValueKind.FLOAT: PropertyType.FLOAT,
-            enums.ValueKind.INT: PropertyType.INTEGER,
-            enums.ValueKind.DATETIME: PropertyType.DATETIME,
-            enums.ValueKind.STRING: PropertyType.STRING,
-            enums.ValueKind.CATEGORY: PropertyType.STRING,
-            enums.ValueKind.BOOLEAN: PropertyType.BOOLEAN,
-            enums.ValueKind.THREE_D_VECTOR: PropertyType.POINT_3D,
-        }
-        property_type = value_kind_to_property_type.get(self.value_kind)
-
-        # If aggregation has a fixed result type, check compatibility
-        if expected_result_type is not None and property_type is not None and property_type != expected_result_type:
-            raise ValueError(f"Aggregation '{aggregation.value}' produces type '{expected_result_type.value}', but property is defined as '{property_type.value}'. Change property type to '{expected_result_type.value}'.")
+        # Compared directly in ValueKind. This used to convert both sides into
+        # PropertyType first, which is a lossier vocabulary — CATEGORY and STRING
+        # collapse together there, and every vector kind but 3D has no
+        # representation at all — so the check was weaker than it looked.
+        if expected_result_type is not None and self.value_kind is not None and self.value_kind != expected_result_type:
+            raise ValueError(
+                f"Aggregation '{aggregation.value}' produces {expected_result_type.value}, "
+                f"but the property is declared as {self.value_kind.value}. "
+                f"Declare it as {expected_result_type.value}."
+            )
 
         return self
 

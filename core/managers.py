@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Generic, Iterable, Optional, TYPE_CHECKING, TypeVar
+from typing import Any, Generic, Iterable, Optional, TYPE_CHECKING, TypeVar
 
 from asgiref.sync import sync_to_async, async_to_sync
 from duckdb import identifier
@@ -335,6 +335,16 @@ class MeasurementCategoryManager(EdgeCategoryManager["core_models.MeasurementCat
         return async_to_sync(self.acreate_from_measurement_definition)(graph, definition)
 
 
+def _metric_kind_for(value_kind: Any) -> "enums.MetricKindChoices | None":
+    """The stored metric kind for a declared value kind, matched by name."""
+    if value_kind is None:
+        return None
+    name = getattr(value_kind, "name", str(value_kind)).upper()
+    # PropertyType still spells these INTEGER and POINT_3D on the input surface.
+    name = {"INTEGER": "INT", "POINT_3D": "THREE_D_VECTOR"}.get(name, name)
+    return getattr(enums.MetricKindChoices, name, None)
+
+
 class MetricCategoryManager(NodeCategoryManager["core_models.MetricCategory"]):
     """Metric categories are a special type of node category that represent metrics in the graph and have additional fields to link them to specific structures and define the kind of metric they represent (e.g. float, int, etc.)."""
 
@@ -345,15 +355,10 @@ class MetricCategoryManager(NodeCategoryManager["core_models.MetricCategory"]):
     ) -> "core_models.MetricCategory":
         from core import models as core_models
 
-        value_kind_map = {
-            input_models.PropertyType.INTEGER: enums.MetricKindChoices.INT,
-            input_models.PropertyType.FLOAT: enums.MetricKindChoices.FLOAT,
-            input_models.PropertyType.DATETIME: enums.MetricKindChoices.DATETIME,
-            input_models.PropertyType.STRING: enums.MetricKindChoices.STRING,
-            input_models.PropertyType.BOOLEAN: enums.MetricKindChoices.BOOLEAN,
-            input_models.PropertyType.POINT_3D: enums.MetricKindChoices.THREE_D_VECTOR,
-        }
-
+        # No conversion table. `MetricKindChoices` declares exactly the same
+        # members as `ValueKind`, so the canonical kind maps across by name. The
+        # table this replaces went through PropertyType and silently lost
+        # CATEGORY and every vector kind except 3D.
         structure = await core_models.StructureCategory.objects.aget(graph=graph, identifier=definition.structure)
 
         category = await super().acreate_from_node_definition(
@@ -361,7 +366,7 @@ class MetricCategoryManager(NodeCategoryManager["core_models.MetricCategory"]):
             definition=definition,
             other_defaults={
                 "structure_category": structure,
-                "value_kind": value_kind_map.get(definition.value_kind),
+                "value_kind": _metric_kind_for(definition.value_kind),
             },
         )
 

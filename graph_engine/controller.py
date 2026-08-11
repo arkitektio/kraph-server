@@ -526,9 +526,14 @@ class GraphController:
         working means entity creation still functions while derived *values* are
         dark between M1 and M3.
         """
+        active_schema = models.GraphSchema.active_for(entity_category.graph)
         updates: Dict[str, Any] = {
             "__lifecycle_state": self._lifecycle_state_for_entity(entity_category.graph, local_id),
-            "__schema_version": entity_category.schema_hash,
+            # The graph's active schema, matching what the projector stamps. This
+            # previously wrote `entity_category.schema_hash` — a hash of one
+            # category's properties — so the two writers disagreed about what
+            # `__schema_version` even means, and whichever ran last won.
+            "__schema_version": active_schema.hash if active_schema else None,
             "__last_derived": int(time.time() * 1000),
         }
 
@@ -609,30 +614,6 @@ class GraphController:
             {"eids": local_ids},
         )
         return [RetrievedEntity.from_node(self, row["e"], graph_name=graph.age_name) for row in result]
-
-    def set_entity_property(self, graph: models.Graph, local_id: scalars.LocalID, key: str, value: Any) -> None:
-        """
-        Sets a property directly on a projected entity node.
-
-        A write straight into the projection, bypassing evidence entirely — which
-        makes it exactly the kind of un-derivable state that `reproject` cannot
-        reconstruct. It survives M1 because it is live and tested; M3 removes it
-        once the projector owns entity properties.
-
-        Args:
-            graph: The graph to operate on
-            local_id: The internal graph ID of the entity node
-            key: The property key to set
-            value: The value to set for the property
-        """
-        self.engine.execute(
-            graph,
-            """
-            MATCH (e) WHERE id(e) = $eid
-            SET e += $props
-            """,
-            {"eid": local_id, "props": {key: value}},
-        )
 
     def get_node(self, graph: models.Graph, local_id: scalars.LocalID, info: Info | None = None) -> retrieved.RetrievedNode:
         """
@@ -1331,12 +1312,16 @@ class GraphController:
 
         entity_refs = projector.dirty(graph, [metric.structure_id])
 
+        already_archived = metric.status == evidence_models.LifecycleStatus.ARCHIVED
+
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             writer.archive(organization, metric, assertion)
-            # Remove the contribution from the statistics too, or the derived
-            # value would keep counting evidence that has been retracted.
-            state_module.retract(metric, entity_refs)
+            if not already_archived:
+                # Remove the contribution from the statistics too, or the derived
+                # value would keep counting evidence that has been retracted.
+                # Guarded, because archiving twice must not subtract twice.
+                state_module.retract(metric, entity_refs)
 
         self.project_entities(graph, entity_refs)
         return metric_id

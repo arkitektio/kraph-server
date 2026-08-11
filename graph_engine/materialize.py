@@ -19,18 +19,36 @@ from django.db.models import Q
 from authentikate.models import Organization, Membership, User
 
 
-def compute_definition_hash(definition: GraphDefinitionInput) -> str:
+def compute_definition_hash(definition: "GraphDefinitionInput | dict") -> str:
     """
-    Compute a stable hash of the graph definition for versioning.
+    Compute a stable hash of a graph definition, for versioning.
+
+    Accepts either the pydantic input or the JSON dict stored on
+    `GraphSchema.definition`, because both spellings of the same schema must hash
+    identically — otherwise a schema would appear to change simply by being read
+    back out of the database. Dict input is dumped with sorted keys for the same
+    reason.
 
     Args:
-        definition: The GraphDefinitionInput to hash
+        definition: The graph definition, as a model or as its JSON form
 
     Returns:
-        SHA256 hash string
+        A short SHA256 digest
     """
-    json_str = definition.model_dump_json(exclude_none=True)
+    if hasattr(definition, "model_dump_json"):
+        json_str = definition.model_dump_json(exclude_none=True)
+    else:
+        json_str = json.dumps(_strip_none(definition), sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(json_str.encode()).hexdigest()[:16]
+
+
+def _strip_none(value: object) -> object:
+    """Drop null values so a dict hashes like `model_dump_json(exclude_none=True)`."""
+    if isinstance(value, dict):
+        return {k: _strip_none(v) for k, v in value.items() if v is not None}
+    if isinstance(value, list):
+        return [_strip_none(item) for item in value]
+    return value
 
 
 def compute_properties_hash(properties: list) -> str:
@@ -160,11 +178,11 @@ def validate_derivation_rules(definition: GraphDefinitionInput) -> None:
     which never matches, so the property stayed unset and any test asserting on it
     passed vacuously.
 
-    Structure kinds are collected from the rules themselves rather than from a
-    declared list, because structures are resolved dynamically at write time and
-    the schema never enumerates them. That means this catches missing keys and
-    malformed rules; naming an entity kind as a source is caught when the rule is
-    evaluated against the graph's actual structure categories.
+    Structures are resolved dynamically at write time, so a schema never
+    enumerates them and there is no positive list to check a source against.
+    What the schema *does* enumerate is its entity and event kinds — and naming
+    one of those as a rollup source is the mistake worth catching, so that is
+    what gets passed down as the forbidden set.
     """
     from graph_engine.aggregate import UnsupportedRule, validate_rule
 
@@ -178,17 +196,9 @@ def validate_derivation_rules(definition: GraphDefinitionInput) -> None:
             if prop.derivation != DerivationType.ROLLUP or prop.rule is None:
                 continue
             try:
-                validate_rule(prop.rule, structure_identifiers=set())
+                validate_rule(prop.rule, forbidden_sources=entity_and_event_keys)
             except UnsupportedRule as error:
                 problems.append(f"{owner}.{prop.key}: {error}")
-                continue
-            if prop.rule.source_node in entity_and_event_keys:
-                problems.append(
-                    f"{owner}.{prop.key}: rollup source '{prop.rule.source_node}' is an entity or event "
-                    f"kind, not a structure kind. Derived properties aggregate measurements that reach an "
-                    f"entity through a structure; counting or summarising related entities and events is "
-                    f"not expressible and is deliberately not silently accepted."
-                )
 
     for entity in definition.extensions.entities:
         check(entity.key, entity.property_definitions)
@@ -265,6 +275,28 @@ def materialize(
         if "already exists" not in str(e):
             raise
 
+    # One schema change, not one per category row. Without suspending, the
+    # post_save signal would emit a version for every category created below and
+    # the history would describe insertion order rather than user intent.
+    from graph_engine import versioning
+
+    with versioning.suspended():
+        _materialize_categories(graph, definition, user)
+
+    for category in graph.relation_categories.all():
+        re_materialize_relation_category(graph, category)
+
+    for category in graph.structure_relation_categories.all():
+        re_materialize_structure_relation_category(graph, category)
+
+    for category in graph.measurement_categories.all():
+        re_materialize_measurement_relation_category(graph, category)
+
+    return graph
+
+
+def _materialize_categories(graph, definition: GraphDefinitionInput, user) -> None:
+    """Create every category the definition declares, plus the initial schema."""
     # Create EntityCategories
     for entity_def in definition.extensions.entities:
         models.EntityCategory.objects.create_from_entity_definition(
@@ -311,23 +343,18 @@ def materialize(
             target_entity_roles=target_roles,
         )
 
-    # Create the GraphSchema
-    models.GraphSchema.objects.create(
+    # The initial schema version. `activate()` is the only path that sets
+    # is_active, and a partial unique constraint enforces one active schema per
+    # graph — the old code hardcoded index=1 and is_active=True and never called
+    # activate at all, so a second materialization would have produced two active
+    # schemas.
+    schema = models.GraphSchema(
         graph=graph,
         version=definition.system_version,
-        index=1,
+        index=None,
         definition=definition.model_dump(mode="json"),
-        is_active=True,
         created_by=user,
+        is_active=False,
     )
-
-    for category in graph.relation_categories.all():
-        re_materialize_relation_category(graph, category)
-
-    for category in graph.structure_relation_categories.all():
-        re_materialize_structure_relation_category(graph, category)
-
-    for category in graph.measurement_categories.all():
-        re_materialize_measurement_relation_category(graph, category)
-
-    return graph
+    schema.save()
+    schema.activate()
