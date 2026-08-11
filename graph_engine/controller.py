@@ -404,6 +404,31 @@ class GraphController:
 
         return projector.project(self, graph, entity_refs)
 
+    def project_refs(self, organization: Any, entity_refs: List[str]) -> int:
+        """Recompute the named entities, whichever graphs they belong to.
+
+        Refs carry their graph as a prefix, so this groups them and resolves each
+        `Graph` once. Use it when you know exactly which entities changed.
+        """
+        from graph_engine import projector
+
+        grouped: Dict[str, List[str]] = {}
+        for ref in entity_refs:
+            age_name, separator, _ = str(ref).partition(":")
+            if separator:
+                grouped.setdefault(age_name, []).append(str(ref))
+
+        projected = 0
+        for age_name, refs in grouped.items():
+            graph = models.Graph.objects.filter(age_name=age_name, organization=organization).first()
+            if graph is None:
+                # A ref naming a graph that no longer exists. Evidence links
+                # outlive the projections built from them by design, so this is
+                # expected after a graph is deleted rather than a corruption.
+                continue
+            projected += projector.project(self, graph, refs)
+        return projected
+
     def project_from_structures(self, organization: Any, structure_ids: List[Any]) -> int:
         """Recompute every entity in the organization these structures are evidence for.
 
@@ -413,15 +438,8 @@ class GraphController:
         """
         from graph_engine import projector
 
-        projected = 0
-        for age_name, entity_refs in projector.dirty_across_organization(organization, structure_ids).items():
-            graph = models.Graph.objects.filter(age_name=age_name, organization=organization).first()
-            if graph is None:
-                # A ref naming a graph that no longer exists. The links outlive the
-                # projection by design, so this is expected after a graph is deleted.
-                continue
-            projected += projector.project(self, graph, entity_refs)
-        return projected
+        fan_out = projector.dirty_across_organization(organization, structure_ids)
+        return self.project_refs(organization, [ref for refs in fan_out.values() for ref in refs])
 
     def rebuild_projection(self, graph: models.Graph) -> Dict[str, int]:
         """Drop this graph's AGE namespace and replay it from evidence."""
@@ -1353,7 +1371,10 @@ class GraphController:
             for metric in writer.active_metrics_for_structures(organization, [structure.pk]):
                 state_module.merge(metric, [str(entity_id)])
 
-        self.project_from_structures(organization, [structure.pk])
+        # Just this entity. The structure's other dependents saw no change in
+        # their statistics, so fanning out to them would re-derive values that
+        # cannot have moved.
+        self.project_refs(organization, [str(entity_id)])
         return RetrievedStructure.from_row(self, structure)
 
     def delete_relation(

@@ -114,3 +114,24 @@ def assertion(organization: Organization) -> evidence_models.Assertion:
         action_name="record_evidence",
         asserted_at=datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc),
     )
+
+
+@pytest.fixture
+def second_graph(test_graph: core_models.Graph, bio_graph_schema, age_engine, authenticated_context) -> core_models.Graph:
+    """A second full projection over the same organization's evidence.
+
+    Materialized from the same schema as `test_graph`, so both declare an AIS
+    entity with a MEAN rollup over ROI — which is what makes "did both move?" a
+    meaningful question.
+    """
+    from graph_engine.materialize import materialize
+
+    request = authenticated_context.request
+    return materialize(
+        bio_graph_schema,
+        age_engine,
+        user=request._user,
+        organization=request._organization,
+        membership=request.membership,
+        name="second_graph",
+    )

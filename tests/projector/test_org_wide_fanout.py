@@ -163,3 +163,96 @@ def test_the_fan_out_stops_at_the_organization(
     structure, _, _ = shared_across_two_graphs
 
     assert projector.dirty_across_organization(other_organization, [structure.pk]) == {}
+
+
+# --- end to end, through the real GraphQL surface ---------------------------
+
+CREATE_ENTITY = """
+    mutation CreateEntity($input: CreateEntityInput!) {
+        createEntity(input: $input) { id }
+    }
+"""
+
+RECORD_METRIC = """
+    mutation RecordMetric($input: RecordMetricInput!) {
+        recordMetric(input: $input) { id }
+    }
+"""
+
+ENTITY_PROPERTIES = """
+    query Entity($id: GraphID!) {
+        node(id: $id) { ... on Entity { id properties } }
+    }
+"""
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_one_recorded_metric_moves_both_projections(
+    api_schema,
+    simple_api_context,
+    test_graph: core_models.Graph,
+    second_graph: core_models.Graph,
+    age_engine,
+) -> None:
+    """The claim, checked through the mutation rather than around it.
+
+    Two graphs, an entity in each, both informed by the same ROI. Record one
+    measurement — naming no graph — and both entities' derived values move.
+
+    The pieces are unit-tested above; this is the wiring. `_record_metric` has to
+    call `dirty_across_organization` and fold across every ref it returns, and
+    the write path has to project all of them. Testing the pieces separately
+    would pass even if nothing joined them up.
+    """
+    import uuid as uuid_module
+
+    from asgiref.sync import sync_to_async
+
+    object_id = f"roi_{uuid_module.hex if False else uuid_module.uuid4().hex[:8]}"
+
+    entity_ids = {}
+    for graph in (test_graph, second_graph):
+        category = await core_models.EntityCategory.objects.filter(graph=graph, key="AIS").afirst()
+        assert category is not None, f"{graph.name} must declare AIS with a MEAN rollup over ROI"
+
+        created = await api_schema.execute(
+            CREATE_ENTITY,
+            variable_values={
+                "input": {
+                    "entityCategory": str(category.pk),
+                    "supportingEvidence": [{"identifier": "ROI", "object": object_id, "metrics": [{"key": "vector_length", "value": 40.0}]}],
+                }
+            },
+            context_value=simple_api_context,
+        )
+        assert created.errors is None, f"GraphQL errors: {created.errors}"
+        entity_ids[graph.age_name] = created.data["createEntity"]["id"]
+
+    @sync_to_async
+    def structure_count() -> int:
+        return evidence_models.Structure.all_objects.filter(object=object_id).count()
+
+    assert await structure_count() == 1, "Both graphs must be informed by the *same* structure row"
+
+    # One measurement, no graph named anywhere.
+    recorded = await api_schema.execute(
+        RECORD_METRIC,
+        variable_values={
+            "input": {
+                "identifier": "ROI",
+                "object": object_id,
+                "key": "vector_length",
+                "value": 60.0,
+                "valueKind": "FLOAT",
+            }
+        },
+        context_value=simple_api_context,
+    )
+    assert recorded.errors is None, f"GraphQL errors: {recorded.errors}"
+
+    for age_name, entity_id in entity_ids.items():
+        result = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity_id}, context_value=simple_api_context)
+        assert result.errors is None, f"GraphQL errors: {result.errors}"
+        avg = result.data["node"]["properties"].get("avg_length")
+        assert avg == pytest.approx(50.0), f"{age_name} still reads {avg}: mean of 40 and 60 is 50. A projection that did not move is the stale-second-graph bug."

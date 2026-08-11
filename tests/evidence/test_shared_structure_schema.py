@@ -18,7 +18,6 @@ no per-graph copy to disagree with.
 import pytest
 from authentikate.models import Organization
 
-from core import models as core_models
 from core.enums import ValueKind
 from evidence import models as evidence_models
 from evidence import writer
@@ -34,15 +33,12 @@ def shared_structure(
     return writer.ensure_structure(organization, roi_kind, "roi-shared", assertion)
 
 
-def test_both_graphs_resolve_the_same_structure_kind(
-    organization: Organization,
-    graph_a: core_models.Graph,
-    graph_b: core_models.Graph,
-) -> None:
+def test_resolving_the_same_identifier_twice_returns_one_kind(organization: Organization) -> None:
     """The term is the organization's, so resolving it twice returns one row.
 
-    Two graphs, two calls, one `StructureKind`. This previously produced two rows
-    identical in everything but which graph owned them.
+    No graph fixtures, because no graph is involved — which is the point. This
+    previously produced two rows, identical in everything but which graph owned
+    them, one per graph that happened to reference the identifier.
     """
     from_a = writer.ensure_structure_kind(organization, "@mikro/roi")
     from_b = writer.ensure_structure_kind(organization, "@mikro/roi")

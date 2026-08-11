@@ -258,7 +258,10 @@ class Structure(models.Model):
     )
     identifier = models.CharField(
         max_length=1000,
-        help_text="The structure identifier, e.g. '@mikro/roi'. Denormalized from the category because uniqueness has to be expressible as a table constraint.",
+        help_text="The structure identifier, e.g. '@mikro/roi'. Denormalized from `kind` because "
+        "uniqueness has to be expressible as a table constraint, and **this column is the one that "
+        "counts**: the unique constraint and every structure filter read it, not the foreign key. "
+        "`ensure_structure` sets the two consistently and nothing else should write either.",
     )
     object = models.CharField(
         max_length=1000,
