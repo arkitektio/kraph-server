@@ -1,6 +1,9 @@
 # CHANGELOG
 
 
+## v1.0.0-rc.2 (2026-08-12)
+
+
 ## v1.0.0-rc.1 (2026-08-12)
 
 ### Bug Fixes
@@ -79,6 +82,33 @@
 
 - Input models
   ([`77e7749`](https://github.com/arkitektio/kraph-server/commit/77e774949d31d087e7b6120a07809c7a6f4db721))
+
+- Make the family read deterministic, and cover retraction across it
+  ([`f423446`](https://github.com/arkitektio/kraph-server/commit/f4234464cf9990cc6e92f3e684c1840be71ac5bf))
+
+Three follow-ups from review.
+
+`state_for`'s queryset had no ordering, so when two terms carried metrics at the same `measured_at`,
+  which one won LATEST depended on whatever order Postgres returned the rows in. Ordered by
+  `value_kind`.
+
+`combine()` was new code on the read path that no retraction test touched. Retraction still operates
+  per term — `retract` finds its row by the metric's own value kind — while a numeric-family read
+  spans both, so the two have to agree or an archived measurement keeps contributing to every
+  combined read while looking correctly retracted in its own row. Covered, and verified non-vacuous:
+  removing the pre-fold recompute leaves MAX reading the archived 60.
+
+Third was a suspected spurious schema-version bump: `source_value_kind` defaults to None, so a
+  pydantic re-serialization would emit the key where stored blobs lack it, rehashing every graph. It
+  does not happen — `versioning._property_definitions` returns `category.property_definitions`
+  verbatim, the stored JSON, so `compute_definition_hash` never sees a re-serialization. Only
+  `materialize()` writes `model_dump()`, and that path already emits a version deliberately. No
+  change needed; recorded because the absence of a bump is the non-obvious part.
+
+Also documents that `state_for` may now return an unsaved row — `combine()` builds one rather than
+  persisting a third grain over what two rows already hold, so callers read it and must not save it.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 
 - Make the fan-out precise, and prove it through the mutation
   ([`062e332`](https://github.com/arkitektio/kraph-server/commit/062e332813558aa0a516825c271ae9ef1184f069))
@@ -484,6 +514,73 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 - Materialized edges
   ([`6f33fd3`](https://github.com/arkitektio/kraph-server/commit/6f33fd36688a1898d43b9a95a59c5ca62f5c29ba))
 
+- Metric kinds are unique per value kind
+  ([`14084b9`](https://github.com/arkitektio/kraph-server/commit/14084b96f654778e283f25b81ff7265b2c2452e3))
+
+`ensure_metric_kind` used to raise when an existing term was redeclared with a different
+  `value_kind`. That refuses a measurement because someone else reached the key first — the same
+  bookkeeping-technicality argument that made `ensure_structure_kind` always-allow. A float
+  `confidence` and a category-label `confidence` are not one quantity disagreeing; they are two
+  quantities sharing a name.
+
+So identity becomes `(organization, structure_kind, key, value_kind)` and both declarations land.
+  Cardinality stays bounded: `ValueKind` has eleven members, and in practice a key has one term.
+
+Provenance stays out of identity. The argument for including `value_kind` does not extend to it —
+  which tool measured something is not a claim about what the quantity is, `action_id` is
+  per-deployment so cardinality would be unbounded rather than eleven, and folding it in would make
+  MEAN over a key become one mean per tool with nothing to combine them.
+
+The collision does not disappear, it relocates
+  -------------------------------------------------------------------- `State`'s grain was
+  `(entity_ref, source_kind, key)` — a *StructureKind*, with `MetricKind` absent entirely. Two terms
+  sharing a key therefore fold into one row, and `_numeric()` returns None for a string, so the
+  string bumps `n` without touching `sum`: MEAN over 40, 60 and "big" reads 33.3.
+
+`recompute()` filtered the same way and reproduced the error exactly, so the incremental fold and
+  its own correctness backstop agreed — and `test_state_vector`'s property test, written to catch
+  fold errors, certified it. Two wrong answers agreeing is not evidence.
+
+`value_kind` therefore joins the State grain, and the property test's generator now emits mixed
+  value kinds with an assertion on the numeric row's `n` rather than only on a rebuild of itself.
+
+Precondition: the declared value kind was being discarded
+  --------------------------------------------------------------------
+  `RecordMetricInput.value_kind` was a *required* field that nothing read. Both write paths inferred
+  from the Python value instead. Verified live: on the old path, recording "high" as STRING under a
+  key inference had called FLOAT did not mislabel it, it raised `could not convert string to float`.
+
+Left unfixed it would also have decided term identity by `type(value)` — `45` minting INT and `45.2`
+  FLOAT under one key, silently, on the first two measurements. `record_metric` no longer takes a
+  `value_kind` argument at all; the row's kind is its term's, so the two cannot disagree.
+
+Resolution rule, symmetric on both sides
+  -------------------------------------------------------------------- Write: a declaration is exact
+  and never refused; silence adopts the single existing term, or infers and mints when there is
+  none. Two or more terms and no declaration is the one raise that survives — an ambiguous *lookup*,
+  not a rejected declaration, and picking arbitrarily would file the same measurement in different
+  columns depending on which write ran first.
+
+Read: `DerivationRule.source_value_kind` is new, because `prop.value_kind` cannot answer this — it
+  is the aggregation's *result* type, so `AGGREGATION_RESULT_TYPES` maps COUNT to INT over STRING
+  sources. Declared is exact; silence resolves from the vocabulary; ambiguity warns naming the terms
+  and skips.
+
+INT and FLOAT are read as one quantity — both live in `value_num` and `_numeric` accepts both, so a
+  rule naming FLOAT that read only the FLOAT term would silently drop half its evidence.
+  `state.combine()` folds the rows, finally using the monoid the design rests on. Deliberately the
+  only widening: routing identity through `VALUE_COLUMN_FOR_KIND` instead would merge STRING with
+  CATEGORY and collapse all five vector arities.
+
+Both load-bearing tests verified non-vacuous by reverting the change and confirming the intended
+  failure.
+
+BREAKING CHANGE: `MetricKind`'s unique constraint gains `value_kind`, as does `State`'s.
+  `writer.record_metric` no longer accepts `value_kind`. `DerivationRule` gains an optional
+  `source_value_kind`.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
 - Minimal tests
   ([`2f35f15`](https://github.com/arkitektio/kraph-server/commit/2f35f15351d8cc907e10487f76a3e9aba7f2ec38))
 
@@ -853,6 +950,5 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 
 ### Breaking Changes
 
-- Ingest mutations no longer accept `graph`; `StructureCategory` and `MetricCategory` are replaced
-  by `StructureKind` and `MetricKind`, which do not implement the Category interface;
-  `createStructureCategory` and `createMetricCategory` are removed (kinds are created lazily).
+- `metrickind`'s unique constraint gains `value_kind`, as does `State`'s. `writer.record_metric` no
+  longer accepts `value_kind`. `DerivationRule` gains an optional `source_value_kind`.
