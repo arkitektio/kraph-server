@@ -224,8 +224,16 @@ def state_for(
     quantity, which is the under-derivation this grain exists to prevent. Rows
     are folded together with :func:`combine`, so the caller gets one vector
     whichever way the terms happened to split.
+
+    Note the return may be an **unsaved** row — see :func:`combine`. Callers read
+    it; they must not save it.
+
+    Ordered so that two measurements sharing a `measured_at` across two terms
+    resolve LATEST the same way every time. Unordered, the winner would depend on
+    whatever order Postgres returned the rows in, which is not a decision worth
+    leaving to chance for a value the API reports.
     """
-    states = list(evidence_models.State.objects.for_organization(organization).filter(entity_ref=entity_ref, source_kind=source_kind, key=key, value_kind__in=list(value_kinds)))
+    states = list(evidence_models.State.objects.for_organization(organization).filter(entity_ref=entity_ref, source_kind=source_kind, key=key, value_kind__in=list(value_kinds)).order_by("value_kind"))
 
     for state in states:
         if state.needs_recompute:

@@ -176,6 +176,44 @@ def test_int_and_float_are_read_as_one_quantity(
     assert aggregate.apply(AggregationFunction.LATEST, combined) == 60, "Ordered by observation time across both terms"
 
 
+def test_retracting_one_term_moves_the_combined_read(
+    organization: Organization,
+    informing_structure: evidence_models.Structure,
+    assertion: evidence_models.Assertion,
+) -> None:
+    """Archiving an INT measurement changes what a FLOAT-family read returns.
+
+    The interaction `combine()` introduced and nothing else covers: retraction
+    still operates per term — `retract` finds its row by the metric's own value
+    kind — while the read spans the family. If the two disagreed, an archived
+    measurement would keep contributing to every combined read, and the
+    retraction would look like it had worked when the per-term row was inspected
+    directly.
+
+    `state_for` is the entry point precisely so the stale row is rebuilt on the
+    way out, and here that has to happen *before* the fold rather than after.
+    """
+    from graph_engine import projector
+
+    _record(organization, informing_structure, assertion, 40.0, ValueKind.FLOAT, 0)
+    retracted = _record(organization, informing_structure, assertion, 60, ValueKind.INT, 10)
+
+    before = state_module.state_for(organization, ENTITY_REF, informing_structure.kind, "confidence", projector.NUMERIC_FAMILY)
+    assert before is not None
+    assert aggregate.apply(AggregationFunction.MEAN, before) == pytest.approx(50.0)
+
+    writer.archive(organization, retracted, assertion)
+    state_module.retract(retracted, [ENTITY_REF])
+
+    after = state_module.state_for(organization, ENTITY_REF, informing_structure.kind, "confidence", projector.NUMERIC_FAMILY)
+
+    assert after is not None
+    assert after.n == 1, "The archived measurement is no longer a contributor"
+    assert aggregate.apply(AggregationFunction.MEAN, after) == pytest.approx(40.0)
+    assert aggregate.apply(AggregationFunction.MAX, after) == pytest.approx(40.0), "MAX cannot be un-merged, so the stale row must have been rebuilt"
+    assert aggregate.apply(AggregationFunction.LATEST, after) == 40.0, "…and LATEST falls back across the family"
+
+
 def test_string_and_category_are_not_widened_together(
     organization: Organization,
     informing_structure: evidence_models.Structure,
