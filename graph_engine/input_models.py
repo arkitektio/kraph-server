@@ -471,6 +471,12 @@ class MetricInput(BaseModel):
 
     key: str
     value: Any
+    value_kind: PropertyType = Field(
+        ...,
+        description=(
+            "What type of value this is. Required: it decides which column the value is stored in and which measurement term it is recorded under, and nothing infers it. Two callers may declare the same key differently — a float `confidence` and a category-label `confidence` are two terms, and both are recorded."
+        ),
+    )
     confidence: Optional[float] = None
     confidence_type: Optional[str] = None
     unit: Optional[str] = None
@@ -1760,7 +1766,6 @@ class RecordMetricInput(MetricInput):
 
     identifier: scalars.StructureIdentifier = Field(..., description="The schema identifier for this metric (e.g. '@mikro/roi_volume')")
     object: scalars.StructureObject = Field(..., description="The unique ID of the object this metric references")
-    value_kind: PropertyType = Field(..., description="The kind of value this metric represents (e.g. 'float', 'integer', 'string', etc.)")
 
 
 class CreateMetricInput(MetricInput):

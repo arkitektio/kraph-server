@@ -221,7 +221,7 @@ async def test_one_recorded_metric_moves_both_projections(
             variable_values={
                 "input": {
                     "entityCategory": str(category.pk),
-                    "supportingEvidence": [{"identifier": "ROI", "object": object_id, "metrics": [{"key": "vector_length", "value": 40.0}]}],
+                    "supportingEvidence": [{"identifier": "ROI", "object": object_id, "metrics": [{"key": "vector_length", "value": 40.0, "valueKind": "FLOAT"}]}],
                 }
             },
             context_value=simple_api_context,

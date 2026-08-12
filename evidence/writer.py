@@ -52,47 +52,41 @@ _PROPERTY_TYPE_TO_VALUE_KIND: dict[str, str] = {
 }
 
 
-def infer_value_kind(value: Any) -> ValueKind:
-    """Guess a value's kind when the schema does not declare one.
-
-    Only a fallback. The kind's declared ``value_kind`` wins whenever it
-    exists, because inference cannot distinguish a CATEGORY from a STRING, and
-    guessing wrong puts the value in a column the aggregation layer will not
-    look in.
-    """
-    if isinstance(value, bool):
-        return ValueKind.BOOLEAN
-    if isinstance(value, int):
-        return ValueKind.INT
-    if isinstance(value, float):
-        return ValueKind.FLOAT
-    if isinstance(value, datetime.datetime):
-        return ValueKind.DATETIME
-    if isinstance(value, (list, tuple)):
-        return {1: ValueKind.ONE_D_VECTOR, 2: ValueKind.TWO_D_VECTOR, 3: ValueKind.THREE_D_VECTOR, 4: ValueKind.FOUR_D_VECTOR}.get(len(value), ValueKind.N_VECTOR)
-    return ValueKind.STRING
+#: Deliberately absent: an `infer_value_kind` that guessed a kind from
+#: `type(value)`. Every write now states its own kind, so nothing here has to
+#: choose — and inference could not tell a CATEGORY from a STRING, nor keep `45`
+#: and `45.2` under one key from becoming an INT term and a FLOAT one.
 
 
-def value_columns(value: Any, value_kind: str) -> dict[str, Any]:
+def value_columns(value: Any, value_kind: str, key: str = "?") -> dict[str, Any]:
     """Map a value onto the single typed column its kind designates.
 
     Raises rather than silently dropping the value, because a metric that
     round-trips as ``None`` is indistinguishable from one that was never
     recorded — and the aggregation layer would treat it as absent evidence.
+
+    ``key`` is only for the error. Now that the caller states the value kind, a
+    mismatch is their own declaration disagreeing with what they sent, so the
+    message names all three — `float('high')` on its own says
+    ``could not convert string to float: 'high'`` and leaves them to work out
+    which of a batch of measurements it came from.
     """
     column = _COLUMN_FOR_KIND.get(value_kind)
     if column is None:
         raise ValueError(f"Unknown value_kind {value_kind!r}; expected one of {sorted(_COLUMN_FOR_KIND)}")
 
-    if value_kind in _VECTOR_KINDS:
-        return {column: list(value)}
-    if column == "value_num":
-        return {column: float(value)}
-    if column == "value_bool":
-        return {column: bool(value)}
-    if column == "value_txt":
-        return {column: str(value)}
-    return {column: value}
+    try:
+        if value_kind in _VECTOR_KINDS:
+            return {column: list(value)}
+        if column == "value_num":
+            return {column: float(value)}
+        if column == "value_bool":
+            return {column: bool(value)}
+        if column == "value_txt":
+            return {column: str(value)}
+        return {column: value}
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"'{key}' is declared {value_kind}, but {value!r} is not a {value_kind} value ({error}). Declare the kind that matches what you are recording.") from error
 
 
 def _as_datetime(value: Any, default: datetime.datetime) -> datetime.datetime:
@@ -121,11 +115,6 @@ def ensure_structure_kind(organization: Organization, identifier: str) -> eviden
     return kind
 
 
-#: Sentinel for "the caller passed no value to infer from", distinct from a
-#: metric whose value genuinely is ``None``.
-_UNDECLARED: Any = object()
-
-
 def canonical_value_kind(value_kind: Any) -> str | None:
     """The canonical spelling of a value kind, or None if nothing was declared.
 
@@ -145,58 +134,36 @@ def ensure_metric_kind(
     organization: Organization,
     structure_kind: evidence_models.StructureKind,
     key: str,
-    value_kind: Any = None,
-    *,
-    value: Any = _UNDECLARED,
+    value_kind: Any,
 ) -> evidence_models.MetricKind:
     """Get or create the organization's term for a kind of measurement.
 
-    Identity includes the value kind, so a *declaration* is never refused: two
-    tools measuring `roi.confidence`, one as a float and one as a category label,
-    get two terms and both measurements are recorded. Rejecting the second would
-    be refusing a fact about the world because someone else reached the key
-    first.
+    One branch, because the caller states the value kind and nothing guesses it.
+    A declaration is therefore never refused: two tools measuring
+    `roi.confidence`, one as a float and one as a category label, get two terms
+    and both measurements are recorded.
 
-    When the caller declares nothing the term has to be guessed, and that is the
-    one case that can still fail:
-
-    - exactly one term exists for the key — use it, whatever its kind. This is
-      what stops inference from forking a key into INT and FLOAT terms just
-      because one measurement happened to be ``45`` and the next ``45.2``.
-    - none exists — infer from the value and mint.
-    - **two or more exist — raise, naming them.** Picking arbitrarily would put
-      the same measurement in different columns depending on timing, so the
-      caller has to say which term they meant.
+    This used to guess when the caller said nothing — adopt the key's single
+    existing term, or infer one from ``type(value)`` and mint, or raise when
+    several terms existed. All three are gone, and the raise is why. Its message
+    said "Declare one" while the inputs that reached it — `createMetric`,
+    `updateMetric`, supporting evidence — had no field to declare with, so a key
+    with two terms became unwritable through them. Requiring the kind removes the
+    branch rather than repairing it, and takes the rest of the guessing with it:
+    a term's identity is no longer decided by whether a measurement happened to
+    be written ``45`` or ``45.2``.
     """
     declared = canonical_value_kind(value_kind)
+    if declared is None:
+        raise ValueError(f"Cannot record '{structure_kind.identifier}'.{key} without a value kind: it decides which column the value is stored in and which term it is recorded under, and nothing infers it.")
 
-    if declared is not None:
-        kind, _ = evidence_models.MetricKind.all_objects.get_or_create(
-            organization=organization,
-            structure_kind=structure_kind,
-            key=key,
-            value_kind=declared,
-        )
-        return kind
-
-    existing = list(evidence_models.MetricKind.all_objects.filter(organization=organization, structure_kind=structure_kind, key=key))
-
-    if len(existing) == 1:
-        return existing[0]
-
-    if len(existing) > 1:
-        kinds = ", ".join(sorted(term.value_kind for term in existing))
-        raise ValueError(f"'{structure_kind.identifier}'.{key} exists as {kinds}; a write that declares no value kind cannot say which one it means. Declare one.")
-
-    if value is _UNDECLARED:
-        raise ValueError(f"Cannot mint '{structure_kind.identifier}'.{key} without a value kind or a value to infer one from: a term whose type is unknown cannot say which column its values belong in.")
-
-    return evidence_models.MetricKind.all_objects.create(
+    kind, _ = evidence_models.MetricKind.all_objects.get_or_create(
         organization=organization,
         structure_kind=structure_kind,
         key=key,
-        value_kind=infer_value_kind(value).value,
+        value_kind=declared,
     )
+    return kind
 
 
 def create_assertion(
@@ -283,7 +250,7 @@ def record_metric(
         confidence_type=confidence_type,
         measured_at=_as_datetime(measured_at, assertion.asserted_at),
         asserted_at=assertion.asserted_at,
-        **value_columns(value, resolved),
+        **value_columns(value, resolved, key),
     )
 
 

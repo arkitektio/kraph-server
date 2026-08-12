@@ -74,7 +74,7 @@ async def _entity_with_measurements(
                     {
                         "identifier": "ROI",
                         "object": object_id,
-                        "metrics": [{"key": "vector_length", "value": values[0], "unit": "um", "confidence": 0.98}],
+                        "metrics": [{"key": "vector_length", "value": values[0], "valueKind": "FLOAT", "unit": "um", "confidence": 0.98}],
                     }
                 ],
             }

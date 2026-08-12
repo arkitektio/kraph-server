@@ -52,6 +52,10 @@ class PropertySet:
 class MetricInput:
     key: str = strawberry.field(description="The key/name of the metric")
     value: AnyScalar = strawberry.field(description="The value of the metric, which can be any scalar type (string, number, boolean)")
+    # Non-null, and before the defaulted fields — a field without a default
+    # cannot follow one that has it. Nothing infers this: it decides both the
+    # column the value lands in and the term the measurement is recorded under.
+    value_kind: input_models.PropertyType = strawberry.field(description="What type of value this is. Required — it decides the storage column and the measurement term")
     unit: Optional[str] = strawberry.field(default=None, description="Unit of measurement, e.g. 'um'")
     confidence: Optional[float] = strawberry.field(default=None, description="How confident the source is in this measurement, 0-1")
     confidence_type: Optional[str] = strawberry.field(default=None, description="What kind of confidence this is (e.g. a model score)")
@@ -535,7 +539,8 @@ class RecordMetricInput(MetricInput):
 
     identifier: str = strawberry.field(description="The schema identifier for this metric (e.g. '@mikro/roi_volume')")
     object: str = strawberry.field(description="The unique ID of the object this metric references")
-    value_kind: input_models.PropertyType = strawberry.field(description="The kind of value this metric represents")
+    # `value_kind` is inherited. It used to be re-declared here because this was
+    # the only input that had one; it is now on every measurement input.
     value: AnyScalar = strawberry.field(description="The value of the metric, which can be any scalar type (string, number, boolean)")
 
 

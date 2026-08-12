@@ -61,7 +61,7 @@ async def test_recording_a_metric_updates_the_derived_value(
         variable_values={
             "input": {
                 "entityCategory": str(category.pk),
-                "supportingEvidence": [{"identifier": "ROI", "object": object_id, "metrics": [{"key": "vector_length", "value": 40.0}]}],
+                "supportingEvidence": [{"identifier": "ROI", "object": object_id, "metrics": [{"key": "vector_length", "value": 40.0, "valueKind": "FLOAT"}]}],
             }
         },
         context_value=simple_api_context,

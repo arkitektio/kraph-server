@@ -221,16 +221,14 @@ class GraphController:
         organization: Any,
         structure_kind: evidence_models.StructureKind,
         key: str,
-        value_kind: Any = None,
-        *,
-        value: Any = None,
+        value_kind: Any,
     ) -> evidence_models.MetricKind:
         """The organization's term for a kind of measurement.
 
-        A declaration is always honoured. Only an *undeclared* write against a
-        key that already has several terms fails — see `writer.ensure_metric_kind`.
+        The value kind is required and comes from the caller. Nothing here
+        guesses it — see `writer.ensure_metric_kind`.
         """
-        return writer.ensure_metric_kind(organization, structure_kind, key, value_kind, value=value)
+        return writer.ensure_metric_kind(organization, structure_kind, key, value_kind)
 
     def _materialize_supporting_evidence(
         self,
@@ -259,16 +257,11 @@ class GraphController:
             )
 
             for measurement in evidence.metrics:
-                # `MetricInput` carries no value kind, so this resolves by
-                # inference — but only when the key has no term yet. An existing
-                # term wins, which is what keeps a `45` and a `45.2` under the
-                # same key from becoming an INT term and a FLOAT term.
                 metric_kind = self.ensure_metric_kind(
                     organization,
                     structure_kind,
                     measurement.key,
-                    getattr(measurement, "value_kind", None),
-                    value=measurement.value,
+                    measurement.value_kind,
                 )
                 metric = writer.record_metric(
                     organization,
@@ -981,19 +974,17 @@ class GraphController:
         the structure?" — stops existing once the term belongs to the
         organization. There is one term, and both graphs see it.
 
-        `RecordMetricInput` declares a ``value_kind`` and it is honoured. It used
-        to be a required input field that nothing read: the term was inferred
-        from the Python value and the declaration was discarded, so recording
-        `7.0` as a STRING silently produced a FLOAT term. Now that the value kind
-        is part of the term's identity, that would have decided identity by
-        ``type(value)`` — `45` minting INT and `45.2` FLOAT under one key.
+        The caller states the value kind; nothing infers it. Once the kind became
+        part of a term's identity, inferring would have decided identity by
+        ``type(value)`` — `45` minting an INT term and `45.2` a FLOAT one under
+        one key — and the paths that could not declare would have had no way to
+        name a term when a key had more than one.
         """
         metric_kind = self.ensure_metric_kind(
             organization,
             structure.kind,
             metric_input.key,
-            getattr(metric_input, "value_kind", None),
-            value=metric_input.value,
+            metric_input.value_kind,
         )
         metric = writer.record_metric(
             organization,
@@ -1317,6 +1308,7 @@ class GraphController:
         metric_input = MetricInput(
             key=payload.key,
             value=payload.value,
+            value_kind=payload.value_kind,
             confidence=payload.confidence,
             confidence_type=payload.confidence_type,
             unit=payload.unit,

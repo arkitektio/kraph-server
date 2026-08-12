@@ -1,17 +1,21 @@
 """How a write resolves the term it is recording under.
 
-Two rules, and the symmetry between them is the design:
+One rule: **the caller states the value kind, and it is exact.** A declaration is
+therefore never refused — a second caller declaring a different type gets a
+second term rather than an error.
 
-- **A declaration is exact, and never refused.** `get_or_create` on the whole
-  four-tuple, so a second caller declaring a different type gets a second term
-  rather than an error.
-- **Silence is resolved from the vocabulary.** One existing term wins; none means
-  infer and mint; more than one is the single case that still raises.
+This file used to describe a second rule for callers who declared nothing:
+adopt the key's single existing term, or infer one from ``type(value)`` and mint,
+or raise when several terms existed. All of it is gone, and three tests went with
+it. The raise is why. Its message said "Declare one" while the inputs that
+reached it — `createMetric`, `updateMetric`, supporting evidence — had no field
+to declare with, so a key with two terms became unwritable through them.
 
-That last raise is the legitimate remainder of the one this change removed. The
-objection was to a *declaration* being rejected, not to an ambiguous *lookup*
-being reported — and picking arbitrarily among terms would file the same
-measurement in different columns depending on which write happened to run first.
+Requiring the kind removes that branch instead of repairing it, and the rest of
+the guessing follows: with nothing inferring, a term's identity no longer depends
+on whether a measurement happened to be written ``45`` or ``45.2``, and the
+adopt-the-existing-term rule that existed to paper over exactly that is
+unnecessary.
 """
 
 import pytest
@@ -63,57 +67,63 @@ def test_the_property_type_spelling_is_accepted(
     assert canonical.pk == lowercase.pk
 
 
-def test_an_existing_term_beats_inference(
+def test_a_missing_value_kind_is_refused(
     organization: Organization,
     roi_kind: evidence_models.StructureKind,
 ) -> None:
-    """`45` after `45.2` must not mint an INT term beside the FLOAT one.
+    """No kind, no term. There is nothing left that guesses one.
 
-    The drift this rule exists to stop. Inference reads `type(value)`, so without
-    it the identity of a term would be decided by whether a measurement happened
-    to be written with a decimal point — two terms for one quantity, silently, on
-    the first two measurements.
+    Replaces three tests that covered the guessing: adopt-the-existing-term,
+    infer-and-mint, and the raise when a key had several terms. The last of those
+    was unactionable — it told callers to declare a kind through inputs that had
+    no field for one — and the first two only existed to keep inference from
+    forking a key. The error names the key so a failure inside a batch of
+    measurements can be located.
     """
-    declared = writer.ensure_metric_kind(organization, roi_kind, "vector_length", ValueKind.FLOAT)
-    inferred = writer.ensure_metric_kind(organization, roi_kind, "vector_length", value=45)
-
-    assert inferred.pk == declared.pk, "An undeclared write adopts the existing term"
-    assert inferred.value_kind == ValueKind.FLOAT.value
-
-
-def test_inference_mints_when_there_is_nothing_to_adopt(
-    organization: Organization,
-    roi_kind: evidence_models.StructureKind,
-) -> None:
-    """A first measurement under a new key does not need a declaration."""
-    minted = writer.ensure_metric_kind(organization, roi_kind, "brightness", value=7.5)
-
-    assert minted.value_kind == ValueKind.FLOAT.value
-
-
-def test_an_undeclared_write_against_an_ambiguous_key_raises(
-    organization: Organization,
-    roi_kind: evidence_models.StructureKind,
-) -> None:
-    """The one raise that survives, and it names both terms.
-
-    Not a contradiction being rejected — both terms are legitimate and both stay.
-    It is a lookup with no answer, and the caller is the only one who can supply
-    it.
-    """
-    writer.ensure_metric_kind(organization, roi_kind, "confidence", ValueKind.FLOAT)
-    writer.ensure_metric_kind(organization, roi_kind, "confidence", ValueKind.STRING)
-
     with pytest.raises(ValueError) as excinfo:
-        writer.ensure_metric_kind(organization, roi_kind, "confidence", value=0.9)
+        writer.ensure_metric_kind(organization, roi_kind, "confidence", None)
 
     message = str(excinfo.value)
-    assert "FLOAT" in message and "STRING" in message, "The error must name both terms to be actionable"
+    assert "confidence" in message, "The error must name the key it could not record"
+    assert "@mikro/roi" in message
 
-    # And declaring resolves it, without disturbing either term.
-    resolved = writer.ensure_metric_kind(organization, roi_kind, "confidence", ValueKind.FLOAT)
-    assert resolved.value_kind == ValueKind.FLOAT.value
+
+def test_a_key_with_several_terms_is_writable(
+    organization: Organization,
+    roi_kind: evidence_models.StructureKind,
+) -> None:
+    """The dead end, at the writer level.
+
+    Two terms for one key used to make an undeclared write impossible. Naming the
+    kind resolves it exactly, and neither existing term is disturbed.
+    """
+    as_float = writer.ensure_metric_kind(organization, roi_kind, "confidence", ValueKind.FLOAT)
+    as_string = writer.ensure_metric_kind(organization, roi_kind, "confidence", ValueKind.STRING)
+
+    assert writer.ensure_metric_kind(organization, roi_kind, "confidence", ValueKind.STRING).pk == as_string.pk
+    assert writer.ensure_metric_kind(organization, roi_kind, "confidence", ValueKind.FLOAT).pk == as_float.pk
     assert evidence_models.MetricKind.objects.for_organization(organization).filter(key="confidence").count() == 2
+
+
+def test_nothing_infers_a_value_kind(
+    organization: Organization,
+    roi_kind: evidence_models.StructureKind,
+) -> None:
+    """`45` and `45.2` under one declared key stay one term.
+
+    Not because an existing term wins over inference — because there is no
+    inference. `writer` exports no way to guess a kind from a value, and this
+    asserts that rather than trusting the deletion stuck: a re-introduced
+    `infer_value_kind` would be a guessing primitive with no caller, and the next
+    write path to want one would reach for it.
+    """
+    assert not hasattr(writer, "infer_value_kind")
+
+    first = writer.ensure_metric_kind(organization, roi_kind, "vector_length", ValueKind.FLOAT)
+    second = writer.ensure_metric_kind(organization, roi_kind, "vector_length", ValueKind.FLOAT)
+
+    assert first.pk == second.pk
+    assert evidence_models.MetricKind.objects.for_organization(organization).filter(key="vector_length").count() == 1
 
 
 def test_an_unknown_value_kind_is_rejected(

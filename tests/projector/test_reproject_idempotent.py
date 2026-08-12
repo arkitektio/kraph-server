@@ -66,7 +66,7 @@ async def _build_measured_entity(
         variable_values={
             "input": {
                 "entityCategory": str(category.pk),
-                "supportingEvidence": [{"identifier": "ROI", "object": object_id, "metrics": [{"key": "vector_length", "value": values[0]}]}],
+                "supportingEvidence": [{"identifier": "ROI", "object": object_id, "metrics": [{"key": "vector_length", "value": values[0], "valueKind": "FLOAT"}]}],
             }
         },
         context_value=ctx,
