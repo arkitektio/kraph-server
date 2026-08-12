@@ -16,6 +16,7 @@ import pytest
 from authentikate.models import Organization
 
 from core import models as core_models
+from core.enums import ValueKind
 from evidence import models as evidence_models
 from evidence import state as state_module
 from evidence import writer
@@ -155,7 +156,7 @@ def test_reading_a_stale_row_rebuilds_it_first(
     writer.archive(organization, metrics[1], metrics[1].assertion)
     state_module.retract(metrics[1], [ENTITY_REF])
 
-    state = state_module.state_for(organization, ENTITY_REF, roi_category_a, "vector_length")
+    state = state_module.state_for(organization, ENTITY_REF, roi_category_a, "vector_length", [ValueKind.FLOAT.value])
 
     assert state is not None
     assert not state.needs_recompute

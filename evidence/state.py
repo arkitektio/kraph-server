@@ -59,6 +59,7 @@ def merge(
             entity_ref=entity_ref,
             source_kind=metric.structure.kind,
             key=metric.key,
+            value_kind=metric.value_kind,
         )
 
         state.n += 1
@@ -107,6 +108,7 @@ def retract(
                 entity_ref=entity_ref,
                 source_kind=metric.structure.kind,
                 key=metric.key,
+                value_kind=metric.value_kind,
             )
             .first()
         )
@@ -140,6 +142,7 @@ def recompute(state: evidence_models.State) -> evidence_models.State:
     metrics = evidence_models.Metric.objects.for_organization(state.organization).filter(
         structure__kind=state.source_kind,
         key=state.key,
+        value_kind=state.value_kind,
         status=evidence_models.LifecycleStatus.ACTIVE,
         structure__in=_structures_informing(state),
     )
@@ -210,9 +213,66 @@ def state_for(
     entity_ref: str,
     source_kind: Any,
     key: str,
+    value_kinds: Iterable[str],
 ) -> evidence_models.State | None:
-    """Read one state vector, recomputing it first if a retraction left it stale."""
-    state = evidence_models.State.objects.for_organization(organization).filter(entity_ref=entity_ref, source_kind=source_kind, key=key).first()
-    if state is not None and state.needs_recompute:
-        recompute(state)
-    return state
+    """Read the state vector for a key, recomputing anything a retraction left stale.
+
+    ``value_kinds`` is a set rather than a single kind because INT and FLOAT are
+    distinct terms that both live in ``value_num`` — see
+    :data:`graph_engine.projector.NUMERIC_FAMILY`. A rule naming FLOAT that read
+    only the FLOAT row would silently miss every INT measurement of the same
+    quantity, which is the under-derivation this grain exists to prevent. Rows
+    are folded together with :func:`combine`, so the caller gets one vector
+    whichever way the terms happened to split.
+    """
+    states = list(evidence_models.State.objects.for_organization(organization).filter(entity_ref=entity_ref, source_kind=source_kind, key=key, value_kind__in=list(value_kinds)))
+
+    for state in states:
+        if state.needs_recompute:
+            recompute(state)
+
+    return combine(states)
+
+
+def combine(states: Iterable[evidence_models.State]) -> evidence_models.State | None:
+    """Fold several state vectors into one, without saving it.
+
+    The monoid the whole design rests on, finally used as one: statistics from
+    disjoint metric sets compose. Returns an **unsaved** `State` — it is a read,
+    not a row, and persisting it would create a second grain claiming to hold
+    what two others already hold.
+    """
+    states = [state for state in states if state is not None]
+    if not states:
+        return None
+    if len(states) == 1:
+        return states[0]
+
+    merged = evidence_models.State(
+        organization=states[0].organization,
+        entity_ref=states[0].entity_ref,
+        source_kind=states[0].source_kind,
+        key=states[0].key,
+        value_kind=states[0].value_kind,
+    )
+    merged.n = sum(state.n for state in states)
+
+    sums = [state.sum for state in states if state.sum is not None]
+    merged.sum = sum(sums) if sums else None
+
+    mins = [state.min for state in states if state.min is not None]
+    merged.min = min(mins) if mins else None
+
+    maxes = [state.max for state in states if state.max is not None]
+    merged.max = max(maxes) if maxes else None
+
+    # Ordered by observation time, exactly as `merge` does it — so a value that
+    # is "latest" in a combined read is the same one that would be latest had the
+    # metrics never split across terms.
+    for state in states:
+        if state.first_ts is not None and (merged.first_ts is None or state.first_ts < merged.first_ts):
+            merged.first_ts, merged.first_value = state.first_ts, state.first_value
+        if state.last_ts is not None and (merged.last_ts is None or state.last_ts >= merged.last_ts):
+            merged.last_ts, merged.last_value = state.last_ts, state.last_value
+
+    return merged

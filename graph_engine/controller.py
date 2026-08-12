@@ -32,7 +32,7 @@ from graph_engine.retrieved import (
 )
 from graph_engine import retrieved
 from authentikate.models import Membership
-from core import enums, models
+from core import models
 from graph_engine import input_models as inputs
 from graph_engine import vocab, scalars
 from django.db import transaction
@@ -205,18 +205,6 @@ class GraphController:
         request = info.context.request
         return True
 
-    def _infer_metric_value_kind(self, value: Any) -> enums.ValueKind:
-        """Guess a value's kind, in the canonical vocabulary.
-
-        `ValueKind`, not `PropertyType`. Kinds store the canonical spelling, so
-        returning `PropertyType.FLOAT` ("float") here produced terms whose
-        `value_kind` did not match any column mapping — `writer.value_columns`
-        rejected them outright.
-        """
-        from evidence.writer import infer_value_kind
-
-        return infer_value_kind(value)
-
     def ensure_structure_kind(self, organization: Any, identifier: str) -> evidence_models.StructureKind:
         """The organization's term for a kind of external datum.
 
@@ -233,14 +221,16 @@ class GraphController:
         organization: Any,
         structure_kind: evidence_models.StructureKind,
         key: str,
-        value_kind: Any,
+        value_kind: Any = None,
+        *,
+        value: Any = None,
     ) -> evidence_models.MetricKind:
         """The organization's term for a kind of measurement.
 
-        Raises when this contradicts an existing declaration — see
-        `writer.ensure_metric_kind`.
+        A declaration is always honoured. Only an *undeclared* write against a
+        key that already has several terms fails — see `writer.ensure_metric_kind`.
         """
-        return writer.ensure_metric_kind(organization, structure_kind, key, value_kind)
+        return writer.ensure_metric_kind(organization, structure_kind, key, value_kind, value=value)
 
     def _materialize_supporting_evidence(
         self,
@@ -269,11 +259,16 @@ class GraphController:
             )
 
             for measurement in evidence.metrics:
+                # `MetricInput` carries no value kind, so this resolves by
+                # inference — but only when the key has no term yet. An existing
+                # term wins, which is what keeps a `45` and a `45.2` under the
+                # same key from becoming an INT term and a FLOAT term.
                 metric_kind = self.ensure_metric_kind(
                     organization,
                     structure_kind,
                     measurement.key,
-                    self._infer_metric_value_kind(measurement.value),
+                    getattr(measurement, "value_kind", None),
+                    value=measurement.value,
                 )
                 metric = writer.record_metric(
                     organization,
@@ -985,12 +980,20 @@ class GraphController:
         metric recorded through graph B resolve against, when graph A introduced
         the structure?" — stops existing once the term belongs to the
         organization. There is one term, and both graphs see it.
+
+        `RecordMetricInput` declares a ``value_kind`` and it is honoured. It used
+        to be a required input field that nothing read: the term was inferred
+        from the Python value and the declaration was discarded, so recording
+        `7.0` as a STRING silently produced a FLOAT term. Now that the value kind
+        is part of the term's identity, that would have decided identity by
+        ``type(value)`` — `45` minting INT and `45.2` FLOAT under one key.
         """
         metric_kind = self.ensure_metric_kind(
             organization,
             structure.kind,
             metric_input.key,
-            self._infer_metric_value_kind(metric_input.value),
+            getattr(metric_input, "value_kind", None),
+            value=metric_input.value,
         )
         metric = writer.record_metric(
             organization,

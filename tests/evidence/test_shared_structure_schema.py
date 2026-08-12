@@ -88,24 +88,32 @@ def test_a_measurement_recorded_by_either_graph_uses_one_term(
     assert metric.kind_id == from_a.pk
 
 
-def test_a_contradicting_value_kind_is_rejected(
+def test_a_contradicting_value_kind_makes_a_second_term(
     organization: Organization,
     roi_kind: evidence_models.StructureKind,
 ) -> None:
-    """One term, one type — and a disagreement is surfaced rather than resolved.
+    """A disagreement about type is two quantities, not one rejected write.
 
-    With separate per-graph categories, one graph could call `vector_length` a
-    number and another a string, and both would "work" while storing the same
-    measurement in different columns. Merged into one term, that is a real
-    conflict, so it raises and names both kinds.
+    This assertion is inverted from what it was, deliberately. It used to raise:
+    one term per `(organization, structure_kind, key)` meant the second
+    declaration contradicted the first, and naming both kinds in the error was
+    the best that could be done. But that refuses a measurement because someone
+    else reached the key first — and a float `confidence` and a category-label
+    `confidence` are not the same quantity disagreeing, they are two quantities
+    sharing a name.
+
+    The raise that remains is a different one, on the *undeclared* path: see
+    `test_metric_kind_identity`.
     """
-    writer.ensure_metric_kind(organization, roi_kind, "vector_length", ValueKind.FLOAT)
+    as_float = writer.ensure_metric_kind(organization, roi_kind, "vector_length", ValueKind.FLOAT)
+    as_string = writer.ensure_metric_kind(organization, roi_kind, "vector_length", ValueKind.STRING)
 
-    with pytest.raises(ValueError) as excinfo:
-        writer.ensure_metric_kind(organization, roi_kind, "vector_length", ValueKind.STRING)
+    assert as_float.pk != as_string.pk, "Each declaration gets its own term"
+    assert evidence_models.MetricKind.objects.for_organization(organization).filter(structure_kind=roi_kind, key="vector_length").count() == 2
 
-    message = str(excinfo.value)
-    assert "FLOAT" in message and "STRING" in message, "The error must name both kinds to be actionable"
+    # And re-declaring either is still idempotent — the identity is the whole
+    # four-tuple, so this is a lookup and not a third term.
+    assert writer.ensure_metric_kind(organization, roi_kind, "vector_length", ValueKind.FLOAT).pk == as_float.pk
 
 
 def test_the_same_key_on_different_structures_is_a_different_term(
@@ -114,10 +122,10 @@ def test_the_same_key_on_different_structures_is_a_different_term(
 ) -> None:
     """`vector_length` on an ROI and on a Mask are separate quantities.
 
-    Identity is `(organization, structure_kind, key)`. The old table enforced
-    `(graph, key)` while the lookup used `(graph, key, structure_category)`, so
-    two metrics named `area` on different structures collided at the database
-    level.
+    Identity is `(organization, structure_kind, key, value_kind)`. The old table
+    enforced `(graph, key)` while the lookup used
+    `(graph, key, structure_category)`, so two metrics named `area` on different
+    structures collided at the database level.
     """
     mask_kind = writer.ensure_structure_kind(organization, "@mikro/mask")
 

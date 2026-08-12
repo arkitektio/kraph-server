@@ -174,18 +174,35 @@ class StructureKind(models.Model):
 class MetricKind(models.Model):
     """A kind of measurement that can be made about a structure kind.
 
-    Identity is ``(organization, structure_kind, key)``: `vector_length` on an ROI
-    and on a Mask are separate terms, because they are separate quantities. The
-    old model enforced ``(graph, key)`` while looking up by
-    ``(graph, key, structure_category)``, so two metrics named `area` on different
-    structures collided.
+    Identity is ``(organization, structure_kind, key, value_kind)``.
 
-    Provenance is deliberately **not** part of this identity. Which tool measured
-    something lives on the :class:`Assertion` of each metric row, and "only what
-    AI_Model_X measured" is answered at read time by a conflict policy or a graph
-    selector — reversibly. Folding it into the term instead would fragment the
-    aggregation grain, so `MEAN` over a key would stop existing and become one mean
-    per tool with nothing to combine them.
+    **The structure kind** is in it because `vector_length` on an ROI and on a
+    Mask are separate quantities. The old model enforced ``(graph, key)`` while
+    looking up by ``(graph, key, structure_category)``, so two metrics named
+    `area` on different structures collided.
+
+    **The value kind** is in it because a disagreement about *what type a thing
+    is* is a disagreement about what is being measured. One tool recording
+    `confidence` as a float and another as a category label are measuring two
+    different quantities that happen to share a name, and the alternative —
+    rejecting whichever declaration arrived second — refuses a fact about the
+    world because someone else reached the key first. Note the cost is bounded:
+    `ValueKind` has eleven members, so a key can fan out to eleven terms and no
+    further. :func:`evidence.writer.ensure_metric_kind` additionally keeps
+    inference from forking a key, so in practice this is one term.
+
+    **Provenance is deliberately not in it**, and the value-kind argument above
+    does not extend to it. Which tool measured something is not a claim about
+    what the quantity *is*, so folding it in would fragment the aggregation
+    grain — `MEAN` over a key would become one mean per tool with nothing to
+    combine them — and `action_id` is per-deployment, so cardinality would be
+    unbounded rather than eleven. It lives on each metric's :class:`Assertion`,
+    and "only what AI_Model_X measured" is a read-time question answered
+    reversibly by a conflict policy or a graph selector.
+
+    Because the value kind is part of identity, `State`'s grain carries it too —
+    otherwise two terms would fold into one row and `MEAN` would divide a numeric
+    sum by a count that included strings.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -220,13 +237,21 @@ class MetricKind(models.Model):
         default_manager_name = "all_objects"
         constraints = [
             models.UniqueConstraint(
-                fields=["organization", "structure_kind", "key"],
-                name="unique_metric_kind_per_structure_kind",
+                fields=["organization", "structure_kind", "key", "value_kind"],
+                name="unique_metric_kind_per_value_kind",
             )
+        ]
+        indexes = [
+            # The undeclared-write lookup: every term for a key, to decide
+            # whether inference may mint a new one.
+            models.Index(fields=["organization", "structure_kind", "key"]),
         ]
 
     def __str__(self) -> str:
-        return f"{self.structure_kind.identifier}.{self.key}"
+        # The value kind is part of the name, not decoration: two terms for one
+        # key otherwise print identically, in the admin and in the error that
+        # exists to tell them apart.
+        return f"{self.structure_kind.identifier}.{self.key}: {self.value_kind}"
 
 
 class Structure(models.Model):
@@ -569,7 +594,18 @@ class State(models.Model):
     MEAN to MAX therefore changes what the next read returns without writing
     anything at all, which is the whole claim being made here.
 
-    **Grain: `(entity_ref, source_kind, key)` over metrics. Nothing else.**
+    **Grain: `(entity_ref, source_kind, key, value_kind)` over metrics. Nothing
+    else.**
+
+    ``value_kind`` is in the grain because it is in :class:`MetricKind`'s
+    identity, and leaving it out would have quietly undone that. Two terms for
+    one key would fold into one row; a string bumps ``n`` but contributes nothing
+    to ``sum`` (see :func:`evidence.state._numeric`), so `MEAN` over 40, 60 and
+    `"big"` would read 33.3. Worse, :func:`evidence.state.recompute` filtered the
+    same way, so the incremental fold and its own correctness backstop would have
+    agreed on the wrong answer — and `test_state_vector`'s property test would
+    have certified it.
+
     A rule may only aggregate measurements reaching an entity through the
     documented ``(Metric)-[DESCRIBES]->(Structure)-[INFORMS]->(Entity)`` path.
     Aggregating over *related entities or events* — "count this cell's mitosis
@@ -607,6 +643,11 @@ class State(models.Model):
         help_text="The kind of structure the measurements came through.",
     )
     key = models.CharField(max_length=1000, help_text="The measurement key being folded.")
+    value_kind = models.CharField(
+        max_length=32,
+        choices=[(k.value, k.value) for k in ValueKind],
+        help_text="The value kind of the metrics folded here. Part of the grain: a key with a FLOAT term and a STRING term maintains two rows, so neither aggregation is polluted by the other's values.",
+    )
 
     # --- The monoid ---
     n = models.PositiveIntegerField(default=0, help_text="Count of contributing metrics. COUNT reads this.")
@@ -649,8 +690,8 @@ class State(models.Model):
         default_manager_name = "all_objects"
         constraints = [
             models.UniqueConstraint(
-                fields=["organization", "entity_ref", "source_kind", "key"],
-                name="unique_state_per_entity_source_kind_key",
+                fields=["organization", "entity_ref", "source_kind", "key", "value_kind"],
+                name="unique_state_per_entity_source_kind_key_value_kind",
             )
         ]
         indexes = [
@@ -659,7 +700,7 @@ class State(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"{self.entity_ref}/{self.key} (n={self.n})"
+        return f"{self.entity_ref}/{self.key}: {self.value_kind} (n={self.n})"
 
 
 class Node(models.Model):

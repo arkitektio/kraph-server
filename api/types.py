@@ -692,6 +692,8 @@ class RichProperty:
         """The state vector behind this property, or None if it has no evidence."""
         from evidence import state as state_module
 
+        from graph_engine import projector
+
         rule = self._rule()
         graph = self._category.graph
         source = _structure_kind_for(graph, rule)
@@ -699,12 +701,16 @@ class RichProperty:
             return None
 
         key = rule.key if rule and rule.key else self._key
-        return state_module.state_for(graph.organization, self._entity.durable_ref, source, key)
+        value_kinds = projector._value_kinds_for_rule(graph, source, key, rule)
+        if value_kinds is None:
+            return None
+        return state_module.state_for(graph.organization, self._entity.durable_ref, source, key, value_kinds)
 
     @sync_to_async
     def _contributing_metrics(self) -> list:
         """Every active metric folded into this property's value."""
         from evidence import models as evidence_models
+        from graph_engine import projector
 
         rule = self._rule()
         graph = self._category.graph
@@ -713,6 +719,13 @@ class RichProperty:
             return []
 
         key = rule.key if rule and rule.key else self._key
+        # Narrowed the same way the value itself was derived. Listing metrics the
+        # fold never counted would make the explanation disagree with the number
+        # it is supposed to explain.
+        value_kinds = projector._value_kinds_for_rule(graph, source, key, rule)
+        if value_kinds is None:
+            return []
+
         structure_ids = list(
             evidence_models.Link.objects.for_organization(graph.organization)
             .filter(
@@ -735,6 +748,7 @@ class RichProperty:
                 structure_id__in=parsed,
                 structure__kind=source,
                 key=key,
+                value_kind__in=list(value_kinds),
                 status=evidence_models.LifecycleStatus.ACTIVE,
             )
             .select_related("assertion", "structure")

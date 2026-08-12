@@ -24,10 +24,13 @@ def _resolve(info: Info, kind_id: str) -> evidence_models.MetricKind:
 def update_metric_kind(info: Info, input: inputs.UpdateMetricDefinitionInput) -> types.MetricKind:
     """Update a metric kind's presentation.
 
-    `value_kind` is deliberately not editable. Changing it would reinterpret every
-    measurement already recorded under this term — values live in a column chosen
-    by the kind, so a term that changes type leaves its own history in the wrong
-    place.
+    `value_kind` is deliberately not editable, now for two reasons. It is part of
+    the term's identity, so changing it is not an edit but a move to a different
+    term — and the term it moved to may already exist. And it would reinterpret
+    every measurement already recorded here: values live in a column chosen by
+    the kind, and the state vectors folded from them are keyed by it, so a term
+    that changes type leaves both its history and its statistics in the wrong
+    place. Record under the other term instead; both are allowed to exist.
     """
     model = input.to_pydantic()
     kind = _resolve(info, str(model.id))

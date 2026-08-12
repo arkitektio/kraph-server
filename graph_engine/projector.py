@@ -24,13 +24,32 @@ import time
 from typing import Any, Iterable
 
 from core import models as core_models
+from core.enums import ValueKind
 from evidence import models as evidence_models
 from evidence import selector as selector_module
 from evidence import state as state_module
+from evidence import writer as writer_module
 from graph_engine import aggregate
 from graph_engine.input_models import DerivationType
 
 logger = logging.getLogger(__name__)
+
+#: INT and FLOAT are distinct *terms* — a cell count and a length are different
+#: declarations — but they are the same quantity to every aggregation: both live
+#: in `value_num` and `state._numeric` accepts both. A rule naming FLOAT that
+#: read only the FLOAT term would silently drop every INT measurement of the
+#: same key, so reads widen across the family and fold the rows together.
+#:
+#: Deliberately the *only* widening. Routing this through
+#: `Metric.VALUE_COLUMN_FOR_KIND` instead would also merge STRING with CATEGORY
+#: and collapse all five vector arities — a separate semantic decision smuggled
+#: in as an implementation detail.
+NUMERIC_FAMILY: frozenset[str] = frozenset({ValueKind.INT.value, ValueKind.FLOAT.value})
+
+
+def value_kind_family(value_kind: str) -> frozenset[str]:
+    """The value kinds that fold together with this one."""
+    return NUMERIC_FAMILY if value_kind in NUMERIC_FAMILY else frozenset({value_kind})
 
 
 def dirty(graph: core_models.Graph, structure_ids: Iterable[Any]) -> list[str]:
@@ -128,12 +147,14 @@ def _priority_scoped_value(
     entity_ref: str,
     source_kind: Any,
     key: str,
+    value_kinds: Iterable[str],
     prop: Any,
 ) -> Any:
     """The latest value from the most-trusted source that has one.
 
     PRIORITY_LATEST and LATEST_ASSERTION_TOOL cannot read the state vector: its
-    grain is `(entity, source_category, key)` with no subject discriminator, and
+    grain is `(entity, source_kind, key, value_kind)` with no subject
+    discriminator, and
     adding one would multiply every row by the number of sources that ever
     measured. These query the metrics directly instead — more expensive, but
     correct, and properties declared this way have few contributors by
@@ -154,10 +175,14 @@ def _priority_scoped_value(
     if not structure_ids:
         return None
 
+    # `value_kind__in` rather than the state grain: this path never reads State,
+    # so it has to apply the same narrowing itself or it would rank a STRING
+    # measurement against a FLOAT one under the same key.
     base = evidence_models.Metric.objects.for_organization(graph.organization).filter(
         structure_id__in=structure_ids,
         structure__kind=source_kind,
         key=key,
+        value_kind__in=list(value_kinds),
         status=evidence_models.LifecycleStatus.ACTIVE,
     )
 
@@ -183,6 +208,47 @@ def _structure_kind_for_rule(graph: core_models.Graph, rule: Any) -> Any:
     if not rule or not rule.source_node:
         return None
     return evidence_models.StructureKind.objects.for_organization(graph.organization).filter(identifier=rule.source_node).first()
+
+
+def _value_kinds_for_rule(graph: core_models.Graph, source_kind: Any, key: str, rule: Any) -> frozenset[str] | None:
+    """Which value kinds this rule reads, or None when that is ambiguous.
+
+    Symmetric with :func:`evidence.writer.ensure_metric_kind` on the write side:
+    a declaration is exact, and silence is resolved from the vocabulary.
+
+    `prop.value_kind` deliberately plays no part here. It is the aggregation's
+    *result* type — `AGGREGATION_RESULT_TYPES` maps COUNT to INT and
+    EUCLIDEAN_RANGE to FLOAT regardless of what the sources are — so using it to
+    pick the source row would pick the wrong one precisely where it differs.
+    """
+    declared = writer_module.canonical_value_kind(getattr(rule, "source_value_kind", None))
+    if declared is not None:
+        return value_kind_family(declared)
+
+    terms = sorted(str(term) for term in evidence_models.MetricKind.objects.for_organization(graph.organization).filter(structure_kind=source_kind, key=key).values_list("value_kind", flat=True))
+
+    families = {value_kind_family(term) for term in terms}
+
+    if not families:
+        # Nothing measured under this key yet. Kinds are minted lazily, so this
+        # is the ordinary state of a freshly declared property, not an error.
+        return frozenset()
+
+    if len(families) > 1:
+        logger.warning(
+            "%s.%s: '%s'.%s exists as %s, and the rule declares no source_value_kind, so there is no way to say which is meant. The property will not derive. Add `source_value_kind` to the rule.",
+            getattr(rule, "source_node", "?"),
+            key,
+            getattr(source_kind, "identifier", "?"),
+            key,
+            # The terms that actually exist, not the families they widen to —
+            # naming INT because FLOAT implies it would send the reader looking
+            # for a term nobody declared.
+            ", ".join(terms),
+        )
+        return None
+
+    return next(iter(families))
 
 
 def split_properties(
@@ -247,10 +313,18 @@ def derive_properties(
 
         key = rule.key if rule and rule.key else prop.key
 
+        value_kinds = _value_kinds_for_rule(graph, source_kind, key, rule)
+        if value_kinds is None:
+            # Ambiguous: the key has terms in more than one value-kind family and
+            # the rule does not say which. `_value_kinds_for_rule` has already
+            # said so; deriving from an arbitrary term would be worse than not
+            # deriving.
+            continue
+
         if prop.derivation in (DerivationType.PRIORITY_LATEST, DerivationType.LATEST_ASSERTION_TOOL):
-            value = _priority_scoped_value(graph, entity_ref, source_kind, key, prop)
+            value = _priority_scoped_value(graph, entity_ref, source_kind, key, value_kinds, prop)
         else:
-            state = state_module.state_for(organization, entity_ref, source_kind, key)
+            state = state_module.state_for(organization, entity_ref, source_kind, key, value_kinds)
 
             aggregation = rule.aggregation if rule and rule.aggregation else None
             if prop.derivation == DerivationType.LATEST and aggregation is None:

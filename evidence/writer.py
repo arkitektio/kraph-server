@@ -121,39 +121,82 @@ def ensure_structure_kind(organization: Organization, identifier: str) -> eviden
     return kind
 
 
+#: Sentinel for "the caller passed no value to infer from", distinct from a
+#: metric whose value genuinely is ``None``.
+_UNDECLARED: Any = object()
+
+
+def canonical_value_kind(value_kind: Any) -> str | None:
+    """The canonical spelling of a value kind, or None if nothing was declared.
+
+    Accepts a `ValueKind`, its string value, or the lowercase `PropertyType`
+    spelling the GraphQL inputs still speak.
+    """
+    if value_kind is None:
+        return None
+    declared = getattr(value_kind, "value", value_kind)
+    declared = _PROPERTY_TYPE_TO_VALUE_KIND.get(declared, declared)
+    if declared not in _COLUMN_FOR_KIND:
+        raise ValueError(f"Unknown value kind {value_kind!r}; expected one of {sorted(_COLUMN_FOR_KIND)}")
+    return declared
+
+
 def ensure_metric_kind(
     organization: Organization,
     structure_kind: evidence_models.StructureKind,
     key: str,
-    value_kind: Any,
+    value_kind: Any = None,
+    *,
+    value: Any = _UNDECLARED,
 ) -> evidence_models.MetricKind:
     """Get or create the organization's term for a kind of measurement.
 
-    Raises when an existing term is redeclared with a different ``value_kind``.
-    That is a real disagreement about what is being measured — one caller saying
-    a length is a number and another saying it is a string — and resolving it
-    silently would put the same measurement in different columns depending on who
-    wrote it. Naming both kinds in the error is what makes it fixable.
+    Identity includes the value kind, so a *declaration* is never refused: two
+    tools measuring `roi.confidence`, one as a float and one as a category label,
+    get two terms and both measurements are recorded. Rejecting the second would
+    be refusing a fact about the world because someone else reached the key
+    first.
+
+    When the caller declares nothing the term has to be guessed, and that is the
+    one case that can still fail:
+
+    - exactly one term exists for the key — use it, whatever its kind. This is
+      what stops inference from forking a key into INT and FLOAT terms just
+      because one measurement happened to be ``45`` and the next ``45.2``.
+    - none exists — infer from the value and mint.
+    - **two or more exist — raise, naming them.** Picking arbitrarily would put
+      the same measurement in different columns depending on timing, so the
+      caller has to say which term they meant.
     """
-    declared = getattr(value_kind, "value", value_kind)
-    declared = _PROPERTY_TYPE_TO_VALUE_KIND.get(declared, declared)
-    if declared is None:
-        raise ValueError(f"Cannot record '{structure_kind.identifier}'.{key} without a value kind: a term whose type is unknown cannot say which column its values belong in.")
+    declared = canonical_value_kind(value_kind)
 
-    existing = evidence_models.MetricKind.all_objects.filter(organization=organization, structure_kind=structure_kind, key=key).first()
-
-    if existing is None:
-        return evidence_models.MetricKind.all_objects.create(
+    if declared is not None:
+        kind, _ = evidence_models.MetricKind.all_objects.get_or_create(
             organization=organization,
             structure_kind=structure_kind,
             key=key,
             value_kind=declared,
         )
+        return kind
 
-    if existing.value_kind != declared:
-        raise ValueError(f"'{structure_kind.identifier}'.{key} is declared {existing.value_kind}; cannot redeclare it as {declared}. Change the schema, or record this under a different key.")
+    existing = list(evidence_models.MetricKind.all_objects.filter(organization=organization, structure_kind=structure_kind, key=key))
 
-    return existing
+    if len(existing) == 1:
+        return existing[0]
+
+    if len(existing) > 1:
+        kinds = ", ".join(sorted(term.value_kind for term in existing))
+        raise ValueError(f"'{structure_kind.identifier}'.{key} exists as {kinds}; a write that declares no value kind cannot say which one it means. Declare one.")
+
+    if value is _UNDECLARED:
+        raise ValueError(f"Cannot mint '{structure_kind.identifier}'.{key} without a value kind or a value to infer one from: a term whose type is unknown cannot say which column its values belong in.")
+
+    return evidence_models.MetricKind.all_objects.create(
+        organization=organization,
+        structure_kind=structure_kind,
+        key=key,
+        value_kind=infer_value_kind(value).value,
+    )
 
 
 def create_assertion(
@@ -212,21 +255,21 @@ def record_metric(
     confidence: float | None = None,
     confidence_type: str | None = None,
     measured_at: Any = None,
-    value_kind: str | None = None,
 ) -> evidence_models.Metric:
     """Append a measurement.
+
+    The row's value kind is the *term's*, not a separate argument. Since
+    ``value_kind`` became part of `MetricKind`'s identity there is no coherent
+    way for the two to differ: a row claiming STRING under a FLOAT term would be
+    filed in a column its own term says nothing lives in, and would then fold
+    into the state vector of a grain it does not belong to. Callers who want a
+    different kind resolve a different term.
 
     ``measured_at`` defaults to the assertion time when the caller does not know
     when the observation happened, which is honest about the two axes being
     equal in that case rather than leaving the column null and unqueryable.
     """
-    resolved = value_kind or kind.value_kind or infer_value_kind(value)
-    resolved = getattr(resolved, "value", resolved)
-    # The GraphQL surface still speaks `PropertyType` ("float", "integer",
-    # "point_3d"); storage speaks `ValueKind`. Normalise at the boundary rather
-    # than letting a lowercase spelling reach a column mapping that will not
-    # recognise it.
-    resolved = _PROPERTY_TYPE_TO_VALUE_KIND.get(resolved, resolved)
+    resolved = kind.value_kind
 
     return evidence_models.Metric.objects.create_for_organization(
         organization=organization,

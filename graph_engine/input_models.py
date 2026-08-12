@@ -156,6 +156,10 @@ class DerivationRule(BaseModel):
 
     source_node: Optional[str] = Field(..., description="The label of the the describing structure to read from.")
     key: Optional[str] = Field(..., description="The property key on the source node.")
+    source_value_kind: Optional[enums.ValueKind] = Field(
+        default=None,
+        description=("Which value kind of the source key to read, when the key has terms in more than one. Distinct from the property's own `value_kind`, which is the aggregation's result type: COUNT yields INT over STRING sources. Leave unset when the key is unambiguous."),
+    )
     aggregation: Optional[AggregationFunction] = None
 
 
@@ -601,6 +605,12 @@ class DerivationRuleInput(BaseModel):
 
     source_node: Optional[str] = Field(default=None, description="The label of the describing structure to read from")
     key: Optional[str] = Field(default=None, description="The property key on the source node")
+    source_value_kind: Optional[enums.ValueKind] = Field(
+        default=None,
+        description=(
+            "Which value kind of the source key to read, when the key has terms in more than one. Distinct from the property's own `value_kind`, which is the aggregation's result type: COUNT yields INT over STRING sources. Leave unset when the key is unambiguous. INT and FLOAT are read together either way."
+        ),
+    )
     aggregation: Optional[AggregationFunction] = Field(default=None, description="Aggregation function (MEAN, SUM, MAX, MIN, COUNT, etc.)")
 
     conflict_policy: ConflictPolicy = Field(
