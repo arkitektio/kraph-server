@@ -35,14 +35,16 @@ async def test_measurement_category_create_and_delete_materializes_edges(test_gr
 
     materialized_edges = core_models.MaterializedMeasurementEdge.objects.filter(
         graph=test_graph,
-        edge=measurement,
+        edge_category=measurement,
     )
 
     assert await materialized_edges.acount() == 1
 
     edge = await materialized_edges.aget()
-    assert edge.source_id == structure.id
-    assert edge.target_id == entity.id
+    # A measurement edge runs from a structure kind to an entity category, so the two
+    # endpoints live in differently-typed columns rather than one polymorphic pair.
+    assert edge.source_structure_kind_id == structure.id
+    assert edge.target_category_id == entity.id
 
     await sync_to_async(measurement.delete)()
 

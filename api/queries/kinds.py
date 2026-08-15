@@ -15,6 +15,30 @@ from api import context, filters, order, pagination, types
 from evidence import models as evidence_models
 
 
+def terms(
+    info: Info,
+    filters: filters.TermFilter | None = None,
+    ordering: List[order.TermOrder] | None = None,
+    pagination: pagination.StructurePaginationInput | None = None,
+) -> List[types.Term]:
+    """Every word this organization uses.
+
+    Its vocabulary, independent of any graph — which is the point: a claim names
+    one of these, so the list is the same whichever view you ask from.
+    """
+    organization = context.get_active_organization(info)
+    return evidence_models.Term.objects.for_organization(organization).order_by("kind", "key")
+
+
+def term(info: Info, id: strawberry.ID) -> types.Term:
+    """One word, if the caller may see it."""
+    organization = context.get_active_organization(info)
+    found = evidence_models.Term.objects.for_organization(organization).filter(id=id).first()
+    if found is None:
+        raise ValueError(f"Term not found with id {id}")
+    return found
+
+
 def structure_kinds(
     info: Info,
     filters: filters.StructureKindFilter | None = None,

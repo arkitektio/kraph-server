@@ -25,14 +25,14 @@ from evidence import models as evidence_models
 from graph_engine.controller import GraphController
 
 CREATE_ENTITY = """
-    mutation CreateEntity($input: CreateEntityInput!) {
-        createEntity(input: $input) { id }
+    mutation CreateEntity($input: AssertEntityExistsInput!) {
+        assertEntityExists(input: $input) { entity { id } }
     }
 """
 
 RECORD_METRIC = """
-    mutation RecordMetric($input: RecordMetricInput!) {
-        recordMetric(input: $input) { id value }
+    mutation RecordMetric($input: AssertMetricValueInput!) {
+        assertMetricValue(input: $input) { metric { id value } }
     }
 """
 
@@ -65,14 +65,14 @@ async def _build_measured_entity(
         CREATE_ENTITY,
         variable_values={
             "input": {
-                "entityCategory": str(category.pk),
+                "term": category.key,
                 "supportingEvidence": [{"identifier": "ROI", "object": object_id, "metrics": [{"key": "vector_length", "value": values[0], "valueKind": "FLOAT"}]}],
             }
         },
         context_value=ctx,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
-    entity_id = created.data["createEntity"]["id"]
+    entity_id = created.data["assertEntityExists"]["entity"]["id"]
 
     for value in values[1:]:
         recorded = await api_schema.execute(
@@ -194,9 +194,10 @@ async def test_entity_refs_survive_a_rebuild(
     refs, result = await refs_and_rebuild()
 
     assert refs, "Creating an entity with evidence must record an INFORMS link"
-    assert all(":" in ref for ref in refs)
-    # The ref names a uuid, not an AGE vertex id: vertex ids are integers.
-    assert all(not ref.split(":", 1)[1].isdigit() for ref in refs), "Refs must key on the durable uuid"
+    # A bare uuid: no graph prefix, and not an integer AGE vertex id. `UUID()`
+    # raising is the assertion.
+    for ref in refs:
+        uuid.UUID(ref)
     assert result["projected"] == 1
 
     after = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity_id}, context_value=simple_api_context)

@@ -4,7 +4,6 @@ from typing import Any, Generic, Iterable, Optional, TYPE_CHECKING, TypeVar
 
 from asgiref.sync import sync_to_async, async_to_sync
 from duckdb import identifier
-from polymorphic.managers import PolymorphicManager
 from django.db import models
 
 from datalayer import models as datalayer_models
@@ -38,12 +37,66 @@ class GraphManager(models.Manager):
         return graph
 
 
-class CategoryManager(PolymorphicManager, Generic[T]):
+class KindedManager(models.Manager):
+    """Manager for a proxy model that owns a subset of its table's ``kind`` values.
+
+    Multi-table inheritance used to do this work: each subclass had its own table, so
+    querying the subclass could only ever return its own rows. Now every former subclass
+    is a proxy over one table, and the ``kind`` column is the only thing separating them --
+    so the manager has to narrow reads and stamp writes. A model with neither ``KIND`` nor
+    ``KINDS`` (the concrete base) is left alone and sees every row.
+    """
+
+    def get_queryset(self) -> models.QuerySet[Any]:
+        queryset = super().get_queryset()
+        kinds = getattr(self.model, "KINDS", None)
+        return queryset.filter(kind__in=kinds) if kinds else queryset
+
+    def _stamped(self, values: dict[str, Any]) -> dict[str, Any]:
+        """Add this proxy's ``kind`` unless the caller set one explicitly.
+
+        Belt and braces, not the primary mechanism: `acreate` goes through the
+        *queryset*, so it never reaches these manager overrides. What actually
+        guarantees the column on every path is `KindDiscriminatedModel.save()`. The
+        load-bearing part of this manager is `get_queryset` -- it is what scopes reads
+        and, with them, the lookup half of `update_or_create`.
+        """
+        kind = getattr(self.model, "KIND", None)
+        if kind is not None:
+            values.setdefault("kind", kind)
+        return values
+
+    def create(self, **kwargs: Any) -> Any:
+        return super().create(**self._stamped(kwargs))
+
+    def get_or_create(self, defaults: Optional[dict[str, Any]] = None, **kwargs: Any) -> Any:
+        return super().get_or_create(defaults=self._stamped(dict(defaults or {})), **kwargs)
+
+    def update_or_create(self, defaults: Optional[dict[str, Any]] = None, **kwargs: Any) -> Any:
+        return super().update_or_create(defaults=self._stamped(dict(defaults or {})), **kwargs)
+
+
+class CategoryManager(KindedManager, Generic[T]):
     """Base manager for all category types, providing common functionality for creating/updating categories from definitions."""
 
     def key_to_age_name(self, key: str) -> str:
         """Convert a category key to an AGE-compatible name by converting to lowercase and replacing spaces with underscores."""
         return key.lower().replace(" ", "_")
+
+    def _term_for(self, graph: "core_models.Graph", key: str):
+        """The organization's word this category declares, minted if it is new.
+
+        The join the evidence log names. Every path that creates a category comes
+        through here, so two graphs declaring "AIS" reach the *same* term — which
+        is what lets a claim made in one view be read by the other.
+
+        `KIND` is the proxy's own discriminator, so an entity "AIS" and a relation
+        "AIS" resolve to different terms. They are different words that happen to
+        be spelled alike.
+        """
+        from evidence import writer as evidence_writer
+
+        return evidence_writer.ensure_term(graph.organization, self.model.KIND, key)
 
     def _resolve_store_id(self, image: datalayer_models.MediaStore | str | None) -> str | None:
         if image is None:
@@ -51,16 +104,6 @@ class CategoryManager(PolymorphicManager, Generic[T]):
         if hasattr(image, "id"):
             return image.id
         return image
-
-    async def _apply_tags(self, category: "core_models.Category", tags: Optional[Iterable[str]]) -> None:
-        if tags is None:
-            return
-        from core import models as core_models
-
-        await sync_to_async(category.tags.clear)()
-        for tag in tags:
-            tag_obj, _ = await sync_to_async(core_models.CategoryTag.objects.get_or_create)(value=tag, graph=category.graph)
-            await sync_to_async(category.tags.add)(tag_obj)
 
     async def _apply_ontology_references(
         self,
@@ -106,6 +149,11 @@ class NodeCategoryManager(CategoryManager[T], Generic[T]):
             "label": label,
             "description": definition.description,
             "age_name": resolved_age_name,
+            # The organization's word this category declares. Minted here rather
+            # than at each call site so that every path which creates a category —
+            # `materialize`, and the schema mutations — reaches the same term for
+            # the same key, which is what lets two graphs read one claim.
+            "term": await sync_to_async(self._term_for)(graph, definition.key),
             **(other_defaults or {}),
         }
 
@@ -121,7 +169,6 @@ class NodeCategoryManager(CategoryManager[T], Generic[T]):
             defaults=defaults,
         )
 
-        await self._apply_tags(category, definition.tags)
         await self._apply_ontology_references(category, definition.ontology_references)
 
         return category
@@ -188,7 +235,6 @@ class EntityCategoryManager(NodeCategoryManager["core_models.EntityCategory"]):
 
         await category.asave()
 
-        await self._apply_tags(category, definition.tags)
         await self._apply_ontology_references(category, definition.ontology_references)
 
         return category
@@ -210,6 +256,8 @@ class EdgeCategoryManager(CategoryManager[T], Generic[T]):
     def key_to_age_name(self, key: str) -> str:
         return key.upper()
 
+    # `_term_for` is inherited from `CategoryManager`.
+
     async def acreate_from_edge_definition(
         self,
         graph: "core_models.Graph",
@@ -226,6 +274,8 @@ class EdgeCategoryManager(CategoryManager[T], Generic[T]):
             "age_name": resolved_age_name,
             "source_definition": definition.source.model_dump(mode="json"),
             "target_definition": definition.target.model_dump(mode="json"),
+            # See `NodeCategoryManager._term_for` — the same reasoning for edges.
+            "term": await sync_to_async(self._term_for)(graph, definition.key),
             **(other_defaults or {}),
         }
 
@@ -244,7 +294,6 @@ class EdgeCategoryManager(CategoryManager[T], Generic[T]):
             defaults=defaults,
         )
 
-        await self._apply_tags(category, definition.tags)
         await self._apply_ontology_references(category, definition.ontology_references)
 
         return category

@@ -202,7 +202,7 @@ def test_retracting_one_term_moves_the_combined_read(
     assert before is not None
     assert aggregate.apply(AggregationFunction.MEAN, before) == pytest.approx(50.0)
 
-    writer.archive(organization, retracted, assertion)
+    writer.retract(organization, retracted, assertion)
     state_module.retract(retracted, [ENTITY_REF])
 
     after = state_module.state_for(organization, ENTITY_REF, informing_structure.kind, "confidence", projector.NUMERIC_FAMILY)

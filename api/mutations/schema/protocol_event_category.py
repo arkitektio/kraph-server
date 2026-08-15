@@ -3,8 +3,12 @@ from typing import cast
 import strawberry
 from kante.types import Info
 
-from api import inputs, types
-from core import models
+from api import context, inputs, types
+from core import enums, models
+from evidence import writer
+from ._guards import delete_or_explain
+from .._scoped import accessible_graph, scoped
+from ._rematerialize import fingerprint, rematerialize_if_moved
 
 
 def create_protocol_event_category(
@@ -22,12 +26,25 @@ def create_protocol_event_category(
     if model.image:
         media_store = models.MediaStore.objects.get(id=model.image)
 
-    vocab, created = models.NodeCategory.objects.update_or_create(
-        graph_id=model.graph,
-        age_name=model.key,
+    graph = accessible_graph(info, model.graph)
+    # Keyed on `(graph, key)`, which is the pair `Category` is unique on —
+    # and `key` is what a claim names. This used to key on `(graph, age_name)`
+    # and never set `key` at all, so every category created here landed with
+    # an empty one.
+    # `update_or_create`, so `properties` may be rewriting a category that
+    # already draws vertices. Snapshotted before, because the write destroys the
+    # old definition — see `_rematerialize`.
+    existing = models.ProtocolEventCategory.objects.filter(graph=graph, key=model.key).first()
+    before = fingerprint(existing) if existing else None
+
+    vocab, created = models.ProtocolEventCategory.objects.update_or_create(
+        graph=graph,
+        key=model.key,
         defaults=dict(
+            term=writer.ensure_term(graph.organization, enums.CategoryKindChoices.PROTOCOL_EVENT, model.key),
+            age_name=model.key,
             description=model.description,
-            store=media_store,
+            image=media_store,
             label=model.label if model.label else model.key,
             property_definitions=[pdef.model_dump() for pdef in model.properties] or [],
         ),
@@ -47,17 +64,20 @@ def create_protocol_event_category(
         else:
             raise ValueError("Each ontology reference must have either an ontology_id or ontology_url.")
 
-    if model.tags:
-        vocab.tags.clear()
-        for tag in model.tags:
-            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag, graph=item.graph.id)
-            vocab.tags.add(tag_obj)
-
     if model.pin is not None:
         if model.pin:
             vocab.pinned_by.add(info.context.request.user)
         else:
             vocab.pinned_by.remove(info.context.request.user)
+
+    if model.backfill:
+        context.get_controller().backfill_category(vocab)
+
+    if before is not None:
+        # After the backfill, not instead of it: a backfill widens membership and
+        # re-derives through `SET`, and only this path `REMOVE`s the keys a
+        # dropped property left behind.
+        rematerialize_if_moved(vocab, before)
 
     return cast(types.ProtocolEventCategory, vocab)
 
@@ -66,7 +86,7 @@ def update_protocol_event_category(info: Info, input: inputs.UpdateProtocolEvent
     """GraphQL mutation wrapper for updating event categories."""
     model = input.to_pydantic()  # Validate input with Pydantic models
 
-    item = models.ProtocolEventCategory.objects.get(id=model.id)
+    item = scoped(info, models.ProtocolEventCategory, model.id, what="protocol event category")
     if model.color:
         assert len(model.color) == 3 or len(model.color) == 4, "Color must be a list of 3 or 4 values RGBA"
 
@@ -81,12 +101,6 @@ def update_protocol_event_category(info: Info, input: inputs.UpdateProtocolEvent
     item.description = model.description if model.description else item.description
     item.color = model.color if model.color else item.color
     item.store = media_store if media_store else item.store
-
-    if model.tags:
-        item.tags.clear()
-        for tag in model.tags:
-            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag, graph=item.graph.id)
-            item.tags.add(tag_obj)
 
     if model.pin is not None:
         if model.pin:
@@ -103,6 +117,6 @@ def delete_protocol_event_category(
     input: inputs.DeleteProtocolEventDefinitionInput,
 ) -> strawberry.ID:
     model = input.to_pydantic()  # Validate input with Pydantic models
-    item = models.ProtocolEventCategory.objects.get(id=model.id)
-    item.delete()
+    item = scoped(info, models.ProtocolEventCategory, model.id, what="protocol event category")
+    delete_or_explain(item, what=f"protocol event category '{item.key}'", instead="Archive the events recorded under it first.")
     return model.id

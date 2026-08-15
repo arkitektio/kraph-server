@@ -61,27 +61,27 @@ def _append_match_conditions(alias: str, where_clauses: list[str], params: dict,
 
 
 def description(info: Info, id: scalars.GraphID) -> types.Description:
-    """Fetch a specific description edge by composite graph ID."""
+    """Fetch one description edge by the id of the claim that made it.
+
+    Resolved from the `Link` row, not from Apache AGE. The id a client holds is
+    that row's primary key — `RetrievedEdge.unique_id` returns it for every
+    row-backed edge, which is all of them — and this used to split it on the first
+    hyphen to recover a graph name and an integer AGE edge id. Given a uuid that
+    yielded a graph named after its first segment and `int()` over the rest:
+    `invalid literal for int() with base 10`, on the very id the API had just
+    handed out.
+
+    It could not be made to work by parsing harder. An AGE edge carries no claim
+    id and cannot: `project_edges` merges every assertion of one proposition onto
+    a single edge, which is the point — agreement is countable in the evidence and
+    a traversal still sees one connection.
+    """
     controller = context.get_controller()
 
-    graph_id = context.extract_graph_id(id)
-    local_id = context.extract_node_id(id)
-    graph = context.get_accessible_graph(info, graph_id)
-
-    result = controller.engine.execute(
-        graph,
-        """
-        MATCH (m:Metric)-[r]->(s:Structure)
-        WHERE id(r) = $rid
-        RETURN r, type(r) as label, id(r) as id, id(startNode(r)) as left_id, id(endNode(r)) as right_id
-        """,
-        {"rid": local_id},
-    )
-
-    if not result:
+    edge = controller.get_relation_by_id(str(id), info=info)
+    if edge is None:
         raise ValueError(f"Description edge with ID {id} not found")
 
-    edge = _to_retrieved_edge(str(graph.age_name), result[0])
     return types.Description(_value=edge)
 
 

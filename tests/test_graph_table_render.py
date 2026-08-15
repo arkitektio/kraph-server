@@ -9,7 +9,7 @@ def test_render_graph_table_query_returns_rows(graph_controller, test_graph: cor
     graph_query = core_models.GraphTableQuery.objects.create(
         graph=test_graph,
         key="literal_table",
-        name="Literal Table",
+        label="Literal Table",
         description="simple literal query",
         kind="TABLE",
         query="RETURN 1 AS value",
@@ -28,7 +28,7 @@ def test_render_graph_table_query_applies_order_and_pagination(graph_controller,
     graph_query = core_models.GraphTableQuery.objects.create(
         graph=test_graph,
         key="unwind_table",
-        name="Unwind Table",
+        label="Unwind Table",
         description="query with variables",
         kind="TABLE",
         query="UNWIND [1, 2, 3] AS value RETURN value",

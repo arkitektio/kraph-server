@@ -1,154 +1,99 @@
 """
 Entity mutation resolvers.
+
+Every one of these returns a :class:`api.types.EntityAssertion` — the claim it
+recorded, the node it was about, and every view that draws that node afterwards.
+See `graph_engine/results.py`.
 """
 
-from graph_engine import scalars
-from graph_engine import input_models
 from api import inputs, types, context
-from core import models
+from core import enums
 from kante import Info
 
 
-def create_entity(
+def assert_entity_exists(
     info: Info,
-    input: inputs.CreateEntityInput,
-) -> types.Entity:
+    input: inputs.AssertEntityExistsInput,
+) -> types.EntityAssertion:
+    """Claim that an entity exists, under one of the organization's words.
+
+    Named for the act rather than for a row being made: nothing is *created*
+    here. Somebody is claiming there is an AIS in this image, and a second
+    annotator may claim there is not — both are recorded, and each view's
+    selector decides whose word it counts. `create*` implied the writer owned the
+    fact, and had no honest answer for a second caller claiming the same thing.
+
+    Names a term, not a graph's category for one — so the claim can be made before
+    any view exists to hold it, and every view that declares the word holds it once
+    one does. Which views those are is decided by their own rules at projection
+    time; if none declare it, the entity is recorded and simply undrawn, which the
+    result reports as an empty `drawings`.
+
+    Authorization is the organization, because the claim is the organization's.
+    This used to resolve `entity_category.graph` and check access to that graph,
+    which was really an organization check reached the long way round.
     """
-    Create a new entity with optional supporting evidence structures.
+    input_model = input.to_pydantic()
 
-    Properties are automatically derived from the evidence according to
-    the graph schema rules.
+    organization = context.get_active_organization(info)
+    context.assert_can_access_organization(info, organization)
 
-    Args:
-        info: Strawberry Info context
-        input: CreateEntityInput         with graph_id, kind, and evidence
-
-    Returns:
-        EntityCreationResult with the created entity
-    """
-
-    input_model = input.to_pydantic()  # Validate input with Pydantic models
-
-    entity_category = models.EntityCategory.objects.get(id=input_model.entity_category)  # Validate graph exists
-    context.validate_graph_access(info, entity_category.graph)
-
-    # Get controller for the specified graph (includes provenance from context)
     controller = context.get_controller()
+    term = controller.ensure_term(organization, enums.CategoryKindChoices.ENTITY, input_model.term)
 
-    # Call controller with kwargs (provenance is already in the controller)
-    result = controller.create_entity(
-        entity_category=entity_category,
-        payload=input_model,
-        info=info,
+    return types.EntityAssertion(
+        _value=controller.create_entity(
+            organization=organization,
+            term=term,
+            payload=input_model,
+            info=info,
+        )
     )
 
-    return types.Entity(_value=result)
 
-
-def delete_entity(
+def retract_entity(
     info: Info,
-    input: inputs.DeleteEntityInput,
-) -> scalars.GraphID:
-    """
-    Delete an entity by its composite ID.
+    input: inputs.RetractEntityInput,
+) -> types.EntityAssertion:
+    """Claim that an entity is not there, and stop drawing it where that counts.
 
-    Args:
-        info: Strawberry Info context
-        input: Composite ID of the entity to delete (e.g., "1-abc123-def456-...")
+    Called retraction rather than archiving because nothing is put away: a
+    `Claim(stands=False)` is written and the vertex is removed. The entity's own
+    row, its metrics and its relations are all untouched — a derived value that
+    dropped a contributing measurement still has to be explainable afterwards.
 
-    Returns:
-        The ID of the deleted entity
-    """
-    controller = context.get_controller()
-    model = input.to_pydantic()  # Validate input with Pydantic models
-
-    graph_id = context.extract_graph_id(model.id)
-    node_id = context.extract_node_id(model.id)
-
-    graph = context.get_accessible_graph(info, graph_id)
-
-    deleted_entity = controller.get_node_by_local_id(graph, local_id=node_id)
-
-    controller.delete_entity(graph, local_id=node_id)
-
-    return model.id
-
-
-def archive_entity(
-    info: Info,
-    input: inputs.ArchiveEntityInput,
-) -> types.Entity:
-    """
-    Archive (soft delete) an entity by its composite ID.
-
-    Args:
-        info: Strawberry Info context
-        input: Composite ID of the entity to archive (e.g., "1-abc123-def456-...")
-
-    Returns:
-        The ID of the archived entity
+    The result's `drawings` is read back rather than assumed empty. Existence is
+    folded under each view's own selector, so a view that does not count this
+    subject still draws the node.
     """
     controller = context.get_controller()
 
     model = input.to_pydantic()
 
-    graph_id = context.extract_graph_id(model.id)
-    node_id = context.extract_node_id(model.id)
-
-    graph = context.get_accessible_graph(info, graph_id)
-
-    controller.archive_entity(
-        graph,
-        local_id=node_id,
-        info=info,
-    )
-
-    archived_entity = controller.get_node_by_local_id(graph, local_id=node_id)
-
-    return types.Entity(_value=archived_entity)
+    # The id is the entity's uuid, so there is no graph to extract from it and no
+    # `get_accessible_graph` call to make here. Authorization comes from the row:
+    # `archive_entity` resolves the node and checks the caller belongs to its
+    # organization.
+    return types.EntityAssertion(_value=controller.archive_entity(model.id, info=info))
 
 
-def update_entity(
+def attest_entity(
     info: Info,
-    input: inputs.UpdateEntityInput,
-) -> types.Entity:
-    """
-    Archive (soft delete) an entity by its composite ID.
+    input: inputs.AttestEntityInput,
+) -> types.EntityAssertion:
+    """Claim that an entity exists, and draw it back into every view that admits it.
 
-    Args:
-        info: Strawberry Info context
-        input: Composite ID of the entity to archive (e.g., "1-abc123-def456-...")
+    The counterpart of `retract_entity`, and deliberately not called "unarchive":
+    nothing is being undone. This records new evidence that the thing is there,
+    alongside whatever said it was not, and each graph decides which of them it
+    counts.
 
-    Returns:
-        The ID of the archived entity
+    Distinct from `assertEntityExists` because the subject differs, not the act:
+    that one names a word and mints a node, this one names a node that already
+    exists. Whether any projection picks the attestation up is reported in
+    `drawings`, and is not something this mutation fails on.
     """
     controller = context.get_controller()
 
     model = input.to_pydantic()
-
-    graph_id = context.extract_graph_id(model.id)
-    local_id = context.extract_node_id(model.id)
-    graph = context.get_accessible_graph(info, graph_id)
-
-    existing = controller.get_node_by_local_id(graph, local_id=local_id, info=info)
-    if not existing.category_id:
-        raise ValueError("Entity does not have a category and cannot be updated")
-
-    entity_category = models.EntityCategory.objects.get(id=existing.category_id)
-
-    controller.archive_entity(
-        graph,
-        local_id=local_id,
-        info=info,
-    )
-
-    updated = controller.create_entity(
-        entity_category=entity_category,
-        payload=input_models.CreateEntityInput(
-            entity_category=str(entity_category.pk),
-            supporting_evidence=model.supporting_evidence,
-        ),
-        info=info,
-    )
-
-    return types.Entity(_value=updated)
+    return types.EntityAssertion(_value=controller.attest_node(model.id, info=info))

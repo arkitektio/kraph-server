@@ -1,0 +1,131 @@
+"""Instance data cannot be destroyed through the API.
+
+Evidence is append-only, so a retraction is a `Claim` and the record of
+what a derived value once rested on survives. Every `delete*` mutation for
+instance data contradicted that outright — and `deleteEntity` was worse than a
+policy violation: it `DETACH DELETE`d the vertex while leaving `Node.status` at
+ACTIVE, and `rebuild` selected on exactly that, so `reproject` resurrected every
+deleted entity. The deletion was the one thing that did not survive.
+
+Note what did *not* make it wrong: removing the vertex. `archiveEntity` does
+exactly that now, and a replay agrees, because the claim behind it says the node
+no longer stands. The defect was destroying the projection while the evidence
+still said the thing was there — a graph disagreeing with its own log.
+
+Asserting the *absence* of a surface, rather than trusting the removal to stick,
+is the pattern this repo already uses for `infer_value_kind`: a primitive with no
+caller is one the next write path reaches for.
+
+Genuine erasure lives in `manage.py redact` — deliberate, operator-only, and
+unreachable from a GraphQL request.
+"""
+
+import re
+
+import pytest
+
+from api.schema import schema
+
+#: Every mutation that used to destroy instance data.
+REMOVED = [
+    "deleteEntity",
+    "deleteStructure",
+    "deleteMetric",
+    "deleteRelation",
+    "deleteMeasurement",
+    "deleteStructureRelation",
+    "deleteNaturalEvent",
+    "deleteProtocolEvent",
+    # Named `archive*`, implemented as `item.delete()`. Their `delete*` twins
+    # remain — these are config rows, not evidence — so nothing is lost by
+    # dropping the pair that lied about what it did.
+    "archiveScatterPlot",
+    # `updateEntity` archived the node and created a new uuid, so a correction
+    # forked identity and every metric and relation keyed on the old ref stopped
+    # describing it. Its whole payload was `supportingEvidence` — which
+    # `linkStructureToEntity` attaches to a *live* entity — plus
+    # `stickyProperties`, which nothing ever read. Corrections are additive now:
+    # measurements accumulate, and classification is a `CLASSIFIES` claim. This
+    # was the one mutation contradicting BIOLOGIST.md's rule that you cannot
+    # change the entity directly, only provide new evidence.
+    "updateEntity",
+    # Same defect for events: archive the node, mint a new uuid. They survived
+    # `updateEntity`'s removal only because their payload carried role mappings
+    # and nothing else could change who took part. `assertParticipation` does
+    # that additively now, so their last job is gone.
+    "updateNaturalEvent",
+    "updateProtocolEvent",
+]
+
+#: The retraction path each removed mutation's callers should use instead. Kept as
+#: a positive assertion so this file cannot pass by the schema simply being empty.
+#:
+#: Spelled `retract*` rather than `archive*`. Nothing is put away: a
+#: `Claim(stands=False)` is written and the drawing is removed, which is what the
+#: rest of the codebase has always called retraction.
+RETAINED = [
+    "retractEntity",
+    "retractStructure",
+    "retractMetric",
+    "retractRelation",
+    "retractMeasurement",
+    "retractStructureRelation",
+    "retractNaturalEvent",
+    "retractProtocolEvent",
+]
+
+
+def _mutation_fields() -> set[str]:
+    """The field names on the root Mutation type.
+
+    Parsed from the Mutation block rather than the whole SDL: `deleteEntity` is a
+    substring of `deleteEntityCategory` and of `DeleteEntityInput`, so a
+    document-wide search would pass while the mutation was still mounted.
+    """
+    sdl = str(schema)
+    block = re.search(r"type Mutation \{(.*?)\n\}", sdl, re.S)
+    assert block, "schema must expose a Mutation type"
+    return set(re.findall(r"^\s+(\w+)\(", block.group(1), re.M))
+
+
+@pytest.mark.parametrize("name", REMOVED)
+def test_hard_delete_mutation_is_absent(name: str) -> None:
+    """No API caller can destroy instance data."""
+    assert name not in _mutation_fields()
+
+
+@pytest.mark.parametrize("name", RETAINED)
+def test_the_retraction_path_remains(name: str) -> None:
+    """Removing the destructive path is only correct if the retracting one stayed."""
+    assert name in _mutation_fields()
+
+
+def test_the_additive_correction_path_remains() -> None:
+    """Removing `updateEntity` is only correct because these cover its job.
+
+    Evidence attaches to a live entity through `linkStructureToEntity`, and a
+    reclassification is a claim rather than a new node. Neither touches identity.
+    """
+    fields = _mutation_fields()
+    assert "linkStructureToEntity" in fields, "attaching evidence to an existing entity is how a correction is made"
+    assert "assertMetricValue" in fields
+    assert "assertParticipation" in fields, "changing who took part in an event must not require replacing the event"
+    assert "retractParticipation" in fields, "and withdrawing that claim must not require deleting it"
+
+
+def test_no_inert_sticky_properties_input() -> None:
+    """`stickyProperties` was in the schema and read by nothing.
+
+    Declared on every entity input, so a client could send it and be silently
+    ignored — the same silent-no-op class as the rule-less properties
+    `materialize` now rejects.
+    """
+    assert "stickyProperties" not in str(schema)
+
+
+def test_redact_is_a_management_command_not_a_mutation() -> None:
+    """Erasure exists, and is deliberately not reachable from a request."""
+    from django.core.management import get_commands
+
+    assert get_commands().get("redact") == "core"
+    assert not any(field.lower().startswith("redact") for field in _mutation_fields())

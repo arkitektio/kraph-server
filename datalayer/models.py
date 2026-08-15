@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from django.db import models
-from polymorphic.models import PolymorphicModel
 from datalayer import base_models
+from datalayer.enums import DatalayerStoreKindChoices
 from datalayer.datalayer import AccessGrant, Datalayer
 
 if TYPE_CHECKING:
@@ -27,17 +27,62 @@ def build_opaque_storage_key(original_file_name: str, generator: Callable[[], st
     return generator()
 
 
-class DatalayerStore(PolymorphicModel):
-    """An object stored behind the S3-backed datalayer."""
+class StoreManager(models.Manager):
+    """Scopes a store proxy to its own `kind`, the way its own table used to."""
+
+    def get_queryset(self) -> models.QuerySet:
+        queryset = super().get_queryset()
+        kind = self.model.KIND
+        return queryset.filter(kind=kind) if kind is not None else queryset
+
+    def create(self, **kwargs):
+        kind = self.model.KIND
+        if kind is not None:
+            kwargs.setdefault("kind", kind)
+        return super().create(**kwargs)
+
+
+class DatalayerStore(models.Model):
+    """An object stored behind the S3-backed datalayer.
+
+    One table for every kind of store. `kind` says which proxy owns a row; the Zarr
+    columns below are simply unset on the other three kinds, which add no state of their
+    own and differ only in behaviour.
+    """
+
+    KIND: "str | None" = None
 
     objects: models.Manager["DatalayerStore"]  # type: ignore[assignment]
 
+    kind = models.CharField(
+        max_length=32,
+        choices=DatalayerStoreKindChoices.choices,
+        help_text="Which kind of object this store points at.",
+    )
     path = models.CharField(max_length=1000, null=True, blank=True, help_text="The object-store URI of the file", unique=True)
     key = models.CharField(max_length=1000, help_text="The object key/path within the datalayer bucket.")
     bucket = models.CharField(max_length=1000, help_text="The datalayer bucket/service this store belongs to.")
     original_file_name = models.CharField(max_length=1000, null=True, blank=True, help_text="The original client-provided file name.")
     content_type = models.CharField(max_length=255, null=True, blank=True, help_text="The client-provided content type for the uploaded file.")
     populated = models.BooleanField(default=False, help_text="Whether the store has been populated with a valid path and is ready for use.")
+
+    # --- Zarr only ---
+    shape = models.JSONField(null=True, blank=True, help_text="The shape of the Zarr array stored at this location.")
+    chunks = models.JSONField(null=True, blank=True, help_text="The chunk size of the Zarr array stored at this location.")
+    version = models.CharField(max_length=10, null=True, blank=True, help_text="The Zarr format version of the array stored at this location.")
+    dtype = models.CharField(max_length=255, null=True, blank=True, help_text="The dtype of the Zarr array stored at this location.")
+    dimension_names = models.JSONField(null=True, blank=True, help_text="The dimension names declared by the Zarr array.")
+    fill_value = models.JSONField(null=True, blank=True, help_text="The fill value declared by the Zarr array.")
+    attributes = models.JSONField(null=True, blank=True, help_text="The user attributes stored in zarr.json.")
+    storage_transformers = models.JSONField(null=True, blank=True, help_text="The storage transformers declared by the Zarr array.")
+    chunk_key_encoding = models.JSONField(null=True, blank=True, help_text="The chunk key encoding configuration for the Zarr array.")
+    codecs = models.JSONField(null=True, blank=True, help_text="The codec pipeline declared for the Zarr array.")
+
+    def save(self, *args, **kwargs):
+        """Stamp the discriminator so a proxy's rows are visible through that proxy."""
+        if not self.kind and type(self).KIND is not None:
+            self.kind = type(self).KIND
+        return super().save(*args, **kwargs)
 
     def build_store_path(self, datalayer: Datalayer | None = None) -> str:
         """Return the canonical object-store URI for this store."""
@@ -79,7 +124,11 @@ class DatalayerStore(PolymorphicModel):
 class BigFileStore(DatalayerStore):
     """A large file stored behind the S3-backed datalayer."""
 
-    objects: models.Manager["BigFileStore"]  # type: ignore[assignment]
+    KIND = DatalayerStoreKindChoices.BIG_FILE
+    objects = StoreManager()
+
+    class Meta:
+        proxy = True
 
     def grant_read_access(self, datalayer: Datalayer, host: str | None = None) -> base_models.BigFileAccessGrant:
         """Return temporary credentials for reading this big file."""
@@ -113,7 +162,11 @@ class BigFileStore(DatalayerStore):
 class MediaStore(DatalayerStore):
     """Media objects stored behind the S3-backed datalayer."""
 
-    objects: models.Manager["MediaStore"]  # type: ignore[assignment]
+    KIND = DatalayerStoreKindChoices.MEDIA
+    objects = StoreManager()
+
+    class Meta:
+        proxy = True
 
     def grant_read_access(self, datalayer: Datalayer, host: str | None = None) -> base_models.MediaAccessGrant:
         """Return temporary credentials for reading this media object."""
@@ -149,18 +202,11 @@ class MediaStore(DatalayerStore):
 class ZarrStore(DatalayerStore):
     """Zarr objects stored behind the S3-backed datalayer."""
 
-    objects: models.Manager["ZarrStore"]  # type: ignore[assignment]
+    KIND = DatalayerStoreKindChoices.ZARR
+    objects = StoreManager()
 
-    shape = models.JSONField(null=True, blank=True, help_text="The shape of the Zarr array stored at this location.")
-    chunks = models.JSONField(null=True, blank=True, help_text="The chunk size of the Zarr array stored at this location.")
-    version = models.CharField(max_length=10, null=True, blank=True, help_text="The Zarr format version of the array stored at this location.")
-    dtype = models.CharField(max_length=255, null=True, blank=True, help_text="The dtype of the Zarr array stored at this location.")
-    dimension_names = models.JSONField(null=True, blank=True, help_text="The dimension names declared by the Zarr array.")
-    fill_value = models.JSONField(null=True, blank=True, help_text="The fill value declared by the Zarr array.")
-    attributes = models.JSONField(null=True, blank=True, help_text="The user attributes stored in zarr.json.")
-    storage_transformers = models.JSONField(null=True, blank=True, help_text="The storage transformers declared by the Zarr array.")
-    chunk_key_encoding = models.JSONField(null=True, blank=True, help_text="The chunk key encoding configuration for the Zarr array.")
-    codecs = models.JSONField(null=True, blank=True, help_text="The codec pipeline declared for the Zarr array.")
+    class Meta:
+        proxy = True
 
     def grant_read_access(self, datalayer: Datalayer, host: str | None = None) -> base_models.ZarrAccessGrant:
         """Return temporary credentials for reading this Zarr prefix."""
@@ -238,7 +284,11 @@ class ZarrStore(DatalayerStore):
 class ParquetStore(DatalayerStore):
     """Parquet objects stored behind the S3-backed datalayer."""
 
-    objects: models.Manager["ParquetStore"]  # type: ignore[assignment]
+    KIND = DatalayerStoreKindChoices.PARQUET
+    objects = StoreManager()
+
+    class Meta:
+        proxy = True
 
     def grant_read_access(self, datalayer: Datalayer, host: str | None = None) -> base_models.ParquetAccessGrant:
         """Return temporary credentials for reading this parquet object."""

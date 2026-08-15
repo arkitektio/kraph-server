@@ -1,89 +1,79 @@
 """
 Structure relation mutation resolvers.
-"""
 
-from typing import cast
+Structure relations are evidence rows and nothing else. Both endpoints are
+structures, which stopped being AGE vertices in M1, so there is no edge to
+project and no graph in the identifier — the `Link` primary key names the claim
+directly, the same way a structure's id does.
+
+Their results therefore always carry an empty `drawings`, structurally: neither
+endpoint has a vertex, so there is nothing for an edge to run between.
+"""
 
 from kante.types import Info
 
 from api import context, inputs, types
-from core import models
-from graph_engine import scalars
+from core import enums
 
 
-def create_structure_relation(info: Info, input: inputs.CreateStructureRelationInput) -> types.StructureRelation:
+def assert_structure_relation_exists(info: Info, input: inputs.AssertStructureRelationExistsInput) -> types.StructureRelationAssertion:
+    """Assert a relation between two structures, under one of the organization's words.
+
+    Names a term. Both endpoints were already organization-scoped and there is no
+    projection to target, so the category this used to take was pure ceremony: it
+    was reduced to its term and its graph's organization and then dropped.
+    """
     payload = input.to_pydantic()
     controller = context.get_controller()
 
-    graph1 = context.extract_graph_id(cast(scalars.GraphID, payload.source_id))
-    graph2 = context.extract_graph_id(cast(scalars.GraphID, payload.target_id))
+    organization = context.get_active_organization(info)
+    context.assert_can_access_organization(info, organization)
 
-    if graph1 != graph2:
-        raise ValueError("Source and target structures must belong to the same graph")
+    term = controller.ensure_term(organization, enums.CategoryKindChoices.STRUCTURE_RELATION, payload.term)
 
-    graph = context.get_accessible_graph(info, graph1)
-
-    category = models.StructureRelationCategory.objects.get(id=payload.category)
-    context.validate_graph_access(info, category.graph)
-    if str(category.graph.age_name) != str(graph.age_name):
-        raise ValueError("Structure relation category must belong to the same graph as the structures")
-
-    created = controller.create_relation(
-        category=cast(models.RelationCategory, category),
-        payload=payload,
-        info=info,
+    return types.StructureRelationAssertion(
+        _value=controller.create_structure_relation(
+            organization=organization,
+            term=term,
+            payload=payload,
+            info=info,
+        )
     )
 
-    return types.StructureRelation(_value=created)
 
+def update_structure_relation(info: Info, input: inputs.UpdateStructureRelationInput) -> types.StructureRelationAssertion:
+    """Replace a structure relation, keeping the old assertion on the record.
 
-def update_structure_relation(info: Info, input: inputs.UpdateStructureRelationInput) -> types.StructureRelation:
+    Two assertions are recorded and the result reports the second — see
+    `update_relation`.
+    """
     model = input.to_pydantic()
     controller = context.get_controller()
 
-    graph_id = context.extract_graph_id(model.id)
-    local_id = context.extract_node_id(model.id)
-    graph = context.get_accessible_graph(info, graph_id)
+    link = controller.resolve_edge_link(str(model.id), info)
+    organization = link.organization
+    context.assert_can_access_organization(info, organization)
 
-    existing = controller.get_relation_by_id(local_id)
-    if existing is None:
-        raise ValueError(f"Structure relation not found with ID {model.id}")
+    # Retract then re-assert, never edit in place: the correction and what it
+    # corrected both stay on the record. Same shape as `supersede_metric_value`.
+    controller.archive_relation(relation_id=str(model.id), info=info)
 
-    category = models.StructureRelationCategory.objects.get(graph=graph, age_name=existing.label)
-
-    controller.archive_relation(graph, relation_id=local_id, info=info)
-
-    updated = controller.create_relation(
-        category=cast(models.RelationCategory, category),
-        payload=model,
-        info=info,
+    return types.StructureRelationAssertion(
+        _value=controller.create_structure_relation(
+            organization=organization,
+            term=controller.edge_term(link),
+            payload=model,
+            info=info,
+        )
     )
 
-    return types.StructureRelation(_value=updated)
 
-
-def delete_structure_relation(info: Info, input: inputs.DeleteStructureRelationInput) -> scalars.GraphID:
+def retract_structure_relation(info: Info, input: inputs.RetractStructureRelationInput) -> types.StructureRelationAssertion:
+    """Retract a structure relation assertion without destroying it."""
     model = input.to_pydantic()
     controller = context.get_controller()
 
-    graph_id = context.extract_graph_id(model.id)
-    local_id = context.extract_node_id(model.id)
-    graph = context.get_accessible_graph(info, graph_id)
+    link = controller.resolve_edge_link(str(model.id), info)
+    context.assert_can_access_organization(info, link.organization)
 
-    controller.delete_relation(graph, relation_id=local_id, info=info)
-    return model.id
-
-
-def archive_structure_relation(info: Info, input: inputs.ArchiveStructureRelationInput) -> types.StructureRelation:
-    model = input.to_pydantic()
-    controller = context.get_controller()
-
-    graph_id = context.extract_graph_id(model.id)
-    local_id = context.extract_node_id(model.id)
-    graph = context.get_accessible_graph(info, graph_id)
-
-    controller.archive_relation(graph, relation_id=local_id, info=info)
-    archived = controller.get_relation_by_id(local_id)
-    assert archived is not None, "Structure relation was archived but could not be loaded"
-
-    return types.StructureRelation(_value=archived)
+    return types.StructureRelationAssertion(_value=controller.archive_relation(relation_id=str(model.id), info=info))

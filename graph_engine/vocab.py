@@ -1,26 +1,33 @@
-# Measurement
-DESCRIBES = "DESCRIBES"  # Relationship indicating that an Measurement describes an Structure
-INFORMS = "INFORMS"  # Relationship indicating that a Structure informs an Entity / Event
-ASSERTED = "ASSERTED"  # Relationship indicating that an Assertion supports a Measurment / Observation
+"""The label strings the read side recognises.
 
-# Provenance
-GENERATED = "GENERATED"  # Relationship indicating that an Assertion generated a  Measurement / Observation
+**Nothing here is ever written to Apache AGE.** `projector.create_vertex` labels
+a vertex with `category.age_name` — the category's key, chosen by whoever defined
+the schema — and `project_edges` / `project_participation` label edges the same
+way. So these are names the *reader* looks for, not names the writer produces,
+and `VocabNodeTypeMap` in `graph_engine/retrieved.py` is the one place they are
+consulted.
 
+Seven more constants used to live here and were read by nothing at all:
+`DESCRIBES`, `INFORMS`, `ASSERTED`, `GENERATED`, `REIFIES_AS_SOURCE`,
+`REIFIES_AS_TARGET` and `ShadowLink`. They named relationship types from an
+earlier design in which provenance and structure-to-entity links were AGE edges;
+`evidence.Link` replaced all of them, and `evidence/models.py` says so. Keeping
+the constants made that design look current to anyone grepping for it — an
+`INFORMS` here and an `evidence.Link.Kind.INFORMS` there, spelled identically,
+meaning different things, only one of them live.
+"""
 
-# Relation
-REIFIES_AS_SOURCE = "REIFIES_AS_SOURCE"  # Relationship indicating that a Relation reifies a StructureRelation as source
-REIFIES_AS_TARGET = "REIFIES_AS_TARGET"  # Relationship indicating that a Relation reifies a StructureRelation as target
-
-ShadowLink = "ShadowLink"  # A link representing a shadow relationship between nodes
-
+#: Labels the adapters in `graph_engine/retrieved.py` construct for rows that
+#: have no vertex at all — a structure, a metric and an assertion are Postgres
+#: rows, and these are what their in-memory node-shaped form is labelled with.
 Structure = "Structure"
 Metric = "Metric"
-
-#
 Assertion = "Assertion"
-# An assertion about what happend when to the graph, and who was responsible for it
 
-# Entity / Event Types
+#: Labels `VocabNodeTypeMap` recognises when discriminating a node read out of a
+#: projection. A vertex only carries one of these if somebody happened to name a
+#: category key exactly so; the reliable discriminator is the `type` property,
+#: which `RetrievedNode.node_type` checks first.
 Entity = "Entity"
 ProtocolEvent = "ProtocolEvent"
 NaturalEvent = "NaturalEvent"

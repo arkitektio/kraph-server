@@ -20,14 +20,14 @@ from kante.context import HttpContext
 from core import models as core_models
 
 CREATE_ENTITY = """
-    mutation CreateEntity($input: CreateEntityInput!) {
-        createEntity(input: $input) { id }
+    mutation CreateEntity($input: AssertEntityExistsInput!) {
+        assertEntityExists(input: $input) { entity { id } }
     }
 """
 
 RECORD_METRIC = """
-    mutation RecordMetric($input: RecordMetricInput!) {
-        recordMetric(input: $input) { id }
+    mutation RecordMetric($input: AssertMetricValueInput!) {
+        assertMetricValue(input: $input) { metric { id } }
     }
 """
 
@@ -60,14 +60,14 @@ async def test_recording_a_metric_updates_the_derived_value(
         CREATE_ENTITY,
         variable_values={
             "input": {
-                "entityCategory": str(category.pk),
+                "term": category.key,
                 "supportingEvidence": [{"identifier": "ROI", "object": object_id, "metrics": [{"key": "vector_length", "value": 40.0, "valueKind": "FLOAT"}]}],
             }
         },
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
-    entity_id = created.data["createEntity"]["id"]
+    entity_id = created.data["assertEntityExists"]["entity"]["id"]
 
     assert (await _properties(api_schema, simple_api_context, entity_id))["avg_length"] == pytest.approx(40.0)
 
@@ -108,7 +108,7 @@ async def test_the_projection_carries_its_schema_version(
 
     created = await api_schema.execute(
         CREATE_ENTITY,
-        variable_values={"input": {"entityCategory": str(category.pk)}},
+        variable_values={"input": {"term": category.key}},
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
@@ -119,7 +119,7 @@ async def test_the_projection_carries_its_schema_version(
             node(id: $id) { ... on Entity { id schemaVersion } }
         }
         """,
-        variable_values={"id": created.data["createEntity"]["id"]},
+        variable_values={"id": created.data["assertEntityExists"]["entity"]["id"]},
         context_value=simple_api_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"

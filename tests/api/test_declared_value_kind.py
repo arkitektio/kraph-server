@@ -1,6 +1,6 @@
 """`recordMetric` honours the value kind the caller declared.
 
-`RecordMetricInput.value_kind` has always been a **required** field, and until
+`AssertMetricValueInput.value_kind` has always been a **required** field, and until
 this change nothing read it: both write paths called `_infer_metric_value_kind`
 on the Python value and threw the declaration away. Recording `7.0` as a STRING
 produced a FLOAT term, and the caller was never told.
@@ -24,8 +24,8 @@ from core import models as core_models
 from evidence import models as evidence_models
 
 RECORD = """
-mutation RecordMetric($input: RecordMetricInput!) {
-    recordMetric(input: $input) { id value }
+mutation RecordMetric($input: AssertMetricValueInput!) {
+    assertMetricValue(input: $input) { metric { id value } }
 }
 """
 

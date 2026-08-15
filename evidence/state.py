@@ -22,6 +22,7 @@ from typing import Any, Iterable
 from django.db import transaction
 from django.db.models import Max, Min, Sum
 
+from evidence import claims as claims_module
 from evidence import models as evidence_models
 
 
@@ -130,6 +131,28 @@ def retract(
     return touched
 
 
+def fold(metrics: Any, into: evidence_models.State) -> evidence_models.State:
+    """Fold a set of metrics into a state vector, in place. Does not save.
+
+    The batch counterpart of :func:`merge`, and the one place the statistics are
+    computed from scratch. :func:`recompute` saves what this produces;
+    :func:`graph_engine.projector.derive_properties` uses it **unsaved** to answer
+    a selector-scoped read without keeping a second row per view.
+    """
+    aggregates = metrics.aggregate(total=Sum("value_num"), lowest=Min("value_num"), highest=Max("value_num"))
+    ordered = list(metrics.order_by("measured_at"))
+
+    into.n = len(ordered)
+    into.sum = aggregates["total"]
+    into.min = aggregates["lowest"]
+    into.max = aggregates["highest"]
+    into.first_ts = ordered[0].measured_at if ordered else None
+    into.first_value = ordered[0].value if ordered else None
+    into.last_ts = ordered[-1].measured_at if ordered else None
+    into.last_value = ordered[-1].value if ordered else None
+    return into
+
+
 @transaction.atomic
 def recompute(state: evidence_models.State) -> evidence_models.State:
     """Rebuild one row from the metrics that still support it.
@@ -138,26 +161,25 @@ def recompute(state: evidence_models.State) -> evidence_models.State:
     maintenance did, this is what the answer should have been. `test_state_vector`
     asserts the two agree for random metric sequences, which is the only way to
     be confident a monoid was implemented rather than merely described.
+
+    **No selector.** State is organization grain, so this counts every live
+    metric reaching the entity — exactly as :func:`merge` does. It used to be
+    that `refold_state` applied a graph's selector here and `merge` did not, so
+    the incremental fold and the rebuild produced different rows, and this
+    "backstop" agreed with the wrong one. Which metrics a *view* counts is a
+    read-time question; see `projector.derive_properties`.
     """
-    metrics = evidence_models.Metric.objects.for_organization(state.organization).filter(
-        structure__kind=state.source_kind,
-        key=state.key,
-        value_kind=state.value_kind,
-        status=evidence_models.LifecycleStatus.ACTIVE,
-        structure__in=_structures_informing(state),
+    metrics = claims_module.standing(
+        evidence_models.Metric.objects.for_organization(state.organization).filter(
+            structure__kind=state.source_kind,
+            key=state.key,
+            value_kind=state.value_kind,
+            structure__in=_structures_informing(state),
+        ),
+        "metric",
     )
 
-    aggregates = metrics.aggregate(total=Sum("value_num"), lowest=Min("value_num"), highest=Max("value_num"))
-    ordered = list(metrics.order_by("measured_at"))
-
-    state.n = len(ordered)
-    state.sum = aggregates["total"]
-    state.min = aggregates["lowest"]
-    state.max = aggregates["highest"]
-    state.first_ts = ordered[0].measured_at if ordered else None
-    state.first_value = ordered[0].value if ordered else None
-    state.last_ts = ordered[-1].measured_at if ordered else None
-    state.last_value = ordered[-1].value if ordered else None
+    fold(metrics, state)
     state.needs_recompute = False
     state.save()
     return state
@@ -178,7 +200,6 @@ def _structures_informing(state: evidence_models.State) -> list[uuid.UUID]:
         .filter(
             kind=evidence_models.Link.Kind.INFORMS,
             target_ref=state.entity_ref,
-            status=evidence_models.LifecycleStatus.ACTIVE,
         )
         .values_list("source_ref", flat=True)
     )

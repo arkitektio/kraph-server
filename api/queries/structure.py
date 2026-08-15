@@ -125,9 +125,10 @@ def informing_structures(
     """
     controller = context.get_controller()
 
-    # Entities are still projected into AGE, so their ids remain composite —
-    # unlike the structures this returns.
-    graph = context.get_accessible_graph(info, context.extract_graph_id(entity_id))
+    # An entity id is its uuid, so the graph comes from the `Node` row rather
+    # than off the front of the id.
+    node = controller._resolve_node(entity_id, info)
+    graph = controller._graph_for_node(node)
 
     responses = controller.get_informing_structures(graph, entity_id=entity_id, info=info)
     return [types.Structure(_value=r) for r in responses]

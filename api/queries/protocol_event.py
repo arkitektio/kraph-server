@@ -11,14 +11,12 @@ from graph_engine import input_models, retrieved, scalars
 
 
 def protocol_event(info: Info, id: scalars.GraphID) -> types.ProtocolEvent:
-    """Fetch a specific protocol event by composite graph ID."""
+    """Fetch a specific protocol event by its uuid."""
     controller = context.get_controller()
 
-    graph_id = context.extract_graph_id(id)
-    local_id = context.extract_node_id(id)
-
-    graph = context.get_accessible_graph(info, graph_id)
-    response = controller.get_node(graph=graph, local_id=local_id, info=info)
+    # The id is the node's own uuid, so there is no graph to take off the front
+    # of it: the `Node` row says which graph projects it.
+    response = controller.get_node_for_composite_id(composite_id=id, info=info)
     if response is None:
         raise ValueError(f"Protocol event with ID {id} not found")
 
@@ -89,14 +87,10 @@ def protocol_events(
     params: dict[str, object] = {"category_id": str(category.id)}
 
     if filter_model.ids:
-        node_ids: list[int] = []
-        for graph_id in filter_model.ids:
-            if str(context.extract_graph_id(graph_id)) == str(graph.age_name):
-                node_ids.append(int(context.extract_node_id(graph_id)))
-        if not node_ids:
-            return []
-        params["ids"] = node_ids
-        where_clauses.append("id(n) IN $ids")
+        # Matched on the uuid the vertex carries, not on `id(n)`. A client holds
+        # the durable id; the AGE vertex id is reassigned by every reproject.
+        params["ids"] = [str(node_id) for node_id in filter_model.ids]
+        where_clauses.append("n.id IN $ids")
 
     if filter_model.has_property:
         params["has_property"] = filter_model.has_property

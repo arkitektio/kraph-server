@@ -32,7 +32,6 @@ from graph_engine import scalars
 class Query:
     """Root query type, grouped by domain sections: Entity Type, Schema, and Insights."""
 
-    # =========================
     # Entity Type Section
     # =========================
     node = kante.django_field(queries.node, description="Get a node by ID")
@@ -56,16 +55,18 @@ class Query:
     input_participations = kante.django_field(queries.input_participations, description="List input participation edges in a graph")
     output_participation = kante.django_field(queries.output_participation, description="Get an output participation edge by composite graph ID")
     output_participations = kante.django_field(queries.output_participations, description="List output participation edges in a graph")
-    assertion = kante.django_field(queries.assertion, description="Get an assertion edge by composite graph ID")
-    assertions = kante.django_field(queries.assertions, description="List assertion edges in a graph")
+    # `assertion` / `assertions` are gone. They ran Cypher for an AGE `Assertion`
+    # edge that nothing has ever written, so they could only return empty. An
+    # assertion is an evidence row; it is reachable through the write results and
+    # through `richProperties { contributingAssertions }`.
     relation = kante.django_field(queries.relation, description="Get a relation by composite graph ID")
     relations = kante.django_field(queries.relations, description="List relations for a relation category")
     structure_relation = kante.django_field(queries.structure_relation, description="Get a structure relation by composite graph ID")
     structure_relations = kante.django_field(queries.structure_relations, description="List structure relations for a structure relation category")
     metric = kante.django_field(queries.metric, description="Get a metric by ID")
-    metrics = kante.django_field(queries.metrics, description="List metrics for a metric category")
+    metrics = kante.django_field(queries.metrics, description="List every un-retracted metric recorded under one metric kind")
     metrics_for_structure = kante.django_field(queries.metrics_for_structure, description="List every un-retracted metric describing a structure")
-    measurements_for_assertion = kante.django_field(queries.measurements_for_assertion, description="List every metric recorded under one assertion")
+    metrics_for_assertion = kante.django_field(queries.measurements_for_assertion, description="List every metric recorded under one assertion")
     activity = kante.django_field(queries.activity, description="Get an activity node by composite graph ID")
     activities = kante.django_field(queries.activities, description="List activities in a graph with optional filters, ordering, and pagination")
 
@@ -75,11 +76,12 @@ class Query:
     graph: types.Graph = kante.django_field(description="Get a graph by ID")
     graphs: list[types.Graph] = kante.django_field(description="List all graphs in the graph engine")
 
-    category_tags: list[types.CategoryTag] = kante.django_field(description="List all category tags")
     entity_categories: list[types.EntityCategory] = kante.django_field(description="List all entity categories/schemas")
     entity_category: types.EntityCategory = kante.django_field(description="Get a single entity category/schema by ID")
     # Explicit resolvers: kinds have no graph, so `CategoryFilter.graph` — which
     # was the only thing scoping these before — no longer exists to fence them.
+    terms = kante.django_field(queries.terms, description="List the organization's words — its vocabulary, independent of any graph")
+    term = kante.django_field(queries.term, description="Get one of the organization's words by ID")
     structure_kinds = kante.django_field(queries.structure_kinds, description="List the organization's structure kinds")
     structure_kind = kante.django_field(queries.structure_kind, description="Get one structure kind by ID")
     metric_kinds = kante.django_field(queries.metric_kinds, description="List the organization's metric kinds")
@@ -105,7 +107,6 @@ class Query:
     materialized_measurement_edge: types.MaterializedMeasurementEdge = kante.django_field(description="Get a single materialized measurement edge by ID")
 
     graph_stats: types.GraphStats = kante.django_field(description="Get aggregated graph stats with optional filters", resolver=types.GraphStatsResolver)
-    category_tag_stats: types.CategoryTagStats = kante.django_field(description="Get aggregated category-tag stats with optional filters", resolver=types.CategoryTagStatsResolver)
     entity_category_stats: types.EntityCategoryStats = kante.django_field(description="Get aggregated entity-category stats with optional filters", resolver=types.EntityCategoryStatsResolver)
     structure_kind_stats: types.StructureKindStats = kante.django_field(description="Aggregated structure-kind stats", resolver=types.StructureKindStatsResolver)
     metric_kind_stats: types.MetricKindStats = kante.django_field(description="Aggregated metric-kind stats", resolver=types.MetricKindStatsResolver)
@@ -126,6 +127,10 @@ class Query:
     graph_node_query: types.GraphNodesQuery = kante.django_field(description="Show a single saved graph node query by ID")
     graph_pairs_queries: list[types.GraphPairsQuery] = kante.django_field(description="Show all saved graph pairs queries")
     graph_pairs_query: types.GraphPairsQuery = kante.django_field(description="Show a single saved graph pairs query by ID")
+    # `GraphPathQuery` had a type, a dataloader and all four mutations, and no way
+    # to read one back — the only member of the family missing its root fields.
+    graph_path_queries: list[types.GraphPathQuery] = kante.django_field(description="Show all saved graph path queries")
+    graph_path_query: types.GraphPathQuery = kante.django_field(description="Show a single saved graph path query by ID")
 
     node_queries: list[types.NodeQuery] = kante.django_field(description="Show all saved node queries")
     node_query: types.NodeQuery = kante.django_field(description="Show a single saved node query by ID")
@@ -151,144 +156,153 @@ class Query:
     scatter_plot: types.ScatterPlot = kante.django_field(description="Show a single saved scatter plot by ID")
 
 
+
 @strawberry.type(description="Graph Engine Mutations")
 class Mutation:
     """Root mutation type, grouped by domain sections: Entity Type, Schema, and Insights."""
 
     # =========================
-    # Entity Type Section
+    # Instance writes
+    #
+    # Every one of these is an act of claiming, named for the act, returning the
+    # assertion it recorded plus every view that draws the claim afterwards. See
+    # `graph_engine/results.py` and `docs/rfcs/0003-undrawn-nodes.md`.
+    #
+    # `pinNode` used to sit here. Its resolver was `raise NotImplementedError`.
     # =========================
-    pin_node = kante.django_mutation(
-        description="Pin a node in the UI for a user",
-        resolver=mutations.pin_node,
+
+    assert_entity_exists = kante.django_mutation(
+        description="Claim that an entity exists, under one of the organization's words. Returns the assertion and every view that draws it — empty when no view declares the word, which is an ordinary outcome",
+        resolver=mutations.assert_entity_exists,
+    )
+    retract_entity = kante.django_mutation(
+        description="Claim that an entity no longer stands. It leaves every projection that counts the claim; the evidence stays.",
+        resolver=mutations.retract_entity,
+    )
+    attest_entity = kante.django_mutation(
+        description="Claim that an entity exists, returning it to every projection whose rules admit it",
+        resolver=mutations.attest_entity,
     )
 
-    # =========================
-
-    create_entity = kante.django_mutation(
-        description="Create a new entity in the graph",
-        resolver=mutations.create_entity,
-    )
-    delete_entity = kante.django_mutation(
-        description="Delete an entity from the graph",
-        resolver=mutations.delete_entity,
-    )
-    archive_entity = kante.django_mutation(
-        description="Archive an entity in the graph (soft delete)",
-        resolver=mutations.archive_entity,
-    )
-    update_entity = kante.django_mutation(
-        description="Update an existing entity in the graph",
-        resolver=mutations.update_entity,
-    )
-
-    create_structure = kante.django_mutation(
-        description="Create a new structure in the graph",
-        resolver=mutations.create_structure,
+    assert_structure_exists = kante.django_mutation(
+        description="Claim that an external datum exists and is worth pointing at. Idempotent by (identifier, object)",
+        resolver=mutations.assert_structure_exists,
     )
     ensure_structure = kante.django_mutation(
-        description="Ensure a structure exists in the graph, creating it if it does not exist",
+        description="Get the structure for an external datum, creating it if this is the first sight of it",
         resolver=mutations.ensure_structure,
     )
-    delete_structure = kante.django_mutation(
-        description="Delete a structure from the graph",
-        resolver=mutations.delete_structure,
-    )
-    archive_structure = kante.django_mutation(
-        description="Archive a structure in the graph (soft delete)",
-        resolver=mutations.archive_structure,
+    retract_structure = kante.django_mutation(
+        description="Claim that a structure should no longer be pointed at. The row and its metrics survive",
+        resolver=mutations.retract_structure,
     )
     link_structure_to_entity = kante.django_mutation(
         description="Assert that a structure is evidence for an entity",
         resolver=mutations.link_structure_to_entity,
     )
     update_structure = kante.django_mutation(
-        description="Update an existing structure in the graph",
+        description="Append metrics to an existing structure. Its (identifier, object) is immutable",
         resolver=mutations.update_structure,
     )
-    record_metric = kante.django_mutation(
-        description="Record a metric, auto-creating structure when allowed",
-        resolver=mutations.record_metric,
+    assert_metric_value = kante.django_mutation(
+        description="Record a measurement, creating the structure it describes if this is its first sight. One assertion covers both",
+        resolver=mutations.assert_metric_value,
     )
-    create_metric = kante.django_mutation(
-        description="Create a new metric in the graph",
-        resolver=mutations.create_metric,
+    assert_metric_value_for_structure = kante.django_mutation(
+        description="Record a measurement against a structure that already exists, named by its evidence id",
+        resolver=mutations.assert_metric_value_for_structure,
     )
-    delete_metric = kante.django_mutation(
-        description="Delete a metric from the graph",
-        resolver=mutations.delete_metric,
+    retract_metric = kante.django_mutation(
+        description="Retract a measurement without destroying it. It stays readable, because a derived value that dropped it still has to be explainable",
+        resolver=mutations.retract_metric,
     )
-    archive_metric = kante.django_mutation(
-        description="Archive a metric in the graph (soft delete)",
-        resolver=mutations.archive_metric,
+    supersede_metric_value = kante.django_mutation(
+        description="Correct a measurement by retracting it and asserting a new one. The returned metric has a new id: it is a new row, not an edited one",
+        resolver=mutations.supersede_metric_value,
     )
-    update_metric = kante.django_mutation(
-        description="Update an existing metric in the graph",
-        resolver=mutations.update_metric,
+    assert_measurement_exists = kante.django_mutation(
+        description="Assert that a structure measures an entity, under one of the organization's words. Drawings are always empty: a measurement has no AGE edge",
+        resolver=mutations.assert_measurement_exists,
     )
-    delete_measurement = kante.django_mutation(
-        description="Delete a measurement from the graph",
-        resolver=mutations.delete_measurement,
+    retract_measurement = kante.django_mutation(
+        description="Retract a measurement assertion without destroying it",
+        resolver=mutations.retract_measurement,
     )
-    archive_measurement = kante.django_mutation(
-        description="Archive a measurement in the graph (soft delete)",
-        resolver=mutations.archive_measurement,
+    assert_relation_exists = kante.django_mutation(
+        description="Assert a relation between two entities, under one of the organization's words",
+        resolver=mutations.assert_relation_exists,
     )
-    delete_relation = kante.django_mutation(
-        description="Delete a relation from the graph",
-        resolver=mutations.delete_relation,
+    update_relation = kante.django_mutation(
+        description="Replace a relation with a new assertion, retracting the old one. Two assertions are recorded; the result reports the one that made the relation now standing",
+        resolver=mutations.update_relation,
     )
-    archive_relation = kante.django_mutation(
-        description="Archive a relation in the graph (soft delete)",
-        resolver=mutations.archive_relation,
+    retract_relation = kante.django_mutation(
+        description="Retract a relation assertion without destroying it. The edge survives wherever another live assertion still states the same proposition",
+        resolver=mutations.retract_relation,
     )
-    create_structure_relation = kante.django_mutation(
-        description="Create a new structure relation in the graph",
-        resolver=mutations.create_structure_relation,
+    assert_structure_relation_exists = kante.django_mutation(
+        description="Assert a relation between two structures. Drawings are always empty: neither endpoint has a vertex",
+        resolver=mutations.assert_structure_relation_exists,
     )
     update_structure_relation = kante.django_mutation(
-        description="Update an existing structure relation in the graph",
+        description="Replace a structure relation, keeping the old assertion on the record",
         resolver=mutations.update_structure_relation,
     )
-    delete_structure_relation = kante.django_mutation(
-        description="Delete a structure relation from the graph",
-        resolver=mutations.delete_structure_relation,
+    retract_structure_relation = kante.django_mutation(
+        description="Retract a structure relation assertion without destroying it",
+        resolver=mutations.retract_structure_relation,
     )
-    archive_structure_relation = kante.django_mutation(
-        description="Archive a structure relation in the graph (soft delete)",
-        resolver=mutations.archive_structure_relation,
+    assert_natural_event_exists = kante.django_mutation(
+        description="Claim that a natural event happened, under one of the organization's words",
+        resolver=mutations.assert_natural_event_exists,
     )
-    create_natural_event = kante.django_mutation(
-        description="Create a new natural event in the graph",
-        resolver=mutations.create_natural_event,
+    retract_natural_event = kante.django_mutation(
+        description="Claim that a natural event no longer stands",
+        resolver=mutations.retract_natural_event,
     )
-    update_natural_event = kante.django_mutation(
-        description="Update an existing natural event in the graph",
-        resolver=mutations.update_natural_event,
+    attest_natural_event = kante.django_mutation(
+        description="Claim that a natural event exists",
+        resolver=mutations.attest_natural_event,
     )
-    delete_natural_event = kante.django_mutation(
-        description="Delete a natural event from the graph",
-        resolver=mutations.delete_natural_event,
+    assert_protocol_event_exists = kante.django_mutation(
+        description="Claim that a protocol step happened, under one of the organization's words",
+        resolver=mutations.assert_protocol_event_exists,
     )
-    archive_natural_event = kante.django_mutation(
-        description="Archive a natural event in the graph (soft delete)",
-        resolver=mutations.archive_natural_event,
+    retract_protocol_event = kante.django_mutation(
+        description="Claim that a protocol event no longer stands",
+        resolver=mutations.retract_protocol_event,
     )
-    create_protocol_event = kante.django_mutation(
-        description="Create a new protocol event in the graph",
-        resolver=mutations.create_protocol_event,
+    attest_protocol_event = kante.django_mutation(
+        description="Claim that a protocol event exists",
+        resolver=mutations.attest_protocol_event,
     )
-    update_protocol_event = kante.django_mutation(
-        description="Update an existing protocol event in the graph",
-        resolver=mutations.update_protocol_event,
+    assert_participation = kante.django_mutation(
+        description="Claim that an entity took part in an event, without displacing anyone else's claim",
+        resolver=mutations.assert_participation,
     )
-    delete_protocol_event = kante.django_mutation(
-        description="Delete a protocol event from the graph",
-        resolver=mutations.delete_protocol_event,
+    assert_participations = kante.django_mutation(
+        description="Claim that several entities took part in one event, as one act and one assertion",
+        resolver=mutations.assert_participations,
     )
-    archive_protocol_event = kante.django_mutation(
-        description="Archive a protocol event in the graph (soft delete)",
-        resolver=mutations.archive_protocol_event,
+    retract_participation = kante.django_mutation(
+        description="Retract one claim that an entity took part in an event. The edge survives while another claim still states it",
+        resolver=mutations.retract_participation,
+    )
+    classify_nodes = kante.django_mutation(
+        description="Claim that several nodes are of a word, without displacing anyone else's claim. One act, one assertion",
+        resolver=mutations.classify_nodes,
+    )
+    retract_claims = kante.django_mutation(
+        description="Retract several claims as one act",
+        resolver=mutations.retract_claims,
+    )
+    assert_same_entity = kante.django_mutation(
+        description="Claim that several already-recorded instances are one thing. An equivalence with no primary — the order of the ids carries no meaning",
+        resolver=mutations.assert_same_entity,
+    )
+    retract_same_entity = kante.django_mutation(
+        description="Withdraw one sameness claim. The component it held together is rebuilt from the claims that survive, which may split it",
+        resolver=mutations.retract_same_entity,
     )
 
     request_media_upload = kante.django_mutation(
@@ -299,11 +313,11 @@ class Mutation:
         description="Finalize a media upload after the client has written the object",
         resolver=datalayer_mutations.finish_media_upload,
     )
-    request_bigfile_upload = kante.django_mutation(
+    request_big_file_upload = kante.django_mutation(
         description="Request an upload grant for a big file store",
         resolver=datalayer_mutations.request_bigfile_upload,
     )
-    finish_bigfile_upload = kante.django_mutation(
+    finish_big_file_upload = kante.django_mutation(
         description="Finalize a big file upload after the client has written the object",
         resolver=datalayer_mutations.finish_bigfile_upload,
     )
@@ -332,10 +346,6 @@ class Mutation:
         resolver=mutations.update_graph_visual,
     )
 
-    create_graph_table_query = kante.django_mutation(
-        description="Create a new graph table query",
-        resolver=mutations.create_graph_table_query,
-    )
     create_graph_table_query_through_builder = kante.django_mutation(
         description="Create or update a graph table query using builder arguments",
         resolver=mutations.create_graph_table_query_through_builder,
@@ -505,10 +515,6 @@ class Mutation:
         description="Delete a scatter plot",
         resolver=mutations.delete_scatter_plot,
     )
-    archive_scatter_plot = kante.django_mutation(
-        description="Archive a scatter plot",
-        resolver=mutations.archive_scatter_plot,
-    )
 
     delete_graph = kante.django_mutation(
         description="Delete a graph from the graph engine",
@@ -526,22 +532,6 @@ class Mutation:
         description="Create a new entity category/schema in the graph",
         resolver=mutations.create_entity_category,
     )
-    create_category_tag = kante.django_mutation(
-        description="Create a new category tag in the graph",
-        resolver=mutations.create_category_tag,
-    )
-    update_category_tag = kante.django_mutation(
-        description="Update an existing category tag in the graph",
-        resolver=mutations.update_category_tag,
-    )
-    archive_category_tag = kante.django_mutation(
-        description="Archive an existing category tag in the graph",
-        resolver=mutations.archive_category_tag,
-    )
-    delete_category_tag = kante.django_mutation(
-        description="Delete an existing category tag from the graph",
-        resolver=mutations.delete_category_tag,
-    )
     delete_entity_category = kante.django_mutation(
         description="Delete an entity category/schema from the graph",
         resolver=mutations.delete_entity_category,
@@ -549,6 +539,21 @@ class Mutation:
     update_entity_category = kante.django_mutation(
         description="Update an existing entity category/schema in the graph",
         resolver=mutations.update_entity_category,
+    )
+    # The organization's vocabulary — the words the evidence log names. A word's
+    # meaning *in one graph* is a `Category`, edited through the category
+    # mutations above; these edit the word itself.
+    create_term = kante.django_mutation(
+        description="Declare one of the organization's words, or describe one an ingest minted bare",
+        resolver=mutations.create_term,
+    )
+    update_term = kante.django_mutation(
+        description="Update a term's label, description, PURL or colour. Its kind and key are its identity and cannot change.",
+        resolver=mutations.update_term,
+    )
+    delete_term = kante.django_mutation(
+        description="Retire a word nothing has been claimed under",
+        resolver=mutations.delete_term,
     )
     # No `create`: structure kinds are minted lazily by `ensure_structure_kind`
     # the first time a measurement names an identifier.
@@ -695,10 +700,6 @@ def create_schema(
                 types.Activity,
                 types.NaturalEvent,
                 types.ProtocolEvent,
-                # Shadow Types
-                types.RelationShadowLink,
-                types.StructureRelationShadowLink,
-                types.MeasurementShadowLink,
                 # Edge Types
                 types.Measurement,
                 types.Description,

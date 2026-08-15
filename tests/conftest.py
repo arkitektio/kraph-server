@@ -149,7 +149,12 @@ def bio_graph_schema() -> models.GraphDefinitionInput:
                     source=models.EntityDescriptorInput(keys=["Cell"]),
                     target=models.EntityDescriptorInput(keys=["Cell"]),
                     cardinality=models.Cardinality.ONE_TO_ONE,
-                    properties=[models.PropertyDefinitionInput(key="distance", type=models.PropertyType.FLOAT, derivation=models.DerivationType.ROLLUP, rule=models.DerivationRuleInput(source_node="ROI", key="centroid", aggregation=models.AggregationFunction.EUCLIDEAN_RANGE))],
+                    # No `properties`. This used to declare `distance` as a
+                    # EUCLIDEAN_RANGE rollup, and `project_edges` has never run a
+                    # derivation rule — it writes `category_id` and
+                    # `__assertion_count` and stops. So the fixture the whole
+                    # suite runs against contained a rule nothing executed, and
+                    # nothing failed. `validate_derivation_rules` now refuses it.
                 ),
                 models.RelationDefinitionInput(key="PART_OF", source=models.EntityDescriptorInput(keys=["AIS", "Soma"]), target=models.EntityDescriptorInput(keys=["Cell"])),
             ],
@@ -247,6 +252,10 @@ def minimal_schema() -> models.GraphDefinitionInput:
     Uses the canonical `*Input` names and `property_definitions`. The previous version
     passed `properties=`, which is not a field on EntityDefinitionInput, so the entity
     materialized with zero properties and any assertion about them passed vacuously.
+
+    Both properties carry a rule. They did not, which made them inert — nothing
+    writes a property directly — so `materialize` now rejects that shape and this
+    fixture would fail to build the graph it exists to provide.
     """
     return models.GraphDefinitionInput(
         system_version="1.0.0",
@@ -256,8 +265,18 @@ def minimal_schema() -> models.GraphDefinitionInput:
                     key="Person",
                     description="A person",
                     property_definitions=[
-                        models.PropertyDefinitionInput(key="name", type=models.PropertyType.STRING),
-                        models.PropertyDefinitionInput(key="age", type=models.PropertyType.INTEGER),
+                        models.PropertyDefinitionInput(
+                            key="name",
+                            type=models.PropertyType.STRING,
+                            derivation=models.DerivationType.LATEST,
+                            rule=models.DerivationRuleInput(source_node="ROI", key="name"),
+                        ),
+                        models.PropertyDefinitionInput(
+                            key="age",
+                            type=models.PropertyType.INTEGER,
+                            derivation=models.DerivationType.ROLLUP,
+                            rule=models.DerivationRuleInput(source_node="ROI", key="age", aggregation=models.AggregationFunction.LATEST),
+                        ),
                     ],
                 )
             ]

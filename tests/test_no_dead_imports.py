@@ -16,7 +16,7 @@ import pytest
 
 # First-party packages. `tests` is excluded because pytest imports it anyway, and
 # `core-backup-do-not-delete` is not a valid package name so pkgutil never sees it.
-PACKAGES = ["api", "core", "datalayer", "evidence", "graph_engine", "kraph_server", "rekuest_core", "stats"]
+PACKAGES = ["api", "core", "datalayer", "evidence", "graph_engine", "kraph_server", "stats"]
 
 
 def _iter_modules() -> list[str]:

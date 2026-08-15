@@ -11,6 +11,7 @@ from kante.types import Info
 
 from api import context, inputs, types
 from evidence import models as evidence_models
+from ._guards import delete_or_explain
 
 
 def _resolve(info: Info, kind_id: str) -> evidence_models.StructureKind:
@@ -45,12 +46,13 @@ def update_structure_kind(info: Info, input: inputs.UpdateStructureDefinitionInp
 
 
 def delete_structure_kind(info: Info, input: inputs.DeleteStructureDefinitionInput) -> strawberry.ID:
-    """Retire a structure kind.
+    """Retire a structure kind that nothing has been recorded under.
 
-    Cascades to the structures and metrics recorded under it, which is why it
-    should be rare — the kind is vocabulary, and deleting vocabulary deletes the
-    evidence expressed in it.
+    This used to cascade to the structures and metrics recorded under it, and
+    said so: "deleting vocabulary deletes the evidence expressed in it". That is
+    exactly what evidence being append-only forbids, so the foreign key is
+    `PROTECT` now and a kind in use cannot be removed at all.
     """
     model = input.to_pydantic()
-    _resolve(info, str(model.id)).delete()
+    delete_or_explain(_resolve(info, str(model.id)), what="this structure kind", instead="Archive the structures recorded under it first.")
     return model.id

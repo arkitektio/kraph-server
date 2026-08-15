@@ -3,8 +3,11 @@ from typing import cast
 import strawberry
 from kante.types import Info
 
-from api import inputs, types
-from core import models
+from api import context, inputs, types
+from core import enums, models
+from evidence import writer
+from ._guards import delete_or_explain, refuse_edge_properties
+from .._scoped import accessible_graph, scoped
 
 
 def create_relation_category(
@@ -15,6 +18,17 @@ def create_relation_category(
 
     model = input.to_pydantic()  # Validate input with Pydantic models
 
+    # An edge carries no derived properties, and this resolver never reaches
+    # `validate_derivation_rules` — so the refusal has to be repeated here or the
+    # single-category path stays the way to get an uncomputable rule stored.
+    #
+    # `property_definitions`, not `properties`. `CreateRelationDefinitionInput`
+    # extends `EntityDefinitionInput`, which names the field the first way; the
+    # sibling structure-relation and measurement inputs name it the second. This
+    # resolver read `model.properties` and so raised `AttributeError` on **every**
+    # call — no test reaches this mutation, which is how it stayed that way.
+    refuse_edge_properties(model.key, model.property_definitions)
+
     if model.color:
         assert len(model.color) == 3 or len(model.color) == 4, "Color must be a list of 3 or 4 values RGBA"
 
@@ -22,14 +36,25 @@ def create_relation_category(
     if model.image:
         media_store = models.MediaStore.objects.get(id=model.image)
 
+    graph = accessible_graph(info, model.graph)
+    # Keyed on `(graph, key)`, which is the pair `Category` is unique on —
+    # and `key` is what a claim names. This used to key on `(graph, age_name)`
+    # and never set `key` at all, so every category created here landed with
+    # an empty one.
     vocab, created = models.RelationCategory.objects.update_or_create(
-        graph_id=model.graph,
-        age_name=model.key,
+        graph=graph,
+        key=model.key,
         defaults=dict(
+            term=writer.ensure_term(graph.organization, enums.CategoryKindChoices.RELATION, model.key),
+            age_name=model.key.upper(),
             description=model.description,
-            store=media_store,
+            image=media_store,
             label=model.label if model.label else model.key,
-            property_definitions=[pdef.model_dump() for pdef in model.properties] or [],
+            # Always empty — `refuse_edge_properties` above has already rejected
+            # anything else. Kept as a field rather than dropped so the column
+            # keeps its shape, and so this reads as "an edge has none" rather
+            # than as an oversight.
+            property_definitions=[],
         ),
     )
 
@@ -47,17 +72,14 @@ def create_relation_category(
         else:
             raise ValueError("Each ontology reference must have either an ontology_id or ontology_url.")
 
-    if model.tags:
-        vocab.tags.clear()
-        for tag in model.tags:
-            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag, graph=item.graph.id)
-            vocab.tags.add(tag_obj)
-
     if model.pin is not None:
         if model.pin:
             vocab.pinned_by.add(info.context.request.user)
         else:
             vocab.pinned_by.remove(info.context.request.user)
+
+    if model.backfill:
+        context.get_controller().backfill_category(vocab)
 
     return cast(types.EntityCategory, vocab)
 
@@ -66,7 +88,7 @@ def update_relation_category(info: Info, input: inputs.UpdateRelationDefinitionI
     """GraphQL mutation wrapper for updating relation categories."""
     model = input.to_pydantic()  # Validate input with Pydantic models
 
-    item = models.RelationCategory.objects.get(id=model.id)
+    item = scoped(info, models.RelationCategory, model.id, what="relation category")
 
     if model.color:
         assert len(model.color) == 3 or len(model.color) == 4, "Color must be a list of 3 or 4 values RGBA"
@@ -83,12 +105,6 @@ def update_relation_category(info: Info, input: inputs.UpdateRelationDefinitionI
     item.color = model.color if model.color else item.color
     item.store = media_store if media_store else item.store
 
-    if model.tags:
-        item.tags.clear()
-        for tag in model.tags:
-            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag, graph=item.graph.id)
-            item.tags.add(tag_obj)
-
     if model.pin is not None:
         if model.pin:
             item.pinned_by.add(info.context.request.user)
@@ -97,8 +113,18 @@ def update_relation_category(info: Info, input: inputs.UpdateRelationDefinitionI
 
     item.save()
 
-    # TODO: Rematerialize all entities of this category if properties were updated
-    # We should do this asynchronously in the background and notify the user when it's done, since it could take a while for large graphs with many entities in this category
+    # No rematerialization here, and none owed. This resolver writes label,
+    # description, colour, store and pins — none of which a vertex or an
+    # edge carries — and `property_definitions` is not among them, so nothing in
+    # the projection can have gone stale.
+    #
+    # Nor would it help if it were. `projector.project_edges` writes exactly
+    # `category_id` and `__assertion_count` onto an edge: no derivation rule has
+    # ever run for a relation category, so the `properties` this API accepts on
+    # `createRelationCategory` are stored and never materialized. That is a real
+    # gap — the same family as the read-time derivation Tier 0 removed for nodes
+    # — and it is recorded in `docs/ARCHITECTURE.md` rather than papered over
+    # with a redraw that would have nothing to redraw.
 
     return item
 
@@ -108,6 +134,6 @@ def delete_relation_category(
     input: inputs.DeleteRelationDefinitionInput,
 ) -> strawberry.ID:
     model = input.to_pydantic()  # Validate input with Pydantic models
-    item = models.RelationCategory.objects.get(id=model.id)
-    item.delete()
+    item = scoped(info, models.RelationCategory, model.id, what="relation category")
+    delete_or_explain(item, what=f"relation category '{item.key}'", instead="Archive the relations asserted under it first.")
     return model.id

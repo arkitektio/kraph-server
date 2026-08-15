@@ -1,7 +1,11 @@
+from typing import cast
+
 from kante.types import Info
 
 import strawberry
 from api import inputs, types, context
+from api.mutations._scoped import scoped
+from api.mutations.insights._saved_query import create_saved_query, update_saved_query
 from graph_engine import scalars
 from core import models
 
@@ -10,18 +14,16 @@ def create_graph_table_query(
     info: Info,
     input: inputs.CreateGraphTableQueryInput,
 ) -> types.GraphTableQuery:
-    raise NotImplementedError("Creating graph queries through builders is not implemented yet")
+    """Save a new graph table query. See `api.mutations.insights._saved_query`."""
+    return cast(types.GraphTableQuery, create_saved_query(info, input.to_pydantic(), models.GraphTableQuery, "graph table query"))
 
 
-def create_graph_table_query_through_builder(
+def update_graph_table_query(
     info: Info,
-    input: inputs.CreateGraphTableQueryThroughBuilderInput,
+    input: inputs.UpdateGraphTableQueryInput,
 ) -> types.GraphTableQuery:
-    raise NotImplementedError("Creating graph queries through builders is not implemented yet")
-
-
-def update_graph_table_query(info: Info, input: inputs.UpdateGraphTableQueryInput) -> types.GraphTableQuery:
-    raise NotImplementedError
+    """Change a saved graph table query. See `api.mutations.insights._saved_query`."""
+    return cast(types.GraphTableQuery, update_saved_query(info, input.to_pydantic(), models.GraphTableQuery, "graph table query"))
 
 
 def delete_graph_table_query(
@@ -29,7 +31,7 @@ def delete_graph_table_query(
     input: inputs.DeleteGraphTableQueryInput,
 ) -> strawberry.ID:
     model = input.to_pydantic()
-    item = models.GraphTableQuery.objects.get(id=model.id)
+    item = scoped(info, models.GraphTableQuery, model.id, what="graph table query")
     item.delete()
     return model.id
 
@@ -39,7 +41,7 @@ def archive_graph_table_query(
     input: inputs.ArchiveGraphTableQueryInput,
 ) -> strawberry.ID:
     model = input.to_pydantic()
-    item = models.GraphTableQuery.objects.get(id=model.id)
+    item = scoped(info, models.GraphTableQuery, model.id, what="graph table query")
     item.archived = True
     item.save()
     return model.id

@@ -4,9 +4,12 @@ import strawberry
 from kante.types import Info
 
 from api import inputs, types
-from core import models
+from core import enums, models
+from evidence import writer
 from datalayer import models as dl_models
 from graph_engine.materialize import re_materialize_structure_relation_category
+from ._guards import delete_or_explain, refuse_edge_properties
+from .._scoped import accessible_graph, scoped
 
 
 def create_structure_relation_category(
@@ -17,6 +20,10 @@ def create_structure_relation_category(
 
     model = input.to_pydantic()  # Validate input with Pydantic models
 
+    # An edge carries no derived properties, and this resolver never reaches
+    # `validate_derivation_rules` — see `refuse_edge_properties`.
+    refuse_edge_properties(model.key, model.properties)
+
     if model.color:
         assert len(model.color) == 3 or len(model.color) == 4, "Color must be a list of 3 or 4 values RGBA"
 
@@ -24,15 +31,23 @@ def create_structure_relation_category(
     if model.image:
         media_store = dl_models.MediaStore.objects.get(id=model.image)
 
+    graph = accessible_graph(info, model.graph)
+    # Keyed on `(graph, key)`, which is the pair `Category` is unique on —
+    # and `key` is what a claim names. This used to key on `(graph, age_name)`
+    # and never set `key` at all, so every category created here landed with
+    # an empty one.
     vocab, created = models.StructureRelationCategory.objects.update_or_create(
-        graph_id=model.graph,
-        age_name=model.key,
+        graph=graph,
         key=model.key,
         defaults=dict(
+            term=writer.ensure_term(graph.organization, enums.CategoryKindChoices.STRUCTURE_RELATION, model.key),
+            age_name=model.key.upper(),
             description=model.description,
             image=media_store,
             label=model.label if model.label else model.key,
-            property_definitions=[pdef.model_dump() for pdef in model.properties] or [],
+            # Always empty — `refuse_edge_properties` has already rejected
+            # anything else. See `create_relation_category` for the same note.
+            property_definitions=[],
         ),
     )
 
@@ -50,12 +65,6 @@ def create_structure_relation_category(
         else:
             raise ValueError("Each ontology reference must have either an ontology_id or ontology_url.")
 
-    if model.tags:
-        vocab.tags.clear()
-        for tag in model.tags:
-            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag, graph=vocab.graph.id)
-            vocab.tags.add(tag_obj)
-
     if model.pin is not None:
         if model.pin:
             vocab.pinned_by.add(info.context.request.user)
@@ -71,7 +80,7 @@ def update_structure_relation_category(info: Info, input: inputs.UpdateStructure
     """GraphQL mutation wrapper for updating structure relation categories."""
     model = input.to_pydantic()  # Validate input with Pydantic models
 
-    item = models.StructureRelationCategory.objects.get(id=model.id)
+    item = scoped(info, models.StructureRelationCategory, model.id, what="structure relation category")
 
     if model.color:
         assert len(model.color) == 3 or len(model.color) == 4, "Color must be a list of 3 or 4 values RGBA"
@@ -88,12 +97,6 @@ def update_structure_relation_category(info: Info, input: inputs.UpdateStructure
     item.color = model.color if model.color else item.color
     item.store = media_store if media_store else item.store
 
-    if model.tags:
-        item.tags.clear()
-        for tag in model.tags:
-            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag, graph=item.graph.id)
-            item.tags.add(tag_obj)
-
     if model.pin is not None:
         if model.pin:
             item.pinned_by.add(info.context.request.user)
@@ -102,8 +105,10 @@ def update_structure_relation_category(info: Info, input: inputs.UpdateStructure
 
     item.save()
 
-    # TODO: Rematerialize all entities of this category if properties were updated
-    # We should do this asynchronously in the background and notify the user when it's done, since it could take a while for large graphs with many entities in this category
+    # No rematerialization owed, for the same two reasons as
+    # `update_relation_category`: this resolver writes no `property_definitions`,
+    # and a structure relation is an edge, which `projector.project_edges` draws
+    # with `category_id` and `__assertion_count` and nothing derived.
 
     return item
 
@@ -113,6 +118,6 @@ def delete_structure_relation_category(
     input: inputs.DeleteStructureRelationDefinitionInput,
 ) -> strawberry.ID:
     model = input.to_pydantic()  # Validate input with Pydantic models
-    item = models.StructureRelationCategory.objects.get(id=model.id)
-    item.delete()
+    item = scoped(info, models.StructureRelationCategory, model.id, what="structure relation category")
+    delete_or_explain(item, what=f"structure relation category '{item.key}'", instead="Archive the structure relations asserted under it first.")
     return model.id

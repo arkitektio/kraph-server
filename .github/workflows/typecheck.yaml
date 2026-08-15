@@ -22,9 +22,13 @@ jobs:
       - name: Install the project
         run: uv sync --all-extras --dev
 
-      # Advisory for now: basedpyright is scoped to the typed facade/ plumbing
-      # modules via [tool.basedpyright] in pyproject.toml. Reports type issues
-      # without failing the build; drop `continue-on-error` to make it required.
+      # Advisory for now: reports type issues without failing the build; drop
+      # `continue-on-error` to make it required.
+      #
+      # It runs over the **whole repo**. This comment used to claim basedpyright
+      # was "scoped to the typed facade/plumbing modules via [tool.basedpyright]
+      # in pyproject.toml" — there has never been such a section, so anyone
+      # reading this believed the report was narrower than it is.
       - name: Run basedpyright
         run: uv run basedpyright
         continue-on-error: true

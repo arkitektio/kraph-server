@@ -155,7 +155,7 @@ def create_graph_table_query_through_builder(
         graph=graph,
         key=model.key,
         defaults={
-            "name": model.name or model.key,
+            "label": model.name or model.key,
             "description": model.description,
             "kind": "TABLE",
             "query": query,

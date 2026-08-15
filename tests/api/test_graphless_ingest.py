@@ -20,7 +20,7 @@ from kante.context import HttpContext
 from core import models as core_models
 from evidence import models as evidence_models
 
-INGEST_INPUTS = ["RecordMetricInput", "CreateStructureInput", "EnsureStructureInput"]
+INGEST_INPUTS = ["AssertMetricValueInput", "AssertStructureExistsInput", "EnsureStructureInput"]
 
 
 @pytest.mark.parametrize("type_name", INGEST_INPUTS)
@@ -49,8 +49,8 @@ async def test_a_measurement_round_trips_with_no_graph_anywhere(
 
     recorded = await api_schema.execute(
         """
-        mutation RecordMetric($input: RecordMetricInput!) {
-            recordMetric(input: $input) { id value unit }
+        mutation RecordMetric($input: AssertMetricValueInput!) {
+            assertMetricValue(input: $input) { metric { id value unit } }
         }
         """,
         variable_values={
@@ -67,8 +67,8 @@ async def test_a_measurement_round_trips_with_no_graph_anywhere(
     )
 
     assert recorded.errors is None, f"GraphQL errors: {recorded.errors}"
-    assert recorded.data["recordMetric"]["value"] == 45.2
-    assert recorded.data["recordMetric"]["unit"] == "um"
+    assert recorded.data["assertMetricValue"]["metric"]["value"] == 45.2
+    assert recorded.data["assertMetricValue"]["metric"]["unit"] == "um"
 
     structure = await evidence_models.Structure.all_objects.filter(object=object_id).afirst()
     assert structure is not None
@@ -92,8 +92,8 @@ async def test_the_kind_is_minted_by_the_write_that_needs_it(
 
     result = await api_schema.execute(
         """
-        mutation RecordMetric($input: RecordMetricInput!) {
-            recordMetric(input: $input) { id }
+        mutation RecordMetric($input: AssertMetricValueInput!) {
+            assertMetricValue(input: $input) { metric { id } }
         }
         """,
         variable_values={

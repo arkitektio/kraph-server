@@ -5,23 +5,40 @@ base relation; projections are built from it, never the other way round, so a
 dependency in this direction would put the source of truth downstream of its own
 cache.
 
-Every function here is append-only. There is no update and no delete: correcting
-a claim means writing a new assertion, and retracting one means writing a
-:class:`~evidence.models.LifecycleEvent`. That is what keeps a derived value
-explainable after the evidence behind it stops counting.
+Every function here is append-only against the **log**: there is no update and no
+delete of a `Structure`, `Metric`, `Link`, `Node`, `Claim` or `Assertion`.
+Correcting a claim means writing a new assertion, and changing whether something
+stands means writing a :class:`~evidence.models.Claim`. That is what keeps a
+derived value explainable after the evidence behind it stops counting.
+
+This paragraph used to be false, and worth knowing why. `claim()` wrote the row
+*and* flipped a cached `stands` boolean on the target — an `UPDATE` on a log
+table, four lines below a docstring promising there were none. The cache is now
+:class:`~evidence.models.ClaimCurrent`, a projection, and :func:`claim` writes to
+that instead. Projections are mutable by definition; the log is not, and can now
+be held to it by the database rather than by this comment.
 """
 
 from __future__ import annotations
 
 import datetime
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable, NamedTuple
 
 from authentikate.models import Organization
 from django.db import transaction
 from django.utils import timezone
 
 from core.enums import ValueKind
+from evidence import claims as claims_module
 from evidence import models as evidence_models
+
+if TYPE_CHECKING:
+    # `create_link` annotates `category: core_models.Category`, which named a
+    # module this file never imported. `from __future__ import annotations` kept
+    # it from failing at runtime, so it only ever surfaced under a type checker
+    # or `typing.get_type_hints`. A real import here, not a runtime one: the
+    # write path deliberately does not depend on the ontology layer.
+    from core import models as core_models
 
 # Which typed column each ValueKind writes into. The inverse of
 # `Metric.VALUE_COLUMN_FOR_KIND`, kept here because writing is where coercion
@@ -113,6 +130,26 @@ def ensure_structure_kind(organization: Organization, identifier: str) -> eviden
         identifier=identifier,
     )
     return kind
+
+
+def ensure_term(organization: Organization, kind: Any, key: str) -> evidence_models.Term:
+    """Get or create the organization's word for a kind of thing.
+
+    Always allowed, for the same reason :func:`ensure_structure_kind` is: refusing
+    to record "this is an AIS" because no graph had declared the word would be
+    refusing a claim on a bookkeeping technicality. A graph's `Category` says what
+    the word means *there*; this is only the word.
+
+    ``kind`` is part of identity, so "AIS" as an entity and "AIS" as a relation are
+    two terms rather than one term two things disagree about.
+    """
+    resolved = getattr(kind, "value", kind)
+    term, _ = evidence_models.Term.all_objects.get_or_create(
+        organization=organization,
+        kind=str(resolved),
+        key=key,
+    )
+    return term
 
 
 def canonical_value_kind(value_kind: Any) -> str | None:
@@ -261,86 +298,165 @@ def create_link(
     source_ref: str,
     target_ref: str,
     assertion: evidence_models.Assertion,
-    category: core_models.Category | None = None,
+    term: evidence_models.Term | None = None,
+    role: str | None = None,
 ) -> evidence_models.Link:
-    """Attach evidence to something. Refs stay opaque — see `Link`."""
+    """Attach evidence to something. Refs stay opaque — see `Link`.
+
+    ``term`` is the organization's word for the claim, not a graph's category. A
+    link that named a category could only be understood by the graph that owned
+    it, which is not what a claim is.
+    """
     return evidence_models.Link.objects.create_for_organization(
         organization=organization,
         kind=kind,
         source_ref=source_ref,
         target_ref=target_ref,
         assertion=assertion,
-        category=category,
+        term=term,
+        role=role,
     )
 
 
+#: Which claim target type each evidence row is. There is no longer a companion
+#: set of "types that cache the answer": the answer is cached in `ClaimCurrent`
+#: for all of them except `Node`, whose standing is per-view, and that exception
+#: is expressed once — in `claims.CACHED_TARGETS` — rather than here as well.
 _TARGET_TYPES: dict[type, str] = {
     evidence_models.Structure: "structure",
     evidence_models.Metric: "metric",
     evidence_models.Link: "link",
+    evidence_models.Node: "node",
 }
 
 
-def archive_ref(
+class ClaimResult(NamedTuple):
+    """A recorded claim, and whether it changed the organization-wide answer.
+
+    Two values because the two questions came apart when the log stopped
+    deduplicating. A claim is always written — that is what makes concurrence
+    countable — but `State` is folded from deltas, so it must move only on the
+    edge. A caller that un-folds on ``claim`` rather than on ``moved`` subtracts a
+    contribution that was already taken out.
+    """
+
+    claim: evidence_models.Claim
+    moved: bool
+
+
+def claim_ref(
     organization: Organization,
     *,
     target_type: str,
     target_id: str,
+    stands: bool,
     assertion: evidence_models.Assertion,
     at: datetime.datetime | None = None,
-) -> evidence_models.LifecycleEvent:
-    """Retract something that is not an evidence row — currently only entities.
+) -> evidence_models.Claim:
+    """Record somebody's position on whether a target stands.
 
-    Entities are still projected into AGE, so there is no row to flip a cached
-    status on. The lifecycle log is still the authority; the projection picks the
-    state up from here.
+    The low-level primitive: it takes a target type and a ref rather than a row,
+    so it can be used for things that are not evidence rows. Prefer
+    :func:`claim`, which resolves both from the object and maintains the cache.
     """
-    return evidence_models.LifecycleEvent.objects.create_for_organization(
+    return evidence_models.Claim.objects.create_for_organization(
         organization=organization,
         target_type=target_type,
-        target_id=target_id,
-        status=evidence_models.LifecycleStatus.ARCHIVED,
+        target_id=str(target_id),
+        stands=stands,
         at=at or timezone.now(),
         assertion=assertion,
     )
 
 
 @transaction.atomic
-def archive(
+def claim(
     organization: Organization,
-    target: evidence_models.Structure | evidence_models.Metric | evidence_models.Link,
+    target: Any,
+    *,
+    stands: bool,
     assertion: evidence_models.Assertion,
     at: datetime.datetime | None = None,
-) -> evidence_models.LifecycleEvent:
-    """Retract a piece of evidence without destroying it.
+) -> ClaimResult:
+    """Claim that a piece of evidence does or does not stand.
 
-    Writes the authoritative lifecycle row and refreshes the cached ``status``
-    on the target in one transaction, so the cache cannot outlive a rolled-back
-    log entry.
+    **The only writer of retraction and attestation, for every kind of target.**
+    There were two — one that wrote a lifecycle row and flipped a cached status,
+    and one that only wrote the row — and which you got depended on whether the
+    target happened to be in a lookup table. Nodes fell through to the second, so
+    their cached status was never written and the filter that read it was a no-op.
+
+    **Every claim is written.** Restating a position already held used to be
+    suppressed: if the cached boolean already equalled the requested position, no
+    row was created and the caller was handed somebody else's earlier claim. So a
+    second annotator independently retracting the same metric left no trace, and
+    agreement was not countable on the existence axis — while `__assertion_count`
+    exists on the relation axis to make exactly that countable. The log records
+    who said what; concurrence is not noise.
+
+    The suppression was load-bearing for something else, which is why it could not
+    simply be deleted: `state.merge`/`state.retract` are deltas rather than
+    idempotent operations, so folding the same retraction twice subtracts a value
+    already taken out. That guard now lives on the transition instead — see the
+    ``moved`` flag below and :func:`evidence.claims.record_current`. The claim is
+    always recorded; only the *fold* is conditional.
+
+    Returns the claim, and whether the organization-wide answer moved. Callers
+    that un-fold state must act on the second value, never on the first.
     """
     target_type = _TARGET_TYPES.get(type(target))
     if target_type is None:
-        raise TypeError(f"{type(target).__name__} is not archivable evidence")
+        raise TypeError(f"{type(target).__name__} is not something a claim can be about")
 
-    if target.status == evidence_models.LifecycleStatus.ARCHIVED:
-        # Archiving twice must be a no-op, not a second retraction. The caller
-        # un-folds the metric's contribution from the state vector alongside
-        # this, so a second archive would subtract a value that has already been
-        # taken out — an error nothing would surface, because `recompute` fixes
-        # `n` and the drift would only show on aggregations that never recompute.
-        return evidence_models.LifecycleEvent.objects.for_organization(organization).filter(target_type=target_type, target_id=str(target.pk)).order_by("-at").first()
-
-    event = archive_ref(
+    written = claim_ref(
         organization,
         target_type=target_type,
         target_id=str(target.pk),
+        stands=stands,
         assertion=assertion,
         at=at,
     )
 
-    target.status = evidence_models.LifecycleStatus.ARCHIVED
-    target.save(update_fields=["status"])
-    return event
+    # The projection, not the log row. `ClaimCurrent` is what the hot read paths
+    # narrow by, and updating it here rather than on the target is what leaves the
+    # log tables immutable.
+    moved = claims_module.record_current(organization, target_type, target.pk, written)
+    return ClaimResult(claim=written, moved=moved)
+
+
+def retract(
+    organization: Organization,
+    target: Any,
+    assertion: evidence_models.Assertion,
+    at: datetime.datetime | None = None,
+) -> ClaimResult:
+    """Claim that a target no longer stands. Named for what it does to the record."""
+    return claim(organization, target, stands=False, assertion=assertion, at=at)
+
+
+def attest(
+    organization: Organization,
+    target: Any,
+    assertion: evidence_models.Assertion,
+    at: datetime.datetime | None = None,
+) -> ClaimResult:
+    """Claim that a target stands — new evidence, not the undoing of a retraction."""
+    return claim(organization, target, stands=True, assertion=assertion, at=at)
+
+
+def standing_metrics_for_kind(kind: evidence_models.MetricKind) -> Any:
+    """Every un-retracted metric recorded under one metric kind.
+
+    Sibling of :func:`active_metrics_for_structures` — same standing filter, a
+    different axis to slice on. Ordered by observation time so a caller reading a
+    kind's history gets it in the order the world happened, not the order rows
+    arrived.
+    """
+    standing = claims_module.standing(
+        evidence_models.Metric.objects.for_organization(kind.organization).filter(kind=kind),
+        "metric",
+    )
+    return standing.order_by("measured_at")
 
 
 def active_metrics_for_structures(
@@ -353,4 +469,8 @@ def active_metrics_for_structures(
     for the Cypher `MATCH (m:Metric)-[:DESCRIBES]->(s)` that rollups used to
     walk.
     """
-    return evidence_models.Metric.objects.for_organization(organization).filter(structure_id__in=list(structure_ids), status=evidence_models.LifecycleStatus.ACTIVE).order_by("measured_at")
+    standing = claims_module.standing(
+        evidence_models.Metric.objects.for_organization(organization).filter(structure_id__in=list(structure_ids)),
+        "metric",
+    )
+    return standing.order_by("measured_at")

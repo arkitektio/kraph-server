@@ -86,11 +86,14 @@ def entities_informed_by(info: Info, id: scalars.GraphID) -> List[types.Entity]:
     """
     controller = context.get_controller()
 
-    graph_id = context.extract_graph_id(id)
-    structure_id = context.extract_node_id(id)
+    # A structure id is a bare evidence primary key and always has been — there
+    # was never a graph in it to extract, and doing so split the uuid on its
+    # first hyphen and looked up a graph called "a3f2c1d4".
+    organization = context.get_active_organization(info)
+    structure = controller._resolve_structure(str(id), info)
 
-    graph = context.get_accessible_graph(info, graph_id)
+    entities = []
+    for graph in models.Graph.objects.filter(organization=organization):
+        entities.extend(controller.list_entities_informed_by_structure(graph=graph, structure_id=structure.pk, info=info))
 
-    structures = controller.list_entities_informed_by_structure(graph=graph, structure_id=structure_id, info=info)
-
-    return [types.Entity(_value=r) for r in structures]
+    return [types.Entity(_value=r) for r in entities]

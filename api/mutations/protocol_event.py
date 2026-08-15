@@ -1,115 +1,66 @@
 """
 Protocol event mutation resolvers.
+
+Every one returns a :class:`api.types.ProtocolEventAssertion` — see `api/mutations/entity.py`.
 """
 
 from kante.types import Info
 
 from api import context, inputs, types
-from core import models
-from evidence import writer
-from graph_engine import scalars
+from core import enums
+from evidence import models as evidence_models
 
 
-def _archive_protocol_event_by_local_id(controller, graph, local_id: scalars.LocalID, info: Info) -> None:
-    # The retraction is an assertion about instance data, so it goes to the
-    # evidence lifecycle log. The previous version created a LifeCycleAssertion
-    # vertex hanging off an `(a:Assertion)` match that no longer resolves after
-    # M1 — the CREATE simply never fired and the archive was silently dropped.
-    assertion = controller._create_assertion(graph.organization, controller._provenance_from_info(info))
-
-    writer.archive_ref(
-        graph.organization,
-        target_type="event",
-        target_id=f"{graph.age_name}:{local_id}",
-        assertion=assertion,
-    )
-
-    controller.engine.execute(
-        graph,
-        """
-        MATCH (e) WHERE id(e) = $eid
-        SET e.__lifecycle_state = $status
-        """,
-        {"eid": local_id, "status": "archived"},
-    )
-
-
-def create_protocol_event(
+def assert_protocol_event_exists(
     info: Info,
-    input: inputs.CreateProtocolEventInput,
-) -> types.ProtocolEvent:
+    input: inputs.AssertProtocolEventExistsInput,
+) -> types.ProtocolEventAssertion:
+    """Claim that a protocol step happened — see `assert_natural_event_exists`.
+
+    States `PROTOCOL_EVENT` outright. The controller used to infer the node kind
+    from `isinstance(category, models.ProtocolEventCategory)`, so the kind recorded
+    in the log depended on which proxy class an FK happened to hydrate, in a
+    resolver that already knew the answer.
+    """
     controller = context.get_controller()
 
     protocol_event = input.to_pydantic()
 
-    category = models.ProtocolEventCategory.objects.get(id=protocol_event.event_category)
+    organization = context.get_active_organization(info)
+    context.assert_can_access_organization(info, organization)
 
-    response = controller.create_natural_event(
-        category=category,
-        payload=protocol_event,
-        info=info,
+    term = controller.ensure_term(organization, enums.CategoryKindChoices.PROTOCOL_EVENT, protocol_event.term)
+
+    return types.ProtocolEventAssertion(
+        _value=controller.create_event(
+            organization=organization,
+            term=term,
+            node_kind=evidence_models.Node.Kind.PROTOCOL_EVENT,
+            payload=protocol_event,
+            info=info,
+        )
     )
 
-    return types.ProtocolEvent(_value=response)
 
-
-def delete_protocol_event(
+def retract_protocol_event(
     info: Info,
-    input: inputs.DeleteProtocolEventInput,
-) -> scalars.GraphID:
+    input: inputs.RetractProtocolEventInput,
+) -> types.ProtocolEventAssertion:
+    """Claim that a protocol event did not happen. See `retract_entity`."""
     controller = context.get_controller()
 
     model = input.to_pydantic()
-    graph_id = context.extract_graph_id(model.id)
-    local_id = context.extract_node_id(model.id)
 
-    graph = context.get_accessible_graph(info, graph_id)
-
-    controller.delete_entity(graph, local_id=local_id)
-
-    return model.id
+    # See `retract_natural_event`: one controller path for every node kind.
+    return types.ProtocolEventAssertion(_value=controller.archive_node(model.id, info=info))
 
 
-def archive_protocol_event(
+def attest_protocol_event(
     info: Info,
-    input: inputs.ArchiveProtocolEventInput,
-) -> types.ProtocolEvent:
+    input: inputs.AttestProtocolEventInput,
+) -> types.ProtocolEventAssertion:
+    """Claim that a protocol event exists. See `attest_entity`."""
     controller = context.get_controller()
 
     model = input.to_pydantic()
-    graph_id = context.extract_graph_id(model.id)
-    local_id = context.extract_node_id(model.id)
-
-    graph = context.get_accessible_graph(info, graph_id)
-
-    _archive_protocol_event_by_local_id(controller, graph, local_id, info)
-
-    archived = controller.get_node_by_local_id(graph, local_id=local_id, info=info)
-
-    return types.ProtocolEvent(_value=archived)
-
-
-def update_protocol_event(
-    info: Info,
-    input: inputs.UpdateProtocolEventInput,
-) -> types.ProtocolEvent:
-    controller = context.get_controller()
-
-    model = input.to_pydantic()
-    graph_id = context.extract_graph_id(model.id)
-    local_id = context.extract_node_id(model.id)
-
-    graph = context.get_accessible_graph(info, graph_id)
-    existing = controller.get_node_by_local_id(graph, local_id=local_id, info=info)
-
-    category = models.ProtocolEventCategory.objects.get(id=existing.category_id)
-
-    _archive_protocol_event_by_local_id(controller, graph, local_id, info)
-
-    updated = controller.create_natural_event(
-        category=category,
-        payload=model,
-        info=info,
-    )
-
-    return types.ProtocolEvent(_value=updated)
+    return types.ProtocolEventAssertion(_value=controller.attest_node(model.id, info=info))

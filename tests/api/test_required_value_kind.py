@@ -3,7 +3,7 @@
 The regression test for a dead end. When `value_kind` became part of a metric
 term's identity, a key could hold two terms — and `ensure_metric_kind` refused an
 undeclared write against such a key with "Declare one". But only
-`RecordMetricInput` had a `value_kind` to declare with: `createMetric`,
+`AssertMetricValueInput` had a `value_kind` to declare with: `createMetric`,
 `updateMetric` and the supporting-evidence metrics on `createEntity` all took the
 undeclared branch. An organization with `roi.confidence` as both FLOAT and STRING
 could not write that key through any of them, and the error told them to do
@@ -24,17 +24,17 @@ from kante.context import HttpContext
 from core import models as core_models
 from evidence import models as evidence_models
 
-MEASUREMENT_INPUTS = ["MetricInput", "RecordMetricInput", "CreateMetricInput", "UpdateMetricInput"]
+MEASUREMENT_INPUTS = ["MetricInput", "AssertMetricValueInput", "AssertMetricValueForStructureInput", "SupersedeMetricValueInput"]
 
 RECORD = """
-mutation RecordMetric($input: RecordMetricInput!) {
-    recordMetric(input: $input) { id value }
+mutation RecordMetric($input: AssertMetricValueInput!) {
+    assertMetricValue(input: $input) { metric { id value } }
 }
 """
 
 CREATE = """
-mutation CreateMetric($input: CreateMetricInput!) {
-    createMetric(input: $input) { id value }
+mutation CreateMetric($input: AssertMetricValueForStructureInput!) {
+    assertMetricValueForStructure(input: $input) { metric { id value } }
 }
 """
 
@@ -83,7 +83,7 @@ async def test_create_metric_works_on_a_key_with_several_terms(
     )
 
     assert created.errors is None, f"createMetric must reach a named term: {created.errors}"
-    assert created.data["createMetric"]["value"] == "medium"
+    assert created.data["assertMetricValueForStructure"]["metric"]["value"] == "medium"
 
     metric = await evidence_models.Metric.all_objects.filter(structure=structure, key="confidence", value_txt="medium").select_related("kind").afirst()
     assert metric is not None

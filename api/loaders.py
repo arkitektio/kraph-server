@@ -25,7 +25,6 @@ from __future__ import annotations
 from contextvars import ContextVar
 from typing import Any, Callable, Iterable
 
-from authentikate.models import User
 from strawberry.dataloader import DataLoader
 from strawberry.extensions import SchemaExtension
 
@@ -60,7 +59,6 @@ def _batch_by_pk(model: type, field: str = "id") -> Callable[[list[PKType]], Any
 
 
 _LOADER_SPECS: dict[str, tuple[type, str]] = {
-    "node_category": (models.NodeCategory, "id"),
     "entity_category": (models.EntityCategory, "id"),
     "structure_kind": (evidence_models.StructureKind, "id"),
     "natural_event_category": (models.NaturalEventCategory, "id"),
@@ -70,12 +68,10 @@ _LOADER_SPECS: dict[str, tuple[type, str]] = {
     "structure_relation_category": (models.StructureRelationCategory, "id"),
     "measurement_category": (models.MeasurementCategory, "id"),
     "graph_by_id": (models.Graph, "id"),
-    "graph": (models.Graph, "age_name"),
     "graph_nodes_query_by_id": (models.GraphNodesQuery, "id"),
     "graph_path_query_by_id": (models.GraphPathQuery, "id"),
     "graph_pairs_query_by_id": (models.GraphPairsQuery, "id"),
     "graph_table_query_by_id": (models.GraphTableQuery, "id"),
-    "user": (User, "id"),
 }
 
 
@@ -133,7 +129,6 @@ class LoaderExtension(SchemaExtension):
             _loaders.reset(token)
 
 
-node_category_loader = _LoaderProxy("node_category")
 entity_category_loader = _LoaderProxy("entity_category")
 structure_kind_loader = _LoaderProxy("structure_kind")
 natural_event_category_loader = _LoaderProxy("natural_event_category")
@@ -142,10 +137,8 @@ protocol_event_category_loader = _LoaderProxy("protocol_event_category")
 relation_category_loader = _LoaderProxy("relation_category")
 structure_relation_category_loader = _LoaderProxy("structure_relation_category")
 measurement_category_loader = _LoaderProxy("measurement_category")
-graph_loader = _LoaderProxy("graph")
 graph_by_id_loader = _LoaderProxy("graph_by_id")
 graph_nodes_query_by_id_loader = _LoaderProxy("graph_nodes_query_by_id")
 graph_path_query_by_id_loader = _LoaderProxy("graph_path_query_by_id")
 graph_pairs_query_by_id_loader = _LoaderProxy("graph_pairs_query_by_id")
 graph_table_query_by_id_loader = _LoaderProxy("graph_table_query_by_id")
-user_loader = _LoaderProxy("user")

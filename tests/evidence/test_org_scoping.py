@@ -24,7 +24,7 @@ EVIDENCE_MODELS = [
     evidence_models.Structure,
     evidence_models.Metric,
     evidence_models.Link,
-    evidence_models.LifecycleEvent,
+    evidence_models.Claim,
 ]
 
 
@@ -88,10 +88,19 @@ def test_all_objects_is_the_only_unrestricted_path(organization: Organization, r
 def test_django_internals_use_the_unrestricted_manager(organization: Organization, roi_category_a: evidence_models.StructureKind, assertion: evidence_models.Assertion) -> None:
     """Reverse accessors must not trip the guard.
 
-    If `_base_manager` / `_default_manager` resolved to the raising manager, this
-    cascade would explode instead of deleting — which is how a well-meaning
-    scoping guard breaks the framework it lives in.
+    If `_base_manager` / `_default_manager` resolved to the raising manager, the
+    collector Django runs before a delete would raise `UnscopedEvidenceAccess`
+    instead of finding the related rows — which is how a well-meaning scoping
+    guard breaks the framework it lives in.
+
+    The delete used to cascade, and this asserted the structure was gone.
+    `Structure.kind` is `PROTECT` now, so the same traversal produces a
+    `ProtectedError` instead: the collector still had to walk the reverse
+    accessor to know what was in the way, which is the property under test, and
+    the evidence survives, which is the property that changed.
     """
+    from django.db.models import ProtectedError
+
     structure = evidence_models.Structure.objects.create_for_organization(
         organization=organization,
         kind=roi_category_a,
@@ -101,5 +110,8 @@ def test_django_internals_use_the_unrestricted_manager(organization: Organizatio
     )
 
     assert list(assertion.structures.all()) == [structure]
-    roi_category_a.delete()
-    assert evidence_models.Structure.all_objects.count() == 0
+
+    with pytest.raises(ProtectedError):
+        roi_category_a.delete()
+
+    assert evidence_models.Structure.all_objects.count() == 1, "Deleting vocabulary must not delete the evidence expressed in it"

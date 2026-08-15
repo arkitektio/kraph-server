@@ -192,8 +192,15 @@ def test_event_category_has_roles(transactional_db, age_engine, bio_graph_schema
 
 
 def test_compute_definition_hash_is_deterministic() -> None:
-    """Test that compute_definition_hash produces consistent results."""
-    schema = models.GraphDefinitionInput(system_version="1.0.0", extensions=models.GraphExtensionsInput(entities=[models.EntityDefinitionInput(key="TestEntity", properties=[models.PropertyDefinitionInput(key="name", type=models.PropertyType.STRING)])]))
+    """Test that compute_definition_hash produces consistent results.
+
+    `property_definitions`, not `properties`: an entity definition spells it the
+    first way and only an edge definition spells it the second. This said
+    `properties=[...]`, pydantic dropped the unknown key, and the schema being
+    hashed had no properties at all — so the test was determinism over an empty
+    entity. `StrictModel` refuses the key now.
+    """
+    schema = models.GraphDefinitionInput(system_version="1.0.0", extensions=models.GraphExtensionsInput(entities=[models.EntityDefinitionInput(key="TestEntity", property_definitions=[models.PropertyDefinitionInput(key="name", type=models.PropertyType.STRING)])]))
 
     hash1 = compute_definition_hash(schema)
     hash2 = compute_definition_hash(schema)

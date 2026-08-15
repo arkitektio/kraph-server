@@ -13,6 +13,68 @@ from graph_engine.scalars import GraphID
 from graph_engine import scalars
 from core import enums
 
+class StrictModel(BaseModel):
+    """Base for every input model here: a key that is not a field is an error.
+
+    Pydantic's default is to **ignore** unknown keys, which is the wrong default
+    everywhere this module is used, and wrong for two different reasons.
+
+    **On the way in**, an ignored key is a silent no-op. A client sending
+    `ontologyTerms` when the field is `ontologyTerms`, or `tags` after tags were
+    removed, gets a success and no effect — the class of silence this codebase
+    keeps having to hunt down after the fact. GraphQL already rejects an unknown
+    *field*; this closes the same hole for every path that builds a model from a
+    dict instead, which is what the eight JSON round-trips in `core/models.py`
+    do.
+
+    **On the way back out of the database**, an ignored key is worse than a
+    no-op: it is an instruction that used to mean something. `source_definition`
+    and `target_definition` are stored as JSON and read back through
+    `EntityDescriptorInput` / `StructureDescriptorInput`, so a filter written
+    under an older schema stays in the row, stops being applied, and *widens* the
+    match — quietly, forever. Forbidding makes that row say so.
+
+    The cost is that stored JSON has to keep up with the models.
+    `core/migrations/0005_strict_input_models` sweeps what exists today; a field
+    removed later needs the same treatment, and this docstring is the reason why.
+
+    Subclasses inherit the config, so only the direct `BaseModel` inheritors in
+    this module name it. Deliberately not applied to `kraph_server.configuration`
+    (its passthrough classes are `extra="allow"` on purpose), nor to
+    `rekuest_core` or `datalayer`, which model payloads another service owns and
+    may extend.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+
+#: What a write says it is claiming. Spelled out once because getting it wrong is
+#: the easiest client-side mistake to make: a term is identified by its **key**,
+#: which is the same string a category's `key` carries — `"AIS"`, `"Mitosis"`,
+#: `"IS_CONNECTED_TO"` — and not by a category's `label` (human-facing, editable)
+#: or its `age_name` (a projection's internal label). The kind of word is implied
+#: by the mutation, so it is never stated here.
+TERM_FIELD_DESCRIPTION = (
+    "The organization's word for what is being claimed — a term's `key`, e.g. 'AIS'. "
+    "Not a category id and not a graph: a claim names a word, and every view that "
+    "declares that word will hold what you write. The word is created if the "
+    "organization has not used it before; a view that declares no category for it "
+    "simply will not draw it."
+)
+
+#: Why a schema mutation offers to project history. Declaring a word widens a view,
+#: and the claims already made under that word are sitting in the evidence base
+#: unread. Offered on the kinds that have a projection to fill — nodes and
+#: relations. Measurements and structure relations are evidence rows with no
+#: projected edge at all, so there would be nothing for the flag to do.
+BACKFILL_FIELD_DESCRIPTION = (
+    "Draw the evidence this word already admits. Claims made under it before this "
+    "category existed are in the organization's evidence base; with this on they are "
+    "projected into the graph now, instead of waiting for the next reproject. Off by "
+    "default because the work is proportional to the graph's evidence and happens "
+    "before this mutation returns."
+)
+
 # --- Enums for Strict Typing ---
 
 
@@ -149,7 +211,7 @@ AGGREGATION_RESULT_TYPES: Dict[AggregationFunction, Optional[enums.ValueKind]] =
 # --- 1. Property & Derivation Rules ---
 
 
-class DerivationRule(BaseModel):
+class DerivationRule(StrictModel):
     """
     Configuration for how to calculate a value if derivation != LATEST.
     """
@@ -166,7 +228,7 @@ class DerivationRule(BaseModel):
 # =======================
 # TEXT MODELS
 # =======================
-class PlateChildInput(BaseModel):
+class PlateChildInput(StrictModel):
     id: str
     type: str | None = None
     text: str | None = None
@@ -185,68 +247,68 @@ class PlateChildInput(BaseModel):
 # ==========================================
 
 
-class RenderGraphNodesFilter(BaseModel):
+class RenderGraphNodesFilter(StrictModel):
     key: str
     operator: str
     value: scalars.AnyScalar
 
 
-class RenderGraphNodesPagination(BaseModel):
+class RenderGraphNodesPagination(StrictModel):
     limit: int
     offset: int
 
 
-class RenderGraphNodesOrder(BaseModel):
+class RenderGraphNodesOrder(StrictModel):
     key: str
     direction: str = "asc"
 
 
-class RenderGraphPathFilter(BaseModel):
+class RenderGraphPathFilter(StrictModel):
     key: Optional[str] = None
     operator: Optional[str] = None
     value: Optional[scalars.AnyScalar] = None
     search: Optional[str] = None
 
 
-class RenderGraphPathPagination(BaseModel):
+class RenderGraphPathPagination(StrictModel):
     limit: int
     offset: int
 
 
-class RenderGraphPathOrder(BaseModel):
+class RenderGraphPathOrder(StrictModel):
     key: str
     direction: str = "asc"
 
 
-class RenderGraphPairsFilter(BaseModel):
+class RenderGraphPairsFilter(StrictModel):
     key: str
     operator: str
     value: scalars.AnyScalar
 
 
-class RenderGraphPairsPagination(BaseModel):
+class RenderGraphPairsPagination(StrictModel):
     limit: int
     offset: int
 
 
-class RenderGraphPairsOrder(BaseModel):
+class RenderGraphPairsOrder(StrictModel):
     key: str
     direction: str = "asc"
 
 
-class RenderGraphTableFilter(BaseModel):
+class RenderGraphTableFilter(StrictModel):
     key: Optional[str] = None
     operator: Optional[str] = None
     value: scalars.AnyScalar
     search: Optional[str] = None
 
 
-class RenderGraphTablePagination(BaseModel):
+class RenderGraphTablePagination(StrictModel):
     limit: int
     offset: int
 
 
-class RenderGraphTableOrder(BaseModel):
+class RenderGraphTableOrder(StrictModel):
     key: str
     direction: str = "asc"
 
@@ -256,15 +318,15 @@ class RenderGraphTableOrder(BaseModel):
 # ==========================================
 
 
-class PropertyMatch(BaseModel):
+class PropertyMatch(StrictModel):
     """A property match"""
 
     key: str = Field(description="The property matching")
     operator: WhereOperator = Field(description="The operator to use")
-    value: scalars.AnyScalar = Field(description="THe value to filter agains")
+    value: scalars.AnyScalar = Field(description="The value to filter against")
 
 
-class EntityFilters(BaseModel):
+class EntityFilters(StrictModel):
     graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
     category: Optional[str] = Field(default=None, description="Filter by entity kind/type")
     ids: Optional[List[scalars.GraphID]] = Field(default=None, description="Filter by specific entity IDs")
@@ -273,12 +335,12 @@ class EntityFilters(BaseModel):
     matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter entities that match specific property conditions")
 
 
-class EntityPagination(BaseModel):
+class EntityPagination(StrictModel):
     offset: Optional[int] = Field(default=0, description="Number of items to skip")
     limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
 
 
-class NodeFilters(BaseModel):
+class NodeFilters(StrictModel):
     graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
     category: Optional[str] = Field(default=None, description="Filter by node kind/type")
     ids: Optional[List[scalars.GraphID]] = Field(default=None, description="Filter by specific node IDs")
@@ -287,12 +349,12 @@ class NodeFilters(BaseModel):
     matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter nodes that match specific property conditions")
 
 
-class NodePagination(BaseModel):
+class NodePagination(StrictModel):
     offset: Optional[int] = Field(default=0, description="Number of items to skip")
     limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
 
 
-class StructureFilters(BaseModel):
+class StructureFilters(StrictModel):
     graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
     category: Optional[str] = Field(default=None, description="Filter by structure kind/type")
     ids: Optional[List[scalars.GraphID]] = Field(default=None, description="Filter by specific structure IDs")
@@ -301,38 +363,38 @@ class StructureFilters(BaseModel):
     matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter structures that match specific property conditions")
 
 
-class StructurePagination(BaseModel):
+class StructurePagination(StrictModel):
     offset: Optional[int] = Field(default=0, description="Number of items to skip")
     limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
 
 
-class PropertyOrder(BaseModel):
+class PropertyOrder(StrictModel):
     key: str = Field(description="The property key to order by")
     direction: Ordering = Field(description="The direction to order (ASC or DESC)")
 
 
-class EntityOrder(BaseModel):
+class EntityOrder(StrictModel):
     created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
     category: Optional[Ordering] = Field(default=None, description="Order by entity kind/type")
     id: Optional[Ordering] = Field(default=None, description="Order by entity ID")
     property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value (requires 'has_property' filter)")
 
 
-class NodeOrder(BaseModel):
+class NodeOrder(StrictModel):
     created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
     category: Optional[Ordering] = Field(default=None, description="Order by entity kind/type")
     id: Optional[Ordering] = Field(default=None, description="Order by entity ID")
     property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value (requires 'has_property' filter)")
 
 
-class StructureOrder(BaseModel):
+class StructureOrder(StrictModel):
     created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
     category: Optional[Ordering] = Field(default=None, description="Order by structure kind/type")
     id: Optional[Ordering] = Field(default=None, description="Order by structure ID")
     property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value (requires 'has_property' filter)")
 
 
-class MetricFilters(BaseModel):
+class MetricFilters(StrictModel):
     graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
     category: Optional[str] = Field(default=None, description="Filter by metric category ID")
     ids: Optional[List[scalars.GraphID]] = Field(default=None, description="Filter by specific metric IDs")
@@ -341,19 +403,19 @@ class MetricFilters(BaseModel):
     matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter metrics that match specific property conditions")
 
 
-class MetricPagination(BaseModel):
+class MetricPagination(StrictModel):
     offset: Optional[int] = Field(default=0, description="Number of items to skip")
     limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
 
 
-class MetricOrder(BaseModel):
+class MetricOrder(StrictModel):
     created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
     category: Optional[Ordering] = Field(default=None, description="Order by metric category")
     id: Optional[Ordering] = Field(default=None, description="Order by metric ID")
     property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value")
 
 
-class NaturalEventFilters(BaseModel):
+class NaturalEventFilters(StrictModel):
     graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
     category: Optional[str] = Field(default=None, description="Filter by natural event category ID")
     ids: Optional[List[scalars.GraphID]] = Field(default=None, description="Filter by specific natural event IDs")
@@ -362,19 +424,19 @@ class NaturalEventFilters(BaseModel):
     matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter natural events that match specific property conditions")
 
 
-class NaturalEventPagination(BaseModel):
+class NaturalEventPagination(StrictModel):
     offset: Optional[int] = Field(default=0, description="Number of items to skip")
     limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
 
 
-class NaturalEventOrder(BaseModel):
+class NaturalEventOrder(StrictModel):
     created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
     category: Optional[Ordering] = Field(default=None, description="Order by natural event category")
     id: Optional[Ordering] = Field(default=None, description="Order by natural event ID")
     property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value")
 
 
-class ProtocolEventFilters(BaseModel):
+class ProtocolEventFilters(StrictModel):
     graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
     category: Optional[str] = Field(default=None, description="Filter by protocol event category ID")
     ids: Optional[List[scalars.GraphID]] = Field(default=None, description="Filter by specific protocol event IDs")
@@ -383,19 +445,19 @@ class ProtocolEventFilters(BaseModel):
     matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter protocol events that match specific property conditions")
 
 
-class ProtocolEventPagination(BaseModel):
+class ProtocolEventPagination(StrictModel):
     offset: Optional[int] = Field(default=0, description="Number of items to skip")
     limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
 
 
-class ProtocolEventOrder(BaseModel):
+class ProtocolEventOrder(StrictModel):
     created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
     category: Optional[Ordering] = Field(default=None, description="Order by protocol event category")
     id: Optional[Ordering] = Field(default=None, description="Order by protocol event ID")
     property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value")
 
 
-class MeasurementFilters(BaseModel):
+class MeasurementFilters(StrictModel):
     graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
     category: Optional[str] = Field(default=None, description="Filter by measurement category ID")
     ids: Optional[List[scalars.GraphID]] = Field(default=None, description="Filter by specific measurement IDs")
@@ -404,19 +466,19 @@ class MeasurementFilters(BaseModel):
     matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter measurements that match specific property conditions")
 
 
-class MeasurementPagination(BaseModel):
+class MeasurementPagination(StrictModel):
     offset: Optional[int] = Field(default=0, description="Number of items to skip")
     limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
 
 
-class MeasurementOrder(BaseModel):
+class MeasurementOrder(StrictModel):
     created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
     category: Optional[Ordering] = Field(default=None, description="Order by measurement category")
     id: Optional[Ordering] = Field(default=None, description="Order by measurement ID")
     property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value")
 
 
-class StructureRelationFilters(BaseModel):
+class StructureRelationFilters(StrictModel):
     graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
     category: Optional[str] = Field(default=None, description="Filter by structure relation category ID")
     ids: Optional[List[scalars.GraphID]] = Field(default=None, description="Filter by specific structure relation IDs")
@@ -425,19 +487,19 @@ class StructureRelationFilters(BaseModel):
     matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter structure relations that match specific property conditions")
 
 
-class StructureRelationPagination(BaseModel):
+class StructureRelationPagination(StrictModel):
     offset: Optional[int] = Field(default=0, description="Number of items to skip")
     limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
 
 
-class StructureRelationOrder(BaseModel):
+class StructureRelationOrder(StrictModel):
     created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
     category: Optional[Ordering] = Field(default=None, description="Order by structure relation category")
     id: Optional[Ordering] = Field(default=None, description="Order by structure relation ID")
     property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value")
 
 
-class RelationFilters(BaseModel):
+class RelationFilters(StrictModel):
     graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
     category: Optional[str] = Field(default=None, description="Filter by relation category ID")
     ids: Optional[List[scalars.GraphID]] = Field(default=None, description="Filter by specific relation IDs")
@@ -446,12 +508,12 @@ class RelationFilters(BaseModel):
     matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter relations that match specific property conditions")
 
 
-class RelationPagination(BaseModel):
+class RelationPagination(StrictModel):
     offset: Optional[int] = Field(default=0, description="Number of items to skip")
     limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
 
 
-class RelationOrder(BaseModel):
+class RelationOrder(StrictModel):
     created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
     category: Optional[Ordering] = Field(default=None, description="Order by relation category")
     id: Optional[Ordering] = Field(default=None, description="Order by relation ID")
@@ -463,7 +525,7 @@ class RelationOrder(BaseModel):
 # ==========================================
 
 
-class MetricInput(BaseModel):
+class MetricInput(StrictModel):
     """
     A single measurement entry.
     Timestamps are converted to Unix Epoch Milliseconds (int) for Apache AGE.
@@ -521,7 +583,7 @@ def create_max_confidence_metric(key: str, value: Any, unit: Optional[str] = Non
     return MetricInput(key=key, value=value, confidence=1.0, confidence_type="max", unit=unit, timestamp=timestamp)
 
 
-class StructureReferenceInput(BaseModel):
+class StructureReferenceInput(StrictModel):
     identifier: scalars.StructureIdentifier = Field(..., description="Schema identifier, e.g. '@mikro/roi'")
     object: scalars.StructureObject = Field(..., description="The unique ID of the object this structure references")
     metrics: List[MetricInput] = []
@@ -531,7 +593,7 @@ def create_told_you_so(metrics: List[MetricInput], object: str) -> StructureRefe
     return StructureReferenceInput(identifier="told_you_so", object=object, metrics=metrics)
 
 
-class ProvenanceContext(BaseModel):
+class ProvenanceContext(StrictModel):
     subject: str = Field(..., description="User ID")
     app_id: str = Field(..., description="Client ID")
     action_id: Optional[str] = None
@@ -579,7 +641,7 @@ class SemanticVersion(str):
         return validate_semver(v)
 
 
-class SchemaValidationError(BaseModel):
+class SchemaValidationError(StrictModel):
     """A single validation error from schema validation."""
 
     location: List[str] = Field(default_factory=list, description="Path to the error location (e.g., ['extensions', 'entities', 'Neuron', 'properties', 'soma_volume'])")
@@ -587,7 +649,7 @@ class SchemaValidationError(BaseModel):
     type: str = Field(default="validation_error", description="Error type (e.g., 'missing_field', 'invalid_type', 'reference_error')")
 
 
-class SchemaValidationResult(BaseModel):
+class SchemaValidationResult(StrictModel):
     """Result of validating a schema."""
 
     is_valid: bool = Field(..., description="Whether the schema is valid")
@@ -595,7 +657,7 @@ class SchemaValidationResult(BaseModel):
     warnings: List[SchemaValidationError] = Field(default_factory=list, description="List of validation warnings (non-fatal issues)")
 
 
-class OntologyReferenceInput(BaseModel):
+class OntologyReferenceInput(StrictModel):
     """Input for an ontology reference."""
 
     prefix: str = Field(..., description="The ontology prefix (e.g. 'OBI'). Must be defined in graph prefixes.")
@@ -606,7 +668,7 @@ class OntologyReferenceInput(BaseModel):
 # These mirror the base_models but are used for input validation
 
 
-class DerivationRuleInput(BaseModel):
+class DerivationRuleInput(StrictModel):
     """Input for a derivation rule configuration."""
 
     source_node: Optional[str] = Field(default=None, description="The label of the describing structure to read from")
@@ -633,7 +695,7 @@ class DerivationRuleInput(BaseModel):
     )
 
 
-class ColumnInput(BaseModel):
+class ColumnInput(StrictModel):
     kind: ColumnKind = Field(..., description="The kind of column (e.g., 'property', 'id', 'metadata', 'derived')")
     key: str = Field(..., description="The property key for this column (inside the table query result)")
     type: str = Field(..., description="The property type for this column (e.g., STRING, FLOAT)")
@@ -647,7 +709,7 @@ class ColumnInput(BaseModel):
     prefer_hidden: bool = Field(default=False, description="Whether this column should be hidden by default in the UI, even if it's not an ID or metadata column")
 
 
-class MatchPathInput(BaseModel):
+class MatchPathInput(StrictModel):
     nodes: list[str] = Field(..., description="List of node IDs to match")
     relations: list[str] = Field(..., description="List of node IDs representing the path")
     optional: bool = Field(default=False, description="Whether the path match is optional")
@@ -659,7 +721,7 @@ class MatchPathInput(BaseModel):
     )
 
 
-class WhereClauseInput(BaseModel):
+class WhereClauseInput(StrictModel):
     path: str
     node: str | None = None
     property: str = Field(..., description="The property name to filter on")
@@ -667,19 +729,19 @@ class WhereClauseInput(BaseModel):
     value: scalars.CypherLiteral = Field(..., description="The value to compare against")
 
 
-class ReturnStatementInput(BaseModel):
+class ReturnStatementInput(StrictModel):
     path: str = Field(..., description="The path ID to return")
     node: str | None = Field(default=None, description="The node ID to return")
     property: str | None = Field(default=None, description="The property name to return")
 
 
-class BuilderArgsInput(BaseModel):
+class BuilderArgsInput(StrictModel):
     where_clauses: Optional[List[WhereClauseInput]] = Field(default=None, description="Optional filtering conditions for the graph query")
     match_paths: Optional[List[MatchPathInput]] = Field(default=None, description="Optional patterns to match in the graph for this query")
     return_statements: Optional[List[ReturnStatementInput]] = Field(default=None, description="The values to return for each matched pattern in the graph query")
 
 
-class PropertyDefinitionInput(BaseModel):
+class PropertyDefinitionInput(StrictModel):
     """Input for a property definition on a node or relation."""
 
     label: Optional[str] = Field(default=None, description="Optional human-readable label for this property (defaults to 'key' if not provided)")
@@ -695,14 +757,29 @@ class PropertyDefinitionInput(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def populate_value_kind_from_legacy_type(cls, data):
+        """Accept the old `type` spelling and translate it to `value_kind`.
+
+        The key is **consumed**, not merely read. `StrictModel` forbids unknown
+        keys, and `type` is not a field — so leaving it in place after translating
+        it would turn every legacy caller into a `ValidationError` at the very
+        moment this validator had just successfully understood them. Popping is
+        what makes translation and strictness compatible: the shim's whole job is
+        to make the old key disappear into the new one.
+
+        `core/migrations/0005_strict_input_models` calls this before sweeping
+        stored JSON, for the same reason — otherwise the sweep would delete a
+        `type` that is carrying the row's only value kind.
+        """
         if not isinstance(data, dict):
             return data
 
-        if data.get("value_kind") is not None:
+        if "type" not in data:
             return data
 
-        legacy_type = data.get("type")
-        if legacy_type is None:
+        data = data.copy()
+        legacy_type = data.pop("type")
+
+        if data.get("value_kind") is not None or legacy_type is None:
             return data
 
         type_to_value_kind = {
@@ -769,32 +846,30 @@ class PropertyDefinitionInput(BaseModel):
         return self
 
 
-class SequenceMappingInput(BaseModel):
+class SequenceMappingInput(StrictModel):
     """Input for a sequence mapping within a structure."""
 
     sequence: str = Field(..., description="The sequence identifier (e.g., 'IAZ001')")
     property: str = Field(..., description="The property key that will be set with the sequence value")
 
 
-class DefinitionInput(BaseModel):
+class DefinitionInput(StrictModel):
     sequences: List[SequenceMappingInput] = Field(default_factory=list, description="Sequence mappings for this node")
     key: str = Field(..., description="The label of the node participating in the event")
     description: Optional[str] = Field(default=None, description="Description of this node role")
     ontology_references: List[OntologyReferenceInput] = Field(default_factory=list, description="Ontology references for this event")
-    tags: List[str] = Field(default_factory=list, description="Optional tags for this node role (e.g. 'cell_body', 'dendrite', 'axon')")
     color: Optional[List[int]] = Field(default=None, description="Optional RGBA color for this node role (e.g. [255, 0, 0, 128])")
     image: Optional[str] = Field(default=None, description="Optional media store ID for an image representing this node role")
     label: Optional[str] = Field(default=None, description="Optional human-readable label for this node role (defaults to 'key' if not provided)")
     pin: Optional[bool] = Field(default=None, description="Whether to pin this node role in the UI")
 
 
-class UpdateDefinitionInput(BaseModel):
+class UpdateDefinitionInput(StrictModel):
     id: GraphID = Field(..., description="The ID of the definition to update")
     sequences: Optional[List[SequenceMappingInput]] = Field(default=None, description="Sequence mappings for this node")
     key: Optional[str] = Field(default=None, description="The label of the node participating in the event")
     description: Optional[str] = Field(default=None, description="Description of this node role")
     ontology_references: Optional[List[OntologyReferenceInput]] = Field(default=None, description="Ontology references for this event")
-    tags: Optional[List[str]] = Field(default=None, description="Optional tags for this node role (e.g. 'cell_body', 'dendrite', 'axon')")
     color: Optional[List[int]] = Field(default=None, description="Optional RGBA color for this node role (e.g. [255, 0, 0, 128])")
     image: Optional[str] = Field(default=None, description="Optional media store ID for an image representing this node role")
     label: Optional[str] = Field(default=None, description="Optional human-readable label for this node role (defaults to 'key' if not provided)")
@@ -870,7 +945,7 @@ class UpdateEntityDefinitionInput(UpdateDefinitionInput):
         return v
 
 
-class SetEntityPropertyInput(BaseModel):
+class SetEntityPropertyInput(StrictModel):
     """Input for setting a property value on an entity."""
 
     entity_id: GraphID = Field(..., description="The ID of the entity to update")
@@ -881,16 +956,20 @@ class SetEntityPropertyInput(BaseModel):
 class CreateEntityDefinitionInput(EntityDefinitionInput):
     """Input for an entity definition at the graph level (not within an event)."""
 
-    graph: GraphID = Field(..., description="The graph id this entitiy will beong to")
+    graph: GraphID = Field(..., description="The graph id this entity will belong to")
+    backfill: bool = Field(
+        default=False,
+        description=BACKFILL_FIELD_DESCRIPTION,
+    )
 
 
-class DeleteEntityDefinitionInput(BaseModel):
+class DeleteEntityDefinitionInput(StrictModel):
     """Input for deleting an existing structure definition at the graph level."""
 
     id: GraphID = Field(..., description="The ID of the structure category to delete")
 
 
-class ArchiveStructureDefinitionInput(BaseModel):
+class ArchiveStructureDefinitionInput(StrictModel):
     """Input for deleting an existing structure definition at the graph level."""
 
     id: GraphID = Field(..., description="The ID of the structure category to delete")
@@ -908,10 +987,55 @@ class CreateStructureDefinitionInput(StructureDefinitionInput):
     graph: GraphID = Field(..., description="The graph id this structure will belong to")
 
 
-class DeleteStructureDefinitionInput(BaseModel):
+class DeleteStructureDefinitionInput(StrictModel):
     """Input for deleting an existing structure definition at the graph level."""
 
     id: GraphID = Field(..., description="The ID of the entity category to delete")
+
+
+class CreateTermInput(StrictModel):
+    """Input for declaring one of the organization's words up front.
+
+    Terms are minted lazily whenever a graph declares a category for a word or a
+    claim names one, so this is never *required*. It exists because a term is an
+    ontology entry a curator may want to describe — a label, a definition, a PURL
+    — before any graph uses it, and `ensure_term` will then find that entry
+    instead of minting a bare one.
+
+    That is the difference from `structureKind`, which has no create: `@mikro/roi`
+    is owned by the service that produces the datum, so there is nothing for a
+    curator to declare in advance.
+    """
+
+    kind: enums.TermKind = Field(..., description="What sort of thing this word names. Part of its identity.")
+    key: str = Field(..., description="The word itself, e.g. 'AIS'")
+    label: Optional[str] = Field(default=None, description="Human-readable name")
+    description: Optional[str] = Field(default=None, description="What this word means")
+    purl: Optional[str] = Field(default=None, description="Persistent URL, where this corresponds to a published ontology term")
+    color: Optional[List[int]] = Field(default=None, description="Optional RGBA colour")
+    image: Optional[str] = Field(default=None, description="Optional media store ID for an illustrative image")
+
+
+class UpdateTermInput(StrictModel):
+    """Input for editing how one of the organization's words presents itself.
+
+    Descriptive fields only. `kind` and `key` are the term's identity, and
+    renaming one would silently re-point every claim recorded under it at a
+    different word.
+    """
+
+    id: GraphID = Field(..., description="The ID of the term to update")
+    label: Optional[str] = Field(default=None, description="Human-readable name")
+    description: Optional[str] = Field(default=None, description="What this word means")
+    purl: Optional[str] = Field(default=None, description="Persistent URL, where this corresponds to a published ontology term")
+    color: Optional[List[int]] = Field(default=None, description="Optional RGBA colour")
+    image: Optional[str] = Field(default=None, description="Optional media store ID for an illustrative image")
+
+
+class DeleteTermInput(StrictModel):
+    """Input for retiring one of the organization's words."""
+
+    id: GraphID = Field(..., description="The ID of the term to delete")
 
 
 class UpdateMetricDefinitionInput(UpdateDefinitionInput):
@@ -926,46 +1050,16 @@ class CreateMetricDefinitionInput(MetricDefinitionInput):
     graph: GraphID = Field(..., description="The graph id this metric will belong to")
 
 
-class DeleteMetricDefinitionInput(BaseModel):
+class DeleteMetricDefinitionInput(StrictModel):
     """Input for deleting an existing metric definition at the graph level."""
 
     id: GraphID = Field(..., description="The ID of the entity category to delete")
 
 
-class ArchiveMetricDefinitionInput(BaseModel):
+class ArchiveMetricDefinitionInput(StrictModel):
     """Input for archiving (soft deleting) an existing metric definition at the graph level."""
 
     id: GraphID = Field(..., description="The ID of the metric definition to archive")
-
-
-class CreateCategoryTagInput(BaseModel):
-    """Input for creating a category tag in a graph."""
-
-    graph: GraphID = Field(..., description="The graph ID this category tag belongs to")
-    value: str = Field(..., description="Unique tag value within the graph")
-    name: Optional[str] = Field(default=None, description="Optional human-readable name")
-    description: Optional[str] = Field(default=None, description="Optional category tag description")
-
-
-class UpdateCategoryTagInput(BaseModel):
-    """Input for updating an existing category tag."""
-
-    id: GraphID = Field(..., description="The category tag ID")
-    value: Optional[str] = Field(default=None, description="Updated unique tag value")
-    name: Optional[str] = Field(default=None, description="Updated human-readable name")
-    description: Optional[str] = Field(default=None, description="Updated category tag description")
-
-
-class DeleteCategoryTagInput(BaseModel):
-    """Input for deleting an existing category tag."""
-
-    id: GraphID = Field(..., description="The category tag ID")
-
-
-class ArchiveCategoryTagInput(BaseModel):
-    """Input for archiving an existing category tag."""
-
-    id: GraphID = Field(..., description="The category tag ID")
 
 
 class EventKind(str, Enum):
@@ -978,7 +1072,6 @@ class EventKind(str, Enum):
 class EntityCategoryProtocol(Protocol):
     """Protocol for entity categories to provide source definition for event linking."""
 
-    tags: List[str]
     key: str
     ontology_references: List[OntologyReferenceInput]
 
@@ -986,39 +1079,44 @@ class EntityCategoryProtocol(Protocol):
 class StructureCategoryProtocol(Protocol):
     """Protocol for entity categories to provide source definition for event linking."""
 
-    tags: List[str]
     key: str
     identifier: scalars.StructureIdentifier
     ontology_references: List[OntologyReferenceInput]
 
 
-class EntityDescriptorInput(BaseModel):
+class EntityDescriptorInput(StrictModel):
     """Input for filtering entities when linking to a structure. This only contains relativ fields
     that can be used for filtering, not absolute references like 'id'."""
 
+    # No `tags`, and deliberately no `REMOVED` placeholder for it either. The
+    # concept is gone, not renamed — `CategoryTag` and `Category.tags` were
+    # deleted in `core/migrations/0004_category_tags_die`, so there is nothing
+    # left for the field to mean. A client still sending one gets GraphQL's own
+    # `Unknown field "tags"`, which is the loud failure that matters; carrying a
+    # placeholder that raises would keep the word in the schema it just left.
+    # (`StructureDescriptorInput` below does carry such placeholders. Those
+    # predate this and record a *different* removal — structures becoming
+    # organization vocabulary — so they are left where they are.)
     keys: Optional[List[str]] = Field(default=None, description="Filter by entity key/label")
-    tags: Optional[List[str]] = Field(default=None, description="Filter by tags on the entity")
-    ontotology_terms: Optional[List[str]] = Field(default=None, description="Filter by ontology references on the entity (format: 'PREFIX:TERM_ID')")
+    ontology_terms: Optional[List[str]] = Field(default=None, description="Filter by ontology references on the entity (format: 'PREFIX:TERM_ID')")
     default_category_key: Optional[str] = Field(default=None, description="Default category to link to if no entities match the filters")
 
     def matches(self, entity: EntityCategoryProtocol) -> bool:
         """Check if a given entity matches this descriptor."""
         if self.keys and entity.key not in self.keys:
             return False
-        if self.tags and not set(self.tags).issubset(set(entity.tags)):
-            return False
-        if self.ontotology_terms and not set(self.ontotology_terms).issubset(set(map(lambda x: x.uri, entity.ontology_references))):
+        if self.ontology_terms and not set(self.ontology_terms).issubset(set(map(lambda x: x.uri, entity.ontology_references))):
             return False
         return True
 
 
-class StructureDescriptorInput(BaseModel):
+class StructureDescriptorInput(StrictModel):
     """Input for filtering entities when linking to a structure. This only contains relativ fields
     that can be used for filtering, not absolute references like 'id'."""
 
     keys: Optional[List[str]] = Field(default=None, description="REMOVED — structure kinds have no key. Use `identifiers`.")
-    tags: Optional[List[str]] = Field(default=None, description="REMOVED — structure kinds carry no tags. Use `identifiers`.")
-    ontotology_terms: Optional[List[str]] = Field(default=None, description="REMOVED — structure kinds carry no ontology references. Use `identifiers`.")
+    tags: Optional[List[str]] = Field(default=None, description="REMOVED — tags are gone, and a structure kind never had them. Use `identifiers`.")
+    ontology_terms: Optional[List[str]] = Field(default=None, description="REMOVED — structure kinds carry no ontology references. Use `identifiers`.")
     default_category_key: Optional[str] = Field(default=None, description="Default category to link to if no entities match the filters")
     identifiers: Optional[list[scalars.StructureIdentifier]] = Field(default=None, description="Structure identifiers to filter by (e.g. '@mikro/roi')")
 
@@ -1032,7 +1130,7 @@ class StructureDescriptorInput(BaseModel):
         silent-zero-result failure this codebase keeps having to remove, so say
         so instead.
         """
-        unusable = [name for name in ("keys", "tags", "ontotology_terms") if getattr(self, name)]
+        unusable = [name for name in ("keys", "tags", "ontology_terms") if getattr(self, name)]
         if unusable:
             raise ValueError(f"Structure descriptors can only filter by `identifiers`; {', '.join(unusable)} {'is' if len(unusable) == 1 else 'are'} not expressible against a structure kind, which has no key, tags or ontology references.")
         return self
@@ -1044,7 +1142,7 @@ class StructureDescriptorInput(BaseModel):
         return True
 
 
-class EventRoleInput(BaseModel):
+class EventRoleInput(StrictModel):
     """Input for a role of a node in an event (input or output)."""
 
     key: str = Field(..., description="The label of the node participating in the event")
@@ -1076,6 +1174,10 @@ class CreateNaturalEventDefinitionInput(NaturalEventDefinitionInput):
     """Input for an event definition at the graph level (not within an event)."""
 
     graph: GraphID = Field(..., description="The graph id this event will belong to")
+    backfill: bool = Field(
+        default=False,
+        description=BACKFILL_FIELD_DESCRIPTION,
+    )
 
 
 class UpdateNaturalEventDefinitionInput(NaturalEventDefinitionInput):
@@ -1084,7 +1186,7 @@ class UpdateNaturalEventDefinitionInput(NaturalEventDefinitionInput):
     id: GraphID = Field(..., description="The ID of the event category to update")
 
 
-class DeleteNaturalEventDefinitionInput(BaseModel):
+class DeleteNaturalEventDefinitionInput(StrictModel):
     """Input for deleting an existing event definition at the graph level."""
 
     id: GraphID = Field(..., description="The ID of the event category to delete")
@@ -1094,6 +1196,10 @@ class CreateProtocolEventDefinitionInput(ProtocolEventDefinitionInput):
     """Input for an event definition at the graph level (not within an event)."""
 
     graph: GraphID = Field(..., description="The graph id this event will belong to")
+    backfill: bool = Field(
+        default=False,
+        description=BACKFILL_FIELD_DESCRIPTION,
+    )
 
 
 class UpdateProtocolEventDefinitionInput(ProtocolEventDefinitionInput):
@@ -1102,13 +1208,13 @@ class UpdateProtocolEventDefinitionInput(ProtocolEventDefinitionInput):
     id: GraphID = Field(..., description="The ID of the event category to update")
 
 
-class DeleteProtocolEventDefinitionInput(BaseModel):
+class DeleteProtocolEventDefinitionInput(StrictModel):
     """Input for deleting an existing event definition at the graph level."""
 
     id: GraphID = Field(..., description="The ID of the event category to delete")
 
 
-class EvidenceRequirementInput(BaseModel):
+class EvidenceRequirementInput(StrictModel):
     """Input for evidence requirements on a materialized relation."""
 
     key: str = Field(..., description="Property key expected on the evidence")
@@ -1116,7 +1222,7 @@ class EvidenceRequirementInput(BaseModel):
     description: Optional[str] = Field(None, description="Description")
 
 
-class MaterializationConfigInput(BaseModel):
+class MaterializationConfigInput(StrictModel):
     """Input for relation materialization configuration."""
 
     backing_link_type: str = Field(..., description="Internal label for the evidence node")
@@ -1165,7 +1271,7 @@ class MeasurementDefinitionInput(EdgeDefinitionInput):
     properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Derived property definitions")
 
 
-class GraphQueryInput(BaseModel):
+class GraphQueryInput(StrictModel):
     """Input for a graph query definition."""
 
     key: str = Field(..., description="Unique key for this graph query, used for referencing in the UI")
@@ -1174,7 +1280,7 @@ class GraphQueryInput(BaseModel):
     query: scalars.CypherLiteral = Field(..., description="The Cypher query string that defines this graph query")
 
 
-class UpdateGraphQueryInput(BaseModel):
+class UpdateGraphQueryInput(StrictModel):
     """Input for updating an existing graph query definition."""
 
     id: strawberry.ID = Field(..., description="The ID of the graph query to update")
@@ -1194,10 +1300,12 @@ class GraphTableQueryInput(GraphQueryInput):
 class CreateGraphTableQueryInput(GraphTableQueryInput):
     """Input for creating a graph table query definition."""
 
-    key: str = Field(..., description="Unique key for this graph query, used for referencing in the UI")
     graph: strawberry.ID = Field(..., description="The graph id this table query will belong to")
     column_input: List[ColumnInput] = Field(default_factory=list, description="Definitions for the columns returned by this graph query")
-    cypher: scalars.CypherLiteral = Field(..., description="The Cypher query string that defines this graph query. Can include parameter placeholders (e.g. $param) for dynamic filtering")
+    # No `cypher`, and no second `key`. Both were declared here *and* inherited
+    # from `GraphQueryInput`, so a client had to send the Cypher twice — under two
+    # required names — with nothing saying which one won. `query` is the name the
+    # node and edge families use, so it is the one that survives.
 
 
 class CreateGraphTableQueryThroughBuilderInput(GraphTableQueryInput):
@@ -1214,21 +1322,19 @@ class CreateGraphTableQueryThroughBuilderInput(GraphTableQueryInput):
 class UpdateGraphTableQueryInput(UpdateGraphQueryInput):
     """Input for updating an existing graph table query definition."""
 
-    key: Optional[str] = Field(default=None, description="Unique key for this graph query, used for referencing in the UI")
-    name: Optional[str] = Field(default=None, description="Human-readable name for this graph query (defaults to 'key' if not provided)")
-    description: Optional[str] = Field(default=None, description="Description of this graph query")
-    id: strawberry.ID = Field(..., description="The ID of the graph query to update")
     column_input: Optional[List[ColumnInput]] = Field(default=None, description="Definitions for the columns returned by this graph query")
-    cypher: Optional[scalars.CypherLiteral] = Field(default=None, description="The Cypher query string that defines this graph query. Can include parameter placeholders (e.g. $param) for dynamic filtering")
+    # `key`, `name`, `description`, `id` and the Cypher all come from
+    # `UpdateGraphQueryInput`; they were re-declared here identically. See
+    # `CreateGraphTableQueryInput` for why `cypher` is gone.
 
 
-class DeleteGraphTableQueryInput(BaseModel):
+class DeleteGraphTableQueryInput(StrictModel):
     """Input for deleting an existing graph table query definition."""
 
     id: strawberry.ID = Field(..., description="The ID of the graph query to delete")
 
 
-class ArchiveGraphTableQueryInput(BaseModel):
+class ArchiveGraphTableQueryInput(StrictModel):
     """Input for archiving (soft deleting) an existing graph table query definition."""
 
     id: strawberry.ID = Field(..., description="The ID of the graph query to archive")
@@ -1246,20 +1352,19 @@ class CreateGraphPairsQueryInput(GraphPairsQueryInput):
     graph: strawberry.ID = Field(..., description="The graph id this graph pairs query will belong to")
 
 
-class UpdateGraphPairsQueryInput(GraphPairsQueryInput):
+class UpdateGraphPairsQueryInput(UpdateGraphQueryInput):
     """Input for updating an existing graph pairs query definition."""
 
-    id: strawberry.ID = Field(..., description="The ID of the graph pairs query to update")
-    query: Optional[scalars.CypherLiteral] = Field(default=None, description="Updated Cypher query string")
+    pass
 
 
-class DeleteGraphPairsQueryInput(BaseModel):
+class DeleteGraphPairsQueryInput(StrictModel):
     """Input for deleting an existing graph pairs query definition."""
 
     id: strawberry.ID = Field(..., description="The ID of the graph pairs query to delete")
 
 
-class ArchiveGraphPairsQueryInput(BaseModel):
+class ArchiveGraphPairsQueryInput(StrictModel):
     """Input for archiving (soft deleting) an existing graph pairs query definition."""
 
     id: strawberry.ID = Field(..., description="The ID of the graph pairs query to archive")
@@ -1277,37 +1382,56 @@ class CreateGraphPathQueryInput(GraphPathQueryInput):
     graph: strawberry.ID = Field(..., description="The graph id this graph path query will belong to")
 
 
-class UpdateGraphPathQueryInput(GraphPathQueryInput):
+class UpdateGraphPathQueryInput(UpdateGraphQueryInput):
     """Input for updating an existing graph path query definition."""
 
-    id: strawberry.ID = Field(..., description="The ID of the graph path query to update")
-    query: Optional[scalars.CypherLiteral] = Field(default=None, description="Updated Cypher query string")
+    pass
 
 
-class DeleteGraphPathQueryInput(BaseModel):
+class DeleteGraphPathQueryInput(StrictModel):
     """Input for deleting an existing graph path query definition."""
 
     id: strawberry.ID = Field(..., description="The ID of the graph path query to delete")
 
 
-class ArchiveGraphPathQueryInput(BaseModel):
+class ArchiveGraphPathQueryInput(StrictModel):
     """Input for archiving (soft deleting) an existing graph path query definition."""
 
     id: strawberry.ID = Field(..., description="The ID of the graph path query to archive")
 
 
-class BuildGraphTableQueryInput(BaseModel):
+class BuildGraphTableQueryInput(StrictModel):
     """Input for a table graph query definition."""
 
     builder_args: Optional[BuilderArgsInput] = Field(default=None, description="Optional additional arguments for the graph query builder to support advanced features like dynamic filtering or pattern matching")
 
 
-class NodeQueryInput(BaseModel):
+class NodeQueryInput(StrictModel):
     key: str = Field(..., description="Unique key for this node query, used for referencing in the UI")
     name: Optional[str] = Field(default=None, description="Human-readable name for this node query (defaults to 'key' if not provided)")
     description: Optional[str] = Field(default=None, description="Description of this node query")
     query: scalars.CypherLiteral = Field(..., description="The Cypher query string that defines this node query")
-    kind: str = Field(default="TABLE", description="The kind/type of the query")
+    # No `kind`. It is decided by the mutation you called — `createNodeTableQuery`
+    # makes a TABLE query — and `managers.KindedManager` stamps it from the proxy.
+    # As an input it was worse than redundant: the manager uses `setdefault`, so a
+    # client-supplied kind overrode the proxy's, writing a row the matching
+    # manager then filtered out of every read.
+
+
+class UpdateNodeQueryInput(StrictModel):
+    """Input for updating an existing node query definition.
+
+    Everything but the id is optional, which the node and edge update inputs did
+    not manage: they derived from the *create*-shaped base, so `key` and `query`
+    stayed required and changing a description meant resending the Cypher. The
+    graph family already had this shape; now all three do.
+    """
+
+    id: strawberry.ID = Field(..., description="The ID of the node query to update")
+    key: Optional[str] = Field(default=None, description="Unique key for this node query, used for referencing in the UI")
+    name: Optional[str] = Field(default=None, description="Human-readable name for this node query")
+    description: Optional[str] = Field(default=None, description="Description of this node query")
+    query: Optional[scalars.CypherLiteral] = Field(default=None, description="The Cypher query string that defines this node query")
 
 
 class NodeTableQueryInput(NodeQueryInput):
@@ -1318,17 +1442,15 @@ class CreateNodeTableQueryInput(NodeTableQueryInput):
     graph: strawberry.ID = Field(..., description="The graph id this node table query will belong to")
 
 
-class UpdateNodeTableQueryInput(NodeTableQueryInput):
-    id: strawberry.ID = Field(..., description="The ID of the node table query to update")
+class UpdateNodeTableQueryInput(UpdateNodeQueryInput):
     column_input: Optional[List[ColumnInput]] = Field(default=None, description="Definitions for the columns returned by this node table query")
-    query: Optional[scalars.CypherLiteral] = Field(default=None, description="Updated Cypher query string")
 
 
-class DeleteNodeTableQueryInput(BaseModel):
+class DeleteNodeTableQueryInput(StrictModel):
     id: strawberry.ID = Field(..., description="The ID of the node table query to delete")
 
 
-class ArchiveNodeTableQueryInput(BaseModel):
+class ArchiveNodeTableQueryInput(StrictModel):
     id: strawberry.ID = Field(..., description="The ID of the node table query to archive")
 
 
@@ -1340,16 +1462,15 @@ class CreateNodePairsQueryInput(NodePairsQueryInput):
     graph: strawberry.ID = Field(..., description="The graph id this node pairs query will belong to")
 
 
-class UpdateNodePairsQueryInput(NodePairsQueryInput):
-    id: strawberry.ID = Field(..., description="The ID of the node pairs query to update")
-    query: Optional[scalars.CypherLiteral] = Field(default=None, description="Updated Cypher query string")
+class UpdateNodePairsQueryInput(UpdateNodeQueryInput):
+    pass
 
 
-class DeleteNodePairsQueryInput(BaseModel):
+class DeleteNodePairsQueryInput(StrictModel):
     id: strawberry.ID = Field(..., description="The ID of the node pairs query to delete")
 
 
-class ArchiveNodePairsQueryInput(BaseModel):
+class ArchiveNodePairsQueryInput(StrictModel):
     id: strawberry.ID = Field(..., description="The ID of the node pairs query to archive")
 
 
@@ -1361,25 +1482,40 @@ class CreateNodePathQueryInput(NodePathQueryInput):
     graph: strawberry.ID = Field(..., description="The graph id this node path query will belong to")
 
 
-class UpdateNodePathQueryInput(NodePathQueryInput):
-    id: strawberry.ID = Field(..., description="The ID of the node path query to update")
-    query: Optional[scalars.CypherLiteral] = Field(default=None, description="Updated Cypher query string")
+class UpdateNodePathQueryInput(UpdateNodeQueryInput):
+    pass
 
 
-class DeleteNodePathQueryInput(BaseModel):
+class DeleteNodePathQueryInput(StrictModel):
     id: strawberry.ID = Field(..., description="The ID of the node path query to delete")
 
 
-class ArchiveNodePathQueryInput(BaseModel):
+class ArchiveNodePathQueryInput(StrictModel):
     id: strawberry.ID = Field(..., description="The ID of the node path query to archive")
 
 
-class EdgeQueryInput(BaseModel):
+class EdgeQueryInput(StrictModel):
     key: str = Field(..., description="Unique key for this edge query, used for referencing in the UI")
     name: Optional[str] = Field(default=None, description="Human-readable name for this edge query (defaults to 'key' if not provided)")
     description: Optional[str] = Field(default=None, description="Description of this edge query")
     query: scalars.CypherLiteral = Field(..., description="The Cypher query string that defines this edge query")
-    kind: str = Field(default="TABLE", description="The kind/type of the query")
+    # No `kind` — see `NodeQueryInput`.
+
+
+class UpdateEdgeQueryInput(StrictModel):
+    """Input for updating an existing edge query definition.
+
+    Everything but the id is optional, which the node and edge update inputs did
+    not manage: they derived from the *create*-shaped base, so `key` and `query`
+    stayed required and changing a description meant resending the Cypher. The
+    graph family already had this shape; now all three do.
+    """
+
+    id: strawberry.ID = Field(..., description="The ID of the edge query to update")
+    key: Optional[str] = Field(default=None, description="Unique key for this edge query, used for referencing in the UI")
+    name: Optional[str] = Field(default=None, description="Human-readable name for this edge query")
+    description: Optional[str] = Field(default=None, description="Description of this edge query")
+    query: Optional[scalars.CypherLiteral] = Field(default=None, description="The Cypher query string that defines this edge query")
 
 
 class EdgeTableQueryInput(EdgeQueryInput):
@@ -1390,17 +1526,15 @@ class CreateEdgeTableQueryInput(EdgeTableQueryInput):
     graph: strawberry.ID = Field(..., description="The graph id this edge table query will belong to")
 
 
-class UpdateEdgeTableQueryInput(EdgeTableQueryInput):
-    id: strawberry.ID = Field(..., description="The ID of the edge table query to update")
+class UpdateEdgeTableQueryInput(UpdateEdgeQueryInput):
     column_input: Optional[List[ColumnInput]] = Field(default=None, description="Definitions for the columns returned by this edge table query")
-    query: Optional[scalars.CypherLiteral] = Field(default=None, description="Updated Cypher query string")
 
 
-class DeleteEdgeTableQueryInput(BaseModel):
+class DeleteEdgeTableQueryInput(StrictModel):
     id: strawberry.ID = Field(..., description="The ID of the edge table query to delete")
 
 
-class ArchiveEdgeTableQueryInput(BaseModel):
+class ArchiveEdgeTableQueryInput(StrictModel):
     id: strawberry.ID = Field(..., description="The ID of the edge table query to archive")
 
 
@@ -1412,16 +1546,15 @@ class CreateEdgePairsQueryInput(EdgePairsQueryInput):
     graph: strawberry.ID = Field(..., description="The graph id this edge pairs query will belong to")
 
 
-class UpdateEdgePairsQueryInput(EdgePairsQueryInput):
-    id: strawberry.ID = Field(..., description="The ID of the edge pairs query to update")
-    query: Optional[scalars.CypherLiteral] = Field(default=None, description="Updated Cypher query string")
+class UpdateEdgePairsQueryInput(UpdateEdgeQueryInput):
+    pass
 
 
-class DeleteEdgePairsQueryInput(BaseModel):
+class DeleteEdgePairsQueryInput(StrictModel):
     id: strawberry.ID = Field(..., description="The ID of the edge pairs query to delete")
 
 
-class ArchiveEdgePairsQueryInput(BaseModel):
+class ArchiveEdgePairsQueryInput(StrictModel):
     id: strawberry.ID = Field(..., description="The ID of the edge pairs query to archive")
 
 
@@ -1433,20 +1566,19 @@ class CreateEdgePathQueryInput(EdgePathQueryInput):
     graph: strawberry.ID = Field(..., description="The graph id this edge path query will belong to")
 
 
-class UpdateEdgePathQueryInput(EdgePathQueryInput):
-    id: strawberry.ID = Field(..., description="The ID of the edge path query to update")
-    query: Optional[scalars.CypherLiteral] = Field(default=None, description="Updated Cypher query string")
+class UpdateEdgePathQueryInput(UpdateEdgeQueryInput):
+    pass
 
 
-class DeleteEdgePathQueryInput(BaseModel):
+class DeleteEdgePathQueryInput(StrictModel):
     id: strawberry.ID = Field(..., description="The ID of the edge path query to delete")
 
 
-class ArchiveEdgePathQueryInput(BaseModel):
+class ArchiveEdgePathQueryInput(StrictModel):
     id: strawberry.ID = Field(..., description="The ID of the edge path query to archive")
 
 
-class PlotInput(BaseModel):
+class PlotInput(StrictModel):
     key: str = Field(..., description="Unique key for this plot definition, used for referencing in the UI")
     label: Optional[str] = Field(default=None, description="Human-readable label for this plot definition (defaults to 'key' if not provided)")
     graph_table_query: str | None = Field(..., description="The key of the graph table query that provides the data for this plot")
@@ -1475,7 +1607,11 @@ class ScatterPlotInput(PlotInput):
 class CreateRelationDefinitionInput(EntityDefinitionInput):
     """Input for an entity definition at the graph level (not within an event)."""
 
-    graph: GraphID = Field(..., description="The graph id this entitiy will beong to")
+    graph: GraphID = Field(..., description="The graph id this entity will belong to")
+    backfill: bool = Field(
+        default=False,
+        description=BACKFILL_FIELD_DESCRIPTION,
+    )
 
 
 class UpdateRelationDefinitionInput(EntityDefinitionInput):
@@ -1484,13 +1620,13 @@ class UpdateRelationDefinitionInput(EntityDefinitionInput):
     id: GraphID = Field(..., description="The ID of the entity category to update")
 
 
-class DeleteRelationDefinitionInput(BaseModel):
+class DeleteRelationDefinitionInput(StrictModel):
     """Input for deleting an existing relation definition at the graph level."""
 
     id: GraphID = Field(..., description="The ID of the relation category to delete")
 
 
-class ArchiveRelationDefinitionInput(BaseModel):
+class ArchiveRelationDefinitionInput(StrictModel):
     """Input for archiving (soft deleting) an existing relation definition at the graph level."""
 
     id: GraphID = Field(..., description="The ID of the relation category to archive")
@@ -1508,13 +1644,13 @@ class UpdateMeasurementDefinitionInput(MeasurementDefinitionInput):
     id: GraphID = Field(..., description="The ID of the measurement category to update")
 
 
-class DeleteMeasurementDefinitionInput(BaseModel):
+class DeleteMeasurementDefinitionInput(StrictModel):
     """Input for deleting an existing measurement definition at the graph level."""
 
     id: GraphID = Field(..., description="The ID of the measurement category to delete")
 
 
-class ArchiveMeasurementDefinitionInput(BaseModel):
+class ArchiveMeasurementDefinitionInput(StrictModel):
     """Input for archiving (soft deleting) an existing measurement definition at the graph level."""
 
     id: GraphID = Field(..., description="The ID of the measurement category to archive")
@@ -1523,7 +1659,7 @@ class ArchiveMeasurementDefinitionInput(BaseModel):
 class CreateStructureRelationDefinitionInput(StructureRelationDefinitionInput):
     """Input for an entity definition at the graph level (not within an event)."""
 
-    graph: GraphID = Field(..., description="The graph id this entitiy will beong to")
+    graph: GraphID = Field(..., description="The graph id this entity will belong to")
 
 
 class UpdateStructureRelationDefinitionInput(EntityDefinitionInput):
@@ -1532,25 +1668,25 @@ class UpdateStructureRelationDefinitionInput(EntityDefinitionInput):
     id: GraphID = Field(..., description="The ID of the structure relation category to update")
 
 
-class DeleteStructureRelationDefinitionInput(BaseModel):
+class DeleteStructureRelationDefinitionInput(StrictModel):
     """Input for deleting an existing structure relation definition at the graph level."""
 
     id: GraphID = Field(..., description="The ID of the structure relation category to delete")
 
 
-class ArchiveStructureRelationDefinitionInput(BaseModel):
+class ArchiveStructureRelationDefinitionInput(StrictModel):
     """Input for archiving (soft deleting) an existing structure relation definition at the graph level."""
 
     id: GraphID = Field(..., description="The ID of the structure relation category to archive")
 
 
-class RestoreStructureRelationDefinitionInput(BaseModel):
+class RestoreStructureRelationDefinitionInput(StrictModel):
     """Input for restoring an existing structure relation definition at the graph level."""
 
     id: GraphID = Field(..., description="The ID of the relation category to restore")
 
 
-class PrefixInput(BaseModel):
+class PrefixInput(StrictModel):
     """Input for a graph prefix definition."""
 
     prefix: str = Field(..., description="The prefix string (e.g. 'OBI')")
@@ -1558,13 +1694,13 @@ class PrefixInput(BaseModel):
     description: Optional[str] = Field(None, description="Description of this prefix")
 
 
-class SequenceInput(BaseModel):
+class SequenceInput(StrictModel):
     """Input for a graph prefix definition."""
 
     prefix: str = Field(..., description="The prefix string (e.g. 'IAZ')")
 
 
-class RoleMappingInput(BaseModel):
+class RoleMappingInput(StrictModel):
     """
     Input for role mappings in an event.
     """
@@ -1573,10 +1709,10 @@ class RoleMappingInput(BaseModel):
     entity_id: GraphID = Field(..., description="The ID of the entity assigned to this role")
 
 
-class EventInput(BaseModel):
+class EventInput(StrictModel):
     """Input for creating a new event instance."""
 
-    event_category: GraphID = Field(..., description="The ID of the event category/type to create")
+    term: str = Field(..., description=TERM_FIELD_DESCRIPTION)
     inputs: List[RoleMappingInput] = Field(default_factory=list, description="List of entity IDs that are inputs to this event")
     outputs: List[RoleMappingInput] = Field(default_factory=list, description="List of entity IDs that are outputs of this event")
     supporting_evidence: List[StructureReferenceInput] = Field(default_factory=list, description="List of evidence structures with measurements")
@@ -1588,25 +1724,83 @@ class NaturalEventInput(EventInput):
     pass
 
 
-class CreateNaturalEventInput(NaturalEventInput):
+class AssertNaturalEventExistsInput(NaturalEventInput):
     """Input for creating a new natural event instance."""
 
-    event_category: GraphID = Field(..., description="The ID of the natural event category/type to create")
+    pass
 
 
-class UpdateNaturalEventInput(NaturalEventInput):
-    """Input for updating an existing natural event instance. Note: this will not update the event in-place, but rather create a new event and archive the old one to preserve history."""
+class AssertParticipationInput(StrictModel):
+    """Input for claiming that an entity took part in an event.
 
-    id: GraphID = Field(..., description="The ID of the natural event to update")
+    Additive: a second observer who reads the same experiment differently asserts
+    their own participation rather than replacing anyone else's, and the edge
+    records how many live claims stand behind it.
+    """
+
+    event: GraphID = Field(..., description="The ID of the event the entity took part in")
+    entity: GraphID = Field(..., description="The ID of the entity that took part")
+    role: str = Field(..., description="Which role the entity played, as the event's category names it")
+    is_input: bool = Field(default=True, description="True if the entity went into the event, False if it came out of it")
 
 
-class ArchiveNaturalEventInput(BaseModel):
+class RetractParticipationInput(StrictModel):
+    """Input for retracting one claim that an entity took part in an event."""
+
+    id: str = Field(..., description="The evidence ID of the participation claim to retract")
+
+
+class ParticipantInput(StrictModel):
+    """One entity's part in an event, inside a batch."""
+
+    entity: GraphID = Field(..., description="The ID of the entity that took part")
+    role: str = Field(..., description="Which role the entity played, as the event's category names it")
+    is_input: bool = Field(default=True, description="True if the entity went into the event, False if it came out of it")
+
+
+class AssertParticipationsInput(StrictModel):
+    """Input for claiming that several entities took part in one event.
+
+    One call, one assertion. Asserting them one at a time records the same act as
+    N separate claims by N separate assertions, and nothing can put those back
+    together afterwards.
+    """
+
+    event: GraphID = Field(..., description="The event the entities took part in")
+    participants: List[ParticipantInput] = Field(..., description="Everyone who took part, and how")
+
+
+class ClassificationInput(StrictModel):
+    """One claim that a node is of a category, inside a batch."""
+
+    node: GraphID = Field(..., description="The node being classified")
+    term: str = Field(..., description=TERM_FIELD_DESCRIPTION)
+
+
+class ClassifyNodesInput(StrictModel):
+    """Input for claiming that several nodes are of a category, as one act.
+
+    Additive: this does not displace anyone else's claim, and the node keeps its
+    identity. Which label a graph then shows is decided at projection time by
+    whichever of its categories carry a definition.
+    """
+
+    classifications: List[ClassificationInput] = Field(..., description="The claims to record")
+
+
+class RetractClaimsInput(StrictModel):
+    """Input for retracting several claims as one act."""
+
+    ids: List[str] = Field(..., description="The evidence IDs of the claims to retract")
+
+
+class RetractNaturalEventInput(StrictModel):
     """Input for archiving (soft deleting) an existing natural event instance."""
 
     id: GraphID = Field(..., description="The ID of the natural event to archive")
 
 
-class DeleteNaturalEventInput(BaseModel):
+class DeleteNaturalEventInput(StrictModel):
     """Input for deleting an existing natural event instance."""
 
     id: GraphID = Field(..., description="The ID of the natural event to delete")
@@ -1618,31 +1812,25 @@ class ProtocolEventInput(EventInput):
     pass
 
 
-class CreateProtocolEventInput(ProtocolEventInput):
+class AssertProtocolEventExistsInput(ProtocolEventInput):
     """Input for creating a new protocol event instance."""
 
-    event_category: GraphID = Field(..., description="The ID of the protocol event category/type to create")
+    pass
 
 
-class UpdateProtocolEventInput(ProtocolEventInput):
-    """Input for updating an existing protocol event instance. Note: this will not update the event in-place, but rather create a new event and archive the old one to preserve history."""
-
-    id: GraphID = Field(..., description="The ID of the protocol event to update")
-
-
-class ArchiveProtocolEventInput(BaseModel):
+class RetractProtocolEventInput(StrictModel):
     """Input for archiving (soft deleting) an existing protocol event instance."""
 
     id: GraphID = Field(..., description="The ID of the protocol event to archive")
 
 
-class DeleteProtocolEventInput(BaseModel):
+class DeleteProtocolEventInput(StrictModel):
     """Input for deleting an existing protocol event instance."""
 
     id: GraphID = Field(..., description="The ID of the protocol event to delete")
 
 
-class PropertySet(BaseModel):
+class PropertySet(StrictModel):
     """Input for a set of properties to associate with an entity or structure."""
 
     key: str = Field(..., description="The property key/label")
@@ -1650,27 +1838,44 @@ class PropertySet(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-class EntityInput(BaseModel):
+class EntityInput(StrictModel):
     """Input for creating a new entity instance."""
 
-    sticky_properties: List[PropertySet] = Field(default_factory=list, description="List of property key-value pairs to associate with this entity")
+    term: str = Field(..., description=TERM_FIELD_DESCRIPTION)
     supporting_evidence: List[StructureReferenceInput] = Field(default_factory=list, description="List of evidence structures with measurements")
 
 
-class CreateEntityInput(EntityInput):
-    """Input for creating a new entity instance."""
+class AssertEntityExistsInput(EntityInput):
+    """Input for claiming that an entity exists."""
 
-    entity_category: strawberry.ID = Field(..., description="The ID of the entity category/type to create")
+    same_as: List[scalars.GraphID] = Field(
+        default_factory=list,
+        description=(
+            "Instances this new one is the same as. Saying \"this is AIS 6\" mints a fresh "
+            "instance and claims it is the same as the one already known as AIS 6 — all under "
+            "**one assertion**, because it is one act. Sameness is an equivalence with no "
+            "primary, so which id you send is immaterial; entities only, never structures."
+        ),
+    )
 
 
-class EnsureEntityInput(EntityInput):
-    """Input for ensuring a new entity instance."""
+class AssertSameEntityInput(StrictModel):
+    """Input for claiming two instances already recorded are one thing."""
 
-    entity_category: strawberry.ID = Field(..., description="The ID of the entity category/type to create")
-    universal_id: scalars.GlobalID = Field(..., description="A universal ID to use for this entity. If an existing entity with this universal ID exists, it will be returned instead of creating a new one.")
+    entities: List[scalars.GraphID] = Field(
+        ...,
+        min_length=2,
+        description="Two or more entity ids that name the same thing. Every pair among them is claimed, under one assertion.",
+    )
 
 
-class CategoryNodePositionInput(BaseModel):
+class RetractSameEntityInput(StrictModel):
+    """Input for withdrawing one sameness claim."""
+
+    id: scalars.GraphID = Field(..., description="The id of the sameness claim to retract")
+
+
+class CategoryNodePositionInput(StrictModel):
     """Input for specifying the position of a node in the graph visualization."""
 
     category: strawberry.ID = Field(..., description="The category of the node")
@@ -1680,48 +1885,62 @@ class CategoryNodePositionInput(BaseModel):
     height: Optional[float] = Field(default=None, description="Optional height for the node (for visualization purposes)")
 
 
-class UpdateGraphVisuals(BaseModel):
+class UpdateGraphVisuals(StrictModel):
     """Input for updating the visual properties of a graph element (node or edge)."""
 
     id: GraphID = Field(..., description="The ID of the graph element to update")
     node_positions: list[CategoryNodePositionInput] = Field(default_factory=list, description="List of node positions to update")
-
-
-class UpdateEntityInput(EntityInput):
-    """Input for updating an existing entity instance. Note: this will not update the entity in-place, but rather create a new entity and archive the old one to preserve history."""
-
-    id: scalars.GraphID = Field(..., description="The ID of the entity to update")
-
-
-class ArchiveEntityInput(BaseModel):
+class RetractEntityInput(StrictModel):
     """Input for archiving (soft deleting) an existing entity instance."""
 
     id: scalars.GraphID = Field(..., description="The ID of the entity to archive")
 
 
-class DeleteEntityInput(BaseModel):
+class AttestNodeInput(StrictModel):
+    """Input for claiming that a node exists.
+
+    Not the reverse of archiving — there is no state to reverse. Somebody is
+    saying the thing is there, which is evidence of exactly the same kind as
+    somebody saying it is not, and both stay on the record. Which of them a given
+    graph believes is decided by its selector.
+    """
+
+    id: scalars.GraphID = Field(..., description="The uuid of the node being attested. The same id `archive*` returns, so the two round-trip.")
+
+
+class AttestEntityInput(AttestNodeInput):
+    """Input for claiming that an entity exists."""
+
+
+class AttestNaturalEventInput(AttestNodeInput):
+    """Input for claiming that a natural event exists."""
+
+
+class AttestProtocolEventInput(AttestNodeInput):
+    """Input for claiming that a protocol event exists."""
+
+
+class DeleteEntityInput(StrictModel):
     """Input for deleting an existing entity instance."""
 
     id: scalars.GraphID = Field(..., description="The ID of the entity to delete")
 
 
-class StructureInput(BaseModel):
+class StructureInput(StrictModel):
     """Input for creating a new structure instance."""
 
     object: str = Field(..., description="The unique ID of the object this structure references")
     metrics: List["MetricInput"] = Field(default_factory=list, description="List of measurements associated with this structure")
 
 
-class PinNodeInput(BaseModel):
-    """Input for pinning a node in the UI."""
-
-    id: GraphID = Field(..., description="The ID of the node to pin")
-    pin: bool = Field(..., description="Whether to pin (true) or unpin (false) this node in the UI for the user making the request")
-    color: Optional[List[int]] = Field(default=None, description="Optional RGBA color for this node (e.g. [255, 0, 0, 128])")
+# `PinNodeInput` is gone with `pinNode`, whose resolver was `raise
+# NotImplementedError`. The strawberry input for it was declared against
+# `CreateStructureInput` anyway, so the schema advertised a pin mutation taking
+# structure fields.
     user: Optional[str] = Field(default=None, description="The ID of the user for whom to set this pin. If not provided, will default to the user making the request.")
 
 
-class CreateStructureInput(StructureInput):
+class AssertStructureExistsInput(StructureInput):
     """Input for creating a new structure instance.
 
     No graph. A structure points at an external datum owned by another service,
@@ -1744,19 +1963,19 @@ class UpdateStructureInput(StructureInput):
     id: scalars.GraphID = Field(..., description="The ID of the structure to update")
 
 
-class ArchiveStructureInput(BaseModel):
+class RetractStructureInput(StrictModel):
     """Input for archiving (soft deleting) an existing structure."""
 
     id: GraphID = Field(..., description="The ID of the structure to archive")
 
 
-class DeleteStructureInput(BaseModel):
+class DeleteStructureInput(StrictModel):
     """Input for hard deleting an existing structure."""
 
     id: GraphID = Field(..., description="The ID of the structure to delete")
 
 
-class RecordMetricInput(MetricInput):
+class AssertMetricValueInput(MetricInput):
     """Input for recording a measurement.
 
     Takes no graph. A measurement is a fact about an external datum, scoped to
@@ -1768,25 +1987,25 @@ class RecordMetricInput(MetricInput):
     object: scalars.StructureObject = Field(..., description="The unique ID of the object this metric references")
 
 
-class CreateMetricInput(MetricInput):
+class AssertMetricValueForStructureInput(MetricInput):
     """Input for creating a new metric associated with a structure."""
 
     structure: GraphID = Field(..., description="The unique ID of the structure this metric is associated with")
 
 
-class ArchiveMetricInput(BaseModel):
+class RetractMetricInput(StrictModel):
     """Input for archiving (soft deleting) an existing metric."""
 
     id: GraphID = Field(..., description="The ID of the metric to archive")
 
 
-class DeleteMetricInput(BaseModel):
+class DeleteMetricInput(StrictModel):
     """Input for hard deleting an existing metric."""
 
     id: GraphID = Field(..., description="The ID of the metric to delete")
 
 
-class RelationInput(BaseModel):
+class RelationInput(StrictModel):
     """Input for a measurement/metric."""
 
     source_id: str = Field(..., description="The ID of the source entity/structure")
@@ -1794,7 +2013,7 @@ class RelationInput(BaseModel):
     supporting_evidence: List[StructureReferenceInput] = Field(default_factory=list, description="List of evidence structures with measurements")
 
 
-class EventBaseInput(BaseModel):
+class EventBaseInput(StrictModel):
     valid_from: Optional[datetime] = Field(default=None, description="Optional start time for the validity of this event (for temporal reasoning)")
     valid_to: Optional[datetime] = Field(default=None, description="Optional end time for the validity of this event (for temporal reasoning)")
 
@@ -1812,10 +2031,10 @@ class ValidateMeasurementInput(EventBaseInput):
     confidence: Optional[float] = Field(default=None, description="Optional confidence score for this measurement (between 0 and 1)")
 
 
-class CreateRelationInput(RelationInput):
+class AssertRelationExistsInput(RelationInput):
     """Input for creating a new relation associated with a structure."""
 
-    category: str = Field(..., description="The unique ID of the structure this metric is associated with")
+    term: str = Field(..., description=TERM_FIELD_DESCRIPTION)
 
 
 class UpdateRelationInput(RelationInput):
@@ -1824,22 +2043,22 @@ class UpdateRelationInput(RelationInput):
     id: GraphID = Field(..., description="The ID of the relation to update")
 
 
-class ArchiveRelationInput(BaseModel):
+class RetractRelationInput(StrictModel):
     """Input for archiving (soft deleting) an existing relation."""
 
     id: GraphID = Field(..., description="The ID of the relation to archive")
 
 
-class DeleteRelationInput(BaseModel):
+class DeleteRelationInput(StrictModel):
     """Input for hard deleting an existing metric."""
 
     id: GraphID = Field(..., description="The ID of the metric to delete")
 
 
-class CreateStructureRelationInput(RelationInput):
+class AssertStructureRelationExistsInput(RelationInput):
     """Input for creating a new structure relation edge."""
 
-    category: str = Field(..., description="The unique ID of the structure relation category")
+    term: str = Field(..., description=TERM_FIELD_DESCRIPTION)
 
 
 class UpdateStructureRelationInput(RelationInput):
@@ -1848,22 +2067,22 @@ class UpdateStructureRelationInput(RelationInput):
     id: GraphID = Field(..., description="The ID of the structure relation to update")
 
 
-class ArchiveStructureRelationInput(BaseModel):
+class RetractStructureRelationInput(StrictModel):
     """Input for archiving (soft deleting) an existing structure relation."""
 
     id: GraphID = Field(..., description="The ID of the structure relation to archive")
 
 
-class DeleteStructureRelationInput(BaseModel):
+class DeleteStructureRelationInput(StrictModel):
     """Input for hard deleting an existing structure relation."""
 
     id: GraphID = Field(..., description="The ID of the structure relation to delete")
 
 
-class CreateMeasurementInput(RelationInput):
+class AssertMeasurementExistsInput(RelationInput):
     """Input for creating a new measurement edge associated with a structure/entity pair."""
 
-    category: str = Field(..., description="The unique ID of the measurement category")
+    term: str = Field(..., description=TERM_FIELD_DESCRIPTION)
 
 
 class UpdateMeasurementInput(RelationInput):
@@ -1872,19 +2091,19 @@ class UpdateMeasurementInput(RelationInput):
     id: GraphID = Field(..., description="The ID of the measurement to update")
 
 
-class ArchiveMeasurementInput(BaseModel):
+class RetractMeasurementInput(StrictModel):
     """Input for archiving (soft deleting) an existing measurement."""
 
     id: GraphID = Field(..., description="The ID of the measurement to archive")
 
 
-class DeleteMeasurementInput(BaseModel):
+class DeleteMeasurementInput(StrictModel):
     """Input for hard deleting an existing measurement."""
 
     id: GraphID = Field(..., description="The ID of the measurement to delete")
 
 
-class ScatterPlotMutationInput(BaseModel):
+class ScatterPlotMutationInput(StrictModel):
     """Base input for scatter plot mutations."""
 
     name: str = Field(..., description="The display name of the scatter plot")
@@ -1912,25 +2131,25 @@ class UpdateScatterPlotInput(ScatterPlotMutationInput):
     id: int = Field(..., description="The database ID of the scatter plot to update")
 
 
-class DeleteScatterPlotInput(BaseModel):
+class DeleteScatterPlotInput(StrictModel):
     """Input for deleting a scatter plot."""
 
     id: int = Field(..., description="The database ID of the scatter plot to delete")
 
 
-class ArchiveScatterPlotInput(BaseModel):
+class ArchiveScatterPlotInput(StrictModel):
     """Input for archiving a scatter plot."""
 
     id: int = Field(..., description="The database ID of the scatter plot to archive")
 
 
-class UpdateMetricInput(MetricInput):
+class SupersedeMetricValueInput(MetricInput):
     """Input for updating an existing metric. The metric will not be updated in-place, but a new metric will be created and the old one archived to preserve history."""
 
     id: GraphID = Field(..., description="The ID of the metric to update")
 
 
-class GraphExtensionsInput(BaseModel):
+class GraphExtensionsInput(StrictModel):
     """
     Input for graph extensions (the main schema content).
 
@@ -1951,18 +2170,18 @@ class GraphExtensionsInput(BaseModel):
     scatter_plots: List[ScatterPlotInput] = Field(default_factory=list, description="Scatter plot definitions")
 
 
-class ActionFilterInput(BaseModel):
+class ActionFilterInput(StrictModel):
     required_roles: List[str] = Field(default_factory=list, description="All roles that must be present on the request")
     required_scopes: List[str] = Field(default_factory=list, description="All scopes that must be present on the request")
 
 
-class ActionRuleInput(BaseModel):
+class ActionRuleInput(StrictModel):
     action: Action = Field(..., description="Action this rule controls")
     allow: bool = Field(True, description="Whether this rule allows or denies the action")
     filter: ActionFilterInput = Field(default_factory=lambda: ActionFilterInput(), description="Simple boolean filter against request context")
 
 
-class GraphDefinitionInput(BaseModel):
+class GraphDefinitionInput(StrictModel):
     """
     Input model for a complete graph schema definition.
 
@@ -1980,7 +2199,7 @@ class GraphDefinitionInput(BaseModel):
         return validate_semver(v)
 
 
-class GraphInput(BaseModel):
+class GraphInput(StrictModel):
     """Input for creating or updating a graph."""
 
     name: str = Field(..., description="Name of the graph")
@@ -1988,7 +2207,7 @@ class GraphInput(BaseModel):
     definition: GraphDefinitionInput = Field(default_factory=lambda: GraphDefinitionInput(), description="The complete graph schema definition")
 
 
-class SetSchemaPayload(BaseModel):
+class SetSchemaPayload(StrictModel):
     """Payload for setting a new schema on a graph."""
 
     version: str = Field(..., description="Semantic version for this schema (e.g., '1.0.0', '1.1.0')")
@@ -2002,7 +2221,7 @@ class SetSchemaPayload(BaseModel):
         return validate_semver(v)
 
 
-class SetSchemaResult(BaseModel):
+class SetSchemaResult(StrictModel):
     """Result of setting a new schema."""
 
     schema_id: int = Field(..., description="Database ID of the created schema")
@@ -2011,15 +2230,26 @@ class SetSchemaResult(BaseModel):
     is_active: bool = Field(..., description="Whether this schema is now active")
 
 
-class CreateGraphFromSchema(BaseModel):
+class CreateGraphFromSchema(StrictModel):
     """Input for creating a new graph from a schema definition."""
 
     name: str = Field(..., description="Name of the graph")
     description: Optional[str] = Field(None, description="Description of the graph")
     definition: Optional[GraphDefinitionInput] = Field(default_factory=lambda: GraphDefinitionInput(), description="The complete graph schema definition")
+    backfill: bool = Field(
+        default=False,
+        description=(
+            "Draw the evidence this graph's words already admit. A graph is a view over "
+            "the organization's evidence, so a new one can be a view over history: with "
+            "this on, every node and edge already claimed under a word this schema "
+            "declares is projected as the graph is created. Off by default because the "
+            "work is proportional to the organization's evidence and happens before this "
+            "mutation returns."
+        ),
+    )
 
 
-class UpdateGraphInput(BaseModel):
+class UpdateGraphInput(StrictModel):
     """Input for updating an existing graph."""
 
     id: strawberry.ID = Field(..., description="The ID of the graph to update")
@@ -2029,19 +2259,19 @@ class UpdateGraphInput(BaseModel):
     pin: Optional[bool] = Field(default=None, description="Optional pin flag update for the user making the request")
 
 
-class DeleteGraphInput(BaseModel):
+class DeleteGraphInput(StrictModel):
     """Input for deleting an existing graph."""
 
     id: strawberry.ID = Field(..., description="The ID of the graph to delete")
 
 
-class ArchiveGraphInput(BaseModel):
+class ArchiveGraphInput(StrictModel):
     """Input for archiving (soft deleting) an existing graph."""
 
     id: strawberry.ID = Field(..., description="The ID of the graph to archive")
 
 
-class PinGraphInput(BaseModel):
+class PinGraphInput(StrictModel):
     """Input for pinning a graph in the UI."""
 
     id: strawberry.ID = Field(..., description="The ID of the graph to pin")

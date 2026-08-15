@@ -114,8 +114,20 @@ def test_each_operation_gets_its_own_loaders() -> None:
 
 
 def test_every_declared_loader_is_constructible() -> None:
-    """All sixteen resolve to a real model and field."""
+    """Every spec resolves to a real model and field, and every proxy has a spec.
+
+    The count used to be asserted as a literal — `len(built) == 16` — which said
+    nothing the set comparison above it did not, and broke the moment three
+    loaders nothing loaded through were removed. What is worth pinning is the
+    pairing: `build_loaders` constructs one DataLoader per spec on **every**
+    operation, so a `_LoaderProxy` naming a spec that does not exist fails at
+    request time, and a spec with no proxy is a loader built per request and
+    never used.
+    """
     built = loaders.build_loaders()
 
     assert set(built) == set(loaders._LOADER_SPECS)
-    assert len(built) == 16
+
+    proxied = {proxy._name for proxy in vars(loaders).values() if isinstance(proxy, loaders._LoaderProxy)}
+    assert proxied <= set(loaders._LOADER_SPECS), f"proxy with no spec: {sorted(proxied - set(loaders._LOADER_SPECS))}"
+    assert set(loaders._LOADER_SPECS) <= proxied, f"spec with no proxy: {sorted(set(loaders._LOADER_SPECS) - proxied)}"

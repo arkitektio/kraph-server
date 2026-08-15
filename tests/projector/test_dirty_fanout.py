@@ -28,12 +28,14 @@ BASE_TIME = datetime(2026, 1, 1, tzinfo=timezone.utc)
 def two_entities_one_structure(
     organization: Organization,
     graph_a: core_models.Graph,
+    entity_category_a: core_models.EntityCategory,
+    make_node,
     roi_category_a: evidence_models.StructureKind,
     assertion: evidence_models.Assertion,
 ) -> tuple[evidence_models.Structure, list[str]]:
     """One ROI that is evidence for two different entities."""
     structure = writer.ensure_structure(organization, roi_category_a, "roi-fanout", assertion)
-    refs = [f"{graph_a.age_name}:aaaaaaaa-0000-0000-0000-000000000001", f"{graph_a.age_name}:aaaaaaaa-0000-0000-0000-000000000002"]
+    refs = [make_node(entity_category_a), make_node(entity_category_a)]
 
     for ref in refs:
         writer.create_link(
@@ -60,17 +62,20 @@ def test_dirty_ignores_other_graphs_entities(
     organization: Organization,
     graph_a: core_models.Graph,
     graph_b: core_models.Graph,
+    entity_category_b: core_models.EntityCategory,
+    make_node,
     two_entities_one_structure: tuple[evidence_models.Structure, list[str]],
     assertion: evidence_models.Assertion,
 ) -> None:
     """Shared evidence must not drag another projection's nodes into the dirty set.
 
-    Entities stay projection-scoped until M7, so a structure shared between two
-    graphs still dirties each graph's own entities separately. Getting this wrong
-    would make one graph's ingest write into another graph's namespace.
+    A structure shared between two graphs dirties each graph's own nodes
+    separately. Which graph a node belongs to is now decided by its term rather
+    than by a prefix on its ref, so this asserts the same property against the
+    mechanism that actually decides it.
     """
     structure, _ = two_entities_one_structure
-    foreign_ref = f"{graph_b.age_name}:bbbbbbbb-0000-0000-0000-000000000001"
+    foreign_ref = make_node(entity_category_b)
     writer.create_link(
         organization,
         kind=evidence_models.Link.Kind.INFORMS,
@@ -96,7 +101,7 @@ def test_dirty_excludes_retracted_links(
     """
     structure, refs = two_entities_one_structure
     link = evidence_models.Link.objects.for_organization(organization).filter(target_ref=refs[0]).first()
-    writer.archive(organization, link, assertion)
+    writer.retract(organization, link, assertion)
 
     assert projector.dirty(graph_a, [structure.pk]) == [refs[1]]
 
@@ -104,6 +109,8 @@ def test_dirty_excludes_retracted_links(
 def test_bulk_ingest_folds_per_metric_but_projects_once(
     organization: Organization,
     graph_a: core_models.Graph,
+    entity_category_a: core_models.EntityCategory,
+    make_node,
     roi_category_a: evidence_models.StructureKind,
     length_category: evidence_models.MetricKind,
     assertion: evidence_models.Assertion,
@@ -115,7 +122,7 @@ def test_bulk_ingest_folds_per_metric_but_projects_once(
     the whole history.
     """
     structure = writer.ensure_structure(organization, roi_category_a, "roi-bulk", assertion)
-    entity_ref = f"{graph_a.age_name}:cccccccc-0000-0000-0000-000000000001"
+    entity_ref = make_node(entity_category_a)
     writer.create_link(
         organization,
         kind=evidence_models.Link.Kind.INFORMS,

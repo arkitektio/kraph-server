@@ -128,7 +128,7 @@ def test_recompute_restores_correctness_after_a_flagged_retraction(
     """The rebuild produces the answer the surviving evidence supports."""
     _, metrics = measured
 
-    writer.archive(organization, metrics[1], metrics[1].assertion)
+    writer.retract(organization, metrics[1], metrics[1].assertion)
     state_module.retract(metrics[1], [ENTITY_REF])
 
     state = evidence_models.State.objects.for_organization(organization).get(entity_ref=ENTITY_REF)
@@ -153,7 +153,7 @@ def test_reading_a_stale_row_rebuilds_it_first(
     flagged row is rebuilt on the way out rather than returned as-is.
     """
     _, metrics = measured
-    writer.archive(organization, metrics[1], metrics[1].assertion)
+    writer.retract(organization, metrics[1], metrics[1].assertion)
     state_module.retract(metrics[1], [ENTITY_REF])
 
     state = state_module.state_for(organization, ENTITY_REF, roi_category_a, "vector_length", [ValueKind.FLOAT.value])

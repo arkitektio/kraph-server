@@ -132,18 +132,19 @@ class GraphFilter:
     def search(self, value: str, prefix: str) -> Q:
         return Q(**{f"{prefix}name__search": value}) | Q(**{f"{prefix}description__search": value})
 
+    @kante.filter_field(description="Only archived graphs, or only live ones. Omitted shows both")
+    def is_archived(self, value: bool, prefix: str) -> Q:
+        """The read half of archiving.
 
-@kante.filter_type(models.CategoryTag)
-class CategoryTagFilter:
-    id: strawberry.auto
+        Opt-in rather than excluded by default, matching `pinned` and every other
+        filter here. A default exclusion would also hide an archived graph from
+        the by-id field, and nothing else could bring it back — the only way to
+        unarchive is `updateGraph(archived: false)`, which needs the client to be
+        able to find it first.
+        """
+        return Q(**{f"{prefix}is_archived": value})
 
-    @kante.filter_field(description="Filter by list of IDs")
-    def ids(self, value: list[strawberry.ID], prefix: str) -> Q:
-        return Q(**{f"{prefix}__id__in": value})
 
-    @kante.filter_field(description="Filter by list of IDs")
-    def search(self, value: str, prefix: str) -> Q:
-        return Q(**{f"{prefix}name__search": value}) | Q(**{f"{prefix}description__search": value})
 
 
 @kante.filter_type(models.Category)
@@ -165,7 +166,7 @@ class CategoryFilter:
         return Q(**{f"{prefix}label__search": value})
 
 
-@kante.filter_type(models.EntityCategory)
+@kante.filter_type(models.Category)
 class EntityCategoryFilter(CategoryFilter):
     pass
 
@@ -199,27 +200,63 @@ class MetricKindFilter:
         return Q(**{f"{prefix}structure_kind_id": value})
 
 
-@kante.filter_type(models.RelationCategory)
+@kante.filter_type(models.Category)
 class RelationCategoryFilter(CategoryFilter):
     pass
 
 
-@kante.filter_type(models.MeasurementCategory)
+@kante.filter_type(models.Category)
 class MeasurementCategoryFilter(CategoryFilter):
-    @kante.filter_field(description="Filter by list of IDs")
+    @kante.filter_field(description="Filter by the structure identifier this measurement's source selects")
     def source_identifier(self, info: kante.Info, value: str, prefix: str) -> Q:
-        """Filter metric categories by the kind of value they represent (e.g. numeric, categorical)."""
-        return Q(**{f"{prefix}source__identifier__icontains": value})
+        """Filter measurement categories by the structure identifier they measure.
+
+        This used to read `source__identifier`, a field a measurement category has
+        never had, so the filter raised `FieldError` on every use. The source is a
+        `StructureDescriptorInput` stored as JSON, so match its `identifiers` list.
+        """
+        return Q(**{f"{prefix}source_definition__identifiers__contains": [value]})
 
 
-@kante.filter_type(models.NaturalEventCategory)
+@kante.filter_type(models.Category)
 class NaturalEventCategoryFilter(CategoryFilter):
     pass
 
 
-@kante.filter_type(models.ProtocolEventCategory)
+@kante.filter_type(models.Category)
 class ProtocolEventCategoryFilter(CategoryFilter):
     pass
+
+
+@kante.filter_type(evidence_models.Term)
+class TermFilter:
+    """Filter options for the organization's vocabulary.
+
+    Standalone, like `StructureKindFilter`: a term has no graph to filter on, so
+    the tenant fence is the resolver's, not the client's.
+    """
+
+    ids: Optional[List[strawberry.ID]] = kante.filter_field(default=None, description="Filter by list of IDs")
+    search: Optional[str] = kante.filter_field(default=None, description="Search key, label and description")
+
+    @kante.filter_field(description="Filter by what sort of thing the word names")
+    def kinds(self, info: kante.Info, value: List[enums.TermKind], prefix: str) -> Q:
+        """Narrow to terms of these kinds."""
+        return Q(**{f"{prefix}kind__in": [str(kind.value) for kind in value]})
+
+    @kante.filter_field(description="Filter by the words themselves")
+    def keys(self, info: kante.Info, value: List[str], prefix: str) -> Q:
+        """Narrow to these exact words."""
+        return Q(**{f"{prefix}key__in": value})
+
+    @kante.filter_field(description="Filter to terms at least one graph declares a category for")
+    def declared(self, info: kante.Info, value: bool, prefix: str) -> Q:
+        """Whether any view speaks this word.
+
+        A term with no category is not an error — it is a word somebody described
+        before wiring a graph to it, or one whose last view was deleted.
+        """
+        return Q(**{f"{prefix}categories__isnull": not value})
 
 
 @kante.filter_type(evidence_models.StructureKind)
@@ -240,7 +277,7 @@ class StructureKindFilter:
         return Q(**{f"{prefix}identifier__in": value.identifiers})
 
 
-@kante.filter_type(models.StructureRelationCategory)
+@kante.filter_type(models.Category)
 class StructureRelationCategoryFilter(CategoryFilter):
     pass
 
@@ -255,20 +292,20 @@ class MaterializedEdgeFilter:
 
     @kante.filter_field(description="Full-text search over connected category labels")
     def search(self, value: str, prefix: str) -> Q:
-        return Q(**{f"{prefix}source__label__search": value}) | Q(**{f"{prefix}target__label__search": value}) | Q(**{f"{prefix}edge__label__search": value})
+        return Q(**{f"{prefix}source_category__label__search": value}) | Q(**{f"{prefix}target_category__label__search": value}) | Q(**{f"{prefix}edge_category__label__search": value})
 
     @kante.filter_field(description="Filter by list of IDs")
     def source_identifier(self, info: kante.Info, value: str, prefix: str) -> Q:
         """Filter measurement categories by the identifier of the source they measure."""
-        return Q(**{f"{prefix}source__identifier": value})
+        return Q(**{f"{prefix}source_structure_kind__identifier": value})
 
     @kante.filter_field(description="Filter by list of IDs")
     def target_identifier(self, info: kante.Info, value: str, prefix: str) -> Q:
         """Filter measurement categories by the identifier of the target they measure."""
-        return Q(**{f"{prefix}target__identifier": value})
+        return Q(**{f"{prefix}target_structure_kind__identifier": value})
 
 
-@kante.filter_type(models.MaterializedStructureRelationEdge)
+@kante.filter_type(models.MaterializedEdge)
 class MaterializedStructureRelationEdgeFilter:
     id: strawberry.auto
 
@@ -278,20 +315,20 @@ class MaterializedStructureRelationEdgeFilter:
 
     @kante.filter_field(description="Full-text search over connected category labels")
     def search(self, value: str, prefix: str) -> Q:
-        return Q(**{f"{prefix}source__label__search": value}) | Q(**{f"{prefix}target__label__search": value}) | Q(**{f"{prefix}edge__label__search": value})
+        return Q(**{f"{prefix}source_category__label__search": value}) | Q(**{f"{prefix}target_category__label__search": value}) | Q(**{f"{prefix}edge_category__label__search": value})
 
     @kante.filter_field(description="Filter by list of IDs")
     def source_identifier(self, info: kante.Info, value: str, prefix: str) -> Q:
         """Filter measurement categories by the identifier of the source they measure."""
-        return Q(**{f"{prefix}source__identifier": value})
+        return Q(**{f"{prefix}source_structure_kind__identifier": value})
 
     @kante.filter_field(description="Filter by list of IDs")
     def target_identifier(self, info: kante.Info, value: str, prefix: str) -> Q:
         """Filter measurement categories by the identifier of the target they measure."""
-        return Q(**{f"{prefix}target__identifier": value})
+        return Q(**{f"{prefix}target_structure_kind__identifier": value})
 
 
-@kante.filter_type(models.MaterializedRelationEdge)
+@kante.filter_type(models.MaterializedEdge)
 class MaterializedRelationEdgeFilter:
     id: strawberry.auto
 
@@ -301,20 +338,20 @@ class MaterializedRelationEdgeFilter:
 
     @kante.filter_field(description="Full-text search over connected category labels")
     def search(self, value: str, prefix: str) -> Q:
-        return Q(**{f"{prefix}source__label__search": value}) | Q(**{f"{prefix}target__label__search": value}) | Q(**{f"{prefix}edge__label__search": value})
+        return Q(**{f"{prefix}source_category__label__search": value}) | Q(**{f"{prefix}target_category__label__search": value}) | Q(**{f"{prefix}edge_category__label__search": value})
 
     @kante.filter_field(description="Filter by list of IDs")
     def source_identifier(self, info: kante.Info, value: str, prefix: str) -> Q:
         """Filter measurement categories by the identifier of the source they measure."""
-        return Q(**{f"{prefix}source__identifier": value})
+        return Q(**{f"{prefix}source_structure_kind__identifier": value})
 
     @kante.filter_field(description="Filter by list of IDs")
     def target_identifier(self, info: kante.Info, value: str, prefix: str) -> Q:
         """Filter measurement categories by the identifier of the target they measure."""
-        return Q(**{f"{prefix}target__identifier": value})
+        return Q(**{f"{prefix}target_structure_kind__identifier": value})
 
 
-@kante.filter_type(models.MaterializedMeasurementEdge)
+@kante.filter_type(models.MaterializedEdge)
 class MaterializedMeasurementEdgeFilter:
     id: strawberry.auto
 
@@ -324,17 +361,17 @@ class MaterializedMeasurementEdgeFilter:
 
     @kante.filter_field(description="Full-text search over connected category labels")
     def search(self, value: str, prefix: str) -> Q:
-        return Q(**{f"{prefix}source__label__search": value}) | Q(**{f"{prefix}target__label__search": value}) | Q(**{f"{prefix}edge__label__search": value})
+        return Q(**{f"{prefix}source_category__label__search": value}) | Q(**{f"{prefix}target_category__label__search": value}) | Q(**{f"{prefix}edge_category__label__search": value})
 
     @kante.filter_field(description="Filter by list of IDs")
     def source_identifier(self, info: kante.Info, value: str, prefix: str) -> Q:
         """Filter measurement categories by the identifier of the source they measure."""
-        return Q(**{f"{prefix}source__identifier": value})
+        return Q(**{f"{prefix}source_structure_kind__identifier": value})
 
     @kante.filter_field(description="Filter by list of IDs")
     def target_identifier(self, info: kante.Info, value: str, prefix: str) -> Q:
         """Filter measurement categories by the identifier of the target they measure."""
-        return Q(**{f"{prefix}target__identifier": value})
+        return Q(**{f"{prefix}target_structure_kind__identifier": value})
 
     @kante.filter_field(description="Filter by list of IDs")
     def graph_id(self, info: kante.Info, value: str, prefix: str) -> Q:
@@ -354,8 +391,13 @@ class GraphQueryFilter:
     def search(self, value: str, prefix: str) -> Q:
         return Q(**{f"{prefix}label__search": value}) | Q(**{f"{prefix}description__search": value})
 
+    @kante.filter_field(description="Only archived queries, or only live ones. Omitted shows both")
+    def archived(self, value: bool, prefix: str) -> Q:
+        """Opt-in, for the same reason as `GraphFilter.is_archived`."""
+        return Q(**{f"{prefix}archived": value})
 
-@kante.filter_type(models.GraphTableQuery)
+
+@kante.filter_type(models.GraphQuery)
 class GraphTableQueryFilter(GraphQueryFilter):
     pass
 
@@ -364,7 +406,7 @@ class GraphTableQueryFilter(GraphQueryFilter):
         return Q(**{f"{prefix}label__search": value}) | Q(**{f"{prefix}description__search": value})
 
 
-@kante.filter_type(models.GraphNodesQuery)
+@kante.filter_type(models.GraphQuery)
 class GraphNodesQueryFilter(GraphQueryFilter):
     pass
 
@@ -373,7 +415,7 @@ class GraphNodesQueryFilter(GraphQueryFilter):
         return Q(**{f"{prefix}label__search": value}) | Q(**{f"{prefix}description__search": value})
 
 
-@kante.filter_type(models.GraphPairsQuery)
+@kante.filter_type(models.GraphQuery)
 class GraphPairsQueryFilter(GraphQueryFilter):
     pass
 
@@ -382,7 +424,7 @@ class GraphPairsQueryFilter(GraphQueryFilter):
         return Q(**{f"{prefix}label__search": value}) | Q(**{f"{prefix}description__search": value})
 
 
-@kante.filter_type(models.GraphPathQuery)
+@kante.filter_type(models.GraphQuery)
 class GraphPathQueryFilter(GraphQueryFilter):
     pass
 
@@ -401,18 +443,23 @@ class NodeQueryFilter:
     def search(self, value: str, prefix: str) -> Q:
         return Q(**{f"{prefix}label__search": value}) | Q(**{f"{prefix}description__search": value})
 
+    @kante.filter_field(description="Only archived queries, or only live ones. Omitted shows both")
+    def archived(self, value: bool, prefix: str) -> Q:
+        """Opt-in, for the same reason as `GraphFilter.is_archived`."""
+        return Q(**{f"{prefix}archived": value})
 
-@kante.filter_type(models.NodeTableQuery)
+
+@kante.filter_type(models.NodeQuery)
 class NodeTableQueryFilter(NodeQueryFilter):
     pass
 
 
-@kante.filter_type(models.NodePairsQuery)
+@kante.filter_type(models.NodeQuery)
 class NodePairsQueryFilter(NodeQueryFilter):
     pass
 
 
-@kante.filter_type(models.NodePathQuery)
+@kante.filter_type(models.NodeQuery)
 class NodePathQueryFilter(NodeQueryFilter):
     pass
 
@@ -427,18 +474,23 @@ class EdgeQueryFilter:
     def search(self, value: str, prefix: str) -> Q:
         return Q(**{f"{prefix}label__search": value}) | Q(**{f"{prefix}description__search": value})
 
+    @kante.filter_field(description="Only archived queries, or only live ones. Omitted shows both")
+    def archived(self, value: bool, prefix: str) -> Q:
+        """Opt-in, for the same reason as `GraphFilter.is_archived`."""
+        return Q(**{f"{prefix}archived": value})
 
-@kante.filter_type(models.EdgeTableQuery)
+
+@kante.filter_type(models.EdgeQuery)
 class EdgeTableQueryFilter(EdgeQueryFilter):
     pass
 
 
-@kante.filter_type(models.EdgePairsQuery)
+@kante.filter_type(models.EdgeQuery)
 class EdgePairsQueryFilter(EdgeQueryFilter):
     pass
 
 
-@kante.filter_type(models.EdgePathQuery)
+@kante.filter_type(models.EdgeQuery)
 class EdgePathQueryFilter(EdgeQueryFilter):
     pass
 

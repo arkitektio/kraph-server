@@ -1,56 +1,52 @@
 """
 Measurement mutation resolvers.
+
+A measurement is the ontology-typed form of INFORMS: it names which term of the
+schema the claim "this structure measures that entity" falls under. Its source is
+a structure, which is a Postgres row, so like a structure relation it has no
+projected edge and is addressed by its evidence id.
+
+Its results therefore always carry an empty `drawings`, and structurally so:
+there is no AGE edge for a measurement to be drawn as.
 """
 
 from kante.types import Info
-import strawberry
-from typing import cast
 
 from api import types, inputs, context
-from core import models
-from graph_engine.scalars import GraphID
+from core import enums
 
 
-def delete_measurement(info: Info, input: inputs.DeleteMeasurementInput) -> GraphID:
+def assert_measurement_exists(info: Info, input: inputs.AssertMeasurementExistsInput) -> types.MeasurementAssertion:
+    """Assert that a structure measures an entity, under one of the organization's words.
+
+    Names a term rather than a measurement category — see `assert_entity_exists`.
+    The structure and the entity are both organization-scoped already, so this was
+    the last part of the claim that named a view.
     """
-    Delete a measurement edge by its composite ID.
-    """
+    payload = input.to_pydantic()
+    controller = context.get_controller()
+
+    organization = context.get_active_organization(info)
+    context.assert_can_access_organization(info, organization)
+
+    term = controller.ensure_term(organization, enums.CategoryKindChoices.MEASUREMENT, payload.term)
+
+    return types.MeasurementAssertion(
+        _value=controller.create_measurement(
+            organization=organization,
+            term=term,
+            payload=payload,
+            info=info,
+        )
+    )
+
+
+def retract_measurement(info: Info, input: inputs.RetractMeasurementInput) -> types.MeasurementAssertion:
+    """Retract a measurement assertion without destroying it."""
     controller = context.get_controller()
 
     model = input.to_pydantic()
-    graph_id = context.extract_graph_id(cast(GraphID, model.id))
-    local_id = context.extract_node_id(cast(GraphID, model.id))
+    link = controller.resolve_edge_link(str(model.id), info)
+    context.assert_can_access_organization(info, link.organization)
 
-    graph = context.get_accessible_graph(info, graph_id)
-
-    controller.delete_relation(
-        graph,
-        relation_id=local_id,
-        info=info,
-    )
-
-    return cast(GraphID, model.id)
-
-
-def archive_measurement(info: Info, input: inputs.ArchiveMeasurementInput) -> types.Measurement:
-    """
-    Archive (soft delete) a measurement edge by its composite ID.
-    """
-    controller = context.get_controller()
-
-    model = input.to_pydantic()
-    graph_id = context.extract_graph_id(cast(GraphID, model.id))
-    local_id = context.extract_node_id(cast(GraphID, model.id))
-
-    graph = context.get_accessible_graph(info, graph_id)
-
-    controller.archive_relation(
-        graph,
-        relation_id=local_id,
-        info=info,
-    )
-
-    archived = controller.get_relation_by_id(local_id)
-    assert archived is not None, "Measurement was archived but could not be loaded"
-
-    return types.Measurement(_value=archived)
+    return types.MeasurementAssertion(_value=controller.archive_relation(relation_id=str(model.id), info=info))

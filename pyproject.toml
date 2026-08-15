@@ -26,7 +26,6 @@ dependencies = [
     "duckdb>=1.2.2",
     "django-taggit>=6.1.0",
     "django-health-check>=3.20.0",
-    "django-polymorphic>=4.1.0",
     "strawberry-graphql>=0.291",
     "kante>=1.1.1",
     "pyjwt>=2.12.1",
@@ -36,17 +35,19 @@ dependencies = [
 [dependency-groups]
 dev = [
     "basedpyright>=1.39.8",
+    # Declared, not merely resolved. `lint.yaml` runs `uv run ruff`, and until now
+    # ruff reached the environment only as somebody else's transitive dependency —
+    # so a dependency bump elsewhere could silently take the linter out of CI.
+    "ruff>=0.14.0",
     "pytest-cov>=7.1.0",
     "python-semantic-release>=9.21.0",
     "django-stubs>=5.2.0",
-    "dokker>=2.5",
+    "dokker>=2.7",
     "moto>=5.1.11",
-    "mypy>=1.15.0",
     "pytest>=8.4.2",
     "pytest-asyncio>=1.1.0",
     "pytest-django>=4.11.1",
     "types-boto3[essential,sts]>=1.42.46",
-    "zarr>=3.1.5",
 ]
 
 [tool.django-stubs]
@@ -137,8 +138,7 @@ exclude_commit_patterns = [
 
 
 
-[tool.mypy]
-exclude = ["venv/", "tests/", "examples/"]
-plugins = ["mypy_django_plugin.main","pydantic.mypy"]
-ignore_missing_imports = true
-strict = true
+# No `[tool.mypy]`. It was here, set to `strict = true` with the django and
+# pydantic plugins — and no CI workflow ever ran mypy, so it asserted a standard
+# for this codebase that nothing checked and nobody could have met. basedpyright
+# is the type checker that actually runs; see `.github/workflows/typecheck.yaml`.

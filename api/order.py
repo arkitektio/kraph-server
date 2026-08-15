@@ -72,45 +72,50 @@ class CategoryOrder:
     id: auto
 
 
-@strawberry_django.order_type(models.CategoryTag)
-class CategoryTagOrder:
-    name: auto
-    id: auto
-
-
 @strawberry_django.order_type(models.MaterializedEdge)
 class MaterializedEdgeOrder:
     id: auto
 
 
-@strawberry_django.order_type(models.MaterializedStructureRelationEdge)
+@strawberry_django.order_type(models.MaterializedEdge)
 class MaterializedStructureRelationEdgeOrder:
     id: auto
 
 
-@strawberry_django.order_type(models.MaterializedMeasurementEdge)
+@strawberry_django.order_type(models.MaterializedEdge)
 class MaterializedMeasurementEdgeOrder:
     id: auto
 
 
-@strawberry_django.order_type(models.MaterializedRelationEdge)
+@strawberry_django.order_type(models.MaterializedEdge)
 class MaterializedRelationEdgeOrder:
     id: auto
 
 
-@strawberry_django.order_type(models.NodeCategory)
+@strawberry_django.order_type(models.Category)
 class NodeCategoryOrder(CategoryOrder):
     instance_kind: auto
 
 
-@strawberry_django.order_type(models.EdgeCategory)
+@strawberry_django.order_type(models.Category)
 class EdgeCategoryOrder(CategoryOrder):
     instance_kind: auto
 
 
-@strawberry_django.order_type(models.EntityCategory)
+@strawberry_django.order_type(models.Category)
 class EntityCategoryOrder(NodeCategoryOrder):
     label: auto
+    id: auto
+
+
+@strawberry_django.order_type(evidence_models.Term)
+class TermOrder:
+    """Standalone: a word has no graph-scoped layout to order by."""
+
+    key: auto
+    kind: auto
+    label: auto
+    created_at: auto
     id: auto
 
 
@@ -134,31 +139,31 @@ class MetricKindOrder:
     id: auto
 
 
-@strawberry_django.order_type(models.NaturalEventCategory)
+@strawberry_django.order_type(models.Category)
 class NaturalEventCategoryOrder(NodeCategoryOrder):
     label: auto
     id: auto
 
 
-@strawberry_django.order_type(models.ProtocolEventCategory)
+@strawberry_django.order_type(models.Category)
 class ProtocolEventCategoryOrder(NodeCategoryOrder):
     label: auto
     id: auto
 
 
-@strawberry_django.order_type(models.RelationCategory)
+@strawberry_django.order_type(models.Category)
 class RelationCategoryOrder(EdgeCategoryOrder):
     label: auto
     id: auto
 
 
-@strawberry_django.order_type(models.StructureRelationCategory)
+@strawberry_django.order_type(models.Category)
 class StructureRelationCategoryOrder(EdgeCategoryOrder):
     label: auto
     id: auto
 
 
-@strawberry_django.order_type(models.MeasurementCategory)
+@strawberry_django.order_type(models.Category)
 class MeasurementCategoryOrder(CategoryOrder):
     label: auto
     id: auto
@@ -170,25 +175,25 @@ class GraphQueryOrder:
     id: auto
 
 
-@strawberry_django.order_type(models.GraphTableQuery)
+@strawberry_django.order_type(models.GraphQuery)
 class GraphTableQueryOrder:
     label: auto
     id: auto
 
 
-@strawberry_django.order_type(models.GraphNodesQuery)
+@strawberry_django.order_type(models.GraphQuery)
 class GraphNodesQueryOrder:
     label: auto
     id: auto
 
 
-@strawberry_django.order_type(models.GraphPairsQuery)
+@strawberry_django.order_type(models.GraphQuery)
 class GraphPairsQueryOrder:
     label: auto
     id: auto
 
 
-@strawberry_django.order_type(models.GraphPathQuery)
+@strawberry_django.order_type(models.GraphQuery)
 class GraphPathQueryOrder:
     label: auto
     id: auto
@@ -200,19 +205,19 @@ class NodeQueryOrder:
     id: auto
 
 
-@strawberry_django.order_type(models.NodeTableQuery)
+@strawberry_django.order_type(models.NodeQuery)
 class NodeTableQueryOrder:
     label: auto
     id: auto
 
 
-@strawberry_django.order_type(models.NodePairsQuery)
+@strawberry_django.order_type(models.NodeQuery)
 class NodePairsQueryOrder:
     label: auto
     id: auto
 
 
-@strawberry_django.order_type(models.NodePathQuery)
+@strawberry_django.order_type(models.NodeQuery)
 class NodePathQueryOrder:
     label: auto
     id: auto
@@ -224,19 +229,19 @@ class EdgeQueryOrder:
     id: auto
 
 
-@strawberry_django.order_type(models.EdgeTableQuery)
+@strawberry_django.order_type(models.EdgeQuery)
 class EdgeTableQueryOrder:
     label: auto
     id: auto
 
 
-@strawberry_django.order_type(models.EdgePairsQuery)
+@strawberry_django.order_type(models.EdgeQuery)
 class EdgePairsQueryOrder:
     label: auto
     id: auto
 
 
-@strawberry_django.order_type(models.EdgePathQuery)
+@strawberry_django.order_type(models.EdgeQuery)
 class EdgePathQueryOrder:
     label: auto
     id: auto

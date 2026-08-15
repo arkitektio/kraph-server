@@ -1,11 +1,29 @@
 # Evidence Graph Architecture
 
-Status: **design proposal** — not yet implemented.
+Status: **historical**. Most of this has since been built, and several of the gaps it names are
+closed. Read [`LOG.md`](./LOG.md) for what the system does now — it is the current-state document
+and this one is the reasoning that got there.
+
+Where the two disagree, `LOG.md` is right. In particular, this document predates: identity being a
+bare uuid rather than a `{age_name}:` composite; `Claim` replacing `LifecycleEvent`, so existence is
+evidence rather than a status; the projection holding only what exists, so no vertex carries
+`__lifecycle_state`; `State` becoming organization grain with the selector applied on read; and the
+**write API naming a term rather than a graph's category**, so a claim can be recorded before any
+view exists to hold it and a view can be declared over history it did not witness.
+
+One conclusion in here was not merely overtaken but **reversed**, and it is load-bearing enough to
+flag up front. §2.1 argues that only filterable properties need materializing and that the rest can
+be derived on read "with no observable difference". The code implemented that faithfully, and the
+difference turned out to be observable and to grow with the result set. The rule now is: **a graph
+is rules plus the log, materialized by an event; a read is a graph query and nothing else.** §2.1
+carries the full reasoning and the bill that comes with it.
+
 Scope: the derivation layer of Kraph — how entity and relation properties come to exist from
 evidence, where they are stored, and how they survive schema change.
 
-This document describes the architecture as built, identifies where it diverges from the model
-promised in [BIOLOGIST.md](./BIOLOGIST.md), and proposes a target design with a migration order.
+This document describes the architecture as it then was, identifies where it diverged from the
+model promised in [BIOLOGIST.md](./BIOLOGIST.md), and proposes a target design with a migration
+order.
 
 ---
 
@@ -19,7 +37,7 @@ Inside a single AGE label space, two tiers currently coexist:
 
 | Tier | Labels | Nature |
 |---|---|---|
-| **Evidence** | `Assertion`, `Structure`, `Metric`, `LifeCycleAssertion`, `ShadowLink` | append-only facts |
+| **Evidence** | `Assertion`, `Structure`, `Metric`, `Claim`, `Link`, `Node` | append-only facts |
 | **Projection** | `Entity`, relation edges, `__`-prefixed properties | derived, stored and mutated in place |
 
 Evidence is written as:
@@ -27,7 +45,8 @@ Evidence is written as:
 ```
 (Assertion)-[:ASSERTED]->(Metric)-[:DESCRIBES]->(Structure)-[:INFORMS]->(Entity)
 (Assertion)-[:GENERATED]->(Entity)
-(Assertion)-[:GENERATED]->(ShadowLink)-[:REIFIES_AS_SOURCE|REIFIES_AS_TARGET]->(node)
+(superseded) (Assertion)-[:GENERATED]->(ShadowLink)-[:REIFIES_AS_SOURCE|REIFIES_AS_TARGET]->(node)
+-- `evidence.Link` replaced all of it; nothing has ever written these edges.
 ```
 
 Projection happens in `GraphController._recalculate_entity` (`graph_engine/controller.py:486`),
@@ -98,9 +117,14 @@ all properties, is not.
 
 ### 2.1 The one argument that justifies materialization
 
-`_build_entity_where_clause` (`controller.py:2166`) emits predicates like `e.length > 40`, and
-`_build_entity_order_clause` (`controller.py:2242`) emits `ORDER BY e.length DESC`. Both operate
-directly on entity properties.
+> **Superseded.** The conclusion this section reached — materialize what you filter on, derive the
+> rest on read — was implemented, and has since been reversed. The rule now is: **a graph is rules
+> plus the log, materialized by an event; a read is a graph query and nothing else.** Everything a
+> client can ask for is physically on the vertex before the query runs. The argument below is kept
+> because the half of it that still holds is the half that decided the reversal.
+
+`_build_entity_where_clause` emits predicates like `e.length > 40`, and `_build_entity_order_clause`
+emits `ORDER BY e.length DESC`. Both operate directly on entity properties.
 
 If `length` were only computable as an aggregate over a subgraph, filtering on it would mean a
 correlated subquery per candidate node — unindexable, unplannable, and degrading with graph size
@@ -108,12 +132,70 @@ rather than result size. Pagination makes it worse: `SKIP 200 LIMIT 200` over a 
 requires deriving the property for every entity in the category before anything can be skipped.
 
 So derived values appearing in `WHERE`, `ORDER BY`, or traversal predicates must be physically
-present somewhere indexable. This is not negotiable.
+present somewhere indexable. That part was and is correct.
 
-**But that argument covers filterable properties only.** Values read *after* a node is already
-selected carry no such constraint — they can be derived on read through a DataLoader with no
-observable difference. In practice that is the large majority of `defined_properties`. The current
-design materializes all of them.
+The step that did not survive was the next one: *"but that argument covers filterable properties
+only — values read after a node is already selected can be derived on read through a DataLoader with
+no observable difference."* Three things were wrong with it.
+
+**The difference was observable, and it grew with the result set.** `PropertyDefinitionInput.index`
+defaults to `False`, so the split was not "a few extras computed lazily" but "everything is lazy
+unless you opt in". Per entity per read: one `Category` query, then per property a `StructureKind`
+lookup, a `MetricKind` query, and either a `State` read or — when the graph carries a selector — a
+scan of `Metric`, the highest-churn table. All behind `sync_to_async`, so each was a thread hop as
+well as a round-trip. For N entities and P derived properties that is ≈ `N × (1 + 3P)` queries;
+200 entities × 5 properties ≈ 3,200 round-trips where a materialized read is one Cypher query.
+A DataLoader would have collapsed the constant, not the growth in N.
+
+**The asymmetry settles it.** The read cost is unbounded in result-set size. The write-side increase
+is bounded by properties-per-category, a constant. Unbounded-in-N is the one that cannot be outrun
+by hardware or caching.
+
+**And "filterable" was not a property of the data.** Whether you could `WHERE` or `ORDER BY` a value
+depended on a flag someone had to set in advance, and `index` never built an Apache AGE index — it
+only decided whether the property was materialized at all. Materializing everything makes every
+derived property filterable and sortable: a capability gain, not just a speed one.
+
+#### What that costs, and where the bill arrives
+
+Adding a property is no longer free. It needs a rematerialization, because the vertex is now the
+answer rather than a cache of the cheap half of it. That is paid in three places:
+
+- `api/mutations/schema/_rematerialize.py` — a category edit that moves the property hash redraws
+  every vertex the category draws, and `REMOVE`s the keys a dropped property left behind. Cypher
+  `SET` only adds and overwrites, so without the explicit removal a value no rule still derives
+  would stay on the vertex answering queries forever.
+- `manage.py rematerialize` — the same work out of band, since the redraw is unbounded in the size
+  of the graph and this service has no job queue. `--stale` selects on `__schema_version`, the stamp
+  `projector.project` writes onto every vertex, so an unfinished redraw is detectable rather than
+  silent.
+- `manage.py reproject` — still the answer when *membership* is wrong rather than the values, since
+  moving a node between labels is what AGE cannot do in place.
+
+#### Two consequences worth stating
+
+**Per-view values are materialized per view.** A graph's selector can make the same entity carry a
+different number in a different view, which is why `_scoped_state` existed on the read path. That is
+not a reason to compute on read — each graph has its own AGE namespace, so the scoped value is
+materialized into *that* namespace, and the selector becomes an input to materialization rather than
+to the query.
+
+**Provenance drill-down stays a Postgres lookup.** `contributing_assertions` and
+`supporting_evidence` answer "which measurements produced this number" for one already-selected
+node. They return rows, they are unbounded in length, and nothing filters or sorts on them. The rule
+is that no value a query *returns as a property, filters on, or sorts by* is computed at read time —
+not that a node can never be asked a follow-up question.
+
+#### The gap this leaves open
+
+**Edges derive nothing.** `projector.project_edges` writes `category_id` and `__assertion_count`
+onto an edge and stops. But `createRelationCategory` accepts `properties` and stores them in
+`property_definitions` — so a relation can declare a derivation rule that nothing has ever run.
+`bio_graph_schema`'s `IS_CONNECTED_TO.distance` (a `EUCLIDEAN_RANGE` rollup) is exactly such a rule.
+This is the same family of defect as the read-time derivation removed above, one layer over: the
+node side was fixed and the edge side was not. `update_relation_category` and
+`update_structure_relation_category` carry comments saying so rather than a rematerialization hook,
+because there is nothing yet to rematerialize.
 
 ### 2.2 Why the current form fails regardless
 

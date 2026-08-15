@@ -5,29 +5,32 @@ Metrics live in the relational evidence base and are scoped to the organization,
 not to a graph. Their IDs are therefore bare primary keys: there is no composite
 `{graph}:{id}` to pull a graph out of, so the controller resolves the row first
 and then authorizes the caller against *its* organization.
+
+**Named for values, not existence.** A metric asserts that something *measures*
+45.2µm; `assertMetricExists` would name the wrong thing. Nothing projects a
+metric into Apache AGE either, so :class:`api.types.MetricAssertion` carries no
+`drawings` field.
 """
 
 from kante.types import Info
 
 from api import types, inputs, context
-from graph_engine.scalars import GraphID
-from graph_engine import input_models
 
 
-def record_metric(
+def assert_metric_value(
     info: Info,
-    input: inputs.RecordMetricInput,
-) -> types.Metric:
-    """
-    Record a new metric for a structure. If the structure doesn't exist, it will be created automatically.
+    input: inputs.AssertMetricValueInput,
+) -> types.MetricAssertion:
+    """Record a measurement, creating the structure it describes if this is its first sight.
 
-    Args:
-        info: Strawberry Info context
-        input: RecordMetricInput
-    Returns:
-        Created Metric object
-    """
+    Takes the structure's `identifier` and `object` rather than a key, so an
+    ingest can state a measurement about an ROI nobody has registered yet.
 
+    **One controller call, so one assertion.** This used to call
+    `create_structure` and then `create_metric`, minting two assertions for what
+    the caller made as one claim — and `Assertion.action_id`, the field that would
+    tie them back together, is never populated.
+    """
     controller = context.get_controller()
 
     model = input.to_pydantic()
@@ -37,130 +40,70 @@ def record_metric(
     # graph had declared the identifier would be refusing a fact about the world
     # on a bookkeeping technicality — and the identifier belongs to the service
     # that produced the datum anyway.
-    structure = controller.create_structure(
-        organization=organization,
-        identifier=model.identifier,
-        payload=input_models.StructureInput(object=model.object),
-        info=info,
+    return types.MetricAssertion(
+        _value=controller.record_metric(
+            organization=organization,
+            identifier=model.identifier,
+            object=model.object,
+            metric=model,
+            info=info,
+        )
     )
 
-    response = controller.create_metric(
-        structure_id=structure.unique_id,
-        input=model,
-        info=info,
-    )
 
-    return types.Metric.from_specific(response)  # Convert to GraphQL type, preserving specific subtype information. If the metric already exists, it will be updated with the new value and timestamp.
-
-
-def create_metric(
+def assert_metric_value_for_structure(
     info: Info,
-    input: inputs.CreateMetricInput,
-) -> types.Metric:
-    """
-    Add a measurement to an existing structure.
+    input: inputs.AssertMetricValueForStructureInput,
+) -> types.MetricAssertion:
+    """Record a measurement against a structure that already exists.
 
-    Args:
-        info: Strawberry Info context
-        input: CreateMetricInput, where `structure` is an evidence primary key
-
-    Returns:
-        Created Metric object
+    Distinct from `assertMetricValue`, not a duplicate of it: that one names the
+    datum by `(identifier, object)` and mints the structure if it is new, this one
+    names an evidence primary key the caller already holds.
     """
     controller = context.get_controller()
 
     model = input.to_pydantic()
 
-    response = controller.create_metric(
-        structure_id=str(model.structure),
-        input=model,
-        info=info,
+    return types.MetricAssertion(
+        _value=controller.create_metric(
+            structure_id=str(model.structure),
+            input=model,
+            info=info,
+        )
     )
 
-    return types.Metric.from_specific(response)
 
-
-def delete_metric(
+def supersede_metric_value(
     info: Info,
-    input: inputs.DeleteMetricInput,
-) -> GraphID:
-    """
-    Hard delete a measurement by its ID.
+    input: inputs.SupersedeMetricValueInput,
+) -> types.MetricAssertion:
+    """Correct a measurement by retracting it and asserting a new one.
 
-    Prefer `archiveMetric`: evidence is append-only, and deleting destroys the
-    record of what a derived value was once computed from.
+    Not called `update`, because there is no update: both the original claim and
+    the correction stay on the record and `as_of` can still recover what was
+    believed before the revision. The returned metric therefore has a **different
+    id** from the one passed in — it is a new row, not an edited one.
 
-    Args:
-        info: Strawberry Info context
-        input: The evidence ID of the measurement to delete
-
-    Returns:
-        The ID of the deleted measurement
+    One assertion covers both halves, which is why they share a transaction: the
+    retraction and the replacement are one corrective act.
     """
     controller = context.get_controller()
 
     model = input.to_pydantic()
-
-    controller.delete_metric(
-        metric_id=str(model.id),
-        info=info,
-    )
-
-    return model.id
+    return types.MetricAssertion(_value=controller.update_metric(payload=model, info=info))
 
 
-def update_metric(
+def retract_metric(
     info: Info,
-    input: inputs.UpdateMetricInput,
-) -> types.Metric:
-    """
-    Update a metric by archiving the previous one and asserting a new one.
+    input: inputs.RetractMetricInput,
+) -> types.MetricAssertion:
+    """Retract a measurement without destroying it.
 
-    Args:
-        info: Strawberry Info context
-        input: The metric update payload
-
-    Returns:
-        The newly created metric
+    The metric stays readable afterwards, which is the point: a derived value that
+    stopped counting this measurement still has to be explainable.
     """
     controller = context.get_controller()
 
     model = input.to_pydantic()
-
-    updated = controller.update_metric(
-        payload=model,
-        info=info,
-    )
-
-    return types.Metric(_value=updated)
-
-
-def archive_metric(
-    info: Info,
-    input: inputs.ArchiveMetricInput,
-) -> types.Metric:
-    """
-    Archive (retract) a measurement by its ID.
-
-    The metric stays readable afterwards — a derived value that stopped counting
-    it still has to be explainable.
-
-    Args:
-        info: Strawberry Info context
-        input: The evidence ID of the measurement to archive
-
-    Returns:
-        The archived measurement
-    """
-    controller = context.get_controller()
-
-    model = input.to_pydantic()
-
-    controller.archive_metric(
-        metric_id=str(model.id),
-        info=info,
-    )
-
-    archived_metric = controller.get_metric(str(model.id), info)
-
-    return types.Metric(_value=archived_metric)
+    return types.MetricAssertion(_value=controller.archive_metric(metric_id=str(model.id), info=info))

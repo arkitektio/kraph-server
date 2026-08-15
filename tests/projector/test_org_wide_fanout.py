@@ -1,14 +1,18 @@
 """One measurement reaches every projection that reads it.
 
 The behaviour change this whole piece of work is for, and a bug fix rather than a
-feature. `informs_links_for` filters links by a single graph's `{age_name}:`
-prefix, so `dirty()` only ever named entities in the graph the caller passed —
-and every write path passed exactly one. A second projection over the same
-shared evidence therefore went stale the moment somebody recorded a metric
-through the first, and stayed stale until a manual `reproject`.
+feature. `dirty()` asks about a single graph, and every write path passed exactly
+one — so a second projection over the same shared evidence went stale the moment
+somebody recorded a metric through the first, and stayed stale until a manual
+`reproject`.
 
 That directly contradicts the point of sharing evidence across projections. If
 these tests fail, ingest is graph-less in signature only.
+
+The fan-out is now two steps rather than one: :func:`refs_informed_by` asks the
+evidence base what a structure supports, and :func:`graphs_for_refs` asks which
+views show those nodes. Splitting them is what lets the fold reach edge refs,
+which belong to no graph and which the old grouped version silently dropped.
 """
 
 import pytest
@@ -19,23 +23,23 @@ from evidence import models as evidence_models
 from evidence import writer
 from graph_engine import projector
 
-REF_A = "{graph}:aaaaaaaa-0000-0000-0000-00000000000a"
-REF_B = "{graph}:bbbbbbbb-0000-0000-0000-00000000000b"
-
 
 @pytest.fixture
 def shared_across_two_graphs(
     organization: Organization,
     graph_a: core_models.Graph,
     graph_b: core_models.Graph,
+    entity_category_a: core_models.EntityCategory,
+    entity_category_b: core_models.EntityCategory,
+    make_node,
     roi_kind: evidence_models.StructureKind,
     assertion: evidence_models.Assertion,
 ) -> tuple[evidence_models.Structure, str, str]:
     """One structure, informing an entity in each of two graphs."""
     structure = writer.ensure_structure(organization, roi_kind, "roi-shared-fanout", assertion)
 
-    ref_a = REF_A.format(graph=graph_a.age_name)
-    ref_b = REF_B.format(graph=graph_b.age_name)
+    ref_a = make_node(entity_category_a)
+    ref_b = make_node(entity_category_b)
 
     for ref in (ref_a, ref_b):
         writer.create_link(
@@ -62,11 +66,12 @@ def test_the_fan_out_reaches_both_graphs(
     """
     structure, ref_a, ref_b = shared_across_two_graphs
 
-    fan_out = projector.dirty_across_organization(organization, [structure.pk])
+    refs = projector.refs_informed_by(organization, [structure.pk])
+    grouped = projector.graphs_for_refs(organization, refs)
 
-    assert set(fan_out) == {graph_a.age_name, graph_b.age_name}
-    assert fan_out[graph_a.age_name] == [ref_a]
-    assert fan_out[graph_b.age_name] == [ref_b]
+    assert {graph.pk for graph in grouped} == {graph_a.pk, graph_b.pk}
+    assert {graph.pk: value for graph, value in grouped.items()}[graph_a.pk] == [ref_a]
+    assert {graph.pk: value for graph, value in grouped.items()}[graph_b.pk] == [ref_b]
 
 
 def test_the_old_single_graph_view_is_a_strict_subset(
@@ -82,7 +87,7 @@ def test_the_old_single_graph_view_is_a_strict_subset(
     structure, ref_a, ref_b = shared_across_two_graphs
 
     single = projector.dirty(graph_a, [structure.pk])
-    everything = [ref for refs in projector.dirty_across_organization(organization, [structure.pk]).values() for ref in refs]
+    everything = projector.refs_informed_by(organization, [structure.pk])
 
     assert single == [ref_a]
     assert set(everything) == {ref_a, ref_b}
@@ -97,9 +102,8 @@ def test_recording_a_metric_folds_state_for_both_graphs(
 ) -> None:
     """A single write updates the statistics behind both projections.
 
-    State vectors are keyed on `entity_ref`, which carries the graph, so one
-    metric legitimately produces two rows — one per projection. Producing only
-    one is the stale-second-graph bug.
+    Two entities, so two state rows — one per node, not one per graph. Producing
+    only one is the stale-second-graph bug.
     """
     from evidence import state as state_module
 
@@ -114,8 +118,7 @@ def test_recording_a_metric_folds_state_for_both_graphs(
         assertion=assertion,
     )
 
-    fan_out = projector.dirty_across_organization(organization, [structure.pk])
-    state_module.merge(metric, [ref for refs in fan_out.values() for ref in refs])
+    state_module.merge(metric, projector.refs_informed_by(organization, [structure.pk]))
 
     states = evidence_models.State.objects.for_organization(organization).filter(key="vector_length")
     assert {state.entity_ref for state in states} == {ref_a, ref_b}
@@ -126,6 +129,8 @@ def test_a_graph_with_no_informed_entity_is_not_in_the_fan_out(
     organization: Organization,
     graph_a: core_models.Graph,
     graph_b: core_models.Graph,
+    entity_category_a: core_models.EntityCategory,
+    make_node,
     roi_kind: evidence_models.StructureKind,
     assertion: evidence_models.Assertion,
 ) -> None:
@@ -140,14 +145,14 @@ def test_a_graph_with_no_informed_entity_is_not_in_the_fan_out(
         organization,
         kind=evidence_models.Link.Kind.INFORMS,
         source_ref=str(structure.pk),
-        target_ref=REF_A.format(graph=graph_a.age_name),
+        target_ref=make_node(entity_category_a),
         assertion=assertion,
     )
 
-    fan_out = projector.dirty_across_organization(organization, [structure.pk])
+    grouped = projector.graphs_for_refs(organization, projector.refs_informed_by(organization, [structure.pk]))
 
-    assert set(fan_out) == {graph_a.age_name}
-    assert graph_b.age_name not in fan_out
+    assert {graph.pk for graph in grouped} == {graph_a.pk}
+    assert graph_b.pk not in {graph.pk for graph in grouped}
 
 
 def test_the_fan_out_stops_at_the_organization(
@@ -162,20 +167,20 @@ def test_the_fan_out_stops_at_the_organization(
     """
     structure, _, _ = shared_across_two_graphs
 
-    assert projector.dirty_across_organization(other_organization, [structure.pk]) == {}
+    assert projector.refs_informed_by(other_organization, [structure.pk]) == []
 
 
 # --- end to end, through the real GraphQL surface ---------------------------
 
 CREATE_ENTITY = """
-    mutation CreateEntity($input: CreateEntityInput!) {
-        createEntity(input: $input) { id }
+    mutation CreateEntity($input: AssertEntityExistsInput!) {
+        assertEntityExists(input: $input) { entity { id } }
     }
 """
 
 RECORD_METRIC = """
-    mutation RecordMetric($input: RecordMetricInput!) {
-        recordMetric(input: $input) { id }
+    mutation RecordMetric($input: AssertMetricValueInput!) {
+        assertMetricValue(input: $input) { metric { id } }
     }
 """
 
@@ -220,14 +225,14 @@ async def test_one_recorded_metric_moves_both_projections(
             CREATE_ENTITY,
             variable_values={
                 "input": {
-                    "entityCategory": str(category.pk),
+                    "term": category.key,
                     "supportingEvidence": [{"identifier": "ROI", "object": object_id, "metrics": [{"key": "vector_length", "value": 40.0, "valueKind": "FLOAT"}]}],
                 }
             },
             context_value=simple_api_context,
         )
         assert created.errors is None, f"GraphQL errors: {created.errors}"
-        entity_ids[graph.age_name] = created.data["createEntity"]["id"]
+        entity_ids[graph.age_name] = created.data["assertEntityExists"]["entity"]["id"]
 
     @sync_to_async
     def structure_count() -> int:

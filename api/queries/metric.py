@@ -35,13 +35,41 @@ def metric(
 
 def metrics(
     info: Info,
-    metric_category_id: strawberry.ID,
-    filters: filters.MetricFilter | None = None,
-    ordering: list[order.MetricOrder] | None = None,
-    pagination: pagination.MetricPaginationInput | None = None,
+    metric_kind_id: strawberry.ID,
 ) -> List[types.Metric]:
-    """List metrics for a given metric category with typed filter/order/pagination arguments."""
-    raise NotImplementedError("metrics resolver scaffold added; query execution not implemented yet")
+    """Every un-retracted metric recorded under one metric kind.
+
+    The argument used to be `metric_category_id`. **There is no metric
+    category** — measurement vocabulary became the organization-scoped
+    `evidence.MetricKind` when structures left the `Category` hierarchy, and
+    `structures(structureKindId:)` was updated at the time while this was not.
+    The resolver was `raise NotImplementedError`, so nothing ever exercised the
+    argument and nothing could notice.
+
+    It also took `filters`, `ordering` and `pagination`, and those are gone. A
+    resolver that raises can advertise any argument it likes; one that answers
+    cannot, and applying them would mean inventing a filter language for a
+    surface nothing has asked for yet. Better to offer what is implemented than
+    to accept three arguments and ignore them — that is the silent no-op this
+    whole pass exists to remove.
+
+    Scoped by the kind's organization rather than by the request's: the kind is
+    resolved first and the caller authorized against *its* tenant, the same order
+    `metric(id:)` and every other evidence read use, because the client names a
+    primary key and never names a tenant.
+    """
+    from evidence import models as evidence_models
+    from evidence import writer
+    from graph_engine.retrieved import RetrievedMetric
+
+    kind = evidence_models.MetricKind.all_objects.filter(pk=str(metric_kind_id)).first()
+    if kind is None:
+        raise ValueError(f"Metric kind not found with id {metric_kind_id}")
+
+    controller = context.get_controller()
+    controller._assert_can_access(kind.organization, info)
+
+    return [types.Metric(_value=RetrievedMetric.from_row(controller, row)) for row in writer.standing_metrics_for_kind(kind)]
 
 
 def metrics_for_structure(

@@ -21,14 +21,14 @@ from kante.context import HttpContext
 from core import models as core_models
 
 CREATE_ENTITY = """
-    mutation CreateEntity($input: CreateEntityInput!) {
-        createEntity(input: $input) { id }
+    mutation CreateEntity($input: AssertEntityExistsInput!) {
+        assertEntityExists(input: $input) { entity { id } }
     }
 """
 
 RECORD_METRIC = """
-    mutation RecordMetric($input: RecordMetricInput!) {
-        recordMetric(input: $input) { id }
+    mutation RecordMetric($input: AssertMetricValueInput!) {
+        assertMetricValue(input: $input) { metric { id } }
     }
 """
 
@@ -69,7 +69,7 @@ async def _entity_with_measurements(
         CREATE_ENTITY,
         variable_values={
             "input": {
-                "entityCategory": str(category.pk),
+                "term": category.key,
                 "supportingEvidence": [
                     {
                         "identifier": "ROI",
@@ -100,7 +100,7 @@ async def _entity_with_measurements(
         )
         assert recorded.errors is None, f"GraphQL errors: {recorded.errors}"
 
-    return created.data["createEntity"]["id"]
+    return created.data["assertEntityExists"]["entity"]["id"]
 
 
 @pytest.mark.django_db(transaction=True)
@@ -201,14 +201,14 @@ async def test_a_property_with_no_evidence_reports_nothing_rather_than_zero(
     category = await core_models.EntityCategory.objects.filter(graph=test_graph, key="AIS").afirst()
     created = await api_schema.execute(
         CREATE_ENTITY,
-        variable_values={"input": {"entityCategory": str(category.pk)}},
+        variable_values={"input": {"term": category.key}},
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
 
     result = await api_schema.execute(
         THE_SENTENCE,
-        variable_values={"id": created.data["createEntity"]["id"]},
+        variable_values={"id": created.data["assertEntityExists"]["entity"]["id"]},
         context_value=simple_api_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"

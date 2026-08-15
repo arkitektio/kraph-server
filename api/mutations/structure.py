@@ -1,152 +1,120 @@
 """
 Structure mutation resolvers.
+
+A structure is a pointer to an external datum — a Mikro ROI, an image — and lives
+only in the relational evidence base. Nothing projects one into Apache AGE, so
+:class:`api.types.StructureAssertion` carries no `drawings` field at all: the
+absence is a permanent property of the model rather than a per-call answer.
 """
 
+from typing import cast
+
 from kante.types import Info
-import strawberry
 
 from api import types, inputs, context
-from core import models
-from graph_engine import scalars
 
 
-def create_structure(
+def assert_structure_exists(
     info: Info,
-    input: inputs.CreateStructureInput,
-) -> types.Structure:
-    """
-    Create a new structure (or return existing if already exists).
+    input: inputs.AssertStructureExistsInput,
+) -> types.StructureAssertion:
+    """Claim that an external datum exists and is worth pointing at.
 
-    Structures are idempotent - creating the same structure twice
-    returns the existing one.
-
-    Args:
-        info: Strawberry Info context
-        input: inputs.CreateStructureInput (pydantic-validated)
-
-    Returns:
-        types.Structure object
+    Idempotent by `(identifier, object)` within the organization: two projections
+    referencing the same external object converge on one row instead of each
+    getting a private copy. So a second call is a second *assertion* about the
+    same structure, which is exactly what the log should record.
     """
     payload = input.to_pydantic()
 
     controller = context.get_controller()
     organization = context.get_active_organization(info)
 
-    response = controller.create_structure(
-        organization=organization,
-        identifier=payload.identifier,
-        payload=payload,
-        info=info,
+    return types.StructureAssertion(
+        _value=controller.create_structure(
+            organization=organization,
+            identifier=payload.identifier,
+            payload=payload,
+            info=info,
+        )
     )
-
-    return types.Structure(_value=response)
 
 
 def ensure_structure(
     info: Info,
     input: inputs.EnsureStructureInput,
-) -> types.Structure:
+) -> types.StructureAssertion:
+    """Get the structure for an external datum, creating it if this is the first sight of it.
+
+    **Identical to `assertStructureExists` in every observable way.** Same
+    controller call, same arguments, and the assertion each records is built from
+    `_provenance_from_info` alone — nothing marks which field was called, so the
+    evidence they produce cannot be told apart. The two names are kept for caller
+    ergonomics: a structure is idempotent by `(identifier, object)`, so an ingest
+    reaching for a handle and an annotator claiming the datum is worth pointing at
+    are the same write, and both spellings read naturally at their own call sites.
+
+    If that distinction ever needs to be recoverable from the log, it has to be
+    *recorded* — an `action_name` on the assertion would do it. Until then, do not
+    document a difference the rows do not carry.
+
+    Delegates rather than repeating the body, so the claim above stays true by
+    construction instead of by a reader diffing two functions.
     """
-    Create a new structure (or return existing if already exists).
-
-    Structures are idempotent - creating the same structure twice
-    returns the existing one.
-
-    Args:
-        info: Strawberry Info context
-        input: inputs.CreateStructureInput (pydantic-validated)
-
-    Returns:
-        types.Structure object
-    """
-    payload = input.to_pydantic()
-
-    controller = context.get_controller()
-    organization = context.get_active_organization(info)
-
-    response = controller.create_structure(
-        organization=organization,
-        identifier=payload.identifier,
-        payload=payload,
-        info=info,
-    )
-
-    return types.Structure(_value=response)
+    return assert_structure_exists(info, cast(inputs.AssertStructureExistsInput, input))
 
 
-def delete_structure(
+def retract_structure(
     info: Info,
-    input: inputs.DeleteStructureInput,
-) -> scalars.GraphID:
-    """
-    Delete a structure by its composite ID. Only the owner of the graph or an admin can delete a structure.
+    input: inputs.RetractStructureInput,
+) -> types.StructureAssertion:
+    """Claim that a structure should no longer be pointed at.
 
-    Args:
-        info: Strawberry Info context
-        input: Composite ID of the structure to delete (e.g., "1-abc123-def456-...")
-
-    Returns:
-        The ID of the deleted structure
+    The row survives, and so do its metrics: a derived value that dropped a
+    contributing measurement still has to be explainable afterwards.
     """
     controller = context.get_controller()
 
-    model = input.to_pydantic()  # Validate input with Pydantic models
-    controller.delete_structure(
-        structure_id=str(model.id),
-        info=info,
+    model = input.to_pydantic()
+    return types.StructureAssertion(
+        _value=controller.archive_structure(
+            structure_id=str(model.id),
+            info=info,
+        )
     )
-
-    return model.id
-
-
-def archive_structure(
-    info: Info,
-    input: inputs.ArchiveStructureInput,
-) -> types.Structure:
-    """
-    Archive (soft delete) a structure by its composite ID.
-
-    Args:
-        info: Strawberry Info context
-        input: Composite ID of the structure to archive (e.g., "1-abc123-def456-...")
-
-    Returns:
-        The ID of the archived structure
-    """
-    controller = context.get_controller()
-
-    model = input.to_pydantic()  # Validate input with Pydantic models
-    structure = controller.archive_structure(
-        structure_id=str(model.id),
-        info=info,
-    )
-
-    return types.Structure(_value=structure)
 
 
 def update_structure(
     info: Info,
     input: inputs.UpdateStructureInput,
-) -> types.Structure:
-    """Update an existing structure by its composite ID and return the updated structure."""
+) -> types.StructureAssertion:
+    """Append metrics to an existing structure.
+
+    Keeps the name `update` because it genuinely appends: a structure's
+    `(identifier, object)` is its identity, so `object` is immutable and
+    repointing it is rejected rather than superseded.
+    """
     controller = context.get_controller()
 
     model = input.to_pydantic()
-    updated = controller.update_structure(
-        structure_id=str(model.id),
-        payload=model,
-        info=info,
+    return types.StructureAssertion(
+        _value=controller.update_structure(
+            structure_id=str(model.id),
+            payload=model,
+            info=info,
+        )
     )
-
-    return types.Structure(_value=updated)
 
 
 def link_structure_to_entity(
     info: Info,
     input: inputs.LinkStructureInput,
-) -> types.Structure:
+) -> types.StructureAssertion:
     """
     Assert that a structure is evidence for an entity.
+
+    Keeps its name: it is already a claim verb, and what it claims is a relation
+    between two things rather than the existence of either.
 
     This is a pure evidence write: it records the claim that a given ROI (or
     image, or file) justifies a given entity, as an `INFORMS` link under a fresh
@@ -155,13 +123,6 @@ def link_structure_to_entity(
 
     Recording the link also refreshes the entity it now supports, so a structure
     attached after the fact still flows into the derived values.
-
-    Args:
-        info: Strawberry Info context
-        input: The structure to link and the entity to link it to
-
-    Returns:
-        The structure, unchanged apart from now having one more link pointing at it
     """
     controller = context.get_controller()
 
@@ -172,10 +133,10 @@ def link_structure_to_entity(
         object=input.structure_object,
     )
 
-    linked = controller.link_structure_to_entity(
-        structure_id=str(structure.pk),
-        entity_id=input.entity_id,
-        info=info,
+    return types.StructureAssertion(
+        _value=controller.link_structure_to_entity(
+            structure_id=str(structure.pk),
+            entity_id=input.entity_id,
+            info=info,
+        )
     )
-
-    return types.Structure(_value=linked)

@@ -34,10 +34,14 @@ async def test_create_graph_from_schema(
                             "key": "TestEntity",
                             "label": "Test Entity",
                             "description": "Entity used for schema creation tests",
+                            # The rule is required: a property with no source is
+                            # not computable, and nothing writes one directly.
                             "propertyDefinitions": [
                                 {
                                     "key": "name",
                                     "valueKind": "STRING",
+                                    "derivation": "LATEST",
+                                    "rule": {"sourceNode": "ROI", "key": "name"},
                                 }
                             ],
                         }

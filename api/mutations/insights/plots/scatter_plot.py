@@ -2,13 +2,22 @@ from kante.types import Info
 import strawberry
 
 from api import inputs, types
+from api.mutations._scoped import scoped
 from core import models
 
 
-def _resolve_plot_query(model) -> tuple[models.GraphTableQuery | None, models.NodeTableQuery | None, models.NodePathQuery | None]:
-    graph_query = models.GraphTableQuery.objects.get(id=model.graph_query_id) if model.graph_query_id else None
-    node_query = models.NodeTableQuery.objects.get(id=model.node_query_id) if model.node_query_id else None
-    path_query = models.NodePathQuery.objects.get(id=model.path_query_id) if model.path_query_id else None
+def _resolve_plot_query(info: Info, model) -> tuple[models.GraphTableQuery | None, models.NodeTableQuery | None, models.NodePathQuery | None]:
+    """The one saved query this plot is drawn from, checked against the caller.
+
+    A plot has no graph of its own — it reaches one through whichever of these
+    three is set, which is why `_scoped.graph_of` walks them. These were bare
+    primary-key fetches, so a plot could be built over another tenant's saved
+    query and would then render that tenant's data through
+    `render_graph_table`.
+    """
+    graph_query = scoped(info, models.GraphTableQuery, model.graph_query_id, what="graph table query") if model.graph_query_id else None
+    node_query = scoped(info, models.NodeTableQuery, model.node_query_id, what="node table query") if model.node_query_id else None
+    path_query = scoped(info, models.NodePathQuery, model.path_query_id, what="node path query") if model.path_query_id else None
 
     if sum(1 for item in [graph_query, node_query, path_query] if item is not None) != 1:
         raise ValueError("Exactly one of graph_query_id, node_query_id, or path_query_id must be provided")
@@ -16,9 +25,27 @@ def _resolve_plot_query(model) -> tuple[models.GraphTableQuery | None, models.No
     return graph_query, node_query, path_query
 
 
+def _own_plot(info: Info, pk) -> models.ScatterPlot:
+    """A plot the caller may change, which is a stricter test than tenancy.
+
+    `ScatterPlot.creator` was already on the model and read by nothing —
+    `update_scatter_plot` and `delete_scatter_plot` fetched by bare primary key,
+    so one member of an organization could rewrite or destroy another's saved
+    plots. Tenancy alone would not catch that, so both checks run: the graph
+    boundary through `scoped`, then ownership.
+    """
+    plot = scoped(info, models.ScatterPlot, pk, what="scatter plot")
+
+    user = info.context.request.user
+    if not user.is_superuser and plot.creator_id != user.id:
+        raise PermissionError("You do not have permission to change this scatter plot — it belongs to somebody else.")
+
+    return plot
+
+
 def create_scatter_plot(info: Info, input: inputs.CreateScatterPlotInput) -> types.ScatterPlot:
     model = input.to_pydantic()
-    graph_query, node_query, path_query = _resolve_plot_query(model)
+    graph_query, node_query, path_query = _resolve_plot_query(info, model)
 
     return models.ScatterPlot.objects.create(
         graph_query=graph_query,
@@ -40,8 +67,8 @@ def create_scatter_plot(info: Info, input: inputs.CreateScatterPlotInput) -> typ
 
 def update_scatter_plot(info: Info, input: inputs.UpdateScatterPlotInput) -> types.ScatterPlot:
     model = input.to_pydantic()
-    scatter_plot = models.ScatterPlot.objects.get(id=model.id)
-    graph_query, node_query, path_query = _resolve_plot_query(model)
+    scatter_plot = _own_plot(info, model.id)
+    graph_query, node_query, path_query = _resolve_plot_query(info, model)
 
     scatter_plot.graph_query = graph_query
     scatter_plot.node_query = node_query
@@ -63,13 +90,8 @@ def update_scatter_plot(info: Info, input: inputs.UpdateScatterPlotInput) -> typ
 
 def delete_scatter_plot(info: Info, input: inputs.DeleteScatterPlotInput) -> strawberry.ID:
     model = input.to_pydantic()
-    item = models.ScatterPlot.objects.get(id=model.id)
+    item = _own_plot(info, model.id)
     item.delete()
     return strawberry.ID(str(model.id))
 
 
-def archive_scatter_plot(info: Info, input: inputs.ArchiveScatterPlotInput) -> strawberry.ID:
-    model = input.to_pydantic()
-    item = models.ScatterPlot.objects.get(id=model.id)
-    item.delete()
-    return strawberry.ID(str(model.id))

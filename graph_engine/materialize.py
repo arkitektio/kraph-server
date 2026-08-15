@@ -8,6 +8,7 @@ instances from the schema definition.
 
 import hashlib
 import json
+import logging
 from typing import Optional
 from pydantic import BaseModel, Field
 
@@ -17,6 +18,8 @@ from core import models
 from itertools import product
 from django.db.models import Q
 from authentikate.models import Organization, Membership, User
+
+logger = logging.getLogger(__name__)
 
 
 def compute_definition_hash(definition: "GraphDefinitionInput | dict") -> str:
@@ -88,14 +91,14 @@ def re_materialize_relation_category(graph: models.Graph, relation_category: mod
     sources = relation_category.get_matching_source_entities()
     target = relation_category.get_matching_target_entities()
 
-    models.MaterializedRelationEdge.objects.filter(graph=graph, edge=relation_category).delete()
+    models.MaterializedRelationEdge.objects.filter(graph=graph, edge_category=relation_category).delete()
 
     for source_cat, target_cat in product(sources, target):
         models.MaterializedRelationEdge.objects.create(
             graph=graph,
-            edge=relation_category,
-            source=source_cat,
-            target=target_cat,
+            edge_category=relation_category,
+            source_category=source_cat,
+            target_category=target_cat,
         )
 
     return relation_category
@@ -116,14 +119,14 @@ def re_materialize_structure_relation_category(graph: models.Graph, relation_cat
     sources = relation_category.get_matching_source_structures()
     target = relation_category.get_matching_target_structures()
 
-    models.MaterializedStructureRelationEdge.objects.filter(graph=graph, edge=relation_category).delete()
+    models.MaterializedStructureRelationEdge.objects.filter(graph=graph, edge_category=relation_category).delete()
 
     for source_cat, target_cat in product(sources, target):
         models.MaterializedStructureRelationEdge.objects.create(
             graph=graph,
-            edge=relation_category,
-            source=source_cat,
-            target=target_cat,
+            edge_category=relation_category,
+            source_structure_kind=source_cat,
+            target_structure_kind=target_cat,
         )
 
     return relation_category
@@ -144,14 +147,14 @@ def re_materialize_measurement_relation_category(graph: models.Graph, relation_c
     sources = relation_category.get_matching_source_structures()
     target = relation_category.get_matching_target_entities()
 
-    models.MaterializedMeasurementEdge.objects.filter(graph=graph, edge=relation_category).delete()
+    models.MaterializedMeasurementEdge.objects.filter(graph=graph, edge_category=relation_category).delete()
 
     for source_cat, target_cat in product(sources, target):
         models.MaterializedMeasurementEdge.objects.create(
             graph=graph,
-            edge=relation_category,
-            source=source_cat,
-            target=target_cat,
+            edge_category=relation_category,
+            source_structure_kind=source_cat,
+            target_category=target_cat,
         )
 
     return relation_category
@@ -165,6 +168,21 @@ def re_materialize_from_entity_category(graph: models.Graph, entity_category: mo
 
     for relation_category in as_potential_input_relations:
         re_materialize_relation_category(graph, relation_category)
+
+
+def edge_property_problems(owner: str, property_definitions: list | None) -> list[str]:
+    """Why an edge cannot carry the properties declared on it. Empty if none were.
+
+    Shared by `validate_derivation_rules`, which checks a whole schema before
+    materializing it, and by the three `create_*_category` mutations, which take
+    an edge definition one at a time and never reach that function. Both surfaces
+    accept the same input, so both have to refuse it — a guard on only one of
+    them would just move the silent empty result to the other.
+    """
+    if not property_definitions:
+        return []
+
+    return [f"{owner}.{prop.key}: an edge carries no derived properties. `project_edges` writes only `category_id` and `__assertion_count`, so a rule declared here would never run. Roll the value up onto one of the endpoints instead." for prop in property_definitions]
 
 
 def validate_derivation_rules(definition: GraphDefinitionInput) -> None:
@@ -192,6 +210,16 @@ def validate_derivation_rules(definition: GraphDefinitionInput) -> None:
 
     def check(owner: str, property_definitions: list) -> None:
         for prop in property_definitions:
+            # A property with no rule naming a source is not expressible. There
+            # is no mutation that sets one, `project` writes only derived values,
+            # and the read path resolves only derived values — so it was declared,
+            # stored nowhere, and readable through nothing, while
+            # `indexed_property_keys` still admitted it to the filterable set and
+            # let a Cypher predicate against it match silently. `id` is exempt:
+            # it is the node's identity, written by `create_entity` itself.
+            if prop.key != "id" and (prop.rule is None or not getattr(prop.rule, "source_node", None)):
+                problems.append(f"{owner}.{prop.key}: a property needs a `rule` naming a `source_node` to be computable. Nothing writes a property directly — record a metric against a structure that informs this node and give the property a rule that rolls it up.")
+                continue
             if prop.derivation != DerivationType.ROLLUP or prop.rule is None:
                 continue
             try:
@@ -199,12 +227,45 @@ def validate_derivation_rules(definition: GraphDefinitionInput) -> None:
             except UnsupportedRule as error:
                 problems.append(f"{owner}.{prop.key}: {error}")
 
+    def check_edge(owner: str, property_definitions: list) -> None:
+        """An edge carries no derived properties at all, so refuse every one.
+
+        `projector.project_edges` writes `category_id` and `__assertion_count`
+        onto a relationship and stops; measurements are not drawn as AGE edges at
+        all, only read back from their `Link` rows. No derivation rule has ever
+        run for an edge category — so a rule declared on one is not "computed
+        later", it is never computed, and the property reads as permanently
+        absent.
+
+        This used to fall through `check` above, which accepts any property
+        carrying a well-formed rule. The result was that the API accepted,
+        *validated* and stored a rule nothing would execute, and the client got a
+        valid schema and an empty property with no error at any point — the
+        silent-empty-result this function exists to eliminate, one layer over
+        from where it was first found.
+
+        Refusing rather than warning, for the same reason a rule-less node
+        property is refused: an unsatisfiable schema should fail where it is
+        declared. If edges gain derived properties later, this is the guard to
+        remove — and `project_edges` is where the work would go, needing a state
+        grain keyed on the proposition rather than on the entity.
+        """
+        problems.extend(edge_property_problems(owner, property_definitions))
+
     for entity in definition.extensions.entities:
         check(entity.key, entity.property_definitions)
-    for relation in definition.extensions.relations:
-        check(relation.key, relation.properties)
     for event in definition.extensions.events:
         check(event.key, event.properties)
+
+    # Relations, structure relations and measurements are edges. They are checked
+    # by a different rule, not a stricter version of the same one — see
+    # `check_edge`.
+    for relation in definition.extensions.relations:
+        check_edge(relation.key, relation.properties)
+    for structure_relation in definition.extensions.structure_relations:
+        check_edge(structure_relation.key, structure_relation.properties)
+    for measurement in definition.extensions.measurements:
+        check_edge(measurement.key, measurement.properties)
 
     if problems:
         raise ValueError("Schema has derivation rules that cannot be computed:\n  - " + "\n  - ".join(problems))
@@ -218,6 +279,7 @@ def materialize(
     membership: Membership,
     name: Optional[str] = None,
     description: Optional[str] = None,
+    backfill: bool = False,
 ) -> models.Graph:
     """
     Materialize a graph based on the provided graph definition.
@@ -237,6 +299,11 @@ def materialize(
         user: Optional user for the graph (required for production)
         organization: Optional organization for the graph (required for production)
         membership: Optional membership for the graph (required for production)
+        backfill: Draw the evidence this graph's words already admit. Off by
+            default because it is O(the organization's evidence) and synchronous;
+            a caller who knows the organization has history worth showing asks for
+            it. Without it a new view over old evidence comes up empty until
+            someone runs `manage.py reproject`.
 
     Returns:
         The materialized Graph instance with all related models created
@@ -291,11 +358,45 @@ def materialize(
     for category in graph.measurement_categories.all():
         re_materialize_measurement_relation_category(graph, category)
 
+    if backfill:
+        # `project_all`, not `rebuild`. The namespace was created five lines up and
+        # is empty, so there is nothing to drop; and `rebuild` ends with
+        # `refold_state(organization)`, which re-folds every metric in the
+        # organization — not something one new view is entitled to do to statistics
+        # its siblings are reading.
+        from graph_engine import projector
+        from graph_engine.controller import GraphController
+
+        counts = projector.project_all(GraphController(engine=engine), graph)
+        # `unclassified` too: a backfill that drew nothing and one whose every
+        # candidate was refused by a definition are indistinguishable from the
+        # `Graph` row this returns, and the second is the one worth knowing about.
+        logger.info(
+            "%s: backfilled %s node(s) and %s edge(s) from existing evidence; %s admitted by no category.",
+            age_name,
+            counts["nodes"],
+            counts["edges"],
+            counts["unclassified"],
+        )
+
     return graph
 
 
 def _materialize_categories(graph, definition: GraphDefinitionInput, user) -> None:
-    """Create every category the definition declares, plus the initial schema."""
+    """Create every category the definition declares, plus the initial schema.
+
+    Each category declares one of the organization's terms, minted here if this is
+    the first graph to use the word. That is the join the evidence log names: a
+    claim says "AIS", and every view with a category for "AIS" can read it.
+    """
+    from core import enums as core_enums
+    from evidence import writer as evidence_writer
+
+    organization = graph.organization
+
+    def term_for(kind, key):
+        return evidence_writer.ensure_term(organization, kind, key)
+
     # Create EntityCategories
     for entity_def in definition.extensions.entities:
         models.EntityCategory.objects.create_from_entity_definition(
@@ -313,6 +414,7 @@ def _materialize_categories(graph, definition: GraphDefinitionInput, user) -> No
 
         models.RelationCategory.objects.create(
             graph=graph,
+            term=term_for(core_enums.CategoryKindChoices.RELATION, relation_def.key),
             age_name=relation_def.key.upper(),
             key=relation_def.key,
             label=relation_def.key,
@@ -320,6 +422,39 @@ def _materialize_categories(graph, definition: GraphDefinitionInput, user) -> No
             source_definition=source_def,
             target_definition=target_def,
             property_definitions=[p.model_dump(mode="json") for p in relation_def.properties],
+        )
+
+    # Create StructureRelationCategories
+    #
+    # `extensions.structure_relations` and `extensions.measurements` were parsed
+    # and then dropped on the floor: a schema could declare either one and no
+    # category was ever created, so `createStructureRelation` and
+    # `createMeasurement` had no term to name and the fields were decoration.
+    for structure_relation_def in definition.extensions.structure_relations:
+        models.StructureRelationCategory.objects.create(
+            graph=graph,
+            term=term_for(core_enums.CategoryKindChoices.STRUCTURE_RELATION, structure_relation_def.key),
+            age_name=structure_relation_def.key.upper(),
+            key=structure_relation_def.key,
+            label=structure_relation_def.key,
+            description=getattr(structure_relation_def, "description", None) or "",
+            source_definition=structure_relation_def.source.model_dump(mode="json"),
+            target_definition=structure_relation_def.target.model_dump(mode="json"),
+            property_definitions=[p.model_dump(mode="json") for p in structure_relation_def.properties],
+        )
+
+    # Create MeasurementCategories
+    for measurement_def in definition.extensions.measurements:
+        models.MeasurementCategory.objects.create(
+            graph=graph,
+            term=term_for(core_enums.CategoryKindChoices.MEASUREMENT, measurement_def.key),
+            age_name=measurement_def.key.upper(),
+            key=measurement_def.key,
+            label=measurement_def.key,
+            description=getattr(measurement_def, "description", None) or "",
+            source_definition=measurement_def.source.model_dump(mode="json"),
+            target_definition=measurement_def.target.model_dump(mode="json"),
+            property_definitions=[p.model_dump(mode="json") for p in measurement_def.properties],
         )
 
     # Create NaturalEventCategories
@@ -333,7 +468,13 @@ def _materialize_categories(graph, definition: GraphDefinitionInput, user) -> No
 
         models.NaturalEventCategory.objects.create(
             graph=graph,
+            term=term_for(core_enums.CategoryKindChoices.NATURAL_EVENT, event_def.key),
             age_name=event_def.key,
+            # Set like every other category kind. Events were the one kind that
+            # left `key` null, so `filter(key=...)` — how the rest of the codebase
+            # finds a category — could never find an event, and
+            # `snapshot_definition` emitted events whose key was None.
+            key=event_def.key,
             label=event_def.key,
             description=getattr(event_def, "description", None) or "",
             property_definitions=property_defs,

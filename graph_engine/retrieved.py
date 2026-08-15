@@ -20,8 +20,8 @@ if TYPE_CHECKING:
 # Two separate rules apply, and conflating them is what previously leaked internals:
 #   1. These named keys carry node identity/metadata rather than user data.
 #   2. Any key prefixed with `__` is written by the projection layer
-#      (`__schema_version`, `__last_derived`, `__lifecycle_state`, `__measured__*`,
-#      `__shadow_link_id`) and is never user data. Filtering by prefix means new
+#      (`__schema_version`, `__last_derived`, `__measured__*`) and is never user
+#      data. Filtering by prefix means new
 #      internal keys are excluded automatically instead of leaking until someone
 #      remembers to extend this set.
 RESERVED_PROPERTY_KEYS = frozenset(
@@ -159,25 +159,46 @@ class RetrievedNode:
 
     @property
     def unique_id(self) -> str:
-        """Global unique identifier.
+        """Global unique identifier — a bare uuid.
 
-        `{graph_name}:{id}` for projected nodes, the bare primary key for
-        evidence rows — which are organization-scoped and so cannot be named by a
-        graph without lying about where they live.
+        For a projected node this is the uuid carried on the vertex as its `id`
+        property, which is the same uuid its `Node` row is keyed on. For an
+        evidence row it is the primary key. Both are world-unique, so neither
+        needs qualifying by a graph.
+
+        It used to be `{graph_name}:{id}`, where `id` was the **Apache AGE vertex
+        id**. Two things were wrong with that. The vertex id is reassigned every
+        time a graph is dropped and replayed, so the identity a client held
+        stopped meaning anything after a reproject. And the graph name asserted
+        that a node belongs to one view, when a view is only a reconstruction —
+        and one vertex may stand for several nodes once merging exists.
+
+        The fallback to the vertex id survives for the handful of shapes that are
+        read straight out of Cypher without an `id` property, so that they still
+        produce *something* addressable rather than raising.
         """
         if self.row_id is not None:
             return self.row_id
+        node_uuid = self.properties.get("id")
+        if node_uuid is not None:
+            return str(node_uuid)
         return f"{self.graph_name}:{self.id}"
 
-    @property
-    def lifecycle(self) -> Optional[str]:
-        """Current lifecycle state of the node."""
-        return self.properties.get("__lifecycle_state") or self.properties.get("lifecycle_status")
-
-    @property
-    def lifecycle_status(self) -> Optional[str]:
-        """Get the lifecycle status of the node, if present."""
-        return self.properties.get("lifecycle_status")
+    # `lifecycle` and `lifecycle_status` are gone, and there is nothing left to
+    # replace them with — which is the point.
+    #
+    # **If it is in the graph, it is.** A vertex read out of a projection could
+    # only ever report "active", because the graph holds what the evidence says
+    # exists; a flag beside it could not disagree with its own presence. And a
+    # node with no vertex was reporting "retracted" from the claims, which made
+    # the field mean two different things depending on which branch built it.
+    #
+    # The honest form of the question is now the shape of the answer: a write
+    # returns `drawings`, and a claim stands exactly where a view draws it. Empty
+    # means no view does — a count, not a flag, and one that says *where* rather
+    # than pretending there is a single global answer. Two annotators may
+    # disagree about whether a thing exists, and each graph's selector decides
+    # whose word it counts, so a single "lifecycle" was never expressible.
 
     @property
     def global_id(self) -> str:
@@ -205,31 +226,79 @@ class RetrievedNode:
         """Alias for local_id - the AGE graph ID."""
         return scalars.GraphID(self.unique_id)
 
+    @classmethod
+    def from_row(cls: Type[T], controller: "GraphController", row: Any, graph_name: str = "") -> T:
+        """Adapt an `evidence.models.Node` row to the node-shaped API surface.
+
+        The claim as **the log has it**, with no view's opinion mixed in. It
+        cannot come from Apache AGE: this is what a write returns before anything
+        is drawn, and what a retraction returns after the vertex is gone. The
+        same move `RetrievedStructure.from_row` and `RetrievedEdge.from_link`
+        already make.
+
+        **It borrows no category, and that is the point.** This used to do
+        `Category.objects.filter(term_id=row.term_id).first()` — unordered, and
+        against *every* graph rather than one that had drawn the node — so the
+        label and `category_id` on a node in no projection came from a view that
+        had refused it or never seen it, and two identical writes could disagree.
+        A category is one view's rule for a word; a row in no view has none. The
+        label is therefore the **word itself**, which is the only name that is
+        true independently of any graph.
+
+        Every real category now reaches the caller through
+        `controller.drawings_for_node`, where it arrives attached to the graph
+        that actually drew it. See `docs/rfcs/0003-undrawn-nodes.md`.
+
+        No lifecycle property, on this or on any other shape. The graph holds what
+        the evidence says exists, so a vertex that is there is one that stands and
+        a flag beside it could only ever contradict it — and a row with no vertex
+        does not need one either, because `drawings` already says which views draw
+        the claim and empty already says none do.
+        """
+        return cls(
+            controller=controller,
+            graph_name=graph_name,
+            id=0,
+            label=str(row.term.key),
+            row_id=str(row.pk),
+            properties={
+                "id": str(row.pk),
+                "category_id": None,
+                # From the row's own kind, so `node_type` discriminates correctly
+                # without a category to read a label off. Without this, dispatch
+                # falls back to `VocabNodeTypeMap.get(self.label, "ENTITY")` — and
+                # the label here is the *word* ("AIS", "Mitosis"), which is in no
+                # such map, so **every** row-backed event was reported as an
+                # entity by `cast_node_to_graphql_type`.
+                "type": str(row.kind).upper(),
+            },
+        )
+
     @property
     def durable_ref(self) -> str:
-        """The identity evidence uses to refer to this node.
+        """The identity evidence uses to refer to this node — the same uuid.
 
-        `{graph_name}:{uuid}`, keyed on the node's own `id` property rather than
-        on its Apache AGE vertex id. Vertex ids are reassigned when a graph is
-        dropped and replayed, so anything stored against one dangles after a
-        `reproject` — which is why every evidence link, state vector and
-        lifecycle row uses this instead.
-
-        Falls back to `unique_id` for nodes with no uuid (evidence rows, which
-        already have a durable primary key of their own).
+        Kept as a distinct name from :attr:`unique_id` because the two answer
+        different questions ("what do I call this to a client" and "what does the
+        log key on"), and it is worth being able to see at a call site which one
+        is meant. They happen to coincide now that identity is a bare uuid, which
+        is the point: there is one identity, not a projection-facing one and an
+        evidence-facing one that have to be translated between.
         """
-        node_uuid = self.properties.get("id")
-        if node_uuid is None:
-            return self.unique_id
-        return f"{self.graph_name}:{node_uuid}"
+        return self.unique_id
 
     # === Type Discrimination ===
 
     @property
     def category_id(self) -> Optional[str]:
-        """Get the category ID (for linking to Django model)."""
-        if self.properties.get("category_id") is None:
-            raise ValueError(f"Node is missing 'category_id' property {self.properties}")
+        """This node's category in the view it was read through, if there is one.
+
+        `None` is an ordinary answer, and used to raise. A node names a *word*, and
+        a category is one view's rule for that word — so a node claimed under a
+        word no view declares has no category, and since writes name terms that is
+        a state a client can reach with one mutation. Raising here turned a
+        perfectly recorded claim into an error on read.
+        """
         return self.properties.get("category_id")
 
     @property
@@ -364,12 +433,94 @@ class RetrievedEdge:
     right_id: int
     properties: Dict[str, Any] = field(default_factory=dict)
 
+    #: Set when this edge came from an `evidence.Link` row. Mirrors
+    #: `RetrievedNode.row_id`: an edge is a claim first and a projection second,
+    #: and structure relations and measurements are *only* claims — neither has
+    #: an AGE edge to carry a vertex id, because structures stopped being
+    #: vertices in M1.
+    row_id: Optional[str] = None
+    #: The endpoints as evidence names them. Durable across a rebuild, unlike
+    #: `left_id`/`right_id`, which are AGE vertex ids reassigned on every replay.
+    source_ref: Optional[str] = None
+    target_ref: Optional[str] = None
+    created_at: Optional[datetime] = None
+    #: Which role the source plays, for participation edges. `InputParticipation`
+    #: and `OutputParticipation` both read it and neither could have worked —
+    #: `RetrievedEdge` had no such attribute, which went unnoticed because
+    #: nothing ever built one of those types.
+    role: Optional[str] = None
+
     # === Core ID Properties ===
 
     @property
+    def is_row_backed(self) -> bool:
+        """Whether this edge came from the evidence tables rather than from AGE."""
+        return self.row_id is not None
+
+    @property
     def unique_id(self) -> str:
-        """Global unique identifier: 'graph_name:id'"""
+        """Global unique identifier.
+
+        The bare `Link` primary key for an edge read from evidence, which is
+        where an edge's identity actually lives — the AGE edge is a projection of
+        the claim and its id does not survive a `reproject`.
+        """
+        if self.row_id is not None:
+            return self.row_id
         return f"{self.graph_name}:{self.id}"
+
+    @classmethod
+    def from_link(
+        cls,
+        controller: "GraphController",
+        link: Any,
+        graph_name: str = "",
+        category: Any = None,
+    ) -> "RetrievedEdge":
+        """Adapt an `evidence.models.Link` row to the edge-shaped API surface.
+
+        The same move `RetrievedStructure.from_row` makes for nodes, for the same
+        reason: it keeps `api/types.py` reading one shape whether the edge has a
+        projection behind it or not.
+        """
+        return cls(
+            graph_name=graph_name,
+            # No AGE edge for structure relations and measurements, and for a
+            # relation the caller fills this in from the projection if it wants
+            # to traverse. Identity is `row_id` either way.
+            id=0,
+            label=category.age_name if category is not None else str(link.kind),
+            left_id=0,
+            right_id=0,
+            row_id=str(link.pk),
+            source_ref=str(link.source_ref),
+            target_ref=str(link.target_ref),
+            created_at=link.created_at,
+            role=link.role,
+            properties={
+                # What kind of claim this is, from the row rather than from the
+                # label. The label is the *category's* `age_name`, and for a
+                # participation the category is the **event's** — so a
+                # participation edge is labelled "Mitosis", which no dispatch
+                # could ever read as a participation. Without this,
+                # `cast_edge_to_graphql_type` fell through its label heuristic and
+                # typed every participation as a `Relation`; the old
+                # `_as_participation` helper had the same defect from the other
+                # side, comparing `label` against a `Link.Kind` and so always
+                # answering `InputParticipation`.
+                "type": str(link.kind).upper(),
+                # A `Category` pk, not the link's term. `api/types.py` resolves
+                # this through the per-graph category loaders, and the AGE edge
+                # carries the same thing in the same slot — so the two ways of
+                # building an edge agree. The link itself names only the word;
+                # which category draws it is the caller's graph to know, which is
+                # why it is passed in rather than read off the row.
+                "category_id": str(category.pk) if category is not None else None,
+                # From the projection, not from a column on the link. `Link` no
+                # longer carries its own answer — that boolean was an `UPDATE` on
+                # a log table, which is what stopped the log from being immutable.
+            },
+        )
 
     @property
     def global_id(self) -> str:
@@ -383,12 +534,20 @@ class RetrievedEdge:
 
     @property
     def global_left_id(self) -> str:
-        """Global ID of source node."""
+        """Global ID of source node.
+
+        The evidence ref when there is one. A vertex-id-shaped answer for an edge
+        that has no projection would name a vertex that does not exist.
+        """
+        if self.source_ref is not None:
+            return self.source_ref
         return f"{self.graph_name}:{self.left_id}"
 
     @property
     def global_right_id(self) -> str:
-        """Global ID of target node."""
+        """Global ID of target node. See :attr:`global_left_id`."""
+        if self.target_ref is not None:
+            return self.target_ref
         return f"{self.graph_name}:{self.right_id}"
 
     @property
@@ -417,12 +576,15 @@ class RetrievedEdge:
         return self.properties.get("type")
 
     @property
-    def category_id(self) -> str:
-        """Get the category ID (for linking to Django model)."""
-        cat = self.properties.get("category_id")
-        if cat is None:
-            raise ValueError("Edge is missing 'category_id' property")
-        return cat
+    def category_id(self) -> Optional[str]:
+        """This edge's category in the view it was read through, if there is one.
+
+        `None` is an ordinary answer, for the reason `RetrievedNode.category_id`
+        gives: the claim names a word, and a view may have no rule for that word.
+        Structure relations and measurements have no projection at all, so they
+        reach this through `from_link` with whatever `_category_for_term` found.
+        """
+        return self.properties.get("category_id")
 
     # === Measurement Properties (when edge_type == 'MEASUREMENT') ===
 
@@ -509,14 +671,6 @@ class RetrievedEdge:
         """
         return {k: v for k, v in self.properties.items() if not is_internal_property_key(k)}
 
-    @property
-    def shadow_link_id(self) -> Optional[int]:
-        """Get the shadow link ID if present (used for structure-entity links)."""
-        val = self.properties.get("__shadow_link_id")
-        if val is None:
-            return None
-        return int(val) if isinstance(val, (int, float, str)) else None
-
     # === Hash/Equality ===
 
     def __hash__(self) -> int:
@@ -593,54 +747,40 @@ class RetrievedStructure(RetrievedNode):
     """
 
     @classmethod
-    def from_row(cls, controller: "GraphController", row: Any, graph_name: str = "") -> "RetrievedStructure":
-        """Adapt an `evidence.models.Structure` row to the node-shaped API surface."""
+    def from_row(cls, controller: "GraphController", row: Any, graph_name: str = "", stands: Optional[bool] = None) -> "RetrievedStructure":
+        """Adapt an `evidence.models.Structure` row to the node-shaped API surface.
+
+        ``stands`` is passed in rather than looked up. It used to be read off a
+        `Structure.stands` column; that column is gone, and resolving it here
+        instead would be a query per row — an N+1 on every structure listing, and
+        one that breaks callers in an async context, since `supporting_evidence`
+        converts rows outside its `sync_to_async` block.
+
+        ``stands`` is accepted and ignored. It fed a lifecycle property that
+        nothing read even before lifecycle was removed — `Structure` is a
+        plain `Node` in the GraphQL schema, never a `VersionedNode`, so it never
+        exposed the field. The parameter stays so the call sites that pass it keep
+        working; whether a structure still stands is a claims question, answered
+        by `evidence.claims`.
+        """
+        properties: Dict[str, Any] = {
+            "identifier": row.identifier,
+            "object": row.object,
+            "category_id": str(row.kind_id),
+        }
         return cls(
             controller=controller,
             graph_name=graph_name,
             id=0,
             label=vocab.Structure,
             row_id=str(row.pk),
-            properties={
-                "identifier": row.identifier,
-                "object": row.object,
-                "category_id": str(row.kind_id),
-                "__lifecycle_state": row.status,
-            },
+            properties=properties,
         )
-
-
-@dataclass
-class RetrievedRelationShadowLink(RetrievedNode):
-    """A retrieved RelationShadowLink node from the AGE graph."""
-
-    pass
-
-
-@dataclass
-class RetrievedStructureRelationShadowLink(RetrievedNode):
-    """A retrieved RelationShadowLink node from the AGE graph."""
-
-    pass
-
-
-@dataclass
-class RetrievedMeasurementShadowLink(RetrievedNode):
-    """A retrieved MeasurementShadowLink node from the AGE graph."""
-
-    pass
 
 
 @dataclass
 class RetrievedEvent(RetrievedNode):
     """A retrieved Event node from the AGE graph."""
-
-    pass
-
-
-@dataclass
-class RetrievedShadowLink(RetrievedNode):
-    """A retrieved ShadowLink node from the AGE graph."""
 
     pass
 
@@ -677,11 +817,6 @@ class RetrievedMeasurement(RetrievedEdge):
         """The measurement role (i.e as input to a structure, as a property of an entity, etc)."""
         return self.properties.get("role")
 
-    @property
-    def supporting_links(self) -> List[RetrievedShadowLink]:
-        """List of shadow link IDs that support this measurement."""
-        raise NotImplementedError("This method is not implemented yet. It would require additional queries to fetch linked shadow links based on the shadow_link_id property.")
-
 
 @dataclass
 class RetrievedMetric(RetrievedNode):
@@ -703,15 +838,18 @@ class RetrievedMetric(RetrievedNode):
         return self.properties.get("__asserted_at")
 
     @classmethod
-    def from_row(cls, controller: "GraphController", row: Any, graph_name: str = "") -> "RetrievedMetric":
-        """Adapt an `evidence.models.Metric` row to the node-shaped API surface."""
+    def from_row(cls, controller: "GraphController", row: Any, graph_name: str = "", stands: Optional[bool] = None) -> "RetrievedMetric":
+        """Adapt an `evidence.models.Metric` row to the node-shaped API surface.
+
+        ``stands`` is accepted and ignored, for the same reason it is on
+        `RetrievedStructure.from_row`.
+        """
         properties: Dict[str, Any] = {
             "key": row.key,
             "value": row.value,
             "category_id": str(row.kind_id),
             "__measured_at": row.measured_at,
             "__asserted_at": row.asserted_at,
-            "__lifecycle_state": row.status,
         }
         for optional_key in ("unit", "confidence", "confidence_type"):
             value = getattr(row, optional_key, None)

@@ -6,6 +6,8 @@ from kante.types import Info
 from api import inputs, types
 from core import models
 from graph_engine import input_models, materialize
+from ._guards import delete_or_explain, refuse_edge_properties
+from .._scoped import accessible_graph, scoped
 
 
 def create_measurement_category(
@@ -16,7 +18,11 @@ def create_measurement_category(
 
     model = input.to_pydantic()  # Validate input with Pydantic models
 
-    graph = models.Graph.objects.get(id=model.graph)
+    # A measurement is an edge, and is not even drawn as one — it is read back
+    # from its `Link` row. See `refuse_edge_properties`.
+    refuse_edge_properties(model.key, getattr(model, "properties", None))
+
+    graph = accessible_graph(info, model.graph)
 
     ent = models.MeasurementCategory.objects.create_from_measurement_definition(
         graph,
@@ -32,7 +38,7 @@ def update_measurement_category(info: Info, input: inputs.UpdateMeasurementDefin
     """GraphQL mutation wrapper for updating measurement categories."""
     model = input.to_pydantic()
 
-    item = models.MeasurementCategory.objects.get(id=model.id)
+    item = scoped(info, models.MeasurementCategory, model.id, what="measurement category")
 
     if model.color:
         assert len(model.color) == 3 or len(model.color) == 4, "Color must be a list of 3 or 4 values RGBA"
@@ -46,12 +52,6 @@ def update_measurement_category(info: Info, input: inputs.UpdateMeasurementDefin
     item.description = model.description if model.description else item.description
     item.color = model.color if model.color else item.color
     item.store = media_store if media_store else item.store
-
-    if model.tags:
-        item.tags.clear()
-        for tag in model.tags:
-            tag_obj, _ = models.CategoryTag.objects.get_or_create(value=tag, graph=item.graph.id)
-            item.tags.add(tag_obj)
 
     if model.pin is not None:
         if model.pin:
@@ -71,7 +71,7 @@ def delete_measurement_category(
     input: inputs.DeleteMeasurementDefinitionInput,
 ) -> strawberry.ID:
     model = input.to_pydantic()
-    item = models.MeasurementCategory.objects.get(id=model.id)
-    item.delete()
+    item = scoped(info, models.MeasurementCategory, model.id, what="measurement category")
+    delete_or_explain(item, what=f"measurement category '{item.key}'", instead="Archive the measurements asserted under it first.")
     materialize.re_materialize_measurement_relation_category(item.graph, item)
     return model.id

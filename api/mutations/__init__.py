@@ -4,21 +4,25 @@ Mutations submodule for the API.
 Contains all GraphQL mutation resolvers for the graph engine.
 """
 
-from .node import pin_node
-from .entity import create_entity, delete_entity, archive_entity, update_entity
-from .structure import create_structure, delete_structure, archive_structure, update_structure, ensure_structure, link_structure_to_entity
-from .metric import record_metric, create_metric, update_metric, delete_metric, archive_metric
-from .relation import delete_relation, archive_relation
-from .measurement import delete_measurement, archive_measurement
+# `pin_node` is gone. It was a registered schema field whose entire body was
+# `raise NotImplementedError`, so `pinNode` was advertised and could only error.
+from .entity import assert_entity_exists, retract_entity, attest_entity
+from .structure import assert_structure_exists, retract_structure, update_structure, ensure_structure, link_structure_to_entity
+from .metric import assert_metric_value, assert_metric_value_for_structure, supersede_metric_value, retract_metric
+from .relation import assert_relation_exists, update_relation, retract_relation
+from .measurement import assert_measurement_exists, retract_measurement
 from .structure_relation import (
-    create_structure_relation,
+    assert_structure_relation_exists,
     update_structure_relation,
-    delete_structure_relation,
-    archive_structure_relation,
+    retract_structure_relation,
 )
-from .natural_event import create_natural_event, update_natural_event, delete_natural_event, archive_natural_event
-from .protocol_event import create_protocol_event, update_protocol_event, delete_protocol_event, archive_protocol_event
+from .natural_event import assert_natural_event_exists, retract_natural_event, attest_natural_event
+from .protocol_event import assert_protocol_event_exists, retract_protocol_event, attest_protocol_event
+from .participation import assert_participation, assert_participations, retract_participation
+from .claim import classify_nodes, retract_claims
+from .identity import assert_same_entity, retract_same_entity
 from .schema import *
+from .schema import create_graph_table_query_through_builder
 from .insights import (
     create_graph_table_query,
     update_graph_table_query,
@@ -59,50 +63,49 @@ from .insights import (
     create_scatter_plot,
     update_scatter_plot,
     delete_scatter_plot,
-    archive_scatter_plot,
 )
 
 __all__ = [
-    "Mutation",
     # Entity mutations
-    "create_entity",
-    "delete_entity",
-    "archive_entity",
-    "update_entity",
+    "assert_entity_exists",
+    "retract_entity",
+    "attest_entity",
     # Node mutations
-    "pin_node",
-    # Structure mutations
-    "create_structure",
-    "delete_structure",
-    "archive_structure",
+        # Structure mutations
+    "assert_structure_exists",
+    "retract_structure",
     "update_structure",
     "link_structure_to_entity",
     "ensure_structure",
     # Metric mutations
-    "record_metric",
-    "create_metric",
-    "update_metric",
-    "delete_metric",
-    "archive_metric",
+    "assert_metric_value",
+    "assert_metric_value_for_structure",
+    "supersede_metric_value",
+    "retract_metric",
     # Relation mutations
-    "delete_relation",
-    "archive_relation",
-    "delete_measurement",
-    "archive_measurement",
-    "create_structure_relation",
+    "assert_relation_exists",
+    "update_relation",
+    "retract_relation",
+    "assert_measurement_exists",
+    "retract_measurement",
+    "assert_structure_relation_exists",
     "update_structure_relation",
-    "delete_structure_relation",
-    "archive_structure_relation",
+    "retract_structure_relation",
     # Natural event mutations
-    "create_natural_event",
-    "update_natural_event",
-    "delete_natural_event",
-    "archive_natural_event",
+    "assert_natural_event_exists",
+    "retract_natural_event",
+    "attest_natural_event",
     # Protocol event mutations
-    "create_protocol_event",
-    "update_protocol_event",
-    "delete_protocol_event",
-    "archive_protocol_event",
+    "assert_protocol_event_exists",
+    "retract_protocol_event",
+    "attest_protocol_event",
+    "assert_participation",
+    "retract_participation",
+    "assert_participations",
+    "classify_nodes",
+    "retract_claims",
+    "assert_same_entity",
+    "retract_same_entity",
     "create_graph_table_query_through_builder",
     # Insights graph query subtype mutations
     "create_graph_table_query",
@@ -146,5 +149,4 @@ __all__ = [
     "create_scatter_plot",
     "update_scatter_plot",
     "delete_scatter_plot",
-    "archive_scatter_plot",
 ]

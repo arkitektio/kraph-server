@@ -70,6 +70,68 @@ def graph_b(organization: Organization, user: User) -> core_models.Graph:
     return _make_graph("graph_b", organization, user)
 
 
+def _category(graph: core_models.Graph, key: str) -> core_models.EntityCategory:
+    """A graph's category for a word, minting the organization's term for it.
+
+    Created directly rather than through the manager because these tests never
+    build a schema — but the term still has to exist, because that is what a
+    claim names and what decides which views hold the node.
+    """
+    from evidence import writer
+
+    return core_models.EntityCategory.objects.create(
+        graph=graph,
+        term=writer.ensure_term(graph.organization, core_models.EntityCategory.KIND, key),
+        key=key,
+        age_name=key,
+        label=key,
+    )
+
+
+@pytest.fixture
+def entity_category_a(graph_a: core_models.Graph) -> core_models.EntityCategory:
+    """A word graph A declares, so nodes claimed under it belong to graph A."""
+    return _category(graph_a, "AIS")
+
+
+@pytest.fixture
+def entity_category_b(graph_b: core_models.Graph) -> core_models.EntityCategory:
+    """A **different** word, declared by graph B alone.
+
+    Deliberately not "AIS". Two graphs declaring the same word now share the term,
+    so a node claimed under it is in both — which is the point of the change, and
+    `test_a_word_two_graphs_declare_is_seen_by_both` covers it. The fixtures that
+    want *isolation* have to ask for two different words, or they would be
+    asserting the opposite of what the model says.
+    """
+    return _category(graph_b, "Soma")
+
+
+@pytest.fixture
+def make_node(organization: Organization, assertion: evidence_models.Assertion):
+    """Create a real node in a graph and hand back its ref.
+
+    These tests used to fake a node with a string — `f"{graph.age_name}:{uuid}"` —
+    and rely on the projector reading membership off that prefix. There is no
+    prefix now: which graph shows a node is decided by its term, so the node has
+    to actually exist for the question to have an answer. Faking it was always
+    the weaker test; it asserted that a string parser worked.
+    """
+
+    def _make(category: core_models.Category) -> str:
+        node = evidence_models.Node.objects.create_for_organization(
+            organization=organization,
+            kind=evidence_models.Node.Kind.ENTITY,
+            # The node names the *word*, not this graph's category for it. Which
+            # views show it follows from which of them declare that word.
+            term=category.term,
+            assertion=assertion,
+        )
+        return node.ref
+
+    return _make
+
+
 @pytest.fixture
 def roi_kind(organization: Organization) -> evidence_models.StructureKind:
     """The ROI term. One per organization — there is no per-graph variant to have."""

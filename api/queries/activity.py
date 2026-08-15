@@ -75,18 +75,16 @@ def activities(
     ordering_models = [entry.to_pydantic() for entry in ordering] if ordering else []
     pagination_model = pagination.to_pydantic() if pagination else input_models.NodePagination()
 
-    where_clauses = ["(n:Assertion OR n:Activity OR toUpper(coalesce(n.type, '')) IN ['ASSERTION', 'ACTIVITY'])"]
+    # No `n:Assertion` branch: nothing has ever written an `Assertion` vertex, so
+    # matching one only widened the pattern with a label that cannot occur.
+    where_clauses = ["(n:Activity OR toUpper(coalesce(n.type, '')) = 'ACTIVITY')"]
     params: dict[str, object] = {}
 
     if filter_model.ids:
-        node_ids: list[int] = []
-        for graph_id in filter_model.ids:
-            if str(context.extract_graph_id(graph_id)) == str(graph_model.age_name):
-                node_ids.append(int(context.extract_node_id(graph_id)))
-        if not node_ids:
-            return []
-        params["ids"] = node_ids
-        where_clauses.append("id(n) IN $ids")
+        # Matched on the uuid the vertex carries, not on `id(n)`. A client holds
+        # the durable id; the AGE vertex id is reassigned by every reproject.
+        params["ids"] = [str(node_id) for node_id in filter_model.ids]
+        where_clauses.append("n.id IN $ids")
 
     if filter_model.has_property:
         params["has_property"] = filter_model.has_property
@@ -142,26 +140,3 @@ def activities(
     ]
 
     return [types.Activity(_value=node) for node in nodes]
-
-
-def activities_for_entity(
-    info: Info,
-    entity_id: scalars.GraphID,
-) -> List[types.Activity]:
-    """
-    Fetch the assertion (provenance) that generated an entity.
-
-    Args:
-        info: Strawberry Info context
-        entity_id: The entity's string ID
-
-    Returns:
-        Activity object or None if not found
-    """
-    controller = context.get_controller()
-
-    graph_id = context.extract_graph_id(entity_id)
-    context.extract_node_id(entity_id)
-
-    graph = context.get_accessible_graph(info, graph_id)
-    raise NotImplementedError("activities_for_entity is not implemented yet")

@@ -1,69 +1,96 @@
 """
 Relation mutation resolvers.
+
+A relation is a claim that two entities are connected, so it is evidence. The
+`Link` row is the fact and the AGE edge is a projection of it — which is why
+these resolvers address relations by their evidence id rather than by the AGE
+edge id, the only identity that survives a `reproject`.
+
+All of them return an :class:`api.types.RelationAssertion`, so a caller sees the
+claim it made and every view that draws the edge afterwards.
 """
 
 from kante.types import Info
+
 from api import types, inputs, context
-from core import models
-from graph_engine import scalars
+from core import enums
 
 
-def delete_relation(info: Info, input: inputs.DeleteRelationInput) -> scalars.GraphID:
+def assert_relation_exists(info: Info, input: inputs.AssertRelationExistsInput) -> types.RelationAssertion:
+    """Assert a relation between two entities, under one of the organization's words.
+
+    Names a term — so the edge is drawn in every view declaring the word, and the
+    claim can be stated before any view declares it. Endpoint category pairs are
+    not checked, and were not before: `MaterializedRelationEdge` is a schema-level
+    expansion for the read surface, never a write-time guard.
     """
-    Delete a relation by its composite ID. Only the owner of the graph or an admin can delete a relation.
+    payload = input.to_pydantic()
+    controller = context.get_controller()
 
-    Args:
-        info: Strawberry Info context
-        input: Composite ID of the relation to delete (e.g., "1-abc123-def456-...")
+    organization = context.get_active_organization(info)
+    context.assert_can_access_organization(info, organization)
 
-    Returns:
-        The ID of the deleted relation
+    term = controller.ensure_term(organization, enums.CategoryKindChoices.RELATION, payload.term)
+
+    return types.RelationAssertion(
+        _value=controller.create_relation(
+            organization=organization,
+            term=term,
+            payload=payload,
+            info=info,
+        )
+    )
+
+
+def update_relation(info: Info, input: inputs.UpdateRelationInput) -> types.RelationAssertion:
+    """Replace a relation with a new assertion, keeping the old one on the record.
+
+    Keeps the name `update`, unlike `supersedeMetricValue`: the retraction here is
+    bookkeeping around a restatement, and what the caller means is one relation
+    replacing another.
+
+    **Two assertions are recorded and the result reports the second.** The
+    retraction is its own act with its own row — that is what keeps the original
+    claim explainable — but the assertion a caller wants a handle on is the one
+    that made the relation now standing.
+
+    The word comes off the existing `Link`, not from a category. It used to be
+    `RelationCategory.objects.get(id=existing.category_id)` — where `category_id`
+    is whichever view happened to declare the word, and is legitimately `None` when
+    none does, so the lookup could raise `Category.DoesNotExist` on a perfectly
+    good relation.
+    """
+    model = input.to_pydantic()
+    controller = context.get_controller()
+
+    link = controller.resolve_edge_link(str(model.id), info)
+    organization = link.organization
+    context.assert_can_access_organization(info, organization)
+
+    controller.archive_relation(relation_id=str(model.id), info=info)
+
+    return types.RelationAssertion(
+        _value=controller.create_relation(
+            organization=organization,
+            term=controller.edge_term(link),
+            payload=model,
+            info=info,
+        )
+    )
+
+
+def retract_relation(info: Info, input: inputs.RetractRelationInput) -> types.RelationAssertion:
+    """Retract a relation assertion without destroying it.
+
+    The edge survives wherever another live assertion still states the same
+    proposition, which is exactly what the result's `drawings` reports — so this
+    no longer re-reads the relation afterwards to build a payload. The controller
+    returns the claim it made.
     """
     controller = context.get_controller()
 
-    model = input.to_pydantic()  # Validate input with Pydantic models
-    # Extract graph ID and local ID from composite ID
-    graph_id = context.extract_graph_id(model.id)
-    local_id = context.extract_node_id(model.id)
+    model = input.to_pydantic()
+    link = controller.resolve_edge_link(str(model.id), info)
+    context.assert_can_access_organization(info, link.organization)
 
-    graph = context.get_accessible_graph(info, graph_id)
-
-    controller.delete_relation(
-        graph,
-        relation_id=local_id,
-        info=info,
-    )
-
-    return model.id
-
-
-def archive_relation(info: Info, input: inputs.ArchiveRelationInput) -> types.Relation:
-    """
-    Archive (soft delete) a relation by its composite ID.
-
-    Args:
-        info: Strawberry Info context
-        input: Composite ID of the relation to archive (e.g., "1-abc123-def456-...")
-
-    Returns:
-        The ID of the archived relation
-    """
-    controller = context.get_controller()
-
-    model = input.to_pydantic()  # Validate input with Pydantic models
-    # Extract graph ID and local ID from composite ID
-    graph_id = context.extract_graph_id(model.id)
-    local_id = context.extract_node_id(model.id)
-
-    graph = context.get_accessible_graph(info, graph_id)
-
-    controller.archive_relation(
-        graph,
-        relation_id=local_id,
-        info=info,
-    )
-
-    archived = controller.get_relation_by_id(local_id)
-    assert archived is not None, "Relation was archived but could not be loaded"
-
-    return types.Relation(_value=archived)
+    return types.RelationAssertion(_value=controller.archive_relation(relation_id=str(model.id), info=info))
