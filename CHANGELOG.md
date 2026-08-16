@@ -1,7 +1,76 @@
 # CHANGELOG
 
 
+## v1.0.0-rc.3 (2026-08-15)
+
+
 ## v1.0.0-rc.2 (2026-08-12)
+
+### Bug Fixes
+
+- More projection fixes
+  ([`c4ab199`](https://github.com/arkitektio/kraph-server/commit/c4ab1992bb60d490219e38612f0749d3ae3f9056))
+
+### Features
+
+- Ingest declares its value kind, and nothing infers
+  ([`cc450ed`](https://github.com/arkitektio/kraph-server/commit/cc450edfed823a41ed768ec2efd6e5e8807dd1ef))
+
+`ensure_metric_kind` guessed when the caller declared nothing: adopt the key's single existing term,
+  infer one from `type(value)` and mint, or — with several terms — raise. That last branch was a
+  dead end. Its message said "Declare one" while the inputs that reached it had no field to declare
+  with: only `RecordMetricInput` carried a `value_kind`, so `createMetric`, `updateMetric` and
+  supporting evidence all took the undeclared path. Once terms could differ by value kind, an
+  organization with `roi.confidence` as both FLOAT and STRING could not write that key through any
+  of them.
+
+Guessing also caused an older problem on the same path: adopt-the-single-term adopted it even when
+  the value could not live there, so an undeclared `"high"` against a FLOAT-only key adopted FLOAT
+  and died inside `value_columns` with `could not convert string to float`.
+
+So `value_kind` moves onto the `MetricInput` base as required, and the undeclared branch is removed
+  rather than repaired. `ensure_metric_kind` is now one `get_or_create` over the four-field
+  identity.
+
+What this gives up, deliberately
+  -------------------------------------------------------------------- The adopt-the-existing-term
+  rule existed to stop inference forking a key into INT and FLOAT terms over `45` and `45.2`. With
+  nothing inferring there is nothing to fork. A caller who declares `integer` once and `float` once
+  still gets two terms — now their explicit choice, visible at the call site, and `NUMERIC_FAMILY`
+  already folds the two for reads.
+
+`infer_value_kind` is deleted, not kept as a utility: its only caller was the mint branch, and a
+  guessing primitive with no caller is one the next write path reaches for. A test asserts its
+  absence rather than trusting the deletion to stick.
+
+The read side is untouched. `DerivationRule.source_value_kind` stays optional (decided with the
+  user): writes being explicit means a key's terms are exactly what was declared, so the ordinary
+  case is one term, and where it is not the projector already warns rather than guessing.
+
+Errors now name the declaration --------------------------------------------------------------------
+  With the kind required, a mismatch is the caller's own statement disagreeing with what they sent,
+  so `value_columns` reports the key, the declared kind and the value instead of surfacing a bare
+  `float()` failure that names none of them.
+
+Verification -------------------------------------------------------------------- The load-bearing
+  test was verified non-vacuous — and the first attempt at that was itself vacuous. Reverting only
+  the pydantic model left the strawberry mirror intact, so the GraphQL schema still required the
+  field and everything passed. Reverting both reproduces the real prior state: `Field 'valueKind' is
+  not defined by type 'CreateMetricInput'`. The schema assertions are parametrized over all four
+  measurement inputs so a field that goes optional again is caught, not only one that disappears.
+
+BREAKING CHANGE: `MetricInput` gains a required `valueKind`, so `metrics: [{key, value}]` becomes
+  `metrics: [{key, value, valueKind}]` on `createMetric`, `updateMetric` and every
+  `supportingEvidence` metric. `writer.ensure_metric_kind` requires a value kind;
+  `writer.infer_value_kind` is gone.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+### Breaking Changes
+
+- `metricinput` gains a required `valueKind`, so `metrics: [{key, value}]` becomes `metrics: [{key,
+  value, valueKind}]` on `createMetric`, `updateMetric` and every `supportingEvidence` metric.
+  `writer.ensure_metric_kind` requires a value kind; `writer.infer_value_kind` is gone.
 
 
 ## v1.0.0-rc.1 (2026-08-12)
