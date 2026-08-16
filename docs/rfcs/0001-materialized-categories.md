@@ -1,7 +1,8 @@
 # RFC 0001 — Can materialized categories go away?
 
-- **Status:** Open question. **Proposes no code change.** Nothing in this file
-  has been implemented; it exists to record the analysis and a recommendation.
+- **Status:** **§1–§5 open. §6 implemented** — the `Materialized*Edge` tables and
+  their GraphQL surface are gone; see §6 for what settled it. §1–§5, about the
+  `Category` rows, propose no code change and remain the open question.
 - **Recommendation:** No, not as posed — but the row should get smaller, and one
   of the two things this repo calls "materialized" is a genuinely separable
   target.
@@ -128,7 +129,7 @@ a **declaration**: this view declares this word, draws it under this label, mean
 this by it, and puts it here on the canvas. "Materialized" invites exactly the
 "it's a cache, delete it" reading this RFC had to spend §3 refuting.
 
-## 6. The other "materialized": the edge tables
+## 6. The other "materialized": the edge tables — **decided: removed**
 
 `MaterializedRelationEdge` and friends *are* caches, and they fit the usual test
 for one much better:
@@ -142,8 +143,42 @@ for one much better:
 - their input just got narrower: with category tags removed, the descriptors
   filter on `keys` and `ontotology_terms` only.
 
-A follow-up RFC could ask whether these should be computed on read instead of
-stored. That question is genuinely open in a way §1–§5's is not.
+This section originally said a follow-up RFC could ask whether they should be
+computed on read instead of stored, and called that genuinely open. **It was not
+as open as it looked**, because the stored answer was already wrong:
+
+- **`re_materialize_from_entity_category` had no callers.** Its whole job was
+  refreshing the cross-product when a newly created entity category widened a
+  relation category's predicate. Nothing called it, so adding a category never
+  refreshed anything.
+- **`createRelationCategory` / `updateRelationCategory` never populated it.**
+  Relation pairs existed only for categories built by the bulk `materialize()`
+  path. A relation category created through the API had zero rows, permanently.
+- Only `MeasurementCategory` and `StructureRelationCategory` refreshed on
+  mutation. So the table was complete for two kinds, empty for the third, and
+  invalidated for none.
+
+That is precisely the failure `docs/ARCHITECTURE.md` names: "the cost of
+materialization without the guarantees that make materialization safe: there is no
+invalidation." A read surface over a cache that stops being maintained is worse
+than no read surface — it answers confidently and wrongly. The eight GraphQL
+fields over it had no test coverage, so nothing would have caught it.
+
+Removed: the models and their proxies, `re_materialize_*`,
+`MaterializedEdgeKindChoices`, the eight root query fields, four GraphQL types,
+their filters and orders, `Graph.materializedEdges` and siblings (two of which had
+no reverse accessor and were frozen empty lists), and
+`EdgeCategory.materializableAs`, which returned `[]` unconditionally.
+
+**The question the rows answered is still answerable, and cheaply.** It is
+`get_matching_source_entities()` × `get_matching_target_entities()` — methods that
+already exist and are what the writer called — evaluated over the graph's
+*categories*, which are the size of the schema, not of the evidence. Anyone who
+wants the pairs back should compute them on read.
+
+`MaterializedView` and `Model` went at the same time: neither had a reader, a
+writer, or a GraphQL type, and `Model`'s only foreign key pointed at
+`MaterializedView`.
 
 ## Recommendation
 
@@ -151,8 +186,10 @@ stored. That question is genuinely open in a way §1–§5's is not.
 2. **Resolve the decoration duplication** between `Category` and `Term` — pick a
    direction and make null mean "inherit".
 3. **Stop calling them materialized.** They are declarations.
-4. **Open a separate RFC on the `Materialized*Edge` tables**, where the
-   delete-the-cache argument actually holds.
+4. ~~**Open a separate RFC on the `Materialized*Edge` tables**, where the
+   delete-the-cache argument actually holds.~~ **Done here instead** — §6 settled
+   it without needing one, because the cache turned out to be unmaintained rather
+   than merely redundant. They are removed.
 
 ## See also
 

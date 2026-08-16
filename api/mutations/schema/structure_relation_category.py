@@ -7,7 +7,6 @@ from api import inputs, types
 from core import enums, models
 from evidence import writer
 from datalayer import models as dl_models
-from graph_engine.materialize import re_materialize_structure_relation_category
 from ._guards import delete_or_explain, refuse_edge_properties
 from .._scoped import accessible_graph, scoped
 
@@ -71,7 +70,6 @@ def create_structure_relation_category(
         else:
             vocab.pinned_by.remove(info.context.request.user)
 
-    re_materialize_structure_relation_category(vocab.graph, vocab)
 
     return cast(types.StructureRelationCategory, vocab)
 

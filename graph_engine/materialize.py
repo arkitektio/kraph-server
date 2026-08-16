@@ -15,8 +15,6 @@ from pydantic import BaseModel, Field
 from .input_models import DerivationType, GraphDefinitionInput
 from .engine.protocol import CypherEngine
 from core import models
-from itertools import product
-from django.db.models import Q
 from authentikate.models import Organization, Membership, User
 
 logger = logging.getLogger(__name__)
@@ -67,107 +65,6 @@ def compute_properties_hash(properties: list) -> str:
     sorted_props = sorted(properties, key=lambda p: p.get("key", ""))
     json_str = json.dumps(sorted_props, sort_keys=True, default=str)
     return hashlib.sha256(json_str.encode()).hexdigest()[:16]
-
-
-class LinkPairs:
-    """Helper dataclass to store pairs of source and target nodes for relation materialization."""
-
-    source_id: str
-    target_id: str
-
-
-def re_materialize_relation_category(graph: models.Graph, relation_category: models.RelationCategory) -> models.RelationCategory:
-    """
-    Docstring for re_materialize_relation_category
-
-    :param graph: Description
-    :type graph: models.Graph
-    :param relation_category: Description
-    :type relation_category: models.EdgeCategory
-    :return: Description
-    :rtype: EdgeCategory
-    """
-
-    sources = relation_category.get_matching_source_entities()
-    target = relation_category.get_matching_target_entities()
-
-    models.MaterializedRelationEdge.objects.filter(graph=graph, edge_category=relation_category).delete()
-
-    for source_cat, target_cat in product(sources, target):
-        models.MaterializedRelationEdge.objects.create(
-            graph=graph,
-            edge_category=relation_category,
-            source_category=source_cat,
-            target_category=target_cat,
-        )
-
-    return relation_category
-
-
-def re_materialize_structure_relation_category(graph: models.Graph, relation_category: models.StructureRelationCategory) -> models.StructureRelationCategory:
-    """
-    Docstring for re_materialize_relation_category
-
-    :param graph: Description
-    :type graph: models.Graph
-    :param relation_category: Description
-    :type relation_category: models.EdgeCategory
-    :return: Description
-    :rtype: EdgeCategory
-    """
-
-    sources = relation_category.get_matching_source_structures()
-    target = relation_category.get_matching_target_structures()
-
-    models.MaterializedStructureRelationEdge.objects.filter(graph=graph, edge_category=relation_category).delete()
-
-    for source_cat, target_cat in product(sources, target):
-        models.MaterializedStructureRelationEdge.objects.create(
-            graph=graph,
-            edge_category=relation_category,
-            source_structure_kind=source_cat,
-            target_structure_kind=target_cat,
-        )
-
-    return relation_category
-
-
-def re_materialize_measurement_relation_category(graph: models.Graph, relation_category: models.MeasurementCategory) -> models.MeasurementCategory:
-    """
-    Docstring for re_materialize_relation_category
-
-    :param graph: Description
-    :type graph: models.Graph
-    :param relation_category: Description
-    :type relation_category: models.EdgeCategory
-    :return: Description
-    :rtype: EdgeCategory
-    """
-
-    sources = relation_category.get_matching_source_structures()
-    target = relation_category.get_matching_target_entities()
-
-    models.MaterializedMeasurementEdge.objects.filter(graph=graph, edge_category=relation_category).delete()
-
-    for source_cat, target_cat in product(sources, target):
-        models.MaterializedMeasurementEdge.objects.create(
-            graph=graph,
-            edge_category=relation_category,
-            source_structure_kind=source_cat,
-            target_category=target_cat,
-        )
-
-    return relation_category
-
-
-def re_materialize_from_entity_category(graph: models.Graph, entity_category: models.EntityCategory) -> models.EntityCategory:
-    # Get all relation categories where this entity category might be a source or target
-    as_potential_input_relations = models.RelationCategory.objects.filter(
-        graph=graph,
-    ).filter(Q(source_definition__categories___contains=[entity_category.pk]) | Q(target_definition__categories___contains=[entity_category.pk]))
-
-    for relation_category in as_potential_input_relations:
-        re_materialize_relation_category(graph, relation_category)
 
 
 def edge_property_problems(owner: str, property_definitions: list | None) -> list[str]:
@@ -348,15 +245,6 @@ def materialize(
 
     with versioning.suspended():
         _materialize_categories(graph, definition, user)
-
-    for category in graph.relation_categories.all():
-        re_materialize_relation_category(graph, category)
-
-    for category in graph.structure_relation_categories.all():
-        re_materialize_structure_relation_category(graph, category)
-
-    for category in graph.measurement_categories.all():
-        re_materialize_measurement_relation_category(graph, category)
 
     if backfill:
         # `project_all`, not `rebuild`. The namespace was created five lines up and

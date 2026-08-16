@@ -11,12 +11,11 @@ from .metric import metrics_for_structure, metric, metrics, measurements_for_ass
 from .measurement import measurement, measurements
 from .relation import relation, relations
 from .structure_relation import structure_relation, structure_relations
-from .description import description, descriptions
+from .description import description
 from .input_participation import input_participation, input_participations
 from .output_participation import output_participation, output_participations
 from .natural_event import natural_event, natural_events
 from .protocol_event import protocol_event, protocol_events
-from .activity import activity, activities
 from .insights.graph_table import render_graph_table
 from .node import node, nodes
 
@@ -30,7 +29,6 @@ __all__ = [
     # Structure queries
     "structure",
     "description",
-    "descriptions",
     "structures",
     "structure_by_identifier",
     "informing_structures",
@@ -49,8 +47,6 @@ __all__ = [
     "input_participations",
     "output_participation",
     "output_participations",
-    "activity",
-    "activities",
     # Structure relation queries
     "structure_relation",
     "structure_relations",

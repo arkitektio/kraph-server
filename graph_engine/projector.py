@@ -768,9 +768,17 @@ def resolve_categories(graph: core_models.Graph, nodes: list[Any]) -> tuple[dict
         selector_module.claim_filter(graph.selector),
     )
 
-    claims = list(selector_module.classification_claims_for(graph))
+    # Built once and reused below. `classification_claims_for` is not free — it
+    # resolves the graph's whole vocabulary first, which is two queries of its own
+    # — and it used to be called again *inside* the definition loop, so a graph
+    # with a dozen defined categories paid for its vocabulary a dozen times to
+    # answer one question. A queryset is lazy, so reusing the object costs
+    # nothing; each `.filter()` below still issues its own query, which is the
+    # part that genuinely has to happen per definition.
+    standing_claims = selector_module.classification_claims_for(graph)
+
     claims_by_ref: dict[str, list[Any]] = {}
-    for claim in claims:
+    for claim in standing_claims:
         claims_by_ref.setdefault(str(claim.source_ref), []).append(claim)
 
     # Evaluate each definition once against the whole claim set rather than once
@@ -778,11 +786,7 @@ def resolve_categories(graph: core_models.Graph, nodes: list[Any]) -> tuple[dict
     # be N queries to answer one question.
     matched_by_definition: dict[Any, set[str]] = {}
     for category in defined:
-        refs = set(
-            selector_module.classification_claims_for(graph)
-            .filter(selector_module.classification_filter(category.definition))
-            .values_list("source_ref", flat=True)
-        )
+        refs = set(standing_claims.filter(selector_module.classification_filter(category.definition)).values_list("source_ref", flat=True))
         matched_by_definition[category.pk] = {str(ref) for ref in refs}
 
     by_pk = {category.pk: category for category in categories}

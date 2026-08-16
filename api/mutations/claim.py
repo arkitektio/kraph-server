@@ -50,9 +50,10 @@ def retract_claims(info: Info, input: inputs.RetractClaimsInput) -> types.EdgesA
     have fixed it: a participation edge is labelled with the *event category's*
     `age_name`, which says nothing about participation.
 
-    `CLASSIFIES` is the one kind with no GraphQL type of its own; it is reported
-    as a `Relation`, which is recorded in `cast_edge_to_graphql_type` rather than
-    arrived at silently.
+    Every kind now has a type of its own, `CLASSIFIES` included — it comes back as
+    a `Classification`, whose target is a **term** rather than a node, which is
+    what a classification actually claims. It used to be reported as a `Relation`
+    for want of anything better.
     """
     model = input.to_pydantic()
     controller = context.get_controller()

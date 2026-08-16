@@ -58,6 +58,46 @@ def _batch_by_pk(model: type, field: str = "id") -> Callable[[list[PKType]], Any
     return load
 
 
+def _batch_grouped_by(model: type, field: str, narrow: Callable[[Any], Any] | None = None) -> Callable[[list[PKType]], Any]:
+    """A load function for a **one-to-many** relation: every row per key, in one query.
+
+    The sibling `_batch_by_pk` cannot do this and fails silently if asked to:
+    it builds `{key: instance}`, so a loader keyed on `Metric.structure_id` would
+    quietly return the last metric per structure and drop the rest. A one-to-many
+    loader has to group, so it is a different load function rather than a
+    different spec.
+
+    Returns `[]` for a key with no rows, never `None` — an empty list is the
+    honest answer to "what measurements does this have", and the `Optional` a
+    missing key would force on every caller would say something else.
+
+    ``narrow`` wraps the queryset before it is grouped, which is how the standing
+    filter gets applied: a retracted metric is still a row, and only the anti-join
+    against `ClaimCurrent` says it is gone.
+    """
+
+    manager = getattr(model, "all_objects", None) or model.objects
+
+    async def load(keys: list[PKType]) -> list[Any]:
+        queryset = manager.filter(**{f"{field}__in": list(keys)})
+        if narrow is not None:
+            queryset = narrow(queryset)
+
+        grouped: dict[str, list[Any]] = {}
+        async for instance in queryset:
+            grouped.setdefault(str(getattr(instance, field)), []).append(instance)
+        return [grouped.get(str(key), []) for key in keys]
+
+    return load
+
+
+def _standing_metrics(queryset: Any) -> Any:
+    """Narrow a metric queryset to the measurements that still stand."""
+    from evidence import claims as claims_module
+
+    return claims_module.standing(queryset, "metric").order_by("measured_at")
+
+
 _LOADER_SPECS: dict[str, tuple[type, str]] = {
     "entity_category": (models.EntityCategory, "id"),
     "structure_kind": (evidence_models.StructureKind, "id"),
@@ -72,12 +112,78 @@ _LOADER_SPECS: dict[str, tuple[type, str]] = {
     "graph_path_query_by_id": (models.GraphPathQuery, "id"),
     "graph_pairs_query_by_id": (models.GraphPairsQuery, "id"),
     "graph_table_query_by_id": (models.GraphTableQuery, "id"),
+    "term_by_id": (evidence_models.Term, "id"),
+    "assertion_by_id": (evidence_models.Assertion, "id"),
 }
+
+#: Loaders that return a **list** per key rather than a row. Kept in their own
+#: table because they need `_batch_grouped_by`, not `_batch_by_pk` — see that
+#: function for why asking the wrong one is a silent data-loss bug rather than an
+#: error.
+_GROUPED_LOADER_SPECS: dict[str, tuple[type, str, Any]] = {
+    "metrics_by_structure": (evidence_models.Metric, "structure_id", _standing_metrics),
+}
+
+
+def _batch_known_about_nodes() -> Callable[[list[PKType]], Any]:
+    """The panel: everything the log says about each node, over its component.
+
+    One load function for four fields rather than four loaders, because all four
+    need the same components and computing them four times is the cost the batch
+    exists to avoid. `evidence.panel.known_about` does the work; this is only the
+    thread hop.
+    """
+    from asgiref.sync import sync_to_async
+
+    async def load(keys: list[PKType]) -> list[Any]:
+        from evidence import panel
+
+        return await sync_to_async(panel.known_about)([str(key) for key in keys])
+
+    return load
+
+
+def _batch_informed_nodes() -> Callable[[list[PKType]], Any]:
+    """The nodes each structure is evidence for.
+
+    Batched even though the underlying read is simple, because it is the hop the
+    rest of the panel hangs off: a DataLoader dispatches once per event-loop tick,
+    so resolving this per structure would put every downstream loader in a batch
+    of one.
+    """
+    from asgiref.sync import sync_to_async
+
+    async def load(keys: list[PKType]) -> list[Any]:
+        from evidence import panel
+
+        return await sync_to_async(panel.informed_nodes)([str(key) for key in keys])
+
+    return load
+
+
+#: Loaders whose batch is a hand-written function rather than a query over one
+#: model. Third table because the two above are declarative and this cannot be.
+#:
+#: Neither of these authorizes: they are keyed on the primary key of a row the
+#: resolver has already resolved and checked, exactly as `_batch_by_pk` is. A
+#: tenant check here would be a second, weaker copy of one that already happened.
+_CUSTOM_LOADER_FACTORIES: dict[str, Callable[[], Callable[[list[PKType]], Any]]] = {
+    "known_about_node": _batch_known_about_nodes,
+    "informed_nodes_by_structure": _batch_informed_nodes,
+}
+
+
+def all_loader_names() -> set[str]:
+    """Every loader name, of any shape. What `build_loaders` produces."""
+    return set(_LOADER_SPECS) | set(_GROUPED_LOADER_SPECS) | set(_CUSTOM_LOADER_FACTORIES)
 
 
 def build_loaders() -> dict[str, DataLoader]:
     """A fresh set of loaders for one operation."""
-    return {name: DataLoader(load_fn=_batch_by_pk(model, field)) for name, (model, field) in _LOADER_SPECS.items()}
+    built = {name: DataLoader(load_fn=_batch_by_pk(model, field)) for name, (model, field) in _LOADER_SPECS.items()}
+    built.update({name: DataLoader(load_fn=_batch_grouped_by(model, field, narrow)) for name, (model, field, narrow) in _GROUPED_LOADER_SPECS.items()})
+    built.update({name: DataLoader(load_fn=factory()) for name, factory in _CUSTOM_LOADER_FACTORIES.items()})
+    return built
 
 
 class _LoaderProxy:
@@ -99,6 +205,11 @@ class _LoaderProxy:
             # resolver directly. A throwaway loader is correct here: there is no
             # request to scope a cache to, so caching across the call would be
             # the bug rather than the optimisation.
+            if self._name in _CUSTOM_LOADER_FACTORIES:
+                return DataLoader(load_fn=_CUSTOM_LOADER_FACTORIES[self._name]())
+            if self._name in _GROUPED_LOADER_SPECS:
+                model, field, narrow = _GROUPED_LOADER_SPECS[self._name]
+                return DataLoader(load_fn=_batch_grouped_by(model, field, narrow))
             model, field = _LOADER_SPECS[self._name]
             return DataLoader(load_fn=_batch_by_pk(model, field))
         return active[self._name]
@@ -142,3 +253,8 @@ graph_nodes_query_by_id_loader = _LoaderProxy("graph_nodes_query_by_id")
 graph_path_query_by_id_loader = _LoaderProxy("graph_path_query_by_id")
 graph_pairs_query_by_id_loader = _LoaderProxy("graph_pairs_query_by_id")
 graph_table_query_by_id_loader = _LoaderProxy("graph_table_query_by_id")
+term_by_id_loader = _LoaderProxy("term_by_id")
+assertion_by_id_loader = _LoaderProxy("assertion_by_id")
+metrics_by_structure_loader = _LoaderProxy("metrics_by_structure")
+known_about_node_loader = _LoaderProxy("known_about_node")
+informed_nodes_by_structure_loader = _LoaderProxy("informed_nodes_by_structure")

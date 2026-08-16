@@ -61,14 +61,6 @@ class EdgeQueryKindChoices(TextChoices):
     TABLE = "TABLE"
 
 
-class MaterializedEdgeKindChoices(TextChoices):
-    """Which kind of category a materialized edge was derived from."""
-
-    RELATION = "RELATION"
-    MEASUREMENT = "MEASUREMENT"
-    STRUCTURE_RELATION = "STRUCTURE_RELATION"
-
-
 class MetricKindChoices(TextChoices):
     INT = "INT"
     FLOAT = "FLOAT"

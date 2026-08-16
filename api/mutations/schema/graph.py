@@ -108,8 +108,7 @@ def delete_graph(
     # below was an unconditional destruction wearing a refusal's clothes.
     #
     # What the CASCADE takes: every `Category`, `GraphSchema`, `GraphOntology`,
-    # `GraphSequence`, `Protocol`, every saved query and plot, and
-    # `MaterializedEdge`, plus the AGE namespace below. The evidence survives —
+    # every saved query and plot, plus the AGE namespace below. The evidence survives —
     # it is organization-scoped, which is the second axiom paying for itself —
     # but **every rule for reading it goes, with no record that it existed**. A
     # replayable log whose interpreter can be deleted irrecoverably is only half
@@ -222,23 +221,3 @@ def update_graph_visual(info: Info, input: inputs.UpdateGraphVisualInput) -> typ
         categories.save()
 
     return graph
-
-
-def pin_graph(
-    info: Info,
-    input: inputs.PinGraphInput,
-) -> types.Graph:
-    """GraphQL mutation wrapper for pinning a graph."""
-
-    model = input.to_pydantic()  # Validate input with Pydantic models
-
-    # `model.id`, not `model.graph_id`. `PinGraphInput` defines only `id`, so this
-    # raised `AttributeError` on every call — twice, since the return read it too.
-    graph = accessible_graph(info, model.id)
-
-    if model.pin:
-        graph.pinned_by.add(info.context.request.user)
-    else:
-        graph.pinned_by.remove(info.context.request.user)
-
-    return types.Graph(id=model.id)

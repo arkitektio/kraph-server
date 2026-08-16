@@ -267,11 +267,11 @@ async def test_retracting_claims_reports_them_as_one_act(
     `INFORMS` links alike, and used to report every one of them as a
     `Measurement`. The dispatch reads the `Link` row's kind now.
 
-    **`CLASSIFIES` is asserted as `Relation` on purpose, and that is the wrong
-    answer.** There is no GraphQL type for a classification claim, so the cast
-    picks the least wrong of the types that exist. Pinning it here means the day
-    somebody adds a proper type, this test fails and points at the decision
-    instead of letting the substitution drift on unnoticed.
+    **`CLASSIFIES` used to be asserted as `Relation`, and this test said so on
+    purpose** — there was no GraphQL type for a classification claim, so the cast
+    picked the least wrong of the ones that existed, and pinning the substitution
+    meant it could not drift on unnoticed. `Classification` exists now, so this
+    failed and pointed at the decision, which is what the tripwire was for.
     """
     entity = await _cell(api_schema, simple_api_context, test_graph)
 
@@ -295,7 +295,7 @@ async def test_retracting_claims_reports_them_as_one_act(
     assert payload["assertion"]["id"], "Retracting is itself a claim, and the batch is one act"
     assert len(payload["edges"]) == 1
     assert payload["edges"][0]["id"] == claim_id
-    assert payload["edges"][0]["__typename"] == "Relation", "No type exists for a classification claim yet; see cast_edge_to_graphql_type"
+    assert payload["edges"][0]["__typename"] == "Classification", "A classification claim is its own kind of thing — it runs node → word, not node → node"
 
 
 @pytest.mark.django_db(transaction=True)

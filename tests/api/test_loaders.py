@@ -125,9 +125,75 @@ def test_every_declared_loader_is_constructible() -> None:
     never used.
     """
     built = loaders.build_loaders()
+    declared = loaders.all_loader_names()
 
-    assert set(built) == set(loaders._LOADER_SPECS)
+    assert set(built) == declared
 
     proxied = {proxy._name for proxy in vars(loaders).values() if isinstance(proxy, loaders._LoaderProxy)}
-    assert proxied <= set(loaders._LOADER_SPECS), f"proxy with no spec: {sorted(proxied - set(loaders._LOADER_SPECS))}"
-    assert set(loaders._LOADER_SPECS) <= proxied, f"spec with no proxy: {sorted(set(loaders._LOADER_SPECS) - proxied)}"
+    assert proxied <= declared, f"proxy with no spec: {sorted(proxied - declared)}"
+    assert declared <= proxied, f"spec with no proxy: {sorted(declared - proxied)}"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_a_one_to_many_loader_returns_every_row_not_the_last(test_graph: core_models.Graph) -> None:
+    """The defect `_batch_by_pk` would have had if it were reused for this.
+
+    It builds `{key: instance}`, so a loader keyed on `Metric.structure_id` would
+    keep only the last measurement per structure and drop the rest — silently,
+    with a plausible-looking answer. Grouping is a different load function for
+    exactly that reason.
+    """
+    @sync_to_async
+    def two_metrics_on_one_structure() -> str:
+        from core.enums import ValueKind
+        from evidence import writer
+
+        organization = test_graph.organization
+        assertion = writer.create_assertion(organization, subject="tester", app_id="pytest")
+        kind = writer.ensure_structure_kind(organization, "@mikro/roi")
+        structure = writer.ensure_structure(organization, kind, "roi-loader-1", assertion)
+        metric_kind = writer.ensure_metric_kind(organization, kind, "length", ValueKind.FLOAT.value)
+        for value in (1.0, 2.0):
+            writer.record_metric(organization, structure, metric_kind, key="length", value=value, assertion=assertion)
+        return str(structure.pk)
+
+    structure_id = await two_metrics_on_one_structure()
+
+    loader = loaders.build_loaders()["metrics_by_structure"]
+    rows = await loader.load(structure_id)
+
+    assert [row.value for row in rows] == [1.0, 2.0], "Every measurement, not the last one"
+    assert isinstance(rows, list)
+    assert await loader.load("00000000-0000-0000-0000-000000000000") == [], "A key with no rows is an empty list, never null"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_a_grouped_loader_hides_retracted_rows(test_graph: core_models.Graph) -> None:
+    """Retraction is a `Claim(stands=False)`, not a delete.
+
+    Nothing about the metric row itself says it is gone, so a loader that skipped
+    the `standing()` narrow would serve withdrawn measurements to the panel.
+    """
+    @sync_to_async
+    def one_retracted_metric() -> str:
+        from core.enums import ValueKind
+        from evidence import writer
+
+        organization = test_graph.organization
+        assertion = writer.create_assertion(organization, subject="tester", app_id="pytest")
+        kind = writer.ensure_structure_kind(organization, "@mikro/roi")
+        structure = writer.ensure_structure(organization, kind, "roi-loader-2", assertion)
+        metric_kind = writer.ensure_metric_kind(organization, kind, "length", ValueKind.FLOAT.value)
+        kept = writer.record_metric(organization, structure, metric_kind, key="length", value=1.0, assertion=assertion)
+        withdrawn = writer.record_metric(organization, structure, metric_kind, key="length", value=99.0, assertion=assertion)
+        writer.retract(organization, withdrawn, assertion)
+        assert kept.pk != withdrawn.pk
+        return str(structure.pk)
+
+    structure_id = await one_retracted_metric()
+
+    rows = await loaders.build_loaders()["metrics_by_structure"].load(structure_id)
+
+    assert [row.value for row in rows] == [1.0]

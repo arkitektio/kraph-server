@@ -363,7 +363,6 @@ def api_schema(age_engine):
     return create_schema(
         max_depth=10,
         debug=True,
-        include_subscriptions=True,
         cypher_engine=age_engine,
     )
 

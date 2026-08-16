@@ -181,7 +181,12 @@ class Command(BaseCommand):
         """
         from evidence import selector as selector_module
 
-        graph_ids = set(selector_module.graph_ids_for_node_ids(organization, refs).values())
+        # Pairs, not a mapping. `graph_ids_for_node_ids` returns
+        # `list[tuple[ref, graph_id]]` because a node can be in more than one
+        # graph — a `dict[ref, graph]` could only record the last one. This called
+        # `.values()` on that list, so `redact` raised `AttributeError` the moment
+        # it reached the reprojection step and the command was broken outright.
+        graph_ids = {graph_id for _, graph_id in selector_module.graph_ids_for_node_ids(organization, refs)}
         return list(models.Graph.objects.filter(organization=organization, pk__in=graph_ids))
 
     def _reproject(self, graphs: list[models.Graph]) -> None:

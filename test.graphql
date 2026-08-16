@@ -173,6 +173,11 @@ input AssertEntityExistsInput {
 
   """List of evidence structures with measurements"""
   supportingEvidence: [StructureReferenceInput!]! = []
+
+  """
+  Instances this new one is the same as. Saying "this is AIS 6" mints a fresh instance and claims it is the same as the one already known as AIS 6 — all under **one assertion**, because it is one act. Sameness is an equivalence with no primary, so which id you send is immaterial; entities only, never structures.
+  """
+  sameAs: [String!]! = []
 }
 
 """Input for creating a new measurement edge"""
@@ -312,6 +317,14 @@ input AssertRelationExistsInput {
   The organization's word for what is being claimed — a term's `key`, e.g. 'AIS'. Not a category id and not a graph: a claim names a word, and every view that declares that word will hold what you write. The word is created if the organization has not used it before; a view that declares no category for it simply will not draw it.
   """
   term: String!
+}
+
+"""Input for claiming that several recorded instances are one thing"""
+input AssertSameEntityInput {
+  """
+  Two or more entity ids that name the same thing. Every pair among them is claimed, under one assertion.
+  """
+  entities: [String!]!
 }
 
 """Input for claiming that an external datum exists"""
@@ -543,6 +556,38 @@ input CategoryNodePositionInput {
 
   """Optional height for the node (for visualization purposes)"""
   height: Float = null
+}
+
+"""A CLASSIFIES claim: somebody's word for what a node is"""
+type Classification implements Edge {
+  """Local AGE graph ID, or null for edges that have no projection"""
+  graphId: Int
+
+  """Global identifier in format 'graph_name:graph_id'"""
+  globalId: GlobalID!
+
+  """Composite ID for edge lookup"""
+  id: String!
+
+  """The edge label/type"""
+  label: String!
+
+  """Global ID of the source/left node"""
+  sourceId: String!
+
+  """Global ID of the target/right node"""
+  targetId: String!
+
+  """
+  Who claimed this, and when. Null for an edge read out of a projection, which carries no provenance
+  """
+  assertion: Assertion
+
+  """The node this word was claimed about"""
+  source: Node!
+
+  """The organization's word that was claimed"""
+  term: Term
 }
 
 """One claim that a node is of a category, inside a batch"""
@@ -1473,6 +1518,11 @@ type Description implements Edge {
   """Global ID of the target/right node"""
   targetId: String!
 
+  """
+  Who claimed this, and when. Null for an edge read out of a projection, which carries no provenance
+  """
+  assertion: Assertion
+
   """The structure that is evidence here"""
   source: Structure!
 
@@ -1499,6 +1549,11 @@ interface Edge {
 
   """Global ID of the target/right node"""
   targetId: String!
+
+  """
+  Who claimed this, and when. Null for an edge read out of a projection, which carries no provenance
+  """
+  assertion: Assertion
 }
 
 """Base interface for graph schemas"""
@@ -1836,6 +1891,31 @@ type Entity implements VersionedNode & Node {
 
   """The current derived properties for this entity"""
   properties: AnyScalar!
+
+  """
+  Every instance claimed to be this same thing, this one included. A component of one means nobody has merged it
+  """
+  component: [ID!]!
+
+  """
+  What anyone has called this thing, with how many assertions say so. Two words means two people disagreed; one word with a count of two means they agreed
+  """
+  labels: [Label!]!
+
+  """
+  The standing claims that this instance and another are one thing, with who said so. Exposed so a merge is visible and contestable rather than silent
+  """
+  sameAs: [Sameness!]!
+
+  """
+  Every standing claim connecting this thing to something else — relations, participations and the structures that inform it. Needs no graph query: they are all evidence rows, and the drawing of them is a projection
+  """
+  connections: [Edge!]!
+
+  """
+  Every view that actually draws this thing, and the category it draws it under. Read back from each projection, so a graph that declares the word but whose definition refuses the node is not listed
+  """
+  drawnIn: [NodeDrawing!]!
 
   """The source entity of this relation"""
   measuredBy: [Measurement!]!
@@ -2749,6 +2829,11 @@ type InputParticipation implements Edge {
   """Global ID of the target/right node"""
   targetId: String!
 
+  """
+  Who claimed this, and when. Null for an edge read out of a projection, which carries no provenance
+  """
+  assertion: Assertion
+
   """The role the entity played going in"""
   role: String!
 
@@ -2763,6 +2848,27 @@ type InputParticipation implements Edge {
 The `JSON` scalar type represents JSON values as specified by [ECMA-404](https://ecma-international.org/wp-content/uploads/ECMA-404_2nd_edition_december_2017.pdf).
 """
 scalar JSON @specifiedBy(url: "https://ecma-international.org/wp-content/uploads/ECMA-404_2nd_edition_december_2017.pdf")
+
+"""A word somebody has called this thing, and how much agreement there is"""
+type Label {
+  """
+  Which instance in the component was called this. Every observation mints its own, so a component's labels may name different ones
+  """
+  nodeId: ID!
+
+  """The organization's word that was claimed"""
+  term: Term
+
+  """
+  How many separate assertions say this. Concurrence, not repetition — the log records a claim that restates a position already held precisely so this is countable
+  """
+  assertionCount: Int!
+
+  """
+  The most recent act that claimed this word. Ordered by the log's `seq`, which cannot tie
+  """
+  latestAssertion: Assertion
+}
 
 """Input for linking a structure to an entity"""
 input LinkStructureInput {
@@ -3004,6 +3110,11 @@ type Measurement implements Edge {
 
   """Global ID of the target/right node"""
   targetId: String!
+
+  """
+  Who claimed this, and when. Null for an edge read out of a projection, which carries no provenance
+  """
+  assertion: Assertion
 
   """How the view this was read through draws it, if any view does"""
   category: MeasurementCategory
@@ -3340,6 +3451,9 @@ type Metric implements Node {
 
   """The organization's term for this kind of measurement"""
   kind: MetricKind
+
+  """Who measured this, and when they claimed it"""
+  assertion: Assertion
 }
 
 """An assertion about a metric — a measured value about a structure"""
@@ -3588,6 +3702,16 @@ type Mutation {
 
   """Retract several claims as one act"""
   retractClaims(input: RetractClaimsInput!): EdgesAssertion!
+
+  """
+  Claim that several already-recorded instances are one thing. An equivalence with no primary — the order of the ids carries no meaning
+  """
+  assertSameEntity(input: AssertSameEntityInput!): SamenessAssertion!
+
+  """
+  Withdraw one sameness claim. The component it held together is rebuilt from the claims that survive, which may split it
+  """
+  retractSameEntity(input: RetractSameEntityInput!): SamenessAssertion!
 
   """Upload media and return a URL for access"""
   requestMediaUpload(input: RequestMediaUploadInput!): MediaUploadGrant!
@@ -4460,6 +4584,11 @@ type OutputParticipation implements Edge {
   """Global ID of the target/right node"""
   targetId: String!
 
+  """
+  Who claimed this, and when. Null for an edge read out of a projection, which carries no provenance
+  """
+  assertion: Assertion
+
   """The role the entity played coming out"""
   role: String!
 
@@ -5170,6 +5299,11 @@ type Relation implements Edge {
   """Global ID of the target/right node"""
   targetId: String!
 
+  """
+  Who claimed this, and when. Null for an edge read out of a projection, which carries no provenance
+  """
+  assertion: Assertion
+
   """The entity this relation runs from"""
   source: Entity!
 
@@ -5500,6 +5634,12 @@ input RetractRelationInput {
   id: GraphID!
 }
 
+"""Input for withdrawing one sameness claim"""
+input RetractSameEntityInput {
+  """The id of the sameness claim to retract"""
+  id: String!
+}
+
 """Input for deleting an existing structure"""
 input RetractStructureInput {
   """The ID of the structure to archive"""
@@ -5578,6 +5718,51 @@ input RoleMappingInput {
 
   """The ID of the entity assigned to this role"""
   entityId: String!
+}
+
+"""A claim that two instances are one thing"""
+type Sameness implements Edge {
+  """Local AGE graph ID, or null for edges that have no projection"""
+  graphId: Int
+
+  """Global identifier in format 'graph_name:graph_id'"""
+  globalId: GlobalID!
+
+  """Composite ID for edge lookup"""
+  id: String!
+
+  """The edge label/type"""
+  label: String!
+
+  """Global ID of the source/left node"""
+  sourceId: String!
+
+  """Global ID of the target/right node"""
+  targetId: String!
+
+  """
+  Who claimed this, and when. Null for an edge read out of a projection, which carries no provenance
+  """
+  assertion: Assertion
+
+  """One of the two instances claimed to be the same"""
+  source: Entity!
+
+  """The other instance claimed to be the same"""
+  target: Entity!
+}
+
+"""An assertion that instances are one thing, and the claims it recorded"""
+type SamenessAssertion {
+  """
+  The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
+  """
+  assertion: Assertion!
+
+  """
+  The sameness claims this act recorded. Asserting that three instances are one records every pair among them, under one assertion
+  """
+  samenesses: [Sameness!]!
 }
 
 """Result of linking a structure to an entity"""
@@ -5728,8 +5913,13 @@ type Structure implements Node {
   """The organization's term for this kind of structure"""
   kind: StructureKind
 
-  """The graph this node belongs to"""
+  """Every un-retracted measurement of this structure, in observation order"""
   metrics: [Metric!]!
+
+  """
+  The nodes this structure is evidence for. Where its labels, merges and connections live — a structure is a pointer to an external datum and is never itself claimed to be an AIS
+  """
+  informs: [Entity!]!
 }
 
 """An assertion about a structure — a pointer to an external datum"""
@@ -5941,6 +6131,11 @@ type StructureRelation implements Edge {
 
   """Global ID of the target/right node"""
   targetId: String!
+
+  """
+  Who claimed this, and when. Null for an edge read out of a projection, which carries no provenance
+  """
+  assertion: Assertion
 
   """The structure this relation runs from"""
   source: Structure!

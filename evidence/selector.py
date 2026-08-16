@@ -196,22 +196,24 @@ def term_ids_for(graph: Any) -> set[Any]:
     never fired. The category matched claims the graph could not see.
 
     Returns a materialized set rather than a subquery, deliberately: it is the
-    size of the graph's *vocabulary*, not of its nodes, and the derived half
-    cannot be a subquery anyway because `definition` is JSON.
+    size of the graph's *vocabulary*, not of its nodes.
+
+    The derived half comes from `core.CategoryAssertedTerm` rather than from
+    re-reading every ``definition`` blob — the same table
+    :func:`_graph_ids_by_term` reads, so the two cannot come to different
+    conclusions about which words a definition names. That mattered enough to
+    normalize: a definition that matched claims the graph could not see is the bug
+    this function documents having already been fixed once.
 
     Deliberately reaching into `core` from here: which words a view speaks is a
     fact about the view, and this module is where the two sides are joined.
     Nothing flows the other way — no evidence row names a graph.
     """
+    from core import asserted_terms
     from core import models as core_models
 
-    declared: set[Any] = set()
-    derived_keys: set[str] = set()
-
-    for term_id, definition in core_models.Category.objects.filter(graph=graph).values_list("term_id", "definition"):
-        if term_id is not None:
-            declared.add(term_id)
-        derived_keys.update(asserted_as_keys(definition))
+    declared: set[Any] = {term_id for term_id in core_models.Category.objects.filter(graph=graph).values_list("term_id", flat=True) if term_id is not None}
+    derived_keys = asserted_terms.keys_for_graph(graph)
 
     if derived_keys:
         declared.update(evidence_models.Term.objects.for_organization(graph.organization).filter(key__in=derived_keys).values_list("id", flat=True))
@@ -272,22 +274,27 @@ def _graph_ids_by_term(organization: Any) -> dict[Any, list[Any]]:
     would turn a fifty-graph organization into a hundred queries per claim.
 
     Categories are the size of the schemas, not of the evidence, so scanning all
-    of them is cheap where scanning them once per graph is not.
+    of them is cheap where scanning them once per graph is not — but only if what
+    is scanned is narrow. It was not: the derived half read `definition`, so every
+    write pulled every JSON blob in the ontology out of the database and parsed it
+    in Python. `core.CategoryAssertedTerm` is that half normalized, and this reads
+    two columns from it instead.
     """
-    declared: dict[Any, list[Any]] = {}
-    derived: dict[str, list[Any]] = {}
+    from core import asserted_terms
 
-    for graph_id, term_id, definition in core_categories(organization):
+    declared: dict[Any, list[Any]] = {}
+    for graph_id, term_id in core_categories(organization):
         if term_id is not None:
             declared.setdefault(term_id, []).append(graph_id)
-        for key in asserted_as_keys(definition):
-            derived.setdefault(key, []).append(graph_id)
 
-    # The derived half cannot be a join: `asserted_as` names words by key, inside
-    # JSON. One lookup for every key any definition mentions, then merged in.
+    # Still not a join, and deliberately: `asserted_as` names a word without
+    # naming its *kind*, while a term's identity is `(organization, kind, key)`.
+    # Resolving by key alone is what keeps a definition able to derive from a word
+    # whichever kind it was minted under.
+    derived = asserted_terms.graph_ids_by_key(organization)
     if derived:
         for term_id, key in evidence_models.Term.objects.for_organization(organization).filter(key__in=list(derived)).values_list("id", "key"):
-            for graph_id in derived[key]:
+            for graph_id in derived[str(key)]:
                 if graph_id not in declared.setdefault(term_id, []):
                     declared[term_id].append(graph_id)
 
@@ -295,14 +302,18 @@ def _graph_ids_by_term(organization: Any) -> dict[Any, list[Any]]:
 
 
 def core_categories(organization: Any) -> Any:
-    """Every category in the organization, as `(graph_id, term_id, definition)`.
+    """Every category in the organization, as `(graph_id, term_id)`.
 
     Split out so :func:`_graph_ids_by_term` reads as the mapping it builds, and so
     the one place this module reaches into `core` stays one place.
+
+    Two columns, not three. It used to carry `definition` as well, which made the
+    only per-write scan in the codebase a scan of every JSON blob in the ontology;
+    that half is `core.CategoryAssertedTerm` now.
     """
     from core import models as core_models
 
-    return core_models.Category.objects.filter(graph__organization=organization).values_list("graph_id", "term_id", "definition")
+    return core_models.Category.objects.filter(graph__organization=organization).values_list("graph_id", "term_id")
 
 
 def graph_ids_for_node_ids(organization: Any, refs: Any) -> list[tuple[str, Any]]:

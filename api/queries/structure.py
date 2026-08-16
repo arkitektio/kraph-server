@@ -15,27 +15,21 @@ from graph_engine import input_models
 
 def structure_by_identifier(
     info: Info,
-    graph: strawberry.ID,
     identifier: scalars.StructureIdentifier,
     object: scalars.StructureObject,
 ) -> types.Structure:
-    """
-    Fetch a specific structure by its identifier and object ID.
+    """The structure for one external datum, by identifier and object.
 
-    Args:
-        info: Strawberry Info context
-        graph: Graph ID
-        identifier: Structure identifier (e.g. '@mikro/roi')
-        object: Structure object ID
-
-    Returns:
-        Structure object or None if not found
+    **No graph.** A structure is idempotent by `(organization, identifier,
+    object)` and has no vertex in any projection, so naming a view selected
+    nothing — see `GraphController.get_structure`. The sibling
+    `structures(structureKindId:)` was already de-graphed on the same grounds.
     """
     controller = context.get_controller()
-    graph_model = context.get_accessible_graph(info, str(graph))
+    organization = context.get_active_organization(info)
 
     response = controller.get_structure(
-        graph=graph_model,
+        organization=organization,
         identifier=identifier,
         object=object,
         info=info,
@@ -125,10 +119,10 @@ def informing_structures(
     """
     controller = context.get_controller()
 
-    # An entity id is its uuid, so the graph comes from the `Node` row rather
-    # than off the front of the id.
+    # No graph. INFORMS is organization-grain, so there was never a view to pick
+    # — and picking one meant `_graph_for_node`, which returns an arbitrary
+    # declarer among the graphs that speak the node's word.
     node = controller._resolve_node(entity_id, info)
-    graph = controller._graph_for_node(node)
 
-    responses = controller.get_informing_structures(graph, entity_id=entity_id, info=info)
+    responses = controller.get_informing_structures(node, info=info)
     return [types.Structure(_value=r) for r in responses]

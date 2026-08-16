@@ -1,13 +1,13 @@
 """
 GraphQL Schema for the API.
 
-This module assembles the complete GraphQL schema from queries,
-mutations, and subscriptions.
+This module assembles the complete GraphQL schema from its queries and
+mutations.
 """
 
 from strawberry.schema.config import StrawberryConfig
 from strawberry.extensions import QueryDepthLimiter
-from typing import AsyncGenerator, Optional
+from typing import Optional
 from authentikate.strawberry.extension import AuthentikateExtension
 
 from .extensions.cypher import CypherEngineExtension
@@ -41,7 +41,7 @@ class Query:
     entities = kante.django_field(queries.entities, description="List entities with optional filters, ordering, and pagination")
     structure = kante.django_field(queries.structure, description="Get a structure by composite graph ID")
     structures = kante.django_field(queries.structures, description="List structures with optional filters, ordering, and pagination")
-    structure_by_identifier = kante.django_field(queries.structure_by_identifier, description="Get a structure by graph, identifier and object")
+    structure_by_identifier = kante.django_field(queries.structure_by_identifier, description="Get a structure by identifier and object. No graph: a structure belongs to the organization and has no vertex in any projection")
     informing_structures = kante.django_field(queries.informing_structures, description="List the structures that are evidence for an entity")
     natural_event = kante.django_field(queries.natural_event, description="Get a natural event by composite graph ID")
     natural_events = kante.django_field(queries.natural_events, description="List natural events for a natural event category")
@@ -50,7 +50,6 @@ class Query:
     measurement = kante.django_field(queries.measurement, description="Get a measurement by composite graph ID")
     measurements = kante.django_field(queries.measurements, description="List measurements for a measurement category")
     description = kante.django_field(queries.description, description="Get a description edge by composite graph ID")
-    descriptions = kante.django_field(queries.descriptions, description="List description edges in a graph")
     input_participation = kante.django_field(queries.input_participation, description="Get an input participation edge by composite graph ID")
     input_participations = kante.django_field(queries.input_participations, description="List input participation edges in a graph")
     output_participation = kante.django_field(queries.output_participation, description="Get an output participation edge by composite graph ID")
@@ -67,8 +66,6 @@ class Query:
     metrics = kante.django_field(queries.metrics, description="List every un-retracted metric recorded under one metric kind")
     metrics_for_structure = kante.django_field(queries.metrics_for_structure, description="List every un-retracted metric describing a structure")
     metrics_for_assertion = kante.django_field(queries.measurements_for_assertion, description="List every metric recorded under one assertion")
-    activity = kante.django_field(queries.activity, description="Get an activity node by composite graph ID")
-    activities = kante.django_field(queries.activities, description="List activities in a graph with optional filters, ordering, and pagination")
 
     # =========================
     # Schema Section
@@ -97,14 +94,13 @@ class Query:
     protocol_event_categories: list[types.ProtocolEventCategory] = kante.django_field(description="List all protocol event categories/schemas")
     protocol_event_category: types.ProtocolEventCategory = kante.django_field(description="Get a single protocol event category/schema by ID")
 
-    materialized_edges: list[types.MaterializedEdge] = kante.django_field(description="List all materialized edges in the graph")
-    materialized_edge: types.MaterializedEdge = kante.django_field(description="Get a single materialized edge by ID")
-    materialized_structure_relation_edges: list[types.MaterializedStructureRelationEdge] = kante.django_field(description="List all materialized structure relation edges in the graph")
-    materialized_structure_relation_edge: types.MaterializedStructureRelationEdge = kante.django_field(description="Get a single materialized structure relation edge by ID")
-    materialized_relation_edges: list[types.MaterializedRelationEdge] = kante.django_field(description="List all materialized relation edges in the graph")
-    materialized_relation_edge: types.MaterializedRelationEdge = kante.django_field(description="Get a single materialized relation edge by ID")
-    materialized_measurement_edges: list[types.MaterializedMeasurementEdge] = kante.django_field(description="List all materialized measurement edges in the graph")
-    materialized_measurement_edge: types.MaterializedMeasurementEdge = kante.django_field(description="Get a single materialized measurement edge by ID")
+    # The eight `materialized*` fields are gone. They read `MaterializedEdge` — a
+    # stored cross-product of the category pairs an edge category permits — which
+    # was populated only at graph creation and never invalidated afterwards: the
+    # function that would refresh it when a new entity category widened a
+    # predicate had no callers, and `createRelationCategory` never populated it at
+    # all. A read surface over a cache that stops being maintained is worse than
+    # no read surface. See RFC 0001 §6.
 
     graph_stats: types.GraphStats = kante.django_field(description="Get aggregated graph stats with optional filters", resolver=types.GraphStatsResolver)
     entity_category_stats: types.EntityCategoryStats = kante.django_field(description="Get aggregated entity-category stats with optional filters", resolver=types.EntityCategoryStatsResolver)
@@ -154,7 +150,6 @@ class Query:
 
     scatter_plots: list[types.ScatterPlot] = kante.django_field(description="Show all saved scatter plots")
     scatter_plot: types.ScatterPlot = kante.django_field(description="Show a single saved scatter plot by ID")
-
 
 
 @strawberry.type(description="Graph Engine Mutations")
@@ -639,35 +634,29 @@ class Mutation:
     # Add more mutations as needed
 
 
-@strawberry.type(description="Graph Engine Subscriptions")
-class Subscription:
-    """A GraphQL subscription type for real-time updates from the graph engine."""
-
-    @strawberry.subscription(description="Subscribe to updates for a specific graph")
-    async def graph_updated(self, info: Info, graph_id: scalars.GraphID) -> AsyncGenerator[types.Graph, None]:
-        """
-        Subscription that triggers when a graph is updated.
-
-        Args:
-            info: Strawberry Info context
-            graph_id: The ID of the graph to subscribe to updates for
-        """
-        yield None
+# There was a `Subscription` type here with one field, `graphUpdated`, whose body
+# was `yield None` — on a generator declared to yield a non-null `Graph`. It
+# notified nobody: nothing anywhere publishes to it. A subscription that cannot
+# emit is worse than an absent one, because a client can open it and wait.
 
 
 def create_schema(
     max_depth: int = 10,
     debug: bool = False,
-    include_subscriptions: bool = True,
     cypher_engine: Optional[CypherEngine] = None,
 ) -> kante.Schema:
-    """
-    Create a configured GraphQL schema for the graph engine.
+    """Build the served GraphQL schema.
+
+    One construction, not two. There used to be an `include_subscriptions` flag
+    and an `else` branch that built a `kante.Schema` with **neither** the explicit
+    `types=[...]` list nor the `scalar_map` — a second, quietly different schema
+    that would have failed at runtime on any query producing a type reachable only
+    through an interface. Nothing ever passed `False`, so it was never built; it
+    was a divergence waiting for its first caller.
 
     Args:
         max_depth: Maximum query depth (default 10)
         debug: Enable debug mode
-        include_subscriptions: Whether to include subscriptions (default True)
         cypher_engine: The CypherEngine instance to use for graph operations
 
     Returns:
@@ -685,94 +674,75 @@ def create_schema(
     if cypher_engine is not None:
         extensions.append(CypherEngineExtension(engine=cypher_engine))
 
-    if include_subscriptions:
-        return kante.Schema(
-            query=Query,
-            mutation=Mutation,
-            subscription=Subscription,
-            extensions=extensions,
-            types=[
-                # Explicitly include all types that are not directly referenced in the Query/Mutation/Subscription root types
-                # Node Types
-                types.Entity,
-                types.Structure,
-                types.Metric,
-                types.Activity,
-                types.NaturalEvent,
-                types.ProtocolEvent,
-                # Edge Types
-                types.Measurement,
-                types.Description,
-                types.Assertion,
-                types.Relation,
-                types.StructureRelation,
-            ],
-            config=StrawberryConfig(
-                scalar_map={
-                    scalars.StructureIdentifier: strawberry.scalar(
-                        name="StructureIdentifier",
-                        serialize=lambda v: v,  # Implement your serialization logic here
-                        parse_value=lambda v: v,  # Implement your parsing logic here
-                    ),
-                    scalars.GlobalID: strawberry.scalar(
-                        name="GlobalID",
-                        serialize=lambda v: v,  # Implement your serialization logic here
-                        parse_value=lambda v: v,  # Implement your parsing logic here
-                    ),
-                    scalars.UnixMilliseconds: strawberry.scalar(
-                        name="UnixMilliseconds",
-                        serialize=lambda v: v,  # Implement your serialization logic here
-                        parse_value=lambda v: v,  # Implement your parsing logic here
-                    ),
-                    scalars.GraphID: strawberry.scalar(
-                        name="GraphID",
-                        serialize=lambda v: v,  # Implement your serialization logic here
-                        parse_value=lambda v: v,  # Implement your parsing logic here
-                    ),
-                    scalars.LocalID: strawberry.scalar(
-                        name="LocalID",
-                        serialize=lambda v: v,  # Implement your serialization logic here
-                        parse_value=lambda v: v,  # Implement your parsing logic here
-                    ),
-                    scalars.StructureObject: strawberry.scalar(
-                        name="StructureObject",
-                        description="The `StructureObject` scalar type represents a structure object (e.g 1) on a specific identifier)",
-                        serialize=lambda v: v,  # Implement your serialization logic here
-                        parse_value=lambda v: v,  # Implement your parsing logic here
-                    ),
-                    scalars.StructureGlobalID: strawberry.scalar(
-                        name="StructureGlobalID",
-                        description="The `StructureGlobalID` scalar type represents a structure global identifier (e.g. '@mikro/roi:433')",
-                        serialize=lambda v: v,  # Implement your serialization logic here
-                        parse_value=lambda v: v,  # Implement your parsing logic here
-                    ),
-                    scalars.StructureIdentifier: strawberry.scalar(
-                        name="StructureIdentifier",
-                        description="The `StructureIdentifier` scalar type represents a structure identifier (e.g. '@mikro/roi')",
-                        serialize=lambda v: v,  # Implement your serialization logic here
-                        parse_value=lambda v: v,  # Implement your parsing logic here
-                    ),
-                    scalars.AnyScalar: strawberry.scalar(
-                        name="AnyScalar",
-                        description="The `AnyScalar` scalar type represents an arbitrary JSON-like value",
-                        serialize=lambda v: v,  # Implement your serialization logic here
-                        parse_value=lambda v: v,  # Implement your parsing logic here
-                    ),
-                    scalars.CypherLiteral: strawberry.scalar(
-                        name="CypherLiteral",
-                        description="The `CypherLiteral` scalar type represents a raw Cypher query or fragment",
-                        serialize=lambda v: v,  # Implement your serialization logic here
-                        parse_value=lambda v: v,  # Implement your parsing logic here
-                    ),
-                }
-            ),
-        )
-    else:
-        return kante.Schema(
-            query=Query,
-            mutation=Mutation,
-            extensions=extensions,
-        )
+    return kante.Schema(
+        query=Query,
+        mutation=Mutation,
+        extensions=extensions,
+        types=[
+            # Explicitly include all types that are not directly referenced in the Query/Mutation root types
+            # Node Types
+            types.Entity,
+            types.Structure,
+            types.Metric,
+            types.NaturalEvent,
+            types.ProtocolEvent,
+            # Edge Types
+            types.Measurement,
+            types.Description,
+            types.Assertion,
+            types.Relation,
+            types.StructureRelation,
+            # Reachable only through the `Edge` interface — `connections` and
+            # `retractClaims` both return it — so nothing names them
+            # concretely and strawberry would not otherwise register them.
+            # An unregistered type is not a schema-build error: it fails at
+            # *runtime*, as "Abstract type 'Edge' was resolved to a type that
+            # does not exist inside the schema", on the one query that
+            # produces it.
+            types.Classification,
+            types.Sameness,
+            types.InputParticipation,
+            types.OutputParticipation,
+        ],
+        config=StrawberryConfig(
+            scalar_map={
+                scalars.UnixMilliseconds: strawberry.scalar(
+                    name="UnixMilliseconds",
+                    serialize=lambda v: v,  # Implement your serialization logic here
+                    parse_value=lambda v: v,  # Implement your parsing logic here
+                ),
+                scalars.GraphID: strawberry.scalar(
+                    name="GraphID",
+                    serialize=lambda v: v,  # Implement your serialization logic here
+                    parse_value=lambda v: v,  # Implement your parsing logic here
+                ),
+                scalars.StructureObject: strawberry.scalar(
+                    name="StructureObject",
+                    description="The `StructureObject` scalar type represents a structure object (e.g 1) on a specific identifier)",
+                    serialize=lambda v: v,  # Implement your serialization logic here
+                    parse_value=lambda v: v,  # Implement your parsing logic here
+                ),
+                scalars.StructureIdentifier: strawberry.scalar(
+                    name="StructureIdentifier",
+                    description="The `StructureIdentifier` scalar type represents a structure identifier (e.g. '@mikro/roi')",
+                    serialize=lambda v: v,  # Implement your serialization logic here
+                    parse_value=lambda v: v,  # Implement your parsing logic here
+                ),
+                scalars.AnyScalar: strawberry.scalar(
+                    name="AnyScalar",
+                    description="The `AnyScalar` scalar type represents an arbitrary JSON-like value",
+                    serialize=lambda v: v,  # Implement your serialization logic here
+                    parse_value=lambda v: v,  # Implement your parsing logic here
+                ),
+                scalars.CypherLiteral: strawberry.scalar(
+                    name="CypherLiteral",
+                    description="The `CypherLiteral` scalar type represents a raw Cypher query or fragment",
+                    serialize=lambda v: v,  # Implement your serialization logic here
+                    parse_value=lambda v: v,  # Implement your parsing logic here
+                ),
+            }
+        ),
+    )
 
 
 # Schema introspection helpers
@@ -786,10 +756,8 @@ def print_schema() -> None:
     print(get_schema_sdl())
 
 
-# Create the schema with subscription support
 schema = create_schema(
     max_depth=10,
     debug=True,
-    include_subscriptions=True,
     cypher_engine=AgeEngine(),  # You can pass a CypherEngine instance here if needed
 )

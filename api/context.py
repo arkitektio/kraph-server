@@ -2,19 +2,9 @@ from kante.types import Info
 from graph_engine.input_models import ProvenanceContext
 from graph_engine import input_models
 from api.extensions.cypher import cypher_engine
-from graph_engine.controller import GraphController, extract_graph_id as exg, extract_node_id as exn
-from graph_engine.scalars import GraphID, LocalID, GraphName
+from graph_engine.controller import GraphController
+from graph_engine.scalars import GraphName
 from core import models
-
-
-def extract_graph_id(composite_id: GraphID) -> GraphName:
-    """Extract the graph ID (graph name) from a composite ID."""
-    return exg(composite_id)
-
-
-def extract_node_id(composite_id: GraphID) -> LocalID:
-    """Extract the local node ID from a composite ID."""
-    return exn(composite_id)
 
 
 def get_provenance_from_context(info: Info) -> ProvenanceContext:

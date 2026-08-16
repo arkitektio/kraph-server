@@ -18,11 +18,15 @@ meaning different things, only one of them live.
 """
 
 #: Labels the adapters in `graph_engine/retrieved.py` construct for rows that
-#: have no vertex at all — a structure, a metric and an assertion are Postgres
-#: rows, and these are what their in-memory node-shaped form is labelled with.
+#: have no vertex at all — a structure and a metric are Postgres rows, and these
+#: are what their in-memory node-shaped form is labelled with.
+#:
+#: `Assertion` used to be a third. It labelled `RetrievedAssertion`, the adapter
+#: behind the `Activity` GraphQL type, whose two queries matched a vertex nothing
+#: has ever drawn and so always came back empty. An assertion is served as the
+#: Django row now and needs no label.
 Structure = "Structure"
 Metric = "Metric"
-Assertion = "Assertion"
 
 #: Labels `VocabNodeTypeMap` recognises when discriminating a node read out of a
 #: projection. A vertex only carries one of these if somebody happened to name a

@@ -5,9 +5,8 @@ anywhere `PROTECT`s `core.Graph`** — every foreign key into it cascades. So th
 guard on `delete_graph` could never fire, and the call was an unconditional
 destruction wearing a refusal's clothes.
 
-What went with it: every `Category`, `GraphSchema`, `GraphOntology`,
-`GraphSequence`, `Protocol`, every saved query and plot,
-`MaterializedEdge`, and the AGE namespace. The evidence itself survived, because
+What went with it: every `Category`, `GraphSchema`, `GraphOntology`, every saved
+query and plot, and the AGE namespace. The evidence itself survived, because
 it is organization-scoped — the second axiom paying for itself — but the words
 this view declared, what they meant here, and whose claims it counted did not,
 and none of that is versioned anywhere else. `tests/api/test_no_hard_deletes.py`

@@ -7,9 +7,10 @@ in one graph's projection would put it in the wrong place entirely.
 
 What that costs is the composite `{graph}-{vertex_id}` identifier, which cannot
 name a row. These edges are addressed by their `Link` primary key instead, the
-same way structures already are. `graphId` is null for them rather than `0`,
-because every unprojected edge would otherwise report the same id — a collision
-dressed up as an identifier.
+same way structures already are. `graphId` used to sit alongside, reporting null
+for them — it is gone from the `Edge` interface entirely now, because the vertex
+id it reported for the edges that *are* projected is reassigned by every
+reproject.
 
 The measurement tests carry the load-bearing claim: a measurement writes the
 plain INFORMS link alongside its typed one, because `dirty()` matches on
@@ -45,7 +46,7 @@ CREATE_ENTITY = """
 CREATE_STRUCTURE_RELATION = """
     mutation CreateStructureRelation($input: AssertStructureRelationExistsInput!) {
         assertStructureRelationExists(input: $input) {
-            structureRelation { id graphId sourceId targetId source { id object } target { id object } }
+            structureRelation { id sourceId targetId source { id object } target { id object } }
         }
     }
 """
@@ -65,7 +66,7 @@ UPDATE_STRUCTURE_RELATION = """
 CREATE_MEASUREMENT = """
     mutation CreateMeasurement($input: AssertMeasurementExistsInput!) {
         assertMeasurementExists(input: $input) {
-            measurement { id graphId source { id object } target { id } }
+            measurement { id source { id object } target { id } }
         }
     }
 """
@@ -181,7 +182,6 @@ async def test_structure_relation_is_an_evidence_row_with_no_projection(
     assert created.errors is None, f"GraphQL errors: {created.errors}"
     payload = created.data["assertStructureRelationExists"]["structureRelation"]
 
-    assert payload["graphId"] is None, "An unprojected edge has no AGE id, and 0 would collide across every one of them"
     assert payload["sourceId"] == source, "Endpoints are named the way evidence names them"
     assert payload["targetId"] == target
 
@@ -325,7 +325,6 @@ async def test_measurement_rolls_its_metrics_up(
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
     measurement = created.data["assertMeasurementExists"]["measurement"]
-    assert measurement["graphId"] is None, "A measurement has a structure at one end, so it has no projected edge"
 
     # A measurement runs structure → entity, and both ends resolve. `source` and
     # `target` were stubs raising on a non-null field until now.

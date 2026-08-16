@@ -338,16 +338,10 @@ class MeasurementCategoryManager(EdgeCategoryManager["core_models.MeasurementCat
         graph: "core_models.Graph",
         definition: input_models.MeasurementDefinitionInput,
     ) -> "core_models.MeasurementCategory":
-        from graph_engine.materialize import re_materialize_measurement_relation_category
-
-        category = await super().acreate_from_edge_definition(
+        return await super().acreate_from_edge_definition(
             graph=graph,
             definition=definition,
         )
-
-        await sync_to_async(re_materialize_measurement_relation_category)(graph, category)
-
-        return category
 
     def create_from_measurement_definition(
         self,

@@ -102,52 +102,16 @@ def _provenance_claims(request: Any) -> dict[str, Any]:
     }
 
 
-def extract_node_id(composite_id: str | scalars.GraphID) -> scalars.LocalID:
-    """
-    Extract the entity UUID from a composite ID.
-
-    Composite IDs are in the format: {graph_id}-{entity_uuid}
-    This function returns everything after the first hyphen.
-
-    Args:
-        composite_id: The composite ID (e.g., "1-abc123-def456-...")
-
-    Returns:
-        The entity UUID part (e.g., "abc123-def456-...")
-    """
-    if "-" in composite_id:
-        parts = composite_id.split("-", 1)
-        if len(parts) == 2:
-            return scalars.LocalID(int(parts[1]))
-    if ":" in composite_id:
-        parts = composite_id.split(":", 1)
-        if len(parts) == 2:
-            return scalars.LocalID(int(parts[1]))
-    raise ValueError(f"Invalid composite ID format: {composite_id}")
-
-
-def extract_graph_id(composite_id: str | scalars.GraphID) -> scalars.GraphName:
-    """
-    Extract the graph ID from a composite ID.
-
-    Composite IDs are in the format: {graph_id}-{entity_uuid}
-    This function returns everything before the first hyphen.
-
-    Args:
-        composite_id: The composite ID (e.g., "1-abc123-def456-...")
-
-    Returns:
-        The graph ID part (e.g., "1")
-    """
-    if "-" in composite_id:
-        parts = composite_id.split("-", 1)
-        if len(parts) == 2:
-            return scalars.GraphName(parts[0])
-    if ":" in composite_id:
-        parts = composite_id.split(":", 1)
-        if len(parts) == 2:
-            return scalars.GraphName(parts[0])
-    raise ValueError(f"Invalid composite ID format: {composite_id}")
+# `extract_node_id` / `extract_graph_id` used to sit here. They split an id on its
+# first hyphen (or colon) to recover a graph name and an **integer Apache AGE
+# vertex id**, from back when identity was the composite `{graph}:{vertex_id}`.
+#
+# Identity is a bare uuid now, and a uuid contains hyphens — so `extract_graph_id`
+# handed back the uuid's *first segment* as a graph name and never raised. Their
+# last five call sites were the `ids` filter of a Cypher-backed edge listing,
+# where the resulting comparison against `age_name` was always false and the
+# filter quietly answered "no matches" to ids the API had just issued. Those
+# queries read `evidence.Link` now; see `api/queries/_edges.py`.
 
 
 def _extract_props(raw_node: Any) -> Dict[str, Any]:
@@ -159,13 +123,6 @@ def _extract_props(raw_node: Any) -> Dict[str, Any]:
     return {}
 
 
-def _extract_id(raw_node: Any) -> scalars.LocalID:
-    """Extract the internal graph ID from an AGE node representation."""
-    if isinstance(raw_node, dict) and "id" in raw_node:
-        return scalars.LocalID(raw_node["id"])
-    raise ValueError("Unable to extract graph ID from node representation.")
-
-
 class GraphController:
     """Controller for interacting with the graph database."""
 
@@ -175,9 +132,14 @@ class GraphController:
         self.subject = subject
         self.app_id = app_id
 
-    def create_universal_id(self) -> scalars.GlobalID:
-        """Generates a unique reference ID for entities."""
-        return scalars.GlobalID(str(uuid.uuid4()))
+    def create_universal_id(self) -> scalars.GraphID:
+        """Mint a durable identity for a node or an edge — a bare uuid.
+
+        Typed `GraphID` because that is what every id in this API is now. It was
+        `GlobalID`, a scalar whose two GraphQL fields required a vertex property
+        nothing ever wrote.
+        """
+        return scalars.GraphID(str(uuid.uuid4()))
 
     def _create_assertion(self, organization: Any, context: ProvenanceContext) -> evidence_models.Assertion:
         """Record who is making this change, in the relational evidence base.
@@ -226,24 +188,6 @@ class GraphController:
             app_id=str(client.id) if client else "unknown",
             **_provenance_claims(request),
         )
-
-    def _get_scopes_from_info(self, info: Info) -> list[str]:
-        request = info.context.request
-
-        extension_scopes = request._extensions.get("scopes") if hasattr(request, "_extensions") else None
-        if isinstance(extension_scopes, list):
-            return [str(scope) for scope in extension_scopes]
-        if isinstance(extension_scopes, str):
-            return [scope for scope in extension_scopes.split(" ") if scope]
-
-        token = request._extensions.get("token") if hasattr(request, "_extensions") else None
-        token_scopes = getattr(token, "scopes", None)
-        if isinstance(token_scopes, list):
-            return [str(scope) for scope in token_scopes]
-        if isinstance(token_scopes, str):
-            return [scope for scope in token_scopes.split(" ") if scope]
-
-        return []
 
     def _ensure_query_access(self, graph: models.Graph, info: Info | None = None) -> None:
         if info is None:
@@ -587,42 +531,6 @@ class GraphController:
 
         return projector.rematerialize_category(self, category.graph, category, retired_keys=retired_keys)
 
-    def get_entity_by_ref(self, graph: models.Graph, entity_ref: str) -> Optional[RetrievedEntity]:
-        """Read an entity by its durable ref rather than by AGE vertex id."""
-        node_uuid = str(entity_ref)
-        result = self.engine.execute(
-            graph,
-            """
-            MATCH (e) WHERE e.id = $node_uuid
-            RETURN e
-            """,
-            {"node_uuid": node_uuid},
-        )
-        if not result:
-            return None
-        return RetrievedEntity.from_node(self, result[0]["e"], graph_name=graph.age_name)
-
-    def get_structure_by_object(self, organization: Any, identifier: str, object: scalars.StructureObject) -> retrieved.RetrievedStructure:
-        """
-        Retrieve a structure by the external datum it points at.
-
-        Args:
-            organization: The tenant to look within
-            identifier: The structure identifier, e.g. '@mikro/roi'
-            object: The unique object identifier of the structure
-
-        Returns:
-            A RetrievedStructure
-
-        Raises:
-            ValueError: if no structure points at that object
-        """
-        structure = evidence_models.Structure.objects.for_organization(organization).filter(identifier=identifier, object=object).first()
-        if structure is None:
-            raise ValueError(f"No structure found for {identifier}:{object}")
-
-        return RetrievedStructure.from_row(self, structure)
-
     def archive_node(self, node_id: Any, info: Info) -> results.Asserted:
         """Retract a node — an entity or an event — by its uuid.
 
@@ -700,19 +608,6 @@ class GraphController:
     # The remaining stamps (`__schema_version`, `__last_derived`) belong to
     # `projector.project`, which is the writer that derives them.
 
-    def recalculate_entity(self, graph: models.Graph, entity_ref: str) -> int:
-        """Recompute one entity's derived properties from its evidence.
-
-        The M1-M3 gap is closed: this used to raise, because metrics had moved to
-        Postgres and the rollup Cypher matched nothing. It now reads state vectors
-        and writes the results onto the projection.
-
-        Note it takes a durable entity *ref*, not an AGE vertex id. The old
-        signature took `(entity_category, local_id)`, which could not survive a
-        rebuild — vertex ids are reassigned when a graph is replayed.
-        """
-        return self.project_entities(graph, [entity_ref])
-
     def list_entities_informed_by_structure(self, graph: models.Graph, structure_id: str, info: Info | None = None) -> List[RetrievedEntity]:
         """
         Lists all entities that are informed by a given structure.
@@ -755,49 +650,6 @@ class GraphController:
         )
         return [RetrievedEntity.from_node(self, row["e"], graph_name=graph.age_name) for row in result]
 
-    def get_node(self, graph: models.Graph, local_id: scalars.LocalID, info: Info | None = None) -> retrieved.RetrievedNode:
-        """
-        Retrieve a raw node by its string ID.
-
-        This is a low-level method that returns the raw graph data without
-        any schema-based processing or migration. It can be used for debugging
-        or for operations that need direct access to the underlying graph.
-
-        Args:
-            graph: The graph to query
-            local_id: The internal graph ID of the node to retrieve
-        """
-        self._ensure_query_access(graph, info)
-
-        query = """
-            MATCH (n) WHERE id(n) = $id
-            RETURN n, labels(n) as lbls
-        """
-        result = self.engine.execute(graph, query, {"id": local_id})
-
-        if not result:
-            raise ValueError(f"Node not found with ID {local_id}")
-
-        raw_node = result[0]["n"]
-
-        return RetrievedNode.from_node(self, raw_node, graph_name=graph.age_name)
-
-    def get_node_by_local_id(self, graph: models.Graph, local_id: scalars.LocalID, info: Info | None = None) -> retrieved.RetrievedNode:
-        """Retrieve a raw node by its internal AGE graph ID."""
-        self._ensure_query_access(graph, info)
-
-        query = """
-            MATCH (n) WHERE id(n) = $nid
-            RETURN n
-        """
-        result = self.engine.execute(graph, query, {"nid": local_id})
-
-        if not result:
-            raise ValueError(f"Node not found with local ID {local_id}")
-
-        raw_node = result[0]["n"]
-        return RetrievedNode.from_node(self, raw_node, graph_name=graph.age_name)
-
     def get_node_for_composite_id(self, composite_id: scalars.GraphID, info: Info | None = None) -> retrieved.RetrievedNode:
         """Retrieve a node by its uuid.
 
@@ -813,119 +665,52 @@ class GraphController:
         """
         return self.projected_node(self._resolve_node(composite_id, info))
 
-    def get_entity(
-        self,
-        entity_category: models.EntityCategory,
-        id: str,
-    ) -> retrieved.RetrievedEntity:
-        """
-        Retrieves an Entity by ID.
-        Dynamically detects the 'kind' from the Node Labels and returns
-        a RetrievedEntity with the raw graph data.
-
-        Args:
-            id: The entity's unique string ID
-            entity_category: The entity category (used to access the graph and schema)
-
-        Returns:
-            RetrievedEntity with the node's data
-        """
-        graph = entity_category.graph
-
-        # 1. Fetch Node AND its Labels
-        # We search strictly by the unique 'id' property.
-        query = """
-            MATCH (n) WHERE n.id = $id
-            RETURN n, labels(n) as lbls
-        """
-        result = self.engine.execute(graph, query, {"id": id})
-
-        if not result:
-            raise ValueError(f"Entity not found with ID {id}")
-
-        # Parse Result
-        # AGE returns: {'n': {'id': <graph_id>, 'label': '...', 'properties': {...}}, 'lbls': [...]}
-        raw_node = result[0]["n"]
-        labels = result[0]["lbls"]
-
-        # Extract properties - AGE wraps them in a 'properties' key
-        if isinstance(raw_node, dict) and "properties" in raw_node:
-            node_props = raw_node["properties"]
-        else:
-            node_props = raw_node
-
-        # 2. Detect Kind from Labels
-        # We look for a label that exists in our graph's entity categories
-        detected_kind = None
-
-        # Priority: Check entity categories defined in this graph
-        entity_categories = {ec.age_name for ec in graph.entity_categories.all()}
-
-        for label in labels:
-            if label in entity_categories:
-                detected_kind = label
-                break
-
-        if not detected_kind:
-            # Fallback: Just return what we have
-            detected_kind = labels[0] if labels else "Unknown"
-
-        normalized_node = {
-            "id": raw_node.get("id", 0),
-            "label": detected_kind,
-            "properties": node_props,
-        }
-        return RetrievedEntity.from_node(self, normalized_node, graph_name=graph.age_name)
-
     def get_structure(
         self,
-        graph: models.Graph,
+        organization: Any,
         identifier: str,
         object: str,
         info: Info | None = None,
     ) -> retrieved.RetrievedStructure:
-        """
-        Retrieves a Structure by identifier and object.
+        """The structure for one external datum, by `(identifier, object)`.
 
-        Args:
-            graph: The graph to query
-            identifier: Schema identifier (e.g. '@mikro/roi')
-            object: Object ID of the structure
+        Takes the **organization**, not a graph. A structure is idempotent by
+        `(organization, identifier, object)` and has no vertex in any projection,
+        so a graph argument selected nothing — it only narrowed *authorization* to
+        one view of a row that belongs to the tenant. Its sibling
+        `list_structures` was de-graphed for the same reason, with the note that
+        "listing them does not need a kind any more than it needs a graph".
         """
-        self._ensure_query_access(graph, info)
+        self._assert_can_access(organization, info)
 
-        structure = evidence_models.Structure.objects.for_organization(graph.organization).filter(identifier=identifier, object=object).first()
+        structure = evidence_models.Structure.objects.for_organization(organization).filter(identifier=identifier, object=object).first()
         if structure is None:
             raise ValueError(f"Structure not found with identifier {identifier} and object {object}")
 
-        return retrieved.RetrievedStructure.from_row(self, structure, graph_name=graph.age_name)
+        return retrieved.RetrievedStructure.from_row(self, structure)
 
     def get_informing_structures(
         self,
-        graph: models.Graph,
-        entity_id: str,
+        node: evidence_models.Node,
         info: Info | None = None,
     ) -> List[retrieved.RetrievedStructure]:
-        """
-        Gets all structures that INFORM a given entity.
+        """Every structure that is evidence for a node.
 
-        Args:
-            graph: The graph to query
-            entity_id: The entity's composite graph ID
+        Takes the **node**, not a graph. INFORMS is organization-grain — ingest
+        names no projection — so which view you happened to ask through never
+        changed the answer, and the caller had to pick one to satisfy the
+        signature. It used `_graph_for_node`, which returns an arbitrary declarer,
+        so a node drawn by three views was answered "through" whichever had the
+        lowest category id.
         """
-        self._ensure_query_access(graph, info)
+        organization = node.organization
+        self._assert_can_access(organization, info)
 
-        organization = graph.organization
-        # Resolved to the durable ref first. Filtering on the composite id
-        # verbatim compared a vertex-id string against refs stored in the uuid
-        # dialect, so this matched nothing for every entity in the system and
-        # returned an empty list rather than an error.
-        entity_ref = self._node_ref(entity_id, info)
         structure_ids = (
             claims_module.standing(
                 evidence_models.Link.objects.for_organization(organization).filter(
                     kind=evidence_models.Link.Kind.INFORMS,
-                    target_ref=entity_ref,
+                    target_ref=node.ref,
                 ),
                 "link",
             )
@@ -933,68 +718,7 @@ class GraphController:
         )
 
         structures = evidence_models.Structure.objects.for_organization(organization).filter(pk__in=list(structure_ids))
-        return [retrieved.RetrievedStructure.from_row(self, row, graph_name=graph.age_name) for row in structures]
-
-    def get_entities_informed_by(
-        self,
-        graph: models.Graph,
-        identifier: str,
-        structure_object: str,
-        info: Info | None = None,
-    ) -> List[retrieved.RetrievedEntity]:
-        """
-        Gets all entities that are informed by a given structure.
-        """
-        self._ensure_query_access(graph, info)
-
-        structure = evidence_models.Structure.objects.for_organization(graph.organization).filter(identifier=identifier, object=structure_object).first()
-        if structure is None:
-            return []
-
-        return self.list_entities_informed_by_structure(graph, str(structure.pk), info=info)
-
-    def get_metrics_for_structure(
-        self,
-        graph: models.Graph,
-        identifier: str,
-        structure_object: str,
-        info: Info | None = None,
-    ) -> List[RetrievedMetric]:
-        """
-        Gets all measurements that describe a given structure.
-
-        Args:
-            graph: The graph to query
-            identifier: Schema identifier (e.g. '@mikro/roi')
-            structure_object: Object ID of the structure
-        """
-        self._ensure_query_access(graph, info)
-
-        organization = graph.organization
-        structure = evidence_models.Structure.objects.for_organization(organization).filter(identifier=identifier, object=structure_object).first()
-        if structure is None:
-            return []
-
-        metrics = writer.active_metrics_for_structures(organization, [structure.pk])
-        return [RetrievedMetric.from_row(self, row, graph_name=graph.age_name) for row in metrics]
-
-    def get_metrics_for_assertion(
-        self,
-        graph: models.Graph,
-        assertion_id: str,
-        info: Info | None = None,
-    ) -> List[RetrievedMetric]:
-        """
-        Gets all measurements asserted by a given assertion.
-
-        Args:
-            graph: The graph to query
-            assertion_id: The evidence primary key of the assertion
-        """
-        self._ensure_query_access(graph, info)
-
-        metrics = evidence_models.Metric.objects.for_organization(graph.organization).filter(assertion_id=assertion_id)
-        return [RetrievedMetric.from_row(self, row, graph_name=graph.age_name) for row in metrics]
+        return [retrieved.RetrievedStructure.from_row(self, row) for row in structures]
 
     def create_structure(
         self,
@@ -2014,35 +1738,6 @@ class GraphController:
         self._assert_same_organization(node.organization, organization, f"Node '{node_id}'")
         return node
 
-    def _graph_for_node(self, node: evidence_models.Node) -> models.Graph:
-        """A graph that projects this node.
-
-        Resolved through the node's *term*: a view shows the node when it
-        declares a category for the word the node was claimed under. More than
-        one may, now that a claim names organization vocabulary — this returns an
-        arbitrary one, so it answers "which graph, roughly" and nothing sharper.
-
-        No organization filter is needed: `_term_for` mints every term against
-        `graph.organization`, so a category and its term are always in the same
-        tenant by construction.
-
-        **Do not use it to read a node back.** A graph that declares the word may
-        still refuse the node — a `definition` can — so the graph this returns is
-        not necessarily one the node is drawn in. `projected_node` asks the views
-        in turn; `projector.graphs_for_refs` reaches all of them.
-        """
-        category = models.Category.objects.filter(term_id=node.term_id).select_related("graph").first()
-        if category is None or category.graph is None:
-            raise ValueError(f"No graph declares a category for '{node.term_id}', so node '{node.pk}' is in no view")
-        return category.graph
-
-    def _graph_for_ref(self, organization: Any, ref: str) -> models.Graph:
-        """A graph a node ref belongs to."""
-        node = evidence_models.Node.objects.for_organization(organization).filter(pk=str(ref)).first()
-        if node is None:
-            raise ValueError(f"No node '{ref}' in this organization")
-        return self._graph_for_node(node)
-
     def _graphs_for_endpoints(self, organization: Any, *refs: str) -> list[models.Graph]:
         """Every view that draws either end of an edge.
 
@@ -2301,6 +1996,20 @@ class GraphController:
             queryset = queryset.filter(graph=graph)
         return queryset.order_by("pk").first()
 
+    def retrieved_edge(self, link: evidence_models.Link, category: models.Category | None = None) -> RetrievedEdge:
+        """One claim, in the edge-shaped form the API reads.
+
+        The read counterpart of the `RetrievedEdge.from_link(...)` call the write
+        paths make, and the same shape: `row_id` is set, so `unique_id` is the
+        claim's primary key and the id round-trips through the singular fetcher.
+        The list queries used to build their own `RetrievedEdge` with no `row_id`
+        and hand out `{age_name}:{vertex_id}` instead.
+
+        ``category`` is passed when the caller already holds one — a category-keyed
+        list has it in hand and would otherwise pay `_category_for_term` per row.
+        """
+        return RetrievedEdge.from_link(self, link, category=category if category is not None else self._category_for_term(link.term_id))
+
     def _node_ref(self, node_id: Any, info: Info | None = None, organization: Any = None) -> str:
         """Check a client-supplied node id and hand back the ref evidence stores.
 
@@ -2333,8 +2042,9 @@ class GraphController:
 
         Names a term, so the edge is drawn in **every** view declaring the word —
         not only the one whose category the caller happened to hold. Endpoint
-        category pairs are not checked here and never were; `MaterializedRelationEdge`
-        is a schema-level expansion for the read surface, not a write-time guard.
+        category pairs are not checked here and never were; the
+        `MaterializedRelationEdge` cross-product that might have looked like a
+        guard was a read surface, and is gone (RFC 0001 §6).
         """
         source_ref = self._node_ref(payload.source_id, info, organization=organization)
         target_ref = self._node_ref(payload.target_id, info, organization=organization)
@@ -2632,20 +2342,6 @@ class GraphController:
             return None
         self._assert_can_access(link.organization, info)
         return RetrievedEdge.from_link(self, link, category=self._category_for_term(link.term_id))
-
-    def get_relation_by_ref(self, graph: models.Graph, link: evidence_models.Link) -> RetrievedEdge:
-        """The projected view of one link, as *this* graph holds it.
-
-        Carries the AGE edge id where the proposition has a projection, so a
-        caller that wants to traverse from the result can, while identity stays
-        on the evidence row.
-
-        See :meth:`drawn_edge` for the variant that answers whether there is a
-        projection at all; this one always returns an edge, with `id` left at its
-        default when there is none.
-        """
-        drawn = self.drawn_edge(graph, link)
-        return drawn if drawn is not None else RetrievedEdge.from_link(self, link, graph_name=graph.age_name, category=None)
 
     def drawn_edge(self, graph: models.Graph, link: evidence_models.Link) -> Optional[RetrievedEdge]:
         """This link as the graph actually draws it, or `None` if it does not.

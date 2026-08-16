@@ -112,6 +112,21 @@ The load-bearing facts:
   **and** the words their definitions derive from. Since writes name terms, the second one is the
   only thing deciding where a write lands, so a write path that fans out over graphs goes through
   `projector.graphs_for_refs` and never `_graph_for_ref`, which returns an arbitrary declarer.
+  The derived half of that rule — the words a `definition.asserted_as` names, which is a string
+  inside JSON and so un-joinable — is normalized into `core.CategoryAssertedTerm`, maintained by a
+  signal in `versioning.connect()` that deliberately does **not** share `is_suspended()`
+  (`materialize` runs suspended, and that is when the index matters most). It stores the **key**,
+  not a `Term` FK: a definition routinely names a word nobody has minted yet. Rebuild and verify
+  with `manage.py rebuild_asserted_terms [--check]`.
+- **Every observation mints its own instance, and sameness is a claim.** "This is an AIS" writes a
+  *fresh* `Node`; "this is AIS 6" additionally writes `Link.Kind.SAME_AS`, under the **same**
+  assertion, because it is one act. `evidence/identity.py` folds those claims into components
+  (`NodeIdentity`, organization grain, lowest uuid as representative, only merged nodes get a row).
+  Retraction cannot un-union, so it flags and `recompute` rebuilds; `manage.py rebuild_identity
+  --check` is the backstop. Everything the panel reports — `evidence/panel.py`, surfaced as
+  `Entity.labels/sameAs/connections/component` and `Structure.metrics/informs` — is unioned over the
+  **component**, never over one node. The projection still draws one vertex per `Node`; see
+  `docs/LOG.md`.
 - **`State` is organization grain**, and nothing folds under a selector — `merge`, `recompute` and
   `refold_state` all count every live metric. Which of them a *view* counts is applied on read in
   `projector._scoped_state`. The three used to disagree, so ingest and replay produced different

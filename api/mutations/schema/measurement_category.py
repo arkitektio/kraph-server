@@ -29,8 +29,6 @@ def create_measurement_category(
         definition=model,
     )
 
-    materialize.re_materialize_measurement_relation_category(graph, ent)
-
     return cast(types.MeasurementCategory, ent)
 
 
@@ -61,8 +59,6 @@ def update_measurement_category(info: Info, input: inputs.UpdateMeasurementDefin
 
     item.save()
 
-    materialize.re_materialize_measurement_relation_category(item.graph, item)
-
     return item
 
 
@@ -73,5 +69,4 @@ def delete_measurement_category(
     model = input.to_pydantic()
     item = scoped(info, models.MeasurementCategory, model.id, what="measurement category")
     delete_or_explain(item, what=f"measurement category '{item.key}'", instead="Archive the measurements asserted under it first.")
-    materialize.re_materialize_measurement_relation_category(item.graph, item)
     return model.id

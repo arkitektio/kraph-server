@@ -72,26 +72,6 @@ class CategoryOrder:
     id: auto
 
 
-@strawberry_django.order_type(models.MaterializedEdge)
-class MaterializedEdgeOrder:
-    id: auto
-
-
-@strawberry_django.order_type(models.MaterializedEdge)
-class MaterializedStructureRelationEdgeOrder:
-    id: auto
-
-
-@strawberry_django.order_type(models.MaterializedEdge)
-class MaterializedMeasurementEdgeOrder:
-    id: auto
-
-
-@strawberry_django.order_type(models.MaterializedEdge)
-class MaterializedRelationEdgeOrder:
-    id: auto
-
-
 @strawberry_django.order_type(models.Category)
 class NodeCategoryOrder(CategoryOrder):
     instance_kind: auto

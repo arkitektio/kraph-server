@@ -17,15 +17,6 @@ from typing import Annotated
 from strawberry.scalars import JSON
 
 
-@pydantic.input(model=input_models.SetEntityPropertyInput, description="Input for ensuring an entity exists with a given global ID")
-class SetEntityPropertyInput:
-    """Input for a set of properties to associate with an entity or structure."""
-
-    entity_id: scalars.GraphID = strawberry.field(description="The composite ID of the entity to set the property on")
-    key: str = strawberry.field(description="The property key/label")
-    value: JSON = strawberry.field(description="The property value")
-
-
 @pydantic.input(model=input_models.CategoryNodePositionInput, all_fields=True, description="Input for specifying the position of a node in the graph visualization")
 class CategoryNodePositionInput:
     """Input for specifying the position of a node in the graph visualization. This can be used to set or update the x and y coordinates of a node for layout purposes."""
@@ -40,14 +31,6 @@ class UpdateGraphVisualInput:
     pass
 
 
-@pydantic.input(model=input_models.PropertySet, description="Input for ensuring an entity exists with a given global ID")
-class PropertySet:
-    """Input for a set of properties to associate with an entity or structure."""
-
-    key: str = strawberry.field(description="The property key/label")
-    value: JSON = strawberry.field(description="The property value")
-
-
 @pydantic.input(model=input_models.MetricInput, description="One measured value about a structure")
 class MetricInput:
     key: str = strawberry.field(description="The key/name of the metric")
@@ -60,29 +43,6 @@ class MetricInput:
     confidence: Optional[float] = strawberry.field(default=None, description="How confident the source is in this measurement, 0-1")
     confidence_type: Optional[str] = strawberry.field(default=None, description="What kind of confidence this is (e.g. a model score)")
     timestamp: Optional[int] = strawberry.field(default=None, description="When the measurement was observed, unix epoch milliseconds")
-
-
-@pydantic.input(model=input_models.PlateChildInput, description="Input for requesting media upload credentials")
-class PlateChildInput:
-    """Input for requesting media upload credentials"""
-
-    id: str
-    type: str | None = None
-    text: str | None = None
-    value: str | None = None
-    color: str | None = None
-    font_size: str | None = None
-    background_color: str | None = None
-    bold: bool | None = None
-    italic: bool | None = None
-    underline: bool | None = None
-    children: List[Annotated["PlateChildInput", strawberry.lazy(".")]] | None
-    pass
-
-
-# ==========================================
-# SCHEMA DEFINITION INPUT TYPES (List-based)
-# ==========================================
 
 
 @pydantic.input(model=input_models.DerivationRuleInput, all_fields=True, description="Configuration for property derivation rules")
@@ -194,11 +154,6 @@ class EntityDescriptorInput:
 
 @pydantic.input(model=input_models.EventRoleInput, all_fields=True, description="One declared role on an event category")
 class EventRoleInput:
-    pass
-
-
-@pydantic.input(model=input_models.SequenceMappingInput, all_fields=True, description="How a category draws its index from a sequence")
-class SequenceMappingInput:
     pass
 
 
@@ -482,13 +437,6 @@ class RetractNaturalEventInput:
     pass
 
 
-@pydantic.input(model=input_models.DeleteNaturalEventInput, all_fields=True, description="Input for deleting an existing natural event instance")
-class DeleteNaturalEventInput:
-    """Input for deleting an existing natural event instance."""
-
-    pass
-
-
 @pydantic.input(model=input_models.AssertProtocolEventExistsInput, all_fields=True, description="Input for creating a new protocol event instance")
 class AssertProtocolEventExistsInput:
     """Input for creating a new protocol event instance."""
@@ -499,13 +447,6 @@ class AssertProtocolEventExistsInput:
 @pydantic.input(model=input_models.RetractProtocolEventInput, all_fields=True, description="Input for archiving (soft deleting) an existing protocol event instance")
 class RetractProtocolEventInput:
     """Input for archiving (soft deleting) an existing protocol event instance."""
-
-    pass
-
-
-@pydantic.input(model=input_models.DeleteProtocolEventInput, all_fields=True, description="Input for deleting an existing protocol event instance")
-class DeleteProtocolEventInput:
-    """Input for deleting an existing protocol event instance."""
 
     pass
 
@@ -527,13 +468,6 @@ class UpdateScatterPlotInput:
 @pydantic.input(model=input_models.DeleteScatterPlotInput, all_fields=True, description="Input for deleting a scatter plot")
 class DeleteScatterPlotInput:
     """Input for deleting a scatter plot."""
-
-    pass
-
-
-@pydantic.input(model=input_models.ArchiveScatterPlotInput, all_fields=True, description="Input for archiving a scatter plot")
-class ArchiveScatterPlotInput:
-    """Input for archiving a scatter plot."""
 
     pass
 
@@ -571,13 +505,6 @@ class SupersedeMetricValueInput(MetricInput):
     pass
 
 
-@pydantic.input(model=input_models.DeleteMetricInput, all_fields=True, description="Input for deleting an existing metric")
-class DeleteMetricInput:
-    """Input for deleting an existing metric."""
-
-    pass
-
-
 @pydantic.input(model=input_models.RetractMetricInput, all_fields=True, description="Input for archiving an existing metric")
 class RetractMetricInput:
     """Input for archiving an existing metric."""
@@ -606,15 +533,6 @@ class UpdateStructureInput:
     pass
 
 
-@pydantic.input(model=input_models.DeleteStructureInput, description="Input for deleting an existing structure")
-class DeleteStructureInput:
-    """Input for deleting an existing structure."""
-
-    id: scalars.GraphID = strawberry.field(description="The composite ID of the structure to delete")
-
-    pass
-
-
 @pydantic.input(model=input_models.RetractStructureInput, description="Input for deleting an existing structure")
 class RetractStructureInput:
     """Input for deleting an existing structure."""
@@ -627,15 +545,6 @@ class RetractStructureInput:
 @pydantic.input(model=input_models.AssertRelationExistsInput, all_fields=True, description="Input for creating a new relation between two entities with supporting evidence")
 class AssertRelationExistsInput:
     """Input for creating a new relation."""
-
-    pass
-
-
-@pydantic.input(model=input_models.DeleteRelationInput, description="Input for deleting an existing relation")
-class DeleteRelationInput:
-    """Input for deleting an existing relation."""
-
-    id: scalars.GraphID = strawberry.field(description="The ID of the relation to delete")
 
     pass
 
@@ -670,13 +579,6 @@ class UpdateStructureRelationInput:
     pass
 
 
-@pydantic.input(model=input_models.DeleteStructureRelationInput, all_fields=True, description="Input for deleting an existing structure relation")
-class DeleteStructureRelationInput:
-    """Input for deleting an existing structure relation."""
-
-    pass
-
-
 @pydantic.input(model=input_models.RetractStructureRelationInput, all_fields=True, description="Input for archiving an existing structure relation")
 class RetractStructureRelationInput:
     """Input for archiving an existing structure relation."""
@@ -691,20 +593,6 @@ class AssertMeasurementExistsInput:
     pass
 
 
-@pydantic.input(model=input_models.UpdateMeasurementInput, all_fields=True, description="Input for updating an existing measurement edge")
-class UpdateMeasurementInput:
-    """Input for updating an existing measurement edge."""
-
-    pass
-
-
-@pydantic.input(model=input_models.DeleteMeasurementInput, all_fields=True, description="Input for deleting an existing measurement edge")
-class DeleteMeasurementInput:
-    """Input for deleting an existing measurement edge."""
-
-    pass
-
-
 @pydantic.input(model=input_models.RetractMeasurementInput, all_fields=True, description="Input for archiving an existing measurement edge")
 class RetractMeasurementInput:
     """Input for archiving an existing measurement edge."""
@@ -715,13 +603,6 @@ class RetractMeasurementInput:
 @pydantic.input(model=input_models.AssertEntityExistsInput, all_fields=True, description="Input for creating a new entity")
 class AssertEntityExistsInput:
     pass
-
-
-@pydantic.input(model=input_models.DeleteEntityInput, description="Input for deleting an existing entity")
-class DeleteEntityInput:
-    """Input for deleting an existing entity."""
-
-    id: scalars.GraphID = strawberry.field(description="The ID of the entity to delete")
 
 
 @pydantic.input(model=input_models.AssertSameEntityInput, all_fields=True, description="Input for claiming that several recorded instances are one thing")
@@ -877,11 +758,6 @@ class PaginationInput:
 
     offset: Optional[int] = strawberry.field(default=0, description="Number of items to skip")
     limit: Optional[int] = strawberry.field(default=100, description="Maximum number of items to return")
-
-
-@pydantic.input(model=input_models.SequenceInput, all_fields=True, description="A sequence a graph can draw category indices from")
-class SequenceInput:
-    pass
 
 
 @pydantic.input(model=input_models.GraphTableQueryInput, all_fields=True, description="A saved table query over a graph")
@@ -1157,11 +1033,6 @@ class DeleteGraphInput:
 
 @pydantic.input(model=input_models.ArchiveGraphInput, all_fields=True, description="Input for archiving a graph")
 class ArchiveGraphInput:
-    pass
-
-
-@pydantic.input(model=input_models.PinGraphInput, all_fields=True, description="Input for pinning a graph")
-class PinGraphInput:
     pass
 
 

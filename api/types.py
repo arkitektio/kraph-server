@@ -18,7 +18,7 @@ from typing import Any, Generic, Optional, List, Type, TypeVar, Union, cast
 from datetime import datetime
 from api import loaders, order, pagination, filters
 from datalayer.types import MediaStore
-from graph_engine.scalars import AnyScalar, UnixMilliseconds, StructureIdentifier, GlobalID
+from graph_engine.scalars import AnyScalar, UnixMilliseconds, StructureIdentifier
 from graph_engine.retrieved import RetrievedMetric, RetrievedNode, RetrievedEdge, RetrievedStructure, _as_datetime
 from api.context import get_controller
 from graph_engine import input_models
@@ -163,60 +163,31 @@ class EventRole:
     """Definition of a role in an event category."""
 
 
-@kante.django_type(models.MaterializedEdge, filters=filters.MaterializedEdgeFilter, ordering=order.MaterializedEdgeOrder, pagination=True, description="A materialized edge representing a relationship in the graph")
-class MaterializedEdge:
-    """A materialized edge representing a relationship in the graph."""
+def _event_roles(stored: Any) -> List[EventRole]:
+    """Read declared event roles out of the JSON column that holds them.
 
-    id: strawberry.ID = strawberry.field(description="Database ID of the edge")
-    # A measurement or structure-relation edge starts at a `StructureKind`, not a
-    # category, so on those rows these are null. The concrete types below say exactly
-    # what each kind connects.
-    source: Optional["NodeCategory"] = kante.django_field(field_name="source_category", description="The source category, for edges that start at one")
-    target: Optional["NodeCategory"] = kante.django_field(field_name="target_category", description="The target category, for edges that end at one")
-    edge: "EdgeCategory" = kante.django_field(field_name="edge_category", description="The edge category this edge was derived from")
-    graph: "Graph"
-
-
-@kind_type(models.MaterializedEdge, enums.MaterializedEdgeKindChoices.STRUCTURE_RELATION, filters=filters.MaterializedStructureRelationEdgeFilter, ordering=order.MaterializedStructureRelationEdgeOrder, pagination=True, description="A materialized edge representing a relationship in the graph")
-class MaterializedStructureRelationEdge:
-    """A materialized edge representing a relationship in the graph."""
-
-    id: strawberry.ID = strawberry.field(description="Database ID of the edge")
-    source: "StructureKind" = kante.django_field(field_name="source_structure_kind", description="The source structure kind")
-    target: "StructureKind" = kante.django_field(field_name="target_structure_kind", description="The target structure kind")
-    edge: "StructureRelationCategory" = kante.django_field(field_name="edge_category", description="The structure relation category this edge was derived from")
-    graph: "Graph"
-
-
-@kind_type(models.MaterializedEdge, enums.MaterializedEdgeKindChoices.MEASUREMENT, filters=filters.MaterializedMeasurementEdgeFilter, ordering=order.MaterializedMeasurementEdgeOrder, pagination=True, description="A materialized edge representing a relationship in the graph")
-class MaterializedMeasurementEdge:
-    """A materialized edge representing a relationship in the graph."""
-
-    id: strawberry.ID = strawberry.field(description="Database ID of the edge")
-    source: "StructureKind" = kante.django_field(field_name="source_structure_kind", description="The source structure kind")
-    target: "EntityCategory" = kante.django_field(field_name="target_category", description="The target entity category")
-    edge: "MeasurementCategory" = kante.django_field(field_name="edge_category", description="The measurement category this edge was derived from")
-    graph: "Graph"
-
-
-@kind_type(models.MaterializedEdge, enums.MaterializedEdgeKindChoices.RELATION, filters=filters.MaterializedRelationEdgeFilter, ordering=order.MaterializedRelationEdgeOrder, pagination=True, description="A materialized edge representing a relationship in the graph")
-class MaterializedRelationEdge:
-    """A materialized edge representing a relationship in the graph."""
-
-    id: strawberry.ID = strawberry.field(description="Database ID of the edge")
-    source: "EntityCategory" = kante.django_field(field_name="source_category", description="The source entity category")
-    target: "EntityCategory" = kante.django_field(field_name="target_category", description="The target entity category")
-    # This said `StructureRelationCategory`, but the model has always pointed at a
-    # `RelationCategory` here.
-    edge: "RelationCategory" = kante.django_field(field_name="edge_category", description="The relation category this edge was derived from")
-    graph: "Graph"
+    `source_entity_roles` / `target_entity_roles` are hand-written JSON on the
+    category, so a row predating a field, or written by an older client, may be
+    missing keys `EventRoleInput` requires. Skipping a malformed entry is better
+    than failing the whole query: the point of the field is to report what the
+    schema declares, and one bad role should not hide the good ones.
+    """
+    roles: List[EventRole] = []
+    for entry in stored or []:
+        try:
+            roles.append(EventRole.from_pydantic(input_models.EventRoleInput(**entry)))
+        except Exception:  # noqa: BLE001 - see docstring
+            continue
+    return roles
 
 
 @kante.django_type(models.Graph, filters=filters.GraphFilter, pagination=True, ordering=order.GraphOrder, description="One view over the organization's evidence log")
 class Graph:
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
     age_name: str = strawberry.field(description="The name of the graph as used in AGE (e.g. 'CellGraph')")
-    graph_id: strawberry.ID = strawberry.field(description="ID of the graph this category belongs to")
+    # No `graphId`. It was copy-pasted from `Category`, and a `Graph` has no
+    # `graph` foreign key to back it — the field named a column that does not
+    # exist. A graph cannot belong to a graph.
     label: str = strawberry.field(description="Label/name of the category")
     description: Optional[str] = strawberry.field(default=None, description="Description of the category")
     purl: Optional[str] = strawberry.field(default=None, description="Persistent URL for this category")
@@ -227,10 +198,6 @@ class Graph:
     # `archiveGraph` managed to do nothing for as long as it did.
     is_archived: bool = strawberry.field(description="Whether this graph has been archived. Archiving is the reversible alternative to deleting it — a delete destroys every rule for reading the evidence, which survives without them")
 
-    # edges
-    materialized_edges: List["MaterializedEdge"] = strawberry.field(default_factory=list, description="List of materialized edges in the graph")
-    materialized_relation_edges: List["MaterializedRelationEdge"] = strawberry.field(default_factory=list, description="List of materialized relation edges in the graph")
-    materialized_structure_relation_edges: List["MaterializedStructureRelationEdge"] = strawberry.field(default_factory=list, description="List of materialized structure relation edges in the graph")
     # Schemas
     node_categories: List["NodeCategory"] = strawberry.field(default_factory=list, description="List of node categories/schemas defined in this graph")
     edge_categories: List["EdgeCategory"] = strawberry.field(default_factory=list, description="List of edge categories/schemas defined in this graph")
@@ -290,13 +257,11 @@ class EdgeCategory:
     color: Optional[List[int]] = strawberry.field(default=None, description="Color as RGBA list (0-255)")
     relevant_edge_queries: List["EdgeQuery"] = strawberry.field(default_factory=list, description="List of relevant queries that use this category as input")
 
-    @kante.django_field(description="The graph this category belongs to")
-    def materializable_as(self) -> List[MaterializedEdge]:
-        """Return a list of materialized edges that can be derived for this edge category."""
-        # In a real implementation, we would check if this edge category is used in any GraphPairsQuery,
-        # and if so, return the corresponding materialized edges from the graph.
-        # For this example, we'll return an empty list for simplicity.
-        return []
+    # `materializableAs` used to sit here, returning `[]` unconditionally under a
+    # comment admitting it. The `MaterializedEdge` rows it would have read are
+    # gone — see RFC 0001 §6 — and the question it named ("which category pairs may
+    # this edge category connect?") is answered by evaluating `source_definition` /
+    # `target_definition`, which is what `get_matching_source_entities` already does.
 
 
 @kind_interface(models.Category, enums.NODE_CATEGORY_KINDS, description="Base interface for graph schemas")
@@ -362,10 +327,9 @@ class GraphPairsQuery(GraphQuery):
     source_category: "NodeCategory" = kante.django_field(field_name="left_category", description="The source node category/schema to query")
     target_category: "NodeCategory" = kante.django_field(field_name="right_category", description="The target node category/schema to query")
 
-    @kante.django_field(description="Optional edge category/schema to filter pairs by")
-    def edge_category(self) -> Optional["EdgeCategory"]:
-        """Pairs queries have never stored an edge category; the field has no column."""
-        return None
+    # `edgeCategory` used to sit here returning `None` unconditionally, with a
+    # docstring conceding that pairs queries have never stored one and the field
+    # has no column behind it.
 
 
 @kind_type(models.GraphQuery, enums.GraphQueryKindChoices.PATH, filters=filters.GraphPathQueryFilter, pagination=True, ordering=order.GraphPathQueryOrder, description="Base interface for graph schemas")
@@ -485,19 +449,22 @@ class EventCategory(NodeCategory, Category):
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
     property_definitions: List[PropertyDefinition] = strawberry.field(default_factory=list, description="List of property definitions for this entity category")
 
-    @kante.django_field(description="The graph this category belongs to")
+    @kante.django_field(description="The roles an entity can play going into an event of this category")
     def inputs(self) -> List[EventRole]:
-        """Return the list of roles defined for this event category."""
-        # In a real implementation, we would query the database for the roles associated with this event category.
-        # For this example, we'll return an empty list for simplicity.
-        return []
+        """The declared input roles.
 
-    @kante.django_field(description="The graph this category belongs to")
+        Read off `source_entity_roles`, the column that has held them all along.
+        This returned `[]` unconditionally — while `materialize()` writes the
+        column and `versioning.snapshot_definition` reads it back to rebuild the
+        schema definition, so the data was there and only this field could not see
+        it.
+        """
+        return _event_roles(cast(models.Category, self).source_entity_roles)
+
+    @kante.django_field(description="The roles an entity can play coming out of an event of this category")
     def outputs(self) -> List[EventRole]:
-        """Return the list of roles defined for this event category."""
-        # In a real implementation, we would query the database for the roles associated with this event category.
-        # For this example, we'll return an empty list for simplicity.
-        return []
+        """The declared output roles — see :meth:`inputs`."""
+        return _event_roles(cast(models.Category, self).target_entity_roles)
 
     pass
 
@@ -701,9 +668,9 @@ class RichProperty:
     _key: strawberry.Private[str]
     _category: strawberry.Private["models.NodeCategory | models.EdgeCategory"]
 
-    @strawberry.field(description="Local AGE graph ID")
-    def graph_id(self) -> scalars.GraphID:
-        return self._entity.graph_id
+    # `graphId` used to sit here and meant two different things: `RetrievedNode`
+    # returned the node's uuid, `RetrievedEdge` returned an int that was `0` for
+    # every row-backed edge. One field name, two answers, neither a graph id.
 
     @strawberry.field(description="The schema definition this property was derived under")
     async def definition(self) -> Optional[PropertyDefinition]:
@@ -889,53 +856,40 @@ class Node(Generic[V]):
     def __hash__(self):
         return hash(self._value)
 
-    @strawberry.field(description="Local AGE graph ID, or null for evidence rows that are not projected into a graph")
-    def graph_id(self) -> Optional[int]:
-        """The AGE vertex id.
-
-        Null for structures, metrics and assertions: they live in the relational
-        evidence base, not in any graph, so there is no vertex id to report.
-        Returning 0 would have been a lie that sorts and compares.
-        """
-        return None if self._value.is_row_backed else self._value.id
-
-    @kante.django_field(description="The graph this node belongs to, or null for organization-scoped evidence")
-    def graph(self) -> Optional[Graph]:
-        """Fetch the graph this node belongs to.
-
-        Evidence is organization-scoped and shared across every projection over
-        that organization, so asking which graph a structure belongs to has no
-        single answer. Null is the honest one.
-        """
-        if self._value.is_row_backed or not self._value.graph_name:
-            return None
-        return cast(Graph, models.Graph.objects.get_graph_from_graph_name(self._value.graph_name))
-
-    @strawberry.field(description="Global identifier in format 'graph_name:graph_id'")
-    def global_id(self) -> GlobalID:
-        return self._value.global_id
+    # Five fields used to sit here and all five were about the **vertex** rather
+    # than the thing:
+    #
+    # - `graphId` was the Apache AGE vertex id, which is reassigned by every
+    #   reproject — an identifier that stops meaning anything after the one
+    #   operation this layer exists to support.
+    # - `graph` asked which graph a node belongs to. A node may be drawn by
+    #   several, and which one you read it through is not a property of it.
+    #   `Entity.drawnIn` answers the honest form: every view that draws it, and
+    #   under which category.
+    # - `globalId` **raised** for every node read out of a projection.
+    #   `RetrievedNode.global_id` requires a `global_id` vertex property and
+    #   `projector.create_vertex` writes exactly `{id, category_id}`, so nothing
+    #   ever set one. Only the row-backed branch worked, which is why the one test
+    #   covering the field — asking a structure — stayed green.
+    # - `localId` returned "0" for every row-backed node and a reassigned vertex
+    #   id otherwise.
+    # - `pinned` was hardcoded `False`; `pinNode` was removed, so nothing could
+    #   set it.
+    #
+    # `id` is the identity, and it is a bare uuid.
 
     @strawberry.field(description="The AGE graph label as recently materialized (e.g. 'Cell IAC100', 'ROI 1')")
     def label(self) -> str:
         """Should return the most specific label for this node (e.g. 'Cell' instead of 'Entity') Composed by its propetries"""
         return self._value.label
 
-    @strawberry.field(description="Composite ID for node lookup")
+    @strawberry.field(description="This node's durable identity — a bare uuid, world-unique and stable across reprojects")
     def id(self) -> str:
         return self._value.unique_id
 
     @strawberry.field(description="External ID if set")
     def external_id(self) -> Optional[str]:
         return self._value.external_id
-
-    @strawberry.field(description="Local ID if set")
-    def local_id(self) -> Optional[str]:
-        return self._value.local_id
-
-    @strawberry.field(description="Whether this node is pinned in the UI. Always false — `pinNode` was removed, so nothing can set it")
-    def pinned(self) -> bool:
-        """ """
-        return False
 
     @classmethod
     def to_subtype(cls, value: RetrievedNode) -> "Node":
@@ -1047,29 +1001,51 @@ class Entity(VersionedNode, Node[RetrievedNode]):
         """
         return self._value.cleaned_properties
 
-    @kante.django_field(description="The source entity of this relation")
-    def measured_by(self) -> List["Measurement"]:
-        """Return the structures that provide evidence for this relation."""
-        # In a real implementation, we would fetch the linked structures
-        # from the graph and return them as Structure types.
-        # For this example, we'll return an empty list.
-        return []
+    # =======================================
+    # What is known about this thing
+    #
+    # Every field below is asked about the whole **component**, not about this
+    # one node. Every observation mints its own instance — "this is an AIS"
+    # writes a fresh node rather than reusing one — so what is known about a
+    # thing is spread across the instances somebody has claimed are one. Asking
+    # about the bare node would show one observation's half of the story and call
+    # it the answer. See `evidence/identity.py`.
+    #
+    # All four share one batched read (`loaders.known_about_node`), so selecting
+    # every section on a page of entities costs a constant number of queries
+    # rather than four per entity.
+    # =======================================
 
-    @kante.django_field(description="The source entity of this relation")
-    def participated_in(self) -> List["InputParticipation"]:
-        """Return the structures that provide evidence for this relation."""
-        # In a real implementation, we would fetch the linked structures
-        # from the graph and return them as Structure types.
-        # For this example, we'll return an empty list.
-        return []
+    @strawberry.field(description="Every instance claimed to be this same thing, this one included. A component of one means nobody has merged it")
+    async def component(self) -> List[strawberry.ID]:
+        known = await loaders.known_about_node_loader.load(self._value.unique_id)
+        return [cast(strawberry.ID, ref) for ref in known.component]
 
-    @kante.django_field(description="The source entity of this relation")
-    def resulted_out(self) -> List["OutputParticipation"]:
-        """Return the structures that provide evidence for this relation."""
-        # In a real implementation, we would fetch the linked structures
-        # from the graph and return them as Structure types.
-        # For this example, we'll return an empty list.
-        return []
+    @strawberry.field(description="What anyone has called this thing, with how many assertions say so. Two words means two people disagreed; one word with a count of two means they agreed")
+    async def labels(self) -> List["Label"]:
+        known = await loaders.known_about_node_loader.load(self._value.unique_id)
+        return [Label(_value=label) for label in known.labels]
+
+    @strawberry.field(description="The standing claims that this instance and another are one thing, with who said so. Exposed so a merge is visible and contestable rather than silent")
+    async def same_as(self) -> List["Sameness"]:
+        known = await loaders.known_about_node_loader.load(self._value.unique_id)
+        return [Sameness(_value=RetrievedEdge.from_link(get_controller(), link)) for link in known.sameness]
+
+    @strawberry.field(description="Every standing claim connecting this thing to something else — relations, participations and the structures that inform it. Needs no graph query: they are all evidence rows, and the drawing of them is a projection")
+    async def connections(self) -> List["Edge"]:
+        known = await loaders.known_about_node_loader.load(self._value.unique_id)
+        return [cast(Edge, cast_edge_to_graphql_type(RetrievedEdge.from_link(get_controller(), link))) for link in known.connections]
+
+    @kante.django_field(description="Every view that actually draws this thing, and the category it draws it under. Read back from each projection, so a graph that declares the word but whose definition refuses the node is not listed")
+    async def drawn_in(self, info: kante.Info) -> List["NodeDrawing"]:
+        drawings = await _drawings_for_ref(self._value.unique_id, info)
+        return [NodeDrawing(_value=drawing) for drawing in drawings]
+
+    # `measuredBy`, `participatedIn` and `resultedOut` used to sit here, each
+    # returning `[]` under a comment saying a real implementation would do
+    # otherwise. They are the pre-evidence-table spelling of a question
+    # `connections` above now answers from the log — and over the whole component
+    # rather than one instance.
 
 
 # ===========================================
@@ -1101,10 +1077,42 @@ class Structure(Node[RetrievedStructure]):
         """The structure kind, resolved through the per-operation loader."""
         return await loaders.structure_kind_loader.load(self._value.category_id)
 
-    @kante.django_field(description="The graph this node belongs to")
+    @kante.django_field(description="Every un-retracted measurement of this structure, in observation order")
     async def metrics(self) -> List["Metric"]:
-        """Fetch the graph this node belongs to."""
-        return []
+        """What has been measured here.
+
+        Hardcoded `return []` until now, while `metricsForStructure(structureId:)`
+        answered the same question at the top level — so the field existed, was
+        selectable, and silently said there were no measurements.
+
+        Batched: a page of structures is one query, not one per structure. The
+        loader has to group rather than index by key, because a structure has many
+        metrics — see `loaders._batch_grouped_by`.
+        """
+        rows = await loaders.metrics_by_structure_loader.load(self._value.unique_id)
+        controller = get_controller()
+        return [Metric(_value=RetrievedMetric.from_row(controller, row)) for row in rows]
+
+    @kante.django_field(description="The nodes this structure is evidence for. Where its labels, merges and connections live — a structure is a pointer to an external datum and is never itself claimed to be an AIS")
+    async def informs(self) -> List["Entity"]:
+        """The entities this structure informs.
+
+        The hop the panel takes to reach everything else. Structures are never
+        "the same" as one another — a structure is idempotent by
+        `(identifier, object)`, so two of them are either one row or two different
+        data — which is why identity, labels and connections all live on the
+        entity and are reached from here.
+
+        Batched, and that is load-bearing beyond this field: a DataLoader
+        dispatches once per event-loop tick, so resolving this per structure would
+        stagger every `Entity` below it into a batch of one.
+
+        Structure → informed node already existed three times over
+        (`controller.py`, `selector.py`, `projector.py`) and was exposed nowhere.
+        """
+        controller = get_controller()
+        rows = await loaders.informed_nodes_by_structure_loader.load(self._value.unique_id)
+        return [Entity(_value=retrieved.RetrievedNode.from_row(controller, node)) for node in rows]
 
 
 # ===========================================
@@ -1129,21 +1137,11 @@ class NaturalEvent(VersionedNode, Event):
     def category_id(self) -> Optional[str]:
         return self._value.category_id
 
-    @strawberry.field(description="List of the current derived properties for this event")
-    def measured_from(self) -> datetime:
-        """Return the structures that provide evidence for this event."""
-        # In a real implementation, we would fetch the linked structures
-        # from the graph and return them as Structure types.
-        # For this example, we'll return an empty list.
-        return self._value.cleaned_properties
-
-    @kante.django_field(description="The source entity of this relation")
-    def measured_to(self) -> datetime:
-        """Return the structures that provide evidence for this event."""
-        # In a real implementation, we would fetch the linked structures
-        # from the graph and return them as Structure types.
-        # For this example, we'll return an empty list.
-        return self._value.cleaned_properties
+    # `measuredFrom` and `measuredTo` used to sit here. Both were annotated
+    # `-> datetime` and returned `cleaned_properties`, a **dict** — so selecting
+    # either failed serialization rather than returning a wrong value. An event
+    # node carries no observation window; the metrics informing it do, and those
+    # are reachable through `richProperties { contributingAssertions }`.
 
     @kante.django_field(description="How the view this was read through draws it, if any view does")
     def category(self) -> Optional[NaturalEventCategory]:
@@ -1230,6 +1228,20 @@ class Metric(Node[RetrievedMetric]):
         """
         return await loaders.metric_kind_loader.load(self._value.category_id)
 
+    @kante.django_field(description="Who measured this, and when they claimed it")
+    async def assertion(self) -> Optional["Assertion"]:
+        """The act that recorded this measurement.
+
+        Unanswerable until now: `RetrievedMetric.from_row` kept the value, the
+        key and both timestamps and dropped the row, so a metric could say *when*
+        it was claimed but never by whom — with provenance being half of what the
+        evidence model is for.
+        """
+        assertion_id = self._value.properties.get("__assertion_id")
+        if assertion_id is None:
+            return None
+        return cast(Optional["Assertion"], await loaders.assertion_by_id_loader.load(assertion_id))
+
 
 # ===========================================
 # REAGENT TYPE
@@ -1257,21 +1269,11 @@ class ProtocolEvent(VersionedNode, Event):
     def category_id(self) -> Optional[str]:
         return self._value.category_id
 
-    @strawberry.field(description="List of the current derived properties for this event")
-    def measured_from(self) -> datetime:
-        """Return the structures that provide evidence for this event."""
-        # In a real implementation, we would fetch the linked structures
-        # from the graph and return them as Structure types.
-        # For this example, we'll return an empty list.
-        return self._value.cleaned_properties
-
-    @kante.django_field(description="The source entity of this relation")
-    def measured_to(self) -> datetime:
-        """Return the structures that provide evidence for this event."""
-        # In a real implementation, we would fetch the linked structures
-        # from the graph and return them as Structure types.
-        # For this example, we'll return an empty list.
-        return self._value.cleaned_properties
+    # `measuredFrom` and `measuredTo` used to sit here. Both were annotated
+    # `-> datetime` and returned `cleaned_properties`, a **dict** — so selecting
+    # either failed serialization rather than returning a wrong value. An event
+    # node carries no observation window; the metrics informing it do, and those
+    # are reachable through `richProperties { contributingAssertions }`.
 
     @kante.django_field(description="How the view this was read through draws it, if any view does")
     def category(self) -> Optional[ProtocolEventCategory]:
@@ -1322,21 +1324,13 @@ class Edge(Generic[V]):
     def __hash__(self):
         return hash(self._value)
 
-    @strawberry.field(description="Local AGE graph ID, or null for edges that have no projection")
-    def graph_id(self) -> Optional[int]:
-        # Null rather than 0 for an edge read from evidence. Structure relations
-        # and measurements are never projected, so every one of them would report
-        # the same id — a collision dressed up as an identifier. Use `id`, which
-        # is the claim's own primary key.
-        if self._value.is_row_backed:
-            return None
-        return self._value.id
+    # `graphId` and `globalId` used to sit here, and both named the drawing rather
+    # than the claim. `graphId` was the Apache AGE edge id, reassigned by every
+    # reproject; `globalId` was `{graph_name}:{age_edge_id}` for anything built
+    # from Cypher, which is an id the singular fetchers could not accept. `id` is
+    # the `Link` primary key and round-trips.
 
-    @strawberry.field(description="Global identifier in format 'graph_name:graph_id'")
-    def global_id(self) -> GlobalID:
-        return self._value.global_id
-
-    @strawberry.field(description="Composite ID for edge lookup")
+    @strawberry.field(description="This claim's durable identity — the `Link` primary key, a bare uuid")
     def id(self) -> str:
         return self._value.unique_id
 
@@ -1344,13 +1338,26 @@ class Edge(Generic[V]):
     def label(self) -> str:
         return self._value.label
 
-    @strawberry.field(description="Global ID of the source/left node")
+    @strawberry.field(description="The source endpoint, as evidence names it — a bare uuid")
     def source_id(self) -> str:
         return self._value.unique_left_id
 
-    @strawberry.field(description="Global ID of the target/right node")
+    @strawberry.field(description="The target endpoint, as evidence names it — a bare uuid")
     def target_id(self) -> str:
         return self._value.unique_right_id
+
+    @kante.django_field(description="Who claimed this, and when. Null for an edge read out of a projection, which carries no provenance")
+    async def assertion(self) -> Optional["Assertion"]:
+        """The act that recorded this claim.
+
+        Null rather than absent for an edge built from Apache AGE: the drawing is
+        a projection of the claim and does not carry who made it, so the honest
+        answer there is "not from here" rather than an invented one. Every edge
+        built from a `Link` row has it.
+        """
+        if self._value.assertion_id is None:
+            return None
+        return cast(Optional["Assertion"], await loaders.assertion_by_id_loader.load(self._value.assertion_id))
 
     @classmethod
     def to_subtype(cls, value: RetrievedEdge) -> "Edge":
@@ -1363,38 +1370,17 @@ class Edge(Generic[V]):
         return cls(_value=subtype)
 
 
-@strawberry.type(description="An activity representing provenance information")
-class Activity(Node):
-    """
-    An activity records who performed what provenance action and when.
-    It links to the graph artifacts it generated or asserted.
-    """
-
-    _value: strawberry.Private[RetrievedNode]
-
-    @strawberry.field(description="User/subject who performed the activity")
-    def subject(self) -> Optional[str]:
-        return self._value.subject
-
-    @strawberry.field(description="Application that performed the activity")
-    def app_id(self) -> Optional[str]:
-        return self._value.app_id
-
-    @strawberry.field(description="Action identifier")
-    def action_id(self) -> Optional[str]:
-        return self._value.action_id
-
-    @strawberry.field(description="Human-readable action name")
-    def action_name(self) -> Optional[str]:
-        return self._value.action_name
-
-    @strawberry.field(description="Action arguments as JSON")
-    def action_args(self) -> Optional[AnyScalar]:
-        return self._value.action_args
-
-    @strawberry.field(description="When this activity was created")
-    def created_at(self) -> Optional[datetime]:
-        return self._value.created_at
+# `Activity` used to be here, with `activity(id:)` and `activities(graph:)`.
+# Both matched `n:Activity` or `n.type = 'ACTIVITY'`, and `projector.create_vertex`
+# labels a vertex with its *category's* `age_name` and writes exactly
+# `{id, category_id}` — so neither the label nor the property has ever been
+# written. `activity(id:)` therefore always raised "is not an activity", and
+# `activities(graph:)` always returned empty: the same guaranteed-empty shape the
+# `assertion`/`assertions` queries were deleted for.
+#
+# Provenance is an `Assertion` row and is reachable as such: every write payload
+# carries one, `Edge.assertion` and `Metric.assertion` resolve one, and
+# `richProperties { contributingAssertions }` lists them.
 
 
 # ===========================================
@@ -1622,6 +1608,45 @@ class Sameness(Edge):
         return Entity(_value=await _endpoint_node(self._value.target_ref, info))
 
 
+@kante.type(description="A CLASSIFIES claim: somebody's word for what a node is")
+class Classification(Edge):
+    """"This node is an AIS", as a claim rather than a column.
+
+    It had no type of its own, and `cast_edge_to_graphql_type` reported one as a
+    `Relation` — the same fails-green defect participations had, where a shape
+    the dispatch did not recognise came back wearing a plausible type instead of
+    failing. `retractClaims` can retract a classification, so the case was
+    reachable and `tests/api/test_batch_claims.py` already documented the answer
+    as wrong.
+
+    The target is a **term**, not a node: a classification runs node → word. That
+    is what makes it readable by every view declaring the same word, and it is
+    why this type has `term` rather than the `target` its siblings carry.
+    """
+
+    pass
+
+    @kante.django_field(description="The node this word was claimed about")
+    async def source(self, info: kante.Info) -> Node:
+        """Whatever was classified.
+
+        The interface rather than `Entity`: events are classified too, and a
+        narrower annotation would fail to resolve for every one of them — the
+        mistake `OutputParticipation.source` records having already made.
+        """
+        return cast(Node, cast_node_to_graphql_type(await _endpoint_node(self._value.source_ref, info)))
+
+    @kante.django_field(description="The organization's word that was claimed")
+    async def term(self) -> Optional["Term"]:
+        """The word itself.
+
+        Nullable because the claim names a term by id and a term can, in
+        principle, have been removed by a redaction; a claim whose word is gone is
+        history rather than an error.
+        """
+        return cast(Optional["Term"], await loaders.term_by_id_loader.load(self._value.target_ref))
+
+
 @kante.type(description="A claim that an entity went into an event")
 class InputParticipation(Edge):
     pass
@@ -1682,14 +1707,14 @@ class OutputParticipation(Edge):
 # none was constructed anywhere: `VocabNodeTypeMap` has no entry mapping to
 # "REAGENT", and `evidence/models.py` records that `Link` "Replaces the
 # `ShadowLink` vertex".
-NodeSubtype = Union[Entity, Structure, NaturalEvent, Metric, ProtocolEvent, Activity]
+NodeSubtype = Union[Entity, Structure, NaturalEvent, Metric, ProtocolEvent]
 
 # Union type for all edge subtypes
 # `Assertion` is deliberately absent: it is the evidence row now, not an AGE edge.
 # `ReifiesAsSource`/`ReifiesAsTarget` used to be here. `RetrievedEdge.from_link`
 # sets `type` from `Link.Kind`, whose seven values map onto the seven cases in
 # `cast_edge_to_graphql_type` — neither reifies branch was reachable.
-EdgeSubtype = Union[Relation, StructureRelation, Description, Measurement, InputParticipation, OutputParticipation, Sameness]
+EdgeSubtype = Union[Relation, StructureRelation, Description, Measurement, InputParticipation, OutputParticipation, Sameness, Classification]
 
 
 def cast_node_to_graphql_type(node: RetrievedNode) -> NodeSubtype:
@@ -1718,10 +1743,10 @@ def cast_node_to_graphql_type(node: RetrievedNode) -> NodeSubtype:
             return Metric(_value=node)
         case "PROTOCOL_EVENT":
             return ProtocolEvent(_value=node)
-        case "ASSERTION":
-            return Activity(_value=node)
-        case "ACTIVITY":
-            return Activity(_value=node)
+        # No `ASSERTION` / `ACTIVITY` branch. Both mapped to `Activity`, a type
+        # for a vertex the projector has never written — `VocabNodeTypeMap` only
+        # reaches them through `vocab.Assertion`, a label `vocab.py` records as one
+        # the reader looks for and the writer never produces.
         case None:
             # Default based on label if type property not set
             label = node.label.upper()
@@ -1767,11 +1792,7 @@ def cast_edge_to_graphql_type(edge: RetrievedEdge) -> EdgeSubtype:
         case "INFORMS":
             return Description(_value=edge)
         case "CLASSIFIES":
-            # No GraphQL type for a classification claim yet. `retractClaims` can
-            # retract one, so this is reachable; reporting it as a `Relation` is
-            # the least wrong of the available types and is recorded here rather
-            # than left to the label heuristic below to arrive at silently.
-            return Relation(_value=edge)
+            return Classification(_value=edge)
         case None:
             # Default based on label if type property not set
             label = edge.label.upper()
@@ -1820,6 +1841,62 @@ def _endpoint_node(ref: Optional[str], info: kante.Info) -> RetrievedNode:
         raise ValueError(f"No node for endpoint '{ref}'")
     controller._assert_can_access(node.organization, info)
     return retrieved.RetrievedNode.from_row(controller, node)
+
+
+@strawberry.type(description="A word somebody has called this thing, and how much agreement there is")
+class Label:
+    """One folded classification claim over a thing's whole component.
+
+    Two annotators claiming **different** words give two of these — the conflict
+    represented rather than resolved. Two claiming the **same** word give one with
+    `assertionCount == 2` — the agreement counted, which is the same distinction
+    `__assertionCount` draws on a projected edge.
+
+    Not a `Classification`, deliberately: that is one claim, and this is what
+    several of them add up to. A client wanting the individual claims with their
+    provenance asks the node's `connections` or the log.
+    """
+
+    _value: strawberry.Private[Any]
+
+    @strawberry.field(description="Which instance in the component was called this. Every observation mints its own, so a component's labels may name different ones")
+    def node_id(self) -> strawberry.ID:
+        return cast(strawberry.ID, self._value.node_ref)
+
+    @kante.django_field(description="The organization's word that was claimed")
+    async def term(self) -> Optional["Term"]:
+        return cast(Optional["Term"], await loaders.term_by_id_loader.load(str(self._value.term_id)))
+
+    @strawberry.field(description="How many separate assertions say this. Concurrence, not repetition — the log records a claim that restates a position already held precisely so this is countable")
+    def assertion_count(self) -> int:
+        return self._value.assertion_count
+
+    @kante.django_field(description="The most recent act that claimed this word. Ordered by the log's `seq`, which cannot tie")
+    async def latest_assertion(self) -> Optional["Assertion"]:
+        if self._value.latest_assertion_id is None:
+            return None
+        return cast(Optional["Assertion"], await loaders.assertion_by_id_loader.load(str(self._value.latest_assertion_id)))
+
+
+@sync_to_async
+def _drawings_for_ref(ref: str, info: kante.Info) -> List[results.NodeDrawing]:
+    """Every view that actually draws this node, read back from the projections.
+
+    **Read back, not approximated.** `projector.graphs_for_refs` answers which
+    graphs declare a word admitting this node — a superset, because a graph whose
+    category carries a `definition` can still refuse it. `drawings_for_node` asks
+    each candidate view for the vertex and reports only the ones that answer,
+    which is what "drawn in" means. Shipping the cheap answer would over-report
+    exactly the case defined categories exist for.
+    """
+    from evidence import models as evidence_models
+
+    controller = get_controller()
+    node = evidence_models.Node.all_objects.filter(pk=str(ref)).first()
+    if node is None:
+        return []
+    controller._assert_can_access(node.organization, info)
+    return list(controller.drawings_for_node(node))
 
 
 @sync_to_async

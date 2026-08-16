@@ -81,14 +81,15 @@ NodeType = Literal[
     "EDIT_EVENT",
 ]
 
+# `vocab.Assertion` and `"Activity"` used to map here. Both named vertices the
+# projector has never written, and the `Activity` type they discriminated to is
+# gone.
 VocabNodeTypeMap: Dict[str, NodeType] = {
     vocab.Entity: "ENTITY",
     vocab.Structure: "STRUCTURE",
     vocab.NaturalEvent: "NATURAL_EVENT",
     vocab.Metric: "METRIC",
     vocab.ProtocolEvent: "PROTOCOL_EVENT",
-    vocab.Assertion: "ASSERTION",
-    "Activity": "ACTIVITY",
 }
 
 
@@ -173,16 +174,20 @@ class RetrievedNode:
         that a node belongs to one view, when a view is only a reconstruction —
         and one vertex may stand for several nodes once merging exists.
 
-        The fallback to the vertex id survives for the handful of shapes that are
-        read straight out of Cypher without an `id` property, so that they still
-        produce *something* addressable rather than raising.
+        There is no composite fallback any more. It used to return
+        `{graph_name}:{vertex_id}` for a shape read straight out of Cypher without
+        an `id` property, on the grounds that *something* addressable beats
+        raising — but an id that cannot be handed back to the fetcher that issued
+        it is not addressable, it only looks it. `create_vertex` writes `id` on
+        every vertex it draws, so a node without one did not come from this
+        projector and has no identity to invent.
         """
         if self.row_id is not None:
             return self.row_id
         node_uuid = self.properties.get("id")
-        if node_uuid is not None:
-            return str(node_uuid)
-        return f"{self.graph_name}:{self.id}"
+        if node_uuid is None:
+            raise ValueError(f"Node {self.label!r} in graph {self.graph_name!r} carries no 'id' property, so it has no durable identity. Every vertex `projector.create_vertex` draws has one.")
+        return str(node_uuid)
 
     # `lifecycle` and `lifecycle_status` are gone, and there is nothing left to
     # replace them with — which is the point.
@@ -200,31 +205,12 @@ class RetrievedNode:
     # disagree about whether a thing exists, and each graph's selector decides
     # whose word it counts, so a single "lifecycle" was never expressible.
 
-    @property
-    def global_id(self) -> str:
-        """A globally unique identifier for this node.
-
-        For an evidence row the primary key already *is* globally unique, so
-        there is nothing to look up. Only projected AGE nodes carry a separate
-        `global_id` property.
-        """
-        if self.row_id is not None:
-            return scalars.GlobalID(self.row_id)
-
-        if not self.properties.get("global_id"):
-            raise ValueError("Node is missing 'global_id' property")
-
-        return scalars.GlobalID(self.properties["global_id"])
-
-    @property
-    def local_id(self) -> scalars.LocalID:
-        """Local AGE graph ID."""
-        return scalars.LocalID(self.id)
-
-    @property
-    def graph_id(self) -> scalars.GraphID:
-        """Alias for local_id - the AGE graph ID."""
-        return scalars.GraphID(self.unique_id)
+    # `global_id`, `local_id` and `graph_id` are gone, with the GraphQL fields that
+    # read them. `global_id` required a `global_id` vertex property that **nothing
+    # ever wrote** — `create_vertex` writes `{id, category_id}` — so it raised for
+    # every node read out of a projection and worked only on the row-backed
+    # branch. `local_id` and `graph_id` returned the Apache AGE vertex id, which
+    # is reassigned by every reproject. `unique_id` is the identity.
 
     @classmethod
     def from_row(cls: Type[T], controller: "GraphController", row: Any, graph_name: str = "") -> T:
@@ -449,6 +435,12 @@ class RetrievedEdge:
     #: `RetrievedEdge` had no such attribute, which went unnoticed because
     #: nothing ever built one of those types.
     role: Optional[str] = None
+    #: Who claimed this, as an id rather than a row. An edge read out of Apache
+    #: AGE has no assertion at all — the projection does not carry provenance —
+    #: so this is None there and the API reports null. An id and not the object
+    #: because resolving it eagerly would be a query per edge on every listing,
+    #: and a synchronous one inside an async resolver; `api/loaders.py` batches it.
+    assertion_id: Optional[str] = None
 
     # === Core ID Properties ===
 
@@ -461,13 +453,19 @@ class RetrievedEdge:
     def unique_id(self) -> str:
         """Global unique identifier.
 
-        The bare `Link` primary key for an edge read from evidence, which is
-        where an edge's identity actually lives — the AGE edge is a projection of
-        the claim and its id does not survive a `reproject`.
+        The bare `Link` primary key — where an edge's identity actually lives. The
+        Apache AGE edge is a projection of the claim and its id does not survive a
+        `reproject`.
+
+        Every edge the API builds is row-backed now: the plural queries read
+        `evidence.Link` (`api/queries/_edges.py`) rather than Cypher, so the
+        `{graph_name}:{age_edge_id}` fallback that used to live here has no
+        remaining producer — and it was the reason the ids those queries returned
+        could not be fed back to the singular fetchers.
         """
-        if self.row_id is not None:
-            return self.row_id
-        return f"{self.graph_name}:{self.id}"
+        if self.row_id is None:
+            raise ValueError(f"Edge {self.label!r} in graph {self.graph_name!r} has no claim behind it, so it has no identity. Edges are read from `evidence.Link`; see `api/queries/_edges.py`.")
+        return self.row_id
 
     @classmethod
     def from_link(
@@ -497,6 +495,7 @@ class RetrievedEdge:
             target_ref=str(link.target_ref),
             created_at=link.created_at,
             role=link.role,
+            assertion_id=str(link.assertion_id),
             properties={
                 # What kind of claim this is, from the row rather than from the
                 # label. The label is the *category's* `age_name`, and for a
@@ -522,43 +521,28 @@ class RetrievedEdge:
             },
         )
 
-    @property
-    def global_id(self) -> str:
-        """Alias for unique_id."""
-        return self.unique_id
-
-    @property
-    def graph_id(self) -> int:
-        """Alias for id - the AGE graph ID."""
-        return self.id
-
-    @property
-    def global_left_id(self) -> str:
-        """Global ID of source node.
-
-        The evidence ref when there is one. A vertex-id-shaped answer for an edge
-        that has no projection would name a vertex that does not exist.
-        """
-        if self.source_ref is not None:
-            return self.source_ref
-        return f"{self.graph_name}:{self.left_id}"
-
-    @property
-    def global_right_id(self) -> str:
-        """Global ID of target node. See :attr:`global_left_id`."""
-        if self.target_ref is not None:
-            return self.target_ref
-        return f"{self.graph_name}:{self.right_id}"
+    # `global_id` and `graph_id` are gone with the GraphQL fields that read them:
+    # one aliased `unique_id`, the other returned the Apache AGE edge id, which is
+    # reassigned by every reproject.
 
     @property
     def unique_left_id(self) -> str:
-        """Alias for global_left_id."""
-        return self.global_left_id
+        """The source endpoint, as evidence names it — a bare uuid.
+
+        No `{graph_name}:{vertex_id}` fallback. It fired for every edge built from
+        Cypher, naming a vertex id that a reproject reassigns; nothing builds an
+        edge that way now.
+        """
+        if self.source_ref is None:
+            raise ValueError("This edge has no recorded source endpoint")
+        return self.source_ref
 
     @property
     def unique_right_id(self) -> str:
-        """Alias for global_right_id."""
-        return self.global_right_id
+        """The target endpoint, as evidence names it. See :attr:`unique_left_id`."""
+        if self.target_ref is None:
+            raise ValueError("This edge has no recorded target endpoint")
+        return self.target_ref
 
     # === Type Discrimination ===
 
@@ -850,6 +834,12 @@ class RetrievedMetric(RetrievedNode):
             "category_id": str(row.kind_id),
             "__measured_at": row.measured_at,
             "__asserted_at": row.asserted_at,
+            # Who measured this. The row was dropped here entirely, so a metric
+            # could report *when* it was claimed and never *by whom* — and the
+            # assertion is the whole provenance half of the evidence model. An id
+            # rather than the row, for the reason `RetrievedEdge.assertion_id`
+            # gives: eager resolution is a query per metric on every listing.
+            "__assertion_id": str(row.assertion_id),
         }
         for optional_key in ("unit", "confidence", "confidence_type"):
             value = getattr(row, optional_key, None)
@@ -866,91 +856,12 @@ class RetrievedMetric(RetrievedNode):
         )
 
 
-@dataclass
-class RetrievedActivity(RetrievedNode):
-    """A retrieved Activity node from the AGE graph."""
-
-    # === Activity Properties (formerly Assertion) ===
-
-    @property
-    def subject(self) -> Optional[str]:
-        """User/subject who performed the activity."""
-        return self.properties.get("subject")
-
-    @property
-    def app_id(self) -> Optional[str]:
-        """Application that performed the activity."""
-        return self.properties.get("app_id")
-
-    @property
-    def action_id(self) -> Optional[str]:
-        """The action ID in Arkitekt/Kabinet."""
-        return self.properties.get("action_id")
-
-    @property
-    def action_name(self) -> Optional[str]:
-        """Human-readable action name."""
-        return self.properties.get("action_name")
-
-    @property
-    def action_args(self) -> Optional[Dict[str, Any]]:
-        """Action arguments as JSON/dict."""
-        val = self.properties.get("action_args")
-        if val is None:
-            return None
-        return val if isinstance(val, dict) else None
-
-
-@dataclass
-class RetrievedAssertion(RetrievedActivity):
-    """Backward-compatible alias for activity provenance nodes."""
-
-    # === Assertion Properties (when node_type == 'ASSERTION') ===
-
-    @property
-    def subject(self) -> Optional[str]:
-        """User/subject who made the assertion."""
-        return self.properties.get("subject")
-
-    @property
-    def app_id(self) -> Optional[str]:
-        """Application that made the assertion."""
-        return self.properties.get("app_id")
-
-    @property
-    def action_id(self) -> Optional[str]:
-        """Action identifier."""
-        return self.properties.get("action_id")
-
-    @property
-    def action_name(self) -> Optional[str]:
-        """Human-readable action name."""
-        return self.properties.get("action_name")
-
-    @property
-    def action_args(self) -> Optional[Any]:
-        """Action arguments as JSON."""
-        return self.properties.get("action_args")
-
-    @classmethod
-    def from_row(cls, controller: "GraphController", row: Any, graph_name: str = "") -> "RetrievedAssertion":
-        """Adapt an `evidence.models.Assertion` row to the node-shaped API surface."""
-        return cls(
-            controller=controller,
-            graph_name=graph_name,
-            id=0,
-            label=vocab.Assertion,
-            row_id=str(row.pk),
-            properties={
-                "subject": row.subject,
-                "app_id": row.app_id,
-                "action_name": row.action_name,
-                "action_args": row.action_args,
-                "__asserted_at": row.asserted_at,
-                # Kept for the GraphQL `timestamp` surface, which still speaks ms epoch.
-                "timestamp": int(row.asserted_at.timestamp() * 1000),
-            },
-        )
+# `RetrievedActivity` and `RetrievedAssertion` used to be here. They adapted an
+# `Assertion` row into the node-shaped surface for the `Activity` GraphQL type,
+# which read a vertex the projector has never written — so the type and its two
+# queries always came back empty. `Assertion` is served as the Django row now
+# (`api/types.py`), which is what makes `seq`, the log's total order, reachable
+# at all.
 
 
 # ==========================================

@@ -849,6 +849,17 @@ class ClaimCurrent(models.Model):
             # The access path every "does this stand" narrowing takes: the
             # retracted subset of one target type, which is the small side.
             models.Index(fields=["organization", "target_type", "stands"]),
+            # The same subset, without the organization — because
+            # :func:`evidence.claims.standing` does not have one. It takes a
+            # queryset and a target type, so its anti-join filters on
+            # `(target_type, stands)` and could not use the index above at all:
+            # `organization` is its leading column, and skipping a leading column
+            # means a scan. Adding the tenant to `standing()`'s signature would
+            # mean threading it through twenty-seven call sites on every hot read
+            # path; an index matching the query that is actually issued is the
+            # smaller and more honest fix. `target_id` rides along so the
+            # subquery is answered from the index without touching the heap.
+            models.Index(fields=["target_type", "stands", "target_id"], name="claimcurrent_retracted_idx"),
         ]
 
     def __str__(self) -> str:

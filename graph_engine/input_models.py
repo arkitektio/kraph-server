@@ -228,25 +228,6 @@ class DerivationRule(StrictModel):
 # =======================
 # TEXT MODELS
 # =======================
-class PlateChildInput(StrictModel):
-    id: str
-    type: str | None = None
-    text: str | None = None
-    children: list["PlateChildInput"] | None = None
-    value: str | None = None
-    color: str | None = None
-    font_size: str | None = None
-    background_color: str | None = None
-    bold: bool | None = None
-    italic: bool | None = None
-    underline: bool | None = None
-
-
-# ==========================================
-# FILTER MODELS FOR NON MODELS
-# ==========================================
-
-
 class RenderGraphNodesFilter(StrictModel):
     key: str
     operator: str
@@ -846,15 +827,7 @@ class PropertyDefinitionInput(StrictModel):
         return self
 
 
-class SequenceMappingInput(StrictModel):
-    """Input for a sequence mapping within a structure."""
-
-    sequence: str = Field(..., description="The sequence identifier (e.g., 'IAZ001')")
-    property: str = Field(..., description="The property key that will be set with the sequence value")
-
-
 class DefinitionInput(StrictModel):
-    sequences: List[SequenceMappingInput] = Field(default_factory=list, description="Sequence mappings for this node")
     key: str = Field(..., description="The label of the node participating in the event")
     description: Optional[str] = Field(default=None, description="Description of this node role")
     ontology_references: List[OntologyReferenceInput] = Field(default_factory=list, description="Ontology references for this event")
@@ -866,7 +839,6 @@ class DefinitionInput(StrictModel):
 
 class UpdateDefinitionInput(StrictModel):
     id: GraphID = Field(..., description="The ID of the definition to update")
-    sequences: Optional[List[SequenceMappingInput]] = Field(default=None, description="Sequence mappings for this node")
     key: Optional[str] = Field(default=None, description="The label of the node participating in the event")
     description: Optional[str] = Field(default=None, description="Description of this node role")
     ontology_references: Optional[List[OntologyReferenceInput]] = Field(default=None, description="Ontology references for this event")
@@ -943,14 +915,6 @@ class UpdateEntityDefinitionInput(UpdateDefinitionInput):
             keys.add(prop.key)
 
         return v
-
-
-class SetEntityPropertyInput(StrictModel):
-    """Input for setting a property value on an entity."""
-
-    entity_id: GraphID = Field(..., description="The ID of the entity to update")
-    key: str = Field(..., description="The property key to set")
-    value: Any = Field(..., description="The value to set for this property")
 
 
 class CreateEntityDefinitionInput(EntityDefinitionInput):
@@ -1694,12 +1658,6 @@ class PrefixInput(StrictModel):
     description: Optional[str] = Field(None, description="Description of this prefix")
 
 
-class SequenceInput(StrictModel):
-    """Input for a graph prefix definition."""
-
-    prefix: str = Field(..., description="The prefix string (e.g. 'IAZ')")
-
-
 class RoleMappingInput(StrictModel):
     """
     Input for role mappings in an event.
@@ -1800,12 +1758,6 @@ class RetractNaturalEventInput(StrictModel):
     id: GraphID = Field(..., description="The ID of the natural event to archive")
 
 
-class DeleteNaturalEventInput(StrictModel):
-    """Input for deleting an existing natural event instance."""
-
-    id: GraphID = Field(..., description="The ID of the natural event to delete")
-
-
 class ProtocolEventInput(EventInput):
     """Input for creating a new protocol event instance."""
 
@@ -1822,20 +1774,6 @@ class RetractProtocolEventInput(StrictModel):
     """Input for archiving (soft deleting) an existing protocol event instance."""
 
     id: GraphID = Field(..., description="The ID of the protocol event to archive")
-
-
-class DeleteProtocolEventInput(StrictModel):
-    """Input for deleting an existing protocol event instance."""
-
-    id: GraphID = Field(..., description="The ID of the protocol event to delete")
-
-
-class PropertySet(StrictModel):
-    """Input for a set of properties to associate with an entity or structure."""
-
-    key: str = Field(..., description="The property key/label")
-    value: str | int | float | bool = Field(..., description="The property value")
-    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class EntityInput(StrictModel):
@@ -1920,24 +1858,21 @@ class AttestProtocolEventInput(AttestNodeInput):
     """Input for claiming that a protocol event exists."""
 
 
-class DeleteEntityInput(StrictModel):
-    """Input for deleting an existing entity instance."""
-
-    id: scalars.GraphID = Field(..., description="The ID of the entity to delete")
-
-
 class StructureInput(StrictModel):
-    """Input for creating a new structure instance."""
+    """Input for creating a new structure instance.
+
+    Two fields, and there were three. Removing `PinNodeInput` left its `user`
+    field behind under the comment that explained the removal — and **a comment
+    does not end a block**, so the indented line stayed part of this class. Every
+    subclass inherited it, and all three use `all_fields=True`, so
+    `assertStructureExists`, `ensureStructure` and `updateStructure` advertised
+    `user: String` in the SDL, accepted it, and dropped it: no controller reads
+    it. A field that is accepted and discarded is worse than one that is refused,
+    which is the whole reason these models are `extra="forbid"`.
+    """
 
     object: str = Field(..., description="The unique ID of the object this structure references")
     metrics: List["MetricInput"] = Field(default_factory=list, description="List of measurements associated with this structure")
-
-
-# `PinNodeInput` is gone with `pinNode`, whose resolver was `raise
-# NotImplementedError`. The strawberry input for it was declared against
-# `CreateStructureInput` anyway, so the schema advertised a pin mutation taking
-# structure fields.
-    user: Optional[str] = Field(default=None, description="The ID of the user for whom to set this pin. If not provided, will default to the user making the request.")
 
 
 class AssertStructureExistsInput(StructureInput):
@@ -1969,12 +1904,6 @@ class RetractStructureInput(StrictModel):
     id: GraphID = Field(..., description="The ID of the structure to archive")
 
 
-class DeleteStructureInput(StrictModel):
-    """Input for hard deleting an existing structure."""
-
-    id: GraphID = Field(..., description="The ID of the structure to delete")
-
-
 class AssertMetricValueInput(MetricInput):
     """Input for recording a measurement.
 
@@ -1999,12 +1928,6 @@ class RetractMetricInput(StrictModel):
     id: GraphID = Field(..., description="The ID of the metric to archive")
 
 
-class DeleteMetricInput(StrictModel):
-    """Input for hard deleting an existing metric."""
-
-    id: GraphID = Field(..., description="The ID of the metric to delete")
-
-
 class RelationInput(StrictModel):
     """Input for a measurement/metric."""
 
@@ -2016,19 +1939,6 @@ class RelationInput(StrictModel):
 class EventBaseInput(StrictModel):
     valid_from: Optional[datetime] = Field(default=None, description="Optional start time for the validity of this event (for temporal reasoning)")
     valid_to: Optional[datetime] = Field(default=None, description="Optional end time for the validity of this event (for temporal reasoning)")
-
-
-class ValidateMeasurementInput(EventBaseInput):
-    """Input for supporting evidence that a measurement exists between a source structure and a target entity."""
-
-    source_structure_id: str = Field(description="The ID of the source structure (if different from source_id)")
-    source_structure_identifier: scalars.StructureIdentifier = Field(description="The schema identifier for the source structure (e.g. '@mikro/roi_volume')")
-    target_entity_id: str = Field(description="The ID of the target entity")
-    supporting_evidence: List[StructureReferenceInput] = Field(
-        default_factory=list,
-        description="Are you basing this measurmenet exists based on evidence other evidence? i.e. did you look at another sample to make this claim that this sample actually measures the entity? If so, include them here to have them automatically linked to the measurement edge",
-    )
-    confidence: Optional[float] = Field(default=None, description="Optional confidence score for this measurement (between 0 and 1)")
 
 
 class AssertRelationExistsInput(RelationInput):
@@ -2049,12 +1959,6 @@ class RetractRelationInput(StrictModel):
     id: GraphID = Field(..., description="The ID of the relation to archive")
 
 
-class DeleteRelationInput(StrictModel):
-    """Input for hard deleting an existing metric."""
-
-    id: GraphID = Field(..., description="The ID of the metric to delete")
-
-
 class AssertStructureRelationExistsInput(RelationInput):
     """Input for creating a new structure relation edge."""
 
@@ -2073,34 +1977,16 @@ class RetractStructureRelationInput(StrictModel):
     id: GraphID = Field(..., description="The ID of the structure relation to archive")
 
 
-class DeleteStructureRelationInput(StrictModel):
-    """Input for hard deleting an existing structure relation."""
-
-    id: GraphID = Field(..., description="The ID of the structure relation to delete")
-
-
 class AssertMeasurementExistsInput(RelationInput):
     """Input for creating a new measurement edge associated with a structure/entity pair."""
 
     term: str = Field(..., description=TERM_FIELD_DESCRIPTION)
 
 
-class UpdateMeasurementInput(RelationInput):
-    """Input for updating an existing measurement by replacing it with a new edge revision."""
-
-    id: GraphID = Field(..., description="The ID of the measurement to update")
-
-
 class RetractMeasurementInput(StrictModel):
     """Input for archiving (soft deleting) an existing measurement."""
 
     id: GraphID = Field(..., description="The ID of the measurement to archive")
-
-
-class DeleteMeasurementInput(StrictModel):
-    """Input for hard deleting an existing measurement."""
-
-    id: GraphID = Field(..., description="The ID of the measurement to delete")
 
 
 class ScatterPlotMutationInput(StrictModel):
@@ -2137,12 +2023,6 @@ class DeleteScatterPlotInput(StrictModel):
     id: int = Field(..., description="The database ID of the scatter plot to delete")
 
 
-class ArchiveScatterPlotInput(StrictModel):
-    """Input for archiving a scatter plot."""
-
-    id: int = Field(..., description="The database ID of the scatter plot to archive")
-
-
 class SupersedeMetricValueInput(MetricInput):
     """Input for updating an existing metric. The metric will not be updated in-place, but a new metric will be created and the old one archived to preserve history."""
 
@@ -2157,7 +2037,6 @@ class GraphExtensionsInput(StrictModel):
     dynamically from the structure identifier at write time.
     """
 
-    sequences: List[SequenceInput] = Field(default_factory=list, description="Graph sequences for ordering entities")
     prefixes: List[PrefixInput] = Field(default_factory=list, description="Graph prefixes for namespacing")
     entities: List[EntityDefinitionInput] = Field(default_factory=list, description="Entity definitions")
     relations: List[RelationDefinitionInput] = Field(default_factory=list, description="Relation definitions")
@@ -2271,13 +2150,9 @@ class ArchiveGraphInput(StrictModel):
     id: strawberry.ID = Field(..., description="The ID of the graph to archive")
 
 
-class PinGraphInput(StrictModel):
-    """Input for pinning a graph in the UI."""
-
-    id: strawberry.ID = Field(..., description="The ID of the graph to pin")
-    pin: bool = Field(..., description="Whether to pin (true) or unpin (false) this graph in the UI for the user making the request")
-    color: Optional[List[int]] = Field(default=None, description="Optional RGBA color for this graph (e.g. [255, 0, 0, 128])")
-    user: Optional[str] = Field(default=None, description="The ID of the user for whom to set this pin. If not provided, will default to the user making the request.")
+# `PinGraphInput` used to sit here, alongside a `pin_graph` resolver that was
+# never mounted on `Mutation` — so neither the input nor the field ever reached
+# the schema.
 
 
 # Backwards-compatible aliases used by older tests and callsites.
@@ -2285,3 +2160,5 @@ GraphDefinitionModel = GraphDefinitionInput
 GraphExtensions = GraphExtensionsInput
 EntityDefinition = EntityDefinitionInput
 PropertyDefinition = PropertyDefinitionInput
+
+

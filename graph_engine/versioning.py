@@ -181,9 +181,31 @@ def on_category_changed(sender: Any, instance: Any, **kwargs: Any) -> None:
 
 
 def connect() -> None:
-    """Wire the signal handlers. Called from the app config's `ready()`."""
+    """Wire the signal handlers. Called from the app config's `ready()`.
+
+    Two handlers per model, and they deliberately do **not** share the suspension
+    gate:
+
+    - :func:`on_category_changed` emits a schema version, and is suspended during
+      `materialize()` so that expressing one schema does not produce a version per
+      category.
+    - `core.asserted_terms` indexes the words each definition derives from, and is
+      **never** suspended. A freshly materialized graph is exactly the case where
+      that index matters most, and gating it would leave the graph deriving from
+      nothing until somebody ran the rebuild command.
+
+    The asserted-term handler is wired on **every** category class, taken from
+    `CATEGORY_PROXIES` plus the concrete `Category` and the two intermediate
+    proxies, rather than on a hand-written list. Django sends `post_save` with the
+    proxy the instance was created through as sender (`save_base` keeps `origin`
+    as the proxy), so a class missing from the list is a class whose saves are
+    silently unindexed. The handler is idempotent — it rewrites a category's rows
+    rather than adding to them — so overlapping registrations cost a redundant
+    delete and nothing else.
+    """
     from django.db.models.signals import post_delete, post_save
 
+    from core import asserted_terms
     from core import models as models_module
 
     # Structure and metric kinds are deliberately absent: they are organization
@@ -201,3 +223,13 @@ def connect() -> None:
     ):
         post_save.connect(on_category_changed, sender=model, dispatch_uid=f"schema_version_{model.__name__}_save")
         post_delete.connect(on_category_changed, sender=model, dispatch_uid=f"schema_version_{model.__name__}_delete")
+
+    category_classes = {
+        models_module.Category,
+        models_module.NodeCategory,
+        models_module.EdgeCategory,
+        *models_module.CATEGORY_PROXIES.values(),
+    }
+    for model in category_classes:
+        post_save.connect(asserted_terms.on_category_saved, sender=model, dispatch_uid=f"asserted_terms_{model.__name__}_save")
+        post_delete.connect(asserted_terms.on_category_deleted, sender=model, dispatch_uid=f"asserted_terms_{model.__name__}_delete")

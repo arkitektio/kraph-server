@@ -154,11 +154,6 @@ class Graph(models.Model):
     )
 
     @classmethod
-    def get_for_node_global_id(cls, node_id: str):
-        graph_id, node_id = node_id.split(":")
-        return cls.objects.get(id=graph_id)
-
-    @classmethod
     def create_age_name(cls, name: str, organization: Organization) -> str:
         base_name = "".join(e for e in name if e.isalnum()).lower()
         org_slug = "".join(e for e in organization.slug if e.isalnum()).lower()
@@ -488,57 +483,6 @@ class OntologyReference(models.Model):
     )
 
 
-class GraphSequence(models.Model):
-    """A node index for a category"""
-
-    graph = models.ForeignKey(
-        Graph,
-        on_delete=models.CASCADE,
-        related_name="graph_sequences",
-        help_text="The graph this sequence belongs to",
-    )
-
-    index = models.CharField(
-        max_length=1000,
-        help_text="The index name that was created",
-    )
-    label = models.CharField(
-        max_length=1000,
-        help_text="The label of the sequence",
-        null=True,
-    )
-    description = models.CharField(
-        max_length=1000,
-        help_text="The description of the sequence",
-        null=True,
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    min_value = models.IntegerField(default=0)
-    start_value = models.IntegerField(default=0)
-    max_value = models.IntegerField(
-        null=True,
-        blank=True,
-        help_text="The maximum value of the sequence (can be null if not set)",
-    )
-    cycle = models.BooleanField(
-        default=False,
-        help_text="If the sequence is circular (e.g. 1,2,3,4,5,1,2,3,4,5)",
-    )
-    step_size = models.IntegerField(
-        default=1,
-        help_text="The step size of the sequence (e.g. 1,2,3,4,5,6)",
-    )
-
-    class Meta:
-        unique_together = ("graph", "index")
-        default_related_name = "graph_sequences"
-
-    @property
-    def ps_name(self) -> str:
-        return f"{self.graph.age_name}{self.index}"
-
-
 class Category(KindDiscriminatedModel):
     """Every node and edge kind a graph allows, in one table.
 
@@ -573,14 +517,6 @@ class Category(KindDiscriminatedModel):
             "did not make it. `PROTECT` because a word that has been used has to outlive the views "
             "that used it; deleting *this* row is free, and only drops the term from this graph."
         ),
-    )
-    sequence = models.ForeignKey(
-        GraphSequence,
-        on_delete=models.CASCADE,
-        related_name="categories",
-        null=True,
-        blank=True,
-        help_text="The index of this category (new entities will be created with this index)",
     )
     image = models.ForeignKey(
         datalayer_models.MediaStore,
@@ -788,35 +724,78 @@ class Category(KindDiscriminatedModel):
         return GraphQuery.objects.filter(graph=self.graph, relevant_for=self.pk)
 
 
-class Descriptor(models.Model):
-    """A descriptor for a category"""
+class CategoryAssertedTerm(models.Model):
+    """The joinable half of :attr:`Category.definition` — which words a category derives from.
 
+    A graph sees a word two ways: it **declares** one (:attr:`Category.term`, an
+    ordinary foreign key) or it **derives** from one, by naming it in
+    ``definition.asserted_as``. The first is already a join. The second is a
+    string inside JSON, and nothing can join against it — so
+    `selector._graph_ids_by_term`, which every instance write goes through, read
+    every category in the organization, pulled every ``definition`` blob out of
+    the database and looped in Python. That is a full scan of the ontology per
+    write, and a second one per page of subjects on the read side.
+
+    This is that half, normalized. Only that half: putting the declared terms in
+    here as well would duplicate a foreign key that already works and create a
+    second answer that can drift from it.
+
+    **The word is stored as a key, not as a `Term` foreign key**, and both reasons
+    matter. A definition may name a word the organization has never minted — terms
+    appear lazily, when somebody first claims one — so an FK would have no row to
+    point at and the graph would stop deriving from a word until the first claim
+    arrived. And `asserted_as` names a word without naming its *kind*, while
+    `Term`'s identity is ``(organization, kind, key)``; resolving to an id would
+    have to pick a kind, narrowing a rule that deliberately does not.
+
+    Lives in `core` because it names a graph. `evidence/models.py` may not: no
+    evidence row names a projection, which is what lets a claim outlive every view
+    built from it.
+
+    Maintained by a signal in `graph_engine.versioning.connect`, alongside the
+    schema-version handler — but **not gated on `versioning.is_suspended()`**.
+    That gate exists so `materialize()` emits one schema version instead of
+    dozens; sharing it here would leave a freshly materialized graph deriving from
+    nothing at all. `manage.py rebuild_asserted_terms` is the out-of-band rebuild,
+    with a `--check` that reports disagreement without writing.
+    """
+
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name="category_asserted_terms",
+        help_text="Denormalized from the graph, so the organization-wide map is one indexed scan rather than a join.",
+    )
+    graph = models.ForeignKey(
+        Graph,
+        on_delete=models.CASCADE,
+        related_name="asserted_terms",
+        help_text="Denormalized from the category: the read is 'which graphs derive from this word', and without it the seek becomes a join.",
+    )
     category = models.ForeignKey(
         Category,
         on_delete=models.CASCADE,
-        related_name="descriptors",
-        help_text="The category this descriptor belongs to",
+        related_name="asserted_terms",
+        help_text="The category whose definition names this word. Rows are rewritten wholesale when it changes, because a definition can stop naming a word as easily as start.",
     )
-
     key = models.CharField(
         max_length=1000,
-        help_text="The name of the descriptor",
-    )
-    description = models.CharField(
-        max_length=1000,
-        help_text="The description of the descriptor",
-        null=True,
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    value = models.CharField(
-        max_length=1000,
-        help_text="The value of the descriptor",
+        help_text="The word, exactly as `definition.asserted_as` spells it.",
     )
 
     class Meta:
-        unique_together = ("category", "key")
-        default_related_name = "descriptors"
+        constraints = [
+            models.UniqueConstraint(fields=["category", "key"], name="unique_asserted_term_per_category"),
+        ]
+        indexes = [
+            # The panel's read: which graphs derive from these words.
+            models.Index(fields=["organization", "key"]),
+            # The whole-organization map `_graph_ids_by_term` builds.
+            models.Index(fields=["organization", "graph"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.graph_id} derives from {self.key}"
 
 
 class NodeCategory(Category):
@@ -972,25 +951,6 @@ class ProtocolEventCategory(NodeCategory):
 
     class Meta:
         proxy = True
-
-
-class Protocol(models.Model):
-    graph = models.ForeignKey(
-        Graph,
-        on_delete=models.CASCADE,
-        related_name="protocols",
-        help_text="The graph this protocol belongs to",
-    )
-    name = models.CharField(max_length=1000, help_text="The name of the protocol")
-    description = models.CharField(
-        max_length=2000,
-        help_text="The description of the protocol",
-        null=True,
-    )
-    plate_children = models.JSONField(
-        default=list,
-        help_text="The steps of the protocol, each step is a dict with the following keys: name, description, event_category, source_entities, target_entities, source_reagents, target_reagents, variables",
-    )
 
 
 class EntityCategory(NodeCategory):
@@ -1583,37 +1543,6 @@ class EdgeTableQuery(EdgeQuery):
         proxy = True
 
 
-class MaterializedView(models.Model):
-    """A view of a graph that is materialized"""
-
-    query = models.ForeignKey(
-        GraphQuery,
-        on_delete=models.CASCADE,
-        related_name="views",
-        help_text="The query that is used to materialize the graph",
-    )
-    creator = models.ForeignKey(
-        get_user_model(),
-        on_delete=models.CASCADE,
-        related_name="graph_views",
-        help_text="The user that created the view",
-    )
-    materialized_at = models.DateTimeField(
-        auto_now_add=True,
-        help_text="The time the view was materialized. Newer created or deleted_instances are not part of the view",
-    )
-    valid_from = models.DateTimeField(
-        help_text="The time the view was created. Newer created or deleted_instances are not part of the view",
-        null=True,
-        blank=True,
-    )
-    valid_to = models.DateTimeField(
-        help_text="The time the view was created. Newer created or deleted_instances are not part of the view",
-        null=True,
-        blank=True,
-    )
-
-
 class ScatterPlot(models.Model):
     graph_query = models.ForeignKey(
         GraphTableQuery,
@@ -1669,159 +1598,6 @@ class ScatterPlot(models.Model):
         on_delete=models.CASCADE,
         related_name="scatter_plots",
         help_text="The user that created the scatter plot",
-    )
-
-
-class MaterializedEdge(KindDiscriminatedModel):
-    """A derived edge between two categories, in one table.
-
-    The three kinds do not point at the same things -- a relation edge runs between two
-    entity categories, a measurement edge from a structure kind to an entity category,
-    a structure-relation edge between two structure kinds. Those are separate tables, so
-    the endpoints cannot collapse into one column each; `source_category` and
-    `source_structure_kind` are the two possibilities, and `kind` says which one is set.
-    """
-
-    objects = managers.KindedManager()
-    kind = models.CharField(
-        max_length=1000,
-        choices=enums.MaterializedEdgeKindChoices.choices,
-        help_text="Which kind of category this edge was derived from",
-    )
-    graph = models.ForeignKey(
-        Graph,
-        on_delete=models.CASCADE,
-        related_name="materialized_edges",
-        help_text="The graph this edge belongs to",
-    )
-    source_category = models.ForeignKey(
-        Category,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="materialized_edges_as_source",
-        help_text="The source category of the edge, for relation edges",
-    )
-    source_structure_kind = models.ForeignKey(
-        "evidence.StructureKind",
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="materialized_edges_as_source",
-        help_text="The source structure kind of the edge, for measurement and structure-relation edges",
-    )
-    target_category = models.ForeignKey(
-        Category,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="materialized_edges_as_target",
-        help_text="The target category of the edge, for relation and measurement edges",
-    )
-    target_structure_kind = models.ForeignKey(
-        "evidence.StructureKind",
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="materialized_edges_as_target",
-        help_text="The target structure kind of the edge, for structure-relation edges",
-    )
-    edge_category = models.ForeignKey(
-        Category,
-        on_delete=models.CASCADE,
-        related_name="materialized_edges_as_edge",
-        help_text="The edge category this edge was derived from",
-    )
-    role = models.CharField(
-        max_length=1000,
-        null=True,
-        blank=True,
-        help_text="The role of the edge, if its part of a protocol or natural event (e.g. source, target, etc.)",
-    )
-
-
-class MaterializedRelationEdge(MaterializedEdge):
-    KIND = enums.MaterializedEdgeKindChoices.RELATION
-    KINDS = (enums.MaterializedEdgeKindChoices.RELATION,)
-    objects = managers.KindedManager()
-
-    class Meta:
-        proxy = True
-
-    @property
-    def source(self) -> "Category | None":
-        return self.source_category
-
-    @property
-    def target(self) -> "Category | None":
-        return self.target_category
-
-    @property
-    def edge(self) -> "Category":
-        return self.edge_category
-
-
-class MaterializedMeasurementEdge(MaterializedEdge):
-    KIND = enums.MaterializedEdgeKindChoices.MEASUREMENT
-    KINDS = (enums.MaterializedEdgeKindChoices.MEASUREMENT,)
-    objects = managers.KindedManager()
-
-    class Meta:
-        proxy = True
-
-    @property
-    def source(self):
-        return self.source_structure_kind
-
-    @property
-    def target(self) -> "Category | None":
-        return self.target_category
-
-    @property
-    def edge(self) -> "Category":
-        return self.edge_category
-
-
-class MaterializedStructureRelationEdge(MaterializedEdge):
-    KIND = enums.MaterializedEdgeKindChoices.STRUCTURE_RELATION
-    KINDS = (enums.MaterializedEdgeKindChoices.STRUCTURE_RELATION,)
-    objects = managers.KindedManager()
-
-    class Meta:
-        proxy = True
-
-    @property
-    def source(self):
-        return self.source_structure_kind
-
-    @property
-    def target(self):
-        return self.target_structure_kind
-
-    @property
-    def edge(self) -> "Category":
-        return self.edge_category
-
-
-class Model(models.Model):
-    """A Model is a deep learning model"""
-
-    name = models.CharField(max_length=1000, help_text="The name of the model")
-    materialized_graph = models.ForeignKey(
-        MaterializedView,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="models",
-        help_text="The materialized grpah this model was trained on",
-    )
-    store = models.ForeignKey(
-        datalayer_models.MediaStore,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="models",
-        help_text="The store of the model",
     )
 
 

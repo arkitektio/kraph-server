@@ -21,8 +21,8 @@ def assert_relation_exists(info: Info, input: inputs.AssertRelationExistsInput) 
 
     Names a term — so the edge is drawn in every view declaring the word, and the
     claim can be stated before any view declares it. Endpoint category pairs are
-    not checked, and were not before: `MaterializedRelationEdge` is a schema-level
-    expansion for the read surface, never a write-time guard.
+    not checked, and never were: the `MaterializedRelationEdge` cross-product that
+    might have looked like a guard was a read surface, and is gone (RFC 0001 §6).
     """
     payload = input.to_pydantic()
     controller = context.get_controller()

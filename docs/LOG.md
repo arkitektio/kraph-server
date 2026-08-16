@@ -416,6 +416,31 @@ Recorded so nobody has to rediscover them.
 - **One label per node.** Apache AGE permits exactly one label per vertex, so a
   node satisfying two defined categories in one graph is refused rather than
   projected under an arbitrary one.
-- **No merge.** Identity is a bare uuid, so one vertex standing for several nodes
-  is expressible — but nothing implements it. Do not re-introduce the assumption
-  that a vertex's `id` property is an identity rather than a projection detail.
+- ~~**No merge.**~~ **Closed.** `Link.Kind.SAME_AS` is the claim and
+  `evidence/identity.py` is the fold. The shape worth keeping in mind: **every
+  observation mints its own instance.** Saying "this is an AIS" writes a *fresh*
+  `Node` — nothing reuses an id, because an observation cannot be asked to know
+  about a prior one — so identity *between* observations is a claim in its own
+  right, contestable and retractable like any other. Saying "this is AIS **6**"
+  records four things under **one** assertion: the term if it is new, the
+  instance, the `INFORMS` claim, and the `SAME_AS` claim. One act, one assertion,
+  because `Assertion.action_id` — the field that would tie two calls back together
+  — is never populated.
+
+  `NodeIdentity` is the persisted union-find, at organization grain like `State`,
+  with the **lowest uuid** as representative so identity does not depend on
+  arrival order. Only merged nodes get a row; a component of one is the absence of
+  one. Union is incremental, retraction cannot un-union so it flags the component
+  and `recompute` rebuilds it, and `manage.py rebuild_identity --check` is the
+  backstop that says whether the two agree.
+
+  Still true, and still the thing not to re-introduce: **do not assume a vertex's
+  `id` property is an identity rather than a projection detail.** A vertex may
+  stand for several nodes.
+- **A merged component is not drawn as one vertex.** The fold answers "what is
+  known about this thing" — `evidence/panel.py` unions labels, sameness and
+  connections over the component — but `projector` still draws one vertex per
+  `Node`. So two instances claimed the same appear twice in Apache AGE and once in
+  the panel. Collapsing them in the projection is a separate decision: it would
+  make a vertex's identity the component's, and every edge to a member would have
+  to be re-pointed on every merge and un-merge.
