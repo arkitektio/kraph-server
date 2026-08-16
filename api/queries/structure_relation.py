@@ -36,6 +36,7 @@ def structure_relation(info: Info, id: scalars.GraphID) -> types.StructureRelati
 
     return types.StructureRelation(_value=edge)
 
+
 def structure_relations(
     info: Info,
     structure_relation_category_id: strawberry.ID,
@@ -45,8 +46,9 @@ def structure_relations(
 ) -> List[types.StructureRelation]:
     """Every standing structurerelation claim stated in this category's word.
 
-    Read from `evidence.Link`, not from Apache AGE. This returned nothing at all before: neither endpoint of a structure relation
-    has a vertex, so there was no edge in the projection to match.
+    Read from `evidence.Link`, not from Apache AGE. This returned nothing at all
+    before: neither endpoint of a structure relation has a vertex, so there was no
+    edge in the projection to match.
 
     Scoped by the category's **term**, so two graphs declaring the same word list
     the same claims — see `api/queries/_edges.py`.

@@ -88,14 +88,16 @@ provenance behind every value. The following gaps are load-bearing, not cosmetic
   un-prefixed names (`schema_version`, `last_derived`, `lyfecyle_status` — typo) while the writer
   emits `__schema_version`, `__last_derived`, `__lifecycle_state`. These pass through
   `cleaned_properties` (`retrieved.py:246`) into the public GraphQL `properties` field.
-- **Three unrelated meanings of "materialized".** `MaterializedRelationEdge` /
-  `MaterializedMeasurementEdge` are schema-level category-pair expansions from `materialize.py`;
-  `MaterializedView` (`core/models.py:1505`) is a query snapshot; `_recalculate_entity` is
-  instance-level projection. Renaming these is an hour of work and removes a persistent source of
-  confusion.
-- **Three half-built temporal mechanisms.** `valid_from` / `valid_to` are reserved property keys,
-  `node_valid` (`insights/graph/parser.py:94`) filters on them in insights templates, and
-  `MaterializedView` has its own pair. Nothing populates any of them.
+- ~~**Three unrelated meanings of "materialized".**~~ **Closed by deletion, not renaming.**
+  `MaterializedRelationEdge` / `MaterializedMeasurementEdge` were schema-level category-pair
+  expansions; `MaterializedView` was a query snapshot; `_recalculate_entity` was instance-level
+  projection. The first two families are **gone** — the edge cross-products had no invalidation at
+  all (RFC 0001 §6), and `MaterializedView` had no reader, writer or GraphQL type.
+  `_recalculate_entity` is `projector.project` / `project_refs` now. Only sense (3) remains, so the
+  word is no longer overloaded.
+- **Two half-built temporal mechanisms.** `valid_from` / `valid_to` are reserved property keys and
+  `node_valid` (`insights/graph/parser.py:94`) filters on them in insights templates. Nothing
+  populates either. `MaterializedView` had a third pair and is deleted.
 
 ### 1.2 The framing question
 
@@ -452,4 +454,5 @@ with nothing behind it.
 7. `RESERVED_PROPERTY_KEYS` (`retrieved.py:22`) does not match the `__`-prefixed keys actually
    written, leaking internal properties through the GraphQL `properties` field. Fix the
    `lyfecyle_status` typo while there.
-8. Rename the three distinct "materialized" concepts (§1.1).
+8. ~~Rename the three distinct "materialized" concepts (§1.1).~~ **Done** — two of the three were
+   deleted outright rather than renamed; see §1.1.

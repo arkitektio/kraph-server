@@ -88,6 +88,16 @@ The load-bearing facts:
   schema mutations (`createEntityCategory(graph:)`), because a read is view-scoped and a category
   belongs to one view. `createGraph` and the category-creation mutations take `backfill` to project
   the history a newly declared word already admits.
+- **And so does the read API, now.** Every id in the schema is a **bare uuid** — `Node.id` and
+  `Edge.id` and nothing else. `graphId`, `globalId`, `localId`, `Node.graph`, `Node.pinned` and the
+  `GlobalID`/`LocalID`/`StructureGlobalID` scalars are gone: each named an Apache AGE vertex that a
+  reproject reassigns, a graph a node may not belong to singly, or (for `globalId`) a vertex
+  property nothing has ever written, so it *raised*. The composite `{graph}:{vertex_id}` parsers
+  went with them. **Edge list queries read `evidence.Link`**, not Cypher
+  (`api/queries/_edges.py`) — five of the six matched labels the projector never writes and could
+  only return empty, and all six handed out ids their own singular fetchers could not accept.
+  Anything that reads a vertex pattern should be checked against `projector.create_vertex`, which
+  writes exactly `{id, category_id}` and labels with `category.age_name`.
 - **A write is named for the act and returns where the claim landed.** `assertEntityExists`, not
   `createEntity`; `retract*`, not `archive*`. Each returns the `Assertion` it recorded, the thing
   claimed, and **`drawings`** — every view that draws that claim afterwards, empty when none does.
@@ -150,9 +160,12 @@ The load-bearing facts:
 
 - **Exclude `core-backup-do-not-delete/` from every search** — it is a legacy snapshot of `core/`
   and will double every grep hit.
-- `test.graphql` at the repo root is a hand-dumped SDL snapshot, **not** asserted by any test
-  (`tests/test_print_schema.py` only checks the schema builds). Treat it as documentation that may
-  be stale.
+- `test.graphql` at the repo root is a hand-dumped SDL snapshot, **not** asserted by any test.
+  `tests/test_print_schema.py` checks the schema builds *and* that every member of `NodeSubtype` /
+  `EdgeSubtype` is registered — a type the cast can produce but `create_schema(types=[...])` does
+  not list fails at **runtime** ("Abstract type 'Edge' was resolved to a type that does not exist
+  inside the schema"), never at build. Regenerate the snapshot after a schema change and read the
+  diff; it is the only artifact that shows a breaking change whole.
 - Releases are `python-semantic-release` off conventional commits: `main` → stable, `next` →
   `-rc.N` prereleases, `N.x` → maintenance. Commit messages drive version bumps, so use
   `feat:`/`fix:`/`chore:` deliberately.

@@ -36,6 +36,7 @@ def measurement(info: Info, id: scalars.GraphID) -> types.Measurement:
 
     return types.Measurement(_value=edge)
 
+
 def measurements(
     info: Info,
     measurement_category_id: strawberry.ID,
@@ -45,7 +46,8 @@ def measurements(
 ) -> List[types.Measurement]:
     """Every standing measurement claim stated in this category's word.
 
-    Read from `evidence.Link`, not from Apache AGE. This returned nothing at all before. A measurement has **no AGE edge** —
+    Read from `evidence.Link`, not from Apache AGE. This returned nothing at all
+    before: a measurement has **no AGE edge** —
     `assertMeasurementExists` says so in its own description — so the Cypher
     `MATCH ()-[r]->()` it ran could not match one.
 

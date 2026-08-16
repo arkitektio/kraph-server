@@ -36,6 +36,7 @@ def relation(info: Info, id: scalars.GraphID) -> types.Relation:
 
     return types.Relation(_value=edge)
 
+
 def relations(
     info: Info,
     relation_category_id: strawberry.ID,
@@ -45,7 +46,8 @@ def relations(
 ) -> List[types.Relation]:
     """Every standing relation claim stated in this category's word.
 
-    Read from `evidence.Link`, not from Apache AGE. Relations are the one edge kind Apache AGE genuinely draws, so this query
+    Read from `evidence.Link`, not from Apache AGE. Relations are the one edge kind
+    Apache AGE genuinely draws, so this query
     did return rows — but with `{graph}:{ageId}` ids the singular fetcher could not
     accept. Reading the claim fixes the identity as well as the scope.
 

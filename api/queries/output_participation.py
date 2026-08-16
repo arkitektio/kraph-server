@@ -35,6 +35,7 @@ def output_participation(info: Info, id: scalars.GraphID) -> types.OutputPartici
 
     return types.OutputParticipation(_value=edge)
 
+
 def output_participations(
     info: Info,
     graph: strawberry.ID,
@@ -44,8 +45,9 @@ def output_participations(
 ) -> List[types.OutputParticipation]:
     """Every standing outputparticipation claim about an event this graph contains.
 
-    Read from `evidence.Link`, not from Apache AGE. This returned nothing at all before, for the reason `input_participations`
-    gives: it matched labels the projector never writes.
+    Read from `evidence.Link`, not from Apache AGE. This returned nothing at all
+    before, for the reason `input_participations` gives: it matched labels the
+    projector never writes.
 
     Graph-scoped through `selector.node_refs_for`, the same membership subquery
     every other view-scoped read uses — the event has to be in the graph, and

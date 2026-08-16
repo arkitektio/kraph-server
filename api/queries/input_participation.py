@@ -35,6 +35,7 @@ def input_participation(info: Info, id: scalars.GraphID) -> types.InputParticipa
 
     return types.InputParticipation(_value=edge)
 
+
 def input_participations(
     info: Info,
     graph: strawberry.ID,
@@ -44,7 +45,8 @@ def input_participations(
 ) -> List[types.InputParticipation]:
     """Every standing inputparticipation claim about an event this graph contains.
 
-    Read from `evidence.Link`, not from Apache AGE. This returned nothing at all before. It matched `(:Entity)-[r]->(:NaturalEvent)`,
+    Read from `evidence.Link`, not from Apache AGE. This returned nothing at all
+    before: it matched `(:Entity)-[r]->(:NaturalEvent)`,
     and `projector.create_vertex` labels a vertex with its *category's* `age_name` —
     never `Entity`, never `NaturalEvent`.
 
