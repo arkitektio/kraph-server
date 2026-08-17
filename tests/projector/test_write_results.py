@@ -31,7 +31,7 @@ ASSERT_ENTITY = """
     mutation AssertEntityExists($input: AssertEntityExistsInput!) {
         assertEntityExists(input: $input) {
             assertion { id subject seq }
-            entity { id kind }
+            instance { id kind term { key } }
             drawings {
                 graph { id name }
                 category { id key }
@@ -67,8 +67,8 @@ async def test_a_claim_no_view_declares_is_recorded_and_undrawn(
     assert result.errors is None, f"A claim under an undeclared word must succeed: {result.errors}"
     payload = result.data["assertEntityExists"]
 
-    assert payload["entity"]["id"], "The claim has a durable identity whether or not any view draws it"
-    assert payload["entity"]["kind"] == word, "And it is labelled with the word claimed, not with a category's name"
+    assert payload["instance"]["id"], "The claim has a durable identity whether or not any view draws it"
+    assert payload["instance"]["term"]["key"] == word, "And it names the word claimed, not a category's name"
     assert payload["drawings"] == [], "No view declares the word, so no view draws it"
 
     assert payload["assertion"]["id"], "The act itself is addressable"
@@ -114,7 +114,7 @@ async def test_a_claim_two_views_declare_reports_both_drawings(
 
     for drawing in payload["drawings"]:
         assert drawing["category"]["key"] == word, "Each drawing reports the category *that view* drew it under"
-        assert drawing["node"]["id"] == payload["entity"]["id"], "and the same node, seen from that view"
+        assert drawing["node"]["id"] == payload["instance"]["id"], "and the same node, seen from that view"
 
 
 @pytest.mark.django_db(transaction=True)
@@ -124,17 +124,21 @@ async def test_the_top_level_node_carries_no_borrowed_category(
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
 ) -> None:
-    """Even when a view *does* draw it, the payload's own category is null.
+    """Even when a view *does* draw it, the payload names no category.
 
     The claim is one thing and the several ways views draw it are another. A
     category belongs to a view, so the only honest place for one is inside a
     drawing — which is where every real category now is.
+
+    It used to be a **null** `categoryId` on a graph-shaped payload. An `Instance` has
+    no such field to be null: the claim names a word (`term`), and what a view makes
+    of that word is the drawing's business.
     """
     result = await api_schema.execute(
         """
         mutation AssertEntityExists($input: AssertEntityExistsInput!) {
             assertEntityExists(input: $input) {
-                entity { id categoryId }
+                instance { id term { key } }
                 drawings { category { id } }
             }
         }
@@ -146,6 +150,6 @@ async def test_the_top_level_node_carries_no_borrowed_category(
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     payload = result.data["assertEntityExists"]
 
-    assert payload["entity"]["categoryId"] is None, "The claim itself names a word, not a view's rule for one"
+    assert payload["instance"]["term"]["key"] == "AIS", "The claim names a word, not a view's rule for one"
     assert payload["drawings"], "while the view that drew it reports its category"
     assert payload["drawings"][0]["category"]["id"], "which is a real category"

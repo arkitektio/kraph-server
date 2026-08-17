@@ -58,7 +58,7 @@ def measured_entity(
         )
         state_module.merge(metric, [ENTITY_REF])
 
-    return evidence_models.State.objects.for_organization(organization).get(entity_ref=ENTITY_REF)
+    return evidence_models.State.objects.for_organization(organization).get(claim_ref=ENTITY_REF)
 
 
 def test_switching_mean_to_max_changes_the_value_with_zero_writes(

@@ -1,9 +1,13 @@
-"""
-Retrieved Entity and Relation Data Classes
+"""The node- and edge-shaped surface `api/types.py` reads.
 
-These dataclasses wrap raw AGE graph data and provide convenient accessors
-for type discrimination and property access. They follow the same pattern
-as core/age.py's RetrievedEntity and RetrievedRelation.
+One shape per side — `RetrievedNode` and `RetrievedEdge` — whether the thing came
+out of an Apache AGE projection or was adapted from an evidence row. That is the
+point: a claim no view draws still has to be answerable, so `from_row` /
+`from_link` build the same shape `from_node` does and `row_id` says which it was.
+
+**Nothing here is an `Instance`.** These are readings, not claims: they carry a
+`label` and a `vertex_id` that belong to one view's drawing, and `unique_id` — the
+claim's uuid — is the only field that means anything in every case.
 """
 
 from dataclasses import dataclass, field
@@ -67,30 +71,30 @@ def is_internal_property_key(key: str) -> bool:
     return key in RESERVED_PROPERTY_KEYS or key.startswith(INTERNAL_PROPERTY_PREFIX)
 
 
-# Type literals for node discrimination
+# Type literals for node discrimination. Exactly the five kinds something
+# node-shaped can be: the three `evidence.Node.Kind` values a claim can name, plus
+# the two Postgres row shapes that are adapted into this surface without ever
+# being drawn.
+#
+# `ACTIVITY`, `ASSERTION`, `REAGENT`, `MEASUREMENT` and `EDIT_EVENT` used to be
+# here. Nothing could produce any of them — `Instance.Kind` has three members, and the
+# GraphQL union has five — so they were five ways to name a node that cannot exist.
 NodeType = Literal[
     "ENTITY",
-    "STRUCTURE",
-    "MEASUREMENT",
-    "ACTIVITY",
-    "ASSERTION",
     "NATURAL_EVENT",
-    "METRIC",
-    "REAGENT",
     "PROTOCOL_EVENT",
-    "EDIT_EVENT",
+    "STRUCTURE",
+    "METRIC",
 ]
 
-# `vocab.Assertion` and `"Activity"` used to map here. Both named vertices the
-# projector has never written, and the `Activity` type they discriminated to is
-# gone.
-VocabNodeTypeMap: Dict[str, NodeType] = {
-    vocab.Entity: "ENTITY",
-    vocab.Structure: "STRUCTURE",
-    vocab.NaturalEvent: "NATURAL_EVENT",
-    vocab.Metric: "METRIC",
-    vocab.ProtocolEvent: "PROTOCOL_EVENT",
-}
+# `VocabNodeTypeMap` used to sit here, mapping a vertex *label* to one of these.
+# It could not work and did not: a drawn vertex is labelled `category.age_name`
+# ("Cell", "Mitosis"), which is one view's rename of a word, so it matched none of
+# the five fixed vocabulary words and every drawn node fell through to the
+# `"ENTITY"` default — `cast_node_to_graphql_type` reported a protocol event as an
+# `Entity`. What a thing *is* is a fact about the claim, so it is read from the
+# claim: `create_vertex` writes `type` from `Instance.kind`, and the `from_row`
+# adapters write it from the row they adapt.
 
 
 # Type literals for edge discrimination
@@ -122,23 +126,24 @@ T = TypeVar("T", bound="RetrievedNode")
 
 @dataclass
 class RetrievedNode:
-    """
-    A retrieved node from the AGE graph.
-
-    This dataclass wraps raw AGE query results and provides convenient
-    accessors for type discrimination and property access. It mirrors
-    the core/age.py RetrievedEntity pattern.
+    """A node as some view holds it — or as the log has it, when no view does.
 
     Attributes:
-        graph_name: The name of the AGE graph
-        id: The AGE vertex ID
-        label: The vertex label (e.g., 'Entity', 'Structure')
-        properties: Raw properties dictionary from AGE
+        graph_name: The AGE graph this was read from; empty for a row-backed shape
+        vertex_id: The AGE vertex id. Not the identity — see `unique_id`
+        label: The vertex label, which is the drawing category's `age_name`
+        properties: Raw properties from AGE, including the derived ones
+        row_id: The evidence primary key, when this was built from a row
     """
 
     controller: "GraphController"
     graph_name: str
-    id: int
+    #: The Apache AGE vertex id, and **not the identity** — it is reassigned every
+    #: time a graph is dropped and replayed. `unique_id` is the identity. Named for
+    #: what it is because `id` invited exactly the confusion the name now prevents:
+    #: three different things were called a node's id, and only one of them is
+    #: stable. Zero for a row-backed shape, which has no vertex.
+    vertex_id: int
     label: str
     properties: Dict[str, Any] = field(default_factory=dict)
     row_id: Optional[str] = None
@@ -163,7 +168,7 @@ class RetrievedNode:
         """Global unique identifier — a bare uuid.
 
         For a projected node this is the uuid carried on the vertex as its `id`
-        property, which is the same uuid its `Node` row is keyed on. For an
+        property, which is the same uuid its `Instance` row is keyed on. For an
         evidence row it is the primary key. Both are world-unique, so neither
         needs qualifying by a graph.
 
@@ -232,7 +237,7 @@ class RetrievedNode:
         true independently of any graph.
 
         Every real category now reaches the caller through
-        `controller.drawings_for_node`, where it arrives attached to the graph
+        `controller.drawings_for_instance`, where it arrives attached to the graph
         that actually drew it. See `docs/rfcs/0003-undrawn-nodes.md`.
 
         No lifecycle property, on this or on any other shape. The graph holds what
@@ -244,7 +249,7 @@ class RetrievedNode:
         return cls(
             controller=controller,
             graph_name=graph_name,
-            id=0,
+            vertex_id=0,
             label=str(row.term.key),
             row_id=str(row.pk),
             properties={
@@ -289,15 +294,23 @@ class RetrievedNode:
 
     @property
     def node_type(self) -> NodeType:
-        """Get the node type for discrimination.
+        """What kind of thing this is, for GraphQL discrimination.
 
-        First checks properties['type'], then falls back to label mapping.
+        The `type` property and nothing else. There is no label fallback: a
+        vertex's label is `category.age_name`, one view's rename of a word, and
+        matching it against a fixed vocabulary is how every drawn event came back
+        as an `Entity`.
+
+        Every shape that reaches this reads it off the claim — `create_vertex` from
+        `Instance.kind`, `RetrievedNode.from_row` from the same column, the structure
+        and metric adapters from the row they adapt. So a missing `type` means the
+        vertex was drawn by an older projector, and the answer is to redraw it
+        rather than to guess: `manage.py reproject`.
         """
-        # Check for explicit type in properties
-        if "type" in self.properties:
-            return self.properties["type"]
-        # Fall back to label-based mapping
-        return VocabNodeTypeMap.get(self.label, "ENTITY")
+        node_type = self.properties.get("type")
+        if node_type is None:
+            raise ValueError(f"Node {self.label!r} in graph {self.graph_name!r} carries no 'type' property, so nothing says what kind of thing it is. Every vertex `projector.create_vertex` draws has one — run `manage.py reproject` to redraw one that does not.")
+        return node_type
 
     @property
     def category_type(self) -> NodeType:
@@ -373,14 +386,14 @@ class RetrievedNode:
     # === Hash/Equality ===
 
     def __hash__(self) -> int:
-        """Has based on graph_name and id"""
-        return hash((self.graph_name, self.id))
+        """Hashed on the graph and the vertex it was read from"""
+        return hash((self.graph_name, self.vertex_id))
 
     def __eq__(self, other: Any) -> bool:
-        """Equality based on graph_name and id"""
+        """Equality on the graph and the vertex it was read from"""
         if not isinstance(other, RetrievedNode):
             return False
-        return self.graph_name == other.graph_name and self.id == other.id
+        return self.graph_name == other.graph_name and self.vertex_id == other.vertex_id
 
     @classmethod
     def from_node(cls: Type[T], controller: "GraphController", node: Dict[str, Any], graph_name: str = "default_graph") -> T:
@@ -388,7 +401,7 @@ class RetrievedNode:
         return cls(
             controller=controller,
             graph_name=graph_name,
-            id=node.get("id", 0),
+            vertex_id=node.get("id", 0),
             label=node.get("label", "Unknown"),
             properties=node.get("properties", {}),
         )
@@ -413,7 +426,9 @@ class RetrievedEdge:
     """
 
     graph_name: str
-    id: int
+    #: The Apache AGE edge id, reassigned by every reproject — see
+    #: `RetrievedNode.vertex_id`. `unique_id` is the identity.
+    edge_id: int
     label: str
     left_id: int
     right_id: int
@@ -486,7 +501,7 @@ class RetrievedEdge:
             # No AGE edge for structure relations and measurements, and for a
             # relation the caller fills this in from the projection if it wants
             # to traverse. Identity is `row_id` either way.
-            id=0,
+            edge_id=0,
             label=category.age_name if category is not None else str(link.kind),
             left_id=0,
             right_id=0,
@@ -658,14 +673,14 @@ class RetrievedEdge:
     # === Hash/Equality ===
 
     def __hash__(self) -> int:
-        """Has based on graph_name and id"""
-        return hash((self.graph_name, self.id))
+        """Hashed on the graph and the edge it was read from"""
+        return hash((self.graph_name, self.edge_id))
 
     def __eq__(self, other: Any) -> bool:
-        """Equality based on graph_name and id"""
-        if not isinstance(other, RetrievedNode):
+        """Equality on the graph and the edge it was read from"""
+        if not isinstance(other, RetrievedEdge):
             return False
-        return self.graph_name == other.graph_name and self.id == other.id
+        return self.graph_name == other.graph_name and self.edge_id == other.edge_id
 
 
 # ==========================================
@@ -706,18 +721,14 @@ class RetrievedReifiesAsSource(RetrievedEdge):
     pass
 
 
-@dataclass
-class RetrievedEntity(RetrievedNode):
-    """A retrieved Entity node from the AGE graph."""
-
-    # NOTE: there is no `schema_hash` accessor here. The projection layer writes
-    # `__schema_version`, never `schema_hash`, so the old accessor always returned
-    # None. Use the inherited `schema_version` property instead.
-
-    @property
-    def entity_id(self) -> Optional[str]:
-        """The entity's logical UUID (stored in properties['id'])."""
-        return self.properties.get("id")
+# `RetrievedEntity` used to sit here, a `RetrievedNode` subclass adding one property:
+# `entity_id`, which returned `properties["id"]` — the same value `unique_id` returns,
+# under a name that says "entity" about a class also constructed for events. It
+# carried no other behaviour, so the two names were a distinction without one. Every
+# caller takes `RetrievedNode`.
+#
+# There was never a `schema_hash` accessor either, deliberately: the projection layer
+# writes `__schema_version`, so use the inherited `schema_version`.
 
 
 @dataclass
@@ -751,11 +762,14 @@ class RetrievedStructure(RetrievedNode):
             "identifier": row.identifier,
             "object": row.object,
             "category_id": str(row.kind_id),
+            # Stated, not inferred from the label. `node_type` has no label
+            # fallback any more — see its docstring.
+            "type": "STRUCTURE",
         }
         return cls(
             controller=controller,
             graph_name=graph_name,
-            id=0,
+            vertex_id=0,
             label=vocab.Structure,
             row_id=str(row.pk),
             properties=properties,
@@ -832,6 +846,8 @@ class RetrievedMetric(RetrievedNode):
             "key": row.key,
             "value": row.value,
             "category_id": str(row.kind_id),
+            # Stated, not inferred from the label — see `node_type`.
+            "type": "METRIC",
             "__measured_at": row.measured_at,
             "__asserted_at": row.asserted_at,
             # Who measured this. The row was dropped here entirely, so a metric
@@ -849,7 +865,7 @@ class RetrievedMetric(RetrievedNode):
         return cls(
             controller=controller,
             graph_name=graph_name,
-            id=0,
+            vertex_id=0,
             label=vocab.Metric,
             row_id=str(row.pk),
             properties=properties,

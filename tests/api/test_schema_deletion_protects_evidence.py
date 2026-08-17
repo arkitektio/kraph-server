@@ -27,7 +27,7 @@ from evidence import models as evidence_models
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { entity { id } }
+        assertEntityExists(input: $input) { instance { id } }
     }
 """
 
@@ -65,7 +65,7 @@ async def _an_entity(api_schema: kante.Schema, ctx: HttpContext, graph: core_mod
         context_value=ctx,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertEntityExists"]["entity"]["id"], category
+    return created.data["assertEntityExists"]["instance"]["id"], category
 
 
 @pytest.mark.django_db(transaction=True)
@@ -101,7 +101,7 @@ async def test_deleting_a_used_entity_category_is_allowed_and_the_evidence_survi
     @sync_to_async
     def survivors() -> tuple[int, int, int]:
         return (
-            evidence_models.Node.objects.for_organization(test_graph.organization).filter(term_id=term_id).count(),
+            evidence_models.Instance.objects.for_organization(test_graph.organization).filter(term_id=term_id).count(),
             core_models.EntityCategory.objects.filter(pk=category.pk).count(),
             evidence_models.Term.objects.for_organization(test_graph.organization).filter(pk=term_id).count(),
         )
@@ -163,7 +163,7 @@ async def test_deleting_a_graph_leaves_the_evidence_standing(
 
     @sync_to_async
     def node_count() -> int:
-        return evidence_models.Node.objects.for_organization(test_graph.organization).count()
+        return evidence_models.Instance.objects.for_organization(test_graph.organization).count()
 
     before = await node_count()
     assert before >= 1
@@ -190,7 +190,7 @@ async def test_deleting_a_graph_leaves_the_evidence_standing(
     @sync_to_async
     def survivors() -> tuple[int, int]:
         return (
-            evidence_models.Node.objects.for_organization(test_graph.organization).count(),
+            evidence_models.Instance.objects.for_organization(test_graph.organization).count(),
             core_models.Graph.objects.filter(pk=test_graph.pk).count(),
         )
 

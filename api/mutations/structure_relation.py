@@ -16,7 +16,7 @@ from api import context, inputs, types
 from core import enums
 
 
-def assert_structure_relation_exists(info: Info, input: inputs.AssertStructureRelationExistsInput) -> types.StructureRelationAssertion:
+def assert_structure_relation_exists(info: Info, input: inputs.AssertStructureRelationExistsInput) -> types.AssertedStructureRelation:
     """Assert a relation between two structures, under one of the organization's words.
 
     Names a term. Both endpoints were already organization-scoped and there is no
@@ -25,13 +25,12 @@ def assert_structure_relation_exists(info: Info, input: inputs.AssertStructureRe
     """
     payload = input.to_pydantic()
     controller = context.get_controller()
-
     organization = context.get_active_organization(info)
     context.assert_can_access_organization(info, organization)
 
     term = controller.ensure_term(organization, enums.CategoryKindChoices.STRUCTURE_RELATION, payload.term)
 
-    return types.StructureRelationAssertion(
+    return types.AssertedStructureRelation(
         _value=controller.create_structure_relation(
             organization=organization,
             term=term,
@@ -41,7 +40,7 @@ def assert_structure_relation_exists(info: Info, input: inputs.AssertStructureRe
     )
 
 
-def update_structure_relation(info: Info, input: inputs.UpdateStructureRelationInput) -> types.StructureRelationAssertion:
+def update_structure_relation(info: Info, input: inputs.UpdateStructureRelationInput) -> types.AssertedStructureRelation:
     """Replace a structure relation, keeping the old assertion on the record.
 
     Two assertions are recorded and the result reports the second — see
@@ -58,7 +57,7 @@ def update_structure_relation(info: Info, input: inputs.UpdateStructureRelationI
     # corrected both stay on the record. Same shape as `supersede_metric_value`.
     controller.archive_relation(relation_id=str(model.id), info=info)
 
-    return types.StructureRelationAssertion(
+    return types.AssertedStructureRelation(
         _value=controller.create_structure_relation(
             organization=organization,
             term=controller.edge_term(link),
@@ -68,7 +67,7 @@ def update_structure_relation(info: Info, input: inputs.UpdateStructureRelationI
     )
 
 
-def retract_structure_relation(info: Info, input: inputs.RetractStructureRelationInput) -> types.StructureRelationAssertion:
+def retract_structure_relation(info: Info, input: inputs.RetractStructureRelationInput) -> types.AssertedStructureRelation:
     """Retract a structure relation assertion without destroying it."""
     model = input.to_pydantic()
     controller = context.get_controller()
@@ -76,4 +75,4 @@ def retract_structure_relation(info: Info, input: inputs.RetractStructureRelatio
     link = controller.resolve_edge_link(str(model.id), info)
     context.assert_can_access_organization(info, link.organization)
 
-    return types.StructureRelationAssertion(_value=controller.archive_relation(relation_id=str(model.id), info=info))
+    return types.AssertedStructureRelation(_value=controller.archive_relation(relation_id=str(model.id), info=info))

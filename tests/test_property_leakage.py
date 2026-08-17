@@ -16,7 +16,7 @@ These tests need no database and no docker stack.
 """
 
 from graph_engine import retrieved
-from graph_engine.retrieved import RetrievedEntity, is_internal_property_key
+from graph_engine.retrieved import RetrievedNode, is_internal_property_key
 
 # Every internal key the write path actually emits. Sourced from
 # GraphController._recalculate_entity and the relation write path.
@@ -31,11 +31,11 @@ WRITTEN_INTERNAL_KEYS = [
 ]
 
 
-def _entity(properties: dict) -> RetrievedEntity:
-    return RetrievedEntity(
+def _entity(properties: dict) -> RetrievedNode:
+    return RetrievedNode(
         controller=None,  # type: ignore[arg-type]
         graph_name="testgraph",
-        id=1,
+        vertex_id=1,
         label="AIS",
         properties=properties,
     )

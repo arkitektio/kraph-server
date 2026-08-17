@@ -8,7 +8,7 @@ projector will never compute.
 
 Every foreign key from the evidence base into `core.Category` or into the
 organization's vocabulary is `PROTECT`. They used to be `CASCADE`, which meant
-deleting one graph's entity category destroyed organization-scoped `Node` rows
+deleting one graph's entity category destroyed organization-scoped `Instance` rows
 that other projections were built from — the append-only guarantee undone from
 the one direction nothing was watching.
 

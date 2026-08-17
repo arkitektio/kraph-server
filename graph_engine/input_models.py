@@ -1746,10 +1746,10 @@ class ClassifyNodesInput(StrictModel):
     classifications: List[ClassificationInput] = Field(..., description="The claims to record")
 
 
-class RetractClaimsInput(StrictModel):
-    """Input for retracting several claims as one act."""
+class RetractLinksInput(StrictModel):
+    """Input for retracting several link claims as one act."""
 
-    ids: List[str] = Field(..., description="The evidence IDs of the claims to retract")
+    ids: List[str] = Field(..., description="The `Link` primary keys of the claims to retract")
 
 
 class RetractNaturalEventInput(StrictModel):
@@ -1797,17 +1797,17 @@ class AssertEntityExistsInput(EntityInput):
     )
 
 
-class AssertSameEntityInput(StrictModel):
+class AssertSameInstanceInput(StrictModel):
     """Input for claiming two instances already recorded are one thing."""
 
-    entities: List[scalars.GraphID] = Field(
+    instances: List[scalars.GraphID] = Field(
         ...,
         min_length=2,
-        description="Two or more entity ids that name the same thing. Every pair among them is claimed, under one assertion.",
+        description="Two or more instance ids that name the same thing — entities or events alike. Every pair among them is claimed, under one assertion.",
     )
 
 
-class RetractSameEntityInput(StrictModel):
+class RetractSameInstanceInput(StrictModel):
     """Input for withdrawing one sameness claim."""
 
     id: scalars.GraphID = Field(..., description="The id of the sameness claim to retract")

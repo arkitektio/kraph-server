@@ -1,6 +1,6 @@
 """Instance data cannot be destroyed through the API.
 
-Evidence is append-only, so a retraction is a `Claim` and the record of
+Evidence is append-only, so a retraction is a `Standing` and the record of
 what a derived value once rested on survives. Every `delete*` mutation for
 instance data contradicted that outright — and `deleteEntity` was worse than a
 policy violation: it `DETACH DELETE`d the vertex while leaving `Node.status` at
@@ -61,7 +61,7 @@ REMOVED = [
 #: a positive assertion so this file cannot pass by the schema simply being empty.
 #:
 #: Spelled `retract*` rather than `archive*`. Nothing is put away: a
-#: `Claim(stands=False)` is written and the drawing is removed, which is what the
+#: `Standing(stands=False)` is written and the drawing is removed, which is what the
 #: rest of the codebase has always called retraction.
 RETAINED = [
     "retractEntity",

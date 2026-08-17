@@ -122,12 +122,12 @@ def test_bulk_ingest_folds_per_metric_but_projects_once(
     the whole history.
     """
     structure = writer.ensure_structure(organization, roi_category_a, "roi-bulk", assertion)
-    entity_ref = make_node(entity_category_a)
+    claim_ref = make_node(entity_category_a)
     writer.create_link(
         organization,
         kind=evidence_models.Link.Kind.INFORMS,
         source_ref=str(structure.pk),
-        target_ref=entity_ref,
+        target_ref=claim_ref,
         assertion=assertion,
     )
 
@@ -141,9 +141,9 @@ def test_bulk_ingest_folds_per_metric_but_projects_once(
             assertion=assertion,
             measured_at=BASE_TIME + timedelta(minutes=index),
         )
-        state_module.merge(metric, [entity_ref])
+        state_module.merge(metric, [claim_ref])
 
-    states = evidence_models.State.objects.for_organization(organization).filter(entity_ref=entity_ref)
+    states = evidence_models.State.objects.for_organization(organization).filter(claim_ref=claim_ref)
     assert states.count() == 1, "A hundred metrics fold into one state row, not a hundred"
 
     state = states.get()
@@ -151,4 +151,4 @@ def test_bulk_ingest_folds_per_metric_but_projects_once(
     assert state.sum == pytest.approx(sum(range(100)))
 
     # And the whole ingest collapses to a single projection target.
-    assert projector.dirty(graph_a, [structure.pk]) == [entity_ref]
+    assert projector.dirty(graph_a, [structure.pk]) == [claim_ref]

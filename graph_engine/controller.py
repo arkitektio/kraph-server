@@ -17,17 +17,11 @@ from graph_engine.input_models import (
 )
 from graph_engine.engine.protocol import CypherEngine
 from graph_engine.retrieved import (
-    RetrievedGraphNodesRender,
-    RetrievedGraphPathRender,
     RetrievedMetric,
-    RetrievedNaturalEvent,
     RetrievedNode,
     RetrievedEdge,
-    RetrievedEntity,
     RetrievedGraphTableRender,
-    RetrievedRelation,
     RetrievedStructure,
-    RetrievedInforms,
 )
 from graph_engine import results, retrieved
 from authentikate.models import Membership
@@ -190,11 +184,20 @@ class GraphController:
         )
 
     def _ensure_query_access(self, graph: models.Graph, info: Info | None = None) -> None:
-        if info is None:
-            return
+        """Check the caller may read through this view.
 
-        request = info.context.request
-        return True
+        It used to be `if info is None: return`, an unused local, and `return True`
+        from a function annotated `-> None` — so every read that relied on it for
+        tenancy had none, and the two API resolvers with no check of their own
+        (`entities`, `renderGraphTable`) read any organization's rows by guessing a
+        primary key.
+
+        A graph belongs to one organization and the claims it draws belong to that
+        organization, so the check is the same one `_assert_can_access` makes about a
+        row: authorization comes from what the id points at, never from the request,
+        because the client names a primary key and never names a tenant.
+        """
+        self._assert_can_access(graph.organization, info)
 
     def ensure_structure_kind(self, organization: Any, identifier: str) -> evidence_models.StructureKind:
         """The organization's term for a kind of external datum.
@@ -232,7 +235,7 @@ class GraphController:
 
         ``kind`` is a `core.enums.CategoryKindChoices` value — that is what
         `Term.kind` holds, and it is deliberately **not** the same enum as
-        `Node.Kind` or `Link.Kind`, which are lowercase and narrower. A write
+        `Instance.Kind` or `Link.Kind`, which are lowercase and narrower. A write
         supplies both: the word's kind here, and the row's kind where the row is
         made.
         """
@@ -347,7 +350,7 @@ class GraphController:
         # prefix either: which views show this entity is a question their
         # derivation rules answer, not something its name decides.
         ref_id = self.create_universal_id()
-        entity_ref = str(ref_id)
+        claim_ref = str(ref_id)
 
         with transaction.atomic():
             # That an entity exists is itself a claim, so it is evidence. Without
@@ -361,10 +364,10 @@ class GraphController:
             # round left a vertex the log had never heard of — still queryable,
             # still resolvable to a ref, so relations could be written naming a
             # node that did not exist, and those links then dangled forever.
-            evidence_models.Node.objects.create_for_organization(
+            evidence_models.Instance.objects.create_for_organization(
                 organization=organization,
-                id=entity_ref,
-                kind=evidence_models.Node.Kind.ENTITY,
+                id=claim_ref,
+                kind=evidence_models.Instance.Kind.ENTITY,
                 term=term,
                 assertion=assertion,
             )
@@ -377,7 +380,7 @@ class GraphController:
             writer.create_link(
                 organization,
                 kind=evidence_models.Link.Kind.CLASSIFIES,
-                source_ref=entity_ref,
+                source_ref=claim_ref,
                 target_ref=str(term.pk),
                 assertion=assertion,
                 term=term,
@@ -390,13 +393,13 @@ class GraphController:
                     organization,
                     kind=evidence_models.Link.Kind.INFORMS,
                     source_ref=str(structure.pk),
-                    target_ref=entity_ref,
+                    target_ref=claim_ref,
                     assertion=assertion,
                 )
 
             # Now that the links exist, the metrics have somewhere to roll up to.
             for metric in recorded_metrics:
-                state_module.merge(metric, [entity_ref])
+                state_module.merge(metric, [claim_ref])
 
             # "This is AIS 6": the same act that minted the instance also says
             # which instance it is. Inside this transaction and under this
@@ -404,7 +407,7 @@ class GraphController:
             # one assertion — and `Assertion.action_id`, the field that would tie
             # two calls back together, is never populated.
             for other_ref in getattr(payload, "same_as", ()) or ():
-                self._claim_same_entity(organization, entity_ref, str(other_ref), assertion, info)
+                self._claim_same_instance(organization, claim_ref, str(other_ref), assertion, info)
 
         # And only now the projection — into **every** view that declares the word
         # this entity was claimed under. Two graphs that both declare "AIS" both
@@ -416,19 +419,19 @@ class GraphController:
         # a replayed one cannot differ.
         from graph_engine import projector
 
-        node = evidence_models.Node.objects.for_organization(organization).select_related("term").get(pk=entity_ref)
-        for target_graph in projector.graphs_for_refs(organization, [entity_ref]):
+        node = evidence_models.Instance.objects.for_organization(organization).select_related("term").get(pk=claim_ref)
+        for target_graph in projector.graphs_for_refs(organization, [claim_ref]):
             projector.reproject_node(self, target_graph, node)
 
         # Read back *after* every projection, not inside the loop: `drawings` is
         # where the claim stands once the act is complete.
-        return results.Asserted.of(assertion, retrieved.RetrievedNode.from_row(self, node), self.drawings_for_node(node))
+        return results.Asserted.of(assertion, node, self.drawings_for_instance(node))
 
     # ===================================================================
     # Projection
     # ===================================================================
 
-    def project_entities(self, graph: models.Graph, entity_refs: List[str]) -> int:
+    def project_entities(self, graph: models.Graph, instance_refs: List[str]) -> int:
         """Recompute derived properties for the named entities.
 
         The replacement for the old per-fact recalculation. Batched by design: a
@@ -437,9 +440,9 @@ class GraphController:
         """
         from graph_engine import projector
 
-        return projector.project(self, graph, entity_refs)
+        return projector.project(self, graph, instance_refs)
 
-    def project_refs(self, organization: Any, entity_refs: List[str]) -> int:
+    def project_refs(self, organization: Any, instance_refs: List[str]) -> int:
         """Recompute the named entities, whichever graphs they belong to.
 
         Which graphs those are is a question for the evidence base — refs are
@@ -451,7 +454,7 @@ class GraphController:
         from graph_engine import projector
 
         projected = 0
-        for graph, refs in projector.graphs_for_refs(organization, entity_refs).items():
+        for graph, refs in projector.graphs_for_refs(organization, instance_refs).items():
             projected += projector.project(self, graph, refs)
         return projected
 
@@ -545,7 +548,7 @@ class GraphController:
         """
         from graph_engine import projector
 
-        node = self._resolve_node(node_id, info)
+        node = self._resolve_instance(node_id, info)
         organization = node.organization
 
         # One transaction. The assertion and the claim it explains were two
@@ -568,7 +571,7 @@ class GraphController:
         # graph's own selector, so a view that does not count this subject still
         # draws the node — see `results` and the `archive_node` note in
         # `docs/rfcs/0003-undrawn-nodes.md`.
-        return results.Asserted.of(assertion, retrieved.RetrievedNode.from_row(self, node), self.drawings_for_node(node))
+        return results.Asserted.of(assertion, node, self.drawings_for_instance(node))
 
     def attest_node(self, node_id: Any, info: Info) -> results.Asserted:
         """Claim that a node exists.
@@ -580,7 +583,7 @@ class GraphController:
         """
         from graph_engine import projector
 
-        node = self._resolve_node(node_id, info)
+        node = self._resolve_instance(node_id, info)
         organization = node.organization
 
         with transaction.atomic():
@@ -590,7 +593,7 @@ class GraphController:
         for graph in projector.graphs_for_refs(organization, [node.ref]):
             projector.reproject_node(self, graph, node)
 
-        return results.Asserted.of(assertion, retrieved.RetrievedNode.from_row(self, node), self.drawings_for_node(node))
+        return results.Asserted.of(assertion, node, self.drawings_for_instance(node))
 
     def archive_entity(self, node_id: Any, info: Info) -> results.Asserted:
         """Retract an entity by its uuid."""
@@ -608,62 +611,30 @@ class GraphController:
     # The remaining stamps (`__schema_version`, `__last_derived`) belong to
     # `projector.project`, which is the writer that derives them.
 
-    def list_entities_informed_by_structure(self, graph: models.Graph, structure_id: str, info: Info | None = None) -> List[RetrievedEntity]:
+    # `list_entities_informed_by_structure(graph=…)` used to sit here: the `INFORMS`
+    # links in SQL, then the named nodes fetched out of one graph's projection, on the
+    # grounds that "entities are still projection-scoped". Its only caller was
+    # `api.queries.entity.entities_informed_by`, which was named by no field on `Query`
+    # and so was unreachable — and which compensated for the graph argument by looping
+    # every graph in the organization and concatenating, listing a node once per view
+    # that declared its word. Both are gone. The direction that is wired,
+    # `get_informing_structures`, takes a node and no graph, which is the grain an
+    # `INFORMS` claim is at.
+
+    def get_node(self, node_id: scalars.GraphID, info: Info | None = None) -> retrieved.RetrievedNode:
+        """One instance, in the node shape the API answers with.
+
+        It was `get_node_for_composite_id(composite_id=…)`, and there is no composite
+        any more: an id used to be `{graph}:{age_vertex_id}` and had to be taken apart
+        to find out which namespace to look in. Now the id is world-unique, the
+        `Instance` row is what it names, and the projection is only consulted to read
+        the drawing back.
+
+        Called `get_node` rather than `get_instance` because of what it returns: the
+        claim as some view draws it, which is what the GraphQL `Node` interface is.
+        `_resolve_instance` is the half that answers with the claim itself.
         """
-        Lists all entities that are informed by a given structure.
-
-        The INFORMS traversal is a SQL lookup now — the links are evidence, not
-        projection — followed by fetching the named entities out of AGE. Entities
-        are still projection-scoped, so this stays restricted to one graph.
-
-        Args:
-            graph: The graph to query
-            structure_id: The evidence primary key of the structure
-        """
-        self._ensure_query_access(graph, info)
-
-        # Restricted to this graph's nodes through `node_refs_for`, not through a
-        # prefix on the ref. That also drops edge-targeted INFORMS links, which
-        # are not entities and have no vertex to fetch.
-        node_uuids = list(
-            claims_module.standing(
-                evidence_models.Link.objects.for_organization(graph.organization).filter(
-                    kind=evidence_models.Link.Kind.INFORMS,
-                    source_ref=str(structure_id),
-                    target_ref__in=selector_module.node_refs_for(graph),
-                ),
-                "link",
-            )
-            .values_list("target_ref", flat=True)
-        )
-
-        if not node_uuids:
-            return []
-
-        result = self.engine.execute(
-            graph,
-            """
-            MATCH (e) WHERE e.id IN $eids
-            RETURN e
-            """,
-            {"eids": node_uuids},
-        )
-        return [RetrievedEntity.from_node(self, row["e"], graph_name=graph.age_name) for row in result]
-
-    def get_node_for_composite_id(self, composite_id: scalars.GraphID, info: Info | None = None) -> retrieved.RetrievedNode:
-        """Retrieve a node by its uuid.
-
-        The name is a leftover: there is no composite any more. An id used to be
-        `{graph}:{age_vertex_id}` and had to be taken apart to find out which
-        namespace to look in — now the id is world-unique, the `Node` row says
-        which graph projects it, and the projection is only consulted to read the
-        vertex back.
-
-        Reads through `projected_node`, which tries every view declaring the node's
-        word. `_graph_for_node` returns an arbitrary one of them, so this used to
-        raise on a node that was drawn perfectly well next door.
-        """
-        return self.projected_node(self._resolve_node(composite_id, info))
+        return self.projected_instance(self._resolve_instance(node_id, info))
 
     def get_structure(
         self,
@@ -691,7 +662,7 @@ class GraphController:
 
     def get_informing_structures(
         self,
-        node: evidence_models.Node,
+        node: evidence_models.Instance,
         info: Info | None = None,
     ) -> List[retrieved.RetrievedStructure]:
         """Every structure that is evidence for a node.
@@ -754,7 +725,7 @@ class GraphController:
         # base and has no AGE presence at all. The absence is structural, which
         # is why the GraphQL result type for structures omits the field rather
         # than always answering `[]`.
-        return results.Asserted.of(assertion, RetrievedStructure.from_row(self, structure))
+        return results.Asserted.of(assertion, structure)
 
     def record_metric(
         self,
@@ -784,7 +755,7 @@ class GraphController:
             recorded = self._record_metric(organization, structure, metric, info=info, assertion=assertion)
 
         self.project_from_structures(organization, [structure.pk])
-        return results.Asserted.of(assertion, RetrievedMetric.from_row(self, recorded))
+        return results.Asserted.of(assertion, recorded)
 
     def _assert_can_access(self, organization: Any, info: Info | None) -> None:
         """Check the caller may act for this organization.
@@ -822,7 +793,7 @@ class GraphController:
         """Fetch a structure by evidence primary key, then authorize against its organization.
 
         ``organization`` is the tenant the write is being made in; see
-        `_resolve_node` for why membership alone is not enough once the write's
+        `_resolve_instance` for why membership alone is not enough once the write's
         organization comes from the request rather than from this row.
         """
         # all_objects, not objects: the organization is what we are *looking up*
@@ -899,7 +870,7 @@ class GraphController:
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             writer.retract(organization, structure, assertion)
 
-        return results.Asserted.of(assertion, retrieved.RetrievedStructure.from_row(self, structure))
+        return results.Asserted.of(assertion, structure)
 
     def update_structure(
         self,
@@ -929,7 +900,7 @@ class GraphController:
                 self._record_metric(organization, structure, metric, info=info, assertion=assertion)
 
         self.project_from_structures(organization, [structure.pk])
-        return results.Asserted.of(assertion, RetrievedStructure.from_row(self, structure))
+        return results.Asserted.of(assertion, structure)
 
     def create_event(
         self,
@@ -956,7 +927,7 @@ class GraphController:
         Args:
             organization: Whose evidence this is
             term: The organization's word for this kind of event
-            node_kind: `Node.Kind.NATURAL_EVENT` or `Node.Kind.PROTOCOL_EVENT`
+            node_kind: `Instance.Kind.NATURAL_EVENT` or `Instance.Kind.PROTOCOL_EVENT`
             payload: The event input, with its participants and supporting evidence
             info: Strawberry info, for provenance
         """
@@ -975,7 +946,7 @@ class GraphController:
 
         # The uuid, not the AGE vertex id and not a graph-prefixed composite —
         # for the same reasons entities are; see `create_entity`, which also
-        # explains why the vertex is written after the `Node` row rather than
+        # explains why the vertex is written after the `Instance` row rather than
         # before it.
         event_ref = str(self.create_universal_id())
 
@@ -986,7 +957,7 @@ class GraphController:
         resolved = [(kind, mapping.role, self._node_ref(mapping.entity_id, info, organization=organization)) for kind, mapping in participations]
 
         with transaction.atomic():
-            evidence_models.Node.objects.create_for_organization(
+            evidence_models.Instance.objects.create_for_organization(
                 organization=organization,
                 id=event_ref,
                 kind=node_kind,
@@ -1022,13 +993,13 @@ class GraphController:
                 writer.create_link(
                     organization,
                     kind=link_kind,
-                    source_ref=entity_ref,
+                    source_ref=claim_ref,
                     target_ref=event_ref,
                     assertion=assertion,
                     term=term,
                     role=role,
                 )
-                for link_kind, role, entity_ref in resolved
+                for link_kind, role, claim_ref in resolved
             ]
 
             for metric in recorded_metrics:
@@ -1040,7 +1011,7 @@ class GraphController:
         # `create_entity` gives at length. `reproject_node` draws the vertex and
         # the participation edges either side of it, from the claims — so the
         # event a fresh write produces and the one a replay produces are the same.
-        node = evidence_models.Node.objects.for_organization(organization).select_related("term").get(pk=event_ref)
+        node = evidence_models.Instance.objects.for_organization(organization).select_related("term").get(pk=event_ref)
         for target_graph in projector.graphs_for_refs(organization, [event_ref]):
             projector.reproject_node(self, target_graph, node)
 
@@ -1048,7 +1019,7 @@ class GraphController:
         # `engine.execute(graph, …)[0]["e"]`, which raised `IndexError` — not even
         # a message — whenever the graph the caller named did not draw the event.
         # The claim was already durable at that point.
-        return results.Asserted.of(assertion, retrieved.RetrievedNode.from_row(self, node), self.drawings_for_node(node))
+        return results.Asserted.of(assertion, node, self.drawings_for_instance(node))
 
     def create_metric(
         self,
@@ -1079,7 +1050,7 @@ class GraphController:
         # metrics folds a thousand times (O(1) each) but projects once.
         self.project_from_structures(organization, [structure.pk])
 
-        return results.Asserted.of(assertion, RetrievedMetric.from_row(self, metric))
+        return results.Asserted.of(assertion, metric)
 
     def _resolve_metric(self, metric_id: str, info: Info | None = None) -> evidence_models.Metric:
         """Fetch a metric by evidence primary key, then authorize against its organization."""
@@ -1133,7 +1104,7 @@ class GraphController:
 
         from graph_engine import projector
 
-        entity_refs = projector.refs_informed_by(organization, [metric.structure_id])
+        instance_refs = projector.refs_informed_by(organization, [metric.structure_id])
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
@@ -1149,14 +1120,14 @@ class GraphController:
                 # annotator's concurring retraction was suppressed entirely so
                 # that this line would not fire twice. Now both claims are
                 # recorded and only the fold is conditional.
-                state_module.retract(metric, entity_refs)
+                state_module.retract(metric, instance_refs)
 
         self.project_from_structures(organization, [metric.structure_id])
         # The retracted metric itself, not its id. Returning a bare string forced
         # the resolver to read the row back to build a payload, which is how
         # `archive_metric` came to report a metric fetched *after* the retraction
         # under an assertion it had no handle on.
-        return results.Asserted.of(assertion, RetrievedMetric.from_row(self, metric))
+        return results.Asserted.of(assertion, metric)
 
     def update_metric(
         self,
@@ -1185,20 +1156,20 @@ class GraphController:
 
         from graph_engine import projector
 
-        entity_refs = projector.refs_informed_by(organization, [structure.pk])
+        instance_refs = projector.refs_informed_by(organization, [structure.pk])
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             writer.retract(organization, metric, assertion)
             # The old value stops counting, so its contribution has to come out of
             # the statistics before the replacement goes in.
-            state_module.retract(metric, entity_refs)
+            state_module.retract(metric, instance_refs)
             replacement = self._record_metric(organization, structure, metric_input, info=info, assertion=assertion)
 
         self.project_from_structures(organization, [structure.pk])
         # One assertion covers both halves — the retraction and the replacement
         # are one corrective act, which is why they share a transaction.
-        return results.Asserted.of(assertion, RetrievedMetric.from_row(self, replacement))
+        return results.Asserted.of(assertion, replacement)
 
     def link_structure_to_entity(
         self,
@@ -1225,7 +1196,7 @@ class GraphController:
         # The client names the entity by its composite id, whose second half is
         # an AGE vertex id. Recording that verbatim — which this used to do —
         # keyed the link and every state row it folded under a ref no projection
-        # ever reads: `project` resolves entities by `Node.ref`, which is always
+        # ever reads: `project` resolves entities by `Instance.ref`, which is always
         # the uuid form. The rows were written, nothing found them, and the
         # derived value silently never moved.
         #
@@ -1233,7 +1204,7 @@ class GraphController:
         # authorized independently: a caller belonging to both tenants passes the
         # membership check on either row, so without this the INFORMS link could
         # say one organization's ROI is evidence for another's cell.
-        entity_ref = self._node_ref(entity_id, info, organization=organization)
+        claim_ref = self._node_ref(entity_id, info, organization=organization)
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
@@ -1241,18 +1212,18 @@ class GraphController:
                 organization,
                 kind=evidence_models.Link.Kind.INFORMS,
                 source_ref=str(structure.pk),
-                target_ref=entity_ref,
+                target_ref=claim_ref,
                 assertion=assertion,
             )
 
             for metric in writer.active_metrics_for_structures(organization, [structure.pk]):
-                state_module.merge(metric, [entity_ref])
+                state_module.merge(metric, [claim_ref])
 
         # Just this entity. The structure's other dependents saw no change in
         # their statistics, so fanning out to them would re-derive values that
         # cannot have moved.
-        self.project_refs(organization, [entity_ref])
-        return results.Asserted.of(assertion, RetrievedStructure.from_row(self, structure))
+        self.project_refs(organization, [claim_ref])
+        return results.Asserted.of(assertion, structure)
 
     # ===================================================================
     # Edges — relations, structure relations and measurements
@@ -1286,15 +1257,15 @@ class GraphController:
         `updateNaturalEvent`, which archived the event and created a new one. A
         disagreement about a participant produced a different *event*.
         """
-        organization = self._resolve_node(event_id, info).organization
+        organization = self._resolve_instance(event_id, info).organization
 
         event_ref = self._node_ref(event_id, info, organization=organization)
-        entity_ref = self._node_ref(entity_id, info, organization=organization)
+        claim_ref = self._node_ref(entity_id, info, organization=organization)
 
-        node = evidence_models.Node.objects.for_organization(organization).filter(id=event_ref).select_related("term").first()
+        node = evidence_models.Instance.objects.for_organization(organization).filter(id=event_ref).select_related("term").first()
         if node is None:
             raise ValueError(f"No event with ref '{event_ref}'")
-        if node.kind == evidence_models.Node.Kind.ENTITY:
+        if node.kind == evidence_models.Instance.Kind.ENTITY:
             raise ValueError("Participation is a claim about an event; the target of this one is an entity.")
 
         kind = evidence_models.Link.Kind.PARTICIPATES_AS_INPUT if is_input else evidence_models.Link.Kind.PARTICIPATES_AS_OUTPUT
@@ -1304,7 +1275,7 @@ class GraphController:
             link = writer.create_link(
                 organization,
                 kind=kind,
-                source_ref=entity_ref,
+                source_ref=claim_ref,
                 target_ref=event_ref,
                 assertion=assertion,
                 term=node.term,
@@ -1315,12 +1286,8 @@ class GraphController:
         # to pick "an arbitrary one of the declarers" here, so a second view of the
         # same event kept a participation edge nobody had retracted and nobody had
         # drawn until its next rebuild.
-        self._reproject_participation_everywhere(organization, entity_ref, event_ref, kind, role)
-        return results.Asserted.of(
-            assertion,
-            RetrievedEdge.from_link(self, link, category=self._category_for_term(link.term_id)),
-            self.drawings_for_edge(link),
-        )
+        self._reproject_participation_everywhere(organization, claim_ref, event_ref, kind, role)
+        return results.Asserted.of(assertion, link, self.drawings_for_edge(link))
 
     # ===================================================================
     # Batch claims
@@ -1348,13 +1315,13 @@ class GraphController:
         if not participants:
             return []
 
-        organization = self._resolve_node(event_id, info).organization
+        organization = self._resolve_instance(event_id, info).organization
         event_ref = self._node_ref(event_id, info, organization=organization)
 
-        node = evidence_models.Node.objects.for_organization(organization).filter(id=event_ref).select_related("term").first()
+        node = evidence_models.Instance.objects.for_organization(organization).filter(id=event_ref).select_related("term").first()
         if node is None:
             raise ValueError(f"No event with ref '{event_ref}'")
-        if node.kind == evidence_models.Node.Kind.ENTITY:
+        if node.kind == evidence_models.Instance.Kind.ENTITY:
             raise ValueError("Participation is a claim about an event; the target of this one is an entity.")
 
         resolved = [
@@ -1372,17 +1339,17 @@ class GraphController:
                 writer.create_link(
                     organization,
                     kind=kind,
-                    source_ref=entity_ref,
+                    source_ref=claim_ref,
                     target_ref=event_ref,
                     assertion=assertion,
                     term=node.term,
                     role=role,
                 )
-                for kind, role, entity_ref in resolved
+                for kind, role, claim_ref in resolved
             ]
 
-        for kind, role, entity_ref in resolved:
-            self._reproject_participation_everywhere(organization, entity_ref, event_ref, kind, role)
+        for kind, role, claim_ref in resolved:
+            self._reproject_participation_everywhere(organization, claim_ref, event_ref, kind, role)
 
         # **One** result, not one per participant. The batch is a single act by a
         # single actor, which is exactly what one assertion means — returning a
@@ -1390,7 +1357,7 @@ class GraphController:
         # N acts had happened.
         return results.Asserted(
             assertion=assertion,
-            subjects=tuple(RetrievedEdge.from_link(self, link, category=self._category_for_term(link.term_id)) for link in links),
+            subjects=tuple(links),
             drawings=tuple(drawing for link in links for drawing in self.drawings_for_edge(link)),
         )
 
@@ -1415,15 +1382,15 @@ class GraphController:
         if not classifications:
             return []
 
-        # `_resolve_node` refuses a node outside this organization, which is what
+        # `_resolve_instance` refuses a node outside this organization, which is what
         # keeps a batch within one tenant. The old body checked the same thing by
         # comparing the *categories'* graphs against each other — "A batch of
         # classifications must stay within one organization." — and that check went
         # with the categories; this is the same guarantee stated against the rows
         # the claims are actually about.
-        resolved: list[tuple[evidence_models.Term, str, evidence_models.Node]] = []
+        resolved: list[tuple[evidence_models.Term, str, evidence_models.Instance]] = []
         for classification in classifications:
-            node = self._resolve_node(classification.node, info, organization=organization)
+            node = self._resolve_instance(classification.node, info, organization=organization)
             term = self.ensure_term(organization, enums.TERM_KIND_FOR_NODE_KIND[str(node.kind)], classification.term)
             resolved.append((term, node.ref, node))
 
@@ -1470,8 +1437,8 @@ class GraphController:
         nodes = [node for _, _, node in resolved]
         return results.Asserted(
             assertion=assertion,
-            subjects=tuple(retrieved.RetrievedNode.from_row(self, node) for node in nodes),
-            drawings=tuple(drawing for node in nodes for drawing in self.drawings_for_node(node)),
+            subjects=tuple(nodes),
+            drawings=tuple(drawing for node in nodes for drawing in self.drawings_for_instance(node)),
         )
 
     def _resolved_labels(self, graphs: list[models.Graph], refs: list[str]) -> dict[Any, dict[str, str]]:
@@ -1485,12 +1452,12 @@ class GraphController:
 
         labels: dict[Any, dict[str, str]] = {}
         for graph in graphs:
-            nodes = list(evidence_models.Node.objects.for_organization(graph.organization).filter(id__in=refs).select_related("term"))
+            nodes = list(evidence_models.Instance.objects.for_organization(graph.organization).filter(id__in=refs).select_related("term"))
             categories, _ = projector.resolve_categories(graph, nodes)
             labels[graph.pk] = {ref: category.age_name for ref, category in categories.items()}
         return labels
 
-    def get_node_by_ref(self, graph: models.Graph, ref: str) -> retrieved.RetrievedNode:
+    def get_instance_by_ref(self, graph: models.Graph, ref: str) -> retrieved.RetrievedNode:
         """Read a projected node back by its durable ref."""
         node_uuid = str(ref)
         result = self.engine.execute(graph, "MATCH (n) WHERE n.id = $nid RETURN n", {"nid": node_uuid})
@@ -1498,11 +1465,35 @@ class GraphController:
             raise ValueError(f"No projected node for ref '{ref}'")
         return RetrievedNode.from_node(self, result[0]["n"], graph_name=graph.age_name)
 
-    def archive_claims(self, claim_ids: list[str], info: Info) -> results.Asserted:
-        """Retract several claims as one act.
+    def drawn_instances(self, graph: models.Graph, refs: list[str]) -> dict[str, retrieved.RetrievedNode]:
+        """How this graph draws each of these nodes, keyed by ref. Missing means undrawn.
+
+        One query for the batch, where `get_instance_by_ref` is one per node — the
+        difference between a page of claims costing one round-trip and costing a
+        hundred. A ref with no vertex simply does not appear: which nodes a view
+        holds is decided from the claims (`projector.refs_in_graph`), and whether it
+        has drawn them yet is a separate question this answers.
+        """
+        if not refs:
+            return {}
+
+        result = self.engine.execute(graph, "MATCH (n) WHERE n.id IN $nids RETURN n", {"nids": [str(ref) for ref in refs]})
+        drawn: dict[str, retrieved.RetrievedNode] = {}
+        for row in result:
+            node = RetrievedNode.from_node(self, row["n"], graph_name=graph.age_name)
+            drawn[node.unique_id] = node
+        return drawn
+
+    def retract_links(self, link_ids: list[str], info: Info) -> results.Asserted:
+        """Retract several link claims as one act.
 
         Retraction is a claim too, so withdrawing a set of them is one assertion
         for the same reason asserting a set of them is.
+
+        **Takes `Link` primary keys, which is what its name now says.** It was
+        `archive_claims(claim_ids=…)`, and both halves misled: the ids are links
+        rather than `Standing` rows, and `archive_*` is the verb this codebase
+        replaced with `retract_*` everywhere else on the instance paths.
 
         An empty batch is refused rather than answered with an empty list. The
         result is now the assertion this call made, and a call that retracts
@@ -1510,10 +1501,10 @@ class GraphController:
         an assertion that claims nothing would put a row in the log for an act
         that did not happen.
         """
-        if not claim_ids:
-            raise ValueError("Retracting an empty set of claims is not an act; pass at least one claim id.")
+        if not link_ids:
+            raise ValueError("Retracting an empty set of claims is not an act; pass at least one link id.")
 
-        links = [self.resolve_edge_link(str(claim_id), info) for claim_id in claim_ids]
+        links = [self.resolve_edge_link(str(link_id), info) for link_id in link_ids]
         organization = links[0].organization
         if any(link.organization_id != organization.pk for link in links):
             raise ValueError("A batch of retractions must stay within one organization.")
@@ -1539,7 +1530,7 @@ class GraphController:
         # its drawings last: a rebuild drops and replays a whole graph.
         return results.Asserted(
             assertion=assertion,
-            subjects=tuple(RetrievedEdge.from_link(self, link, category=self._category_for_term(link.term_id)) for link in links),
+            subjects=tuple(links),
             drawings=tuple(drawing for link in links for drawing in self.drawings_for_edge(link)),
         )
 
@@ -1585,7 +1576,7 @@ class GraphController:
             members = identity_module.component_refs(organization, [str(link.source_ref)])[str(link.source_ref)]
             identity_module.retract(organization, link)
             identity_module.recompute(organization, identity_module.canonical_for(organization, str(link.source_ref)))
-            self._reproject_nodes(organization, members)
+            self._reproject_instances(organization, members)
         elif link.kind == evidence_models.Link.Kind.INFORMS:
             # Nothing to un-draw — an INFORMS link has no edge — but the derived
             # values it fed have to stop counting it.
@@ -1616,17 +1607,13 @@ class GraphController:
         # Drawings read back, not assumed empty: the edge survives wherever
         # another live claim still states the same participation, which is the
         # point of keeping claims separate from the thing they agree on.
-        return results.Asserted.of(
-            assertion,
-            RetrievedEdge.from_link(self, link, category=self._category_for_term(link.term_id)),
-            self.drawings_for_edge(link),
-        )
+        return results.Asserted.of(assertion, link, self.drawings_for_edge(link))
 
     def _reproject_participation(
         self,
         graph: models.Graph,
         organization: Any,
-        entity_ref: str,
+        claim_ref: str,
         event_ref: str,
         kind: str,
         role: str | None,
@@ -1638,7 +1625,7 @@ class GraphController:
             claims_module.standing(
                 evidence_models.Link.objects.for_organization(organization).filter(
                     kind=kind,
-                    source_ref=entity_ref,
+                    source_ref=claim_ref,
                     target_ref=event_ref,
                     role=role,
                 ),
@@ -1650,7 +1637,7 @@ class GraphController:
             projector.project_participation(self, graph, survivors)
             return
 
-        node = evidence_models.Node.objects.for_organization(organization).filter(id=event_ref).first()
+        node = evidence_models.Instance.objects.for_organization(organization).filter(id=event_ref).first()
         if node is None:
             return
 
@@ -1666,7 +1653,7 @@ class GraphController:
         label = category.AGE_INPUT_EDGE if is_input else category.AGE_OUTPUT_EDGE
         pattern = f"(entity)-[r:{label}]->(event)" if is_input else f"(event)-[r:{label}]->(entity)"
 
-        entity_uuid = str(entity_ref)
+        entity_uuid = str(claim_ref)
         event_uuid = str(event_ref)
 
         # Nothing claims this participation any more, so the edge states nothing.
@@ -1707,14 +1694,14 @@ class GraphController:
         if actual_pk != expected_pk:
             raise PermissionError(f"{what} belongs to another organization; a claim cannot reach across tenants.")
 
-    def _resolve_node(self, node_id: Any, info: Info | None = None, organization: Any = None) -> evidence_models.Node:
+    def _resolve_instance(self, node_id: Any, info: Info | None = None, organization: Any = None) -> evidence_models.Instance:
         """Find the node a client named, and check the caller may reach it.
 
         **Identity resolves in Postgres, never through the projection.** A node
         id is a world-unique uuid, so this is a primary-key lookup — where it
         used to be `get_node_by_local_id`, which read an Apache AGE vertex and
         took its identity off a vertex property. That made the cache the
-        authority on identity: a vertex that existed without a `Node` row still
+        authority on identity: a vertex that existed without a `Instance` row still
         resolved, and every `Link` written against it named something the log had
         never heard of.
 
@@ -1731,7 +1718,7 @@ class GraphController:
         write took its organization *from* the row it was given; it became reachable
         the moment the organization started coming from the request.
         """
-        node = evidence_models.Node.all_objects.filter(pk=str(node_id)).select_related("term", "organization").first()
+        node = evidence_models.Instance.all_objects.filter(pk=str(node_id)).select_related("term", "organization").first()
         if node is None:
             raise ValueError(f"No node with id '{node_id}'")
         self._assert_can_access(node.organization, info)
@@ -1755,7 +1742,7 @@ class GraphController:
 
         # One call over every ref, not one per ref. `graphs_for_refs` runs an
         # organization-wide `Category` scan to build the term→graphs map, and
-        # `_reproject_claim` calls this once per link inside `archive_claims` — so
+        # `_reproject_claim` calls this once per link inside `retract_links` — so
         # asking per ref would make an N-claim retraction 2N full scans, which is
         # exactly what building that map in a single pass was meant to avoid.
         # It already orders by primary key.
@@ -1775,16 +1762,16 @@ class GraphController:
     def _reproject_participation_everywhere(
         self,
         organization: Any,
-        entity_ref: str,
+        claim_ref: str,
         event_ref: str,
         kind: str,
         role: str | None,
     ) -> None:
         """Correct this participation's edge in every view that draws it."""
-        for graph in self._graphs_for_endpoints(organization, entity_ref, event_ref):
-            self._reproject_participation(graph, organization, entity_ref, event_ref, kind, role)
+        for graph in self._graphs_for_endpoints(organization, claim_ref, event_ref):
+            self._reproject_participation(graph, organization, claim_ref, event_ref, kind, role)
 
-    def _claim_same_entity(
+    def _claim_same_instance(
         self,
         organization: Any,
         left_ref: str,
@@ -1797,7 +1784,7 @@ class GraphController:
         **Entities only.** A structure is a pointer to an external datum, already
         idempotent by `(identifier, object)`, so two structures are never "the
         same" — a claim that says so is either meaningless or is really a claim
-        about the entities they inform. `_resolve_node` refuses anything that is
+        about the entities they inform. `_resolve_instance` refuses anything that is
         not a node, and the kind check refuses events, which have their own
         identity through the protocol that produced them.
 
@@ -1805,11 +1792,11 @@ class GraphController:
         so the claim carries no information, and letting it through would put a
         row in the log that no reader can act on.
         """
-        left = self._resolve_node(left_ref, info, organization=organization)
-        right = self._resolve_node(right_ref, info, organization=organization)
+        left = self._resolve_instance(left_ref, info, organization=organization)
+        right = self._resolve_instance(right_ref, info, organization=organization)
 
         for node in (left, right):
-            if str(node.kind) != str(evidence_models.Node.Kind.ENTITY):
+            if str(node.kind) != str(evidence_models.Instance.Kind.ENTITY):
                 raise ValueError(f"Only entities can be claimed the same; node {node.pk} is a {node.kind}.")
 
         if str(left.pk) == str(right.pk):
@@ -1829,7 +1816,7 @@ class GraphController:
         identity_module.merge(organization, str(left.pk), str(right.pk))
         return link
 
-    def assert_same_entity(self, organization: Any, entity_refs: list[Any], info: Info) -> results.Asserted:
+    def assert_same_instance(self, organization: Any, instance_refs: list[Any], info: Info) -> results.Asserted:
         """Claim that several already-recorded instances are one thing.
 
         Every pair among them, under **one** assertion: the caller is making one
@@ -1842,25 +1829,25 @@ class GraphController:
         argument order, which is exactly what the lowest-uuid rule in
         `evidence.identity` exists to avoid.
         """
-        refs = [str(ref) for ref in entity_refs]
+        refs = [str(ref) for ref in instance_refs]
         if len(set(refs)) < 2:
             raise ValueError("Claiming sameness needs at least two distinct entities.")
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            links = [self._claim_same_entity(organization, refs[0], other, assertion, info) for other in refs[1:]]
+            links = [self._claim_same_instance(organization, refs[0], other, assertion, info) for other in refs[1:]]
 
         # Every view drawing any member may now draw the component differently, so
         # each member is reprojected — the same fan-out a classification does.
-        self._reproject_nodes(organization, refs)
+        self._reproject_instances(organization, refs)
 
         return results.Asserted(
             assertion=assertion,
-            subjects=tuple(RetrievedEdge.from_link(self, link, category=None) for link in links),
+            subjects=tuple(links),
             drawings=(),
         )
 
-    def retract_same_entity(self, claim_id: str, info: Info) -> results.Asserted:
+    def retract_same_instance(self, claim_id: str, info: Info) -> results.Asserted:
         """Withdraw one sameness claim, and rebuild whatever it may have held together.
 
         A retraction can split a component in two, and union-find cannot un-union
@@ -1878,39 +1865,48 @@ class GraphController:
             writer.retract(organization, link, assertion)
 
         # The rebuild and the reprojection are `_reproject_claim`'s SAME_AS
-        # branch, shared with `retractClaims` so a sameness claim withdrawn in a
+        # branch, shared with `retractLinks` so a sameness claim withdrawn in a
         # batch and one withdrawn alone cannot diverge.
         self._reproject_claim(organization, link)
 
-        return results.Asserted.of(assertion, RetrievedEdge.from_link(self, link, category=None), ())
+        return results.Asserted.of(assertion, link, ())
 
-    def _reproject_nodes(self, organization: Any, refs: list[str]) -> None:
+    def _reproject_instances(self, organization: Any, refs: list[str]) -> None:
         """Redraw these nodes in every view that holds them."""
         from graph_engine import projector
 
-        nodes = list(evidence_models.Node.objects.for_organization(organization).filter(pk__in=refs).select_related("term"))
+        nodes = list(evidence_models.Instance.objects.for_organization(organization).filter(pk__in=refs).select_related("term"))
         for node in nodes:
             for graph in projector.graphs_for_refs(organization, [node.ref]):
                 projector.reproject_node(self, graph, node)
 
-    def projected_node(self, node: evidence_models.Node) -> retrieved.RetrievedNode:
-        """The node as some view holds it — a **read** path, and only that.
+    def projected_instance(self, node: evidence_models.Instance) -> retrieved.RetrievedNode:
+        """The node, drawn if any view draws it and as the log has it if none does.
 
-        Kept for `get_node_for_composite_id`, where the caller asked for one node
-        and one is what it wants. Writes no longer come through here: picking one
-        of several drawings is lossy, which is what `drawings_for_node` exists to
-        stop, and this now shares its read-back so the two cannot disagree about
-        what "drawn" means.
+        For `get_node`, where the caller asked for one node and one
+        is what it wants.
+
+        **Being drawn nowhere is not an error.** This used to raise `"Node '…' is in
+        no projection: every view declaring its term refused it"` — telling a client
+        that the id it holds names nothing, about a claim sitting in the log. A graph
+        is a view; whether one has drawn a node is a fact about the view, and the
+        claim is readable either way. `RetrievedNode.from_row` is the same shape a
+        write returns before anything is drawn (`docs/rfcs/0003-undrawn-nodes.md`),
+        so a caller reads one object whether there is a vertex behind it or not, and
+        `drawings` is where "which views hold it" is answered.
+
+        Which drawing, when there are several, is still lossy — that is what
+        `drawings_for_instance` is for, and every write goes through it.
         """
-        drawings = self.drawings_for_node(node)
+        drawings = self.drawings_for_instance(node)
         if not drawings:
-            raise ValueError(f"Node '{node.pk}' is in no projection: every view declaring its term refused it")
+            return retrieved.RetrievedNode.from_row(self, node)
         return drawings[0].node
 
-    def drawings_for_node(self, node: evidence_models.Node) -> tuple[results.NodeDrawing, ...]:
+    def drawings_for_instance(self, node: evidence_models.Instance) -> tuple[results.NodeDrawing, ...]:
         """Every view that draws this node, as it draws it.
 
-        Replaces `projected_node`, which asked the same views in the same order
+        Replaces `projected_instance`, which asked the same views in the same order
         and returned the **first** that answered — so a node drawn in three views
         reported one, and which one depended on primary-key order. Nothing about
         the claim explained the difference, because the difference was not about
@@ -1929,7 +1925,7 @@ class GraphController:
         drawings: list[results.NodeDrawing] = []
         for graph in projector.graphs_for_refs(node.organization, [node.ref]):
             try:
-                projected = self.get_node_by_ref(graph, node.ref)
+                projected = self.get_instance_by_ref(graph, node.ref)
             except ValueError:
                 continue
 
@@ -2019,7 +2015,7 @@ class GraphController:
         against something the log does not have — and, given an ``organization``,
         one that belongs to a different tenant than the claim being written.
         """
-        return self._resolve_node(node_id, info, organization=organization).ref
+        return self._resolve_instance(node_id, info, organization=organization).ref
 
     def create_relation(
         self,
@@ -2083,11 +2079,7 @@ class GraphController:
         # single projection to prefer — and `Edge.id` is the link's primary key
         # anyway, so nothing a client can select comes from the AGE edge. Which
         # views drew it is `drawings`, where each answer keeps its graph.
-        return results.Asserted.of(
-            assertion,
-            RetrievedEdge.from_link(self, link, category=self._category_for_term(link.term_id)),
-            self.drawings_for_edge(link),
-        )
+        return results.Asserted.of(assertion, link, self.drawings_for_edge(link))
 
     def _attach_supporting_evidence(
         self,
@@ -2100,7 +2092,7 @@ class GraphController:
 
         The structures that justify "these two cells are connected" inform the
         *relation*, not either endpoint, so the INFORMS links target the edge's
-        own durable ref. `project` skips refs with no `Node` row, so these never
+        own durable ref. `project` skips refs with no `Instance` row, so these never
         reach node projection; folding the metrics now is what lets derived
         properties on edges become a read-side change later rather than a
         backfill.
@@ -2165,7 +2157,7 @@ class GraphController:
         # No drawings, and none possible: both endpoints are structures, which are
         # Postgres rows with no vertex, so `graphs_for_refs` returns nothing and
         # there is no edge to draw between them.
-        return results.Asserted.of(assertion, RetrievedEdge.from_link(self, link, category=self._category_for_term(link.term_id)))
+        return results.Asserted.of(assertion, link)
 
     def create_measurement(
         self,
@@ -2209,7 +2201,7 @@ class GraphController:
         # No drawings: a measurement's source is a structure, and nothing projects
         # a MEASUREMENT link to an AGE edge. What it *does* move is the target
         # entity's derived properties, which is what `project_refs` above did.
-        return results.Asserted.of(assertion, RetrievedEdge.from_link(self, link, category=self._category_for_term(link.term_id)))
+        return results.Asserted.of(assertion, link)
 
     def resolve_edge_link(self, edge_id: str, info: Info | None = None) -> evidence_models.Link:
         """Find the edge assertion a client named, and check it may be reached."""
@@ -2262,11 +2254,7 @@ class GraphController:
         self._reproject_proposition_everywhere(organization, source_ref, target_ref, term_id)
         # Read back, not assumed gone: the edge survives wherever another live
         # assertion still states the same proposition.
-        return results.Asserted.of(
-            assertion,
-            RetrievedEdge.from_link(self, link, category=self._category_for_term(link.term_id)),
-            self.drawings_for_edge(link),
-        )
+        return results.Asserted.of(assertion, link, self.drawings_for_edge(link))
 
     def _reproject_proposition(
         self,
@@ -2382,7 +2370,7 @@ class GraphController:
             return None
 
         edge = RetrievedEdge.from_link(self, link, graph_name=graph.age_name, category=category)
-        edge.id = int(result[0]["id"])
+        edge.edge_id = int(result[0]["id"])
         edge.left_id = int(result[0]["sid"])
         edge.right_id = int(result[0]["tid"])
         return edge
@@ -2674,32 +2662,23 @@ class GraphController:
         limit = pagination.limit if pagination.limit is not None else 200
         return f"SKIP {offset} LIMIT {limit}"
 
-    def list_entities(self, graph: models.Graph, filters: input_models.EntityFilters | None = None, pagination: input_models.EntityPagination | None = None, ordering: list[input_models.EntityOrder] | None = None, info: Info | None = None) -> List[RetrievedEntity]:
-        self._ensure_query_access(graph, info)
+    # `list_entities(graph=…)` used to sit here, and it was what `nodes(graph:)` and
+    # `entities(entityCategoryId:)` were built on. It matched `labels(e)[0] IN
+    # <this graph's entity categories>`, so it answered two questions wrongly at
+    # once: *nodes* meant entities, and *entities* meant the ones the projection had
+    # drawn. Both are decided from the claims now — `projector.refs_in_graph` and
+    # `refs_admitted_by`, read through `api/queries/_nodes.py`.
 
-        entity_labels = list(models.EntityCategory.objects.filter(graph=graph).values_list("age_name", flat=True))
-        if not entity_labels:
-            return []
+    def list_entities_for_category(self, category: models.EntityCategory, filters: input_models.EntityFilters | None = None, pagination: input_models.EntityPagination | None = None, ordering: list[input_models.EntityOrder] | None = None, info: Info | None = None) -> List[RetrievedNode]:
+        """This view's **drawing**, queried on the derived properties it has indexed.
 
-        where_clause, filter_params = self._build_entity_where_clause(filters, variable="e")
-        order_clause = self._build_entity_order_clause(ordering, variable="e")
-        pagination_clause = self._build_entity_pagination_clause(pagination)
-
-        query = f"""
-            MATCH (e)
-            WHERE labels(e)[0] IN $entity_labels
-            {("AND " + where_clause[len("WHERE ") :]) if where_clause else ""}
-            RETURN e
-            {order_clause}
-            {pagination_clause}
+        A drawing-scoped read, and the only honest use of one: filtering by
+        `has_property` or a property match is a question about values the view
+        derived, which exist nowhere else — `_assert_indexed` is what keeps it to the
+        keys the schema said to index. No GraphQL field is built on it now that the
+        entity lists are claim-grain; `EntityCategory.entities` answers what the
+        category *admits*, which is a different question and cannot be asked of AGE.
         """
-
-        params: dict[str, Any] = {"entity_labels": entity_labels, **filter_params}
-        result = self.engine.execute(graph, query, params)
-
-        return [RetrievedEntity.from_node(self, row["e"], graph_name=graph.age_name) for row in result]
-
-    def list_entities_for_category(self, category: models.EntityCategory, filters: input_models.EntityFilters | None = None, pagination: input_models.EntityPagination | None = None, ordering: list[input_models.EntityOrder] | None = None, info: Info | None = None) -> List[RetrievedEntity]:
         self._ensure_query_access(category.graph, info)
 
         indexed_keys = self.indexed_property_keys(category)
@@ -2723,7 +2702,7 @@ class GraphController:
         params: dict[str, Any] = {**filter_params}
         result = self.engine.execute(category.graph, query, params)
 
-        return [RetrievedEntity.from_node(self, row["e"], graph_name=category.graph.age_name) for row in result]
+        return [RetrievedNode.from_node(self, row["e"], graph_name=category.graph.age_name) for row in result]
 
     def list_structures(self, organization: Any, filters: input_models.StructureFilters | None = None, pagination: input_models.StructurePagination | None = None, ordering: list[input_models.StructureOrder] | None = None, info: Info | None = None) -> List[RetrievedStructure]:
         """List structures from the evidence base.

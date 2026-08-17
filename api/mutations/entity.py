@@ -1,7 +1,7 @@
 """
 Entity mutation resolvers.
 
-Every one of these returns a :class:`api.types.EntityAssertion` — the claim it
+Every one of these returns a :class:`api.types.AssertedEntity` — the claim it
 recorded, the node it was about, and every view that draws that node afterwards.
 See `graph_engine/results.py`.
 """
@@ -14,7 +14,7 @@ from kante import Info
 def assert_entity_exists(
     info: Info,
     input: inputs.AssertEntityExistsInput,
-) -> types.EntityAssertion:
+) -> types.AssertedEntity:
     """Claim that an entity exists, under one of the organization's words.
 
     Named for the act rather than for a row being made: nothing is *created*
@@ -41,7 +41,7 @@ def assert_entity_exists(
     controller = context.get_controller()
     term = controller.ensure_term(organization, enums.CategoryKindChoices.ENTITY, input_model.term)
 
-    return types.EntityAssertion(
+    return types.AssertedEntity(
         _value=controller.create_entity(
             organization=organization,
             term=term,
@@ -54,11 +54,11 @@ def assert_entity_exists(
 def retract_entity(
     info: Info,
     input: inputs.RetractEntityInput,
-) -> types.EntityAssertion:
+) -> types.AssertedEntity:
     """Claim that an entity is not there, and stop drawing it where that counts.
 
     Called retraction rather than archiving because nothing is put away: a
-    `Claim(stands=False)` is written and the vertex is removed. The entity's own
+    `Standing(stands=False)` is written and the vertex is removed. The entity's own
     row, its metrics and its relations are all untouched — a derived value that
     dropped a contributing measurement still has to be explainable afterwards.
 
@@ -74,13 +74,13 @@ def retract_entity(
     # `get_accessible_graph` call to make here. Authorization comes from the row:
     # `archive_entity` resolves the node and checks the caller belongs to its
     # organization.
-    return types.EntityAssertion(_value=controller.archive_entity(model.id, info=info))
+    return types.AssertedEntity(_value=controller.archive_entity(model.id, info=info))
 
 
 def attest_entity(
     info: Info,
     input: inputs.AttestEntityInput,
-) -> types.EntityAssertion:
+) -> types.AssertedEntity:
     """Claim that an entity exists, and draw it back into every view that admits it.
 
     The counterpart of `retract_entity`, and deliberately not called "unarchive":
@@ -96,4 +96,4 @@ def attest_entity(
     controller = context.get_controller()
 
     model = input.to_pydantic()
-    return types.EntityAssertion(_value=controller.attest_node(model.id, info=info))
+    return types.AssertedEntity(_value=controller.attest_node(model.id, info=info))

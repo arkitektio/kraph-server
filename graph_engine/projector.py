@@ -33,6 +33,8 @@ import logging
 import time
 from typing import Any, Iterable
 
+from django.db.models import Q
+
 from core import models as core_models
 from core.enums import ValueKind
 from evidence import claims as claims_module
@@ -69,7 +71,7 @@ def dirty(graph: core_models.Graph, structure_ids: Iterable[Any]) -> list[str]:
     An indexed lookup, not a traversal: one query against
     `(organization, kind, source_ref)` regardless of how many metrics landed.
     """
-    return selector_module.entity_refs_informed_by(graph, list(structure_ids))
+    return selector_module.instance_refs_informed_by(graph, list(structure_ids))
 
 
 #: Every derivation that reads from evidence. All four are handled — leaving
@@ -137,21 +139,21 @@ def graphs_for_refs(organization: Any, refs: Iterable[str]) -> dict[Any, list[st
     it belongs to is a question for the evidence base — and one a ref can answer
     with more than one graph, which the prefix could never express.
 
-    Refs with no `Node` row simply do not appear: they are edge refs, or nodes
+    Refs with no `Instance` row simply do not appear: they are edge refs, or nodes
     of a graph that has since been deleted. Both are expected — evidence
     outlives the projections built from it.
     """
     from core import models as core_models
 
     by_graph_id: dict[Any, list[str]] = {}
-    for node_ref, graph_id in selector_module.graph_ids_for_node_ids(organization, refs):
+    for node_ref, graph_id in selector_module.graph_ids_for_instance_ids(organization, refs):
         by_graph_id.setdefault(graph_id, []).append(node_ref)
 
     if not by_graph_id:
         return {}
 
     # Ordered so the *sequence* of drawings a write reports is stable — see
-    # `GraphController.drawings_for_node`. This used to matter far more: a write
+    # `GraphController.drawings_for_instance`. This used to matter far more: a write
     # returned the first graph this yielded and discarded the rest, so the order
     # decided which single category a client saw. It reports all of them now, and
     # the ordering is only so that two identical writes list them alike.
@@ -164,7 +166,7 @@ def _derived_properties(category: core_models.Category) -> list[Any]:
     return [prop for prop in (category.defined_properties or []) if is_derived(prop)]
 
 
-def _structure_ids_informing(graph: core_models.Graph, entity_ref: str) -> list[Any]:
+def _structure_ids_informing(graph: core_models.Graph, claim_ref: str) -> list[Any]:
     """The structure primary keys whose measurements reach this entity.
 
     Parsed to real UUIDs rather than left as strings: `source_ref` is an opaque
@@ -175,13 +177,13 @@ def _structure_ids_informing(graph: core_models.Graph, entity_ref: str) -> list[
     """
     import uuid as uuid_module
 
-    refs = selector_module.informs_links_for(graph).filter(target_ref=entity_ref).values_list("source_ref", flat=True)
+    refs = selector_module.informs_links_for(graph).filter(target_ref=claim_ref).values_list("source_ref", flat=True)
     return [uuid_module.UUID(str(ref)) for ref in refs]
 
 
 def _priority_scoped_value(
     graph: core_models.Graph,
-    entity_ref: str,
+    claim_ref: str,
     source_kind: Any,
     key: str,
     value_kinds: Iterable[str],
@@ -208,7 +210,7 @@ def _priority_scoped_value(
     ordering = list(getattr(rule, "tool_priority", []) if by_tool else getattr(rule, "subject_priority", []))
     field = "assertion__app_id" if by_tool else "assertion__subject"
 
-    structure_ids = _structure_ids_informing(graph, entity_ref)
+    structure_ids = _structure_ids_informing(graph, claim_ref)
     if not structure_ids:
         return None
 
@@ -324,7 +326,7 @@ def derived_property_keys(category: core_models.Category) -> set[str]:
 
 def _property_statistics(
     graph: core_models.Graph,
-    entity_ref: str,
+    claim_ref: str,
     category: core_models.Category,
 ) -> dict[str, Any]:
     """How much evidence stands behind each derived value, and over what window.
@@ -356,7 +358,7 @@ def _property_statistics(
         if value_kinds is None:
             continue
 
-        state = _scoped_state(graph, entity_ref, source_kind, key, value_kinds) if graph.selector else state_module.state_for(graph.organization, entity_ref, source_kind, key, value_kinds)
+        state = _scoped_state(graph, claim_ref, source_kind, key, value_kinds) if graph.selector else state_module.state_for(graph.organization, claim_ref, source_kind, key, value_kinds)
         if state is None:
             continue
 
@@ -373,7 +375,7 @@ def _property_statistics(
 
 def derive_properties(
     graph: core_models.Graph,
-    entity_ref: str,
+    claim_ref: str,
     category: core_models.Category,
 ) -> dict[str, Any]:
     """Compute one entity's derived properties from its state vectors.
@@ -426,9 +428,9 @@ def derive_properties(
             continue
 
         if prop.derivation in (DerivationType.PRIORITY_LATEST, DerivationType.LATEST_ASSERTION_TOOL):
-            value = _priority_scoped_value(graph, entity_ref, source_kind, key, value_kinds, prop)
+            value = _priority_scoped_value(graph, claim_ref, source_kind, key, value_kinds, prop)
         else:
-            state = _scoped_state(graph, entity_ref, source_kind, key, value_kinds) if graph.selector else state_module.state_for(organization, entity_ref, source_kind, key, value_kinds)
+            state = _scoped_state(graph, claim_ref, source_kind, key, value_kinds) if graph.selector else state_module.state_for(organization, claim_ref, source_kind, key, value_kinds)
 
             aggregation = rule.aggregation if rule and rule.aggregation else None
             if prop.derivation == DerivationType.LATEST and aggregation is None:
@@ -446,7 +448,7 @@ def derive_properties(
 
 def _scoped_state(
     graph: core_models.Graph,
-    entity_ref: str,
+    claim_ref: str,
     source_kind: Any,
     key: str,
     value_kinds: Iterable[str],
@@ -464,7 +466,7 @@ def _scoped_state(
     into an unsaved vector. The same trade `_priority_scoped_value` already
     makes, and for the same reason.
     """
-    structure_ids = _structure_ids_informing(graph, entity_ref)
+    structure_ids = _structure_ids_informing(graph, claim_ref)
     if not structure_ids:
         return None
 
@@ -487,7 +489,7 @@ def _scoped_state(
     # aggregation ever needs the kind, give it the whole set rather than one.
     vector = evidence_models.State(
         organization=graph.organization,
-        entity_ref=entity_ref,
+        claim_ref=claim_ref,
         source_kind=source_kind,
         key=key,
         value_kind=next(iter(sorted(value_kinds)), ""),
@@ -495,7 +497,7 @@ def _scoped_state(
     return state_module.fold(metrics, vector)
 
 
-def _observation_window(graph: core_models.Graph, entity_ref: str) -> dict[str, Any]:
+def _observation_window(graph: core_models.Graph, claim_ref: str) -> dict[str, Any]:
     """When the evidence behind this node was observed.
 
     `valid_from` and `valid_to` are read by six GraphQL fields that have always
@@ -508,7 +510,7 @@ def _observation_window(graph: core_models.Graph, entity_ref: str) -> dict[str, 
 
     from evidence import models as evidence_models
 
-    structure_ids = _structure_ids_informing(graph, entity_ref)
+    structure_ids = _structure_ids_informing(graph, claim_ref)
     if not structure_ids:
         return {"valid_from": None, "valid_to": None}
 
@@ -526,7 +528,7 @@ def _observation_window(graph: core_models.Graph, entity_ref: str) -> dict[str, 
 def project(
     controller: Any,
     graph: core_models.Graph,
-    entity_refs: Iterable[str],
+    instance_refs: Iterable[str],
 ) -> int:
     """Write derived properties onto the named entities. Returns how many were written.
 
@@ -543,15 +545,15 @@ def project(
     active_schema = core_models.GraphSchema.active_for(graph)
     schema_version = active_schema.hash if active_schema else None
 
-    refs = [str(ref) for ref in entity_refs]
-    nodes = list(evidence_models.Node.objects.for_organization(graph.organization).filter(id__in=refs))
+    refs = [str(ref) for ref in instance_refs]
+    nodes = list(evidence_models.Instance.objects.for_organization(graph.organization).filter(id__in=refs))
     # Which category a node projects as is this graph's question to answer, and
     # `_write_properties` needs the answer to find the vertex at all — it matches
     # on the label. Resolved once for the batch rather than per node.
     resolved, _ = resolve_categories(graph, nodes)
 
-    for entity_ref in refs:
-        category = resolved.get(entity_ref)
+    for claim_ref in refs:
+        category = resolved.get(claim_ref)
         if category is None:
             # Either no such node, or no category in this graph admits it. Either
             # way there is no vertex to write onto.
@@ -563,19 +565,19 @@ def project(
         # the rest to `api/types._derive_unindexed`, which folded state per node
         # on every read — and since `index` defaults to False, that was almost
         # all of them.
-        values = derive_properties(graph, entity_ref, category)
-        values.update(_property_statistics(graph, entity_ref, category))
-        values.update(_observation_window(graph, entity_ref))
+        values = derive_properties(graph, claim_ref, category)
+        values.update(_property_statistics(graph, claim_ref, category))
+        values.update(_observation_window(graph, claim_ref))
         values["__schema_version"] = schema_version
         values["__last_derived"] = int(time.time() * 1000)
 
-        if not _write_properties(controller, graph, entity_ref, category, values):
-            # The node has a `Node` row and a category this graph admits, but no
+        if not _write_properties(controller, graph, claim_ref, category, values):
+            # The node has a `Instance` row and a category this graph admits, but no
             # vertex — the projection is behind the log. `reproject` is the fix;
             # counting it as projected would hide that it is needed.
             logger.warning(
                 "%s: no vertex labelled %s to write onto; the projection is behind the evidence. Run `manage.py reproject --graph %s`.",
-                entity_ref,
+                claim_ref,
                 category.age_name,
                 graph.age_name,
             )
@@ -804,8 +806,11 @@ def resolve_categories(graph: core_models.Graph, nodes: list[Any]) -> tuple[dict
 
         if len(matches) > 1:
             names = ", ".join(sorted(category.key for category in matches))
+            # Reported, not logged. This is read by the *read* paths too now
+            # (`refs_admitted_by`), and a warning here fired on every list query for
+            # as long as the ambiguity existed — the same line `project_all` already
+            # emits at rebuild. Whoever can act on it does the logging.
             skipped[ref] = f"matches more than one defined category ({names}); a vertex carries one label, and choosing between them would hide the disagreement"
-            logger.warning("%s: %s", ref, skipped[ref])
             continue
 
         if matches:
@@ -830,6 +835,65 @@ def resolve_categories(graph: core_models.Graph, nodes: list[Any]) -> tuple[dict
         skipped[ref] = "no category in this graph admits it: every term it was asserted as is defined, and none of those definitions match"
 
     return resolved, skipped
+
+
+def refs_admitted_by(category: core_models.Category) -> set[str]:
+    """Every node this category draws — asked of the claims, not of the drawing.
+
+    What a category-scoped node list needs, and it goes through
+    :func:`resolve_categories` rather than reimplementing the rule. That matters
+    more here than it looks: the list would otherwise be a *fourth* place deciding
+    membership, and the three that exist agree on purpose. A definition that admits
+    a node the list did not show, or the reverse, would be indistinguishable from a
+    stale projection.
+
+    The candidate set is narrowed first so this costs the category rather than the
+    graph. A node can only resolve to this category two ways — its definition
+    matched (so some standing `CLASSIFIES` claim names one of the words its
+    ``asserted_as`` lists), or the category is primitive and the node was claimed
+    under its word (as `Instance.term` or as a claim naming that term). Anything outside
+    that set resolves elsewhere or nowhere, so leaving it out cannot change an
+    answer. `resolve_categories` evaluates every definition in the graph against
+    whatever batch it is given, so its verdict for these nodes is the same one a
+    whole-graph pass would reach.
+    """
+    graph = category.graph
+    standing_claims = selector_module.classification_claims_for(graph)
+
+    asserted_as = selector_module.asserted_as_keys(category.definition) if category.definition else []
+    if asserted_as:
+        claimed = standing_claims.filter(term__key__in=asserted_as)
+    else:
+        claimed = standing_claims.filter(term_id=category.term_id)
+    claimed_refs = {str(ref) for ref in claimed.values_list("source_ref", flat=True)}
+
+    candidates = list(selector_module.instances_for(graph).filter(Q(term_id=category.term_id) | Q(id__in=claimed_refs)).select_related("term"))
+    resolved, _ = resolve_categories(graph, candidates)
+
+    return {ref for ref, drawn_as in resolved.items() if drawn_as.pk == category.pk}
+
+
+def refs_in_graph(graph: core_models.Graph) -> set[str]:
+    """Every node this graph holds, by the claims — the whole view's membership.
+
+    `instances_for` says which nodes the graph's *words* admit; this additionally folds
+    existence and the categories' definitions, which is what decides whether the
+    view holds the node at all. Same answer `project_all` draws, asked without
+    reference to whether it has drawn it yet.
+
+    **This costs the whole view, and its caller paginates afterwards.** Every node the
+    graph's words admit is loaded and resolved to answer a request for ten of them,
+    where the Cypher it replaced pushed `SKIP`/`LIMIT` into the projection. Said out
+    loud rather than left to be discovered: the rule is evaluated in Postgres against
+    claims and definitions, and it has no `SKIP` to push. Narrowing it means either
+    teaching `resolve_categories` to answer for a page — which would page over a set
+    it has not finished computing — or accepting short pages, so it is a deliberate
+    trade and not an oversight. `refs_admitted_by` is bounded by its category and is
+    the one to prefer where a category is known.
+    """
+    nodes = list(selector_module.instances_for(graph).select_related("term"))
+    resolved, _ = resolve_categories(graph, nodes)
+    return set(resolved)
 
 
 #: The two participation kinds, and which way the projected edge points. An input
@@ -989,7 +1053,7 @@ def project_participation(
 def _write_properties(
     controller: Any,
     graph: core_models.Graph,
-    entity_ref: str,
+    claim_ref: str,
     category: core_models.Category,
     values: dict[str, Any],
 ) -> bool:
@@ -1003,7 +1067,7 @@ def _write_properties(
     silent no-op in Cypher, so without this the caller cannot tell a written
     node from an absent one — and reports both as projected.
     """
-    node_uuid = str(entity_ref)
+    node_uuid = str(claim_ref)
 
     set_clause = ", ".join(f"e.{controller._validate_property_key(key)} = $u_{key}" for key in values)
     params: dict[str, Any] = {f"u_{key}": value for key, value in values.items()}
@@ -1021,27 +1085,36 @@ def _write_properties(
     return bool(result)
 
 
-def create_vertex(controller: Any, graph: core_models.Graph, node_ref: str, category: Any) -> None:
+def create_vertex(controller: Any, graph: core_models.Graph, node: Any, category: Any) -> None:
     """Draw one node into the projection.
 
     Shared by `rebuild` and `reproject_node` so that a replayed vertex and a
     freshly re-attested one cannot differ — the same reason `project_edges` is
     shared between creating a relation and replaying one.
 
-    The vertex carries its identity and its label and nothing else. Every value
-    on it is derived, and `project` is what derives them.
+    The vertex carries its identity, **what kind of thing it is**, and its label.
+    Every other value on it is derived, and `project` is what derives them.
+
+    ``type`` comes from `Instance.kind` — the claim's own account of what it is —
+    rather than from the label, which is `category.age_name` and therefore this
+    view's private rename of a word. Reading the kind off the label is what made
+    every drawn event answer `__typename: Entity`: `RetrievedNode.node_type` fell
+    back to matching "Cell" or "Mitosis" against a fixed vocabulary of five words
+    it could never be one of. A node's kind is a fact about the claim, so the
+    claim is where it is taken from — and it is written here so that a vertex is
+    self-describing to any reader, which is what removes the fallback entirely.
     """
     controller.engine.execute(
         graph,
         f"""
-        CREATE (e:{category.age_name} {{id: $eid, category_id: $cid}})
+        CREATE (e:{category.age_name} {{id: $eid, category_id: $cid, type: $ntype}})
         RETURN id(e) as db_id
         """,
-        {"eid": str(node_ref), "cid": category.pk},
+        {"eid": str(node.ref), "cid": category.pk, "ntype": str(node.kind).upper()},
     )
 
 
-def unproject(controller: Any, graph: core_models.Graph, entity_refs: Iterable[str]) -> int:
+def unproject(controller: Any, graph: core_models.Graph, instance_refs: Iterable[str]) -> int:
     """Remove nodes from the projection. Returns how many vertices went.
 
     The counterpart of :func:`project`, and the node-side analogue of the
@@ -1056,14 +1129,14 @@ def unproject(controller: Any, graph: core_models.Graph, entity_refs: Iterable[s
     edges are redrawn from those claims, which is exactly what `rebuild` does.
     """
     removed = 0
-    for entity_ref in entity_refs:
+    for claim_ref in instance_refs:
         # Counted before the delete: AGE reports nothing useful back from
         # `DETACH DELETE`, and a count that always said "1" would be the same
         # kind of lie `project_edges` used to tell.
         found = controller.engine.execute(
             graph,
             "MATCH (e) WHERE e.id = $node_uuid RETURN id(e) as db_id",
-            {"node_uuid": str(entity_ref)},
+            {"node_uuid": str(claim_ref)},
         )
         if not found:
             continue
@@ -1071,7 +1144,7 @@ def unproject(controller: Any, graph: core_models.Graph, entity_refs: Iterable[s
         controller.engine.execute(
             graph,
             "MATCH (e) WHERE e.id = $node_uuid DETACH DELETE e",
-            {"node_uuid": str(entity_ref)},
+            {"node_uuid": str(claim_ref)},
         )
         removed += 1
 
@@ -1095,7 +1168,7 @@ def reproject_node(controller: Any, graph: core_models.Graph, node: Any) -> bool
     if category is None:
         return False
 
-    create_vertex(controller, graph, node.ref, category)
+    create_vertex(controller, graph, node, category)
 
     # Its edges come from the claims, not from anything remembered about what the
     # vertex used to have. Scoped to this node so re-attesting one entity does
@@ -1119,10 +1192,10 @@ def project_all(controller: Any, graph: core_models.Graph) -> dict[str, int]:
     functions `rebuild` calls — so running this over a populated projection
     converges rather than duplicating.
     """
-    # Every node this graph contains. `Node` carries no cached "does it exist"
+    # Every node this graph contains. `Instance` carries no cached "does it exist"
     # column, so which of these actually get a vertex is decided by
     # `resolve_categories`, which folds the claims under this graph's selector.
-    nodes = list(selector_module.nodes_for(graph).select_related("term"))
+    nodes = list(selector_module.instances_for(graph).select_related("term"))
 
     # Which label each node takes is a question about *this graph's* categories,
     # not a fact stored on the node — see `resolve_categories`. Answered before
@@ -1133,7 +1206,7 @@ def project_all(controller: Any, graph: core_models.Graph) -> dict[str, int]:
         category = resolved.get(str(node.ref))
         if category is None:
             continue
-        create_vertex(controller, graph, node.ref, category)
+        create_vertex(controller, graph, node, category)
 
     # Edges after nodes: `MATCH (s) ... MATCH (t)` needs both endpoints to exist.
     edges = project_edges(controller, graph, active_relation_links(graph))
@@ -1143,6 +1216,11 @@ def project_all(controller: Any, graph: core_models.Graph) -> dict[str, int]:
 
     if skipped:
         logger.warning("%s: %d node(s) admitted by no category in this graph and left unprojected.", graph.age_name, len(skipped))
+        # Each reason, once, here — where somebody can act on it. `resolve_categories`
+        # used to log the ambiguous case itself, which meant every read that consults
+        # the rule logged it too.
+        for ref, reason in skipped.items():
+            logger.warning("%s: %s: %s", graph.age_name, ref, reason)
 
     # `unclassified` is reported, not swallowed. A definition that narrows a
     # category also shrinks the graph, and a caller that cannot see by how much
@@ -1163,7 +1241,7 @@ def refs_drawn_as(graph: core_models.Graph, category: core_models.Category) -> l
     a node takes is this graph's question — a `definition` can move a node between
     categories without anything on the node changing.
     """
-    nodes = list(selector_module.nodes_for(graph).select_related("term"))
+    nodes = list(selector_module.instances_for(graph).select_related("term"))
     resolved, _ = resolve_categories(graph, nodes)
     return [ref for ref, resolved_category in resolved.items() if resolved_category.pk == category.pk]
 
@@ -1247,7 +1325,7 @@ def rebuild(controller: Any, graph: core_models.Graph) -> dict[str, int]:
     rebuilt from *another* cache. That refold is organization-wide, which is why
     it lives here and not in :func:`project_all`.
 
-    So are the standing answers, and those come **first**: `ClaimCurrent` is what
+    So are the standing answers, and those come **first**: `CurrentStanding` is what
     every "which of these still count" narrowing reads, so replaying nodes and
     edges before it would replay them against a cache this rebuild has not yet
     proved. Same argument as `refold_state`, one layer down — and the reason it is
@@ -1268,7 +1346,7 @@ def rebuild(controller: Any, graph: core_models.Graph) -> dict[str, int]:
     # an empty namespace and an exception, with nothing left to fall back on.
     # `project_all` resolves again after the drop; one redundant pass is the price
     # of the guarantee, and rebuild is the expensive operation either way.
-    resolve_categories(graph, list(selector_module.nodes_for(graph).select_related("term")))
+    resolve_categories(graph, list(selector_module.instances_for(graph).select_related("term")))
 
     controller.engine.drop_graph(graph.age_name, cascade=True)
     controller.engine.create_graph(age_name=graph.age_name)

@@ -19,8 +19,8 @@ from .structure_relation import (
 from .natural_event import assert_natural_event_exists, retract_natural_event, attest_natural_event
 from .protocol_event import assert_protocol_event_exists, retract_protocol_event, attest_protocol_event
 from .participation import assert_participation, assert_participations, retract_participation
-from .claim import classify_nodes, retract_claims
-from .identity import assert_same_entity, retract_same_entity
+from .link import classify_nodes, retract_links
+from .identity import assert_same_instance, retract_same_instance
 from .schema import *
 from .schema import create_graph_table_query_through_builder
 from .insights import (
@@ -103,9 +103,9 @@ __all__ = [
     "retract_participation",
     "assert_participations",
     "classify_nodes",
-    "retract_claims",
-    "assert_same_entity",
-    "retract_same_entity",
+    "retract_links",
+    "assert_same_instance",
+    "retract_same_instance",
     "create_graph_table_query_through_builder",
     # Insights graph query subtype mutations
     "create_graph_table_query",

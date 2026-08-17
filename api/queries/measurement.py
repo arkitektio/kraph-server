@@ -40,9 +40,9 @@ def measurement(info: Info, id: scalars.GraphID) -> types.Measurement:
 def measurements(
     info: Info,
     measurement_category_id: strawberry.ID,
-    filters: filters.RelationFilter | None = None,
-    ordering: list[order.RelationOrder] | None = None,
-    pagination: pagination.RelationPaginationInput | None = None,
+    filters: filters.MeasurementFilter | None = None,
+    ordering: list[order.MeasurementOrder] | None = None,
+    pagination: pagination.MeasurementPaginationInput | None = None,
 ) -> List[types.Measurement]:
     """Every standing measurement claim stated in this category's word.
 
@@ -53,6 +53,10 @@ def measurements(
 
     Scoped by the category's **term**, so two graphs declaring the same word list
     the same claims — see `api/queries/_edges.py`.
+
+    Authorized against the **organization**, the grain the answer is at, and reached
+    through the category's graph rather than through the request — see `relations`
+    for why both halves of that matter.
     """
     controller = context.get_controller()
 
@@ -60,13 +64,14 @@ def measurements(
     if category is None:
         raise ValueError(f"Measurement category {measurement_category_id} not found")
 
-    context.get_accessible_graph(info, str(category.graph.age_name))
+    organization = category.graph.organization
+    context.assert_can_access_organization(info, organization)
 
-    filter_model = filters.to_pydantic() if filters else input_models.RelationFilters()
+    filter_model = filters.to_pydantic() if filters else input_models.MeasurementFilters()
     ordering_models = [entry.to_pydantic() for entry in ordering] if ordering else []
-    pagination_model = pagination.to_pydantic() if pagination else input_models.RelationPagination()
+    pagination_model = pagination.to_pydantic() if pagination else input_models.MeasurementPagination()
 
-    links = _edges.links_for_category(category, evidence_models.Link.Kind.MEASUREMENT)
+    links = _edges.links_for_category(organization, category, evidence_models.Link.Kind.MEASUREMENT)
     rows = _edges.narrow(links, filter_model, ordering_models, pagination_model)
 
     return [types.Measurement(_value=controller.retrieved_edge(link, category=category)) for link in rows]

@@ -50,7 +50,7 @@ def input_participations(
     and `projector.create_vertex` labels a vertex with its *category's* `age_name` —
     never `Entity`, never `NaturalEvent`.
 
-    Graph-scoped through `selector.node_refs_for`, the same membership subquery
+    Graph-scoped through `selector.instance_refs_for`, the same membership subquery
     every other view-scoped read uses — the event has to be in the graph, and
     `participation_key` stores the event as `target_ref` on both sides.
     """

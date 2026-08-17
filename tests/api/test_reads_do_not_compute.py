@@ -30,7 +30,7 @@ from core import models as core_models
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { entity { id } }
+        assertEntityExists(input: $input) { instance { id } }
     }
 """
 
@@ -72,7 +72,7 @@ async def _measured_ais(api_schema: kante.Schema, ctx: HttpContext, values: tupl
         context_value=ctx,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertEntityExists"]["entity"]["id"]
+    return created.data["assertEntityExists"]["instance"]["id"]
 
 
 @sync_to_async

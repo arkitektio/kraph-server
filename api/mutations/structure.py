@@ -3,7 +3,7 @@ Structure mutation resolvers.
 
 A structure is a pointer to an external datum — a Mikro ROI, an image — and lives
 only in the relational evidence base. Nothing projects one into Apache AGE, so
-:class:`api.types.StructureAssertion` carries no `drawings` field at all: the
+:class:`api.types.AssertedStructure` carries no `drawings` field at all: the
 absence is a permanent property of the model rather than a per-call answer.
 """
 
@@ -17,7 +17,7 @@ from api import types, inputs, context
 def assert_structure_exists(
     info: Info,
     input: inputs.AssertStructureExistsInput,
-) -> types.StructureAssertion:
+) -> types.AssertedStructure:
     """Claim that an external datum exists and is worth pointing at.
 
     Idempotent by `(identifier, object)` within the organization: two projections
@@ -30,7 +30,7 @@ def assert_structure_exists(
     controller = context.get_controller()
     organization = context.get_active_organization(info)
 
-    return types.StructureAssertion(
+    return types.AssertedStructure(
         _value=controller.create_structure(
             organization=organization,
             identifier=payload.identifier,
@@ -43,7 +43,7 @@ def assert_structure_exists(
 def ensure_structure(
     info: Info,
     input: inputs.EnsureStructureInput,
-) -> types.StructureAssertion:
+) -> types.AssertedStructure:
     """Get the structure for an external datum, creating it if this is the first sight of it.
 
     **Identical to `assertStructureExists` in every observable way.** Same
@@ -67,7 +67,7 @@ def ensure_structure(
 def retract_structure(
     info: Info,
     input: inputs.RetractStructureInput,
-) -> types.StructureAssertion:
+) -> types.AssertedStructure:
     """Claim that a structure should no longer be pointed at.
 
     The row survives, and so do its metrics: a derived value that dropped a
@@ -76,7 +76,7 @@ def retract_structure(
     controller = context.get_controller()
 
     model = input.to_pydantic()
-    return types.StructureAssertion(
+    return types.AssertedStructure(
         _value=controller.archive_structure(
             structure_id=str(model.id),
             info=info,
@@ -87,7 +87,7 @@ def retract_structure(
 def update_structure(
     info: Info,
     input: inputs.UpdateStructureInput,
-) -> types.StructureAssertion:
+) -> types.AssertedStructure:
     """Append metrics to an existing structure.
 
     Keeps the name `update` because it genuinely appends: a structure's
@@ -97,7 +97,7 @@ def update_structure(
     controller = context.get_controller()
 
     model = input.to_pydantic()
-    return types.StructureAssertion(
+    return types.AssertedStructure(
         _value=controller.update_structure(
             structure_id=str(model.id),
             payload=model,
@@ -109,7 +109,7 @@ def update_structure(
 def link_structure_to_entity(
     info: Info,
     input: inputs.LinkStructureInput,
-) -> types.StructureAssertion:
+) -> types.AssertedStructure:
     """
     Assert that a structure is evidence for an entity.
 
@@ -133,7 +133,7 @@ def link_structure_to_entity(
         object=input.structure_object,
     )
 
-    return types.StructureAssertion(
+    return types.AssertedStructure(
         _value=controller.link_structure_to_entity(
             structure_id=str(structure.pk),
             entity_id=input.entity_id,

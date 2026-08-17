@@ -29,23 +29,23 @@ ASSERT_ENTITY = """
     mutation AssertEntityExists($input: AssertEntityExistsInput!) {
         assertEntityExists(input: $input) {
             assertion { id seq }
-            entity { id }
+            instance { id }
         }
     }
 """
 
 ASSERT_SAME = """
-    mutation AssertSameEntity($input: AssertSameEntityInput!) {
-        assertSameEntity(input: $input) {
+    mutation AssertSameEntity($input: AssertSameInstanceInput!) {
+        assertSameInstance(input: $input) {
             assertion { id }
-            samenesses { __typename id source { id } target { id } }
+            links { kind id source { ... on Instance { id } } target { ... on Instance { id } } }
         }
     }
 """
 
 RETRACT_SAME = """
-    mutation RetractSameEntity($input: RetractSameEntityInput!) {
-        retractSameEntity(input: $input) { assertion { id } samenesses { id } }
+    mutation RetractSameEntity($input: RetractSameInstanceInput!) {
+        retractSameInstance(input: $input) { assertion { id } links { id } }
     }
 """
 
@@ -77,9 +77,9 @@ async def test_this_is_ais_6_is_one_act(
     """
     established = await _assert_entity(api_schema, simple_api_context, "AIS")
 
-    observed = await _assert_entity(api_schema, simple_api_context, "AIS", same_as=[established["entity"]["id"]])
+    observed = await _assert_entity(api_schema, simple_api_context, "AIS", same_as=[established["instance"]["id"]])
 
-    assert observed["entity"]["id"] != established["entity"]["id"], "The observation mints its own instance rather than reusing one"
+    assert observed["instance"]["id"] != established["instance"]["id"], "The observation mints its own instance rather than reusing one"
 
     @sync_to_async
     def claims_under(assertion_id: str) -> dict[str, int]:
@@ -96,9 +96,9 @@ async def test_this_is_ais_6_is_one_act(
     @sync_to_async
     def component() -> list[str]:
         organization = test_graph.organization
-        return identity.component_refs(organization, [observed["entity"]["id"]])[observed["entity"]["id"]]
+        return identity.component_refs(organization, [observed["instance"]["id"]])[observed["instance"]["id"]]
 
-    assert sorted(await component()) == sorted([observed["entity"]["id"], established["entity"]["id"]])
+    assert sorted(await component()) == sorted([observed["instance"]["id"], established["instance"]["id"]])
 
 
 @pytest.mark.django_db(transaction=True)
@@ -114,20 +114,21 @@ async def test_noticing_later_that_two_instances_are_one(
 
     result = await api_schema.execute(
         ASSERT_SAME,
-        variable_values={"input": {"entities": [first["entity"]["id"], second["entity"]["id"]]}},
+        variable_values={"input": {"instances": [first["instance"]["id"], second["instance"]["id"]]}},
         context_value=simple_api_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
-    payload = result.data["assertSameEntity"]
+    payload = result.data["assertSameInstance"]
 
-    assert len(payload["samenesses"]) == 1
-    claim = payload["samenesses"][0]
+    assert len(payload["links"]) == 1
+    claim = payload["links"][0]
 
-    # `__typename`, not just `id`. A sameness claim used to have no type of its
-    # own, and `cast_edge_to_graphql_type` reported anything it did not recognise
-    # as a `Relation` — the exact defect participations had.
-    assert claim["__typename"] == "Sameness"
-    assert {claim["source"]["id"], claim["target"]["id"]} == {first["entity"]["id"], second["entity"]["id"]}
+    # `kind`, which is the column the claim carries. It used to be `__typename` over
+    # a payload of drawing types, where a sameness claim had no type of its own and
+    # `cast_edge_to_graphql_type` reported anything it did not recognise as a
+    # `Relation` — the exact defect participations had.
+    assert claim["kind"] == "SAME_AS"
+    assert {claim["source"]["id"], claim["target"]["id"]} == {first["instance"]["id"], second["instance"]["id"]}
 
 
 @pytest.mark.django_db(transaction=True)
@@ -143,16 +144,16 @@ async def test_three_instances_claimed_together_are_one_assertion(
     sameness has no primary — making the first argument the hub would let identity
     depend on argument order.
     """
-    entities = [(await _assert_entity(api_schema, simple_api_context, "AIS"))["entity"]["id"] for _ in range(3)]
+    entities = [(await _assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"] for _ in range(3)]
 
     result = await api_schema.execute(
         ASSERT_SAME,
-        variable_values={"input": {"entities": entities}},
+        variable_values={"input": {"instances": entities}},
         context_value=simple_api_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
 
-    assert len({claim["id"] for claim in result.data["assertSameEntity"]["samenesses"]}) == 2, "n instances need n-1 claims to connect"
+    assert len({claim["id"] for claim in result.data["assertSameInstance"]["links"]}) == 2, "n instances need n-1 claims to connect"
 
     @sync_to_async
     def component() -> list[str]:
@@ -175,7 +176,7 @@ async def test_retracting_sameness_splits_the_component(
     reaches the API.
     """
     first = await _assert_entity(api_schema, simple_api_context, "AIS")
-    second = await _assert_entity(api_schema, simple_api_context, "AIS", same_as=[first["entity"]["id"]])
+    second = await _assert_entity(api_schema, simple_api_context, "AIS", same_as=[first["instance"]["id"]])
 
     @sync_to_async
     def sameness_id() -> str:
@@ -194,13 +195,13 @@ async def test_retracting_sameness_splits_the_component(
     def components() -> tuple[list[str], list[str]]:
         organization = test_graph.organization
         return (
-            identity.component_refs(organization, [first["entity"]["id"]])[first["entity"]["id"]],
-            identity.component_refs(organization, [second["entity"]["id"]])[second["entity"]["id"]],
+            identity.component_refs(organization, [first["instance"]["id"]])[first["instance"]["id"]],
+            identity.component_refs(organization, [second["instance"]["id"]])[second["instance"]["id"]],
         )
 
     left, right = await components()
-    assert left == [first["entity"]["id"]], "Each is its own thing again"
-    assert right == [second["entity"]["id"]]
+    assert left == [first["instance"]["id"]], "Each is its own thing again"
+    assert right == [second["instance"]["id"]]
 
 
 @pytest.mark.django_db(transaction=True)
@@ -217,7 +218,7 @@ async def test_a_structure_cannot_be_claimed_the_same_as_anything(
     data, and a sameness claim about them is really a claim about the entities
     they inform. Refusing is better than folding a claim no reader can act on.
     """
-    entity = (await _assert_entity(api_schema, simple_api_context, "AIS"))["entity"]["id"]
+    entity = (await _assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"]
 
     created = await api_schema.execute(
         """
@@ -233,7 +234,7 @@ async def test_a_structure_cannot_be_claimed_the_same_as_anything(
 
     refused = await api_schema.execute(
         ASSERT_SAME,
-        variable_values={"input": {"entities": [entity, structure]}},
+        variable_values={"input": {"instances": [entity, structure]}},
         context_value=simple_api_context,
     )
     assert refused.errors, "A structure is not an entity and cannot be merged with one"
@@ -247,11 +248,11 @@ async def test_a_node_cannot_be_claimed_the_same_as_itself(
     test_graph: core_models.Graph,
 ) -> None:
     """A node is trivially itself, so the claim carries no information."""
-    entity = (await _assert_entity(api_schema, simple_api_context, "AIS"))["entity"]["id"]
+    entity = (await _assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"]
 
     result = await api_schema.execute(
         ASSERT_SAME,
-        variable_values={"input": {"entities": [entity, entity]}},
+        variable_values={"input": {"instances": [entity, entity]}},
         context_value=simple_api_context,
     )
     assert result.errors, "Claiming a node is the same as itself must be refused"

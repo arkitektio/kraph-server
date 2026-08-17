@@ -73,7 +73,7 @@ def test_group_statistics_subtract_without_a_recompute(
     _, metrics = measured
     state_module.retract(metrics[1], [ENTITY_REF])
 
-    state = evidence_models.State.objects.for_organization(organization).get(entity_ref=ENTITY_REF)
+    state = evidence_models.State.objects.for_organization(organization).get(claim_ref=ENTITY_REF)
 
     assert aggregate.apply(AggregationFunction.COUNT, state) == 2
     assert aggregate.apply(AggregationFunction.SUM, state) == pytest.approx(30.0)
@@ -88,7 +88,7 @@ def test_retracting_the_maximum_flags_the_row(
     _, metrics = measured
     state_module.retract(metrics[1], [ENTITY_REF])
 
-    state = evidence_models.State.objects.for_organization(organization).get(entity_ref=ENTITY_REF)
+    state = evidence_models.State.objects.for_organization(organization).get(claim_ref=ENTITY_REF)
     assert state.needs_recompute, "Removing the extremum must mark the row for rebuild"
 
 
@@ -116,7 +116,7 @@ def test_retracting_a_middling_value_does_not_flag_the_row(
     # retract a genuinely interior one instead.
     state_module.retract(metrics[2], [ENTITY_REF])  # 20.0 at minute 2
 
-    state = evidence_models.State.objects.for_organization(organization).get(entity_ref=ENTITY_REF)
+    state = evidence_models.State.objects.for_organization(organization).get(claim_ref=ENTITY_REF)
     assert not state.needs_recompute
     assert aggregate.apply(AggregationFunction.MAX, state) == 30.0
 
@@ -131,7 +131,7 @@ def test_recompute_restores_correctness_after_a_flagged_retraction(
     writer.retract(organization, metrics[1], metrics[1].assertion)
     state_module.retract(metrics[1], [ENTITY_REF])
 
-    state = evidence_models.State.objects.for_organization(organization).get(entity_ref=ENTITY_REF)
+    state = evidence_models.State.objects.for_organization(organization).get(claim_ref=ENTITY_REF)
     assert state.needs_recompute
 
     rebuilt = state_module.recompute(state)

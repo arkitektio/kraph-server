@@ -425,8 +425,8 @@ class ClassifyNodesInput:
     pass
 
 
-@pydantic.input(model=input_models.RetractClaimsInput, all_fields=True, description="Input for retracting several claims as one act")
-class RetractClaimsInput:
+@pydantic.input(model=input_models.RetractLinksInput, all_fields=True, description="Input for retracting several link claims as one act")
+class RetractLinksInput:
     pass
 
 
@@ -605,15 +605,15 @@ class AssertEntityExistsInput:
     pass
 
 
-@pydantic.input(model=input_models.AssertSameEntityInput, all_fields=True, description="Input for claiming that several recorded instances are one thing")
-class AssertSameEntityInput:
+@pydantic.input(model=input_models.AssertSameInstanceInput, all_fields=True, description="Input for claiming that several recorded instances are one thing")
+class AssertSameInstanceInput:
     """Input for claiming that several recorded instances are one thing."""
 
     pass
 
 
-@pydantic.input(model=input_models.RetractSameEntityInput, all_fields=True, description="Input for withdrawing one sameness claim")
-class RetractSameEntityInput:
+@pydantic.input(model=input_models.RetractSameInstanceInput, all_fields=True, description="Input for withdrawing one sameness claim")
+class RetractSameInstanceInput:
     """Input for withdrawing one sameness claim."""
 
     pass

@@ -119,9 +119,9 @@ def make_node(organization: Organization, assertion: evidence_models.Assertion):
     """
 
     def _make(category: core_models.Category) -> str:
-        node = evidence_models.Node.objects.create_for_organization(
+        node = evidence_models.Instance.objects.create_for_organization(
             organization=organization,
-            kind=evidence_models.Node.Kind.ENTITY,
+            kind=evidence_models.Instance.Kind.ENTITY,
             # The node names the *word*, not this graph's category for it. Which
             # views show it follows from which of them declare that word.
             term=category.term,

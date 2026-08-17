@@ -40,9 +40,9 @@ def structure_relation(info: Info, id: scalars.GraphID) -> types.StructureRelati
 def structure_relations(
     info: Info,
     structure_relation_category_id: strawberry.ID,
-    filters: filters.RelationFilter | None = None,
-    ordering: list[order.RelationOrder] | None = None,
-    pagination: pagination.RelationPaginationInput | None = None,
+    filters: filters.StructureRelationFilter | None = None,
+    ordering: list[order.StructureRelationOrder] | None = None,
+    pagination: pagination.StructureRelationPaginationInput | None = None,
 ) -> List[types.StructureRelation]:
     """Every standing structurerelation claim stated in this category's word.
 
@@ -52,6 +52,10 @@ def structure_relations(
 
     Scoped by the category's **term**, so two graphs declaring the same word list
     the same claims — see `api/queries/_edges.py`.
+
+    Authorized against the **organization**, the grain the answer is at, and reached
+    through the category's graph rather than through the request — see `relations`
+    for why both halves of that matter.
     """
     controller = context.get_controller()
 
@@ -59,13 +63,14 @@ def structure_relations(
     if category is None:
         raise ValueError(f"StructureRelation category {structure_relation_category_id} not found")
 
-    context.get_accessible_graph(info, str(category.graph.age_name))
+    organization = category.graph.organization
+    context.assert_can_access_organization(info, organization)
 
-    filter_model = filters.to_pydantic() if filters else input_models.RelationFilters()
+    filter_model = filters.to_pydantic() if filters else input_models.StructureRelationFilters()
     ordering_models = [entry.to_pydantic() for entry in ordering] if ordering else []
-    pagination_model = pagination.to_pydantic() if pagination else input_models.RelationPagination()
+    pagination_model = pagination.to_pydantic() if pagination else input_models.StructureRelationPagination()
 
-    links = _edges.links_for_category(category, evidence_models.Link.Kind.STRUCTURE_RELATION)
+    links = _edges.links_for_category(organization, category, evidence_models.Link.Kind.STRUCTURE_RELATION)
     rows = _edges.narrow(links, filter_model, ordering_models, pagination_model)
 
     return [types.StructureRelation(_value=controller.retrieved_edge(link, category=category)) for link in rows]

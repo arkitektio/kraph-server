@@ -121,7 +121,7 @@ def test_recording_a_metric_folds_state_for_both_graphs(
     state_module.merge(metric, projector.refs_informed_by(organization, [structure.pk]))
 
     states = evidence_models.State.objects.for_organization(organization).filter(key="vector_length")
-    assert {state.entity_ref for state in states} == {ref_a, ref_b}
+    assert {state.claim_ref for state in states} == {ref_a, ref_b}
     assert all(state.n == 1 and state.sum == pytest.approx(42.0) for state in states)
 
 
@@ -174,7 +174,7 @@ def test_the_fan_out_stops_at_the_organization(
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { entity { id } }
+        assertEntityExists(input: $input) { instance { id } }
     }
 """
 
@@ -232,7 +232,7 @@ async def test_one_recorded_metric_moves_both_projections(
             context_value=simple_api_context,
         )
         assert created.errors is None, f"GraphQL errors: {created.errors}"
-        entity_ids[graph.age_name] = created.data["assertEntityExists"]["entity"]["id"]
+        entity_ids[graph.age_name] = created.data["assertEntityExists"]["instance"]["id"]
 
     @sync_to_async
     def structure_count() -> int:

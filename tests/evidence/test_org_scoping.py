@@ -24,7 +24,7 @@ EVIDENCE_MODELS = [
     evidence_models.Structure,
     evidence_models.Metric,
     evidence_models.Link,
-    evidence_models.Claim,
+    evidence_models.Standing,
 ]
 
 

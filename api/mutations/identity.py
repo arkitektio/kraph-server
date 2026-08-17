@@ -1,4 +1,4 @@
-"""Entity identity mutations.
+"""Instance identity mutations: two recorded instances being one thing.
 
 Saying "this is AIS 6" is one act with four claims in it — mint the term, mint an
 instance, say the structure measures it, say it is the same as one already known
@@ -12,7 +12,7 @@ from kante.types import Info
 from api import context, inputs, types
 
 
-def assert_same_entity(info: Info, input: inputs.AssertSameEntityInput) -> types.SamenessAssertion:
+def assert_same_instance(info: Info, input: inputs.AssertSameInstanceInput) -> types.AssertedSameness:
     """Claim that several already-recorded instances are one thing.
 
     Sameness is an equivalence with no primary, so the order of the ids carries
@@ -25,10 +25,10 @@ def assert_same_entity(info: Info, input: inputs.AssertSameEntityInput) -> types
     organization = context.get_active_organization(info)
     context.assert_can_access_organization(info, organization)
 
-    return types.SamenessAssertion(_value=controller.assert_same_entity(organization=organization, entity_refs=model.entities, info=info))
+    return types.AssertedSameness(_value=controller.assert_same_instance(organization=organization, instance_refs=model.instances, info=info))
 
 
-def retract_same_entity(info: Info, input: inputs.RetractSameEntityInput) -> types.SamenessAssertion:
+def retract_same_instance(info: Info, input: inputs.RetractSameInstanceInput) -> types.AssertedSameness:
     """Withdraw one sameness claim.
 
     The component it held together is rebuilt from the claims that survive, which
@@ -38,4 +38,4 @@ def retract_same_entity(info: Info, input: inputs.RetractSameEntityInput) -> typ
     model = input.to_pydantic()
     controller = context.get_controller()
 
-    return types.SamenessAssertion(_value=controller.retract_same_entity(str(model.id), info=info))
+    return types.AssertedSameness(_value=controller.retract_same_instance(str(model.id), info=info))

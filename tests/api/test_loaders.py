@@ -171,7 +171,7 @@ async def test_a_one_to_many_loader_returns_every_row_not_the_last(test_graph: c
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_grouped_loader_hides_retracted_rows(test_graph: core_models.Graph) -> None:
-    """Retraction is a `Claim(stands=False)`, not a delete.
+    """Retraction is a `Standing(stands=False)`, not a delete.
 
     Nothing about the metric row itself says it is gone, so a loader that skipped
     the `standing()` narrow would serve withdrawn measurements to the panel.

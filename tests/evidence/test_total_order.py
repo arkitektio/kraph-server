@@ -1,7 +1,7 @@
 """The log has an order to replay in.
 
 `docs/LOG.md` carried this as a known gap: every evidence row is keyed on a
-`uuid4`, so "replay the log in order" had no order. `Claim.recorded_at` broke ties
+`uuid4`, so "replay the log in order" had no order. `Standing.recorded_at` broke ties
 within one target and conceded in its own help_text that it was "a tiebreak, not a
 total order" — two claims written in one request share it to the microsecond often
 enough that the fold could return either, so the same evidence could produce two
@@ -86,7 +86,7 @@ def test_the_fold_breaks_ties_on_seq_not_on_wall_clock(organization, roi_kind) -
     structure = writer.ensure_structure(organization, kind=roi_kind, object="roi-total-order", assertion=minting)
 
     first = writer.create_assertion(organization, subject="first", app_id="app")
-    writer.claim_ref(
+    writer.record_standing_for_ref(
         organization,
         target_type="structure",
         target_id=str(structure.pk),
@@ -96,7 +96,7 @@ def test_the_fold_breaks_ties_on_seq_not_on_wall_clock(organization, roi_kind) -
     )
 
     second = writer.create_assertion(organization, subject="second", app_id="app")
-    writer.claim_ref(
+    writer.record_standing_for_ref(
         organization,
         target_type="structure",
         target_id=str(structure.pk),

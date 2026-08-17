@@ -206,7 +206,7 @@ def informed_nodes(structure_refs: Iterable[str]) -> list[list[Any]]:
     Organization-wide, like `projector.refs_informed_by`: ingest names no graph, so
     a structure informs whatever it informs regardless of which view is asking.
 
-    Refs naming no `Node` are dropped — `_attach_supporting_evidence` writes INFORMS
+    Refs naming no `Instance` are dropped — `_attach_supporting_evidence` writes INFORMS
     links against edge primary keys too, and an edge is not something a structure
     "informs" in the sense this answers.
     """
@@ -237,7 +237,7 @@ def informed_nodes(structure_refs: Iterable[str]) -> list[list[Any]]:
         refs_by_structure[str(source_ref)].append(str(target_ref))
         every_target.add(str(target_ref))
 
-    nodes = {str(node.pk): node for node in evidence_models.Node.all_objects.filter(pk__in=every_target).select_related("term", "organization").order_by("created_at")}
+    nodes = {str(node.pk): node for node in evidence_models.Instance.all_objects.filter(pk__in=every_target).select_related("term", "organization").order_by("created_at")}
 
     return [[nodes[ref] for ref in refs_by_structure.get(structure_ref, ()) if ref in nodes] for structure_ref in wanted]
 
@@ -261,12 +261,12 @@ def known_about(refs: Iterable[str]) -> list[Known]:
     here to avoid. Positional correspondence with ``refs``, because a DataLoader
     requires it.
 
-    The organization is looked up from the `Node` rows rather than passed in: the
+    The organization is looked up from the `Instance` rows rather than passed in: the
     caller has already authorized each node it is asking about, and threading a
     tenant through a batch that may legitimately span two of them would be a
     second, weaker copy of the check the resolver already made.
 
-    A ref with no `Node` row gets an empty answer rather than an error — it is an
+    A ref with no `Instance` row gets an empty answer rather than an error — it is an
     edge ref, or a node whose organization has since gone. Both are ordinary;
     evidence outlives the projections built from it.
     """
@@ -276,7 +276,7 @@ def known_about(refs: Iterable[str]) -> list[Known]:
 
     by_organization: dict[Any, list[str]] = defaultdict(list)
     organizations: dict[Any, Any] = {}
-    for node in evidence_models.Node.all_objects.filter(pk__in=wanted).select_related("organization"):
+    for node in evidence_models.Instance.all_objects.filter(pk__in=wanted).select_related("organization"):
         by_organization[node.organization_id].append(str(node.pk))
         organizations[node.organization_id] = node.organization
 

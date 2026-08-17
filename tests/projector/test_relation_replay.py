@@ -25,25 +25,25 @@ from graph_engine.controller import GraphController
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { entity { id } }
+        assertEntityExists(input: $input) { instance { id } }
     }
 """
 
 CREATE_RELATION = """
     mutation CreateRelation($input: AssertRelationExistsInput!) {
-        assertRelationExists(input: $input) { relation { id label } }
+        assertRelationExists(input: $input) { link { id term { key } } }
     }
 """
 
 ARCHIVE_RELATION = """
     mutation ArchiveRelation($input: RetractRelationInput!) {
-        retractRelation(input: $input) { relation { id } }
+        retractRelation(input: $input) { link { id } }
     }
 """
 
 UPDATE_RELATION = """
     mutation UpdateRelation($input: UpdateRelationInput!) {
-        updateRelation(input: $input) { relation { id } }
+        updateRelation(input: $input) { link { id } }
     }
 """
 
@@ -72,7 +72,7 @@ async def _make_cell(api_schema: kante.Schema, ctx: HttpContext, category: core_
         context_value=ctx,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertEntityExists"]["entity"]["id"]
+    return created.data["assertEntityExists"]["instance"]["id"]
 
 
 async def _connect(api_schema: kante.Schema, ctx: HttpContext, category: core_models.RelationCategory, source: str, target: str) -> str:
@@ -82,7 +82,7 @@ async def _connect(api_schema: kante.Schema, ctx: HttpContext, category: core_mo
         context_value=ctx,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertRelationExists"]["relation"]["id"]
+    return created.data["assertRelationExists"]["link"]["id"]
 
 
 def _count_edges(age_engine, graph: core_models.Graph, age_name: str) -> int:
@@ -209,7 +209,7 @@ async def test_archiving_one_of_two_assertions_keeps_the_edge(
             f"MATCH ()-[r:{relation_category.age_name}]->() RETURN r.__assertion_count as c",
             {},
         )
-        events = evidence_models.Claim.objects.for_organization(test_graph.organization).filter(target_type="link", target_id=first)
+        events = evidence_models.Standing.objects.for_organization(test_graph.organization).filter(target_type="link", target_id=first)
         return _count_edges(age_engine, test_graph, relation_category.age_name), int(rows[0]["c"]), events.count()
 
     edge_count, assertion_count, lifecycle_rows = await state()
@@ -291,7 +291,7 @@ async def test_updating_a_relation_replaces_the_claim_and_keeps_the_old_one(
         context_value=simple_api_context,
     )
     assert updated.errors is None, f"GraphQL errors: {updated.errors}"
-    replacement = updated.data["updateRelation"]["relation"]["id"]
+    replacement = updated.data["updateRelation"]["link"]["id"]
 
     assert replacement != original, "An update must produce a new claim, not mutate the old one"
 
@@ -299,7 +299,7 @@ async def test_updating_a_relation_replaces_the_claim_and_keeps_the_old_one(
     def state() -> tuple[str, str, int]:
         organization = test_graph.organization
         return (
-            # `ClaimCurrent`, not a column on the link: the answer moved off the
+            # `CurrentStanding`, not a column on the link: the answer moved off the
             # log so the log could be immutable.
             claims_module.current(organization, "link", original),
             claims_module.current(organization, "link", replacement),

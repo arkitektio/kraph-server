@@ -87,11 +87,11 @@ class Command(BaseCommand):
     def _reproject(self, graph: models.Graph, category_keys: set[str]) -> int:
         """Re-derive the nodes whose category's rules changed.
 
-        Membership comes from `selector.nodes_for`, the one function that decides
-        it. The filter here was written against a `Node` that no longer exists and
+        Membership comes from `selector.instances_for`, the one function that decides
+        it. The filter here was written against a `Instance` that no longer exists and
         could not have matched anything: it tested `ref__startswith="{age_name}:"`,
         but `ref` is a property rather than a column and refs carry no graph prefix
-        any more; it filtered `stands=True`, and `Node` deliberately has no cached
+        any more; it filtered `stands=True`, and `Instance` deliberately has no cached
         `stands`; and it joined `category__key`, where the field is `term`.
 
         Standing is not filtered, deliberately. `project` writes derived properties
@@ -103,7 +103,7 @@ class Command(BaseCommand):
         engine = self._engine()
         controller = GraphController(engine=engine)
 
-        refs = [str(node_id) for node_id in selector_module.nodes_for(graph).filter(term__key__in=list(category_keys)).values_list("id", flat=True)]
+        refs = [str(node_id) for node_id in selector_module.instances_for(graph).filter(term__key__in=list(category_keys)).values_list("id", flat=True)]
         return controller.project_entities(graph, refs)
 
     def _engine(self) -> AgeEngine:

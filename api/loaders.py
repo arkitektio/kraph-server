@@ -73,7 +73,7 @@ def _batch_grouped_by(model: type, field: str, narrow: Callable[[Any], Any] | No
 
     ``narrow`` wraps the queryset before it is grouped, which is how the standing
     filter gets applied: a retracted metric is still a row, and only the anti-join
-    against `ClaimCurrent` says it is gone.
+    against `CurrentStanding` says it is gone.
     """
 
     manager = getattr(model, "all_objects", None) or model.objects
@@ -114,7 +114,24 @@ _LOADER_SPECS: dict[str, tuple[type, str]] = {
     "graph_table_query_by_id": (models.GraphTableQuery, "id"),
     "term_by_id": (evidence_models.Term, "id"),
     "assertion_by_id": (evidence_models.Assertion, "id"),
+    # The claims themselves, for the types that answer with one: a write's payload
+    # and `Link.source`/`target`, which resolve an opaque ref into whichever of
+    # these tables its `kind` says it names.
+    "instance_by_id": (evidence_models.Instance, "id"),
+    "link_by_id": (evidence_models.Link, "id"),
+    "structure_by_id": (evidence_models.Structure, "id"),
 }
+
+
+def _newest_standings(queryset: Any) -> Any:
+    """Every position on a claim, newest first.
+
+    Ordered by `(at, assertion.seq)` — the fold's own order, from
+    `evidence.claims._LATEST` — so the caller can read `stands` off the first row
+    instead of asking the database a second question. `select_related` because every
+    standing is shown with who recorded it.
+    """
+    return queryset.select_related("assertion").order_by("-at", "-assertion__seq")
 
 #: Loaders that return a **list** per key rather than a row. Kept in their own
 #: table because they need `_batch_grouped_by`, not `_batch_by_pk` — see that
@@ -122,6 +139,10 @@ _LOADER_SPECS: dict[str, tuple[type, str]] = {
 #: error.
 _GROUPED_LOADER_SPECS: dict[str, tuple[type, str, Any]] = {
     "metrics_by_structure": (evidence_models.Metric, "structure_id", _standing_metrics),
+    # Keyed on `target_id` alone, without `target_type`. The ids are uuid4 primary
+    # keys of four different tables, so one cannot collide with another — and the
+    # callers ask about a claim they are holding, not about a type.
+    "standings_by_target": (evidence_models.Standing, "target_id", _newest_standings),
 }
 
 
@@ -255,6 +276,10 @@ graph_pairs_query_by_id_loader = _LoaderProxy("graph_pairs_query_by_id")
 graph_table_query_by_id_loader = _LoaderProxy("graph_table_query_by_id")
 term_by_id_loader = _LoaderProxy("term_by_id")
 assertion_by_id_loader = _LoaderProxy("assertion_by_id")
+instance_by_id_loader = _LoaderProxy("instance_by_id")
+link_by_id_loader = _LoaderProxy("link_by_id")
+structure_by_id_loader = _LoaderProxy("structure_by_id")
 metrics_by_structure_loader = _LoaderProxy("metrics_by_structure")
+standings_by_target_loader = _LoaderProxy("standings_by_target")
 known_about_node_loader = _LoaderProxy("known_about_node")
 informed_nodes_by_structure_loader = _LoaderProxy("informed_nodes_by_structure")

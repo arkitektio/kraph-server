@@ -14,7 +14,7 @@ import uuid
 
 import strawberry
 from asgiref.sync import sync_to_async
-from typing import Any, Generic, Optional, List, Type, TypeVar, Union, cast
+from typing import Annotated, Any, Generic, Optional, List, Type, TypeVar, Union, cast
 from datetime import datetime
 from api import loaders, order, pagination, filters
 from datalayer.types import MediaStore
@@ -346,22 +346,27 @@ class EntityCategory(NodeCategory, Category):
     label: str = strawberry.field(description="Label/name of the category")
     instance_kind: strawberry.auto = strawberry.field(description="What type of instance, (taking from the universe) 'LOT', 'BIOLOGICAL', 'PHYSICAL'")
 
-    @kante.django_field(description="The graph this category belongs to")
+    @kante.django_field(description="The entities this category draws, read from the evidence log")
     def entities(self, filters: filters.EntityFilter | None = None, ordering: list[order.EntityOrder] | None = None, pagination: pagination.EntityPaginationInput | None = None) -> List["Entity"]:
-        """Fetch the latest entity instance of this category."""
-        # In a real implementation, we would query the graph for the most recently derived entity
-        # that belongs to this category. For this example, we'll return None for simplicity.
-        cat = cast(models.EntityCategory, cast(models.Category, self).as_kind())
+        """Every entity this category draws — the same answer `entities(entityCategoryId:)` gives.
 
-        con = get_controller()
-        ordering_model = [o.to_pydantic() for o in ordering] if ordering else None
+        Through `_nodes`, so the field and the root query cannot disagree about what
+        the category contains. It used to call `list_entities_for_category`, which
+        matched vertices by label: an entity the rule admits but the projection has
+        not drawn was missing here and present in a rebuild.
+        """
+        from api.queries import _nodes
+
+        category = cast(models.EntityCategory, cast(models.Category, self).as_kind())
+
+        controller = get_controller()
+        ordering_models = [entry.to_pydantic() for entry in ordering] if ordering else []
         pagination_model = pagination.to_pydantic() if pagination else None
+        filter_model = filters.to_pydantic() if filters else None
 
-        filters_model = filters.to_pydantic() if filters else None
+        rows = _nodes.narrow(_nodes.rows_for_category(category), filter_model, ordering_models, pagination_model)
 
-        returned_entities = con.list_entities_for_category(category=cat, filters=filters_model, ordering=ordering_model, pagination=pagination_model)
-
-        return [Entity(_value=v) for v in returned_entities]
+        return [Entity(_value=node) for node in _nodes.retrieved_in(controller, category.graph, rows)]
 
     @kante.django_field(description="The graph this category belongs to")
     def property_definitions(self) -> List[PropertyDefinition]:
@@ -795,8 +800,7 @@ class RichProperty:
                     target_ref=self._entity.durable_ref,
                 ),
                 "link",
-            )
-            .values_list("source_ref", flat=True)
+            ).values_list("source_ref", flat=True)
         )
         parsed = []
         for ref in structure_ids:
@@ -924,8 +928,15 @@ class VersionedNode(Node):
     and each graph's selector decides whose word it counts.
     """
 
-    @strawberry.field(description="Schema version used to derive properties")
-    def schema_version(self) -> str:
+    @strawberry.field(description="Schema version the properties were derived under. Null when this reading came from the log rather than from a projection — a claim no view draws has no derived properties, so there is no version to name")
+    def schema_version(self) -> Optional[str]:
+        """Nullable, and it was `String!`.
+
+        `RetrievedNode.from_row` writes no `__schema_version`, so every row-backed
+        reading returned null on a non-null field — a hard error on the exact case
+        the shape exists for. Reachable through `entity(id:)` too, since
+        `projected_instance` stopped raising for a claim no view draws.
+        """
         return self._value.schema_version
 
     @strawberry.field(description="Timestamp when properties were last derived (unix ms)")
@@ -966,19 +977,25 @@ class Entity(VersionedNode, Node[RetrievedNode]):
             return None
         return cast(EntityCategory, models.EntityCategory.objects.get(id=self._value.category_id))
 
-    @strawberry.field(description="When this entity became valid")
+    @strawberry.field(description="When this entity became valid. When did it start existing?")
     def valid_from(self) -> Optional[datetime]:
         return self._value.valid_from
 
-    @strawberry.field(description="When this entity stopped being valid")
+    @strawberry.field(description="When this entity stopped being valid. . When did it stop existing?")
     def valid_to(self) -> Optional[datetime]:
         return self._value.valid_to
 
-    @strawberry.field(description="List of properties derived for this entity")
+    @strawberry.field(description="List of properties derived for this entity. Empty when this reading has no category — a property definition is one view's rule, and a claim no view draws has none")
     async def rich_properties(self) -> List[RichProperty]:
-        """Combine raw properties with schema definitions for a rich view."""
-        # Category lookup and schema merging logic would go here in a real implementation.
-        assert self._value.category_id is not None, "Entity must have a category_id to fetch property definitions"
+        """Combine raw properties with schema definitions for a rich view.
+
+        The empty answer used to be an `assert category_id is not None`, which made
+        an ordinary state — a claim under a word no view declares — an
+        `AssertionError`. What explains a property is a category, so with no category
+        there is nothing to explain and nothing to raise about.
+        """
+        if self._value.category_id is None:
+            return []
         category = await loaders.entity_category_loader.load(self._value.category_id)
 
         # Enumerated from the schema, not from the node's stored keys. Only
@@ -1586,6 +1603,235 @@ class Assertion:
         return int(cast(evidence_models.Assertion, self).seq)
 
 
+# ===========================================
+# THE CLAIMS
+#
+# `Instance`, `Link` and `Standing` are the recorded statements and the positions
+# taken on them — the evidence rows themselves, served the way `Assertion` above
+# is, with no projection adapted in between.
+#
+# **These are what a write returns.** They used to be answered with `Entity` /
+# `Relation` / the rest of the `Node` and `Edge` families, which are *drawing*
+# shapes: a label, a category, derived properties, a schema version. For a claim no
+# view draws — the ordinary outcome of naming a word no graph declares — two of
+# those fields could not answer at all (`schemaVersion` is non-null and had no value
+# to give; `richProperties` asserted on a category that does not exist) and six more
+# were structurally empty. RFC 0003 §1 named the mismatch and fixed only the
+# `drawings` half of it.
+#
+# So: the claim here, the drawing in `NodeDrawing` / `EdgeDrawing`, and nothing
+# pretending to be both.
+# ===========================================
+
+
+@kante.django_type(evidence_models.Standing, description="Somebody's position on whether a claim still holds")
+class Standing:
+    """One vote on a claim: attesting it, or retracting it.
+
+    Not the claim — the claims are `Instance`, `Link`, `Structure` and `Metric`.
+    `stands=True` attests and `stands=False` retracts, and both are evidence of the
+    same kind: there is no "reinstate" operation, only somebody newly claiming the
+    thing is there.
+
+    Neither `targetType` nor `targetId` is exposed. Whatever you reached this
+    through *is* the target, and a pair of columns addressing four tables is an
+    implementation detail of the log rather than something a client should join on.
+    `recordedAt` is absent for the reason its own `help_text` gives: it is arrival
+    time, kept for debugging ingest and not for answering questions.
+    """
+
+    id: strawberry.ID = strawberry.field(description="This position's own identity")
+    stands: bool = kante.django_field(description="Whether the claimant says the claim holds. True attests, False retracts")
+    at: datetime = kante.django_field(description="When the position took effect — world time, the axis that decides which claim is newest")
+    assertion: Assertion = kante.django_field(description="Who took this position, with what tool, and when they recorded it")
+
+
+@kante.django_type(evidence_models.Instance, description="A claimed individual — an entity or an event, as the log has it")
+class Instance:
+    """What somebody claimed exists, independent of any view.
+
+    An `Entity` is how *one graph* draws this; a `NodeDrawing` pairs the two. The
+    difference matters most at the moment of writing, when a claim may be drawn
+    nowhere: an instance is fully addressable then, and its `id` is the identity a
+    client holds afterwards.
+
+    The four "what is known about this thing" fields are asked over the whole
+    **component** — every instance somebody has claimed is the same thing — for the
+    reason `evidence/identity.py` gives: every observation mints its own instance, so
+    asking about the bare row would show one observation's half of the story.
+
+    **There is no `stands` field, and that is the point.** Whether an instance exists
+    has no organization-wide answer: `CurrentStanding` deliberately holds no row for
+    one, because a graph's selector decides whose claims it counts and two views may
+    legitimately disagree. A folded boolean here would have had to be the *unscoped*
+    answer — true of nobody's view in particular — sitting next to `drawnIn`, which is
+    the real one. So the positions are reported and the folding is left to whoever
+    knows which of them they count: `standings` is newest-first, and an empty list
+    means nobody has disputed it.
+    """
+
+    id: strawberry.ID = strawberry.field(description="The claim's durable identity — a bare uuid, world-unique and stable across reprojects")
+    term: "Term" = kante.django_field(description="The organization's word this was first claimed under. Which view draws it, and as what, is decided from the claims")
+    created_at: datetime = kante.django_field(description="When the claim was recorded")
+    assertion: Assertion = kante.django_field(description="The act that first claimed this exists. Not the latest — for that, read `standings`")
+
+    @strawberry.field(description="What sort of individual this is. Entities and events are told apart here, not by a vertex label — a label is one view's rename of a word")
+    def kind(self) -> enums.InstanceKind:
+        return enums.InstanceKind(str(cast(evidence_models.Instance, self).kind).upper())
+
+    @strawberry.field(
+        description=(
+            "Every position anyone has taken on whether this exists, **newest first** by the order "
+            "the fold uses. An empty list means nobody has disputed it, which is not the same as "
+            "nobody having attested it: silence is not dissent. Two rows disagreeing is an ordinary "
+            "state rather than a conflict to resolve. "
+            "There is no folded `stands` beside this, deliberately — see the class docstring."
+        )
+    )
+    async def standings(self) -> List[Standing]:
+        return cast(List[Standing], await loaders.standings_by_target_loader.load(str(cast(evidence_models.Instance, self).pk)))
+
+    @strawberry.field(description="Every instance claimed to be this same thing, this one included. A component of one means nobody has merged it")
+    async def component(self) -> List[strawberry.ID]:
+        known = await loaders.known_about_node_loader.load(str(cast(evidence_models.Instance, self).pk))
+        return [cast(strawberry.ID, ref) for ref in known.component]
+
+    @strawberry.field(description="What anyone has called this thing, with how many assertions say so. Two words means two people disagreed; one word with a count of two means they agreed")
+    async def labels(self) -> List["Label"]:
+        known = await loaders.known_about_node_loader.load(str(cast(evidence_models.Instance, self).pk))
+        return [Label(_value=label) for label in known.labels]
+
+    @strawberry.field(description="The standing claims that this instance and another are one thing, with who said so")
+    async def same_as(self) -> List["Link"]:
+        known = await loaders.known_about_node_loader.load(str(cast(evidence_models.Instance, self).pk))
+        return cast(List["Link"], list(known.sameness))
+
+    @strawberry.field(description="Every standing claim connecting this thing to something else — relations, participations, classifications and the structures that inform it")
+    async def connections(self) -> List["Link"]:
+        known = await loaders.known_about_node_loader.load(str(cast(evidence_models.Instance, self).pk))
+        return cast(List["Link"], list(known.connections))
+
+    @kante.django_field(description="Every view that actually draws this claim, and the category it draws it under. Empty means no view does, which is an ordinary answer")
+    async def drawn_in(self, info: kante.Info) -> List["NodeDrawing"]:
+        drawings = await _drawings_for_ref(str(cast(evidence_models.Instance, self).pk), info)
+        return [NodeDrawing(_value=drawing) for drawing in drawings]
+
+
+@kante.django_type(evidence_models.Link, description="A claim relating two things — as the log has it, whether or not any view draws it")
+class Link:
+    """One row of `evidence.Link`: eight kinds of claim, one shape.
+
+    A `Relation` or a `Measurement` is how a graph *draws* one of these, and three
+    of the eight kinds are never drawn at all (measurements and structure relations
+    have no AGE edge; `INFORMS` drives derivation instead). So the claim is what a
+    write returns, and the drawings say where it went.
+
+    `sourceRef` and `targetRef` are the refs as the log holds them: opaque uuids
+    addressing four different tables, which is why `evidence/models.py` says not to
+    infer from their shape what they point at. `source` and `target` resolve them —
+    by reading `kind`, the only thing that says which end is which.
+    """
+
+    id: strawberry.ID = strawberry.field(description="The claim's durable identity — the `Link` primary key")
+    term: Optional["Term"] = kante.django_field(description="The organization's word this claim is stated in. Null for a plain INFORMS link, which names no word")
+    role: Optional[str] = kante.django_field(description="Which role the source plays, for participation claims. Named by the schema")
+    created_at: datetime = kante.django_field(description="When the claim was recorded")
+    assertion: Assertion = kante.django_field(description="The act that made this claim")
+
+    @strawberry.field(description="What this claim says — and therefore what each of its two refs points at")
+    def kind(self) -> enums.LinkKind:
+        return enums.LinkKind(str(cast(evidence_models.Link, self).kind).upper())
+
+    @strawberry.field(description="The source ref, as the log holds it: an opaque uuid. `source` resolves it")
+    def source_ref(self) -> strawberry.ID:
+        return cast(strawberry.ID, str(cast(evidence_models.Link, self).source_ref))
+
+    @strawberry.field(description="The target ref, as the log holds it: an opaque uuid. `target` resolves it")
+    def target_ref(self) -> strawberry.ID:
+        return cast(strawberry.ID, str(cast(evidence_models.Link, self).target_ref))
+
+    @strawberry.field(description="Every position anyone has taken on whether this claim holds, newest first. Empty means nobody has disputed it — see `Instance.standings`, which is the same field asked of a different claim")
+    async def standings(self) -> List[Standing]:
+        return cast(List[Standing], await loaders.standings_by_target_loader.load(str(cast(evidence_models.Link, self).pk)))
+
+    @strawberry.field(description="What this claim is about, resolved. Null when the ref names a row a redaction has since removed — history rather than an error")
+    async def source(self) -> Optional["ClaimEndpoint"]:
+        link = cast(evidence_models.Link, self)
+        return await _resolve_claim_endpoint(_endpoint_tables(link)[0], str(link.source_ref))
+
+    @strawberry.field(description="What this claim relates it to, resolved. A classification's target is a `Term`, a measurement's is an `Instance`, and an INFORMS link may name another claim")
+    async def target(self) -> Optional["ClaimEndpoint"]:
+        link = cast(evidence_models.Link, self)
+        return await _resolve_claim_endpoint(_endpoint_tables(link)[1], str(link.target_ref))
+
+    @kante.django_field(description="Every view that draws this claim as an edge. Empty for the three kinds that are never drawn, and for a claim whose endpoints no view holds")
+    async def drawn_in(self, info: kante.Info) -> List["EdgeDrawing"]:
+        drawings = await _drawings_for_link(cast(evidence_models.Link, self), info)
+        return [EdgeDrawing(_value=drawing) for drawing in drawings]
+
+
+#: What a `Link`'s refs can point at. Four members because the two ref columns
+#: address four tables — `evidence.Link`'s own docstring says so — and one of them
+#: is `Link` itself, since evidence can inform an edge.
+ClaimEndpoint = Annotated[
+    Union[Instance, "Structure", Link, "Term"],
+    strawberry.union("ClaimEndpoint", description="Either end of a claim: another claim, an external datum, or one of the organization's words"),
+]
+
+#: Which table each end of a link names, by kind. The same table `docs/LOG.md`
+#: prints, and the reason `source`/`target` never guess from the ref: every kind of
+#: ref looks alike, so `kind` is the discriminator.
+#:
+#: `INFORMS` is the one with two possible targets — `_attach_supporting_evidence`
+#: writes it against a `Link` pk when the evidence informs an edge rather than a
+#: node — so its target is tried as an instance and then as a link.
+_ENDPOINT_TABLES: dict[str, tuple[str, str]] = {
+    evidence_models.Link.Kind.RELATION: ("instance", "instance"),
+    evidence_models.Link.Kind.SAME_AS: ("instance", "instance"),
+    evidence_models.Link.Kind.PARTICIPATES_AS_INPUT: ("instance", "instance"),
+    evidence_models.Link.Kind.PARTICIPATES_AS_OUTPUT: ("instance", "instance"),
+    evidence_models.Link.Kind.MEASUREMENT: ("structure", "instance"),
+    evidence_models.Link.Kind.STRUCTURE_RELATION: ("structure", "structure"),
+    evidence_models.Link.Kind.CLASSIFIES: ("instance", "term"),
+    evidence_models.Link.Kind.INFORMS: ("structure", "instance_or_link"),
+}
+
+
+def _endpoint_tables(link: evidence_models.Link) -> tuple[str, str]:
+    """Which table each end of this link names."""
+    return _ENDPOINT_TABLES.get(str(link.kind), ("instance", "instance"))
+
+
+async def _resolve_claim_endpoint(table: str, ref: str) -> Optional[Any]:
+    """Load one end of a link out of the table its kind names.
+
+    Through the per-pk loaders, so selecting both ends of a page of claims costs one
+    query per table rather than two per claim. A `Structure` is wrapped on the way
+    out because that type is a reading of a row rather than the row itself — the one
+    member of `ClaimEndpoint` that is not served directly.
+    """
+    if table == "term":
+        return await loaders.term_by_id_loader.load(ref)
+    if table == "structure":
+        row = await loaders.structure_by_id_loader.load(ref)
+        return Structure(_value=RetrievedStructure.from_row(get_controller(), row)) if row is not None else None
+    if table == "instance_or_link":
+        return await loaders.instance_by_id_loader.load(ref) or await loaders.link_by_id_loader.load(ref)
+    return await loaders.instance_by_id_loader.load(ref)
+
+
+@sync_to_async
+def _drawings_for_link(link: evidence_models.Link, info: kante.Info) -> List[results.EdgeDrawing]:
+    """Every view that draws this claim as an edge, read back from the projections.
+
+    The edge counterpart of `_drawings_for_ref`, and it authorizes the same way: the
+    row says which organization it belongs to, and the caller is checked against it.
+    """
+    controller = get_controller()
+    controller._assert_can_access(link.organization, info)
+    return list(controller.drawings_for_edge(link))
+
+
 @kante.type(description="A claim that two instances are one thing")
 class Sameness(Edge):
     """An equivalence claim between two entities.
@@ -1610,12 +1856,12 @@ class Sameness(Edge):
 
 @kante.type(description="A CLASSIFIES claim: somebody's word for what a node is")
 class Classification(Edge):
-    """"This node is an AIS", as a claim rather than a column.
+    """ "This node is an AIS", as a claim rather than a column.
 
     It had no type of its own, and `cast_edge_to_graphql_type` reported one as a
     `Relation` — the same fails-green defect participations had, where a shape
     the dispatch did not recognise came back wearing a plausible type instead of
-    failing. `retractClaims` can retract a classification, so the case was
+    failing. `retractLinks` can retract a classification, so the case was
     reachable and `tests/api/test_batch_claims.py` already documented the answer
     as wrong.
 
@@ -1704,9 +1950,9 @@ class OutputParticipation(Edge):
 
 # Union type for all node subtypes
 # `Reagent` and the three `*ShadowLink`s used to be here. None was in the SDL and
-# none was constructed anywhere: `VocabNodeTypeMap` has no entry mapping to
-# "REAGENT", and `evidence/models.py` records that `Link` "Replaces the
-# `ShadowLink` vertex".
+# none was constructed anywhere: nothing has ever produced a node typed "REAGENT",
+# and `evidence/models.py` records that `Link` "Replaces the `ShadowLink` vertex".
+# The five members are exactly `retrieved.NodeType`'s five values.
 NodeSubtype = Union[Entity, Structure, NaturalEvent, Metric, ProtocolEvent]
 
 # Union type for all edge subtypes
@@ -1718,19 +1964,22 @@ EdgeSubtype = Union[Relation, StructureRelation, Description, Measurement, Input
 
 
 def cast_node_to_graphql_type(node: RetrievedNode) -> NodeSubtype:
-    """
-    Convert a RetrievedNode to the appropriate Strawberry type based on its node_type.
+    """Pick the GraphQL type for a node, from what the claim says it is.
 
-    This matches the pattern from core/types.py's entity_to_node_subtype function.
+    `node_type` is the `type` property, written from `Instance.kind` — so this
+    dispatches on the claim's own account of the thing, never on a vertex label,
+    which is one view's rename of a word. The `case None` branch that used to sit
+    at the bottom guessed from the label and defaulted to `Entity`, which is what
+    every drawn event resolved to.
 
     Args:
-        node: The retrieved node from AGE
+        node: The retrieved node, from a projection or from a row
 
     Returns:
         The appropriate Strawberry type instance (Entity, Structure, etc.)
 
     Raises:
-        ValueError: If the node type is unknown
+        ValueError: If the node carries no type, or one nothing can be
     """
     match node.node_type:
         case "ENTITY":
@@ -1744,19 +1993,8 @@ def cast_node_to_graphql_type(node: RetrievedNode) -> NodeSubtype:
         case "PROTOCOL_EVENT":
             return ProtocolEvent(_value=node)
         # No `ASSERTION` / `ACTIVITY` branch. Both mapped to `Activity`, a type
-        # for a vertex the projector has never written — `VocabNodeTypeMap` only
-        # reaches them through `vocab.Assertion`, a label `vocab.py` records as one
-        # the reader looks for and the writer never produces.
-        case None:
-            # Default based on label if type property not set
-            label = node.label.upper()
-            if label == "ENTITY":
-                return Entity(_value=node)
-            elif label == "STRUCTURE":
-                return Structure(_value=node)
-            else:
-                # Default to Entity for unknown types
-                return Entity(_value=node)
+        # for a vertex the projector has never written; an assertion is served as
+        # the Django row now.
         case _:
             raise ValueError(f"Unknown node type: {node.node_type}")
 
@@ -1832,11 +2070,11 @@ def _endpoint_node(ref: Optional[str], info: kante.Info) -> RetrievedNode:
 
     controller = get_controller()
     # `all_objects` because the organization is what we are looking *up* — the
-    # same reason `controller._resolve_node` uses it — so the tenancy check has
+    # same reason `controller._resolve_instance` uses it — so the tenancy check has
     # to come from the row that was found, and `info` has to reach it. Passing
     # `None` here would skip the check entirely: `_assert_can_access` returns
     # early when it has no request to check against.
-    node = evidence_models.Node.all_objects.filter(pk=str(ref)).select_related("term").first()
+    node = evidence_models.Instance.all_objects.filter(pk=str(ref)).select_related("term").first()
     if node is None:
         raise ValueError(f"No node for endpoint '{ref}'")
     controller._assert_can_access(node.organization, info)
@@ -1884,7 +2122,7 @@ def _drawings_for_ref(ref: str, info: kante.Info) -> List[results.NodeDrawing]:
 
     **Read back, not approximated.** `projector.graphs_for_refs` answers which
     graphs declare a word admitting this node — a superset, because a graph whose
-    category carries a `definition` can still refuse it. `drawings_for_node` asks
+    category carries a `definition` can still refuse it. `drawings_for_instance` asks
     each candidate view for the vertex and reports only the ones that answer,
     which is what "drawn in" means. Shipping the cheap answer would over-report
     exactly the case defined categories exist for.
@@ -1892,11 +2130,11 @@ def _drawings_for_ref(ref: str, info: kante.Info) -> List[results.NodeDrawing]:
     from evidence import models as evidence_models
 
     controller = get_controller()
-    node = evidence_models.Node.all_objects.filter(pk=str(ref)).first()
+    node = evidence_models.Instance.all_objects.filter(pk=str(ref)).first()
     if node is None:
         return []
     controller._assert_can_access(node.organization, info)
-    return list(controller.drawings_for_node(node))
+    return list(controller.drawings_for_instance(node))
 
 
 @sync_to_async
@@ -1966,21 +2204,25 @@ _DRAWINGS_DESCRIPTION = (
     "subject still draws the node."
 )
 
-_ASSERTION_DESCRIPTION = (
-    "The claim this call recorded. Not the subject's original assertion — for an attestation "
-    "or a retraction those are different acts, possibly years apart."
+_CLAIM_DESCRIPTION = (
+    "What was claimed, as the log has it. Not a drawing of it: derived properties, a label and a "
+    "category are one view's account and live on each entry in `drawings`. This is addressable "
+    "whether or not any view draws it, which is the case a write has to answer for."
 )
 
+_ASSERTION_DESCRIPTION = "The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart."
 
-@strawberry.type(description="An assertion about an entity, and everywhere that entity is now drawn")
-class EntityAssertion:
-    """The payload is concretely typed, deliberately.
 
-    An interface or a union here would force every caller to write
-    `... on Entity { id }` for a mutation whose kind is fixed by the field it was
-    selected on — `assertEntityExists` cannot return anything but an entity. The
-    polymorphic shapes below (`NodesAssertion`, `EdgesAssertion`, and the two
-    drawing types) are the ones where the kind genuinely varies.
+@strawberry.type(description="An assertion about an entity: the act, the claim it recorded, and everywhere that claim is now drawn")
+class AssertedEntity:
+    """Three fields, and none of them a drawing of the thing claimed.
+
+    `instance` used to be `entity: Entity!` — a graph-shaped type standing for a
+    claim that may be in no graph at all. Two of its fields could not answer for
+    that case (`schemaVersion` is non-null with no value to give, `richProperties`
+    asserted on a category that does not exist), six more were empty by
+    construction, and `drawnIn` said what `drawings` already says. The claim is an
+    `Instance`; how a view holds it is a `NodeDrawing`.
     """
 
     _value: strawberry.Private[results.Asserted]
@@ -1989,9 +2231,9 @@ class EntityAssertion:
     def assertion(self) -> Assertion:
         return cast(Assertion, self._value.assertion)
 
-    @strawberry.field(description="The entity as the log has it: its identity and the word it was claimed under. Derived properties are per-view and live on each drawing")
-    def entity(self) -> "Entity":
-        return Entity(_value=cast(RetrievedNode, self._value.subject))
+    @strawberry.field(description=_CLAIM_DESCRIPTION)
+    def instance(self) -> Instance:
+        return cast(Instance, self._value.subject)
 
     @strawberry.field(description=_DRAWINGS_DESCRIPTION)
     def drawings(self) -> List[NodeDrawing]:
@@ -1999,16 +2241,16 @@ class EntityAssertion:
 
 
 @strawberry.type(description="An assertion about a natural event, and everywhere it is now drawn")
-class NaturalEventAssertion:
+class AssertedNaturalEvent:
     _value: strawberry.Private[results.Asserted]
 
     @strawberry.field(description=_ASSERTION_DESCRIPTION)
     def assertion(self) -> Assertion:
         return cast(Assertion, self._value.assertion)
 
-    @strawberry.field(description="The event as the log has it")
-    def natural_event(self) -> "NaturalEvent":
-        return NaturalEvent(_value=cast(RetrievedNode, self._value.subject))
+    @strawberry.field(description=_CLAIM_DESCRIPTION)
+    def instance(self) -> Instance:
+        return cast(Instance, self._value.subject)
 
     @strawberry.field(description=_DRAWINGS_DESCRIPTION)
     def drawings(self) -> List[NodeDrawing]:
@@ -2016,16 +2258,16 @@ class NaturalEventAssertion:
 
 
 @strawberry.type(description="An assertion about a protocol event, and everywhere it is now drawn")
-class ProtocolEventAssertion:
+class AssertedProtocolEvent:
     _value: strawberry.Private[results.Asserted]
 
     @strawberry.field(description=_ASSERTION_DESCRIPTION)
     def assertion(self) -> Assertion:
         return cast(Assertion, self._value.assertion)
 
-    @strawberry.field(description="The event as the log has it")
-    def protocol_event(self) -> "ProtocolEvent":
-        return ProtocolEvent(_value=cast(RetrievedNode, self._value.subject))
+    @strawberry.field(description=_CLAIM_DESCRIPTION)
+    def instance(self) -> Instance:
+        return cast(Instance, self._value.subject)
 
     @strawberry.field(description=_DRAWINGS_DESCRIPTION)
     def drawings(self) -> List[NodeDrawing]:
@@ -2033,12 +2275,13 @@ class ProtocolEventAssertion:
 
 
 @strawberry.type(description="An assertion about several nodes made as one act, and everywhere they are now drawn")
-class NodesAssertion:
-    """Polymorphic, because `classifyNodes` genuinely accepts nodes of any kind.
+class AssertedNodes:
+    """A batch, and one type covers it.
 
-    It used to wrap every one in `Entity` regardless — the controller reads each
-    node's kind from its row — so classifying a natural event reported it as an
-    entity, and only the `Node` interface made that type-check.
+    It needed a polymorphic `[Node!]!` while the payload was drawing-shaped, because
+    an entity and an event are different GraphQL types. An `Instance` carries its
+    own `kind`, so the caller reads it off the claim instead of writing
+    `... on NaturalEvent`.
     """
 
     _value: strawberry.Private[results.Asserted]
@@ -2047,9 +2290,9 @@ class NodesAssertion:
     def assertion(self) -> Assertion:
         return cast(Assertion, self._value.assertion)
 
-    @strawberry.field(description="The nodes this act was about, each as its own kind")
-    def nodes(self) -> List[Node]:
-        return [cast(Node, cast_node_to_graphql_type(subject)) for subject in self._value.subjects]
+    @strawberry.field(description="The instances this act was about, as the log has them")
+    def instances(self) -> List[Instance]:
+        return [cast(Instance, subject) for subject in self._value.subjects]
 
     @strawberry.field(description=_DRAWINGS_DESCRIPTION)
     def drawings(self) -> List[NodeDrawing]:
@@ -2057,16 +2300,16 @@ class NodesAssertion:
 
 
 @strawberry.type(description="An assertion about a relation, and everywhere that relation is now drawn")
-class RelationAssertion:
+class AssertedRelation:
     _value: strawberry.Private[results.Asserted]
 
     @strawberry.field(description=_ASSERTION_DESCRIPTION)
     def assertion(self) -> Assertion:
         return cast(Assertion, self._value.assertion)
 
-    @strawberry.field(description="The relation as the log has it")
-    def relation(self) -> "Relation":
-        return Relation(_value=cast(RetrievedEdge, self._value.subject))
+    @strawberry.field(description=_CLAIM_DESCRIPTION)
+    def link(self) -> Link:
+        return cast(Link, self._value.subject)
 
     @strawberry.field(description=_DRAWINGS_DESCRIPTION)
     def drawings(self) -> List[EdgeDrawing]:
@@ -2074,16 +2317,16 @@ class RelationAssertion:
 
 
 @strawberry.type(description="An assertion about a measurement. Drawings are always empty: a measurement has no AGE edge at all")
-class MeasurementAssertion:
+class AssertedMeasurement:
     _value: strawberry.Private[results.Asserted]
 
     @strawberry.field(description=_ASSERTION_DESCRIPTION)
     def assertion(self) -> Assertion:
         return cast(Assertion, self._value.assertion)
 
-    @strawberry.field(description="The measurement as the log has it")
-    def measurement(self) -> "Measurement":
-        return Measurement(_value=cast(RetrievedEdge, self._value.subject))
+    @strawberry.field(description=_CLAIM_DESCRIPTION)
+    def link(self) -> Link:
+        return cast(Link, self._value.subject)
 
     @strawberry.field(description="Always empty, and structurally so: nothing projects a measurement to an AGE edge")
     def drawings(self) -> List[EdgeDrawing]:
@@ -2091,16 +2334,16 @@ class MeasurementAssertion:
 
 
 @strawberry.type(description="An assertion about a structure relation. Drawings are always empty: neither endpoint has a vertex")
-class StructureRelationAssertion:
+class AssertedStructureRelation:
     _value: strawberry.Private[results.Asserted]
 
     @strawberry.field(description=_ASSERTION_DESCRIPTION)
     def assertion(self) -> Assertion:
         return cast(Assertion, self._value.assertion)
 
-    @strawberry.field(description="The structure relation as the log has it")
-    def structure_relation(self) -> "StructureRelation":
-        return StructureRelation(_value=cast(RetrievedEdge, self._value.subject))
+    @strawberry.field(description=_CLAIM_DESCRIPTION)
+    def link(self) -> Link:
+        return cast(Link, self._value.subject)
 
     @strawberry.field(description="Always empty, and structurally so: both endpoints are structures, which have no vertex for an edge to run between")
     def drawings(self) -> List[EdgeDrawing]:
@@ -2108,7 +2351,7 @@ class StructureRelationAssertion:
 
 
 @strawberry.type(description="An assertion about one participation, and everywhere it is now drawn")
-class ParticipationAssertion:
+class AssertedParticipation:
     """Polymorphic in the payload, because which side of the event a claim is about
     decides its type — `InputParticipation` or `OutputParticipation`."""
 
@@ -2118,9 +2361,9 @@ class ParticipationAssertion:
     def assertion(self) -> Assertion:
         return cast(Assertion, self._value.assertion)
 
-    @strawberry.field(description="The participation claim, as an input or an output depending on which side it names")
-    def participation(self) -> Edge:
-        return cast(Edge, cast_edge_to_graphql_type(self._value.subject))
+    @strawberry.field(description=_CLAIM_DESCRIPTION)
+    def link(self) -> Link:
+        return cast(Link, self._value.subject)
 
     @strawberry.field(description=_DRAWINGS_DESCRIPTION)
     def drawings(self) -> List[EdgeDrawing]:
@@ -2128,10 +2371,9 @@ class ParticipationAssertion:
 
 
 @strawberry.type(description="An assertion about several edges made as one act, and everywhere they are now drawn")
-class EdgesAssertion:
-    """Polymorphic: `retractClaims` retracts classifications, relations,
-    participations and INFORMS links alike. It used to wrap every one in
-    `Measurement`, so retracting a participation reported it as a measurement."""
+class AssertedEdges:
+    """A batch of link claims — `retractLinks` takes classifications, relations,
+    participations and INFORMS links alike, and each one reports its own `kind`."""
 
     _value: strawberry.Private[results.Asserted]
 
@@ -2139,9 +2381,9 @@ class EdgesAssertion:
     def assertion(self) -> Assertion:
         return cast(Assertion, self._value.assertion)
 
-    @strawberry.field(description="The claims this act was about, each as its own kind")
-    def edges(self) -> List[Edge]:
-        return [cast(Edge, cast_edge_to_graphql_type(subject)) for subject in self._value.subjects]
+    @strawberry.field(description="The claims this act was about, as the log has them")
+    def links(self) -> List[Link]:
+        return [cast(Link, subject) for subject in self._value.subjects]
 
     @strawberry.field(description=_DRAWINGS_DESCRIPTION)
     def drawings(self) -> List[EdgeDrawing]:
@@ -2149,7 +2391,7 @@ class EdgesAssertion:
 
 
 @strawberry.type(description="An assertion that instances are one thing, and the claims it recorded")
-class SamenessAssertion:
+class AssertedSameness:
     """No `drawings`, and structurally so: nothing projects a sameness claim.
 
     What it changes is which nodes a *component* contains, and that shows up in
@@ -2164,12 +2406,12 @@ class SamenessAssertion:
         return cast(Assertion, self._value.assertion)
 
     @strawberry.field(description="The sameness claims this act recorded. Asserting that three instances are one records every pair among them, under one assertion")
-    def samenesses(self) -> List["Sameness"]:
-        return [Sameness(_value=cast(RetrievedEdge, subject)) for subject in self._value.subjects]
+    def links(self) -> List[Link]:
+        return [cast(Link, subject) for subject in self._value.subjects]
 
 
 @strawberry.type(description="An assertion about a structure — a pointer to an external datum")
-class StructureAssertion:
+class AssertedStructure:
     """No `drawings`, and the absence is structural rather than circumstantial.
 
     A structure lives only in the relational evidence base and has no Apache AGE
@@ -2185,12 +2427,14 @@ class StructureAssertion:
 
     @strawberry.field(description="The structure this act was about")
     def structure(self) -> "Structure":
-        return Structure(_value=cast(RetrievedStructure, self._value.subject))
+        # Adapted here rather than in the controller: `Asserted.subjects` carries
+        # evidence rows, and `Structure` is a reading of one.
+        return Structure(_value=RetrievedStructure.from_row(get_controller(), self._value.subject))
 
 
 @strawberry.type(description="An assertion about a metric — a measured value about a structure")
-class MetricAssertion:
-    """No `drawings`, for the same reason `StructureAssertion` has none."""
+class AssertedMetric:
+    """No `drawings`, for the same reason `AssertedStructure` has none."""
 
     _value: strawberry.Private[results.Asserted]
 
@@ -2200,7 +2444,7 @@ class MetricAssertion:
 
     @strawberry.field(description="The metric this act was about")
     def metric(self) -> "Metric":
-        return Metric(_value=cast(RetrievedMetric, self._value.subject))
+        return Metric(_value=RetrievedMetric.from_row(get_controller(), self._value.subject))
 
 
 # ===========================================

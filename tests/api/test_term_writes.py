@@ -3,7 +3,7 @@
 `docs/LOG.md`'s second axiom is that tenancy is the organization and never the
 graph. The evidence layer honoured that from the start — nothing in `evidence/`
 carries a graph foreign key, and membership is computed by
-`evidence.selector.nodes_for` rather than stored — but the write API did not: to
+`evidence.selector.instances_for` rather than stored — but the write API did not: to
 claim "there is an AIS here" you had to name some graph's `EntityCategory` for the
 word "AIS", which the controller then reduced to that category's term and its
 graph's organization before writing anything.
@@ -81,7 +81,7 @@ async def test_a_claim_under_a_word_no_view_declares_is_recorded(
     @sync_to_async
     def recorded() -> tuple[int, int, int]:
         organization = test_graph.organization
-        nodes = evidence_models.Node.objects.for_organization(organization).filter(pk=entity_id).count()
+        nodes = evidence_models.Instance.objects.for_organization(organization).filter(pk=entity_id).count()
         terms = evidence_models.Term.objects.for_organization(organization).filter(kind="ENTITY", key=word).count()
         categories = core_models.Category.objects.filter(term__key=word).count()
         return nodes, terms, categories
@@ -206,7 +206,7 @@ async def test_classifying_an_event_claims_an_event_word(
     classified = await api_schema.execute(
         """
         mutation ClassifyNodes($input: ClassifyNodesInput!) {
-            classifyNodes(input: $input) { nodes { __typename id } }
+            classifyNodes(input: $input) { instances { kind id } }
         }
         """,
         variable_values={"input": {"classifications": [{"node": event_id, "term": word}]}},
@@ -220,11 +220,12 @@ async def test_classifying_an_event_claims_an_event_word(
 
     assert await minted_kinds() == ["NATURAL_EVENT"], "The kind follows the node it is claimed about"
 
-    # And the payload agrees. `classifyNodes` used to wrap every classified node
-    # in `Entity` regardless of what it was, so classifying an event reported it
-    # as an entity — visible only if you asked for `__typename`, since `id` is on
-    # the `Node` interface and resolves either way.
-    assert classified.data["classifyNodes"]["nodes"][0]["__typename"] == "NaturalEvent", "A classified event comes back as an event"
+    # And the payload agrees. `classifyNodes` used to wrap every classified node in
+    # `Entity` regardless of what it was, so classifying an event reported it as an
+    # entity — visible only if you asked for `__typename`, since `id` is on the `Node`
+    # interface and resolves either way. The claim carries its own `kind` now, so the
+    # question needs no type name to ask.
+    assert classified.data["classifyNodes"]["instances"][0]["kind"] == "NATURAL_EVENT", "A classified event comes back as an event"
 
 
 RELATION_BY_ID = """
@@ -274,7 +275,7 @@ async def test_a_claim_cannot_reach_into_another_organization(
     """A write refuses a reference belonging to a different tenant.
 
     Membership alone stopped being enough when the organization started coming from
-    the request instead of from the row the caller named. `_resolve_node` authorizes
+    the request instead of from the row the caller named. `_resolve_instance` authorizes
     against the *node's* organization, so a user who belongs to two would pass that
     check for a node in either — and the resulting `Link` would sit in one tenant
     naming rows in the other, invisible to every query scoped to its own endpoints.
@@ -298,9 +299,9 @@ async def test_a_claim_cannot_reach_into_another_organization(
         Membership.objects.get_or_create(user=simple_api_context.request._user, organization=other)
         assertion = evidence_writer.create_assertion(other, subject="someone-else", app_id="elsewhere")
         term = evidence_writer.ensure_term(other, "ENTITY", "Cell")
-        node = evidence_models.Node.objects.create_for_organization(
+        node = evidence_models.Instance.objects.create_for_organization(
             organization=other,
-            kind=evidence_models.Node.Kind.ENTITY,
+            kind=evidence_models.Instance.Kind.ENTITY,
             term=term,
             assertion=assertion,
         )
@@ -312,7 +313,7 @@ async def test_a_claim_cannot_reach_into_another_organization(
     def attempt() -> str:
         controller = controller_module.GraphController(engine=None)
         try:
-            controller._resolve_node(outsider, None, organization=test_graph.organization)
+            controller._resolve_instance(outsider, None, organization=test_graph.organization)
         except PermissionError as error:
             return str(error)
         return ""
@@ -322,11 +323,11 @@ async def test_a_claim_cannot_reach_into_another_organization(
 
     # And through a real mutation, not only the guard in isolation: the guard
     # existing proves nothing if a call site forgets to pass the organization, and a
-    # test that only calls `_resolve_node` stays green when one does.
+    # test that only calls `_resolve_instance` stays green when one does.
     attempted = await api_schema.execute(
         """
         mutation CreateRelation($input: AssertRelationExistsInput!) {
-            assertRelationExists(input: $input) { relation { id } }
+            assertRelationExists(input: $input) { link { id } }
         }
         """,
         variable_values={"input": {"term": "IS_CONNECTED_TO", "sourceId": source, "targetId": outsider}},
@@ -342,7 +343,7 @@ async def test_a_claim_cannot_reach_into_another_organization(
 
         controller = controller_module.GraphController(engine=None)
         other = Org.objects.get(slug="a-different-tenant")
-        return controller._resolve_node(outsider, None, organization=other) is not None
+        return controller._resolve_instance(outsider, None, organization=other) is not None
 
     assert await allowed(), "The guard is about the tenant, not about the node"
     assert source, "The in-tenant write that set this up still succeeded"
@@ -389,26 +390,26 @@ async def test_attesting_a_node_no_view_draws_does_not_fail(
 ) -> None:
     """The path the change opened: create under an undeclared word, archive, attest.
 
-    `attest*` returned `projected_node`, which raises when every view declaring the
+    `attest*` returned `projected_instance`, which raises when every view declaring the
     node's word refused it. That was unreachable while a write had to name a
     category some graph owned. It is routine now, and raising would report a failure
-    for a `Claim(stands=True)` that was durably written a moment earlier — the same
+    for a `Standing(stands=True)` that was durably written a moment earlier — the same
     defect this change removed from `createEntity`.
     """
     word = f"Unseen_{uuid.uuid4().hex[:8]}"
     entity_id = await writes.create_entity(api_schema, simple_api_context, word)
 
     archived = await api_schema.execute(
-        "mutation Archive($input: RetractEntityInput!) { retractEntity(input: $input) { entity { id } } }",
+        "mutation Archive($input: RetractEntityInput!) { retractEntity(input: $input) { instance { id } } }",
         variable_values={"input": {"id": entity_id}},
         context_value=simple_api_context,
     )
     assert archived.errors is None, f"GraphQL errors: {archived.errors}"
 
     attested = await api_schema.execute(
-        "mutation Attest($input: AttestEntityInput!) { attestEntity(input: $input) { entity { id } } }",
+        "mutation Attest($input: AttestEntityInput!) { attestEntity(input: $input) { instance { id } } }",
         variable_values={"input": {"id": entity_id}},
         context_value=simple_api_context,
     )
     assert attested.errors is None, f"GraphQL errors: {attested.errors}"
-    assert attested.data["attestEntity"]["entity"]["id"] == entity_id, "The node comes back as the log has it"
+    assert attested.data["attestEntity"]["instance"]["id"] == entity_id, "The node comes back as the log has it"

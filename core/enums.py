@@ -124,11 +124,11 @@ class TermKind(str, Enum):
 
 #: Which word-kind a node's claims are stated in, keyed by `evidence.Node.Kind`.
 #:
-#: The two vocabularies are deliberately separate — `Node.Kind` is lowercase, has
+#: The two vocabularies are deliberately separate — `Instance.Kind` is lowercase, has
 #: three members, and says what sort of row this is; `CategoryKindChoices` is
 #: uppercase, has seven, and says what sort of thing a word names. A write needs
 #: both, and `classify_nodes` needs to go from the row it was handed to the kind of
-#: word it may claim. Total over `Node.Kind`, so there is no default to get wrong;
+#: word it may claim. Total over `Instance.Kind`, so there is no default to get wrong;
 #: `REAGENT` has no node kind and so cannot be reached from here, which matches the
 #: fact that nothing mints reagent instances.
 TERM_KIND_FOR_NODE_KIND: dict[str, str] = {
@@ -136,6 +136,45 @@ TERM_KIND_FOR_NODE_KIND: dict[str, str] = {
     "natural_event": CategoryKindChoices.NATURAL_EVENT.value,
     "protocol_event": CategoryKindChoices.PROTOCOL_EVENT.value,
 }
+
+
+@strawberry.enum
+class InstanceKind(str, Enum):
+    """What sort of individual an `evidence.Instance` is.
+
+    A separate strawberry enum from `Instance.Kind`, for the same reason `TermKind`
+    is separate from `CategoryKindChoices`: the Django `TextChoices` stores
+    **lowercase** values and is not exposed to GraphQL, while a GraphQL enum is
+    conventionally uppercase. `test_instance_kinds_match_the_model` holds the two
+    together.
+
+    Three members, and no `REAGENT`: nothing mints a reagent instance, which is why
+    `TERM_KIND_FOR_NODE_KIND` above cannot reach that word kind either.
+    """
+
+    ENTITY = "ENTITY"
+    NATURAL_EVENT = "NATURAL_EVENT"
+    PROTOCOL_EVENT = "PROTOCOL_EVENT"
+
+
+@strawberry.enum
+class LinkKind(str, Enum):
+    """What an `evidence.Link` claims — and therefore what its two refs point at.
+
+    The refs are opaque strings by design, so `kind` is the only thing that says
+    which end is which; `api/types.py::Link.source` reads exactly this to decide.
+    Uppercase mirror of `Link.Kind`, held to it by
+    `test_link_kinds_match_the_model`.
+    """
+
+    INFORMS = "INFORMS"
+    RELATION = "RELATION"
+    STRUCTURE_RELATION = "STRUCTURE_RELATION"
+    MEASUREMENT = "MEASUREMENT"
+    PARTICIPATES_AS_INPUT = "PARTICIPATES_AS_INPUT"
+    PARTICIPATES_AS_OUTPUT = "PARTICIPATES_AS_OUTPUT"
+    CLASSIFIES = "CLASSIFIES"
+    SAME_AS = "SAME_AS"
 
 
 @strawberry.enum

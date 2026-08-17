@@ -156,7 +156,7 @@ def claim_filter(selector: dict[str, Any] | None) -> Q:
 
     The third member of the family, alongside :func:`metric_filter` and
     :func:`classification_filter` — the same "which claims count" question asked
-    of :class:`~evidence.models.Claim`. That symmetry is the point: whether a
+    of :class:`~evidence.models.Standing`. That symmetry is the point: whether a
     node exists is contestable in exactly the way its category is, so a graph
     scoped to one annotator gets that annotator's answer about what is there.
 
@@ -192,7 +192,7 @@ def term_ids_for(graph: Any) -> set[Any]:
     A category is a rule over claims, so a view's "Neuron" may be defined as
     "anything claimed Pyramidal or Interneuron" without declaring either word
     itself. Counting only the declared ones excluded those nodes from
-    `nodes_for` — so they never reached `resolve_categories` and the definition
+    `instances_for` — so they never reached `resolve_categories` and the definition
     never fired. The category matched claims the graph could not see.
 
     Returns a materialized set rather than a subquery, deliberately: it is the
@@ -221,11 +221,11 @@ def term_ids_for(graph: Any) -> set[Any]:
     return declared
 
 
-def nodes_for(graph: Any) -> QuerySet[Any]:
+def instances_for(graph: Any) -> QuerySet[Any]:
     """The nodes this graph contains.
 
     **The one place graph membership is decided**, together with its inverse
-    :func:`graph_ids_for_node_ids`. It used to be decided in five, by testing
+    :func:`graph_ids_for_instance_ids`. It used to be decided in five, by testing
     whether a ref started with ``{age_name}:`` — which made membership a property
     of a node's *name*, so a node could belong to exactly one view forever and
     the same claim could not be seen twice.
@@ -239,10 +239,10 @@ def nodes_for(graph: Any) -> QuerySet[Any]:
     names a term; whether *this* view has anything to say about that word is what
     decides membership, and it is why one node can now be in two graphs.
     """
-    return evidence_models.Node.objects.for_organization(graph.organization).filter(term__in=term_ids_for(graph))
+    return evidence_models.Instance.objects.for_organization(graph.organization).filter(term__in=term_ids_for(graph))
 
 
-def node_refs_for(graph: Any) -> QuerySet[Any]:
+def instance_refs_for(graph: Any) -> QuerySet[Any]:
     """The same membership, shaped for comparison against an opaque ref column.
 
     A **subquery**, not a materialized list. `Link.source_ref`/`target_ref` are
@@ -252,16 +252,16 @@ def node_refs_for(graph: Any) -> QuerySet[Any]:
     inlines every node id in the graph into an `IN (...)` on every call, and
     `_structure_ids_informing` is called once per derived property per entity.
     """
-    return nodes_for(graph).annotate(ref_str=Cast("id", CharField(max_length=1000))).values("ref_str")
+    return instances_for(graph).annotate(ref_str=Cast("id", CharField(max_length=1000))).values("ref_str")
 
 
-def node_ids_for(graph: Any) -> list[str]:
+def instance_ids_for(graph: Any) -> list[str]:
     """The nodes this graph contains, as ref strings. Materialized.
 
-    Prefer :func:`node_refs_for` inside a query. This exists for the callers that
+    Prefer :func:`instance_refs_for` inside a query. This exists for the callers that
     genuinely need the values in Python.
     """
-    return [str(node_id) for node_id in nodes_for(graph).values_list("id", flat=True)]
+    return [str(node_id) for node_id in instances_for(graph).values_list("id", flat=True)]
 
 
 def _graph_ids_by_term(organization: Any) -> dict[Any, list[Any]]:
@@ -270,7 +270,7 @@ def _graph_ids_by_term(organization: Any) -> dict[Any, list[Any]]:
     The inverse of :func:`term_ids_for`, built for the whole organization in **one
     scan** rather than by calling that function per graph. It has to be one scan:
     `term_ids_for` costs two queries each, and its caller
-    :func:`graph_ids_for_node_ids` runs on every write, so per-graph evaluation
+    :func:`graph_ids_for_instance_ids` runs on every write, so per-graph evaluation
     would turn a fifty-graph organization into a hundred queries per claim.
 
     Categories are the size of the schemas, not of the evidence, so scanning all
@@ -316,8 +316,8 @@ def core_categories(organization: Any) -> Any:
     return core_models.Category.objects.filter(graph__organization=organization).values_list("graph_id", "term_id")
 
 
-def graph_ids_for_node_ids(organization: Any, refs: Any) -> list[tuple[str, Any]]:
-    """Which graphs each of these nodes belongs to — the inverse of :func:`nodes_for`.
+def graph_ids_for_instance_ids(organization: Any, refs: Any) -> list[tuple[str, Any]]:
+    """Which graphs each of these nodes belongs to — the inverse of :func:`instances_for`.
 
     **Pairs, not a mapping, because a node can be in more than one graph.** That is
     the whole gain from the log naming a term rather than a category: two views
@@ -329,16 +329,16 @@ def graph_ids_for_node_ids(organization: Any, refs: Any) -> list[tuple[str, Any]
     categories declare, exactly as :func:`term_ids_for` does. It used to join
     `term__categories__graph` alone, which made it a narrower rule than the
     function it claims to invert: a view whose "Neuron" is defined as "anything
-    claimed Pyramidal or Interneuron" was found by `nodes_for` but not by this, so
+    claimed Pyramidal or Interneuron" was found by `instances_for` but not by this, so
     a newly claimed Pyramidal reached that view only on the next rebuild. That is
     the same omission `term_ids_for` documents having already been fixed for
-    `nodes_for`, and it matters more here — this is the only thing deciding where
+    `instances_for`, and it matters more here — this is the only thing deciding where
     a write lands, now that no caller names a graph.
 
     Ordered by graph id, so a write that reads itself back through "some admitting
     view" reads back through a *reproducible* one.
 
-    Refs with no `Node` row simply do not appear: they are edge refs, or nodes
+    Refs with no `Instance` row simply do not appear: they are edge refs, or nodes
     whose term no graph declares any more. Both are expected, since evidence
     outlives the projections built from it.
     """
@@ -347,7 +347,7 @@ def graph_ids_for_node_ids(organization: Any, refs: Any) -> list[tuple[str, Any]
         return []
 
     pairs: list[tuple[str, Any]] = []
-    for node_id, term_id in evidence_models.Node.objects.for_organization(organization).filter(id__in=[str(ref) for ref in refs]).values_list("id", "term_id"):
+    for node_id, term_id in evidence_models.Instance.objects.for_organization(organization).filter(id__in=[str(ref) for ref in refs]).values_list("id", "term_id"):
         for graph_id in sorted(graph_ids_by_term.get(term_id, ())):
             pairs.append((str(node_id), graph_id))
 
@@ -364,9 +364,9 @@ def classification_claims_for(graph: Any) -> QuerySet[Any]:
     **`standing()`, which this was missing.** The docstring said "live" and the
     queryset returned retracted claims — both siblings below wrap and this one
     did not, so a withdrawn classification still counted towards a defined
-    category and still showed as a label. Retraction is a `Claim(stands=False)`
+    category and still showed as a label. Retraction is a `Standing(stands=False)`
     rather than a delete, so nothing about the row itself says it is gone; the
-    anti-join against `ClaimCurrent` is the only thing that does.
+    anti-join against `CurrentStanding` is the only thing that does.
     """
     return claims_module.standing(
         evidence_models.Link.objects.for_organization(graph.organization).filter(
@@ -389,7 +389,7 @@ def metrics_for(graph: Any) -> QuerySet[Any]:
 def informs_links_for(graph: Any) -> QuerySet[Any]:
     """Every active INFORMS link whose target is a node of this graph.
 
-    Membership comes from :func:`nodes_for`, not from a prefix on the ref.
+    Membership comes from :func:`instances_for`, not from a prefix on the ref.
     That also keeps edge-targeted INFORMS links out — the ones
     `_attach_supporting_evidence` writes against a `Link` pk — because an edge
     ref is not among this graph's node ids. The old prefix test excluded them
@@ -398,13 +398,13 @@ def informs_links_for(graph: Any) -> QuerySet[Any]:
     return claims_module.standing(
         evidence_models.Link.objects.for_organization(graph.organization).filter(
             kind=evidence_models.Link.Kind.INFORMS,
-            target_ref__in=node_refs_for(graph),
+            target_ref__in=instance_refs_for(graph),
         ),
         "link",
     )
 
 
-def entity_refs_informed_by(graph: Any, structure_ids: list[Any]) -> list[str]:
+def instance_refs_informed_by(graph: Any, structure_ids: list[Any]) -> list[str]:
     """Which of this graph's entities the given structures are evidence for.
 
     The fan-out a new metric triggers, and the reason dirty tracking is cheap:

@@ -61,15 +61,20 @@ def links_of_kind(organization: Any, kind: Any) -> Any:
     ).select_related("assertion", "term")
 
 
-def links_for_category(category: Any, kind: Any) -> Any:
+def links_for_category(organization: Any, category: Any, kind: Any) -> Any:
     """Standing claims of one kind stated in a category's word.
 
     Scoped by **term**, not by the category: a claim names one of the
     organization's words, and a category is one view's rule for that word. Two
     graphs declaring the same word therefore list the same claims, which is the
     whole gain from the log naming a term.
+
+    The organization is passed in rather than reached through `category.graph`. The
+    claims are the tenant's and the category only supplies the word, so taking the
+    tenant from a graph would say that a view owns the claims it draws — and it made
+    the one thing the caller has already authorized implicit here.
     """
-    return links_of_kind(category.graph.organization, kind).filter(term_id=category.term_id)
+    return links_of_kind(organization, kind).filter(term_id=category.term_id)
 
 
 def links_in_graph(graph: Any, kind: Any, *, ref_field: str) -> Any:
@@ -79,11 +84,11 @@ def links_in_graph(graph: Any, kind: Any, *, ref_field: str) -> Any:
     event does, and `participation_key` stores the event as `target_ref` on both
     the input and the output side.
 
-    Membership comes from `selector.node_refs_for`, the same subquery
+    Membership comes from `selector.instance_refs_for`, the same subquery
     `informs_links_for` uses, so a graph-scoped edge list agrees with every other
     graph-scoped read about what the graph contains.
     """
-    return links_of_kind(graph.organization, kind).filter(**{f"{ref_field}__in": selector_module.node_refs_for(graph)})
+    return links_of_kind(graph.organization, kind).filter(**{f"{ref_field}__in": selector_module.instance_refs_for(graph)})
 
 
 def narrow(links: Any, filter_model: Any, ordering_models: Iterable[Any], pagination_model: Any) -> list[Any]:

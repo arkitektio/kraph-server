@@ -95,7 +95,7 @@ def update_term(info: Info, input: inputs.UpdateTermInput) -> types.Term:
 def delete_term(info: Info, input: inputs.DeleteTermInput) -> strawberry.ID:
     """Retire a word nothing has been claimed under.
 
-    `Node.term` and `Link.term` are `PROTECT`, so a word in use cannot be removed
+    `Instance.term` and `Link.term` are `PROTECT`, so a word in use cannot be removed
     and the refusal names what is in the way. That guard sits here rather than on
     `Category` deliberately: a category is one view's rule and deleting it is
     free, but the word every view's claims were recorded under has to outlive

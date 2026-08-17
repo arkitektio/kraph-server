@@ -4,7 +4,7 @@ Queries submodule for the API.
 Contains all GraphQL query resolvers for the graph engine.
 """
 
-from .entity import entity, entities_informed_by, entities
+from .entity import entity, entities
 from .structure import structure, structures, structure_by_identifier, informing_structures
 from .kinds import structure_kinds, structure_kind, metric_kinds, metric_kind, terms, term
 from .metric import metrics_for_structure, metric, metrics, measurements_for_assertion
@@ -18,14 +18,18 @@ from .natural_event import natural_event, natural_events
 from .protocol_event import protocol_event, protocol_events
 from .insights.graph_table import render_graph_table
 from .node import node, nodes
+from .claim import instance, link, standings
 
 __all__ = [
+    # The claims themselves, read back as claims
+    "instance",
+    "link",
+    "standings",
     # Entity queries
     "entity",
     "node",
     "nodes",
     "entities",
-    "entities_informed_by",
     # Structure queries
     "structure",
     "description",

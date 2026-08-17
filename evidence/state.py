@@ -43,21 +43,21 @@ def _numeric(value: Any) -> float | None:
 @transaction.atomic
 def merge(
     metric: evidence_models.Metric,
-    entity_refs: Iterable[str],
+    instance_refs: Iterable[str],
 ) -> list[evidence_models.State]:
     """Fold one metric into the state of every entity it informs.
 
-    ``entity_refs`` is passed in rather than derived here: which entities a
+    ``instance_refs`` is passed in rather than derived here: which entities a
     structure informs is a projection question, and the projector owns it. This
     module only knows how to fold.
     """
     updated: list[evidence_models.State] = []
     numeric = _numeric(metric.value)
 
-    for entity_ref in entity_refs:
+    for claim_ref in instance_refs:
         state, _ = evidence_models.State.all_objects.select_for_update().get_or_create(
             organization=metric.organization,
-            entity_ref=entity_ref,
+            claim_ref=claim_ref,
             source_kind=metric.structure.kind,
             key=metric.key,
             value_kind=metric.value_kind,
@@ -87,7 +87,7 @@ def merge(
 @transaction.atomic
 def retract(
     metric: evidence_models.Metric,
-    entity_refs: Iterable[str],
+    instance_refs: Iterable[str],
 ) -> list[evidence_models.State]:
     """Remove a metric's contribution.
 
@@ -101,12 +101,12 @@ def retract(
     numeric = _numeric(metric.value)
     touched: list[evidence_models.State] = []
 
-    for entity_ref in entity_refs:
+    for claim_ref in instance_refs:
         state = (
             evidence_models.State.all_objects.select_for_update()
             .filter(
                 organization=metric.organization,
-                entity_ref=entity_ref,
+                claim_ref=claim_ref,
                 source_kind=metric.structure.kind,
                 key=metric.key,
                 value_kind=metric.value_kind,
@@ -199,7 +199,7 @@ def _structures_informing(state: evidence_models.State) -> list[uuid.UUID]:
         evidence_models.Link.objects.for_organization(state.organization)
         .filter(
             kind=evidence_models.Link.Kind.INFORMS,
-            target_ref=state.entity_ref,
+            target_ref=state.claim_ref,
         )
         .values_list("source_ref", flat=True)
     )
@@ -231,7 +231,7 @@ def recompute_stale(organization: Any, limit: int | None = None) -> int:
 
 def state_for(
     organization: Any,
-    entity_ref: str,
+    claim_ref: str,
     source_kind: Any,
     key: str,
     value_kinds: Iterable[str],
@@ -254,7 +254,7 @@ def state_for(
     whatever order Postgres returned the rows in, which is not a decision worth
     leaving to chance for a value the API reports.
     """
-    states = list(evidence_models.State.objects.for_organization(organization).filter(entity_ref=entity_ref, source_kind=source_kind, key=key, value_kind__in=list(value_kinds)).order_by("value_kind"))
+    states = list(evidence_models.State.objects.for_organization(organization).filter(claim_ref=claim_ref, source_kind=source_kind, key=key, value_kind__in=list(value_kinds)).order_by("value_kind"))
 
     for state in states:
         if state.needs_recompute:
@@ -279,7 +279,7 @@ def combine(states: Iterable[evidence_models.State]) -> evidence_models.State | 
 
     merged = evidence_models.State(
         organization=states[0].organization,
-        entity_ref=states[0].entity_ref,
+        claim_ref=states[0].claim_ref,
         source_kind=states[0].source_kind,
         key=states[0].key,
         value_kind=states[0].value_kind,

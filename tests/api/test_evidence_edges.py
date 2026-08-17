@@ -39,34 +39,46 @@ CREATE_STRUCTURE = """
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { entity { id } }
+        assertEntityExists(input: $input) { instance { id } }
     }
 """
 
 CREATE_STRUCTURE_RELATION = """
     mutation CreateStructureRelation($input: AssertStructureRelationExistsInput!) {
         assertStructureRelationExists(input: $input) {
-            structureRelation { id sourceId targetId source { id object } target { id object } }
+            link {
+                id
+                kind
+                sourceRef
+                targetRef
+                source { ... on Structure { id object } }
+                target { ... on Structure { id object } }
+            }
         }
     }
 """
 
 ARCHIVE_STRUCTURE_RELATION = """
     mutation ArchiveStructureRelation($input: RetractStructureRelationInput!) {
-        retractStructureRelation(input: $input) { structureRelation { id } }
+        retractStructureRelation(input: $input) { link { id } }
     }
 """
 
 UPDATE_STRUCTURE_RELATION = """
     mutation UpdateStructureRelation($input: UpdateStructureRelationInput!) {
-        updateStructureRelation(input: $input) { structureRelation { id } }
+        updateStructureRelation(input: $input) { link { id } }
     }
 """
 
 CREATE_MEASUREMENT = """
     mutation CreateMeasurement($input: AssertMeasurementExistsInput!) {
         assertMeasurementExists(input: $input) {
-            measurement { id source { id object } target { id } }
+            link {
+                id
+                kind
+                source { ... on Structure { id object } }
+                target { ... on Instance { id } }
+            }
         }
     }
 """
@@ -156,7 +168,7 @@ async def _ais(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Gr
         context_value=ctx,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertEntityExists"]["entity"]["id"]
+    return created.data["assertEntityExists"]["instance"]["id"]
 
 
 @pytest.mark.django_db(transaction=True)
@@ -180,16 +192,15 @@ async def test_structure_relation_is_an_evidence_row_with_no_projection(
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
-    payload = created.data["assertStructureRelationExists"]["structureRelation"]
+    payload = created.data["assertStructureRelationExists"]["link"]
 
-    assert payload["sourceId"] == source, "Endpoints are named the way evidence names them"
-    assert payload["targetId"] == target
+    assert payload["sourceRef"] == source, "Endpoints are named the way evidence names them — opaque refs"
+    assert payload["targetRef"] == target
 
-    # `source`/`target` were `raise NotImplementedError` on every edge type while
-    # being **non-null** in the SDL, so selecting either was a guaranteed error on
-    # a query the schema advertised as valid. They resolve the endpoint through
-    # the authorizing controller path, so this also exercises the tenancy check —
-    # `get_structure_by_id` skips it entirely when handed no `info`.
+    # Resolved through the union, and dispatched on `kind` rather than on the ref:
+    # every ref is a bare uuid, so nothing about one says which table it names. A
+    # structure relation runs structure → structure, and this is what proves the
+    # table in `api/types.py::_ENDPOINT_TABLES` agrees with what the writer wrote.
     assert payload["source"]["id"] == source, "The structure this relation runs from"
     assert payload["target"]["id"] == target, "and the one it runs to"
     assert payload["source"]["object"], "resolved as a real structure, not a stub"
@@ -223,7 +234,7 @@ async def test_archiving_a_structure_relation_is_a_lifecycle_row(
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
-    relation_id = created.data["assertStructureRelationExists"]["structureRelation"]["id"]
+    relation_id = created.data["assertStructureRelationExists"]["link"]["id"]
 
     archived = await api_schema.execute(ARCHIVE_STRUCTURE_RELATION, variable_values={"input": {"id": relation_id}}, context_value=simple_api_context)
     assert archived.errors is None, f"GraphQL errors: {archived.errors}"
@@ -231,7 +242,7 @@ async def test_archiving_a_structure_relation_is_a_lifecycle_row(
     @sync_to_async
     def state() -> tuple[str, int]:
         link = evidence_models.Link.all_objects.get(pk=relation_id)
-        events = evidence_models.Claim.objects.for_organization(edge_graph.organization).filter(target_type="link", target_id=relation_id)
+        events = evidence_models.Standing.objects.for_organization(edge_graph.organization).filter(target_type="link", target_id=relation_id)
         return claims_module.current(link.organization, "link", link.pk), events.count()
 
     status, lifecycle_rows = await state()
@@ -263,7 +274,7 @@ async def test_structure_relation_update_and_archive_reach_the_row(
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
-    original = created.data["assertStructureRelationExists"]["structureRelation"]["id"]
+    original = created.data["assertStructureRelationExists"]["link"]["id"]
 
     updated = await api_schema.execute(
         UPDATE_STRUCTURE_RELATION,
@@ -271,7 +282,7 @@ async def test_structure_relation_update_and_archive_reach_the_row(
         context_value=simple_api_context,
     )
     assert updated.errors is None, f"GraphQL errors: {updated.errors}"
-    replacement = updated.data["updateStructureRelation"]["structureRelation"]["id"]
+    replacement = updated.data["updateStructureRelation"]["link"]["id"]
     assert replacement != original, "An update supersedes a claim rather than editing it"
 
     @sync_to_async
@@ -324,7 +335,7 @@ async def test_measurement_rolls_its_metrics_up(
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
-    measurement = created.data["assertMeasurementExists"]["measurement"]
+    measurement = created.data["assertMeasurementExists"]["link"]
 
     # A measurement runs structure → entity, and both ends resolve. `source` and
     # `target` were stubs raising on a non-null field until now.
@@ -341,7 +352,7 @@ async def test_measurement_rolls_its_metrics_up(
 
         return sorted(
             evidence_models.Link.objects.for_organization(edge_graph.organization)
-            .filter(target_ref__in=selector_module.node_ids_for(edge_graph))
+            .filter(target_ref__in=selector_module.instance_ids_for(edge_graph))
             .values_list("kind", flat=True)
         )
 

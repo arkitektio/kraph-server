@@ -1,7 +1,7 @@
 """Destroy evidence, on purpose, outside the API.
 
 Every ``delete*`` mutation for instance data is gone: evidence is append-only, so
-retraction is a ``Claim`` and the record of what a derived value once
+retraction is a ``Standing`` and the record of what a derived value once
 rested on survives. That is the right default and it is not negotiable through
 the API.
 
@@ -18,7 +18,7 @@ how much. What it cannot say is what the thing *was*. That is the honest limit o
 erasure, and the reason to prefer `archive*` for anything that is merely wrong
 rather than prohibited.
 
-**The claim log itself is never destroyed.** This used to delete the `Claim` rows
+**The claim log itself is never destroyed.** This used to delete the `Standing` rows
 about the target along with the target, which erased the record of who had
 asserted or retracted it — the one part of the account that is *about people
 rather than about the datum*, and the part an erasure has least business
@@ -117,7 +117,7 @@ class Command(BaseCommand):
             # State rows are folded statistics over these metrics, so they have to
             # be dropped and refolded rather than left holding a contribution
             # whose source no longer exists.
-            evidence_models.State.objects.for_organization(organization).filter(entity_ref__in=refs).delete()
+            evidence_models.State.objects.for_organization(organization).filter(claim_ref__in=refs).delete()
             links.delete()
             structure.delete()  # cascades to its metrics
 
@@ -140,13 +140,13 @@ class Command(BaseCommand):
         }
 
     def _plan_entity(self, organization, ref: str) -> dict:
-        node = evidence_models.Node.objects.for_organization(organization).filter(id=ref).first()
+        node = evidence_models.Instance.objects.for_organization(organization).filter(id=ref).first()
         if node is None:
             raise CommandError(f"No node with ref '{ref}' in this organization.")
 
         links = evidence_models.Link.objects.for_organization(organization).filter(source_ref=ref) | evidence_models.Link.objects.for_organization(organization).filter(target_ref=ref)
-        states = evidence_models.State.objects.for_organization(organization).filter(entity_ref=ref)
-        lifecycle = evidence_models.Claim.objects.for_organization(organization).filter(target_id=ref)
+        states = evidence_models.State.objects.for_organization(organization).filter(claim_ref=ref)
+        lifecycle = evidence_models.Standing.objects.for_organization(organization).filter(target_id=ref)
 
         def destroy() -> None:
             states.delete()
@@ -181,12 +181,12 @@ class Command(BaseCommand):
         """
         from evidence import selector as selector_module
 
-        # Pairs, not a mapping. `graph_ids_for_node_ids` returns
+        # Pairs, not a mapping. `graph_ids_for_instance_ids` returns
         # `list[tuple[ref, graph_id]]` because a node can be in more than one
         # graph — a `dict[ref, graph]` could only record the last one. This called
         # `.values()` on that list, so `redact` raised `AttributeError` the moment
         # it reached the reprojection step and the command was broken outright.
-        graph_ids = {graph_id for _, graph_id in selector_module.graph_ids_for_node_ids(organization, refs)}
+        graph_ids = {graph_id for _, graph_id in selector_module.graph_ids_for_instance_ids(organization, refs)}
         return list(models.Graph.objects.filter(organization=organization, pk__in=graph_ids))
 
     def _reproject(self, graphs: list[models.Graph]) -> None:

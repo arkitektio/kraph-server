@@ -32,6 +32,15 @@ from graph_engine import scalars
 class Query:
     """Root query type, grouped by domain sections: Entity Type, Schema, and Insights."""
 
+    # The claims themselves
+    # =========================
+    # `node(id:)` answers with a drawing — how some view holds the thing. These
+    # answer with the recorded statement, which is what a write returns and what
+    # exists whether or not any view draws it.
+    instance = kante.django_field(queries.instance, description="Get one claimed individual by ID, as the log has it")
+    link = kante.django_field(queries.link, description="Get one claim relating two things by ID, as the log has it")
+    standings = kante.django_field(queries.standings, description="Every position anyone has taken on one claim, newest first")
+
     # Entity Type Section
     # =========================
     node = kante.django_field(queries.node, description="Get a node by ID")
@@ -287,17 +296,17 @@ class Mutation:
         description="Claim that several nodes are of a word, without displacing anyone else's claim. One act, one assertion",
         resolver=mutations.classify_nodes,
     )
-    retract_claims = kante.django_mutation(
-        description="Retract several claims as one act",
-        resolver=mutations.retract_claims,
+    retract_links = kante.django_mutation(
+        description="Retract several link claims as one act, by their `Link` ids — a relation, a classification, a participation, a measurement",
+        resolver=mutations.retract_links,
     )
-    assert_same_entity = kante.django_mutation(
+    assert_same_instance = kante.django_mutation(
         description="Claim that several already-recorded instances are one thing. An equivalence with no primary — the order of the ids carries no meaning",
-        resolver=mutations.assert_same_entity,
+        resolver=mutations.assert_same_instance,
     )
-    retract_same_entity = kante.django_mutation(
+    retract_same_instance = kante.django_mutation(
         description="Withdraw one sameness claim. The component it held together is rebuilt from the claims that survive, which may split it",
-        resolver=mutations.retract_same_entity,
+        resolver=mutations.retract_same_instance,
     )
 
     request_media_upload = kante.django_mutation(
@@ -693,7 +702,7 @@ def create_schema(
             types.Relation,
             types.StructureRelation,
             # Reachable only through the `Edge` interface — `connections` and
-            # `retractClaims` both return it — so nothing names them
+            # `retractLinks` both return it — so nothing names them
             # concretely and strawberry would not otherwise register them.
             # An unregistered type is not a schema-build error: it fails at
             # *runtime*, as "Abstract type 'Edge' was resolved to a type that
@@ -703,6 +712,14 @@ def create_schema(
             types.Sameness,
             types.InputParticipation,
             types.OutputParticipation,
+            # The claims. `Instance` and `Link` are named by the write payloads and
+            # by their own root fields, but the members of `ClaimEndpoint` are
+            # reachable only through that union — same runtime failure as the `Edge`
+            # subtypes above if one is left out.
+            types.Instance,
+            types.Link,
+            types.Standing,
+            types.Term,
         ],
         config=StrawberryConfig(
             scalar_map={

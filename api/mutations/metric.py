@@ -8,7 +8,7 @@ and then authorizes the caller against *its* organization.
 
 **Named for values, not existence.** A metric asserts that something *measures*
 45.2µm; `assertMetricExists` would name the wrong thing. Nothing projects a
-metric into Apache AGE either, so :class:`api.types.MetricAssertion` carries no
+metric into Apache AGE either, so :class:`api.types.AssertedMetric` carries no
 `drawings` field.
 """
 
@@ -20,7 +20,7 @@ from api import types, inputs, context
 def assert_metric_value(
     info: Info,
     input: inputs.AssertMetricValueInput,
-) -> types.MetricAssertion:
+) -> types.AssertedMetric:
     """Record a measurement, creating the structure it describes if this is its first sight.
 
     Takes the structure's `identifier` and `object` rather than a key, so an
@@ -40,7 +40,7 @@ def assert_metric_value(
     # graph had declared the identifier would be refusing a fact about the world
     # on a bookkeeping technicality — and the identifier belongs to the service
     # that produced the datum anyway.
-    return types.MetricAssertion(
+    return types.AssertedMetric(
         _value=controller.record_metric(
             organization=organization,
             identifier=model.identifier,
@@ -54,7 +54,7 @@ def assert_metric_value(
 def assert_metric_value_for_structure(
     info: Info,
     input: inputs.AssertMetricValueForStructureInput,
-) -> types.MetricAssertion:
+) -> types.AssertedMetric:
     """Record a measurement against a structure that already exists.
 
     Distinct from `assertMetricValue`, not a duplicate of it: that one names the
@@ -65,7 +65,7 @@ def assert_metric_value_for_structure(
 
     model = input.to_pydantic()
 
-    return types.MetricAssertion(
+    return types.AssertedMetric(
         _value=controller.create_metric(
             structure_id=str(model.structure),
             input=model,
@@ -77,7 +77,7 @@ def assert_metric_value_for_structure(
 def supersede_metric_value(
     info: Info,
     input: inputs.SupersedeMetricValueInput,
-) -> types.MetricAssertion:
+) -> types.AssertedMetric:
     """Correct a measurement by retracting it and asserting a new one.
 
     Not called `update`, because there is no update: both the original claim and
@@ -91,13 +91,13 @@ def supersede_metric_value(
     controller = context.get_controller()
 
     model = input.to_pydantic()
-    return types.MetricAssertion(_value=controller.update_metric(payload=model, info=info))
+    return types.AssertedMetric(_value=controller.update_metric(payload=model, info=info))
 
 
 def retract_metric(
     info: Info,
     input: inputs.RetractMetricInput,
-) -> types.MetricAssertion:
+) -> types.AssertedMetric:
     """Retract a measurement without destroying it.
 
     The metric stays readable afterwards, which is the point: a derived value that
@@ -106,4 +106,4 @@ def retract_metric(
     controller = context.get_controller()
 
     model = input.to_pydantic()
-    return types.MetricAssertion(_value=controller.archive_metric(metric_id=str(model.id), info=info))
+    return types.AssertedMetric(_value=controller.archive_metric(metric_id=str(model.id), info=info))

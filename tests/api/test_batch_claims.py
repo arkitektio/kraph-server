@@ -23,31 +23,31 @@ from evidence import models as evidence_models
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { entity { id } }
+        assertEntityExists(input: $input) { instance { id } }
     }
 """
 
 CREATE_NATURAL_EVENT = """
     mutation CreateNaturalEvent($input: AssertNaturalEventExistsInput!) {
-        assertNaturalEventExists(input: $input) { naturalEvent { id } }
+        assertNaturalEventExists(input: $input) { instance { id } }
     }
 """
 
 ASSERT_PARTICIPATION = """
     mutation AssertParticipation($input: AssertParticipationInput!) {
-        assertParticipation(input: $input) { participation { id } }
+        assertParticipation(input: $input) { link { id } }
     }
 """
 
 ASSERT_PARTICIPATIONS = """
     mutation AssertParticipations($input: AssertParticipationsInput!) {
-        assertParticipations(input: $input) { assertion { id } edges { __typename id } }
+        assertParticipations(input: $input) { assertion { id } links { kind id } }
     }
 """
 
 CLASSIFY_NODES = """
     mutation ClassifyNodes($input: ClassifyNodesInput!) {
-        classifyNodes(input: $input) { assertion { id } nodes { __typename id } }
+        classifyNodes(input: $input) { assertion { id } instances { kind id } }
     }
 """
 
@@ -61,7 +61,7 @@ async def _cell(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.G
         context_value=ctx,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertEntityExists"]["entity"]["id"]
+    return created.data["assertEntityExists"]["instance"]["id"]
 
 
 async def _mitosis(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph) -> str:
@@ -73,7 +73,7 @@ async def _mitosis(api_schema: kante.Schema, ctx: HttpContext, graph: core_model
         context_value=ctx,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertNaturalEventExists"]["naturalEvent"]["id"]
+    return created.data["assertNaturalEventExists"]["instance"]["id"]
 
 
 @sync_to_async
@@ -106,13 +106,13 @@ async def test_a_batch_of_participations_is_one_assertion(
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     payload = result.data["assertParticipations"]
-    assert len(payload["edges"]) == 3
+    assert len(payload["links"]) == 3
 
-    # `__typename`, because the payload is polymorphic and `id` alone resolves
-    # whatever type the dispatch picked. These are all inputs, so all of them must
-    # come back as inputs — the kind is read off the `Link` row, since a
-    # participation edge's label is the *event category's* name.
-    assert {edge["__typename"] for edge in payload["edges"]} == {"InputParticipation"}
+    # `kind`, which is the column the claim carries. It used to be `__typename` over a
+    # polymorphic payload of drawing types, and the dispatch behind it read an edge
+    # *label* — which for a participation is the event category's name and says nothing
+    # about which side of the event it is.
+    assert {link["kind"] for link in payload["links"]} == {"PARTICIPATES_AS_INPUT"}
     assert payload["assertion"]["id"], "One act, one assertion, and it is addressable"
 
     after = await _assertion_count(test_graph)
@@ -239,7 +239,7 @@ async def test_classifying_several_nodes_is_one_assertion(
         # one view's row was wrong in the first place.
         term_id = core_models.Category.objects.get(pk=soma).term_id
         rows = evidence_models.Link.objects.for_organization(test_graph.organization).filter(kind=evidence_models.Link.Kind.CLASSIFIES, target_ref=str(term_id))
-        nodes = evidence_models.Node.objects.for_organization(test_graph.organization).count()
+        nodes = evidence_models.Instance.objects.for_organization(test_graph.organization).count()
         return rows.count(), nodes
 
     claim_count, node_count = await claims()
@@ -248,8 +248,8 @@ async def test_classifying_several_nodes_is_one_assertion(
 
 
 RETRACT_CLAIMS = """
-    mutation RetractClaims($input: RetractClaimsInput!) {
-        retractClaims(input: $input) { assertion { id } edges { __typename id } }
+    mutation RetractClaims($input: RetractLinksInput!) {
+        retractLinks(input: $input) { assertion { id } links { kind id } }
     }
 """
 
@@ -263,7 +263,7 @@ async def test_retracting_claims_reports_them_as_one_act(
 ) -> None:
     """One assertion covers the batch, and each claim comes back typed by its kind.
 
-    `retractClaims` accepts `CLASSIFIES`, `RELATION`, `PARTICIPATES_*` and
+    `retractLinks` accepts `CLASSIFIES`, `RELATION`, `PARTICIPATES_*` and
     `INFORMS` links alike, and used to report every one of them as a
     `Measurement`. The dispatch reads the `Link` row's kind now.
 
@@ -290,12 +290,12 @@ async def test_retracting_claims_reports_them_as_one_act(
     )
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
-    payload = result.data["retractClaims"]
+    payload = result.data["retractLinks"]
 
     assert payload["assertion"]["id"], "Retracting is itself a claim, and the batch is one act"
-    assert len(payload["edges"]) == 1
-    assert payload["edges"][0]["id"] == claim_id
-    assert payload["edges"][0]["__typename"] == "Classification", "A classification claim is its own kind of thing — it runs node → word, not node → node"
+    assert len(payload["links"]) == 1
+    assert payload["links"][0]["id"] == claim_id
+    assert payload["links"][0]["kind"] == "CLASSIFIES", "A classification claim is its own kind of thing — it runs node → word, not node → node"
 
 
 @pytest.mark.django_db(transaction=True)

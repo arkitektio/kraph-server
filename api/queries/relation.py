@@ -53,6 +53,14 @@ def relations(
 
     Scoped by the category's **term**, so two graphs declaring the same word list
     the same claims — see `api/queries/_edges.py`.
+
+    Authorized against the **organization**, which is the grain the answer is at.
+    It used to be `get_accessible_graph(category.graph)` — a check one grain narrower
+    than the list, asserting that the view whose word this is owns claims that belong
+    to the tenant. The organization comes from the category's graph rather than from
+    the request for the reason `GraphController._assert_can_access` gives: the client
+    names a primary key and never names a tenant, so authorization has to come from
+    what the id points at.
     """
     controller = context.get_controller()
 
@@ -60,13 +68,14 @@ def relations(
     if category is None:
         raise ValueError(f"Relation category {relation_category_id} not found")
 
-    context.get_accessible_graph(info, str(category.graph.age_name))
+    organization = category.graph.organization
+    context.assert_can_access_organization(info, organization)
 
     filter_model = filters.to_pydantic() if filters else input_models.RelationFilters()
     ordering_models = [entry.to_pydantic() for entry in ordering] if ordering else []
     pagination_model = pagination.to_pydantic() if pagination else input_models.RelationPagination()
 
-    links = _edges.links_for_category(category, evidence_models.Link.Kind.RELATION)
+    links = _edges.links_for_category(organization, category, evidence_models.Link.Kind.RELATION)
     rows = _edges.narrow(links, filter_model, ordering_models, pagination_model)
 
     return [types.Relation(_value=controller.retrieved_edge(link, category=category)) for link in rows]

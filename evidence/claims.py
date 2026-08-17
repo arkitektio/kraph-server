@@ -1,9 +1,9 @@
-"""Reading the claim log back: does this thing stand?
+"""Reading the standing of a claim back: does it still hold?
 
-The counterpart of :func:`evidence.writer.claim`. Nothing here writes.
+The counterpart of :func:`evidence.writer.record_standing`. Nothing here writes.
 
 Existence is not a flag, so it is not read like one. It is a fold over
-:class:`~evidence.models.Claim` rows — somebody said this is here, somebody else
+:class:`~evidence.models.Standing` rows — somebody said this is here, somebody else
 said it is not — and the fold takes a **predicate** saying whose claims count.
 That predicate is how one graph can hold that a cell exists while the graph next
 door does not, with no evidence rewritten and no row belonging to either.
@@ -33,14 +33,14 @@ from evidence import models as evidence_models
 _LATEST = ("-at", "-assertion__seq")
 
 
-def claims_about(
+def standings_about(
     organization: Any,
     target_type: str,
     target_ids: Iterable[str],
     predicate: Q | None = None,
 ) -> Any:
-    """Every claim about these targets, newest first, narrowed by the predicate."""
-    queryset = evidence_models.Claim.objects.for_organization(organization).filter(
+    """Every standing recorded about these claims, newest first, narrowed by the predicate."""
+    queryset = evidence_models.Standing.objects.for_organization(organization).filter(
         target_type=target_type,
         target_id__in=[str(target_id) for target_id in target_ids],
     )
@@ -60,7 +60,7 @@ def stands(
     Prefer :func:`stands_for` when asking about more than one target — this is
     one query per call, and the projector asks about every node in a graph.
     """
-    latest = claims_about(organization, target_type, [target_id], predicate).first()
+    latest = standings_about(organization, target_type, [target_id], predicate).first()
     return True if latest is None else latest.stands
 
 
@@ -86,7 +86,7 @@ def stands_for(
         return {}
 
     winner: dict[str, bool] = {}
-    for claim in claims_about(organization, target_type, wanted, predicate).values_list("target_id", "stands", named=True):
+    for claim in standings_about(organization, target_type, wanted, predicate).values_list("target_id", "stands", named=True):
         # Ordered newest first, so the first claim seen for a target is the one
         # that wins and every later row about it is history.
         winner.setdefault(str(claim.target_id), claim.stands)
@@ -107,13 +107,14 @@ def retracted_ids(
 # ===================================================================
 # The cached answer
 #
-# Everything above folds `Claim` directly and takes a predicate, which is what
+# Everything above folds `Standing` directly and takes a predicate, which is what
 # makes per-view disagreement possible. Everything below maintains
-# `ClaimCurrent`, the organization-wide answer the hot read paths narrow by —
-# see that model's docstring for why it exists and why nodes are not in it.
+# `CurrentStanding`, the organization-wide answer the hot read paths narrow by —
+# see that model's docstring for why it exists and why instances are not in it.
 # ===================================================================
 
-#: Target types that get a cached answer. Nodes are folded per view instead.
+#: Which kinds of claim get a cached answer. An instance's standing is folded per
+#: view instead, because a graph's selector decides whose claims it counts.
 CACHED_TARGETS = ("structure", "metric", "link")
 
 
@@ -123,12 +124,12 @@ def standing(queryset: Any, target_type: str) -> Any:
     The replacement for `.filter(stands=True)`, which used to read a boolean on
     the log row itself. An anti-join against the retracted subset rather than a
     join against the standing one, because absence of a claim means a thing
-    stands: the vast majority of rows have no `ClaimCurrent` at all, and the small
+    stands: the vast majority of rows have no `CurrentStanding` at all, and the small
     side of the comparison is the one worth scanning.
     """
     from evidence import models as evidence_models
 
-    retracted = evidence_models.ClaimCurrent.all_objects.filter(target_type=target_type, stands=False).values("target_id")
+    retracted = evidence_models.CurrentStanding.all_objects.filter(target_type=target_type, stands=False).values("target_id")
     return queryset.exclude(pk__in=retracted)
 
 
@@ -136,12 +137,12 @@ def current(organization: Any, target_type: str, target_id: Any) -> bool:
     """The cached answer for one target. Organization-wide, unscoped by any view."""
     from evidence import models as evidence_models
 
-    row = evidence_models.ClaimCurrent.objects.for_organization(organization).filter(target_type=target_type, target_id=str(target_id)).first()
+    row = evidence_models.CurrentStanding.objects.for_organization(organization).filter(target_type=target_type, target_id=str(target_id)).first()
     return True if row is None else row.stands
 
 
-def record_current(organization: Any, target_type: str, target_id: Any, claim: Any) -> bool:
-    """Point the cached answer at this claim, and say whether it moved.
+def record_current(organization: Any, target_type: str, target_id: Any, standing: Any) -> bool:
+    """Point the cached answer at this standing, and say whether it moved.
 
     **The return value is the transition, and callers depend on it.**
     `state.merge`/`state.retract` are deltas, not idempotent — folding the same
@@ -150,36 +151,36 @@ def record_current(organization: Any, target_type: str, target_id: Any, claim: A
     column on the log row; it is this instead, which is a projection, and which is
     therefore allowed to be compared against and rewritten.
 
-    Nothing is written for a node: its answer is per-view. Returns ``False`` for
-    those, since there is no organization-wide edge to report.
+    Nothing is written for an instance: its answer is per-view. Returns ``False``
+    for those, since there is no organization-wide edge to report.
     """
     from evidence import models as evidence_models
 
     if target_type not in CACHED_TARGETS:
         return False
 
-    row = evidence_models.ClaimCurrent.all_objects.filter(
+    row = evidence_models.CurrentStanding.all_objects.filter(
         organization=organization,
         target_type=target_type,
         target_id=str(target_id),
     ).first()
 
     if row is None:
-        evidence_models.ClaimCurrent.objects.create_for_organization(
+        evidence_models.CurrentStanding.objects.create_for_organization(
             organization=organization,
             target_type=target_type,
             target_id=str(target_id),
-            stands=claim.stands,
-            claim=claim,
+            stands=standing.stands,
+            standing=standing,
         )
         # A first claim that something stands changes nothing: it already did,
         # because absence is not dissent.
-        return claim.stands is False
+        return standing.stands is False
 
-    moved = row.stands != claim.stands
-    row.stands = claim.stands
-    row.claim = claim
-    row.save(update_fields=["stands", "claim"])
+    moved = row.stands != standing.stands
+    row.stands = standing.stands
+    row.standing = standing
+    row.save(update_fields=["stands", "standing"])
     return moved
 
 
@@ -198,29 +199,29 @@ def refold_current(organization: Any) -> int:
     from evidence import models as evidence_models
 
     with transaction.atomic():
-        evidence_models.ClaimCurrent.objects.for_organization(organization).delete()
+        evidence_models.CurrentStanding.objects.for_organization(organization).delete()
 
         written = 0
         for target_type in CACHED_TARGETS:
-            targets = evidence_models.Claim.objects.for_organization(organization).filter(target_type=target_type).values_list("target_id", flat=True).distinct()
+            targets = evidence_models.Standing.objects.for_organization(organization).filter(target_type=target_type).values_list("target_id", flat=True).distinct()
             folded = stands_for(organization, target_type, list(targets))
 
             winners = {}
-            for claim in claims_about(organization, target_type, list(targets)).only("id", "target_id", "stands"):
-                winners.setdefault(str(claim.target_id), claim)
+            for standing in standings_about(organization, target_type, list(targets)).only("id", "target_id", "stands"):
+                winners.setdefault(str(standing.target_id), standing)
 
             # `all_objects`, because `bulk_create` goes through the manager's
             # default queryset and the scoped one deliberately has none. Every row
             # below names its organization explicitly, which is the guarantee the
             # guard exists to enforce.
-            evidence_models.ClaimCurrent.all_objects.bulk_create(
+            evidence_models.CurrentStanding.all_objects.bulk_create(
                 [
-                    evidence_models.ClaimCurrent(
+                    evidence_models.CurrentStanding(
                         organization=organization,
                         target_type=target_type,
                         target_id=target_id,
                         stands=stands_now,
-                        claim=winners[target_id],
+                        standing=winners[target_id],
                     )
                     for target_id, stands_now in folded.items()
                     if target_id in winners

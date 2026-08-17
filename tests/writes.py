@@ -20,31 +20,31 @@ from kante.context import HttpContext
 # the id so their eighteen call sites did not have to change.
 ASSERT_ENTITY_EXISTS = """
     mutation AssertEntityExists($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { entity { id } }
+        assertEntityExists(input: $input) { instance { id } }
     }
 """
 
 ASSERT_NATURAL_EVENT_EXISTS = """
     mutation AssertNaturalEventExists($input: AssertNaturalEventExistsInput!) {
-        assertNaturalEventExists(input: $input) { naturalEvent { id } }
+        assertNaturalEventExists(input: $input) { instance { id } }
     }
 """
 
 ASSERT_PROTOCOL_EVENT_EXISTS = """
     mutation AssertProtocolEventExists($input: AssertProtocolEventExistsInput!) {
-        assertProtocolEventExists(input: $input) { protocolEvent { id } }
+        assertProtocolEventExists(input: $input) { instance { id } }
     }
 """
 
 ASSERT_RELATION_EXISTS = """
     mutation AssertRelationExists($input: AssertRelationExistsInput!) {
-        assertRelationExists(input: $input) { relation { id } }
+        assertRelationExists(input: $input) { link { id } }
     }
 """
 
 CLASSIFY_NODES = """
     mutation ClassifyNodes($input: ClassifyNodesInput!) {
-        classifyNodes(input: $input) { nodes { id } }
+        classifyNodes(input: $input) { instances { id } }
     }
 """
 
@@ -70,7 +70,7 @@ async def create_entity(
             "assertEntityExists",
             {"term": term, "supportingEvidence": list(evidence or [])},
         )
-    )["entity"]["id"]
+    )["instance"]["id"]
 
 
 async def create_event(
@@ -86,8 +86,10 @@ async def create_event(
     """Claim that an event of this word happened. Returns its id."""
     document = ASSERT_PROTOCOL_EVENT_EXISTS if protocol else ASSERT_NATURAL_EVENT_EXISTS
     field = "assertProtocolEventExists" if protocol else "assertNaturalEventExists"
-    # The payload key is named for the kind, so it differs with the document.
-    payload_key = "protocolEvent" if protocol else "naturalEvent"
+    # Both documents answer with `instance`: a write returns the claim, and an
+    # `Instance` carries its own `kind`. It used to be `protocolEvent` /
+    # `naturalEvent`, one graph-shaped type per kind.
+    payload_key = "instance"
     return (
         await _mutate(
             api_schema,
@@ -120,7 +122,7 @@ async def create_relation(
             "assertRelationExists",
             {"term": term, "sourceId": source, "targetId": target, "supportingEvidence": []},
         )
-    )["relation"]["id"]
+    )["link"]["id"]
 
 
 async def classify(api_schema: kante.Schema, ctx: HttpContext, pairs: Iterable[tuple[str, str]]) -> list[str]:
@@ -132,4 +134,4 @@ async def classify(api_schema: kante.Schema, ctx: HttpContext, pairs: Iterable[t
         "classifyNodes",
         {"classifications": [{"node": node, "term": term} for node, term in pairs]},
     )
-    return [entry["id"] for entry in classified["nodes"]]
+    return [entry["id"] for entry in classified["instances"]]

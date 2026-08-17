@@ -46,7 +46,7 @@ def _refuse_unless_archived(graph: models.Graph) -> None:
     pointed at a mutation which set an attribute and dropped it.
 
     Deliberately **not** a check on whether the graph contains anything. A graph
-    is a view, there is no foreign key from it to `Node`, and deleting a view
+    is a view, there is no foreign key from it to `Instance`, and deleting a view
     that has been used has to stay possible — that is the design
     `test_deleting_a_graph_leaves_the_evidence_standing` exists to hold. What is
     owed for a populated graph is a *record* of what went, not a refusal; see
@@ -80,7 +80,7 @@ def _record_what_deletion_destroys(graph: models.Graph) -> None:
         "Deleting graph '%s' (%s): %d node(s) lose their only reader; %d categor(ies) and %d schema version(s) go with it, and nothing records what they said.",
         graph.name,
         graph.age_name,
-        selector_module.nodes_for(graph).count(),
+        selector_module.instances_for(graph).count(),
         models.Category.objects.filter(graph=graph).count(),
         models.GraphSchema.objects.filter(graph=graph).count(),
     )

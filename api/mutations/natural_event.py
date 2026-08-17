@@ -1,7 +1,7 @@
 """
 Natural event mutation resolvers.
 
-Every one returns a :class:`api.types.NaturalEventAssertion` — see `api/mutations/entity.py`.
+Every one returns a :class:`api.types.AssertedNaturalEvent` — see `api/mutations/entity.py`.
 """
 
 from kante.types import Info
@@ -14,7 +14,7 @@ from evidence import models as evidence_models
 def assert_natural_event_exists(
     info: Info,
     input: inputs.AssertNaturalEventExistsInput,
-) -> types.NaturalEventAssertion:
+) -> types.AssertedNaturalEvent:
     """Claim that a natural event happened, under one of the organization's words.
 
     Names a term rather than an event category — see `assert_entity_exists`. The
@@ -36,11 +36,11 @@ def assert_natural_event_exists(
 
     term = controller.ensure_term(organization, enums.CategoryKindChoices.NATURAL_EVENT, natural_event.term)
 
-    return types.NaturalEventAssertion(
+    return types.AssertedNaturalEvent(
         _value=controller.create_event(
             organization=organization,
             term=term,
-            node_kind=evidence_models.Node.Kind.NATURAL_EVENT,
+            node_kind=evidence_models.Instance.Kind.NATURAL_EVENT,
             payload=natural_event,
             info=info,
         )
@@ -50,7 +50,7 @@ def assert_natural_event_exists(
 def retract_natural_event(
     info: Info,
     input: inputs.RetractNaturalEventInput,
-) -> types.NaturalEventAssertion:
+) -> types.AssertedNaturalEvent:
     """Claim that a natural event did not happen. See `retract_entity`."""
     controller = context.get_controller()
 
@@ -59,15 +59,15 @@ def retract_natural_event(
     # One controller path for every node kind. This used to be an inline copy of
     # the retraction flow with `target_type` hardcoded — which is how the entity
     # and event spellings drifted apart in the first place.
-    return types.NaturalEventAssertion(_value=controller.archive_node(model.id, info=info))
+    return types.AssertedNaturalEvent(_value=controller.archive_node(model.id, info=info))
 
 
 def attest_natural_event(
     info: Info,
     input: inputs.AttestNaturalEventInput,
-) -> types.NaturalEventAssertion:
+) -> types.AssertedNaturalEvent:
     """Claim that a natural event exists. See `attest_entity`."""
     controller = context.get_controller()
 
     model = input.to_pydantic()
-    return types.NaturalEventAssertion(_value=controller.attest_node(model.id, info=info))
+    return types.AssertedNaturalEvent(_value=controller.attest_node(model.id, info=info))

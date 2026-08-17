@@ -20,7 +20,7 @@ def test_every_castable_subtype_is_registered_in_the_schema():
 
     `cast_edge_to_graphql_type` and `cast_node_to_graphql_type` dispatch onto the
     members of `EdgeSubtype` and `NodeSubtype`. Several are reachable only through
-    the `Edge` or `Node` *interface* — `connections`, `retractClaims` — so nothing
+    the `Edge` or `Node` *interface* — `connections`, `retractLinks` — so nothing
     names them concretely and strawberry does not register them unless
     `create_schema` lists them explicitly.
 

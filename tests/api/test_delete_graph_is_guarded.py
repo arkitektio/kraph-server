@@ -43,7 +43,7 @@ ARCHIVE_GRAPH = """
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { entity { id } }
+        assertEntityExists(input: $input) { instance { id } }
     }
 """
 
@@ -109,7 +109,7 @@ async def test_an_archived_graph_holding_nodes_is_still_deletable(
 
     @sync_to_async
     def node_count() -> int:
-        return evidence_models.Node.objects.for_organization(test_graph.organization).count()
+        return evidence_models.Instance.objects.for_organization(test_graph.organization).count()
 
     before = await node_count()
     assert before >= 1

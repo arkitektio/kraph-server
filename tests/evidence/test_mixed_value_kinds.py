@@ -111,7 +111,7 @@ def test_each_term_keeps_its_own_statistics(
     _record(organization, informing_structure, assertion, "big", ValueKind.STRING, 20)
     _record(organization, informing_structure, assertion, "small", ValueKind.STRING, 30)
 
-    rows = evidence_models.State.objects.for_organization(organization).filter(entity_ref=ENTITY_REF, key="confidence")
+    rows = evidence_models.State.objects.for_organization(organization).filter(claim_ref=ENTITY_REF, key="confidence")
     assert rows.count() == 2, "One row per value kind"
 
     labels = state_module.state_for(organization, ENTITY_REF, informing_structure.kind, "confidence", [ValueKind.STRING.value])
@@ -136,12 +136,12 @@ def test_recompute_agrees_per_row(
     _record(organization, informing_structure, assertion, 60.0, ValueKind.FLOAT, 10)
     _record(organization, informing_structure, assertion, "big", ValueKind.STRING, 20)
 
-    for row in evidence_models.State.objects.for_organization(organization).filter(entity_ref=ENTITY_REF, key="confidence"):
+    for row in evidence_models.State.objects.for_organization(organization).filter(claim_ref=ENTITY_REF, key="confidence"):
         before = row.n
         rebuilt = state_module.recompute(row)
         assert rebuilt.n == before, f"{row.value_kind} row changed on rebuild"
 
-    numeric = evidence_models.State.objects.for_organization(organization).get(entity_ref=ENTITY_REF, key="confidence", value_kind=ValueKind.FLOAT.value)
+    numeric = evidence_models.State.objects.for_organization(organization).get(claim_ref=ENTITY_REF, key="confidence", value_kind=ValueKind.FLOAT.value)
     assert aggregate.apply(AggregationFunction.MEAN, numeric) == pytest.approx(50.0)
 
 
@@ -161,7 +161,7 @@ def test_int_and_float_are_read_as_one_quantity(
     _record(organization, informing_structure, assertion, 40.0, ValueKind.FLOAT, 0)
     _record(organization, informing_structure, assertion, 60, ValueKind.INT, 10)
 
-    rows = evidence_models.State.objects.for_organization(organization).filter(entity_ref=ENTITY_REF, key="confidence")
+    rows = evidence_models.State.objects.for_organization(organization).filter(claim_ref=ENTITY_REF, key="confidence")
     assert rows.count() == 2, "Still two terms, and two rows"
 
     from graph_engine import projector

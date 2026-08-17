@@ -123,7 +123,7 @@ def test_incremental_merge_equals_full_recompute(
         metric = _record(organization, linked_structure, label_term, assertion, label, offset)
         state_module.merge(metric, [ENTITY_REF])
 
-    incremental = evidence_models.State.objects.for_organization(organization).get(entity_ref=ENTITY_REF, source_kind=linked_structure.kind, key="vector_length", value_kind=ValueKind.FLOAT.value)
+    incremental = evidence_models.State.objects.for_organization(organization).get(claim_ref=ENTITY_REF, source_kind=linked_structure.kind, key="vector_length", value_kind=ValueKind.FLOAT.value)
 
     # The sighted assertion. Under the old grain the strings landed here too, so
     # `n` over-counted and MEAN was sum/(numeric + string) — and recompute made
@@ -144,7 +144,7 @@ def test_incremental_merge_equals_full_recompute(
             assert incremental_value == rebuilt_value, f"{agg.value} drifted"
 
     # The string row is maintained independently, and recompute agrees there too.
-    strings = evidence_models.State.objects.for_organization(organization).get(entity_ref=ENTITY_REF, source_kind=linked_structure.kind, key="vector_length", value_kind=ValueKind.STRING.value)
+    strings = evidence_models.State.objects.for_organization(organization).get(claim_ref=ENTITY_REF, source_kind=linked_structure.kind, key="vector_length", value_kind=ValueKind.STRING.value)
     assert strings.n == len(labels)
     assert strings.sum is None, "Strings contribute to COUNT, never to SUM"
     rebuilt_strings = state_module.recompute(strings)
@@ -169,7 +169,7 @@ def test_last_value_follows_observation_time_not_arrival(
     backfilled = _record(organization, linked_structure, length_category, assertion, 99.0, offset_minutes=1)
     state_module.merge(backfilled, [ENTITY_REF])
 
-    state = evidence_models.State.objects.for_organization(organization).get(entity_ref=ENTITY_REF)
+    state = evidence_models.State.objects.for_organization(organization).get(claim_ref=ENTITY_REF)
 
     assert aggregate.apply(AggregationFunction.LATEST, state) == 10.0
     assert state.first_value == 99.0, "The backfilled row is the earliest observation"

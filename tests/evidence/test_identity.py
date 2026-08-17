@@ -27,9 +27,9 @@ def node_factory(organization: Organization, assertion: evidence_models.Assertio
     term = writer.ensure_term(organization, "ENTITY", "AIS")
 
     def _make() -> str:
-        node = evidence_models.Node.objects.create_for_organization(
+        node = evidence_models.Instance.objects.create_for_organization(
             organization=organization,
-            kind=evidence_models.Node.Kind.ENTITY,
+            kind=evidence_models.Instance.Kind.ENTITY,
             term=term,
             assertion=assertion,
         )
@@ -61,7 +61,7 @@ def test_an_unmerged_node_is_its_own_component(organization: Organization, node_
 
     assert identity.canonical_for(organization, node) == node
     assert identity.component_refs(organization, [node]) == {node: [node]}
-    assert not evidence_models.NodeIdentity.objects.for_organization(organization).exists()
+    assert not evidence_models.InstanceIdentity.objects.for_organization(organization).exists()
 
 
 @pytest.mark.django_db(transaction=True)
@@ -118,7 +118,7 @@ def test_a_repeated_claim_changes_nothing(organization: Organization, assertion,
     _same(organization, assertion, a, b)
 
     assert identity.component_refs(organization, [a])[a] == before
-    assert evidence_models.NodeIdentity.objects.for_organization(organization).count() == 2
+    assert evidence_models.InstanceIdentity.objects.for_organization(organization).count() == 2
 
 
 @pytest.mark.django_db(transaction=True)
@@ -192,8 +192,8 @@ def test_the_rebuild_agrees_with_incremental_maintenance(organization: Organizat
 def test_a_retracted_claim_does_not_survive_a_refold(organization: Organization, assertion, node_factory) -> None:
     """`refold` folds standing claims only.
 
-    Retraction is a `Claim(stands=False)` rather than a delete, so the link row is
-    still there; only the anti-join against `ClaimCurrent` says it is gone.
+    Retraction is a `Standing(stands=False)` rather than a delete, so the link row is
+    still there; only the anti-join against `CurrentStanding` says it is gone.
     """
     a, b = node_factory(), node_factory()
     link = _same(organization, assertion, a, b)

@@ -6,15 +6,15 @@ dependency in this direction would put the source of truth downstream of its own
 cache.
 
 Every function here is append-only against the **log**: there is no update and no
-delete of a `Structure`, `Metric`, `Link`, `Node`, `Claim` or `Assertion`.
+delete of a `Structure`, `Metric`, `Link`, `Instance`, `Standing` or `Assertion`.
 Correcting a claim means writing a new assertion, and changing whether something
-stands means writing a :class:`~evidence.models.Claim`. That is what keeps a
+stands means writing a :class:`~evidence.models.Standing`. That is what keeps a
 derived value explainable after the evidence behind it stops counting.
 
-This paragraph used to be false, and worth knowing why. `claim()` wrote the row
+This paragraph used to be false, and worth knowing why. `record_standing()` wrote the row
 *and* flipped a cached `stands` boolean on the target — an `UPDATE` on a log
 table, four lines below a docstring promising there were none. The cache is now
-:class:`~evidence.models.ClaimCurrent`, a projection, and :func:`claim` writes to
+:class:`~evidence.models.CurrentStanding`, a projection, and :func:`record_standing` writes to
 that instead. Projections are mutable by definition; the log is not, and can now
 be held to it by the database rather than by this comment.
 """
@@ -319,18 +319,18 @@ def create_link(
 
 
 #: Which claim target type each evidence row is. There is no longer a companion
-#: set of "types that cache the answer": the answer is cached in `ClaimCurrent`
-#: for all of them except `Node`, whose standing is per-view, and that exception
+#: set of "types that cache the answer": the answer is cached in `CurrentStanding`
+#: for all of them except `Instance`, whose standing is per-view, and that exception
 #: is expressed once — in `claims.CACHED_TARGETS` — rather than here as well.
 _TARGET_TYPES: dict[type, str] = {
     evidence_models.Structure: "structure",
     evidence_models.Metric: "metric",
     evidence_models.Link: "link",
-    evidence_models.Node: "node",
+    evidence_models.Instance: "node",
 }
 
 
-class ClaimResult(NamedTuple):
+class StandingResult(NamedTuple):
     """A recorded claim, and whether it changed the organization-wide answer.
 
     Two values because the two questions came apart when the log stopped
@@ -340,11 +340,11 @@ class ClaimResult(NamedTuple):
     contribution that was already taken out.
     """
 
-    claim: evidence_models.Claim
+    standing: evidence_models.Standing
     moved: bool
 
 
-def claim_ref(
+def record_standing_for_ref(
     organization: Organization,
     *,
     target_type: str,
@@ -352,14 +352,14 @@ def claim_ref(
     stands: bool,
     assertion: evidence_models.Assertion,
     at: datetime.datetime | None = None,
-) -> evidence_models.Claim:
+) -> evidence_models.Standing:
     """Record somebody's position on whether a target stands.
 
     The low-level primitive: it takes a target type and a ref rather than a row,
     so it can be used for things that are not evidence rows. Prefer
-    :func:`claim`, which resolves both from the object and maintains the cache.
+    :func:`record_standing`, which resolves both from the object and maintains the cache.
     """
-    return evidence_models.Claim.objects.create_for_organization(
+    return evidence_models.Standing.objects.create_for_organization(
         organization=organization,
         target_type=target_type,
         target_id=str(target_id),
@@ -370,14 +370,14 @@ def claim_ref(
 
 
 @transaction.atomic
-def claim(
+def record_standing(
     organization: Organization,
     target: Any,
     *,
     stands: bool,
     assertion: evidence_models.Assertion,
     at: datetime.datetime | None = None,
-) -> ClaimResult:
+) -> StandingResult:
     """Claim that a piece of evidence does or does not stand.
 
     **The only writer of retraction and attestation, for every kind of target.**
@@ -408,7 +408,7 @@ def claim(
     if target_type is None:
         raise TypeError(f"{type(target).__name__} is not something a claim can be about")
 
-    written = claim_ref(
+    written = record_standing_for_ref(
         organization,
         target_type=target_type,
         target_id=str(target.pk),
@@ -417,11 +417,11 @@ def claim(
         at=at,
     )
 
-    # The projection, not the log row. `ClaimCurrent` is what the hot read paths
+    # The projection, not the log row. `CurrentStanding` is what the hot read paths
     # narrow by, and updating it here rather than on the target is what leaves the
     # log tables immutable.
     moved = claims_module.record_current(organization, target_type, target.pk, written)
-    return ClaimResult(claim=written, moved=moved)
+    return StandingResult(standing=written, moved=moved)
 
 
 def retract(
@@ -429,9 +429,9 @@ def retract(
     target: Any,
     assertion: evidence_models.Assertion,
     at: datetime.datetime | None = None,
-) -> ClaimResult:
+) -> StandingResult:
     """Claim that a target no longer stands. Named for what it does to the record."""
-    return claim(organization, target, stands=False, assertion=assertion, at=at)
+    return record_standing(organization, target, stands=False, assertion=assertion, at=at)
 
 
 def attest(
@@ -439,9 +439,9 @@ def attest(
     target: Any,
     assertion: evidence_models.Assertion,
     at: datetime.datetime | None = None,
-) -> ClaimResult:
+) -> StandingResult:
     """Claim that a target stands — new evidence, not the undoing of a retraction."""
-    return claim(organization, target, stands=True, assertion=assertion, at=at)
+    return record_standing(organization, target, stands=True, assertion=assertion, at=at)
 
 
 def standing_metrics_for_kind(kind: evidence_models.MetricKind) -> Any:

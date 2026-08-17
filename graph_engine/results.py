@@ -1,5 +1,13 @@
 """What a write hands back: the claim it recorded, and everywhere that claim stands.
 
+Three parts, and the middle one is an evidence row: the act (`Assertion`), the claim
+(`Instance`, `Link`, `Structure`, `Metric`), and the drawings. The API serves the
+claim as `Instance` / `Link` rather than as `Entity` / `Relation`, because those are
+*drawing* shapes — a label, a category, derived properties, a schema version — and a
+write's result may be drawn nowhere at all. Two of `Entity`'s fields could not answer
+in that case: `schemaVersion` is non-null with nothing to give, and `richProperties`
+asserted on a category that by definition does not exist.
+
 Instance writes used to return a `RetrievedNode` — a **projection-shaped** object
 for an operation whose result is not a projection. That forced two untruths, and
 they are opposite in sign:
@@ -9,7 +17,7 @@ they are opposite in sign:
   not drawn it, chosen by an unordered `.first()`. Two identical writes could
   report different categories.
 - **A claim several views draw** had to come back as *one* node, so
-  `projected_node` returned the first graph that succeeded and discarded the
+  `projected_instance` returned the first graph that succeeded and discarded the
   rest. The `order_by("pk")` that made this deterministic was damage control on a
   lossy shape, not a fix.
 
@@ -83,16 +91,20 @@ class Asserted:
     """One act of claiming: what was recorded, what it was about, where it stands."""
 
     #: The assertion **this call** made. Carried explicitly and never derived from
-    #: the subject: `Node.assertion` is the assertion that *first* claimed the
+    #: the subject: `Instance.assertion` is the assertion that *first* claimed the
     #: node exists, so for an attestation or a retraction it names somebody else's
     #: act, possibly years earlier.
     assertion: evidence_models.Assertion
-    #: What was claimed, in its API-facing form — a `Retrieved*` built from the
-    #: evidence row, **not** from a projection. Row-backed on purpose: the claim
-    #: is one thing, and the several ways views draw it are in `drawings`, each
-    #: attached to the graph whose answer it is. A client wanting derived
-    #: properties reads them from a drawing, because derived properties are
-    #: per-graph and always were.
+    #: What was claimed: the **evidence row itself** — an `Instance`, a `Link`, a
+    #: `Structure` or a `Metric`. Not a `Retrieved*` adapter, which is a *reading*
+    #: of a row through some view and carries a label, a category and derived
+    #: properties that a claim has not got. A client wanting those reads them from
+    #: a drawing, where they are one graph's answer and true.
+    #:
+    #: That also removed the last `_category_for_term` call from the write paths.
+    #: It answers "any view's category for this word, lowest id" — defensible for a
+    #: drawing, which names its own graph, and never for a payload that stands for
+    #: every view at once.
     #:
     #: A tuple because three writes are batches, and a batch is **one** assertion
     #: over many subjects rather than many assertions —

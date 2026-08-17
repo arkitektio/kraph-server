@@ -11,7 +11,7 @@ impossible."* Nodes were the last holdout.
 Two things follow, and both are tested here rather than assumed:
 
 - Retracting a node removes it and its edges from the drawing, while every
-  `Node`, `Link` and `Claim` row survives untouched. The projection is a cache;
+  `Node`, `Link` and `Standing` row survives untouched. The projection is a cache;
   the claims are not.
 - Attesting is not "un-archiving". There is no state to reverse — somebody
   claims the thing is there, which is evidence of the same kind as somebody
@@ -34,37 +34,37 @@ from graph_engine.controller import GraphController
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { entity { id } }
+        assertEntityExists(input: $input) { instance { id } }
     }
 """
 
 CREATE_NATURAL_EVENT = """
     mutation CreateNaturalEvent($input: AssertNaturalEventExistsInput!) {
-        assertNaturalEventExists(input: $input) { naturalEvent { id } }
+        assertNaturalEventExists(input: $input) { instance { id } }
     }
 """
 
 CREATE_RELATION = """
     mutation CreateRelation($input: AssertRelationExistsInput!) {
-        assertRelationExists(input: $input) { relation { id } }
+        assertRelationExists(input: $input) { link { id } }
     }
 """
 
 RETRACT_ENTITY = """
     mutation RetractEntity($input: RetractEntityInput!) {
-        retractEntity(input: $input) { entity { id } drawings { graph { id } } }
+        retractEntity(input: $input) { instance { id } drawings { graph { id } } }
     }
 """
 
 ATTEST_ENTITY = """
     mutation AttestEntity($input: AttestEntityInput!) {
-        attestEntity(input: $input) { entity { id } drawings { graph { id } } }
+        attestEntity(input: $input) { instance { id } drawings { graph { id } } }
     }
 """
 
 RETRACT_NATURAL_EVENT = """
     mutation RetractNaturalEvent($input: RetractNaturalEventInput!) {
-        retractNaturalEvent(input: $input) { naturalEvent { id } drawings { graph { id } } }
+        retractNaturalEvent(input: $input) { instance { id } drawings { graph { id } } }
     }
 """
 
@@ -84,7 +84,7 @@ async def _cell(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.G
         context_value=ctx,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertEntityExists"]["entity"]["id"]
+    return created.data["assertEntityExists"]["instance"]["id"]
 
 
 async def _ais_with_length(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph, value: float) -> str:
@@ -108,7 +108,7 @@ async def _ais_with_length(api_schema: kante.Schema, ctx: HttpContext, graph: co
         context_value=ctx,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertEntityExists"]["entity"]["id"]
+    return created.data["assertEntityExists"]["instance"]["id"]
 
 
 async def _mitosis(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph, source: str, target: str) -> str:
@@ -127,7 +127,7 @@ async def _mitosis(api_schema: kante.Schema, ctx: HttpContext, graph: core_model
         context_value=ctx,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertNaturalEventExists"]["naturalEvent"]["id"]
+    return created.data["assertNaturalEventExists"]["instance"]["id"]
 
 
 def _vertices(age_engine, graph: core_models.Graph, node_id: str) -> int:
@@ -177,7 +177,7 @@ async def test_archiving_a_natural_event_removes_its_vertex(
 
     @sync_to_async
     def claim_says_retracted() -> bool:
-        return evidence_models.Claim.objects.for_organization(test_graph.organization).filter(target_type="node", target_id=event_id, stands=False).exists()
+        return evidence_models.Standing.objects.for_organization(test_graph.organization).filter(target_type="node", target_id=event_id, stands=False).exists()
 
     assert await claim_says_retracted(), "And the retraction is on the record as a claim"
 
@@ -224,7 +224,7 @@ async def test_archiving_an_entity_removes_its_edges_but_keeps_the_claims(
     @sync_to_async
     def relation_claims() -> int:
         # Through the fold, not a column on the link — standing lives in
-        # `ClaimCurrent` now, so the log row cannot answer this itself.
+        # `CurrentStanding` now, so the log row cannot answer this itself.
         return claims_module.standing(
             evidence_models.Link.objects.for_organization(test_graph.organization).filter(kind=evidence_models.Link.Kind.RELATION),
             "link",
@@ -277,7 +277,7 @@ async def test_attesting_a_retracted_entity_brings_it_back_unchanged(
 
     attested = await api_schema.execute(ATTEST_ENTITY, variable_values={"input": {"id": entity_id}}, context_value=simple_api_context)
     assert attested.errors is None, f"GraphQL errors: {attested.errors}"
-    assert attested.data["attestEntity"]["entity"]["id"] == entity_id
+    assert attested.data["attestEntity"]["instance"]["id"] == entity_id
     assert attested.data["attestEntity"]["drawings"], "Attesting draws it again, and the result says where"
 
     assert await vertices() == 1, "The node is back, drawn from the evidence"
@@ -291,7 +291,7 @@ async def test_attesting_a_retracted_entity_brings_it_back_unchanged(
     @sync_to_async
     def claims() -> list[bool]:
         return list(
-            evidence_models.Claim.objects.for_organization(test_graph.organization)
+            evidence_models.Standing.objects.for_organization(test_graph.organization)
             .filter(target_type="node", target_id=entity_id)
             .order_by("at", "recorded_at")
             .values_list("stands", flat=True)
@@ -372,7 +372,7 @@ async def test_a_word_two_graphs_declare_is_seen_by_both(
 
     @sync_to_async
     def one_term_two_categories() -> tuple[int, int]:
-        node = evidence_models.Node.objects.for_organization(test_graph.organization).get(pk=entity_id)
+        node = evidence_models.Instance.objects.for_organization(test_graph.organization).get(pk=entity_id)
         categories = core_models.Category.objects.filter(term_id=node.term_id)
         return categories.count(), categories.filter(graph__in=[test_graph, second_graph]).count()
 

@@ -169,7 +169,7 @@ def test_a_derived_word_still_widens_a_graphs_vocabulary(organization: Organizat
 
     A graph whose "Neuron" is *defined* as "anything claimed Pyramidal" declares
     no `Pyramidal` category at all, so counting only declared words excluded those
-    nodes from `nodes_for` — the definition matched claims the graph could not
+    nodes from `instances_for` — the definition matched claims the graph could not
     see.
     """
     _defined(graph_a, "Neuron", ["Pyramidal"])
@@ -207,22 +207,22 @@ def test_a_write_lands_in_the_graph_that_only_derives_from_the_word(
     graph_a: core_models.Graph,
     assertion: evidence_models.Assertion,
 ) -> None:
-    """`graph_ids_for_node_ids` is the only thing deciding where a write lands.
+    """`graph_ids_for_instance_ids` is the only thing deciding where a write lands.
 
-    It has to be the exact inverse of `nodes_for`, derived half included — a
+    It has to be the exact inverse of `instances_for`, derived half included — a
     narrower rule here means a newly claimed Pyramidal reaches the defining view
     only on the next rebuild.
     """
     _defined(graph_a, "Neuron", ["Pyramidal"])
     pyramidal = writer.ensure_term(organization, "ENTITY", "Pyramidal")
-    node = evidence_models.Node.objects.create_for_organization(
+    node = evidence_models.Instance.objects.create_for_organization(
         organization=organization,
-        kind=evidence_models.Node.Kind.ENTITY,
+        kind=evidence_models.Instance.Kind.ENTITY,
         term=pyramidal,
         assertion=assertion,
     )
 
-    assert selector.graph_ids_for_node_ids(organization, [node.ref]) == [(node.ref, graph_a.pk)]
+    assert selector.graph_ids_for_instance_ids(organization, [node.ref]) == [(node.ref, graph_a.pk)]
 
 
 @pytest.mark.django_db(transaction=True)
@@ -244,14 +244,14 @@ def test_deciding_where_a_write_lands_does_not_scale_with_the_ontology(
     """
     _defined(graph_a, "Neuron", ["Pyramidal"])
     pyramidal = writer.ensure_term(organization, "ENTITY", "Pyramidal")
-    node = evidence_models.Node.objects.create_for_organization(
+    node = evidence_models.Instance.objects.create_for_organization(
         organization=organization,
-        kind=evidence_models.Node.Kind.ENTITY,
+        kind=evidence_models.Instance.Kind.ENTITY,
         term=pyramidal,
         assertion=assertion,
     )
 
     with django_assert_num_queries(4) as captured:
-        selector.graph_ids_for_node_ids(organization, [node.ref])
+        selector.graph_ids_for_instance_ids(organization, [node.ref])
 
     assert not any("definition" in query["sql"] for query in captured.captured_queries), "Deciding where a write lands must not read a single definition blob"

@@ -1,4 +1,4 @@
-"""Rebuild the entity-identity fold from the sameness claims that still stand.
+"""Rebuild the instance-identity fold from the sameness claims that still stand.
 
 The out-of-band half of :mod:`evidence.identity`, and the same escape hatch
 `manage.py reproject` is for the AGE projection: if this cannot reproduce what
@@ -30,9 +30,9 @@ from evidence import models as evidence_models
 
 
 class Command(BaseCommand):
-    """Rebuild or verify the components entity-identity claims fold into."""
+    """Rebuild or verify the components instance-identity claims fold into."""
 
-    help = "Rebuild the entity-identity fold from standing SAME_AS claims."
+    help = "Rebuild the instance-identity fold from standing SAME_AS claims."
 
     def add_arguments(self, parser) -> None:
         """Declare the command's arguments."""
@@ -80,7 +80,7 @@ class Command(BaseCommand):
         the table — so a `--check` on a disagreeing database reports it and leaves
         the disagreement in place to be looked at.
         """
-        stored: dict[str, str] = {str(node_id): str(canonical_id) for node_id, canonical_id in evidence_models.NodeIdentity.objects.for_organization(organization).values_list("node_id", "canonical_id")}
+        stored: dict[str, str] = {str(instance_id): str(canonical_id) for instance_id, canonical_id in evidence_models.InstanceIdentity.objects.for_organization(organization).values_list("instance_id", "canonical_id")}
 
         expected = self._expected(organization)
 

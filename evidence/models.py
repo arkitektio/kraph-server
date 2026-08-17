@@ -19,7 +19,7 @@ collapsing them (as the old single ms-epoch ``timestamp`` property did) makes
 "what did we believe on March 3rd" unanswerable.
 
 **Evidence is append-only.** Nothing here is edited in place. Retraction is a
-:class:`Claim` saying the thing no longer stands, not a ``DELETE``, because a
+:class:`Standing` saying the thing no longer stands, not a ``DELETE``, because a
 derived value that dropped a contributing metric still has to be explainable
 afterwards. Attestation is the same row with ``stands=True``: there is no
 "un-archive" operation, only somebody newly claiming the thing is there.
@@ -33,7 +33,7 @@ These used to point at ``core.Category``, which belongs to one graph. That was
 wrong twice over. It bound a claim to a single view, so one annotator's
 classification could not be seen by a second — against the first axiom above. And
 because ``Category.graph`` cascades, deleting a graph once destroyed the
-organization-scoped ``Node`` rows other projections were built from; a ``PROTECT``
+organization-scoped ``Instance`` rows other projections were built from; a ``PROTECT``
 was added to stop it. There is no such foreign key any more, so that failure is
 not guarded against, it is **unreachable** — and deleting a graph or one of its
 categories is now simply allowed, because a view is only a view.
@@ -57,10 +57,11 @@ from core.enums import ValueKind
 from evidence.managers import OrganizationScopedManager
 
 
-#: Target types a :class:`Claim` can be about. A plain table rather than a
-#: `TextChoices`, because the values name *other tables* rather than states of
-#: this one — and `writer` needs the mapping in both directions.
-CLAIM_TARGETS = ("structure", "metric", "link", "node")
+#: The kinds of claim a :class:`Standing` can be about — one per table that holds
+#: recorded statements. A plain tuple rather than a `TextChoices`, because the
+#: values name *other tables* rather than states of this one, and `writer` needs
+#: the mapping in both directions.
+CLAIM_TARGETS = ("structure", "metric", "link", "instance")
 
 #: The Postgres sequence backing :attr:`Assertion.seq`.
 #:
@@ -425,10 +426,10 @@ class Structure(models.Model):
         related_name="structures",
         help_text="The assertion that first introduced this structure.",
     )
-    #: No cached `stands`, and deliberately. It used to live here: `writer.claim`
+    #: No cached `stands`, and deliberately. It used to live here: `writer.record_standing`
     #: wrote the claim and flipped this boolean in one transaction, which made a
     #: log table mutable and blocked `REVOKE UPDATE`. The answer now lives in
-    #: :class:`ClaimCurrent`, a projection with the same index and the same query
+    #: :class:`CurrentStanding`, a projection with the same index and the same query
     #: cost, and :func:`evidence.claims.standing` is how a queryset narrows by it.
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -533,10 +534,10 @@ class Metric(models.Model):
         on_delete=models.PROTECT,
         related_name="metrics",
     )
-    #: No cached `stands`, and deliberately. It used to live here: `writer.claim`
+    #: No cached `stands`, and deliberately. It used to live here: `writer.record_standing`
     #: wrote the claim and flipped this boolean in one transaction, which made a
     #: log table mutable and blocked `REVOKE UPDATE`. The answer now lives in
-    #: :class:`ClaimCurrent`, a projection with the same index and the same query
+    #: :class:`CurrentStanding`, a projection with the same index and the same query
     #: cost, and :func:`evidence.claims.standing` is how a queryset narrows by it.
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -600,7 +601,7 @@ class Link(models.Model):
     """Evidence attaching to something, or to another piece of evidence.
 
     Replaces the ``ShadowLink`` vertex. The refs are deliberately **opaque
-    strings**, and every one of them is now a bare uuid — a :class:`Node`, a
+    strings**, and every one of them is now a bare uuid — a :class:`Instance`, a
     :class:`Structure`, or another ``Link``. They used to be able to hold a
     projection-scoped ``{age_name}:{uuid}`` composite; keeping them opaque
     throughout is what made removing that prefix a re-point rather than a
@@ -621,7 +622,7 @@ class Link(models.Model):
         PARTICIPATES_AS_INPUT = "participates_as_input", "Participates as input"
         PARTICIPATES_AS_OUTPUT = "participates_as_output", "Participates as output"
         # "This node is an AIS" is a claim, and claims are the thing two
-        # annotators disagree about. It used to be the `Node.category` foreign
+        # annotators disagree about. It used to be the `Instance.category` foreign
         # key — written once at creation, never updated anywhere — so there was
         # exactly one classification per node forever, reclassifying meant
         # archiving the node and creating a different one, and a category had no
@@ -681,10 +682,10 @@ class Link(models.Model):
         on_delete=models.PROTECT,
         related_name="links",
     )
-    #: No cached `stands`, and deliberately. It used to live here: `writer.claim`
+    #: No cached `stands`, and deliberately. It used to live here: `writer.record_standing`
     #: wrote the claim and flipped this boolean in one transaction, which made a
     #: log table mutable and blocked `REVOKE UPDATE`. The answer now lives in
-    #: :class:`ClaimCurrent`, a projection with the same index and the same query
+    #: :class:`CurrentStanding`, a projection with the same index and the same query
     #: cost, and :func:`evidence.claims.standing` is how a queryset narrows by it.
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -703,8 +704,16 @@ class Link(models.Model):
         return f"{self.source_ref} -{self.kind}-> {self.target_ref}"
 
 
-class Claim(models.Model):
-    """Somebody's position on whether a thing stands. Append-only.
+class Standing(models.Model):
+    """Somebody's position on whether a claim stands. Append-only.
+
+    **The vote, not the claim.** The claims are the other tables in this module —
+    an :class:`Instance` ("there is a cell here"), a :class:`Link` ("this is an
+    AIS"), a :class:`Metric` ("it is 45.2µm"), a :class:`Structure`. This says
+    whether one of them still holds, and who says so. It was called ``Claim``,
+    which made the word mean two things at once: every docstring in the app uses
+    "claim" for the statements, so the narrow sense had to be inferred from
+    context every time.
 
     This replaces a ``LifecycleEvent`` whose ``status`` was an enum, and the
     change is not cosmetic. A lifecycle event modelled retraction as a *state
@@ -733,11 +742,11 @@ class Claim(models.Model):
     organization = models.ForeignKey(
         Organization,
         on_delete=models.CASCADE,
-        related_name="claims",
+        related_name="standings",
     )
     target_type = models.CharField(
         max_length=32,
-        help_text="Which table the target lives in: 'structure', 'metric', 'link' or 'node'.",
+        help_text="Which table the claim this is about lives in: 'structure', 'metric', 'link' or 'instance'.",
     )
     target_id = models.CharField(
         max_length=1000,
@@ -759,7 +768,7 @@ class Claim(models.Model):
     assertion = models.ForeignKey(
         Assertion,
         on_delete=models.PROTECT,
-        related_name="claims",
+        related_name="standings",
     )
 
     objects = OrganizationScopedManager()
@@ -779,19 +788,19 @@ class Claim(models.Model):
         return f"{self.target_type}:{self.target_id} {'stands' if self.stands else 'retracted'}"
 
 
-class ClaimCurrent(models.Model):
+class CurrentStanding(models.Model):
     """The folded answer to "does this stand", kept as a projection.
 
     **This is a cache, and it is the reason the log tables are immutable.**
 
     `Structure`, `Metric` and `Link` each used to carry a `stands` boolean that
-    :func:`evidence.writer.claim` wrote in the same transaction as the claim. That
+    :func:`evidence.writer.record_standing` wrote in the same transaction as the claim. That
     made the log tables mutable — the module docstring in `writer` said "there is
     no update and no delete" while issuing an `UPDATE` four lines down — and it is
     what stopped `REVOKE UPDATE` from being possible. The answer had to live
     somewhere indexed, because `metrics_for`, `informs_links_for` and
     `active_metrics_for_structures` all narrow the highest-churn table in the
-    system by it and folding `Claim` per row on those paths is a real regression.
+    system by it and folding `Standing` per row on those paths is a real regression.
     So it lives here instead: same index, same query cost, and nothing writes to
     the log to maintain it.
 
@@ -807,7 +816,7 @@ class ClaimCurrent(models.Model):
     **Nodes are deliberately absent.** Whether a node stands is a per-view
     question — a graph's selector decides whose claims it counts, so two
     projections may legitimately disagree — and one organization-wide answer would
-    be wrong for at least one of them. `projector.resolve_categories` folds `Claim`
+    be wrong for at least one of them. `projector.resolve_categories` folds `Standing`
     under `claim_filter(graph.selector)` for exactly that reason, and must keep
     doing so. The three kinds here are organization-grain: a retracted metric is
     retracted everywhere.
@@ -817,23 +826,23 @@ class ClaimCurrent(models.Model):
     organization = models.ForeignKey(
         Organization,
         on_delete=models.CASCADE,
-        related_name="claim_currents",
+        related_name="current_standings",
     )
     target_type = models.CharField(
         max_length=32,
-        help_text="Which table the target lives in: 'structure', 'metric' or 'link'. Never 'node' — see the class docstring.",
+        help_text="Which table the target lives in: 'structure', 'metric' or 'link'. Never 'instance' — see the class docstring.",
     )
     target_id = models.UUIDField(
-        help_text="The target row's primary key. A `UUIDField` where `Claim.target_id` is a `CharField`, because this column exists to be joined against those tables' primary keys and a text-to-uuid comparison would either fail or force a cast into every query that narrows by standing.",
+        help_text="The target row's primary key. A `UUIDField` where `Standing.target_id` is a `CharField`, because this column exists to be joined against those tables' primary keys and a text-to-uuid comparison would either fail or force a cast into every query that narrows by standing.",
     )
     stands = models.BooleanField(
-        help_text="The folded answer. Derived from `Claim` and never authoritative — rebuild it and it must not change.",
+        help_text="The folded answer. Derived from `Standing` and never authoritative — rebuild it and it must not change.",
     )
-    claim = models.ForeignKey(
-        Claim,
+    standing = models.ForeignKey(
+        Standing,
         on_delete=models.CASCADE,
         related_name="+",
-        help_text="The claim this answer came from. CASCADE because this row is a projection of that one: if the claim goes, so does the answer derived from it.",
+        help_text="The standing this answer was folded from — the claim that won. CASCADE because this row is a projection of that one: if it goes, so does the answer derived from it.",
     )
 
     objects = OrganizationScopedManager()
@@ -859,7 +868,7 @@ class ClaimCurrent(models.Model):
             # path; an index matching the query that is actually issued is the
             # smaller and more honest fix. `target_id` rides along so the
             # subquery is answered from the index without touching the heap.
-            models.Index(fields=["target_type", "stands", "target_id"], name="claimcurrent_retracted_idx"),
+            models.Index(fields=["target_type", "stands", "target_id"], name="currentstanding_retracted_idx"),
         ]
 
     def __str__(self) -> str:
@@ -878,7 +887,7 @@ class State(models.Model):
     MEAN to MAX therefore changes what the next read returns without writing
     anything at all, which is the whole claim being made here.
 
-    **Grain: `(entity_ref, source_kind, key, value_kind)` over metrics. Nothing
+    **Grain: `(claim_ref, source_kind, key, value_kind)` over metrics. Nothing
     else.**
 
     ``value_kind`` is in the grain because it is in :class:`MetricKind`'s
@@ -900,7 +909,7 @@ class State(models.Model):
     rules when the schema is validated, so their author is told, instead of the
     property silently never computing.
 
-    ``entity_ref`` is an opaque bare uuid — a :class:`Node`, or a ``Link`` when
+    ``claim_ref`` is an opaque bare uuid — a :class:`Instance`, or a ``Link`` when
     the statistic describes an edge. It used to carry the projection implicitly,
     as a ``{age_name}:{uuid}`` composite, so two views over the same evidence
     maintained two rows differing only in that prefix. They no longer do: a
@@ -922,7 +931,7 @@ class State(models.Model):
         on_delete=models.CASCADE,
         related_name="states",
     )
-    entity_ref = models.CharField(
+    claim_ref = models.CharField(
         max_length=1000,
         help_text="Opaque uuid of the node or edge this statistic describes. Do not parse.",
     )
@@ -980,21 +989,28 @@ class State(models.Model):
         default_manager_name = "all_objects"
         constraints = [
             models.UniqueConstraint(
-                fields=["organization", "entity_ref", "source_kind", "key", "value_kind"],
-                name="unique_state_per_entity_source_kind_key_value_kind",
+                fields=["organization", "claim_ref", "source_kind", "key", "value_kind"],
+                name="unique_state_per_claim_source_kind_key_value_kind",
             )
         ]
         indexes = [
-            models.Index(fields=["organization", "entity_ref"]),
+            models.Index(fields=["organization", "claim_ref"]),
             models.Index(fields=["organization", "needs_recompute"]),
         ]
 
     def __str__(self) -> str:
-        return f"{self.entity_ref}/{self.key}: {self.value_kind} (n={self.n})"
+        return f"{self.claim_ref}/{self.key}: {self.value_kind} (n={self.n})"
 
 
-class Node(models.Model):
-    """A node this organization asserted into existence.
+class Instance(models.Model):
+    """An individual this organization claimed into existence — an entity or an event.
+
+    **Named for what it is, not for where it is drawn.** This was ``Node``, which
+    made the word mean three things: this row, the GraphQL ``Node`` interface (wider
+    — a :class:`Structure` and a :class:`Metric` implement it and neither is ever
+    drawn), and an Apache AGE vertex. ``Instance`` is the word the rest of the
+    documentation already used for it — "every observation mints its own instance" —
+    and it leaves ``Node`` to mean the one thing it should: something a *graph* has.
 
     Entities and events are not derivable from measurements — somebody claimed
     "there is a cell here", and that claim is evidence like any other. Without a
@@ -1025,20 +1041,20 @@ class Node(models.Model):
     organization = models.ForeignKey(
         Organization,
         on_delete=models.CASCADE,
-        related_name="projected_nodes",
+        related_name="instances",
     )
     kind = models.CharField(max_length=32, choices=Kind.choices)
     term = models.ForeignKey(
         Term,
         on_delete=models.PROTECT,
-        related_name="projected_nodes",
-        help_text="The organization's word this node was first claimed under. Which view shows it, and as what, is decided from the claims — see `projector.resolve_categories`.",
+        related_name="instances",
+        help_text="The organization's word this instance was first claimed under. Which view shows it, and as what, is decided from the claims — see `projector.resolve_categories`.",
     )
     assertion = models.ForeignKey(
         Assertion,
         on_delete=models.PROTECT,
-        related_name="projected_nodes",
-        help_text="The assertion that first claimed this node exists.",
+        related_name="instances",
+        help_text="The assertion that first claimed this instance exists.",
     )
     # Deliberately **no cached `stands` column**, unlike Structure/Metric/Link.
     #
@@ -1070,7 +1086,7 @@ class Node(models.Model):
     def ref(self) -> str:
         """This node's identity as evidence refers to it — its uuid, as a string.
 
-        `Link.source_ref`, `State.entity_ref` and the lifecycle log all hold
+        `Link.source_ref`, `State.claim_ref` and the lifecycle log all hold
         opaque strings, so the one place that converts is here rather than at
         every call site.
         """
@@ -1080,7 +1096,7 @@ class Node(models.Model):
         return f"{self.kind}:{self.pk}"
 
 
-class NodeIdentity(models.Model):
+class InstanceIdentity(models.Model):
     """Which nodes are one thing — the fold over :attr:`Link.Kind.SAME_AS`.
 
     Every observation mints its own instance, so "this is AIS 6" writes a *fresh*
@@ -1097,9 +1113,9 @@ class NodeIdentity(models.Model):
     `refold_state` once disagreed about which metrics counted, so ingest and
     replay produced different numbers from the same evidence.
 
-    **Only nodes that are actually merged have a row.** A node nobody has merged
+    **Only instances that are actually merged have a row.** One nobody has merged
     is a component of one, and materializing that would make this table as large
-    as `Node` for no information. `identity.canonical_for` returns the node
+    as `Instance` for no information. `identity.canonical_for` returns the instance
     itself when there is no row.
 
     **The representative is the lowest uuid in the component**, not the
@@ -1112,16 +1128,16 @@ class NodeIdentity(models.Model):
     organization = models.ForeignKey(
         Organization,
         on_delete=models.CASCADE,
-        related_name="node_identities",
+        related_name="instance_identities",
     )
-    node = models.OneToOneField(
-        "Node",
+    instance = models.OneToOneField(
+        "Instance",
         on_delete=models.CASCADE,
         related_name="identity",
-        help_text="A node belonging to a component of two or more.",
+        help_text="An instance belonging to a component of two or more.",
     )
     canonical = models.ForeignKey(
-        "Node",
+        "Instance",
         on_delete=models.CASCADE,
         related_name="identity_members",
         help_text="The component's representative — the lowest uuid among its members, itself included.",

@@ -122,7 +122,7 @@ def informing_structures(
     # No graph. INFORMS is organization-grain, so there was never a view to pick
     # — and picking one meant `_graph_for_node`, which returns an arbitrary
     # declarer among the graphs that speak the node's word.
-    node = controller._resolve_node(entity_id, info)
+    node = controller._resolve_instance(entity_id, info)
 
     responses = controller.get_informing_structures(node, info=info)
     return [types.Structure(_value=r) for r in responses]

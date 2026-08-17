@@ -17,10 +17,10 @@ Everything below is a consequence of taking that literally.
 ## The three axioms
 
 **Nothing is edited in place**, and the database enforces it. There is no update
-and no delete on `Assertion`, `Claim`, `Structure`, `Metric`, `Link` or `Node`:
+and no delete on `Assertion`, `Standing`, `Structure`, `Metric`, `Link` or `Instance`:
 a trigger refuses both (`evidence/migrations/0005_log_is_append_only.py`).
 Correcting a claim means writing a new one; withdrawing a claim means writing a
-`Claim` that says it no longer stands. The API has no mutation that destroys
+`Standing` that says it no longer stands. The API has no mutation that destroys
 instance data — erasure exists only as `manage.py redact`, which is operator-only,
 records what it reached in `Assertion.action_args`, and is the one caller that
 sets `kraph.allow_log_rewrite` to say so.
@@ -33,7 +33,7 @@ This axiom was aspirational until recently. `writer.claim()` wrote the claim and
 then flipped a cached `stands` boolean on the target — an `UPDATE` on a log table,
 four lines below a docstring promising there were none — and three of the four
 evidence kinds were read from that cache rather than folded. The cache now lives
-in `ClaimCurrent`, a projection; `evidence.claims.standing` is how a queryset
+in `CurrentStanding`, a projection; `evidence.claims.standing` is how a queryset
 narrows by it; and `rebuild` folds it from the log before drawing anything.
 
 One consequence worth stating on its own: **concurring claims are no longer
@@ -41,7 +41,7 @@ dropped.** Restating a position already held used to write no row at all, so a
 second annotator retracting the same metric left no trace and agreement was not
 countable on the existence axis. The suppression existed because `State` folds
 deltas and must not subtract twice; that guard now sits on the transition
-(`ClaimResult.moved`) instead of on the log.
+(`StandingResult.moved`) instead of on the log.
 
 **Tenancy is the organization, never the graph.** A `Graph` is a view over its
 organization's evidence, so the same ROI measured in two experiments is one row
@@ -95,7 +95,7 @@ aggregation stays a database operation.
 `writer.ensure_term`, like `StructureKind` and `MetricKind`.
 
 **This is what the log names.** A claim says "this node is an AIS" — not "this
-node is *that graph's* AIS row", which is what it said while `Node.category` and
+node is *that graph's* AIS row", which is what it said while `Instance.category` and
 `Link.category` pointed at `core.Category`. That bound each claim to one view, so
 a second projection could not read it however much vocabulary the two shared.
 
@@ -120,10 +120,10 @@ existed, but nothing offered it at the moment the declaration was made.
 Consequently a category, or a whole graph, can be deleted freely: it is a view,
 and removing it takes nothing with it. The `PROTECT` lives on `Term`, which cannot
 be removed while anything has been claimed under it. There is no longer any
-foreign key from `Graph` to `Node`, so the cascade that once destroyed
+foreign key from `Graph` to `Instance`, so the cascade that once destroyed
 organization-scoped evidence is unreachable rather than merely guarded.
 
-### `Node` — asserted existence
+### `Instance` — asserted existence
 
 "There is a cell here." One of `ENTITY`, `NATURAL_EVENT`, `PROTOCOL_EVENT`.
 Exists because an entity carrying no measurements yet would otherwise vanish on
@@ -136,8 +136,8 @@ correspondence with an Apache AGE vertex that the merge case breaks. It is
 emphatically not the AGE vertex id either — those are reassigned by exactly the
 drop-and-replay `reproject` performs.
 
-`Node` never had a cached `stands` column, and now nothing does — the three that
-did were moved to `ClaimCurrent`. But the reason `Node` is absent from that
+`Instance` never had a cached `stands` column, and now nothing does — the three that
+did were moved to `CurrentStanding`. But the reason `Instance` is absent from that
 projection too is different and still holds: whether a node stands can differ per
 view, because a graph's selector decides whose claims it counts, so one
 organization-wide boolean would be wrong the same way the prefix was. The other
@@ -162,9 +162,9 @@ rather than an AGE vertex. That is not a gap: both endpoints of a structure
 relation are organization-scoped, so an edge in one graph's projection would be
 the wrong place to keep it.
 
-### `Claim` — whether a thing stands
+### `Standing` — whether a claim still holds
 
-"There is a cell here", or "that no longer stands". `stands=True` attests,
+"That still stands", or "that no longer does". `stands=True` attests,
 `stands=False` retracts, and both are evidence of the same kind.
 
 This replaced a `LifecycleEvent` whose `status` was an enum, and the change is not
@@ -186,7 +186,7 @@ total order over the organization's log — a Postgres sequence, allocated once 
 assertion — not the `recorded_at` timestamp tiebreak this used to name, which
 could collide within a transaction and left the fold order-dependent.
 
-The folded answer lives in `ClaimCurrent`, one row per claimed structure, metric
+The folded answer lives in `CurrentStanding`, one row per claimed structure, metric
 or link. `Structure`, `Metric` and `Link` used to each cache it in a `stands`
 boolean of their own; those columns are gone. They were mutable columns on log
 tables that nothing may rewrite, which is a contradiction the append-only trigger
@@ -208,10 +208,10 @@ fold. Which of those metrics a view counts is answered by
 has its own AGE namespace to materialize the scoped number into. Keeping a row per
 view would mean naming a graph inside `evidence/`, which the second axiom forbids.
 
-**`ClaimCurrent`** — the folded "does this stand" answer, one row per claimed
+**`CurrentStanding`** — the folded "does this stand" answer, one row per claimed
 structure, metric or link. A cache of the log, not part of it: it carries no
 assertion, `refold_current` rebuilds it wholesale, and it is deliberately mutable
-where the log is not. Nodes are absent on purpose — whether a node stands is a
+where the log is not. Instances are absent on purpose — whether an instance stands is a
 per-view question, since a graph's selector decides whose claims it counts, so one
 organization-wide answer would be wrong for at least one projection.
 
@@ -247,7 +247,7 @@ nothing was lost by asking for those directly.
 **Every one is also named for the act it performs.** `assertEntityExists`, not
 `createEntity`: nothing is created, somebody claims a thing is there, and a second
 annotator may claim it is not. Retraction is `retract*`, not `archive*` — nothing
-is put away, a `Claim(stands=False)` is written. The verbs match `attest*` and
+is put away, a `Standing(stands=False)` is written. The verbs match `attest*` and
 `assertParticipation`, which were already right.
 
 **And every one returns the same shape**: the `Assertion` it recorded, the thing
@@ -272,19 +272,19 @@ there is one global answer.
 
 | Mutation | Writes |
 |---|---|
-| `assertEntityExists` | `Assertion`, `Node(ENTITY)`, `Link(CLASSIFIES)`, plus `Structure`/`Metric`/`Link(INFORMS)` per supporting evidence |
+| `assertEntityExists` | `Assertion`, `Instance(ENTITY)`, `Link(CLASSIFIES)`, plus `Structure`/`Metric`/`Link(INFORMS)` per supporting evidence |
 | `assertStructureExists` / `ensureStructure` | `Assertion`, `Structure`, `Metric` |
 | `assertMetricValue` / `assertMetricValueForStructure` | `Assertion`, `Metric`. The first mints the structure if it is new, as one act |
-| `supersedeMetricValue` | `Claim(stands=False)` on the old metric, then a new `Metric`, under **one** assertion — both stay on the record. Named for what it does: there is no in-place update |
+| `supersedeMetricValue` | `Standing(stands=False)` on the old metric, then a new `Metric`, under **one** assertion — both stay on the record. Named for what it does: there is no in-place update |
 | `linkStructureToEntity` | `Assertion`, `Link(INFORMS)` — how evidence is attached to a *live* entity |
-| `assertNaturalEventExists` / `assertProtocolEventExists` | `Assertion`, `Node`, `Link(CLASSIFIES)`, `Link(PARTICIPATES_AS_*)` per role |
+| `assertNaturalEventExists` / `assertProtocolEventExists` | `Assertion`, `Instance`, `Link(CLASSIFIES)`, `Link(PARTICIPATES_AS_*)` per role |
 | `assertParticipation` | `Assertion`, `Link(PARTICIPATES_AS_*)` |
-| `assertParticipations` / `classifyNodes` / `retractClaims` | one `Assertion` over many subjects — a batch is one act, so the result carries one assertion and a list |
+| `assertParticipations` / `classifyNodes` / `retractLinks` | one `Assertion` over many subjects — a batch is one act, so the result carries one assertion and a list |
 | `assertRelationExists` | `Assertion`, `Link(RELATION)` |
 | `assertMeasurementExists` | `Assertion`, `Link(MEASUREMENT)` **and** `Link(INFORMS)` — the plain link is what `dirty()` matches, so without it nothing rolls up |
 | `assertStructureRelationExists` | `Assertion`, `Link(STRUCTURE_RELATION)` |
-| every `retract*` | `Assertion`, `Claim(stands=False)`, the `ClaimCurrent` row, and — for nodes — removal of the vertex |
-| every `attest*` | `Assertion`, `Claim(stands=True)`, and the node redrawn into every view whose rules admit it |
+| every `retract*` | `Assertion`, `Standing(stands=False)`, the `CurrentStanding` row, and — for nodes — removal of the vertex |
+| every `attest*` | `Assertion`, `Standing(stands=True)`, and the node redrawn into every view whose rules admit it |
 | `createTerm` | a `Term`, or fills in the description of one an ingest minted bare — idempotent on `(kind, key)` |
 | `updateTerm` | nothing in the log: descriptive fields only. `kind` and `key` are identity and cannot change, because every claim points at them |
 | `deleteTerm` | nothing — refused while any claim or category names the word |
@@ -313,6 +313,23 @@ so links could be written naming a node that did not exist.
 ---
 
 ## Reading it back
+
+**Two grains, and the shape says which.** A *claim* read answers from these tables:
+`instance(id:)`, `link(id:)`, `standings(id:)`, and every write payload
+(`assertion` + `instance`/`link` + `drawings`). A *view* read answers from a
+projection: `node(id:)`, `nodes(graph:)`, `entities(entityCategoryId:)` and the rest,
+whose types carry a label, a category and derived properties because a view is what
+supplies those. Nothing answers both at once any more — the payloads used to, handing
+back an `Entity` for a claim that might be drawn nowhere, and two of its fields
+(`schemaVersion`, `richProperties`) could not answer at all in that case.
+
+Whether a claim still holds is `standings`: every position anyone recorded, newest
+first, with whose assertion — and an empty list meaning nobody has disputed it, since
+silence is not dissent. **No folded boolean sits beside it.** For an instance there is
+nothing honest to fold to: `CurrentStanding` holds no instance rows, because a graph's
+selector decides whose claims it counts, so the only unscoped answer would be one no
+view is obliged to agree with. The per-view answer is `drawings` — a view draws the
+claim exactly when its own fold says it stands and its rules admit it.
 
 **A graph is rules plus the log, materialized by an event. A read is a graph query
 and nothing else.**
@@ -355,7 +372,7 @@ of three tables:
 
 - **`Graph.selector`** — `selector.metric_filter` over `Metric` (which
   measurements a derived property counts), and `selector.claim_filter` over
-  `Claim` (whose word decides a node exists). Shape: structure kinds,
+  `Standing` (whose word decides a node exists). Shape: structure kinds,
   `assertion_filter` (subjects, app_ids, action_names), `as_of`,
   `observed_window`. **Changing a selector requires a reproject** — the projection
   caches the answer the previous one produced.
@@ -419,7 +436,7 @@ Recorded so nobody has to rediscover them.
 - ~~**No merge.**~~ **Closed.** `Link.Kind.SAME_AS` is the claim and
   `evidence/identity.py` is the fold. The shape worth keeping in mind: **every
   observation mints its own instance.** Saying "this is an AIS" writes a *fresh*
-  `Node` — nothing reuses an id, because an observation cannot be asked to know
+  `Instance` — nothing reuses an id, because an observation cannot be asked to know
   about a prior one — so identity *between* observations is a claim in its own
   right, contestable and retractable like any other. Saying "this is AIS **6**"
   records four things under **one** assertion: the term if it is new, the
@@ -427,7 +444,7 @@ Recorded so nobody has to rediscover them.
   because `Assertion.action_id` — the field that would tie two calls back together
   — is never populated.
 
-  `NodeIdentity` is the persisted union-find, at organization grain like `State`,
+  `InstanceIdentity` is the persisted union-find, at organization grain like `State`,
   with the **lowest uuid** as representative so identity does not depend on
   arrival order. Only merged nodes get a row; a component of one is the absence of
   one. Union is incremental, retraction cannot un-union so it flags the component
@@ -440,7 +457,7 @@ Recorded so nobody has to rediscover them.
 - **A merged component is not drawn as one vertex.** The fold answers "what is
   known about this thing" — `evidence/panel.py` unions labels, sameness and
   connections over the component — but `projector` still draws one vertex per
-  `Node`. So two instances claimed the same appear twice in Apache AGE and once in
+  `Instance`. So two instances claimed the same appear twice in Apache AGE and once in
   the panel. Collapsing them in the projection is a separate decision: it would
   make a vertex's identity the component's, and every edge to a member would have
   to be re-pointed on every merge and un-merge.

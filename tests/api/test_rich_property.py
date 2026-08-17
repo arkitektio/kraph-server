@@ -22,7 +22,7 @@ from core import models as core_models
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { entity { id } }
+        assertEntityExists(input: $input) { instance { id } }
     }
 """
 
@@ -100,7 +100,7 @@ async def _entity_with_measurements(
         )
         assert recorded.errors is None, f"GraphQL errors: {recorded.errors}"
 
-    return created.data["assertEntityExists"]["entity"]["id"]
+    return created.data["assertEntityExists"]["instance"]["id"]
 
 
 @pytest.mark.django_db(transaction=True)
@@ -208,7 +208,7 @@ async def test_a_property_with_no_evidence_reports_nothing_rather_than_zero(
 
     result = await api_schema.execute(
         THE_SENTENCE,
-        variable_values={"id": created.data["assertEntityExists"]["entity"]["id"]},
+        variable_values={"id": created.data["assertEntityExists"]["instance"]["id"]},
         context_value=simple_api_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"

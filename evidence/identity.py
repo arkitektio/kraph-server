@@ -50,7 +50,7 @@ def canonical_for(organization: Any, node_ref: str) -> str:
 
     Returns the node itself when nothing has been merged with it — a component of
     one has no row, because materializing those would make the table as large as
-    `Node` and say nothing.
+    `Instance` and say nothing.
     """
     return canonical_for_many(organization, [node_ref])[str(node_ref)]
 
@@ -62,9 +62,9 @@ def canonical_for_many(organization: Any, node_refs: Iterable[str]) -> dict[str,
     node is how a read that should be one seek becomes N.
     """
     refs = [str(ref) for ref in node_refs]
-    rows = evidence_models.NodeIdentity.objects.for_organization(organization).filter(node_id__in=refs).values_list("node_id", "canonical_id")
+    rows = evidence_models.InstanceIdentity.objects.for_organization(organization).filter(instance_id__in=refs).values_list("instance_id", "canonical_id")
 
-    found = {str(node_id): str(canonical_id) for node_id, canonical_id in rows}
+    found = {str(instance_id): str(canonical_id) for instance_id, canonical_id in rows}
     return {ref: found.get(ref, ref) for ref in refs}
 
 
@@ -79,9 +79,9 @@ def component_refs(organization: Any, node_refs: Iterable[str]) -> dict[str, lis
     canonical = canonical_for_many(organization, refs)
 
     members: dict[str, list[str]] = defaultdict(list)
-    rows = evidence_models.NodeIdentity.objects.for_organization(organization).filter(canonical_id__in=set(canonical.values())).values_list("canonical_id", "node_id")
-    for canonical_id, node_id in rows:
-        members[str(canonical_id)].append(str(node_id))
+    rows = evidence_models.InstanceIdentity.objects.for_organization(organization).filter(canonical_id__in=set(canonical.values())).values_list("canonical_id", "instance_id")
+    for canonical_id, instance_id in rows:
+        members[str(canonical_id)].append(str(instance_id))
 
     # An unmerged node has no rows under its own id, so the default stands: a
     # component of one, which is what "nobody has merged this" means.
@@ -110,7 +110,7 @@ def merge(organization: Any, left_ref: str, right_ref: str) -> str:
 
 def component_members(organization: Any, canonical_ref: str) -> list[str]:
     """Every node currently recorded under this representative."""
-    return [str(node_id) for node_id in evidence_models.NodeIdentity.objects.for_organization(organization).filter(canonical_id=str(canonical_ref)).values_list("node_id", flat=True)]
+    return [str(instance_id) for instance_id in evidence_models.InstanceIdentity.objects.for_organization(organization).filter(canonical_id=str(canonical_ref)).values_list("instance_id", flat=True)]
 
 
 def _write_component(organization: Any, members: set[str], canonical: str) -> None:
@@ -121,18 +121,18 @@ def _write_component(organization: Any, members: set[str], canonical: str) -> No
     delete-then-create is both simpler and correct where an `update` would have
     to know which rows it was allowed to touch.
     """
-    evidence_models.NodeIdentity.objects.for_organization(organization).filter(node_id__in=members).delete()
+    evidence_models.InstanceIdentity.objects.for_organization(organization).filter(instance_id__in=members).delete()
 
     if len(members) < 2:
         # A component of one is the absence of a row. Nothing is merged, so there
         # is nothing to say.
         return
 
-    evidence_models.NodeIdentity.all_objects.bulk_create(
+    evidence_models.InstanceIdentity.all_objects.bulk_create(
         [
-            evidence_models.NodeIdentity(
+            evidence_models.InstanceIdentity(
                 organization=organization,
-                node_id=member,
+                instance_id=member,
                 canonical_id=canonical,
             )
             for member in sorted(members)
@@ -154,7 +154,7 @@ def retract(organization: Any, link: evidence_models.Link) -> None:
     here would be a second implementation of the same question.
     """
     canonical = canonical_for(organization, str(link.source_ref))
-    evidence_models.NodeIdentity.objects.for_organization(organization).filter(canonical_id=canonical).update(needs_recompute=True)
+    evidence_models.InstanceIdentity.objects.for_organization(organization).filter(canonical_id=canonical).update(needs_recompute=True)
 
 
 @transaction.atomic
@@ -218,7 +218,7 @@ def _reachable(start: str, adjacency: dict[str, set[str]]) -> set[str]:
 
 def recompute_stale(organization: Any, limit: int | None = None) -> int:
     """Rebuild every component a retraction left flagged. Returns how many were rebuilt."""
-    stale = evidence_models.NodeIdentity.objects.for_organization(organization).filter(needs_recompute=True).values_list("canonical_id", flat=True).distinct()
+    stale = evidence_models.InstanceIdentity.objects.for_organization(organization).filter(needs_recompute=True).values_list("canonical_id", flat=True).distinct()
     canonicals = [str(canonical) for canonical in stale]
     if limit is not None:
         canonicals = canonicals[:limit]
@@ -241,7 +241,7 @@ def refold(organization: Any) -> int:
         adjacency[source].add(target)
         adjacency[target].add(source)
 
-    evidence_models.NodeIdentity.objects.for_organization(organization).delete()
+    evidence_models.InstanceIdentity.objects.for_organization(organization).delete()
 
     components = 0
     unassigned = set(adjacency)

@@ -39,13 +39,13 @@ ASSERT_STRUCTURE = """
 
 ASSERT_ENTITY = """
     mutation AssertEntityExists($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { entity { id } }
+        assertEntityExists(input: $input) { instance { id } }
     }
 """
 
 ASSERT_RELATION = """
     mutation AssertRelationExists($input: AssertRelationExistsInput!) {
-        assertRelationExists(input: $input) { relation { id } }
+        assertRelationExists(input: $input) { link { id } }
     }
 """
 
@@ -75,7 +75,7 @@ async def _entity(api_schema: kante.Schema, ctx: HttpContext, term: str) -> str:
         context_value=ctx,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
-    return result.data["assertEntityExists"]["entity"]["id"]
+    return result.data["assertEntityExists"]["instance"]["id"]
 
 
 async def _relation(api_schema: kante.Schema, ctx: HttpContext, term: str, source: str, target: str) -> str:
@@ -85,7 +85,7 @@ async def _relation(api_schema: kante.Schema, ctx: HttpContext, term: str, sourc
         context_value=ctx,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
-    return result.data["assertRelationExists"]["relation"]["id"]
+    return result.data["assertRelationExists"]["link"]["id"]
 
 
 @sync_to_async

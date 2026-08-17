@@ -47,7 +47,7 @@ DELETE_TERM = """
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { entity { id } }
+        assertEntityExists(input: $input) { instance { id } }
     }
 """
 
@@ -68,6 +68,30 @@ def test_term_kinds_match_category_kinds() -> None:
     client ask for a kind nothing can mint.
     """
     assert {kind.value for kind in enums.TermKind} == {kind.value for kind in enums.CategoryKindChoices}
+
+
+def test_instance_kinds_match_the_model() -> None:
+    """`InstanceKind` is the GraphQL spelling of `Instance.Kind`, and nothing else.
+
+    The model stores lowercase (`"entity"`) because that is what the column has always
+    held; a GraphQL enum is uppercase. `Instance.kind` upcases on the way out, so a
+    member in one and not the other would either be unaskable or unanswerable.
+    """
+    from evidence import models as evidence_models
+
+    assert {kind.value for kind in enums.InstanceKind} == {choice.value.upper() for choice in evidence_models.Instance.Kind}
+
+
+def test_link_kinds_match_the_model() -> None:
+    """The same for `LinkKind`, where it matters more.
+
+    `Link.source` and `Link.target` dispatch on this enum's members to decide which
+    table each ref names, so a kind the enum does not know would resolve an endpoint
+    against the wrong table — or, with the fallback, against none.
+    """
+    from evidence import models as evidence_models
+
+    assert {kind.value for kind in enums.LinkKind} == {choice.value.upper() for choice in evidence_models.Link.Kind}
 
 
 @pytest.mark.django_db(transaction=True)

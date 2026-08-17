@@ -3,7 +3,6 @@ directive @oneOf on INPUT_OBJECT
 schema @link(url: "https://specs.apollo.dev/federation/v2.11", import: ["@key"]) {
   query: Query
   mutation: Mutation
-  subscription: Subscription
 }
 
 enum Action {
@@ -35,59 +34,6 @@ input ActionRuleInput {
 
   """Simple boolean filter against request context"""
   filter: ActionFilterInput!
-}
-
-"""An activity representing provenance information"""
-type Activity implements Node {
-  """
-  Local AGE graph ID, or null for evidence rows that are not projected into a graph
-  """
-  graphId: Int
-
-  """
-  The graph this node belongs to, or null for organization-scoped evidence
-  """
-  graph: Graph
-
-  """Global identifier in format 'graph_name:graph_id'"""
-  globalId: GlobalID!
-
-  """
-  The AGE graph label as recently materialized (e.g. 'Cell IAC100', 'ROI 1')
-  """
-  label: String!
-
-  """Composite ID for node lookup"""
-  id: String!
-
-  """External ID if set"""
-  externalId: String
-
-  """Local ID if set"""
-  localId: String
-
-  """
-  Whether this node is pinned in the UI. Always false — `pinNode` was removed, so nothing can set it
-  """
-  pinned: Boolean!
-
-  """User/subject who performed the activity"""
-  subject: String
-
-  """Application that performed the activity"""
-  appId: String
-
-  """Action identifier"""
-  actionId: String
-
-  """Human-readable action name"""
-  actionName: String
-
-  """Action arguments as JSON"""
-  actionArgs: AnyScalar
-
-  """When this activity was created"""
-  createdAt: DateTime
 }
 
 enum AggregationFunction {
@@ -320,11 +266,11 @@ input AssertRelationExistsInput {
 }
 
 """Input for claiming that several recorded instances are one thing"""
-input AssertSameEntityInput {
+input AssertSameInstanceInput {
   """
-  Two or more entity ids that name the same thing. Every pair among them is claimed, under one assertion.
+  Two or more instance ids that name the same thing — entities or events alike. Every pair among them is claimed, under one assertion.
   """
-  entities: [String!]!
+  instances: [String!]!
 }
 
 """Input for claiming that an external datum exists"""
@@ -334,11 +280,6 @@ input AssertStructureExistsInput {
 
   """List of measurements associated with this structure"""
   metrics: [MetricInput!]! = []
-
-  """
-  The ID of the user for whom to set this pin. If not provided, will default to the user making the request.
-  """
-  user: String = null
 
   """The structure identifier, e.g. '@mikro/roi'"""
   identifier: String!
@@ -359,6 +300,209 @@ input AssertStructureRelationExistsInput {
   The organization's word for what is being claimed — a term's `key`, e.g. 'AIS'. Not a category id and not a graph: a claim names a word, and every view that declares that word will hold what you write. The word is created if the organization has not used it before; a view that declares no category for it simply will not draw it.
   """
   term: String!
+}
+
+"""
+An assertion about several edges made as one act, and everywhere they are now drawn
+"""
+type AssertedEdges {
+  """The single claim covering the whole batch"""
+  assertion: Assertion!
+
+  """The claims this act was about, as the log has them"""
+  links: [Link!]!
+
+  """
+  Every view that draws this claim, after this assertion. Empty means no view does — which is an ordinary answer, not an error: a claim names a word the organization owns, and a view that declares no category for that word simply will not draw it. For a retraction this is usually empty and deliberately not hardcoded so: existence is folded under each view's own selector, so a view that does not count the retracting subject still draws the node.
+  """
+  drawings: [EdgeDrawing!]!
+}
+
+"""
+An assertion about an entity: the act, the claim it recorded, and everywhere that claim is now drawn
+"""
+type AssertedEntity {
+  """
+  The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
+  """
+  assertion: Assertion!
+
+  """
+  What was claimed, as the log has it. Not a drawing of it: derived properties, a label and a category are one view's account and live on each entry in `drawings`. This is addressable whether or not any view draws it, which is the case a write has to answer for.
+  """
+  instance: Instance!
+
+  """
+  Every view that draws this claim, after this assertion. Empty means no view does — which is an ordinary answer, not an error: a claim names a word the organization owns, and a view that declares no category for that word simply will not draw it. For a retraction this is usually empty and deliberately not hardcoded so: existence is folded under each view's own selector, so a view that does not count the retracting subject still draws the node.
+  """
+  drawings: [NodeDrawing!]!
+}
+
+"""
+An assertion about a measurement. Drawings are always empty: a measurement has no AGE edge at all
+"""
+type AssertedMeasurement {
+  """
+  The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
+  """
+  assertion: Assertion!
+
+  """
+  What was claimed, as the log has it. Not a drawing of it: derived properties, a label and a category are one view's account and live on each entry in `drawings`. This is addressable whether or not any view draws it, which is the case a write has to answer for.
+  """
+  link: Link!
+
+  """
+  Always empty, and structurally so: nothing projects a measurement to an AGE edge
+  """
+  drawings: [EdgeDrawing!]!
+}
+
+"""An assertion about a metric — a measured value about a structure"""
+type AssertedMetric {
+  """
+  The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
+  """
+  assertion: Assertion!
+
+  """The metric this act was about"""
+  metric: Metric!
+}
+
+"""An assertion about a natural event, and everywhere it is now drawn"""
+type AssertedNaturalEvent {
+  """
+  The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
+  """
+  assertion: Assertion!
+
+  """
+  What was claimed, as the log has it. Not a drawing of it: derived properties, a label and a category are one view's account and live on each entry in `drawings`. This is addressable whether or not any view draws it, which is the case a write has to answer for.
+  """
+  instance: Instance!
+
+  """
+  Every view that draws this claim, after this assertion. Empty means no view does — which is an ordinary answer, not an error: a claim names a word the organization owns, and a view that declares no category for that word simply will not draw it. For a retraction this is usually empty and deliberately not hardcoded so: existence is folded under each view's own selector, so a view that does not count the retracting subject still draws the node.
+  """
+  drawings: [NodeDrawing!]!
+}
+
+"""
+An assertion about several nodes made as one act, and everywhere they are now drawn
+"""
+type AssertedNodes {
+  """
+  The single claim covering the whole batch. One act by one actor is one assertion, which is why this is not a list
+  """
+  assertion: Assertion!
+
+  """The instances this act was about, as the log has them"""
+  instances: [Instance!]!
+
+  """
+  Every view that draws this claim, after this assertion. Empty means no view does — which is an ordinary answer, not an error: a claim names a word the organization owns, and a view that declares no category for that word simply will not draw it. For a retraction this is usually empty and deliberately not hardcoded so: existence is folded under each view's own selector, so a view that does not count the retracting subject still draws the node.
+  """
+  drawings: [NodeDrawing!]!
+}
+
+"""An assertion about one participation, and everywhere it is now drawn"""
+type AssertedParticipation {
+  """
+  The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
+  """
+  assertion: Assertion!
+
+  """
+  What was claimed, as the log has it. Not a drawing of it: derived properties, a label and a category are one view's account and live on each entry in `drawings`. This is addressable whether or not any view draws it, which is the case a write has to answer for.
+  """
+  link: Link!
+
+  """
+  Every view that draws this claim, after this assertion. Empty means no view does — which is an ordinary answer, not an error: a claim names a word the organization owns, and a view that declares no category for that word simply will not draw it. For a retraction this is usually empty and deliberately not hardcoded so: existence is folded under each view's own selector, so a view that does not count the retracting subject still draws the node.
+  """
+  drawings: [EdgeDrawing!]!
+}
+
+"""An assertion about a protocol event, and everywhere it is now drawn"""
+type AssertedProtocolEvent {
+  """
+  The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
+  """
+  assertion: Assertion!
+
+  """
+  What was claimed, as the log has it. Not a drawing of it: derived properties, a label and a category are one view's account and live on each entry in `drawings`. This is addressable whether or not any view draws it, which is the case a write has to answer for.
+  """
+  instance: Instance!
+
+  """
+  Every view that draws this claim, after this assertion. Empty means no view does — which is an ordinary answer, not an error: a claim names a word the organization owns, and a view that declares no category for that word simply will not draw it. For a retraction this is usually empty and deliberately not hardcoded so: existence is folded under each view's own selector, so a view that does not count the retracting subject still draws the node.
+  """
+  drawings: [NodeDrawing!]!
+}
+
+"""
+An assertion about a relation, and everywhere that relation is now drawn
+"""
+type AssertedRelation {
+  """
+  The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
+  """
+  assertion: Assertion!
+
+  """
+  What was claimed, as the log has it. Not a drawing of it: derived properties, a label and a category are one view's account and live on each entry in `drawings`. This is addressable whether or not any view draws it, which is the case a write has to answer for.
+  """
+  link: Link!
+
+  """
+  Every view that draws this claim, after this assertion. Empty means no view does — which is an ordinary answer, not an error: a claim names a word the organization owns, and a view that declares no category for that word simply will not draw it. For a retraction this is usually empty and deliberately not hardcoded so: existence is folded under each view's own selector, so a view that does not count the retracting subject still draws the node.
+  """
+  drawings: [EdgeDrawing!]!
+}
+
+"""An assertion that instances are one thing, and the claims it recorded"""
+type AssertedSameness {
+  """
+  The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
+  """
+  assertion: Assertion!
+
+  """
+  The sameness claims this act recorded. Asserting that three instances are one records every pair among them, under one assertion
+  """
+  links: [Link!]!
+}
+
+"""An assertion about a structure — a pointer to an external datum"""
+type AssertedStructure {
+  """
+  The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
+  """
+  assertion: Assertion!
+
+  """The structure this act was about"""
+  structure: Structure!
+}
+
+"""
+An assertion about a structure relation. Drawings are always empty: neither endpoint has a vertex
+"""
+type AssertedStructureRelation {
+  """
+  The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
+  """
+  assertion: Assertion!
+
+  """
+  What was claimed, as the log has it. Not a drawing of it: derived properties, a label and a category are one view's account and live on each entry in `drawings`. This is addressable whether or not any view draws it, which is the case a write has to answer for.
+  """
+  link: Link!
+
+  """
+  Always empty, and structurally so: both endpoints are structures, which have no vertex for an edge to run between
+  """
+  drawings: [EdgeDrawing!]!
 }
 
 """
@@ -558,24 +702,23 @@ input CategoryNodePositionInput {
   height: Float = null
 }
 
+"""
+Either end of a claim: another claim, an external datum, or one of the organization's words
+"""
+union ClaimEndpoint = Instance | Structure | Link | Term
+
 """A CLASSIFIES claim: somebody's word for what a node is"""
 type Classification implements Edge {
-  """Local AGE graph ID, or null for edges that have no projection"""
-  graphId: Int
-
-  """Global identifier in format 'graph_name:graph_id'"""
-  globalId: GlobalID!
-
-  """Composite ID for edge lookup"""
+  """This claim's durable identity — the `Link` primary key, a bare uuid"""
   id: String!
 
   """The edge label/type"""
   label: String!
 
-  """Global ID of the source/left node"""
+  """The source endpoint, as evidence names it — a bare uuid"""
   sourceId: String!
 
-  """Global ID of the target/right node"""
+  """The target endpoint, as evidence names it — a bare uuid"""
   targetId: String!
 
   """
@@ -777,9 +920,6 @@ input CreateEdgeTableQueryInput {
 
 """Input for creating a new entity definition in the graph schema"""
 input CreateEntityDefinitionInput {
-  """Sequence mappings for this node"""
-  sequences: [SequenceMappingInput!]! = []
-
   """The label of the node participating in the event"""
   key: String!
 
@@ -930,9 +1070,6 @@ input CreateGraphTableQueryThroughBuilderInput {
 
 """Input for creating a new measurement definition in the graph schema"""
 input CreateMeasurementDefinitionInput {
-  """Sequence mappings for this node"""
-  sequences: [SequenceMappingInput!]! = []
-
   """Relation type name/key"""
   key: String!
 
@@ -974,9 +1111,6 @@ input CreateMeasurementDefinitionInput {
 
 """Input for creating a new natural event definition in the graph schema"""
 input CreateNaturalEventDefinitionInput {
-  """Sequence mappings for this node"""
-  sequences: [SequenceMappingInput!]! = []
-
   """The label of the node participating in the event"""
   key: String!
 
@@ -1086,9 +1220,6 @@ input CreateNodeTableQueryInput {
 
 """Input for creating a new protocol event definition in the graph schema"""
 input CreateProtocolEventDefinitionInput {
-  """Sequence mappings for this node"""
-  sequences: [SequenceMappingInput!]! = []
-
   """The label of the node participating in the event"""
   key: String!
 
@@ -1138,9 +1269,6 @@ input CreateProtocolEventDefinitionInput {
 
 """Input for creating a new relation definition in the graph schema"""
 input CreateRelationDefinitionInput {
-  """Sequence mappings for this node"""
-  sequences: [SequenceMappingInput!]! = []
-
   """The label of the node participating in the event"""
   key: String!
 
@@ -1227,9 +1355,6 @@ input CreateScatterPlotInput {
 Input for creating a new structure relation definition in the graph schema
 """
 input CreateStructureRelationDefinitionInput {
-  """Sequence mappings for this node"""
-  sequences: [SequenceMappingInput!]! = []
-
   """Relation type name/key"""
   key: String!
 
@@ -1500,22 +1625,16 @@ enum DerivationType {
 
 """An INFORMS claim: a structure that is evidence for a node"""
 type Description implements Edge {
-  """Local AGE graph ID, or null for edges that have no projection"""
-  graphId: Int
-
-  """Global identifier in format 'graph_name:graph_id'"""
-  globalId: GlobalID!
-
-  """Composite ID for edge lookup"""
+  """This claim's durable identity — the `Link` primary key, a bare uuid"""
   id: String!
 
   """The edge label/type"""
   label: String!
 
-  """Global ID of the source/left node"""
+  """The source endpoint, as evidence names it — a bare uuid"""
   sourceId: String!
 
-  """Global ID of the target/right node"""
+  """The target endpoint, as evidence names it — a bare uuid"""
   targetId: String!
 
   """
@@ -1532,22 +1651,16 @@ type Description implements Edge {
 
 """Base interface for all graph edges"""
 interface Edge {
-  """Local AGE graph ID, or null for edges that have no projection"""
-  graphId: Int
-
-  """Global identifier in format 'graph_name:graph_id'"""
-  globalId: GlobalID!
-
-  """Composite ID for edge lookup"""
+  """This claim's durable identity — the `Link` primary key, a bare uuid"""
   id: String!
 
   """The edge label/type"""
   label: String!
 
-  """Global ID of the source/left node"""
+  """The source endpoint, as evidence names it — a bare uuid"""
   sourceId: String!
 
-  """Global ID of the target/right node"""
+  """The target endpoint, as evidence names it — a bare uuid"""
   targetId: String!
 
   """
@@ -1578,9 +1691,6 @@ interface EdgeCategory {
 
   """List of relevant queries that use this category as input"""
   relevantEdgeQueries: [EdgeQuery!]!
-
-  """The graph this category belongs to"""
-  materializableAs: [MaterializedEdge!]!
 }
 
 """One view that draws a claimed edge, and how it draws it"""
@@ -1797,22 +1907,6 @@ input EdgeTableQueryOrder @oneOf {
 }
 
 """
-An assertion about several edges made as one act, and everywhere they are now drawn
-"""
-type EdgesAssertion {
-  """The single claim covering the whole batch"""
-  assertion: Assertion!
-
-  """The claims this act was about, each as its own kind"""
-  edges: [Edge!]!
-
-  """
-  Every view that draws this claim, after this assertion. Empty means no view does — which is an ordinary answer, not an error: a claim names a word the organization owns, and a view that declares no category for that word simply will not draw it. For a retraction this is usually empty and deliberately not hardcoded so: existence is folded under each view's own selector, so a view that does not count the retracting subject still draws the node.
-  """
-  drawings: [EdgeDrawing!]!
-}
-
-"""
 Input for getting the structure for an external datum, creating it if new
 """
 input EnsureStructureInput {
@@ -1822,11 +1916,6 @@ input EnsureStructureInput {
   """List of measurements associated with this structure"""
   metrics: [MetricInput!]! = []
 
-  """
-  The ID of the user for whom to set this pin. If not provided, will default to the user making the request.
-  """
-  user: String = null
-
   """The structure identifier, e.g. '@mikro/roi'"""
   identifier: String!
 }
@@ -1834,39 +1923,22 @@ input EnsureStructureInput {
 """An entity in the knowledge graph with derived properties"""
 type Entity implements VersionedNode & Node {
   """
-  Local AGE graph ID, or null for evidence rows that are not projected into a graph
-  """
-  graphId: Int
-
-  """
-  The graph this node belongs to, or null for organization-scoped evidence
-  """
-  graph: Graph
-
-  """Global identifier in format 'graph_name:graph_id'"""
-  globalId: GlobalID!
-
-  """
   The AGE graph label as recently materialized (e.g. 'Cell IAC100', 'ROI 1')
   """
   label: String!
 
-  """Composite ID for node lookup"""
+  """
+  This node's durable identity — a bare uuid, world-unique and stable across reprojects
+  """
   id: String!
 
   """External ID if set"""
   externalId: String
 
-  """Local ID if set"""
-  localId: String
-
   """
-  Whether this node is pinned in the UI. Always false — `pinNode` was removed, so nothing can set it
+  Schema version the properties were derived under. Null when this reading came from the log rather than from a projection — a claim no view draws has no derived properties, so there is no version to name
   """
-  pinned: Boolean!
-
-  """Schema version used to derive properties"""
-  schemaVersion: String!
+  schemaVersion: String
 
   """Timestamp when properties were last derived (unix ms)"""
   lastDerived: UnixMilliseconds
@@ -1880,13 +1952,15 @@ type Entity implements VersionedNode & Node {
   """How the view this was read through draws it, if any view does"""
   category: EntityCategory
 
-  """When this entity became valid"""
+  """When this entity became valid. When did it start existing?"""
   validFrom: DateTime
 
-  """When this entity stopped being valid"""
+  """When this entity stopped being valid. . When did it stop existing?"""
   validTo: DateTime
 
-  """List of properties derived for this entity"""
+  """
+  List of properties derived for this entity. Empty when this reading has no category — a property definition is one view's rule, and a claim no view draws has none
+  """
   richProperties: [RichProperty!]!
 
   """The current derived properties for this entity"""
@@ -1916,33 +1990,6 @@ type Entity implements VersionedNode & Node {
   Every view that actually draws this thing, and the category it draws it under. Read back from each projection, so a graph that declares the word but whose definition refuses the node is not listed
   """
   drawnIn: [NodeDrawing!]!
-
-  """The source entity of this relation"""
-  measuredBy: [Measurement!]!
-
-  """The source entity of this relation"""
-  participatedIn: [InputParticipation!]!
-
-  """The source entity of this relation"""
-  resultedOut: [OutputParticipation!]!
-}
-
-"""An assertion about an entity, and everywhere that entity is now drawn"""
-type EntityAssertion {
-  """
-  The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
-  """
-  assertion: Assertion!
-
-  """
-  The entity as the log has it: its identity and the word it was claimed under. Derived properties are per-view and live on each drawing
-  """
-  entity: Entity!
-
-  """
-  Every view that draws this claim, after this assertion. Empty means no view does — which is an ordinary answer, not an error: a claim names a word the organization owns, and a view that declares no category for that word simply will not draw it. For a retraction this is usually empty and deliberately not hardcoded so: existence is folded under each view's own selector, so a view that does not count the retracting subject still draws the node.
-  """
-  drawings: [NodeDrawing!]!
 }
 
 """An entity category/schema definition"""
@@ -2013,7 +2060,7 @@ type EntityCategory implements NodeCategory & Category @key(fields: "id", resolv
   """
   instanceKind: String
 
-  """The graph this category belongs to"""
+  """The entities this category draws, read from the evidence log"""
   entities(filters: EntityFilter = null, ordering: [EntityOrder!] = null, pagination: EntityPaginationInput = null): [Entity!]!
 
   """The graph this category belongs to"""
@@ -2075,9 +2122,6 @@ type EntityCategoryStats {
 
 """Definition of an entity type in the graph schema"""
 input EntityDefinitionInput {
-  """Sequence mappings for this node"""
-  sequences: [SequenceMappingInput!]! = []
-
   """The label of the node participating in the event"""
   key: String!
 
@@ -2245,18 +2289,15 @@ interface EventCategory implements NodeCategory & Category {
   """List of property definitions for this entity category"""
   propertyDefinitions: [PropertyDefinition!]!
 
-  """The graph this category belongs to"""
+  """The roles an entity can play going into an event of this category"""
   inputs: [EventRole!]!
 
-  """The graph this category belongs to"""
+  """The roles an entity can play coming out of an event of this category"""
   outputs: [EventRole!]!
 }
 
 """Definition of an event type in the graph schema"""
 input EventDefinitionInput {
-  """Sequence mappings for this node"""
-  sequences: [SequenceMappingInput!]! = []
-
   """The label of the node participating in the event"""
   key: String!
 
@@ -2347,8 +2388,6 @@ input FinishZarrUploadInput {
   valid: Boolean! = true
 }
 
-scalar GlobalID
-
 """One view over the organization's evidence log"""
 type Graph @key(fields: "id", resolvable: true) {
   """Database ID of the category"""
@@ -2356,9 +2395,6 @@ type Graph @key(fields: "id", resolvable: true) {
 
   """The name of the graph as used in AGE (e.g. 'CellGraph')"""
   ageName: String!
-
-  """ID of the graph this category belongs to"""
-  graphId: ID!
 
   """Label/name of the category"""
   label: String!
@@ -2382,15 +2418,6 @@ type Graph @key(fields: "id", resolvable: true) {
   Whether this graph has been archived. Archiving is the reversible alternative to deleting it — a delete destroys every rule for reading the evidence, which survives without them
   """
   isArchived: Boolean!
-
-  """List of materialized edges in the graph"""
-  materializedEdges(filters: MaterializedEdgeFilter, ordering: [MaterializedEdgeOrder!]! = [], pagination: OffsetPaginationInput): [MaterializedEdge!]!
-
-  """List of materialized relation edges in the graph"""
-  materializedRelationEdges(filters: MaterializedRelationEdgeFilter, ordering: [MaterializedRelationEdgeOrder!]! = [], pagination: OffsetPaginationInput): [MaterializedRelationEdge!]!
-
-  """List of materialized structure relation edges in the graph"""
-  materializedStructureRelationEdges(filters: MaterializedStructureRelationEdgeFilter, ordering: [MaterializedStructureRelationEdgeOrder!]! = [], pagination: OffsetPaginationInput): [MaterializedStructureRelationEdge!]!
 
   """List of node categories/schemas defined in this graph"""
   nodeCategories: [NodeCategory!]!
@@ -2437,9 +2464,6 @@ input GraphDefinitionInput {
 
 """The categories a graph schema declares"""
 input GraphExtensionsInput {
-  """Graph sequences for ordering entities"""
-  sequences: [SequenceInput!]! = []
-
   """Graph prefixes for namespacing"""
   prefixes: [PrefixInput!]! = []
 
@@ -2585,9 +2609,6 @@ type GraphPairsQuery implements GraphQuery @key(fields: "id", resolvable: true) 
 
   """The target node category/schema to query"""
   targetCategory: NodeCategory!
-
-  """Optional edge category/schema to filter pairs by"""
-  edgeCategory: EdgeCategory
 }
 
 input GraphPairsQueryFilter {
@@ -2811,22 +2832,16 @@ type GraphTableRender {
 
 """A claim that an entity went into an event"""
 type InputParticipation implements Edge {
-  """Local AGE graph ID, or null for edges that have no projection"""
-  graphId: Int
-
-  """Global identifier in format 'graph_name:graph_id'"""
-  globalId: GlobalID!
-
-  """Composite ID for edge lookup"""
+  """This claim's durable identity — the `Link` primary key, a bare uuid"""
   id: String!
 
   """The edge label/type"""
   label: String!
 
-  """Global ID of the source/left node"""
+  """The source endpoint, as evidence names it — a bare uuid"""
   sourceId: String!
 
-  """Global ID of the target/right node"""
+  """The target endpoint, as evidence names it — a bare uuid"""
   targetId: String!
 
   """
@@ -2842,6 +2857,68 @@ type InputParticipation implements Edge {
 
   """The entity that took part"""
   source: Entity!
+}
+
+"""A claimed individual — an entity or an event, as the log has it"""
+type Instance @key(fields: "id", resolvable: true) {
+  """
+  The claim's durable identity — a bare uuid, world-unique and stable across reprojects
+  """
+  id: ID!
+
+  """
+  The organization's word this was first claimed under. Which view draws it, and as what, is decided from the claims
+  """
+  term: Term!
+
+  """When the claim was recorded"""
+  createdAt: DateTime!
+
+  """
+  The act that first claimed this exists. Not the latest — for that, read `standings`
+  """
+  assertion: Assertion!
+
+  """
+  What sort of individual this is. Entities and events are told apart here, not by a vertex label — a label is one view's rename of a word
+  """
+  kind: InstanceKind!
+
+  """
+  Every position anyone has taken on whether this exists, **newest first** by the order the fold uses. An empty list means nobody has disputed it, which is not the same as nobody having attested it: silence is not dissent. Two rows disagreeing is an ordinary state rather than a conflict to resolve. There is no folded `stands` beside this, deliberately — see the class docstring.
+  """
+  standings: [Standing!]!
+
+  """
+  Every instance claimed to be this same thing, this one included. A component of one means nobody has merged it
+  """
+  component: [ID!]!
+
+  """
+  What anyone has called this thing, with how many assertions say so. Two words means two people disagreed; one word with a count of two means they agreed
+  """
+  labels: [Label!]!
+
+  """
+  The standing claims that this instance and another are one thing, with who said so
+  """
+  sameAs: [Link!]!
+
+  """
+  Every standing claim connecting this thing to something else — relations, participations, classifications and the structures that inform it
+  """
+  connections: [Link!]!
+
+  """
+  Every view that actually draws this claim, and the category it draws it under. Empty means no view does, which is an ordinary answer
+  """
+  drawnIn: [NodeDrawing!]!
+}
+
+enum InstanceKind {
+  ENTITY
+  NATURAL_EVENT
+  PROTOCOL_EVENT
 }
 
 """
@@ -2868,6 +2945,76 @@ type Label {
   The most recent act that claimed this word. Ordered by the log's `seq`, which cannot tie
   """
   latestAssertion: Assertion
+}
+
+"""
+A claim relating two things — as the log has it, whether or not any view draws it
+"""
+type Link @key(fields: "id", resolvable: true) {
+  """The claim's durable identity — the `Link` primary key"""
+  id: ID!
+
+  """
+  The organization's word this claim is stated in. Null for a plain INFORMS link, which names no word
+  """
+  term: Term
+
+  """
+  Which role the source plays, for participation claims. Named by the schema
+  """
+  role: String
+
+  """When the claim was recorded"""
+  createdAt: DateTime!
+
+  """The act that made this claim"""
+  assertion: Assertion!
+
+  """
+  What this claim says — and therefore what each of its two refs points at
+  """
+  kind: LinkKind!
+
+  """
+  The source ref, as the log holds it: an opaque uuid. `source` resolves it
+  """
+  sourceRef: ID!
+
+  """
+  The target ref, as the log holds it: an opaque uuid. `target` resolves it
+  """
+  targetRef: ID!
+
+  """
+  Every position anyone has taken on whether this claim holds, newest first. Empty means nobody has disputed it — see `Instance.standings`, which is the same field asked of a different claim
+  """
+  standings: [Standing!]!
+
+  """
+  What this claim is about, resolved. Null when the ref names a row a redaction has since removed — history rather than an error
+  """
+  source: ClaimEndpoint
+
+  """
+  What this claim relates it to, resolved. A classification's target is a `Term`, a measurement's is an `Instance`, and an INFORMS link may name another claim
+  """
+  target: ClaimEndpoint
+
+  """
+  Every view that draws this claim as an edge. Empty for the three kinds that are never drawn, and for a claim whose endpoints no view holds
+  """
+  drawnIn: [EdgeDrawing!]!
+}
+
+enum LinkKind {
+  INFORMS
+  RELATION
+  STRUCTURE_RELATION
+  MEASUREMENT
+  PARTICIPATES_AS_INPUT
+  PARTICIPATES_AS_OUTPUT
+  CLASSIFIES
+  SAME_AS
 }
 
 """Input for linking a structure to an entity"""
@@ -2928,187 +3075,18 @@ input MatchPathInput {
   relationDirections: [Boolean!] = null
 }
 
-"""A materialized edge representing a relationship in the graph"""
-type MaterializedEdge @key(fields: "id", resolvable: true) {
-  """Database ID of the edge"""
-  id: ID!
-
-  """The source category, for edges that start at one"""
-  source: NodeCategory
-
-  """The target category, for edges that end at one"""
-  target: NodeCategory
-
-  """The edge category this edge was derived from"""
-  edge: EdgeCategory!
-  graph: Graph!
-}
-
-input MaterializedEdgeFilter {
-  id: ID
-  AND: MaterializedEdgeFilter
-  OR: MaterializedEdgeFilter
-  NOT: MaterializedEdgeFilter
-  DISTINCT: Boolean
-
-  """Filter by list of IDs"""
-  ids: [ID!]
-
-  """Full-text search over connected category labels"""
-  search: String
-
-  """Filter by list of IDs"""
-  sourceIdentifier: String
-
-  """Filter by list of IDs"""
-  targetIdentifier: String
-}
-
-input MaterializedEdgeOrder @oneOf {
-  id: Ordering
-}
-
-"""A materialized edge representing a relationship in the graph"""
-type MaterializedMeasurementEdge @key(fields: "id", resolvable: true) {
-  """Database ID of the edge"""
-  id: ID!
-
-  """The source structure kind"""
-  source: StructureKind!
-
-  """The target entity category"""
-  target: EntityCategory!
-
-  """The measurement category this edge was derived from"""
-  edge: MeasurementCategory!
-  graph: Graph!
-}
-
-input MaterializedMeasurementEdgeFilter {
-  id: ID
-  AND: MaterializedMeasurementEdgeFilter
-  OR: MaterializedMeasurementEdgeFilter
-  NOT: MaterializedMeasurementEdgeFilter
-  DISTINCT: Boolean
-
-  """Filter by list of IDs"""
-  ids: [ID!]
-
-  """Full-text search over connected category labels"""
-  search: String
-
-  """Filter by list of IDs"""
-  sourceIdentifier: String
-
-  """Filter by list of IDs"""
-  targetIdentifier: String
-
-  """Filter by list of IDs"""
-  graphId: String
-}
-
-input MaterializedMeasurementEdgeOrder @oneOf {
-  id: Ordering
-}
-
-"""A materialized edge representing a relationship in the graph"""
-type MaterializedRelationEdge @key(fields: "id", resolvable: true) {
-  """Database ID of the edge"""
-  id: ID!
-
-  """The source entity category"""
-  source: EntityCategory!
-
-  """The target entity category"""
-  target: EntityCategory!
-
-  """The relation category this edge was derived from"""
-  edge: RelationCategory!
-  graph: Graph!
-}
-
-input MaterializedRelationEdgeFilter {
-  id: ID
-  AND: MaterializedRelationEdgeFilter
-  OR: MaterializedRelationEdgeFilter
-  NOT: MaterializedRelationEdgeFilter
-  DISTINCT: Boolean
-
-  """Filter by list of IDs"""
-  ids: [ID!]
-
-  """Full-text search over connected category labels"""
-  search: String
-
-  """Filter by list of IDs"""
-  sourceIdentifier: String
-
-  """Filter by list of IDs"""
-  targetIdentifier: String
-}
-
-input MaterializedRelationEdgeOrder @oneOf {
-  id: Ordering
-}
-
-"""A materialized edge representing a relationship in the graph"""
-type MaterializedStructureRelationEdge @key(fields: "id", resolvable: true) {
-  """Database ID of the edge"""
-  id: ID!
-
-  """The source structure kind"""
-  source: StructureKind!
-
-  """The target structure kind"""
-  target: StructureKind!
-
-  """The structure relation category this edge was derived from"""
-  edge: StructureRelationCategory!
-  graph: Graph!
-}
-
-input MaterializedStructureRelationEdgeFilter {
-  id: ID
-  AND: MaterializedStructureRelationEdgeFilter
-  OR: MaterializedStructureRelationEdgeFilter
-  NOT: MaterializedStructureRelationEdgeFilter
-  DISTINCT: Boolean
-
-  """Filter by list of IDs"""
-  ids: [ID!]
-
-  """Full-text search over connected category labels"""
-  search: String
-
-  """Filter by list of IDs"""
-  sourceIdentifier: String
-
-  """Filter by list of IDs"""
-  targetIdentifier: String
-}
-
-input MaterializedStructureRelationEdgeOrder @oneOf {
-  id: Ordering
-}
-
 """A MEASUREMENT claim: a structure measuring an entity"""
 type Measurement implements Edge {
-  """Local AGE graph ID, or null for edges that have no projection"""
-  graphId: Int
-
-  """Global identifier in format 'graph_name:graph_id'"""
-  globalId: GlobalID!
-
-  """Composite ID for edge lookup"""
+  """This claim's durable identity — the `Link` primary key, a bare uuid"""
   id: String!
 
   """The edge label/type"""
   label: String!
 
-  """Global ID of the source/left node"""
+  """The source endpoint, as evidence names it — a bare uuid"""
   sourceId: String!
 
-  """Global ID of the target/right node"""
+  """The target endpoint, as evidence names it — a bare uuid"""
   targetId: String!
 
   """
@@ -3130,24 +3108,6 @@ type Measurement implements Edge {
 
   """When this relation stopped being valid according to the evidence"""
   measuredTo: DateTime
-}
-
-"""
-An assertion about a measurement. Drawings are always empty: a measurement has no AGE edge at all
-"""
-type MeasurementAssertion {
-  """
-  The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
-  """
-  assertion: Assertion!
-
-  """The measurement as the log has it"""
-  measurement: Measurement!
-
-  """
-  Always empty, and structurally so: nothing projects a measurement to an AGE edge
-  """
-  drawings: [EdgeDrawing!]!
 }
 
 """A measurement category/schema definition"""
@@ -3172,9 +3132,6 @@ type MeasurementCategory implements EdgeCategory & Category @key(fields: "id", r
 
   """List of relevant queries that use this category as input"""
   relevantEdgeQueries: [EdgeQuery!]!
-
-  """The graph this category belongs to"""
-  materializableAs: [MaterializedEdge!]!
 
   """
   The unique key/identifier for this category, used for linking to entities or structures (e.g. 'Cell', 'ROI')
@@ -3265,9 +3222,6 @@ type MeasurementCategoryStats {
 
 """Declares a measurement category in a graph schema"""
 input MeasurementDefinitionInput {
-  """Sequence mappings for this node"""
-  sequences: [SequenceMappingInput!]! = []
-
   """Relation type name/key"""
   key: String!
 
@@ -3394,36 +3348,17 @@ type MediaUploadGrant {
 """A metric node representing computed values"""
 type Metric implements Node {
   """
-  Local AGE graph ID, or null for evidence rows that are not projected into a graph
-  """
-  graphId: Int
-
-  """
-  The graph this node belongs to, or null for organization-scoped evidence
-  """
-  graph: Graph
-
-  """Global identifier in format 'graph_name:graph_id'"""
-  globalId: GlobalID!
-
-  """
   The AGE graph label as recently materialized (e.g. 'Cell IAC100', 'ROI 1')
   """
   label: String!
 
-  """Composite ID for node lookup"""
+  """
+  This node's durable identity — a bare uuid, world-unique and stable across reprojects
+  """
   id: String!
 
   """External ID if set"""
   externalId: String
-
-  """Local ID if set"""
-  localId: String
-
-  """
-  Whether this node is pinned in the UI. Always false — `pinNode` was removed, so nothing can set it
-  """
-  pinned: Boolean!
 
   """ID of the metric kind this instantiates"""
   kindId: String
@@ -3454,17 +3389,6 @@ type Metric implements Node {
 
   """Who measured this, and when they claimed it"""
   assertion: Assertion
-}
-
-"""An assertion about a metric — a measured value about a structure"""
-type MetricAssertion {
-  """
-  The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
-  """
-  assertion: Assertion!
-
-  """The metric this act was about"""
-  metric: Metric!
 }
 
 """One measured value about a structure"""
@@ -3569,149 +3493,151 @@ type Mutation {
   """
   Claim that an entity exists, under one of the organization's words. Returns the assertion and every view that draws it — empty when no view declares the word, which is an ordinary outcome
   """
-  assertEntityExists(input: AssertEntityExistsInput!): EntityAssertion!
+  assertEntityExists(input: AssertEntityExistsInput!): AssertedEntity!
 
   """
   Claim that an entity no longer stands. It leaves every projection that counts the claim; the evidence stays.
   """
-  retractEntity(input: RetractEntityInput!): EntityAssertion!
+  retractEntity(input: RetractEntityInput!): AssertedEntity!
 
   """
   Claim that an entity exists, returning it to every projection whose rules admit it
   """
-  attestEntity(input: AttestEntityInput!): EntityAssertion!
+  attestEntity(input: AttestEntityInput!): AssertedEntity!
 
   """
   Claim that an external datum exists and is worth pointing at. Idempotent by (identifier, object)
   """
-  assertStructureExists(input: AssertStructureExistsInput!): StructureAssertion!
+  assertStructureExists(input: AssertStructureExistsInput!): AssertedStructure!
 
   """
   Get the structure for an external datum, creating it if this is the first sight of it
   """
-  ensureStructure(input: EnsureStructureInput!): StructureAssertion!
+  ensureStructure(input: EnsureStructureInput!): AssertedStructure!
 
   """
   Claim that a structure should no longer be pointed at. The row and its metrics survive
   """
-  retractStructure(input: RetractStructureInput!): StructureAssertion!
+  retractStructure(input: RetractStructureInput!): AssertedStructure!
 
   """Assert that a structure is evidence for an entity"""
-  linkStructureToEntity(input: LinkStructureInput!): StructureAssertion!
+  linkStructureToEntity(input: LinkStructureInput!): AssertedStructure!
 
   """
   Append metrics to an existing structure. Its (identifier, object) is immutable
   """
-  updateStructure(input: UpdateStructureInput!): StructureAssertion!
+  updateStructure(input: UpdateStructureInput!): AssertedStructure!
 
   """
   Record a measurement, creating the structure it describes if this is its first sight. One assertion covers both
   """
-  assertMetricValue(input: AssertMetricValueInput!): MetricAssertion!
+  assertMetricValue(input: AssertMetricValueInput!): AssertedMetric!
 
   """
   Record a measurement against a structure that already exists, named by its evidence id
   """
-  assertMetricValueForStructure(input: AssertMetricValueForStructureInput!): MetricAssertion!
+  assertMetricValueForStructure(input: AssertMetricValueForStructureInput!): AssertedMetric!
 
   """
   Retract a measurement without destroying it. It stays readable, because a derived value that dropped it still has to be explainable
   """
-  retractMetric(input: RetractMetricInput!): MetricAssertion!
+  retractMetric(input: RetractMetricInput!): AssertedMetric!
 
   """
   Correct a measurement by retracting it and asserting a new one. The returned metric has a new id: it is a new row, not an edited one
   """
-  supersedeMetricValue(input: SupersedeMetricValueInput!): MetricAssertion!
+  supersedeMetricValue(input: SupersedeMetricValueInput!): AssertedMetric!
 
   """
   Assert that a structure measures an entity, under one of the organization's words. Drawings are always empty: a measurement has no AGE edge
   """
-  assertMeasurementExists(input: AssertMeasurementExistsInput!): MeasurementAssertion!
+  assertMeasurementExists(input: AssertMeasurementExistsInput!): AssertedMeasurement!
 
   """Retract a measurement assertion without destroying it"""
-  retractMeasurement(input: RetractMeasurementInput!): MeasurementAssertion!
+  retractMeasurement(input: RetractMeasurementInput!): AssertedMeasurement!
 
   """
   Assert a relation between two entities, under one of the organization's words
   """
-  assertRelationExists(input: AssertRelationExistsInput!): RelationAssertion!
+  assertRelationExists(input: AssertRelationExistsInput!): AssertedRelation!
 
   """
   Replace a relation with a new assertion, retracting the old one. Two assertions are recorded; the result reports the one that made the relation now standing
   """
-  updateRelation(input: UpdateRelationInput!): RelationAssertion!
+  updateRelation(input: UpdateRelationInput!): AssertedRelation!
 
   """
   Retract a relation assertion without destroying it. The edge survives wherever another live assertion still states the same proposition
   """
-  retractRelation(input: RetractRelationInput!): RelationAssertion!
+  retractRelation(input: RetractRelationInput!): AssertedRelation!
 
   """
   Assert a relation between two structures. Drawings are always empty: neither endpoint has a vertex
   """
-  assertStructureRelationExists(input: AssertStructureRelationExistsInput!): StructureRelationAssertion!
+  assertStructureRelationExists(input: AssertStructureRelationExistsInput!): AssertedStructureRelation!
 
   """Replace a structure relation, keeping the old assertion on the record"""
-  updateStructureRelation(input: UpdateStructureRelationInput!): StructureRelationAssertion!
+  updateStructureRelation(input: UpdateStructureRelationInput!): AssertedStructureRelation!
 
   """Retract a structure relation assertion without destroying it"""
-  retractStructureRelation(input: RetractStructureRelationInput!): StructureRelationAssertion!
+  retractStructureRelation(input: RetractStructureRelationInput!): AssertedStructureRelation!
 
   """
   Claim that a natural event happened, under one of the organization's words
   """
-  assertNaturalEventExists(input: AssertNaturalEventExistsInput!): NaturalEventAssertion!
+  assertNaturalEventExists(input: AssertNaturalEventExistsInput!): AssertedNaturalEvent!
 
   """Claim that a natural event no longer stands"""
-  retractNaturalEvent(input: RetractNaturalEventInput!): NaturalEventAssertion!
+  retractNaturalEvent(input: RetractNaturalEventInput!): AssertedNaturalEvent!
 
   """Claim that a natural event exists"""
-  attestNaturalEvent(input: AttestNaturalEventInput!): NaturalEventAssertion!
+  attestNaturalEvent(input: AttestNaturalEventInput!): AssertedNaturalEvent!
 
   """
   Claim that a protocol step happened, under one of the organization's words
   """
-  assertProtocolEventExists(input: AssertProtocolEventExistsInput!): ProtocolEventAssertion!
+  assertProtocolEventExists(input: AssertProtocolEventExistsInput!): AssertedProtocolEvent!
 
   """Claim that a protocol event no longer stands"""
-  retractProtocolEvent(input: RetractProtocolEventInput!): ProtocolEventAssertion!
+  retractProtocolEvent(input: RetractProtocolEventInput!): AssertedProtocolEvent!
 
   """Claim that a protocol event exists"""
-  attestProtocolEvent(input: AttestProtocolEventInput!): ProtocolEventAssertion!
+  attestProtocolEvent(input: AttestProtocolEventInput!): AssertedProtocolEvent!
 
   """
   Claim that an entity took part in an event, without displacing anyone else's claim
   """
-  assertParticipation(input: AssertParticipationInput!): ParticipationAssertion!
+  assertParticipation(input: AssertParticipationInput!): AssertedParticipation!
 
   """
   Claim that several entities took part in one event, as one act and one assertion
   """
-  assertParticipations(input: AssertParticipationsInput!): EdgesAssertion!
+  assertParticipations(input: AssertParticipationsInput!): AssertedEdges!
 
   """
   Retract one claim that an entity took part in an event. The edge survives while another claim still states it
   """
-  retractParticipation(input: RetractParticipationInput!): ParticipationAssertion!
+  retractParticipation(input: RetractParticipationInput!): AssertedParticipation!
 
   """
   Claim that several nodes are of a word, without displacing anyone else's claim. One act, one assertion
   """
-  classifyNodes(input: ClassifyNodesInput!): NodesAssertion!
+  classifyNodes(input: ClassifyNodesInput!): AssertedNodes!
 
-  """Retract several claims as one act"""
-  retractClaims(input: RetractClaimsInput!): EdgesAssertion!
+  """
+  Retract several link claims as one act, by their `Link` ids — a relation, a classification, a participation, a measurement
+  """
+  retractLinks(input: RetractLinksInput!): AssertedEdges!
 
   """
   Claim that several already-recorded instances are one thing. An equivalence with no primary — the order of the ids carries no meaning
   """
-  assertSameEntity(input: AssertSameEntityInput!): SamenessAssertion!
+  assertSameInstance(input: AssertSameInstanceInput!): AssertedSameness!
 
   """
   Withdraw one sameness claim. The component it held together is rebuilt from the claims that survive, which may split it
   """
-  retractSameEntity(input: RetractSameEntityInput!): SamenessAssertion!
+  retractSameInstance(input: RetractSameInstanceInput!): AssertedSameness!
 
   """Upload media and return a URL for access"""
   requestMediaUpload(input: RequestMediaUploadInput!): MediaUploadGrant!
@@ -3949,39 +3875,22 @@ type Mutation {
 """A natural event in the knowledge graph"""
 type NaturalEvent implements VersionedNode & Node & Event {
   """
-  Local AGE graph ID, or null for evidence rows that are not projected into a graph
-  """
-  graphId: Int
-
-  """
-  The graph this node belongs to, or null for organization-scoped evidence
-  """
-  graph: Graph
-
-  """Global identifier in format 'graph_name:graph_id'"""
-  globalId: GlobalID!
-
-  """
   The AGE graph label as recently materialized (e.g. 'Cell IAC100', 'ROI 1')
   """
   label: String!
 
-  """Composite ID for node lookup"""
+  """
+  This node's durable identity — a bare uuid, world-unique and stable across reprojects
+  """
   id: String!
 
   """External ID if set"""
   externalId: String
 
-  """Local ID if set"""
-  localId: String
-
   """
-  Whether this node is pinned in the UI. Always false — `pinNode` was removed, so nothing can set it
+  Schema version the properties were derived under. Null when this reading came from the log rather than from a projection — a claim no view draws has no derived properties, so there is no version to name
   """
-  pinned: Boolean!
-
-  """Schema version used to derive properties"""
-  schemaVersion: String!
+  schemaVersion: String
 
   """Timestamp when properties were last derived (unix ms)"""
   lastDerived: UnixMilliseconds
@@ -3992,12 +3901,6 @@ type NaturalEvent implements VersionedNode & Node & Event {
   """Category ID linking to NaturalEventCategory model"""
   categoryId: String
 
-  """List of the current derived properties for this event"""
-  measuredFrom: DateTime!
-
-  """The source entity of this relation"""
-  measuredTo: DateTime!
-
   """How the view this was read through draws it, if any view does"""
   category: NaturalEventCategory
 
@@ -4006,22 +3909,6 @@ type NaturalEvent implements VersionedNode & Node & Event {
 
   """List of the current derived properties for this entity"""
   properties: AnyScalar!
-}
-
-"""An assertion about a natural event, and everywhere it is now drawn"""
-type NaturalEventAssertion {
-  """
-  The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
-  """
-  assertion: Assertion!
-
-  """The event as the log has it"""
-  naturalEvent: NaturalEvent!
-
-  """
-  Every view that draws this claim, after this assertion. Empty means no view does — which is an ordinary answer, not an error: a claim names a word the organization owns, and a view that declares no category for that word simply will not draw it. For a retraction this is usually empty and deliberately not hardcoded so: existence is folded under each view's own selector, so a view that does not count the retracting subject still draws the node.
-  """
-  drawings: [NodeDrawing!]!
 }
 
 """A relation category/schema definition"""
@@ -4090,10 +3977,10 @@ type NaturalEventCategory implements EventCategory & NodeCategory & Category @ke
   """List of property definitions for this entity category"""
   propertyDefinitions: [PropertyDefinition!]!
 
-  """The graph this category belongs to"""
+  """The roles an entity can play going into an event of this category"""
   inputs: [EventRole!]!
 
-  """The graph this category belongs to"""
+  """The roles an entity can play coming out of an event of this category"""
   outputs: [EventRole!]!
 }
 
@@ -4189,36 +4076,17 @@ input NaturalEventPaginationInput {
 """Base interface for all graph nodes"""
 interface Node {
   """
-  Local AGE graph ID, or null for evidence rows that are not projected into a graph
-  """
-  graphId: Int
-
-  """
-  The graph this node belongs to, or null for organization-scoped evidence
-  """
-  graph: Graph
-
-  """Global identifier in format 'graph_name:graph_id'"""
-  globalId: GlobalID!
-
-  """
   The AGE graph label as recently materialized (e.g. 'Cell IAC100', 'ROI 1')
   """
   label: String!
 
-  """Composite ID for node lookup"""
+  """
+  This node's durable identity — a bare uuid, world-unique and stable across reprojects
+  """
   id: String!
 
   """External ID if set"""
   externalId: String
-
-  """Local ID if set"""
-  localId: String
-
-  """
-  Whether this node is pinned in the UI. Always false — `pinNode` was removed, so nothing can set it
-  """
-  pinned: Boolean!
 }
 
 """Base interface for graph schemas"""
@@ -4514,24 +4382,6 @@ input NodeTableQueryOrder @oneOf {
   id: Ordering
 }
 
-"""
-An assertion about several nodes made as one act, and everywhere they are now drawn
-"""
-type NodesAssertion {
-  """
-  The single claim covering the whole batch. One act by one actor is one assertion, which is why this is not a list
-  """
-  assertion: Assertion!
-
-  """The nodes this act was about, each as its own kind"""
-  nodes: [Node!]!
-
-  """
-  Every view that draws this claim, after this assertion. Empty means no view does — which is an ordinary answer, not an error: a claim names a word the organization owns, and a view that declares no category for that word simply will not draw it. For a retraction this is usually empty and deliberately not hardcoded so: existence is folded under each view's own selector, so a view that does not count the retracting subject still draws the node.
-  """
-  drawings: [NodeDrawing!]!
-}
-
 input OffsetPaginationInput {
   offset: Int! = 0
   limit: Int
@@ -4566,22 +4416,16 @@ enum Ordering {
 
 """A claim that an entity came out of an event"""
 type OutputParticipation implements Edge {
-  """Local AGE graph ID, or null for edges that have no projection"""
-  graphId: Int
-
-  """Global identifier in format 'graph_name:graph_id'"""
-  globalId: GlobalID!
-
-  """Composite ID for edge lookup"""
+  """This claim's durable identity — the `Link` primary key, a bare uuid"""
   id: String!
 
   """The edge label/type"""
   label: String!
 
-  """Global ID of the source/left node"""
+  """The source endpoint, as evidence names it — a bare uuid"""
   sourceId: String!
 
-  """Global ID of the target/right node"""
+  """The target endpoint, as evidence names it — a bare uuid"""
   targetId: String!
 
   """
@@ -4609,24 +4453,6 @@ input ParticipantInput {
 
   """True if the entity went into the event, False if it came out of it"""
   isInput: Boolean! = true
-}
-
-"""An assertion about one participation, and everywhere it is now drawn"""
-type ParticipationAssertion {
-  """
-  The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
-  """
-  assertion: Assertion!
-
-  """
-  The participation claim, as an input or an output depending on which side it names
-  """
-  participation: Edge!
-
-  """
-  Every view that draws this claim, after this assertion. Empty means no view does — which is an ordinary answer, not an error: a claim names a word the organization owns, and a view that declares no category for that word simply will not draw it. For a retraction this is usually empty and deliberately not hardcoded so: existence is folded under each view's own selector, so a view that does not count the retracting subject still draws the node.
-  """
-  drawings: [EdgeDrawing!]!
 }
 
 """Base interface for plottable queries"""
@@ -4745,39 +4571,22 @@ enum PropertyType {
 """A protocol event in the graph"""
 type ProtocolEvent implements VersionedNode & Node & Event {
   """
-  Local AGE graph ID, or null for evidence rows that are not projected into a graph
-  """
-  graphId: Int
-
-  """
-  The graph this node belongs to, or null for organization-scoped evidence
-  """
-  graph: Graph
-
-  """Global identifier in format 'graph_name:graph_id'"""
-  globalId: GlobalID!
-
-  """
   The AGE graph label as recently materialized (e.g. 'Cell IAC100', 'ROI 1')
   """
   label: String!
 
-  """Composite ID for node lookup"""
+  """
+  This node's durable identity — a bare uuid, world-unique and stable across reprojects
+  """
   id: String!
 
   """External ID if set"""
   externalId: String
 
-  """Local ID if set"""
-  localId: String
-
   """
-  Whether this node is pinned in the UI. Always false — `pinNode` was removed, so nothing can set it
+  Schema version the properties were derived under. Null when this reading came from the log rather than from a projection — a claim no view draws has no derived properties, so there is no version to name
   """
-  pinned: Boolean!
-
-  """Schema version used to derive properties"""
-  schemaVersion: String!
+  schemaVersion: String
 
   """Timestamp when properties were last derived (unix ms)"""
   lastDerived: UnixMilliseconds
@@ -4788,12 +4597,6 @@ type ProtocolEvent implements VersionedNode & Node & Event {
   """Category ID linking to ProtocolEventCategory model"""
   categoryId: String
 
-  """List of the current derived properties for this event"""
-  measuredFrom: DateTime!
-
-  """The source entity of this relation"""
-  measuredTo: DateTime!
-
   """How the view this was read through draws it, if any view does"""
   category: ProtocolEventCategory
 
@@ -4802,22 +4605,6 @@ type ProtocolEvent implements VersionedNode & Node & Event {
 
   """List of the current derived properties for this entity"""
   properties: AnyScalar!
-}
-
-"""An assertion about a protocol event, and everywhere it is now drawn"""
-type ProtocolEventAssertion {
-  """
-  The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
-  """
-  assertion: Assertion!
-
-  """The event as the log has it"""
-  protocolEvent: ProtocolEvent!
-
-  """
-  Every view that draws this claim, after this assertion. Empty means no view does — which is an ordinary answer, not an error: a claim names a word the organization owns, and a view that declares no category for that word simply will not draw it. For a retraction this is usually empty and deliberately not hardcoded so: existence is folded under each view's own selector, so a view that does not count the retracting subject still draws the node.
-  """
-  drawings: [NodeDrawing!]!
 }
 
 """A relation category/schema definition"""
@@ -4886,10 +4673,10 @@ type ProtocolEventCategory implements EventCategory & NodeCategory & Category @k
   """List of property definitions for this entity category"""
   propertyDefinitions: [PropertyDefinition!]!
 
-  """The graph this category belongs to"""
+  """The roles an entity can play going into an event of this category"""
   inputs: [EventRole!]!
 
-  """The graph this category belongs to"""
+  """The roles an entity can play coming out of an event of this category"""
   outputs: [EventRole!]!
 }
 
@@ -5028,30 +4815,6 @@ type Query {
   """Get a single protocol event category/schema by ID"""
   protocolEventCategory(id: ID!): ProtocolEventCategory!
 
-  """List all materialized edges in the graph"""
-  materializedEdges(filters: MaterializedEdgeFilter, ordering: [MaterializedEdgeOrder!]! = [], pagination: OffsetPaginationInput): [MaterializedEdge!]!
-
-  """Get a single materialized edge by ID"""
-  materializedEdge(id: ID!): MaterializedEdge!
-
-  """List all materialized structure relation edges in the graph"""
-  materializedStructureRelationEdges(filters: MaterializedStructureRelationEdgeFilter, ordering: [MaterializedStructureRelationEdgeOrder!]! = [], pagination: OffsetPaginationInput): [MaterializedStructureRelationEdge!]!
-
-  """Get a single materialized structure relation edge by ID"""
-  materializedStructureRelationEdge(id: ID!): MaterializedStructureRelationEdge!
-
-  """List all materialized relation edges in the graph"""
-  materializedRelationEdges(filters: MaterializedRelationEdgeFilter, ordering: [MaterializedRelationEdgeOrder!]! = [], pagination: OffsetPaginationInput): [MaterializedRelationEdge!]!
-
-  """Get a single materialized relation edge by ID"""
-  materializedRelationEdge(id: ID!): MaterializedRelationEdge!
-
-  """List all materialized measurement edges in the graph"""
-  materializedMeasurementEdges(filters: MaterializedMeasurementEdgeFilter, ordering: [MaterializedMeasurementEdgeOrder!]! = [], pagination: OffsetPaginationInput): [MaterializedMeasurementEdge!]!
-
-  """Get a single materialized measurement edge by ID"""
-  materializedMeasurementEdge(id: ID!): MaterializedMeasurementEdge!
-
   """Get aggregated graph stats with optional filters"""
   graphStats(filters: GraphFilter = null): GraphStats!
 
@@ -5163,6 +4926,15 @@ type Query {
   """Show a single saved scatter plot by ID"""
   scatterPlot(id: ID!): ScatterPlot!
 
+  """Get one claimed individual by ID, as the log has it"""
+  instance(id: GraphID!): Instance!
+
+  """Get one claim relating two things by ID, as the log has it"""
+  link(id: GraphID!): Link!
+
+  """Every position anyone has taken on one claim, newest first"""
+  standings(id: ID!): [Standing!]!
+
   """Get a node by ID"""
   node(id: GraphID!): Node!
 
@@ -5181,8 +4953,10 @@ type Query {
   """List structures with optional filters, ordering, and pagination"""
   structures(structureKindId: ID = null, filters: StructureFilter = null, ordering: [StructureOrder!] = null, pagination: StructurePaginationInput = null): [Structure!]!
 
-  """Get a structure by graph, identifier and object"""
-  structureByIdentifier(graph: ID!, identifier: StructureIdentifier!, object: StructureObject!): Structure!
+  """
+  Get a structure by identifier and object. No graph: a structure belongs to the organization and has no vertex in any projection
+  """
+  structureByIdentifier(identifier: StructureIdentifier!, object: StructureObject!): Structure!
 
   """List the structures that are evidence for an entity"""
   informingStructures(entityId: String!): [Structure!]!
@@ -5207,9 +4981,6 @@ type Query {
 
   """Get a description edge by composite graph ID"""
   description(id: GraphID!): Description!
-
-  """List description edges in a graph"""
-  descriptions(graph: ID!, filters: RelationFilter = null, ordering: [RelationOrder!] = null, pagination: RelationPaginationInput = null): [Description!]!
 
   """Get an input participation edge by composite graph ID"""
   inputParticipation(id: GraphID!): InputParticipation!
@@ -5247,14 +5018,6 @@ type Query {
   """List every metric recorded under one assertion"""
   metricsForAssertion(assertionId: GraphID!): [Metric!]!
 
-  """Get an activity node by composite graph ID"""
-  activity(id: GraphID!): Activity!
-
-  """
-  List activities in a graph with optional filters, ordering, and pagination
-  """
-  activities(graph: ID!, filters: NodeFilters = null, ordering: [NodeOrder!] = null, pagination: NodePaginationInput = null): [Activity!]!
-
   """
   List the organization's words — its vocabulary, independent of any graph
   """
@@ -5281,22 +5044,16 @@ type Query {
 
 """A relation edge between two entities"""
 type Relation implements Edge {
-  """Local AGE graph ID, or null for edges that have no projection"""
-  graphId: Int
-
-  """Global identifier in format 'graph_name:graph_id'"""
-  globalId: GlobalID!
-
-  """Composite ID for edge lookup"""
+  """This claim's durable identity — the `Link` primary key, a bare uuid"""
   id: String!
 
   """The edge label/type"""
   label: String!
 
-  """Global ID of the source/left node"""
+  """The source endpoint, as evidence names it — a bare uuid"""
   sourceId: String!
 
-  """Global ID of the target/right node"""
+  """The target endpoint, as evidence names it — a bare uuid"""
   targetId: String!
 
   """
@@ -5329,24 +5086,6 @@ type Relation implements Edge {
   properties: AnyScalar!
 }
 
-"""
-An assertion about a relation, and everywhere that relation is now drawn
-"""
-type RelationAssertion {
-  """
-  The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
-  """
-  assertion: Assertion!
-
-  """The relation as the log has it"""
-  relation: Relation!
-
-  """
-  Every view that draws this claim, after this assertion. Empty means no view does — which is an ordinary answer, not an error: a claim names a word the organization owns, and a view that declares no category for that word simply will not draw it. For a retraction this is usually empty and deliberately not hardcoded so: existence is folded under each view's own selector, so a view that does not count the retracting subject still draws the node.
-  """
-  drawings: [EdgeDrawing!]!
-}
-
 """A relation category/schema definition"""
 type RelationCategory implements EdgeCategory & Category @key(fields: "id", resolvable: true) {
   """Database ID of the category"""
@@ -5369,9 +5108,6 @@ type RelationCategory implements EdgeCategory & Category @key(fields: "id", reso
 
   """List of relevant queries that use this category as input"""
   relevantEdgeQueries: [EdgeQuery!]!
-
-  """The graph this category belongs to"""
-  materializableAs: [MaterializedEdge!]!
 
   """
   The unique key/identifier for this category, used for linking to entities or structures (e.g. 'Cell', 'ROI')
@@ -5460,9 +5196,6 @@ type RelationCategoryStats {
 
 """Definition of a relation type in the graph schema"""
 input RelationDefinitionInput {
-  """Sequence mappings for this node"""
-  sequences: [SequenceMappingInput!]! = []
-
   """Relation type name/key"""
   key: String!
 
@@ -5584,16 +5317,16 @@ input RequestZarrUploadInput {
   protocol: String! = "https"
 }
 
-"""Input for retracting several claims as one act"""
-input RetractClaimsInput {
-  """The evidence IDs of the claims to retract"""
-  ids: [String!]!
-}
-
 """Input for retracting an entity claim"""
 input RetractEntityInput {
   """The ID of the entity to archive"""
   id: GraphID!
+}
+
+"""Input for retracting several link claims as one act"""
+input RetractLinksInput {
+  """The `Link` primary keys of the claims to retract"""
+  ids: [String!]!
 }
 
 """Input for archiving an existing measurement edge"""
@@ -5635,7 +5368,7 @@ input RetractRelationInput {
 }
 
 """Input for withdrawing one sameness claim"""
-input RetractSameEntityInput {
+input RetractSameInstanceInput {
   """The id of the sameness claim to retract"""
   id: String!
 }
@@ -5678,9 +5411,6 @@ input ReturnStatementInput {
 
 """A rich property with metadata from schema and graph"""
 type RichProperty {
-  """Local AGE graph ID"""
-  graphId: GraphID!
-
   """The schema definition this property was derived under"""
   definition: PropertyDefinition
 
@@ -5722,22 +5452,16 @@ input RoleMappingInput {
 
 """A claim that two instances are one thing"""
 type Sameness implements Edge {
-  """Local AGE graph ID, or null for edges that have no projection"""
-  graphId: Int
-
-  """Global identifier in format 'graph_name:graph_id'"""
-  globalId: GlobalID!
-
-  """Composite ID for edge lookup"""
+  """This claim's durable identity — the `Link` primary key, a bare uuid"""
   id: String!
 
   """The edge label/type"""
   label: String!
 
-  """Global ID of the source/left node"""
+  """The source endpoint, as evidence names it — a bare uuid"""
   sourceId: String!
 
-  """Global ID of the target/right node"""
+  """The target endpoint, as evidence names it — a bare uuid"""
   targetId: String!
 
   """
@@ -5750,19 +5474,6 @@ type Sameness implements Edge {
 
   """The other instance claimed to be the same"""
   target: Entity!
-}
-
-"""An assertion that instances are one thing, and the claims it recorded"""
-type SamenessAssertion {
-  """
-  The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
-  """
-  assertion: Assertion!
-
-  """
-  The sameness claims this act recorded. Asserting that three instances are one records every pair among them, under one assertion
-  """
-  samenesses: [Sameness!]!
 }
 
 """Result of linking a structure to an entity"""
@@ -5852,54 +5563,39 @@ input ScatterPlotOrder @oneOf {
   id: Ordering
 }
 
-"""A sequence a graph can draw category indices from"""
-input SequenceInput {
-  """The prefix string (e.g. 'IAZ')"""
-  prefix: String!
-}
+"""Somebody's position on whether a claim still holds"""
+type Standing @key(fields: "id", resolvable: true) {
+  """This position's own identity"""
+  id: ID!
 
-"""How a category draws its index from a sequence"""
-input SequenceMappingInput {
-  """The sequence identifier (e.g., 'IAZ001')"""
-  sequence: String!
+  """
+  Whether the claimant says the claim holds. True attests, False retracts
+  """
+  stands: Boolean!
 
-  """The property key that will be set with the sequence value"""
-  property: String!
+  """
+  When the position took effect — world time, the axis that decides which claim is newest
+  """
+  at: DateTime!
+
+  """Who took this position, with what tool, and when they recorded it"""
+  assertion: Assertion!
 }
 
 """A structure that provides evidence for entities"""
 type Structure implements Node {
   """
-  Local AGE graph ID, or null for evidence rows that are not projected into a graph
-  """
-  graphId: Int
-
-  """
-  The graph this node belongs to, or null for organization-scoped evidence
-  """
-  graph: Graph
-
-  """Global identifier in format 'graph_name:graph_id'"""
-  globalId: GlobalID!
-
-  """
   The AGE graph label as recently materialized (e.g. 'Cell IAC100', 'ROI 1')
   """
   label: String!
 
-  """Composite ID for node lookup"""
+  """
+  This node's durable identity — a bare uuid, world-unique and stable across reprojects
+  """
   id: String!
 
   """External ID if set"""
   externalId: String
-
-  """Local ID if set"""
-  localId: String
-
-  """
-  Whether this node is pinned in the UI. Always false — `pinNode` was removed, so nothing can set it
-  """
-  pinned: Boolean!
 
   """Schema identifier (e.g. '@mikro/roi')"""
   identifier: StructureIdentifier!
@@ -5920,17 +5616,6 @@ type Structure implements Node {
   The nodes this structure is evidence for. Where its labels, merges and connections live — a structure is a pointer to an external datum and is never itself claimed to be an AIS
   """
   informs: [Entity!]!
-}
-
-"""An assertion about a structure — a pointer to an external datum"""
-type StructureAssertion {
-  """
-  The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
-  """
-  assertion: Assertion!
-
-  """The structure this act was about"""
-  structure: Structure!
 }
 
 """Input type for creating a new graph query"""
@@ -6114,22 +5799,16 @@ input StructureReferenceInput {
 
 """A relation edge between two structures"""
 type StructureRelation implements Edge {
-  """Local AGE graph ID, or null for edges that have no projection"""
-  graphId: Int
-
-  """Global identifier in format 'graph_name:graph_id'"""
-  globalId: GlobalID!
-
-  """Composite ID for edge lookup"""
+  """This claim's durable identity — the `Link` primary key, a bare uuid"""
   id: String!
 
   """The edge label/type"""
   label: String!
 
-  """Global ID of the source/left node"""
+  """The source endpoint, as evidence names it — a bare uuid"""
   sourceId: String!
 
-  """Global ID of the target/right node"""
+  """The target endpoint, as evidence names it — a bare uuid"""
   targetId: String!
 
   """
@@ -6159,24 +5838,6 @@ type StructureRelation implements Edge {
   category: StructureRelationCategory
 }
 
-"""
-An assertion about a structure relation. Drawings are always empty: neither endpoint has a vertex
-"""
-type StructureRelationAssertion {
-  """
-  The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
-  """
-  assertion: Assertion!
-
-  """The structure relation as the log has it"""
-  structureRelation: StructureRelation!
-
-  """
-  Always empty, and structurally so: both endpoints are structures, which have no vertex for an edge to run between
-  """
-  drawings: [EdgeDrawing!]!
-}
-
 """A relation category/schema definition"""
 type StructureRelationCategory implements EdgeCategory & Category @key(fields: "id", resolvable: true) {
   """Database ID of the category"""
@@ -6199,9 +5860,6 @@ type StructureRelationCategory implements EdgeCategory & Category @key(fields: "
 
   """List of relevant queries that use this category as input"""
   relevantEdgeQueries: [EdgeQuery!]!
-
-  """The graph this category belongs to"""
-  materializableAs: [MaterializedEdge!]!
 
   """
   The unique key/identifier for this category, used for linking to entities or structures (e.g. 'Cell', 'ROI')
@@ -6290,9 +5948,6 @@ type StructureRelationCategoryStats {
 
 """Declares a structure relation category in a graph schema"""
 input StructureRelationDefinitionInput {
-  """Sequence mappings for this node"""
-  sequences: [SequenceMappingInput!]! = []
-
   """Relation type name/key"""
   key: String!
 
@@ -6366,12 +6021,6 @@ input StructureRelationPaginationInput {
 
   """Maximum number of items to return"""
   limit: Int = 100
-}
-
-"""Graph Engine Subscriptions"""
-type Subscription {
-  """Subscribe to updates for a specific graph"""
-  graphUpdated(graphId: GraphID!): Graph!
 }
 
 """Input for updating an existing metric"""
@@ -6534,9 +6183,6 @@ input UpdateEntityDefinitionInput {
   """The ID of the definition to update"""
   id: ID!
 
-  """Sequence mappings for this node"""
-  sequences: [SequenceMappingInput!] = null
-
   """The label of the node participating in the event"""
   key: String = null
 
@@ -6663,9 +6309,6 @@ input UpdateGraphVisualInput {
 Input for updating an existing measurement definition in the graph schema
 """
 input UpdateMeasurementDefinitionInput {
-  """Sequence mappings for this node"""
-  sequences: [SequenceMappingInput!]! = []
-
   """Relation type name/key"""
   key: String!
 
@@ -6710,9 +6353,6 @@ input UpdateMetricDefinitionInput {
   """The ID of the definition to update"""
   id: String!
 
-  """Sequence mappings for this node"""
-  sequences: [SequenceMappingInput!] = null
-
   """The label of the node participating in the event"""
   key: String = null
 
@@ -6744,9 +6384,6 @@ input UpdateMetricDefinitionInput {
 Input for updating an existing natural event definition in the graph schema
 """
 input UpdateNaturalEventDefinitionInput {
-  """Sequence mappings for this node"""
-  sequences: [SequenceMappingInput!]! = []
-
   """The label of the node participating in the event"""
   key: String!
 
@@ -6847,9 +6484,6 @@ input UpdateNodeTableQueryInput {
 Input for updating an existing protocol event definition in the graph schema
 """
 input UpdateProtocolEventDefinitionInput {
-  """Sequence mappings for this node"""
-  sequences: [SequenceMappingInput!]! = []
-
   """The label of the node participating in the event"""
   key: String!
 
@@ -6894,9 +6528,6 @@ input UpdateProtocolEventDefinitionInput {
 
 """Input for updating an existing relation definition in the graph schema"""
 input UpdateRelationDefinitionInput {
-  """Sequence mappings for this node"""
-  sequences: [SequenceMappingInput!]! = []
-
   """The label of the node participating in the event"""
   key: String!
 
@@ -6999,9 +6630,6 @@ input UpdateStructureDefinitionInput {
   """The ID of the definition to update"""
   id: String!
 
-  """Sequence mappings for this node"""
-  sequences: [SequenceMappingInput!] = null
-
   """The label of the node participating in the event"""
   key: String = null
 
@@ -7037,11 +6665,6 @@ input UpdateStructureInput {
   """List of measurements associated with this structure"""
   metrics: [MetricInput!]! = []
 
-  """
-  The ID of the user for whom to set this pin. If not provided, will default to the user making the request.
-  """
-  user: String = null
-
   """The ID of the structure to update"""
   id: String!
 }
@@ -7050,9 +6673,6 @@ input UpdateStructureInput {
 Input for updating an existing structure relation definition in the graph schema
 """
 input UpdateStructureRelationDefinitionInput {
-  """Sequence mappings for this node"""
-  sequences: [SequenceMappingInput!]! = []
-
   """The label of the node participating in the event"""
   key: String!
 
@@ -7141,39 +6761,22 @@ enum ValueKind {
 """Interface for versioned nodes with schema tracking"""
 interface VersionedNode implements Node {
   """
-  Local AGE graph ID, or null for evidence rows that are not projected into a graph
-  """
-  graphId: Int
-
-  """
-  The graph this node belongs to, or null for organization-scoped evidence
-  """
-  graph: Graph
-
-  """Global identifier in format 'graph_name:graph_id'"""
-  globalId: GlobalID!
-
-  """
   The AGE graph label as recently materialized (e.g. 'Cell IAC100', 'ROI 1')
   """
   label: String!
 
-  """Composite ID for node lookup"""
+  """
+  This node's durable identity — a bare uuid, world-unique and stable across reprojects
+  """
   id: String!
 
   """External ID if set"""
   externalId: String
 
-  """Local ID if set"""
-  localId: String
-
   """
-  Whether this node is pinned in the UI. Always false — `pinNode` was removed, so nothing can set it
+  Schema version the properties were derived under. Null when this reading came from the log rather than from a projection — a claim no view draws has no derived properties, so there is no version to name
   """
-  pinned: Boolean!
-
-  """Schema version used to derive properties"""
-  schemaVersion: String!
+  schemaVersion: String
 
   """Timestamp when properties were last derived (unix ms)"""
   lastDerived: UnixMilliseconds
@@ -7278,7 +6881,7 @@ type ZarrUploadGrant {
 
 scalar _Any
 
-union _Entity = Assertion | BigFileStore | EdgePairsQuery | EdgePathQuery | EdgeTableQuery | EntityCategory | Graph | GraphNodesQuery | GraphPairsQuery | GraphPathQuery | GraphTableQuery | MaterializedEdge | MaterializedMeasurementEdge | MaterializedRelationEdge | MaterializedStructureRelationEdge | MeasurementCategory | MediaStore | MetricKind | NaturalEventCategory | NodePairsQuery | NodePathQuery | NodeTableQuery | ProtocolEventCategory | RelationCategory | ScatterPlot | StructureKind | StructureRelationCategory | Term | ZarrStore
+union _Entity = Assertion | BigFileStore | EdgePairsQuery | EdgePathQuery | EdgeTableQuery | EntityCategory | Graph | GraphNodesQuery | GraphPairsQuery | GraphPathQuery | GraphTableQuery | Instance | Link | MeasurementCategory | MediaStore | MetricKind | NaturalEventCategory | NodePairsQuery | NodePathQuery | NodeTableQuery | ProtocolEventCategory | RelationCategory | ScatterPlot | Standing | StructureKind | StructureRelationCategory | Term | ZarrStore
 
 type _Service {
   sdl: String!

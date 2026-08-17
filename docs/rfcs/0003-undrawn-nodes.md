@@ -9,9 +9,19 @@
   draws the claim afterwards, empty when none does. `lifecycle` went with it: a
   node in a graph is one the evidence says exists, so where a claim stands is
   `drawings` and nothing else. Option E was rejected as described below.
+- **§1 is settled too, later and against the shape this file kept.** It asked whether
+  a `RetrievedNode` is the right thing to hand back at all and left it standing; it is
+  not, and the payload now returns the evidence row itself as `Instance` (or `Link`).
+  The three fields §1 called meaningless here — `graph_name`, `id`, `label` — are
+  gone from the payload along with two that were worse than meaningless:
+  `schemaVersion` was non-null over a value only a projection supplies, and
+  `richProperties` asserted on a category an undrawn claim does not have. Both fired
+  on the exact case this RFC is about.
 - **Where the code is:** `graph_engine/results.py` (the shape and the reasoning),
-  `GraphController.drawings_for_node` / `drawings_for_edge` (the read-back),
-  `api/types.py`'s `*Assertion` types, and `docs/LOG.md`'s operation table.
+  `GraphController.drawings_for_instance` / `drawings_for_edge` (the read-back),
+  `api/types.py`'s `Instance` / `Link` / `Standing` types and the `Asserted*` payloads,
+  and `docs/LOG.md`'s operation table. Note the vocabulary changed after this file was
+  written: `Node` the row is `Instance`, `Claim` is `Standing` — see `CLAUDE.md`.
 
 ## The situation
 

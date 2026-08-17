@@ -31,7 +31,7 @@ from graph_engine.controller import GraphController
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { entity { id } }
+        assertEntityExists(input: $input) { instance { id } }
     }
 """
 
@@ -48,7 +48,7 @@ async def _an_ais(api_schema: kante.Schema, ctx: HttpContext, graph: core_models
         context_value=ctx,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertEntityExists"]["entity"]["id"]
+    return created.data["assertEntityExists"]["instance"]["id"]
 
 
 def _claim(graph: core_models.Graph, ref: str, category: core_models.Category, subject: str) -> evidence_models.Link:
@@ -69,7 +69,7 @@ def _retract_classifications(graph: core_models.Graph, ref: str) -> None:
 
     Through `writer.retract`, not a queryset `.update(stands=False)`. That used to
     work because `Link` carried its own cached answer, so a test could flip the
-    projection with no `Claim` behind it — a shape nothing structurally prevented
+    projection with no `Standing` behind it — a shape nothing structurally prevented
     application code from copying. The column is gone and standing is folded from
     the log, so withdrawing a claim now means making one.
     """
@@ -119,12 +119,12 @@ async def test_two_annotators_can_disagree_without_forking_the_entity(
 
     @sync_to_async
     def disagree() -> tuple[int, int]:
-        node = evidence_models.Node.objects.for_organization(test_graph.organization).filter(term__in=selector_module.term_ids_for(test_graph)).get()
+        node = evidence_models.Instance.objects.for_organization(test_graph.organization).filter(term__in=selector_module.term_ids_for(test_graph)).get()
         soma = core_models.EntityCategory.objects.get(graph=test_graph, key="Soma")
         _claim(test_graph, node.ref, soma, CHRISTIAN)
 
         claims = evidence_models.Link.objects.for_organization(test_graph.organization).filter(kind=evidence_models.Link.Kind.CLASSIFIES, source_ref=node.ref)
-        nodes = evidence_models.Node.objects.for_organization(test_graph.organization).filter(pk=node.ref)
+        nodes = evidence_models.Instance.objects.for_organization(test_graph.organization).filter(pk=node.ref)
         return claims.count(), nodes.count()
 
     claim_count, node_count = await disagree()
@@ -153,7 +153,7 @@ async def test_a_definition_narrows_what_the_graph_contains(
     @sync_to_async
     def define_and_rebuild() -> dict:
         ais = core_models.EntityCategory.objects.get(graph=test_graph, key="AIS")
-        nodes = list(evidence_models.Node.objects.for_organization(test_graph.organization).filter(term__in=selector_module.term_ids_for(test_graph)))
+        nodes = list(evidence_models.Instance.objects.for_organization(test_graph.organization).filter(term__in=selector_module.term_ids_for(test_graph)))
         assert len(nodes) == 2
 
         # Each node gets one annotator's claim, and the creating claim is retracted
@@ -201,7 +201,7 @@ async def test_changing_a_definition_moves_membership_and_writes_no_evidence(
     @sync_to_async
     def setup() -> int:
         ais = core_models.EntityCategory.objects.get(graph=test_graph, key="AIS")
-        nodes = list(evidence_models.Node.objects.for_organization(test_graph.organization).filter(term__in=selector_module.term_ids_for(test_graph)))
+        nodes = list(evidence_models.Instance.objects.for_organization(test_graph.organization).filter(term__in=selector_module.term_ids_for(test_graph)))
         for node, subject in zip(nodes, (JOHANNES, CHRISTIAN)):
             _retract_classifications(test_graph, node.ref)
             _claim(test_graph, node.ref, ais, subject)
@@ -247,8 +247,8 @@ def _evidence_row_count(graph: core_models.Graph) -> int:
             evidence_models.Structure,
             evidence_models.Metric,
             evidence_models.Link,
-            evidence_models.Node,
-            evidence_models.Claim,
+            evidence_models.Instance,
+            evidence_models.Standing,
         )
     )
 
@@ -273,7 +273,7 @@ async def test_definitions_can_partition_one_term_by_annotator(
     @sync_to_async
     def partition() -> dict:
         ais = core_models.EntityCategory.objects.get(graph=test_graph, key="AIS")
-        nodes = list(evidence_models.Node.objects.for_organization(test_graph.organization).filter(term__in=selector_module.term_ids_for(test_graph)))
+        nodes = list(evidence_models.Instance.objects.for_organization(test_graph.organization).filter(term__in=selector_module.term_ids_for(test_graph)))
         for node, subject in zip(nodes, (JOHANNES, CHRISTIAN)):
             _retract_classifications(test_graph, node.ref)
             _claim(test_graph, node.ref, ais, subject)
@@ -324,7 +324,7 @@ async def test_a_node_matching_two_definitions_is_refused_not_guessed(
     @sync_to_async
     def both_claim_it() -> dict:
         ais = core_models.EntityCategory.objects.get(graph=test_graph, key="AIS")
-        node = evidence_models.Node.objects.for_organization(test_graph.organization).filter(term__in=selector_module.term_ids_for(test_graph)).first()
+        node = evidence_models.Instance.objects.for_organization(test_graph.organization).filter(term__in=selector_module.term_ids_for(test_graph)).first()
         _retract_classifications(test_graph, node.ref)
 
         # The same node, claimed as AIS by both annotators.
@@ -400,7 +400,7 @@ async def test_a_category_can_derive_from_several_words_the_graph_never_declares
     ontology operation of grouping several claimed kinds under one heading.
 
     And membership counted only the words a graph's categories *declare*. A node
-    claimed Pyramidal therefore never entered `nodes_for` for a graph that only
+    claimed Pyramidal therefore never entered `instances_for` for a graph that only
     declares Neuron, so it never reached `resolve_categories` and the definition
     never fired: the category matched claims the graph could not see. Every other
     test here defines `AIS` over `"AIS"` — the category's own word — so membership
@@ -417,7 +417,7 @@ async def test_a_category_can_derive_from_several_words_the_graph_never_declares
         from evidence import writer
 
         organization = test_graph.organization
-        nodes = list(evidence_models.Node.objects.for_organization(organization).filter(term__in=selector_module.term_ids_for(test_graph)))
+        nodes = list(evidence_models.Instance.objects.for_organization(organization).filter(term__in=selector_module.term_ids_for(test_graph)))
         assert len(nodes) == 2
 
         # Claim the two nodes under words this graph declares no category for.
@@ -433,7 +433,7 @@ async def test_a_category_can_derive_from_several_words_the_graph_never_declares
             # the originating word is what the node was created under, and editing
             # it is rewriting history rather than adding to it. The test does not
             # need it either. `term_ids_for` widens to the words a definition
-            # derives from, so a node still carrying "AIS" is in `nodes_for`, and
+            # derives from, so a node still carrying "AIS" is in `instances_for`, and
             # `resolve_categories` matches on the CLASSIFIES claims above — which
             # is precisely the mechanism under test.
 

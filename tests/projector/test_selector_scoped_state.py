@@ -35,7 +35,7 @@ from graph_engine.controller import GraphController
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { entity { id } }
+        assertEntityExists(input: $input) { instance { id } }
     }
 """
 
@@ -81,7 +81,7 @@ async def _ais_with_roi(api_schema: kante.Schema, ctx: HttpContext, graph: core_
         context_value=ctx,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertEntityExists"]["entity"]["id"], object_id
+    return created.data["assertEntityExists"]["instance"]["id"], object_id
 
 
 def _record_observed_at(graph: core_models.Graph, object_id: str, value: float, measured_at: datetime) -> None:
@@ -217,9 +217,9 @@ async def test_a_retraction_after_a_rebuild_does_not_widen_the_scope(
         metric = evidence_models.Metric.objects.for_organization(test_graph.organization).filter(structure__identifier="ROI", value_num=20.0).first()
         assert metric is not None
         controller = GraphController(engine=age_engine)
-        entity_refs = projector.refs_informed_by(test_graph.organization, [metric.structure_id])
+        instance_refs = projector.refs_informed_by(test_graph.organization, [metric.structure_id])
         writer.retract(test_graph.organization, metric, metric.assertion)
-        state_module.retract(metric, entity_refs)
+        state_module.retract(metric, instance_refs)
         controller.project_from_structures(test_graph.organization, [metric.structure_id])
 
     await retract_one_and_materialize()
@@ -261,7 +261,7 @@ async def test_edge_state_survives_a_rebuild(
             context_value=simple_api_context,
         )
         assert created.errors is None, f"GraphQL errors: {created.errors}"
-        return created.data["assertEntityExists"]["entity"]["id"]
+        return created.data["assertEntityExists"]["instance"]["id"]
 
     source = await _cell()
     target = await _cell()
@@ -269,7 +269,7 @@ async def test_edge_state_survives_a_rebuild(
     created = await api_schema.execute(
         """
         mutation CreateRelation($input: AssertRelationExistsInput!) {
-            assertRelationExists(input: $input) { relation { id } }
+            assertRelationExists(input: $input) { link { id } }
         }
         """,
         variable_values={
@@ -289,11 +289,11 @@ async def test_edge_state_survives_a_rebuild(
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
-    edge_id = created.data["assertRelationExists"]["relation"]["id"]
+    edge_id = created.data["assertRelationExists"]["link"]["id"]
 
     @sync_to_async
     def edge_state() -> list[tuple[int, float | None]]:
-        return sorted(evidence_models.State.objects.for_organization(test_graph.organization).filter(entity_ref=edge_id).values_list("n", "sum"))
+        return sorted(evidence_models.State.objects.for_organization(test_graph.organization).filter(claim_ref=edge_id).values_list("n", "sum"))
 
     before = await edge_state()
     assert before, "A relation with supporting evidence must fold statistics against its own ref"

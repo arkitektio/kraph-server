@@ -27,13 +27,13 @@ from graph_engine.controller import GraphController
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { entity { id } }
+        assertEntityExists(input: $input) { instance { id } }
     }
 """
 
 CREATE_NATURAL_EVENT = """
     mutation CreateNaturalEvent($input: AssertNaturalEventExistsInput!) {
-        assertNaturalEventExists(input: $input) { naturalEvent { id } }
+        assertNaturalEventExists(input: $input) { instance { id } }
     }
 """
 
@@ -47,7 +47,7 @@ async def _cell(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.G
         context_value=ctx,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertEntityExists"]["entity"]["id"]
+    return created.data["assertEntityExists"]["instance"]["id"]
 
 
 async def _mitosis(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph, source: str, target: str) -> str:
@@ -66,7 +66,7 @@ async def _mitosis(api_schema: kante.Schema, ctx: HttpContext, graph: core_model
         context_value=ctx,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertNaturalEventExists"]["naturalEvent"]["id"]
+    return created.data["assertNaturalEventExists"]["instance"]["id"]
 
 
 def _participations(age_engine, graph: core_models.Graph) -> list[tuple[str, str]]:
@@ -199,7 +199,7 @@ async def test_a_protocol_event_with_inputs_succeeds_and_is_recorded_as_one(
     created = await api_schema.execute(
         """
         mutation CreateProtocolEvent($input: AssertProtocolEventExistsInput!) {
-            assertProtocolEventExists(input: $input) { protocolEvent { id } }
+            assertProtocolEventExists(input: $input) { instance { id } }
         }
         """,
         variable_values={
@@ -223,20 +223,20 @@ async def test_a_protocol_event_with_inputs_succeeds_and_is_recorded_as_one(
 
     @sync_to_async
     def kinds() -> list[str]:
-        return list(evidence_models.Node.objects.for_organization(test_graph.organization).filter(term=category.term).values_list("kind", flat=True))
+        return list(evidence_models.Instance.objects.for_organization(test_graph.organization).filter(term=category.term).values_list("kind", flat=True))
 
     assert await kinds() == ["protocol_event"], "A protocol event must be recorded as one"
 
 
 ASSERT_PARTICIPATION = """
     mutation AssertParticipation($input: AssertParticipationInput!) {
-        assertParticipation(input: $input) { participation { id } }
+        assertParticipation(input: $input) { link { id } }
     }
 """
 
 ARCHIVE_PARTICIPATION = """
     mutation ArchiveParticipation($input: RetractParticipationInput!) {
-        retractParticipation(input: $input) { participation { id } }
+        retractParticipation(input: $input) { link { id } }
     }
 """
 
@@ -306,14 +306,14 @@ async def test_retracting_one_participation_claim_keeps_the_edge(
 
     archived = await api_schema.execute(
         ARCHIVE_PARTICIPATION,
-        variable_values={"input": {"id": second.data["assertParticipation"]["participation"]["id"]}},
+        variable_values={"input": {"id": second.data["assertParticipation"]["link"]["id"]}},
         context_value=simple_api_context,
     )
     assert archived.errors is None, f"GraphQL errors: {archived.errors}"
 
     @sync_to_async
     def state() -> tuple[list[tuple[str, str]], list[int], int]:
-        events = evidence_models.Claim.objects.for_organization(test_graph.organization).filter(target_type="link")
+        events = evidence_models.Standing.objects.for_organization(test_graph.organization).filter(target_type="link")
         return _participations(age_engine, test_graph), _assertion_count(age_engine, test_graph, "WENT_THROUGH"), events.count()
 
     edges, counts, lifecycle_rows = await state()
@@ -364,7 +364,7 @@ async def test_retracting_the_last_participation_claim_removes_the_edge(
 ASSERT_PARTICIPATION = """
     mutation AssertParticipation($input: AssertParticipationInput!) {
         assertParticipation(input: $input) {
-            participation { __typename id }
+            link { kind id }
             drawings { graph { id } category { id } edge { __typename id } }
         }
     }
@@ -413,18 +413,21 @@ async def test_a_participation_reports_the_view_that_drew_it(
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     payload = result.data["assertParticipation"]
 
-    assert payload["participation"]["id"], "The claim has an identity"
+    assert payload["link"]["id"], "The claim has an identity"
 
-    # `__typename`, not just `id`. `id` lives on the `Edge` interface, so it
-    # resolves whatever concrete type the dispatch picked — which is how this
-    # test could pass while every participation came back as a `Relation`. The
-    # label a participation edge carries is the *event category's* `age_name`
-    # ("Mitosis"), so nothing readable from the label could ever have said
-    # "participation"; the kind comes off the `Link` row instead.
-    expected = "InputParticipation" if is_input else "OutputParticipation"
-    assert payload["participation"]["__typename"] == expected, f"A participation must be typed by the side it names, got {payload['participation']['__typename']}"
+    # `kind`, not just `id`. This used to be `__typename` over the drawing types,
+    # which is how the test could pass while every participation came back as a
+    # `Relation`: the label a participation edge carries is the *event category's*
+    # `age_name` ("Mitosis"), so nothing readable from the label could ever have said
+    # "participation". The claim states the side outright.
+    expected = "PARTICIPATES_AS_INPUT" if is_input else "PARTICIPATES_AS_OUTPUT"
+    assert payload["link"]["kind"] == expected, f"A participation names the side it claims, got {payload['link']['kind']}"
 
     assert payload["drawings"], f"The graph draws this participation, so the result must say so (isInput={is_input})"
     assert payload["drawings"][0]["graph"]["id"] == str(test_graph.id)
     assert payload["drawings"][0]["category"]["id"], "and name the category it was drawn under"
-    assert payload["drawings"][0]["edge"]["__typename"] == expected, "and the drawing agrees about what it drew"
+    # The *drawing* is still an `Edge` subtype — that is what a graph holds, and where
+    # `InputParticipation` / `OutputParticipation` belong. The claim beside it names the
+    # same side in the vocabulary of the log.
+    drawn_as = "InputParticipation" if is_input else "OutputParticipation"
+    assert payload["drawings"][0]["edge"]["__typename"] == drawn_as, "and the drawing agrees about what it drew"

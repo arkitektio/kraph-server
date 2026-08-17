@@ -30,7 +30,7 @@ ASSERT_STRUCTURE = """
 
 ASSERT_ENTITY = """
     mutation AssertEntityExists($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { entity { id } }
+        assertEntityExists(input: $input) { instance { id } }
     }
 """
 
@@ -41,8 +41,8 @@ CLASSIFY_NODES = """
 """
 
 RETRACT_CLAIMS = """
-    mutation RetractClaims($input: RetractClaimsInput!) {
-        retractClaims(input: $input) { assertion { id } }
+    mutation RetractClaims($input: RetractLinksInput!) {
+        retractLinks(input: $input) { assertion { id } }
     }
 """
 
@@ -91,7 +91,7 @@ async def _entity(api_schema: kante.Schema, ctx: HttpContext, term: str, evidenc
         context_value=ctx,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
-    return result.data["assertEntityExists"]["entity"]["id"]
+    return result.data["assertEntityExists"]["instance"]["id"]
 
 
 async def _panel(api_schema: kante.Schema, ctx: HttpContext, structure_id: str) -> dict:
@@ -189,10 +189,10 @@ async def test_a_retracted_label_does_not_appear(
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
 ) -> None:
-    """Retraction is a `Claim(stands=False)`, not a delete.
+    """Retraction is a `Standing(stands=False)`, not a delete.
 
     Nothing about the `CLASSIFIES` row says it is gone; only the anti-join against
-    `ClaimCurrent` does. `selector.classification_claims_for` was missing that
+    `CurrentStanding` does. `selector.classification_claims_for` was missing that
     wrapper while its docstring promised "every *live* claim".
     """
     structure_id, object_id = await _structure(api_schema, simple_api_context)

@@ -87,7 +87,7 @@ async def test_an_unprovenanced_write_still_records_a_claim(
 
     @sync_to_async
     def assertion_for() -> evidence_models.Assertion:
-        node = evidence_models.Node.objects.for_organization(test_graph.organization).select_related("assertion").get(pk=entity_id)
+        node = evidence_models.Instance.objects.for_organization(test_graph.organization).select_related("assertion").get(pk=entity_id)
         return node.assertion
 
     assertion = await assertion_for()
@@ -113,7 +113,7 @@ async def test_a_provenanced_write_records_the_run(
 
     @sync_to_async
     def assertion_for() -> evidence_models.Assertion:
-        node = evidence_models.Node.objects.for_organization(test_graph.organization).select_related("assertion").get(pk=entity_id)
+        node = evidence_models.Instance.objects.for_organization(test_graph.organization).select_related("assertion").get(pk=entity_id)
         return node.assertion
 
     assertion = await assertion_for()
@@ -143,7 +143,7 @@ async def test_the_raw_token_is_never_stored(
 
     @sync_to_async
     def stored() -> str:
-        node = evidence_models.Node.objects.for_organization(test_graph.organization).select_related("assertion").get(pk=entity_id)
+        node = evidence_models.Instance.objects.for_organization(test_graph.organization).select_related("assertion").get(pk=entity_id)
         return repr(node.assertion.action_args)
 
     assert "eyJ0aGlzIjoiaXMgYSBjcmVkZW50aWFsIn0" not in await stored(), "The raw token must not be persisted"

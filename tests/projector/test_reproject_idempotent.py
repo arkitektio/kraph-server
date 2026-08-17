@@ -26,7 +26,7 @@ from graph_engine.controller import GraphController
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { entity { id } }
+        assertEntityExists(input: $input) { instance { id } }
     }
 """
 
@@ -72,7 +72,7 @@ async def _build_measured_entity(
         context_value=ctx,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
-    entity_id = created.data["assertEntityExists"]["entity"]["id"]
+    entity_id = created.data["assertEntityExists"]["instance"]["id"]
 
     for value in values[1:]:
         recorded = await api_schema.execute(
@@ -168,7 +168,7 @@ async def test_rebuild_survives_the_age_namespace_being_destroyed(
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_entity_refs_survive_a_rebuild(
+async def test_instance_refs_survive_a_rebuild(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,

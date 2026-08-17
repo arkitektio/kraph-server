@@ -49,7 +49,7 @@ def output_participations(
     before, for the reason `input_participations` gives: it matched labels the
     projector never writes.
 
-    Graph-scoped through `selector.node_refs_for`, the same membership subquery
+    Graph-scoped through `selector.instance_refs_for`, the same membership subquery
     every other view-scoped read uses — the event has to be in the graph, and
     `participation_key` stores the event as `target_ref` on both sides.
     """

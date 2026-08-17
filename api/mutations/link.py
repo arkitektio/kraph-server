@@ -1,5 +1,9 @@
-"""
-Claim-level mutations: classification, and retraction of any claim.
+"""Writes over `evidence.Link`: classifying nodes, and retracting links.
+
+The file was `claim.py` and the mutation was `retractClaims`, which named the wrong
+table twice over: the ids it takes are `Link` primary keys, and `Standing` is what a
+claim's *retraction* is a row of. Every kind of claim can be retracted — an
+instance, a metric, a structure — but this one retracts links, so it says so.
 
 Both are batch-shaped because a set of claims made together by one actor in one
 act *is* one assertion. The singular forms are a batch of one.
@@ -14,7 +18,7 @@ from kante.types import Info
 from api import context, inputs, types
 
 
-def classify_nodes(info: Info, input: inputs.ClassifyNodesInput) -> types.NodesAssertion:
+def classify_nodes(info: Info, input: inputs.ClassifyNodesInput) -> types.AssertedNodes:
     """Claim that several nodes are of a word, without displacing anyone else's claim.
 
     This is the additive alternative to what `updateEntity` used to do: it
@@ -37,11 +41,11 @@ def classify_nodes(info: Info, input: inputs.ClassifyNodesInput) -> types.NodesA
     organization = context.get_active_organization(info)
     context.assert_can_access_organization(info, organization)
 
-    return types.NodesAssertion(_value=controller.classify_nodes(organization=organization, classifications=model.classifications, info=info))
+    return types.AssertedNodes(_value=controller.classify_nodes(organization=organization, classifications=model.classifications, info=info))
 
 
-def retract_claims(info: Info, input: inputs.RetractClaimsInput) -> types.EdgesAssertion:
-    """Retract several claims as one act. Retraction is a claim too.
+def retract_links(info: Info, input: inputs.RetractLinksInput) -> types.AssertedEdges:
+    """Retract several link claims as one act. Retraction is a claim too.
 
     The claims come back as their real kinds — dispatched on the `Link` row's
     kind, not on the edge's label. This used to wrap every one in
@@ -58,4 +62,4 @@ def retract_claims(info: Info, input: inputs.RetractClaimsInput) -> types.EdgesA
     model = input.to_pydantic()
     controller = context.get_controller()
 
-    return types.EdgesAssertion(_value=controller.archive_claims(claim_ids=[str(claim_id) for claim_id in model.ids], info=info))
+    return types.AssertedEdges(_value=controller.retract_links(link_ids=[str(link_id) for link_id in model.ids], info=info))

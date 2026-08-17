@@ -16,7 +16,7 @@ from api import types, inputs, context
 from core import enums
 
 
-def assert_measurement_exists(info: Info, input: inputs.AssertMeasurementExistsInput) -> types.MeasurementAssertion:
+def assert_measurement_exists(info: Info, input: inputs.AssertMeasurementExistsInput) -> types.AssertedMeasurement:
     """Assert that a structure measures an entity, under one of the organization's words.
 
     Names a term rather than a measurement category — see `assert_entity_exists`.
@@ -31,7 +31,7 @@ def assert_measurement_exists(info: Info, input: inputs.AssertMeasurementExistsI
 
     term = controller.ensure_term(organization, enums.CategoryKindChoices.MEASUREMENT, payload.term)
 
-    return types.MeasurementAssertion(
+    return types.AssertedMeasurement(
         _value=controller.create_measurement(
             organization=organization,
             term=term,
@@ -41,7 +41,7 @@ def assert_measurement_exists(info: Info, input: inputs.AssertMeasurementExistsI
     )
 
 
-def retract_measurement(info: Info, input: inputs.RetractMeasurementInput) -> types.MeasurementAssertion:
+def retract_measurement(info: Info, input: inputs.RetractMeasurementInput) -> types.AssertedMeasurement:
     """Retract a measurement assertion without destroying it."""
     controller = context.get_controller()
 
@@ -49,4 +49,4 @@ def retract_measurement(info: Info, input: inputs.RetractMeasurementInput) -> ty
     link = controller.resolve_edge_link(str(model.id), info)
     context.assert_can_access_organization(info, link.organization)
 
-    return types.MeasurementAssertion(_value=controller.archive_relation(relation_id=str(model.id), info=info))
+    return types.AssertedMeasurement(_value=controller.archive_relation(relation_id=str(model.id), info=info))

@@ -5,9 +5,10 @@ from typing import List
 import strawberry
 from kante.types import Info
 
-from api import context, types, filters, order, pagination
+from api import context, filters, order, pagination, types
+from api.queries import _nodes
 from core import models
-from graph_engine import input_models, retrieved, scalars
+from graph_engine import input_models, scalars
 
 
 def natural_event(info: Info, id: scalars.GraphID) -> types.NaturalEvent:
@@ -15,51 +16,13 @@ def natural_event(info: Info, id: scalars.GraphID) -> types.NaturalEvent:
     controller = context.get_controller()
 
     # The id is the node's own uuid, so there is no graph to take off the front
-    # of it: the `Node` row says which graph projects it.
-    response = controller.get_node_for_composite_id(composite_id=id, info=info)
+    # of it: the `Instance` row says what was claimed, and `drawings` says which views
+    # draw it.
+    response = controller.get_node(node_id=id, info=info)
     if response is None:
         raise ValueError(f"Natural event with ID {id} not found")
 
     return types.NaturalEvent(_value=response)
-
-
-def _order_direction(value: object) -> str:
-    return "DESC" if str(value).upper().endswith("DESC") else "ASC"
-
-
-def _append_match_conditions(alias: str, where_clauses: list[str], params: dict, matches: list[input_models.PropertyMatch] | None) -> None:
-    if not matches:
-        return
-
-    for index, match in enumerate(matches):
-        key_param = f"match_key_{index}"
-        value_param = f"match_value_{index}"
-        params[key_param] = match.key
-        params[value_param] = match.value
-
-        operator = str(match.operator)
-        if operator.endswith("EQUALS"):
-            where_clauses.append(f"{alias}[$${key_param}] = $${value_param}".replace("$$", "$"))
-        elif operator.endswith("NOT_EQUALS"):
-            where_clauses.append(f"{alias}[$${key_param}] <> $${value_param}".replace("$$", "$"))
-        elif operator.endswith("GREATER_THAN"):
-            where_clauses.append(f"{alias}[$${key_param}] > $${value_param}".replace("$$", "$"))
-        elif operator.endswith("LESS_THAN"):
-            where_clauses.append(f"{alias}[$${key_param}] < $${value_param}".replace("$$", "$"))
-        elif operator.endswith("GREATER_OR_EQUAL") or operator.endswith("GREATER_THAN_OR_EQUAL"):
-            where_clauses.append(f"{alias}[$${key_param}] >= $${value_param}".replace("$$", "$"))
-        elif operator.endswith("LESS_OR_EQUAL") or operator.endswith("LESS_THAN_OR_EQUAL"):
-            where_clauses.append(f"{alias}[$${key_param}] <= $${value_param}".replace("$$", "$"))
-        elif operator.endswith("CONTAINS"):
-            where_clauses.append(f"toString({alias}[$${key_param}]) CONTAINS toString($${value_param})".replace("$$", "$"))
-        elif operator.endswith("STARTS_WITH"):
-            where_clauses.append(f"toString({alias}[$${key_param}]) STARTS WITH toString($${value_param})".replace("$$", "$"))
-        elif operator.endswith("ENDS_WITH"):
-            where_clauses.append(f"toString({alias}[$${key_param}]) ENDS WITH toString($${value_param})".replace("$$", "$"))
-        elif operator.endswith("IN"):
-            where_clauses.append(f"{alias}[$${key_param}] IN $${value_param}".replace("$$", "$"))
-        elif operator.endswith("NOT_IN"):
-            where_clauses.append(f"NOT {alias}[$${key_param}] IN $${value_param}".replace("$$", "$"))
 
 
 def natural_events(
@@ -69,7 +32,12 @@ def natural_events(
     ordering: list[order.NaturalEventOrder] | None = None,
     pagination: pagination.NaturalEventPaginationInput | None = None,
 ) -> List[types.NaturalEvent]:
-    """Fetch natural events for a given category with optional filters, ordering, and pagination."""
+    """Every natural event this category draws, from the claims.
+
+    The same change as `protocol_events`, for the same reason: the list was a list of
+    vertices, so it answered what the view had drawn rather than what its rule admits.
+    See `api/queries/_nodes.py`.
+    """
     controller = context.get_controller()
 
     category = models.NaturalEventCategory.objects.filter(id=natural_event_category_id).first()
@@ -79,70 +47,9 @@ def natural_events(
     graph = context.get_accessible_graph(info, str(category.graph.age_name))
 
     filter_model = filters.to_pydantic() if filters else input_models.NaturalEventFilters()
-    filter_model.category = str(category.id)
     ordering_models = [entry.to_pydantic() for entry in ordering] if ordering else []
     pagination_model = pagination.to_pydantic() if pagination else input_models.NaturalEventPagination()
 
-    where_clauses = ["n.category_id = $category_id"]
-    params: dict[str, object] = {"category_id": str(category.id)}
+    rows = _nodes.narrow(_nodes.rows_for_category(category), filter_model, ordering_models, pagination_model)
 
-    if filter_model.ids:
-        # Matched on the uuid the vertex carries, not on `id(n)`. A client holds
-        # the durable id; the AGE vertex id is reassigned by every reproject.
-        params["ids"] = [str(node_id) for node_id in filter_model.ids]
-        where_clauses.append("n.id IN $ids")
-
-    if filter_model.has_property:
-        params["has_property"] = filter_model.has_property
-        where_clauses.append("n[$has_property] IS NOT NULL")
-
-    if filter_model.search:
-        params["search"] = filter_model.search
-        where_clauses.append("toString(n) CONTAINS $search")
-
-    _append_match_conditions("n", where_clauses, params, filter_model.matches)
-
-    order_clauses: list[str] = []
-    for order_model in ordering_models:
-        if order_model.created_at:
-            order_clauses.append(f"coalesce(n.created_at, 0) {_order_direction(order_model.created_at)}")
-        if order_model.category:
-            order_clauses.append(f"coalesce(n.category_id, '') {_order_direction(order_model.category)}")
-        if order_model.id:
-            order_clauses.append(f"id(n) {_order_direction(order_model.id)}")
-        if order_model.property:
-            property_key = f"order_property_{len(params)}"
-            params[property_key] = order_model.property.key
-            order_clauses.append(f"n[$${property_key}] {_order_direction(order_model.property.direction)}".replace("$$", "$"))
-
-    if not order_clauses:
-        order_clauses.append("id(n) DESC")
-
-    params["offset"] = int(pagination_model.offset or 0)
-    params["limit"] = int(pagination_model.limit or 100)
-
-    result = controller.engine.execute(
-        graph,
-        f"""
-        MATCH (n)
-        WHERE {" AND ".join(where_clauses)}
-        RETURN n, labels(n)[0] as label, id(n) as id
-        ORDER BY {", ".join(order_clauses)}
-        SKIP $offset
-        LIMIT $limit
-        """,
-        params,
-    )
-
-    nodes = [
-        retrieved.RetrievedNode(
-            controller=controller,
-            graph_name=str(graph.age_name),
-            id=int(row["id"]),
-            label=str(row.get("label", "NaturalEvent")),
-            properties=(row.get("n") or {}).get("properties", {}) if isinstance(row.get("n"), dict) else {},
-        )
-        for row in result
-    ]
-
-    return [types.NaturalEvent(_value=node) for node in nodes]
+    return [types.NaturalEvent(_value=node) for node in _nodes.retrieved_in(controller, graph, rows)]

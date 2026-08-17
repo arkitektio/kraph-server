@@ -6,7 +6,7 @@ A relation is a claim that two entities are connected, so it is evidence. The
 these resolvers address relations by their evidence id rather than by the AGE
 edge id, the only identity that survives a `reproject`.
 
-All of them return an :class:`api.types.RelationAssertion`, so a caller sees the
+All of them return an :class:`api.types.AssertedRelation`, so a caller sees the
 claim it made and every view that draws the edge afterwards.
 """
 
@@ -16,7 +16,7 @@ from api import types, inputs, context
 from core import enums
 
 
-def assert_relation_exists(info: Info, input: inputs.AssertRelationExistsInput) -> types.RelationAssertion:
+def assert_relation_exists(info: Info, input: inputs.AssertRelationExistsInput) -> types.AssertedRelation:
     """Assert a relation between two entities, under one of the organization's words.
 
     Names a term — so the edge is drawn in every view declaring the word, and the
@@ -32,7 +32,7 @@ def assert_relation_exists(info: Info, input: inputs.AssertRelationExistsInput) 
 
     term = controller.ensure_term(organization, enums.CategoryKindChoices.RELATION, payload.term)
 
-    return types.RelationAssertion(
+    return types.AssertedRelation(
         _value=controller.create_relation(
             organization=organization,
             term=term,
@@ -42,7 +42,7 @@ def assert_relation_exists(info: Info, input: inputs.AssertRelationExistsInput) 
     )
 
 
-def update_relation(info: Info, input: inputs.UpdateRelationInput) -> types.RelationAssertion:
+def update_relation(info: Info, input: inputs.UpdateRelationInput) -> types.AssertedRelation:
     """Replace a relation with a new assertion, keeping the old one on the record.
 
     Keeps the name `update`, unlike `supersedeMetricValue`: the retraction here is
@@ -69,7 +69,7 @@ def update_relation(info: Info, input: inputs.UpdateRelationInput) -> types.Rela
 
     controller.archive_relation(relation_id=str(model.id), info=info)
 
-    return types.RelationAssertion(
+    return types.AssertedRelation(
         _value=controller.create_relation(
             organization=organization,
             term=controller.edge_term(link),
@@ -79,7 +79,7 @@ def update_relation(info: Info, input: inputs.UpdateRelationInput) -> types.Rela
     )
 
 
-def retract_relation(info: Info, input: inputs.RetractRelationInput) -> types.RelationAssertion:
+def retract_relation(info: Info, input: inputs.RetractRelationInput) -> types.AssertedRelation:
     """Retract a relation assertion without destroying it.
 
     The edge survives wherever another live assertion still states the same
@@ -93,4 +93,4 @@ def retract_relation(info: Info, input: inputs.RetractRelationInput) -> types.Re
     link = controller.resolve_edge_link(str(model.id), info)
     context.assert_can_access_organization(info, link.organization)
 
-    return types.RelationAssertion(_value=controller.archive_relation(relation_id=str(model.id), info=info))
+    return types.AssertedRelation(_value=controller.archive_relation(relation_id=str(model.id), info=info))

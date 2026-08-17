@@ -21,7 +21,7 @@ from core import models as core_models
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { entity { id } }
+        assertEntityExists(input: $input) { instance { id } }
     }
 """
 
@@ -67,7 +67,7 @@ async def test_recording_a_metric_updates_the_derived_value(
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
-    entity_id = created.data["assertEntityExists"]["entity"]["id"]
+    entity_id = created.data["assertEntityExists"]["instance"]["id"]
 
     assert (await _properties(api_schema, simple_api_context, entity_id))["avg_length"] == pytest.approx(40.0)
 
@@ -119,7 +119,7 @@ async def test_the_projection_carries_its_schema_version(
             node(id: $id) { ... on Entity { id schemaVersion } }
         }
         """,
-        variable_values={"id": created.data["assertEntityExists"]["entity"]["id"]},
+        variable_values={"id": created.data["assertEntityExists"]["instance"]["id"]},
         context_value=simple_api_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"

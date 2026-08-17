@@ -1,7 +1,7 @@
 """
 Protocol event mutation resolvers.
 
-Every one returns a :class:`api.types.ProtocolEventAssertion` — see `api/mutations/entity.py`.
+Every one returns a :class:`api.types.AssertedProtocolEvent` — see `api/mutations/entity.py`.
 """
 
 from kante.types import Info
@@ -14,7 +14,7 @@ from evidence import models as evidence_models
 def assert_protocol_event_exists(
     info: Info,
     input: inputs.AssertProtocolEventExistsInput,
-) -> types.ProtocolEventAssertion:
+) -> types.AssertedProtocolEvent:
     """Claim that a protocol step happened — see `assert_natural_event_exists`.
 
     States `PROTOCOL_EVENT` outright. The controller used to infer the node kind
@@ -31,11 +31,11 @@ def assert_protocol_event_exists(
 
     term = controller.ensure_term(organization, enums.CategoryKindChoices.PROTOCOL_EVENT, protocol_event.term)
 
-    return types.ProtocolEventAssertion(
+    return types.AssertedProtocolEvent(
         _value=controller.create_event(
             organization=organization,
             term=term,
-            node_kind=evidence_models.Node.Kind.PROTOCOL_EVENT,
+            node_kind=evidence_models.Instance.Kind.PROTOCOL_EVENT,
             payload=protocol_event,
             info=info,
         )
@@ -45,22 +45,22 @@ def assert_protocol_event_exists(
 def retract_protocol_event(
     info: Info,
     input: inputs.RetractProtocolEventInput,
-) -> types.ProtocolEventAssertion:
+) -> types.AssertedProtocolEvent:
     """Claim that a protocol event did not happen. See `retract_entity`."""
     controller = context.get_controller()
 
     model = input.to_pydantic()
 
     # See `retract_natural_event`: one controller path for every node kind.
-    return types.ProtocolEventAssertion(_value=controller.archive_node(model.id, info=info))
+    return types.AssertedProtocolEvent(_value=controller.archive_node(model.id, info=info))
 
 
 def attest_protocol_event(
     info: Info,
     input: inputs.AttestProtocolEventInput,
-) -> types.ProtocolEventAssertion:
+) -> types.AssertedProtocolEvent:
     """Claim that a protocol event exists. See `attest_entity`."""
     controller = context.get_controller()
 
     model = input.to_pydantic()
-    return types.ProtocolEventAssertion(_value=controller.attest_node(model.id, info=info))
+    return types.AssertedProtocolEvent(_value=controller.attest_node(model.id, info=info))
