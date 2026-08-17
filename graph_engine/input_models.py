@@ -13,6 +13,7 @@ from graph_engine.scalars import GraphID
 from graph_engine import scalars
 from core import enums
 
+
 class StrictModel(BaseModel):
     """Base for every input model here: a key that is not a field is an error.
 
@@ -355,45 +356,30 @@ class PropertyOrder(StrictModel):
 
 
 class EntityOrder(StrictModel):
+    # `property` is not on the GraphQL surface (the node lists refuse drawing
+    # questions); it is consumed by the drawing-scoped
+    # `GraphController.list_entities_for_category`, which no GraphQL field is
+    # built on. The other orderings below carry no `property` because nothing
+    # consumes one anywhere.
     created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
-    category: Optional[Ordering] = Field(default=None, description="Order by entity kind/type")
     id: Optional[Ordering] = Field(default=None, description="Order by entity ID")
-    property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value (requires 'has_property' filter)")
+    property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific derived property value — drawing-scoped reads only")
 
 
 class NodeOrder(StrictModel):
     created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
-    category: Optional[Ordering] = Field(default=None, description="Order by entity kind/type")
-    id: Optional[Ordering] = Field(default=None, description="Order by entity ID")
-    property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value (requires 'has_property' filter)")
+    id: Optional[Ordering] = Field(default=None, description="Order by node ID")
 
 
 class StructureOrder(StrictModel):
     created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
-    category: Optional[Ordering] = Field(default=None, description="Order by structure kind/type")
     id: Optional[Ordering] = Field(default=None, description="Order by structure ID")
-    property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value (requires 'has_property' filter)")
 
 
-class MetricFilters(StrictModel):
-    graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
-    category: Optional[str] = Field(default=None, description="Filter by metric category ID")
-    ids: Optional[List[scalars.GraphID]] = Field(default=None, description="Filter by specific metric IDs")
-    has_property: Optional[str] = Field(default=None, description="Filter metrics that have a specific property")
-    search: Optional[str] = Field(default=None, description="Full-text search over metric properties")
-    matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter metrics that match specific property conditions")
-
-
-class MetricPagination(StrictModel):
-    offset: Optional[int] = Field(default=0, description="Number of items to skip")
-    limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
-
-
-class MetricOrder(StrictModel):
-    created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
-    category: Optional[Ordering] = Field(default=None, description="Order by metric category")
-    id: Optional[Ordering] = Field(default=None, description="Order by metric ID")
-    property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value")
+# `MetricFilters`, `MetricPagination` and `MetricOrder` used to sit here. No
+# resolver accepted any of them — `metrics(metricKindId:)` dropped its filter
+# arguments with the note in `api/queries/metric.py` — and their strawberry
+# wrappers were equally unreferenced.
 
 
 class NaturalEventFilters(StrictModel):
@@ -412,9 +398,7 @@ class NaturalEventPagination(StrictModel):
 
 class NaturalEventOrder(StrictModel):
     created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
-    category: Optional[Ordering] = Field(default=None, description="Order by natural event category")
     id: Optional[Ordering] = Field(default=None, description="Order by natural event ID")
-    property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value")
 
 
 class ProtocolEventFilters(StrictModel):
@@ -433,9 +417,7 @@ class ProtocolEventPagination(StrictModel):
 
 class ProtocolEventOrder(StrictModel):
     created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
-    category: Optional[Ordering] = Field(default=None, description="Order by protocol event category")
     id: Optional[Ordering] = Field(default=None, description="Order by protocol event ID")
-    property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value")
 
 
 class MeasurementFilters(StrictModel):
@@ -454,9 +436,7 @@ class MeasurementPagination(StrictModel):
 
 class MeasurementOrder(StrictModel):
     created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
-    category: Optional[Ordering] = Field(default=None, description="Order by measurement category")
     id: Optional[Ordering] = Field(default=None, description="Order by measurement ID")
-    property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value")
 
 
 class StructureRelationFilters(StrictModel):
@@ -475,9 +455,7 @@ class StructureRelationPagination(StrictModel):
 
 class StructureRelationOrder(StrictModel):
     created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
-    category: Optional[Ordering] = Field(default=None, description="Order by structure relation category")
     id: Optional[Ordering] = Field(default=None, description="Order by structure relation ID")
-    property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value")
 
 
 class RelationFilters(StrictModel):
@@ -496,9 +474,7 @@ class RelationPagination(StrictModel):
 
 class RelationOrder(StrictModel):
     created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
-    category: Optional[Ordering] = Field(default=None, description="Order by relation category")
     id: Optional[Ordering] = Field(default=None, description="Order by relation ID")
-    property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific property value")
 
 
 # ==========================================
@@ -1027,7 +1003,15 @@ class ArchiveMetricDefinitionInput(StrictModel):
 
 
 class EventKind(str, Enum):
-    """Role type for a node in an event."""
+    """Whether an event arises in the system itself or is applied from outside.
+
+    Not "event" in the event-sourcing sense — the log's unit is `Assertion` —
+    and not a role type either, which is what this docstring used to claim while
+    the description beside the field said "the kind of event". It is a fact
+    about the *defined* event: mitosis happens to the sample (INTRINSIC), a
+    protocol step is done to it (EXTRINSIC). Recorded in the definition;
+    nothing derives from it yet.
+    """
 
     INTRINSIC = "intrinsic"
     EXTRINSIC = "extrinsic"
@@ -1118,7 +1102,7 @@ class EventRoleInput(StrictModel):
 class EventDefinitionInput(NodeDefinitionInput):
     """Input for an event definition."""
 
-    kind: EventKind = Field(..., description="The kind of event")
+    kind: EventKind = Field(..., description="Whether the event arises in the system itself (INTRINSIC, e.g. mitosis) or is applied from outside (EXTRINSIC, e.g. a protocol step)")
     inputs: List[EventRoleInput] = Field(default_factory=list, description="Input node roles")
     outputs: List[EventRoleInput] = Field(default_factory=list, description="Output node roles")
     properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Property definitions")
@@ -1698,7 +1682,7 @@ class AssertParticipationInput(StrictModel):
 
     event: GraphID = Field(..., description="The ID of the event the entity took part in")
     entity: GraphID = Field(..., description="The ID of the entity that took part")
-    role: str = Field(..., description="Which role the entity played, as the event's category names it")
+    role: str = Field(..., description="Which role the entity played — the caller's own word; the write names no graph and no category")
     is_input: bool = Field(default=True, description="True if the entity went into the event, False if it came out of it")
 
 
@@ -1712,7 +1696,7 @@ class ParticipantInput(StrictModel):
     """One entity's part in an event, inside a batch."""
 
     entity: GraphID = Field(..., description="The ID of the entity that took part")
-    role: str = Field(..., description="Which role the entity played, as the event's category names it")
+    role: str = Field(..., description="Which role the entity played — the caller's own word; the write names no graph and no category")
     is_input: bool = Field(default=True, description="True if the entity went into the event, False if it came out of it")
 
 
@@ -1729,14 +1713,14 @@ class AssertParticipationsInput(StrictModel):
 
 
 class ClassificationInput(StrictModel):
-    """One claim that a node is of a category, inside a batch."""
+    """One claim that a node is of a word, inside a batch."""
 
     node: GraphID = Field(..., description="The node being classified")
     term: str = Field(..., description=TERM_FIELD_DESCRIPTION)
 
 
 class ClassifyNodesInput(StrictModel):
-    """Input for claiming that several nodes are of a category, as one act.
+    """Input for claiming that several nodes are of a word, as one act.
 
     Additive: this does not displace anyone else's claim, and the node keeps its
     identity. Which label a graph then shows is decided at projection time by
@@ -1753,9 +1737,9 @@ class RetractLinksInput(StrictModel):
 
 
 class RetractNaturalEventInput(StrictModel):
-    """Input for archiving (soft deleting) an existing natural event instance."""
+    """Input for retracting a natural event claim — a Standing(stands=False), not a deletion."""
 
-    id: GraphID = Field(..., description="The ID of the natural event to archive")
+    id: GraphID = Field(..., description="The ID of the natural event to retract")
 
 
 class ProtocolEventInput(EventInput):
@@ -1771,9 +1755,9 @@ class AssertProtocolEventExistsInput(ProtocolEventInput):
 
 
 class RetractProtocolEventInput(StrictModel):
-    """Input for archiving (soft deleting) an existing protocol event instance."""
+    """Input for retracting a protocol event claim — a Standing(stands=False), not a deletion."""
 
-    id: GraphID = Field(..., description="The ID of the protocol event to archive")
+    id: GraphID = Field(..., description="The ID of the protocol event to retract")
 
 
 class EntityInput(StrictModel):
@@ -1789,7 +1773,7 @@ class AssertEntityExistsInput(EntityInput):
     same_as: List[scalars.GraphID] = Field(
         default_factory=list,
         description=(
-            "Instances this new one is the same as. Saying \"this is AIS 6\" mints a fresh "
+            'Instances this new one is the same as. Saying "this is AIS 6" mints a fresh '
             "instance and claims it is the same as the one already known as AIS 6 — all under "
             "**one assertion**, because it is one act. Sameness is an equivalence with no "
             "primary, so which id you send is immaterial; entities only, never structures."
@@ -1828,22 +1812,24 @@ class UpdateGraphVisuals(StrictModel):
 
     id: GraphID = Field(..., description="The ID of the graph element to update")
     node_positions: list[CategoryNodePositionInput] = Field(default_factory=list, description="List of node positions to update")
-class RetractEntityInput(StrictModel):
-    """Input for archiving (soft deleting) an existing entity instance."""
 
-    id: scalars.GraphID = Field(..., description="The ID of the entity to archive")
+
+class RetractEntityInput(StrictModel):
+    """Input for retracting an entity claim — a Standing(stands=False), not a deletion."""
+
+    id: scalars.GraphID = Field(..., description="The ID of the entity to retract")
 
 
 class AttestNodeInput(StrictModel):
     """Input for claiming that a node exists.
 
-    Not the reverse of archiving — there is no state to reverse. Somebody is
+    Not the reverse of retracting — there is no state to reverse. Somebody is
     saying the thing is there, which is evidence of exactly the same kind as
     somebody saying it is not, and both stay on the record. Which of them a given
     graph believes is decided by its selector.
     """
 
-    id: scalars.GraphID = Field(..., description="The uuid of the node being attested. The same id `archive*` returns, so the two round-trip.")
+    id: scalars.GraphID = Field(..., description="The uuid of the node being attested. The same id `retract*` returns, so the two round-trip.")
 
 
 class AttestEntityInput(AttestNodeInput):
@@ -2160,5 +2146,3 @@ GraphDefinitionModel = GraphDefinitionInput
 GraphExtensions = GraphExtensionsInput
 EntityDefinition = EntityDefinitionInput
 PropertyDefinition = PropertyDefinitionInput
-
-

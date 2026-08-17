@@ -183,14 +183,14 @@ def _event_roles(stored: Any) -> List[EventRole]:
 
 @kante.django_type(models.Graph, filters=filters.GraphFilter, pagination=True, ordering=order.GraphOrder, description="One view over the organization's evidence log")
 class Graph:
-    id: strawberry.ID = strawberry.field(description="Database ID of the category")
+    id: strawberry.ID = strawberry.field(description="Database ID of the graph")
     age_name: str = strawberry.field(description="The name of the graph as used in AGE (e.g. 'CellGraph')")
     # No `graphId`. It was copy-pasted from `Category`, and a `Graph` has no
     # `graph` foreign key to back it — the field named a column that does not
     # exist. A graph cannot belong to a graph.
-    label: str = strawberry.field(description="Label/name of the category")
-    description: Optional[str] = strawberry.field(default=None, description="Description of the category")
-    purl: Optional[str] = strawberry.field(default=None, description="Persistent URL for this category")
+    label: str = strawberry.field(description="Label/name of the graph")
+    description: Optional[str] = strawberry.field(default=None, description="Description of the graph")
+    purl: Optional[str] = strawberry.field(default=None, description="Persistent URL for this graph")
     color: Optional[List[int]] = strawberry.field(default=None, description="Color as RGBA list (0-255)")
     name: str = strawberry.field(description="Name of the graph")
     image: MediaStore | None = strawberry.field(description="An image representing this graph, for visualization purposes")
@@ -212,9 +212,9 @@ class Graph:
     # Queries
     queries: List["GraphQuery"] = strawberry.field(default_factory=list, description="List of graph queries defined in this graph")
 
-    @kante.django_field(description="The graph this category belongs to")
+    @kante.django_field(description="Whether the requesting user has pinned this graph for quick access")
     def pinned(self, info: kante.Info) -> bool:
-        """Whether this category is pinned for quick access in the UI."""
+        """Whether this graph is pinned for quick access in the UI."""
         # In a real implementation, we would check the user's preferences or a pinned categories list.
         # For this example, we'll return False for simplicity.
         return cast(models.Graph, self).pinned_by.filter(id=info.context.request.user.id).exists()
@@ -238,9 +238,9 @@ class Category:
         """`Category.relevant_queries` is a method on the model, so it needs a resolver."""
         return list(cast(models.Category, self).relevant_queries())
 
-    @kante.django_field(description="The graph this category belongs to")
+    @kante.django_field(description="Whether the requesting user has pinned this graph for quick access")
     def pinned(self, info: kante.Info) -> bool:
-        """Whether this category is pinned for quick access in the UI."""
+        """Whether this graph is pinned for quick access in the UI."""
         # In a real implementation, we would check the user's preferences or a pinned categories list.
         # For this example, we'll return False for simplicity.
         return cast(models.Category, self).pinned_by.filter(id=info.context.request.user.id).exists()
@@ -378,7 +378,7 @@ class EntityCategory(NodeCategory, Category):
         return cat.defined_properties
 
 
-@kante.django_type(evidence_models.Term, filters=filters.TermFilter, pagination=True, ordering=order.TermOrder, description="A word this organization uses for a kind of thing")
+@kante.django_type(evidence_models.Term, filters=filters.TermFilter, pagination=True, description="A word this organization uses for a kind of thing")
 class Term:
     """The organization's vocabulary, and what the evidence log names.
 
@@ -412,7 +412,7 @@ class Term:
         return list(models.Category.objects.filter(term_id=self.id))
 
 
-@kante.django_type(evidence_models.StructureKind, filters=filters.StructureKindFilter, pagination=True, ordering=order.StructureKindOrder, description="A kind of external datum this organization knows about")
+@kante.django_type(evidence_models.StructureKind, filters=filters.StructureKindFilter, pagination=True, description="A kind of external datum this organization knows about")
 class StructureKind:
     """Organization vocabulary, not schema.
 
@@ -434,7 +434,7 @@ class StructureKind:
     created_at: datetime = kante.django_field(description="When this organization first saw this kind")
 
 
-@kante.django_type(evidence_models.MetricKind, filters=filters.MetricKindFilter, pagination=True, ordering=order.MetricKindOrder, description="A kind of measurement that can be made about a structure kind")
+@kante.django_type(evidence_models.MetricKind, filters=filters.MetricKindFilter, pagination=True, description="A kind of measurement that can be made about a structure kind")
 class MetricKind:
     """Organization vocabulary. Identity is (organization, structure kind, key)."""
 
@@ -496,7 +496,7 @@ class MeasurementCategory(EdgeCategory, Category):
     """A relation category/schema definition, which defines the type of a relation edge between entities. It can also include property definitions for the relation."""
     property_definitions: List[PropertyDefinition] = strawberry.field(default_factory=list, description="List of property definitions for this entity category")
 
-    @kante.django_field(description="The graph this category belongs to")
+    @kante.django_field(description="Which nodes this edge category admits as its source")
     def source_descriptor(self) -> StructureDescriptor:
         """Return the source node category definition if this edge category is used in a pairs query."""
         # In a real implementation, we would check if this edge category is used as a filter in any EdgePairsQuery,
@@ -504,7 +504,7 @@ class MeasurementCategory(EdgeCategory, Category):
         # For this example, we'll return None for simplicity.
         return StructureDescriptor.from_pydantic(cast(models.MeasurementCategory, cast(models.Category, self).as_kind()).source_definition_model)
 
-    @kante.django_field(description="The graph this category belongs to")
+    @kante.django_field(description="Which nodes this edge category admits as its target")
     def target_descriptor(self) -> EntityDescriptor:
         """Return the target node category definition if this edge category is used in a pairs query."""
         # In a real implementation, we would check if this edge category is used as a filter in any EdgePairsQuery,
@@ -521,7 +521,7 @@ class RelationCategory(EdgeCategory, Category):
     """A relation category/schema definition, which defines the type of a relation edge between entities. It can also include property definitions for the relation."""
     property_definitions: List[PropertyDefinition] = strawberry.field(default_factory=list, description="List of property definitions for this entity category")
 
-    @kante.django_field(description="The graph this category belongs to")
+    @kante.django_field(description="Which nodes this edge category admits as its source")
     def source_descriptor(self) -> EntityDescriptor:
         """Return the source node category definition if this edge category is used in a pairs query."""
         # In a real implementation, we would check if this edge category is used as a filter in any EdgePairsQuery,
@@ -529,7 +529,7 @@ class RelationCategory(EdgeCategory, Category):
         # For this example, we'll return None for simplicity.
         return EntityDescriptor.from_pydantic(cast(models.RelationCategory, cast(models.Category, self).as_kind()).source_definition_model)
 
-    @kante.django_field(description="The graph this category belongs to")
+    @kante.django_field(description="Which nodes this edge category admits as its target")
     def target_descriptor(self) -> EntityDescriptor:
         """Return the target node category definition if this edge category is used in a pairs query."""
         # In a real implementation, we would check if this edge category is used as a filter in any EdgePairsQuery,
@@ -546,7 +546,7 @@ class StructureRelationCategory(EdgeCategory, Category):
     """A relation category/schema definition, which defines the type of a relation edge between entities. It can also include property definitions for the relation."""
     property_definitions: List[PropertyDefinition] = strawberry.field(default_factory=list, description="List of property definitions for this entity category")
 
-    @kante.django_field(description="The graph this category belongs to")
+    @kante.django_field(description="Which nodes this edge category admits as its source")
     def source_descriptor(self) -> StructureDescriptor:
         """Return the source node category definition if this edge category is used in a pairs query."""
         # In a real implementation, we would check if this edge category is used as a filter in any EdgePairsQuery,
@@ -554,7 +554,7 @@ class StructureRelationCategory(EdgeCategory, Category):
         # For this example, we'll return None for simplicity.
         return StructureDescriptor.from_pydantic(cast(models.StructureRelationCategory, cast(models.Category, self).as_kind()).source_definition_model)
 
-    @kante.django_field(description="The graph this category belongs to")
+    @kante.django_field(description="Which nodes this edge category admits as its target")
     def target_descriptor(self) -> StructureDescriptor:
         """Return the target node category definition if this edge category is used in a pairs query."""
         # In a real implementation, we would check if this edge category is used as a filter in any EdgePairsQuery,
@@ -638,7 +638,7 @@ class EdgePathQuery(EdgeQuery):
 # ===========================================
 
 
-@kante.django_type(models.ScatterPlot, filters=filters.ScatterPlotFilter, pagination=True, ordering=order.ScatterPlotOrder, description="Result of linking a structure to an entity")
+@kante.django_type(models.ScatterPlot, filters=filters.ScatterPlotFilter, pagination=True, ordering=order.ScatterPlotOrder, description="A saved scatter-plot configuration over a graph query")
 class ScatterPlot:
     label: str = strawberry.field(description="Label/name of the scatter plot definition")
     description: Optional[str] = strawberry.field(default=None, description="Description of the scatter plot definition")
@@ -839,13 +839,18 @@ T = TypeVar("T", bound="Node")
 V = TypeVar("V", bound=RetrievedNode)
 
 
-@strawberry.interface(description="Interface for edges that track schema version and derivation time")
+@strawberry.interface(description="A domain event drawn in a graph — something that happened to the sample, never an entry of the assertion log")
 class Event:
-    """
-    Base interface for all event types in the graph.
+    """The interface `NaturalEvent` and `ProtocolEvent` share.
+
+    Its shipped description used to read "Interface for edges that track schema
+    version and derivation time" — it is not an edge and tracks neither. Naming
+    care is warranted here: in an event-sourced system "event" is the log's
+    unit, but the log's unit is `Assertion`, and these are *domain* events —
+    mitosis, a fixation step — that exist as claims like any entity.
     """
 
-    kind: str = strawberry.field(description="The event type/kind")
+    kind: str = strawberry.field(description="The event's word, e.g. 'Mitosis' — what the claim says happened")
 
 
 @strawberry.interface(description="Base interface for all graph nodes")
@@ -1726,7 +1731,7 @@ class Link:
 
     id: strawberry.ID = strawberry.field(description="The claim's durable identity — the `Link` primary key")
     term: Optional["Term"] = kante.django_field(description="The organization's word this claim is stated in. Null for a plain INFORMS link, which names no word")
-    role: Optional[str] = kante.django_field(description="Which role the source plays, for participation claims. Named by the schema")
+    role: Optional[str] = kante.django_field(description="Which role the source plays, for participation claims — the asserter's own word; the claim names no graph, so no schema names this")
     created_at: datetime = kante.django_field(description="When the claim was recorded")
     assertion: Assertion = kante.django_field(description="The act that made this claim")
 
@@ -2440,7 +2445,7 @@ class AssertedMetric:
 # ===========================================
 # RESULT TYPES
 # ===========================================
-@strawberry.type(description="Result of linking a structure to an entity")
+@strawberry.type(description="A rendered node-list result for a saved graph nodes query")
 class GraphNodesRender:
     _value: strawberry.Private[retrieved.RetrievedGraphNodesRender]
 
@@ -2463,15 +2468,15 @@ class PathLike:
     edges: List[Edge] = strawberry.field(description="Edges in the path")
 
 
-@strawberry.type(description="Result of linking a structure to an entity")
+@strawberry.type(description="A rendered path result for a saved graph path query")
 class GraphPathRender(PathLike):
     _value: strawberry.Private[retrieved.RetrievedGraphPathRender]
 
-    @strawberry.field(description="The graph name used for this render")
+    @strawberry.field(description="Nodes in the rendered path")
     def nodes(self) -> List[Node]:
         return [cast_node_to_graphql_type(node) for node in self._value.nodes]
 
-    @strawberry.field(description="The graph name used for this render")
+    @strawberry.field(description="Edges in the rendered path")
     def edges(self) -> List[Edge]:
         return [cast_edge_to_graphql_type(edge) for edge in self._value.edges]
 
@@ -2488,7 +2493,7 @@ class GraphPathRender(PathLike):
         return await loaders.graph_path_query_by_id_loader.load(self._value.graph_query_id)
 
 
-@strawberry.type(description="Result of linking a structure to an entity")
+@strawberry.type(description="A rendered pairs result for a saved graph pairs query")
 class GraphPairsRender:
     _value: strawberry.Private[retrieved.RetrievedGraphPairsRender]
 
@@ -2526,13 +2531,10 @@ class GraphTableRender:
         return self._value.rows
 
 
-@strawberry.type(description="Result of linking a structure to an entity")
-class LinkStructureResult:
-    """Result returned after linking a structure to an entity."""
-
-    success: bool = strawberry.field(description="Whether the link was successful")
-    entity: Entity = strawberry.field(description="The updated entity with recalculated properties")
-    structure: Structure = strawberry.field(description="The linked structure")
+# `LinkStructureResult` used to sit here — `success` + view-grain `Entity` +
+# `Structure`, the exact write-payload shape the `Asserted*` family replaced. It
+# was referenced by nothing and registered in no schema; `linkStructureToEntity`
+# returns `AssertedDescription`.
 
 
 # ===========================================

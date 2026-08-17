@@ -9,9 +9,18 @@ from graph_engine import scalars, input_models
 from api import inputs
 
 
-@kante.pydantic_input(input_models.PropertyMatch, all_fields=True, description="A property match condition for filtering entities")
+@kante.pydantic_input(input_models.PropertyMatch, all_fields=True, description="A property match condition for filtering structures")
 class PropertyMatch:
-    """The condition to match for a specific property when filtering entities."""
+    """The condition to match for a specific property when filtering structures."""
+
+
+# The node and edge filters below carry `ids` and nothing else, deliberately.
+# They used to advertise `hasProperty`, `search` and `matches` — questions about
+# a drawn vertex's derived properties — and every node and edge resolver refused
+# them at runtime (`_nodes.refuse_drawing_filters`, `_edges.refuse_vertex_filters`),
+# so a schema-driven client saw three valid arguments that were guaranteed errors.
+# The schema says what the resolvers answer now. `StructureFilter` keeps all
+# three because `structures` genuinely honors them, over `Metric` rows.
 
 
 @kante.pydantic_input(input_models.EntityFilters, description="Filter options for querying entities")
@@ -19,9 +28,6 @@ class EntityFilter:
     """Filter options for entity queries."""
 
     ids: Optional[List[scalars.GraphID]] = kante.field(default=None, description="Filter by specific entity IDs")
-    has_property: Optional[str] = kante.field(default=None, description="Filter entities that have a specific property")
-    search: Optional[str] = kante.field(default=None, description="Full-text search over entity properties")
-    matches: Optional[List[PropertyMatch]] = kante.field(default=None, description="Filter entities that match specific property conditions")
 
 
 @kante.pydantic_input(input_models.EntityPagination, all_fields=True, description="Pagination options for querying entities")
@@ -34,9 +40,6 @@ class NodeFilters:
     """Filter options for node queries."""
 
     ids: Optional[List[scalars.GraphID]] = kante.field(default=None, description="Filter by specific node IDs")
-    has_property: Optional[str] = kante.field(default=None, description="Filter nodes that have a specific property")
-    search: Optional[str] = kante.field(default=None, description="Full-text search over node properties")
-    matches: Optional[List[PropertyMatch]] = kante.field(default=None, description="Filter nodes that match specific property conditions")
 
 
 @kante.pydantic_input(input_models.NodePagination, all_fields=True, description="Pagination options for querying nodes")
@@ -54,14 +57,9 @@ class StructureFilter:
     matches: Optional[List[PropertyMatch]] = kante.field(default=None, description="Filter structures that match specific property conditions")
 
 
-@kante.pydantic_input(input_models.MetricFilters, description="Filter options for querying metrics")
-class MetricFilter:
-    """Filter options for metric queries."""
-
-    ids: Optional[List[scalars.GraphID]] = kante.field(default=None, description="Filter by specific metric IDs")
-    has_property: Optional[str] = kante.field(default=None, description="Filter metrics that have a specific property")
-    search: Optional[str] = kante.field(default=None, description="Full-text search over metric properties")
-    matches: Optional[List[PropertyMatch]] = kante.field(default=None, description="Filter metrics that match specific property conditions")
+# `MetricFilter` used to sit here — four fields, referenced by no root field:
+# `metrics(metricKindId:)` removed its filter arguments with the note recorded in
+# `api/queries/metric.py`, and nothing else ever took one.
 
 
 @kante.pydantic_input(input_models.NaturalEventFilters, description="Filter options for querying natural events")
@@ -69,9 +67,6 @@ class NaturalEventFilter:
     """Filter options for natural event queries."""
 
     ids: Optional[List[scalars.GraphID]] = kante.field(default=None, description="Filter by specific natural event IDs")
-    has_property: Optional[str] = kante.field(default=None, description="Filter natural events that have a specific property")
-    search: Optional[str] = kante.field(default=None, description="Full-text search over natural event properties")
-    matches: Optional[List[PropertyMatch]] = kante.field(default=None, description="Filter natural events that match specific property conditions")
 
 
 @kante.pydantic_input(input_models.ProtocolEventFilters, description="Filter options for querying protocol events")
@@ -79,9 +74,6 @@ class ProtocolEventFilter:
     """Filter options for protocol event queries."""
 
     ids: Optional[List[scalars.GraphID]] = kante.field(default=None, description="Filter by specific protocol event IDs")
-    has_property: Optional[str] = kante.field(default=None, description="Filter protocol events that have a specific property")
-    search: Optional[str] = kante.field(default=None, description="Full-text search over protocol event properties")
-    matches: Optional[List[PropertyMatch]] = kante.field(default=None, description="Filter protocol events that match specific property conditions")
 
 
 @kante.pydantic_input(input_models.MeasurementFilters, description="Filter options for querying measurements")
@@ -89,9 +81,6 @@ class MeasurementFilter:
     """Filter options for measurement queries."""
 
     ids: Optional[List[scalars.GraphID]] = kante.field(default=None, description="Filter by specific measurement IDs")
-    has_property: Optional[str] = kante.field(default=None, description="Filter measurements that have a specific property")
-    search: Optional[str] = kante.field(default=None, description="Full-text search over measurement properties")
-    matches: Optional[List[PropertyMatch]] = kante.field(default=None, description="Filter measurements that match specific property conditions")
 
 
 @kante.pydantic_input(input_models.StructureRelationFilters, description="Filter options for querying structure relations")
@@ -99,9 +88,6 @@ class StructureRelationFilter:
     """Filter options for structure relation queries."""
 
     ids: Optional[List[scalars.GraphID]] = kante.field(default=None, description="Filter by specific structure relation IDs")
-    has_property: Optional[str] = kante.field(default=None, description="Filter structure relations that have a specific property")
-    search: Optional[str] = kante.field(default=None, description="Full-text search over structure relation properties")
-    matches: Optional[List[PropertyMatch]] = kante.field(default=None, description="Filter structure relations that match specific property conditions")
 
 
 @kante.pydantic_input(input_models.RelationFilters, description="Filter options for querying relations")
@@ -109,9 +95,6 @@ class RelationFilter:
     """Filter options for relation queries."""
 
     ids: Optional[List[scalars.GraphID]] = kante.field(default=None, description="Filter by specific relation IDs")
-    has_property: Optional[str] = kante.field(default=None, description="Filter relations that have a specific property")
-    search: Optional[str] = kante.field(default=None, description="Full-text search over relation properties")
-    matches: Optional[List[PropertyMatch]] = kante.field(default=None, description="Filter relations that match specific property conditions")
 
 
 @kante.filter_type(models.Graph)
@@ -143,8 +126,6 @@ class GraphFilter:
         able to find it first.
         """
         return Q(**{f"{prefix}is_archived": value})
-
-
 
 
 @kante.filter_type(models.Category)

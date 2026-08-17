@@ -48,7 +48,7 @@ class Query:
 
     entity = kante.django_field(queries.entity, description="Get an entity by ID, as the named view holds it — see `node`")
     entities = kante.django_field(queries.entities, description="List entities with optional filters, ordering, and pagination")
-    structure = kante.django_field(queries.structure, description="Get a structure by composite graph ID")
+    structure = kante.django_field(queries.structure, description="Get a structure by ID — a bare uuid, its evidence primary key")
     structures = kante.django_field(queries.structures, description="List structures with optional filters, ordering, and pagination")
     structure_by_identifier = kante.django_field(queries.structure_by_identifier, description="Get a structure by identifier and object. No graph: a structure belongs to the organization and has no vertex in any projection")
     informing_structures = kante.django_field(queries.informing_structures, description="List the structures that are evidence for an entity")
@@ -56,20 +56,20 @@ class Query:
     natural_events = kante.django_field(queries.natural_events, description="List natural events for a natural event category")
     protocol_event = kante.django_field(queries.protocol_event, description="Get a protocol event by ID, as the named view holds it — see `node`")
     protocol_events = kante.django_field(queries.protocol_events, description="List protocol events for a protocol event category")
-    measurement = kante.django_field(queries.measurement, description="Get a measurement by composite graph ID")
+    measurement = kante.django_field(queries.measurement, description="Get a measurement claim by ID — a bare uuid, its `Link` primary key")
     measurements = kante.django_field(queries.measurements, description="List measurements for a measurement category")
-    description = kante.django_field(queries.description, description="Get a description edge by composite graph ID")
-    input_participation = kante.django_field(queries.input_participation, description="Get an input participation edge by composite graph ID")
+    description = kante.django_field(queries.description, description="Get an INFORMS claim by ID — a bare uuid, its `Link` primary key")
+    input_participation = kante.django_field(queries.input_participation, description="Get an input participation claim by ID — a bare uuid, its `Link` primary key")
     input_participations = kante.django_field(queries.input_participations, description="List input participation edges in a graph")
-    output_participation = kante.django_field(queries.output_participation, description="Get an output participation edge by composite graph ID")
+    output_participation = kante.django_field(queries.output_participation, description="Get an output participation claim by ID — a bare uuid, its `Link` primary key")
     output_participations = kante.django_field(queries.output_participations, description="List output participation edges in a graph")
     # `assertion` / `assertions` are gone. They ran Cypher for an AGE `Assertion`
     # edge that nothing has ever written, so they could only return empty. An
     # assertion is an evidence row; it is reachable through the write results and
     # through `richProperties { contributingAssertions }`.
-    relation = kante.django_field(queries.relation, description="Get a relation by composite graph ID")
+    relation = kante.django_field(queries.relation, description="Get a relation claim by ID — a bare uuid, its `Link` primary key")
     relations = kante.django_field(queries.relations, description="List relations for a relation category")
-    structure_relation = kante.django_field(queries.structure_relation, description="Get a structure relation by composite graph ID")
+    structure_relation = kante.django_field(queries.structure_relation, description="Get a structure relation claim by ID — a bare uuid, its `Link` primary key")
     structure_relations = kante.django_field(queries.structure_relations, description="List structure relations for a structure relation category")
     metric = kante.django_field(queries.metric, description="Get a metric by ID")
     metrics = kante.django_field(queries.metrics, description="List every un-retracted metric recorded under one metric kind")

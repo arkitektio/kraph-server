@@ -330,8 +330,6 @@ class ArchiveMetricDefinitionInput:
     pass
 
 
-
-
 @pydantic.input(model=input_models.CreateRelationDefinitionInput, all_fields=True, description="Input for creating a new relation definition in the graph schema")
 class CreateRelationDefinitionInput:
     """Input for creating a new relation definition in the graph schema."""
@@ -415,12 +413,12 @@ class AssertParticipationsInput:
     pass
 
 
-@pydantic.input(model=input_models.ClassificationInput, all_fields=True, description="One claim that a node is of a category, inside a batch")
+@pydantic.input(model=input_models.ClassificationInput, all_fields=True, description="One claim that a node is of a word, inside a batch")
 class ClassificationInput:
     pass
 
 
-@pydantic.input(model=input_models.ClassifyNodesInput, all_fields=True, description="Input for claiming that several nodes are of a category, as one act")
+@pydantic.input(model=input_models.ClassifyNodesInput, all_fields=True, description="Input for claiming that several nodes are of a word, as one act")
 class ClassifyNodesInput:
     pass
 
@@ -430,9 +428,9 @@ class RetractLinksInput:
     pass
 
 
-@pydantic.input(model=input_models.RetractNaturalEventInput, all_fields=True, description="Input for archiving (soft deleting) an existing natural event instance")
+@pydantic.input(model=input_models.RetractNaturalEventInput, all_fields=True, description="Input for retracting a natural event claim — a Standing(stands=false), not a deletion")
 class RetractNaturalEventInput:
-    """Input for archiving (soft deleting) an existing natural event instance."""
+    """Input for retracting a natural event claim."""
 
     pass
 
@@ -444,9 +442,9 @@ class AssertProtocolEventExistsInput:
     pass
 
 
-@pydantic.input(model=input_models.RetractProtocolEventInput, all_fields=True, description="Input for archiving (soft deleting) an existing protocol event instance")
+@pydantic.input(model=input_models.RetractProtocolEventInput, all_fields=True, description="Input for retracting a protocol event claim — a Standing(stands=false), not a deletion")
 class RetractProtocolEventInput:
-    """Input for archiving (soft deleting) an existing protocol event instance."""
+    """Input for retracting a protocol event claim."""
 
     pass
 
@@ -489,25 +487,25 @@ class AssertMetricValueForStructureInput(MetricInput):
 
     key: str = strawberry.field(description="The key/name of the metric")
     value: AnyScalar = strawberry.field(description="The value of the metric, which can be any scalar type (string, number, boolean)")
-    structure: scalars.GraphID = strawberry.field(description="The composite ID of the structure this metric will be attached to")
+    structure: scalars.GraphID = strawberry.field(description="The ID of the structure this metric will be attached to — a bare uuid, its evidence primary key")
     pass
 
     pass
 
 
-@pydantic.input(model=input_models.SupersedeMetricValueInput, description="Input for updating an existing metric")
+@pydantic.input(model=input_models.SupersedeMetricValueInput, description="Input for superseding a metric value")
 class SupersedeMetricValueInput(MetricInput):
-    """Input for updating an existing metric. Note: this will not update the metric in-place, but rather create a new metric and archive the old one to preserve history."""
+    """Input for superseding a metric value: a Standing(stands=false) on the old metric and a new metric, under one assertion — both stay on the record."""
 
-    id: str = strawberry.field(description="The ID of the metric to update")
+    id: str = strawberry.field(description="The ID of the metric to supersede")
     key: str = strawberry.field(description="The key/name of the metric")
     value: AnyScalar = strawberry.field(description="The value of the metric, which can be any scalar type (string, number, boolean)")
     pass
 
 
-@pydantic.input(model=input_models.RetractMetricInput, all_fields=True, description="Input for archiving an existing metric")
+@pydantic.input(model=input_models.RetractMetricInput, all_fields=True, description="Input for retracting a metric claim — a Standing(stands=false), not a deletion")
 class RetractMetricInput:
-    """Input for archiving an existing metric."""
+    """Input for retracting a metric claim."""
 
     pass
 
@@ -533,11 +531,11 @@ class UpdateStructureInput:
     pass
 
 
-@pydantic.input(model=input_models.RetractStructureInput, description="Input for deleting an existing structure")
+@pydantic.input(model=input_models.RetractStructureInput, description="Input for retracting a structure claim — a Standing(stands=false), not a deletion")
 class RetractStructureInput:
-    """Input for deleting an existing structure."""
+    """Input for retracting a structure claim."""
 
-    id: scalars.GraphID = strawberry.field(description="The composite ID of the structure to archive")
+    id: scalars.GraphID = strawberry.field(description="The ID of the structure to retract — a bare uuid, its evidence primary key")
 
     pass
 
@@ -549,11 +547,11 @@ class AssertRelationExistsInput:
     pass
 
 
-@pydantic.input(model=input_models.RetractRelationInput, description="Input for archiving an existing relation")
+@pydantic.input(model=input_models.RetractRelationInput, description="Input for retracting a relation claim — a Standing(stands=false), not a deletion")
 class RetractRelationInput:
-    """Input for archiving an existing relation."""
+    """Input for retracting a relation claim."""
 
-    id: scalars.GraphID = strawberry.field(description="The ID of the relation to archive")
+    id: scalars.GraphID = strawberry.field(description="The ID of the relation claim to retract — its `Link` primary key")
 
     pass
 
@@ -579,9 +577,9 @@ class UpdateStructureRelationInput:
     pass
 
 
-@pydantic.input(model=input_models.RetractStructureRelationInput, all_fields=True, description="Input for archiving an existing structure relation")
+@pydantic.input(model=input_models.RetractStructureRelationInput, all_fields=True, description="Input for retracting a structure relation claim — a Standing(stands=false), not a deletion")
 class RetractStructureRelationInput:
-    """Input for archiving an existing structure relation."""
+    """Input for retracting a structure relation claim."""
 
     pass
 
@@ -593,9 +591,9 @@ class AssertMeasurementExistsInput:
     pass
 
 
-@pydantic.input(model=input_models.RetractMeasurementInput, all_fields=True, description="Input for archiving an existing measurement edge")
+@pydantic.input(model=input_models.RetractMeasurementInput, all_fields=True, description="Input for retracting a measurement claim — a Standing(stands=false), not a deletion")
 class RetractMeasurementInput:
-    """Input for archiving an existing measurement edge."""
+    """Input for retracting a measurement claim."""
 
     pass
 
@@ -668,7 +666,7 @@ class LinkStructureInput:
 
     structure_identifier: str = strawberry.field(description="Structure identifier, e.g. '@mikro/roi'")
     structure_object: str = strawberry.field(description="Structure object ID")
-    entity_id: str = strawberry.field(description="Composite ID of the entity this structure informs")
+    entity_id: str = strawberry.field(description="The ID of the entity this structure informs — a bare uuid")
 
 
 @pydantic.input(model=input_models.EntityDefinitionInput, all_fields=True, description="Definition of an entity type in the graph schema")

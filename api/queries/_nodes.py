@@ -19,7 +19,9 @@ there is a vertex to read them from.
 `matches` ask about derived properties, which live in the drawing and only exist
 where the view has drawn the node; ordering by a property is the same question. A
 filter that quietly narrows a claim list by what happens to be cached is how a wrong
-answer looks right.
+answer looks right. The GraphQL filter inputs no longer advertise these fields at
+all (`api/filters.py`), so the guard below is a backstop for internal callers
+constructing the pydantic models directly.
 """
 
 from __future__ import annotations

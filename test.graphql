@@ -211,7 +211,9 @@ input AssertParticipationInput {
   """The ID of the entity that took part"""
   entity: String!
 
-  """Which role the entity played, as the event's category names it"""
+  """
+  Which role the entity played — the caller's own word; the write names no graph and no category
+  """
   role: String!
 
   """True if the entity went into the event, False if it came out of it"""
@@ -541,7 +543,7 @@ type Assertion @key(fields: "id", resolvable: true) {
 """Input for claiming that an entity exists"""
 input AttestEntityInput {
   """
-  The uuid of the node being attested. The same id `archive*` returns, so the two round-trip.
+  The uuid of the node being attested. The same id `retract*` returns, so the two round-trip.
   """
   id: String!
 }
@@ -549,7 +551,7 @@ input AttestEntityInput {
 """Input for claiming that a natural event exists"""
 input AttestNaturalEventInput {
   """
-  The uuid of the node being attested. The same id `archive*` returns, so the two round-trip.
+  The uuid of the node being attested. The same id `retract*` returns, so the two round-trip.
   """
   id: String!
 }
@@ -557,7 +559,7 @@ input AttestNaturalEventInput {
 """Input for claiming that a protocol event exists"""
 input AttestProtocolEventInput {
   """
-  The uuid of the node being attested. The same id `archive*` returns, so the two round-trip.
+  The uuid of the node being attested. The same id `retract*` returns, so the two round-trip.
   """
   id: String!
 }
@@ -680,7 +682,7 @@ interface Category {
   """List of relevant queries that use this category as input"""
   relevantQueries: [GraphQuery!]!
 
-  """The graph this category belongs to"""
+  """Whether the requesting user has pinned this graph for quick access"""
   pinned: Boolean!
 }
 
@@ -731,7 +733,7 @@ type Classification implements Edge {
   term: Term
 }
 
-"""One claim that a node is of a category, inside a batch"""
+"""One claim that a node is of a word, inside a batch"""
 input ClassificationInput {
   """The node being classified"""
   node: String!
@@ -742,7 +744,7 @@ input ClassificationInput {
   term: String!
 }
 
-"""Input for claiming that several nodes are of a category, as one act"""
+"""Input for claiming that several nodes are of a word, as one act"""
 input ClassifyNodesInput {
   """The claims to record"""
   classifications: [ClassificationInput!]!
@@ -1132,7 +1134,9 @@ input CreateNaturalEventDefinitionInput {
   """Whether to pin this node role in the UI"""
   pin: Boolean = null
 
-  """The kind of event"""
+  """
+  Whether the event arises in the system itself (INTRINSIC, e.g. mitosis) or is applied from outside (EXTRINSIC, e.g. a protocol step)
+  """
   kind: EventKind!
 
   """Input node roles"""
@@ -1241,7 +1245,9 @@ input CreateProtocolEventDefinitionInput {
   """Whether to pin this node role in the UI"""
   pin: Boolean = null
 
-  """The kind of event"""
+  """
+  Whether the event arises in the system itself (INTRINSIC, e.g. mitosis) or is applied from outside (EXTRINSIC, e.g. a protocol step)
+  """
   kind: EventKind!
 
   """Input node roles"""
@@ -2046,7 +2052,7 @@ type EntityCategory implements NodeCategory & Category @key(fields: "id", resolv
   """List of relevant queries that use this category as input"""
   relevantQueries: [GraphQuery!]!
 
-  """The graph this category belongs to"""
+  """Whether the requesting user has pinned this graph for quick access"""
   pinned: Boolean!
 
   """
@@ -2176,15 +2182,6 @@ input EntityDescriptorInput {
 input EntityFilter {
   """Filter by specific entity IDs"""
   ids: [GraphID!] = null
-
-  """Filter entities that have a specific property"""
-  hasProperty: String = null
-
-  """Full-text search over entity properties"""
-  search: String = null
-
-  """Filter entities that match specific property conditions"""
-  matches: [PropertyMatch!] = null
 }
 
 """Ordering options for entity queries"""
@@ -2192,14 +2189,8 @@ input EntityOrder {
   """Order by creation timestamp"""
   createdAt: Ordering = null
 
-  """Order by entity kind/type"""
-  category: Ordering = null
-
   """Order by entity ID"""
   id: Ordering = null
-
-  """Order by a specific property value (requires 'has_property' filter)"""
-  property: PropertyOrder = null
 }
 
 """Pagination options for querying entities"""
@@ -2211,9 +2202,11 @@ input EntityPaginationInput {
   limit: Int = 100
 }
 
-"""Interface for edges that track schema version and derivation time"""
+"""
+A domain event drawn in a graph — something that happened to the sample, never an entry of the assertion log
+"""
 interface Event {
-  """The event type/kind"""
+  """The event's word, e.g. 'Mitosis' — what the claim says happened"""
   kind: String!
 }
 
@@ -2277,7 +2270,7 @@ interface EventCategory implements NodeCategory & Category {
   """List of relevant queries that use this category as input"""
   relevantQueries: [GraphQuery!]!
 
-  """The graph this category belongs to"""
+  """Whether the requesting user has pinned this graph for quick access"""
   pinned: Boolean!
 
   """List of property definitions for this entity category"""
@@ -2315,7 +2308,9 @@ input EventDefinitionInput {
   """Whether to pin this node role in the UI"""
   pin: Boolean = null
 
-  """The kind of event"""
+  """
+  Whether the event arises in the system itself (INTRINSIC, e.g. mitosis) or is applied from outside (EXTRINSIC, e.g. a protocol step)
+  """
   kind: EventKind!
 
   """Input node roles"""
@@ -2384,19 +2379,19 @@ input FinishZarrUploadInput {
 
 """One view over the organization's evidence log"""
 type Graph @key(fields: "id", resolvable: true) {
-  """Database ID of the category"""
+  """Database ID of the graph"""
   id: ID!
 
   """The name of the graph as used in AGE (e.g. 'CellGraph')"""
   ageName: String!
 
-  """Label/name of the category"""
+  """Label/name of the graph"""
   label: String!
 
-  """Description of the category"""
+  """Description of the graph"""
   description: String
 
-  """Persistent URL for this category"""
+  """Persistent URL for this graph"""
   purl: String
 
   """Color as RGBA list (0-255)"""
@@ -2440,7 +2435,7 @@ type Graph @key(fields: "id", resolvable: true) {
   """List of graph queries defined in this graph"""
   queries: [GraphQuery!]!
 
-  """The graph this category belongs to"""
+  """Whether the requesting user has pinned this graph for quick access"""
   pinned: Boolean!
 }
 
@@ -2952,7 +2947,7 @@ type Link @key(fields: "id", resolvable: true) {
   term: Term
 
   """
-  Which role the source plays, for participation claims. Named by the schema
+  Which role the source plays, for participation claims — the asserter's own word; the claim names no graph, so no schema names this
   """
   role: String
 
@@ -3017,7 +3012,7 @@ input LinkStructureInput {
   """Structure object ID"""
   structureObject: String!
 
-  """Composite ID of the entity this structure informs"""
+  """The ID of the entity this structure informs — a bare uuid"""
   entityId: String!
 }
 
@@ -3139,16 +3134,16 @@ type MeasurementCategory implements EdgeCategory & Category @key(fields: "id", r
   """List of relevant queries that use this category as input"""
   relevantQueries: [GraphQuery!]!
 
-  """The graph this category belongs to"""
+  """Whether the requesting user has pinned this graph for quick access"""
   pinned: Boolean!
 
   """List of property definitions for this entity category"""
   propertyDefinitions: [PropertyDefinition!]!
 
-  """The graph this category belongs to"""
+  """Which nodes this edge category admits as its source"""
   sourceDescriptor: StructureDescriptor!
 
-  """The graph this category belongs to"""
+  """Which nodes this edge category admits as its target"""
   targetDescriptor: EntityDescriptor!
 }
 
@@ -3246,15 +3241,6 @@ input MeasurementDefinitionInput {
 input MeasurementFilter {
   """Filter by specific measurement IDs"""
   ids: [GraphID!] = null
-
-  """Filter measurements that have a specific property"""
-  hasProperty: String = null
-
-  """Full-text search over measurement properties"""
-  search: String = null
-
-  """Filter measurements that match specific property conditions"""
-  matches: [PropertyMatch!] = null
 }
 
 """Ordering options for measurement queries"""
@@ -3262,14 +3248,8 @@ input MeasurementOrder {
   """Order by creation timestamp"""
   createdAt: Ordering = null
 
-  """Order by measurement category"""
-  category: Ordering = null
-
   """Order by measurement ID"""
   id: Ordering = null
-
-  """Order by a specific property value"""
-  property: PropertyOrder = null
 }
 
 """Pagination options for querying measurements"""
@@ -3433,13 +3413,6 @@ input MetricKindFilter {
 
   """Filter by the structure kind this describes"""
   structureKind: ID
-}
-
-input MetricKindOrder @oneOf {
-  label: Ordering
-  key: Ordering
-  createdAt: Ordering
-  id: Ordering
 }
 
 type MetricKindStats {
@@ -3945,7 +3918,7 @@ type NaturalEventCategory implements EventCategory & NodeCategory & Category @ke
   """List of relevant queries that use this category as input"""
   relevantQueries: [GraphQuery!]!
 
-  """The graph this category belongs to"""
+  """Whether the requesting user has pinned this graph for quick access"""
   pinned: Boolean!
 
   """List of property definitions for this entity category"""
@@ -4012,15 +3985,6 @@ type NaturalEventCategoryStats {
 input NaturalEventFilter {
   """Filter by specific natural event IDs"""
   ids: [GraphID!] = null
-
-  """Filter natural events that have a specific property"""
-  hasProperty: String = null
-
-  """Full-text search over natural event properties"""
-  search: String = null
-
-  """Filter natural events that match specific property conditions"""
-  matches: [PropertyMatch!] = null
 }
 
 """Ordering options for natural event queries"""
@@ -4028,14 +3992,8 @@ input NaturalEventOrder {
   """Order by creation timestamp"""
   createdAt: Ordering = null
 
-  """Order by natural event category"""
-  category: Ordering = null
-
   """Order by natural event ID"""
   id: Ordering = null
-
-  """Order by a specific property value"""
-  property: PropertyOrder = null
 }
 
 """Pagination options for querying natural events"""
@@ -4122,15 +4080,6 @@ type NodeDrawing {
 input NodeFilters {
   """Filter by specific node IDs"""
   ids: [GraphID!] = null
-
-  """Filter nodes that have a specific property"""
-  hasProperty: String = null
-
-  """Full-text search over node properties"""
-  search: String = null
-
-  """Filter nodes that match specific property conditions"""
-  matches: [PropertyMatch!] = null
 }
 
 """Ordering options for node queries"""
@@ -4138,14 +4087,8 @@ input NodeOrder {
   """Order by creation timestamp"""
   createdAt: Ordering = null
 
-  """Order by entity kind/type"""
-  category: Ordering = null
-
-  """Order by entity ID"""
+  """Order by node ID"""
   id: Ordering = null
-
-  """Order by a specific property value (requires 'has_property' filter)"""
-  property: PropertyOrder = null
 }
 
 """Pagination options for querying nodes"""
@@ -4420,7 +4363,9 @@ input ParticipantInput {
   """The ID of the entity that took part"""
   entity: String!
 
-  """Which role the entity played, as the event's category names it"""
+  """
+  Which role the entity played — the caller's own word; the write names no graph and no category
+  """
   role: String!
 
   """True if the entity went into the event, False if it came out of it"""
@@ -4510,7 +4455,7 @@ input PropertyDefinitionInput {
   searchable: Boolean! = false
 }
 
-"""A property match condition for filtering entities"""
+"""A property match condition for filtering structures"""
 input PropertyMatch {
   """The property matching"""
   key: String!
@@ -4520,15 +4465,6 @@ input PropertyMatch {
 
   """The value to filter against"""
   value: String!
-}
-
-"""Ordering options for graph table queries"""
-input PropertyOrder {
-  """The property key to order by"""
-  key: String!
-
-  """The direction to order (ASC or DESC)"""
-  direction: Ordering!
 }
 
 enum PropertyType {
@@ -4639,7 +4575,7 @@ type ProtocolEventCategory implements EventCategory & NodeCategory & Category @k
   """List of relevant queries that use this category as input"""
   relevantQueries: [GraphQuery!]!
 
-  """The graph this category belongs to"""
+  """Whether the requesting user has pinned this graph for quick access"""
   pinned: Boolean!
 
   """List of property definitions for this entity category"""
@@ -4706,15 +4642,6 @@ type ProtocolEventCategoryStats {
 input ProtocolEventFilter {
   """Filter by specific protocol event IDs"""
   ids: [GraphID!] = null
-
-  """Filter protocol events that have a specific property"""
-  hasProperty: String = null
-
-  """Full-text search over protocol event properties"""
-  search: String = null
-
-  """Filter protocol events that match specific property conditions"""
-  matches: [PropertyMatch!] = null
 }
 
 """Ordering options for protocol event queries"""
@@ -4722,14 +4649,8 @@ input ProtocolEventOrder {
   """Order by creation timestamp"""
   createdAt: Ordering = null
 
-  """Order by protocol event category"""
-  category: Ordering = null
-
   """Order by protocol event ID"""
   id: Ordering = null
-
-  """Order by a specific property value"""
-  property: PropertyOrder = null
 }
 
 """Pagination options for querying protocol events"""
@@ -4921,7 +4842,7 @@ type Query {
   """List entities with optional filters, ordering, and pagination"""
   entities(entityCategoryId: ID!, filters: EntityFilter = null, ordering: [EntityOrder!] = null, pagination: EntityPaginationInput = null): [Entity!]!
 
-  """Get a structure by composite graph ID"""
+  """Get a structure by ID — a bare uuid, its evidence primary key"""
   structure(id: GraphID!): Structure!
 
   """List structures with optional filters, ordering, and pagination"""
@@ -4947,34 +4868,40 @@ type Query {
   """List protocol events for a protocol event category"""
   protocolEvents(protocolEventCategoryId: ID!, filters: ProtocolEventFilter = null, ordering: [ProtocolEventOrder!] = null, pagination: ProtocolEventPaginationInput = null): [ProtocolEvent!]!
 
-  """Get a measurement by composite graph ID"""
+  """Get a measurement claim by ID — a bare uuid, its `Link` primary key"""
   measurement(id: GraphID!): Measurement!
 
   """List measurements for a measurement category"""
   measurements(measurementCategoryId: ID!, filters: MeasurementFilter = null, ordering: [MeasurementOrder!] = null, pagination: MeasurementPaginationInput = null): [Measurement!]!
 
-  """Get a description edge by composite graph ID"""
+  """Get an INFORMS claim by ID — a bare uuid, its `Link` primary key"""
   description(id: GraphID!): Description!
 
-  """Get an input participation edge by composite graph ID"""
+  """
+  Get an input participation claim by ID — a bare uuid, its `Link` primary key
+  """
   inputParticipation(id: GraphID!): InputParticipation!
 
   """List input participation edges in a graph"""
   inputParticipations(graph: ID!, filters: RelationFilter = null, ordering: [RelationOrder!] = null, pagination: RelationPaginationInput = null): [InputParticipation!]!
 
-  """Get an output participation edge by composite graph ID"""
+  """
+  Get an output participation claim by ID — a bare uuid, its `Link` primary key
+  """
   outputParticipation(id: GraphID!): OutputParticipation!
 
   """List output participation edges in a graph"""
   outputParticipations(graph: ID!, filters: RelationFilter = null, ordering: [RelationOrder!] = null, pagination: RelationPaginationInput = null): [OutputParticipation!]!
 
-  """Get a relation by composite graph ID"""
+  """Get a relation claim by ID — a bare uuid, its `Link` primary key"""
   relation(id: GraphID!): Relation!
 
   """List relations for a relation category"""
   relations(relationCategoryId: ID!, filters: RelationFilter = null, ordering: [RelationOrder!] = null, pagination: RelationPaginationInput = null): [Relation!]!
 
-  """Get a structure relation by composite graph ID"""
+  """
+  Get a structure relation claim by ID — a bare uuid, its `Link` primary key
+  """
   structureRelation(id: GraphID!): StructureRelation!
 
   """List structure relations for a structure relation category"""
@@ -4995,19 +4922,19 @@ type Query {
   """
   List the organization's words — its vocabulary, independent of any graph
   """
-  terms(filters: TermFilter = null, ordering: [TermOrder!] = null, pagination: StructurePaginationInput = null): [Term!]!
+  terms(filters: TermFilter = null, pagination: StructurePaginationInput = null): [Term!]!
 
   """Get one of the organization's words by ID"""
   term(id: ID!): Term!
 
   """List the organization's structure kinds"""
-  structureKinds(filters: StructureKindFilter = null, ordering: [StructureKindOrder!] = null, pagination: StructurePaginationInput = null): [StructureKind!]!
+  structureKinds(filters: StructureKindFilter = null, pagination: StructurePaginationInput = null): [StructureKind!]!
 
   """Get one structure kind by ID"""
   structureKind(id: ID!): StructureKind!
 
   """List the organization's metric kinds"""
-  metricKinds(filters: MetricKindFilter = null, ordering: [MetricKindOrder!] = null, pagination: StructurePaginationInput = null): [MetricKind!]!
+  metricKinds(filters: MetricKindFilter = null, pagination: StructurePaginationInput = null): [MetricKind!]!
 
   """Get one metric kind by ID"""
   metricKind(id: ID!): MetricKind!
@@ -5091,16 +5018,16 @@ type RelationCategory implements EdgeCategory & Category @key(fields: "id", reso
   """List of relevant queries that use this category as input"""
   relevantQueries: [GraphQuery!]!
 
-  """The graph this category belongs to"""
+  """Whether the requesting user has pinned this graph for quick access"""
   pinned: Boolean!
 
   """List of property definitions for this entity category"""
   propertyDefinitions: [PropertyDefinition!]!
 
-  """The graph this category belongs to"""
+  """Which nodes this edge category admits as its source"""
   sourceDescriptor: EntityDescriptor!
 
-  """The graph this category belongs to"""
+  """Which nodes this edge category admits as its target"""
   targetDescriptor: EntityDescriptor!
 }
 
@@ -5196,15 +5123,6 @@ input RelationDefinitionInput {
 input RelationFilter {
   """Filter by specific relation IDs"""
   ids: [GraphID!] = null
-
-  """Filter relations that have a specific property"""
-  hasProperty: String = null
-
-  """Full-text search over relation properties"""
-  search: String = null
-
-  """Filter relations that match specific property conditions"""
-  matches: [PropertyMatch!] = null
 }
 
 """Ordering options for relation queries"""
@@ -5212,14 +5130,8 @@ input RelationOrder {
   """Order by creation timestamp"""
   createdAt: Ordering = null
 
-  """Order by relation category"""
-  category: Ordering = null
-
   """Order by relation ID"""
   id: Ordering = null
-
-  """Order by a specific property value"""
-  property: PropertyOrder = null
 }
 
 """Pagination options for querying relations"""
@@ -5279,7 +5191,7 @@ input RequestZarrUploadInput {
 
 """Input for retracting an entity claim"""
 input RetractEntityInput {
-  """The ID of the entity to archive"""
+  """The ID of the entity to retract"""
   id: GraphID!
 }
 
@@ -5289,21 +5201,27 @@ input RetractLinksInput {
   ids: [String!]!
 }
 
-"""Input for archiving an existing measurement edge"""
+"""
+Input for retracting a measurement claim — a Standing(stands=false), not a deletion
+"""
 input RetractMeasurementInput {
   """The ID of the measurement to archive"""
   id: String!
 }
 
-"""Input for archiving an existing metric"""
+"""
+Input for retracting a metric claim — a Standing(stands=false), not a deletion
+"""
 input RetractMetricInput {
   """The ID of the metric to archive"""
   id: String!
 }
 
-"""Input for archiving (soft deleting) an existing natural event instance"""
+"""
+Input for retracting a natural event claim — a Standing(stands=false), not a deletion
+"""
 input RetractNaturalEventInput {
-  """The ID of the natural event to archive"""
+  """The ID of the natural event to retract"""
   id: String!
 }
 
@@ -5314,14 +5232,16 @@ input RetractParticipationInput {
 }
 
 """
-Input for archiving (soft deleting) an existing protocol event instance
+Input for retracting a protocol event claim — a Standing(stands=false), not a deletion
 """
 input RetractProtocolEventInput {
-  """The ID of the protocol event to archive"""
+  """The ID of the protocol event to retract"""
   id: String!
 }
 
-"""Input for archiving an existing relation"""
+"""
+Input for retracting a relation claim — a Standing(stands=false), not a deletion
+"""
 input RetractRelationInput {
   """The ID of the relation to archive"""
   id: GraphID!
@@ -5333,13 +5253,17 @@ input RetractSameInstanceInput {
   id: String!
 }
 
-"""Input for deleting an existing structure"""
+"""
+Input for retracting a structure claim — a Standing(stands=false), not a deletion
+"""
 input RetractStructureInput {
   """The ID of the structure to archive"""
   id: GraphID!
 }
 
-"""Input for archiving an existing structure relation"""
+"""
+Input for retracting a structure relation claim — a Standing(stands=false), not a deletion
+"""
 input RetractStructureRelationInput {
   """The ID of the structure relation to archive"""
   id: String!
@@ -5434,7 +5358,7 @@ type Sameness implements Edge {
   target: Entity!
 }
 
-"""Result of linking a structure to an entity"""
+"""A saved scatter-plot configuration over a graph query"""
 type ScatterPlot @key(fields: "id", resolvable: true) {
   """Label/name of the scatter plot definition"""
   label: String!
@@ -5681,13 +5605,6 @@ input StructureKindFilter {
   matchesDescriptor: StructureDescriptorInput
 }
 
-input StructureKindOrder @oneOf {
-  label: Ordering
-  identifier: Ordering
-  createdAt: Ordering
-  id: Ordering
-}
-
 type StructureKindStats {
   """Total number of items in the selection"""
   count: Int!
@@ -5718,14 +5635,8 @@ input StructureOrder {
   """Order by creation timestamp"""
   createdAt: Ordering = null
 
-  """Order by structure kind/type"""
-  category: Ordering = null
-
   """Order by structure ID"""
   id: Ordering = null
-
-  """Order by a specific property value (requires 'has_property' filter)"""
-  property: PropertyOrder = null
 }
 
 """Pagination options for querying structures"""
@@ -5825,16 +5736,16 @@ type StructureRelationCategory implements EdgeCategory & Category @key(fields: "
   """List of relevant queries that use this category as input"""
   relevantQueries: [GraphQuery!]!
 
-  """The graph this category belongs to"""
+  """Whether the requesting user has pinned this graph for quick access"""
   pinned: Boolean!
 
   """List of property definitions for this entity category"""
   propertyDefinitions: [PropertyDefinition!]!
 
-  """The graph this category belongs to"""
+  """Which nodes this edge category admits as its source"""
   sourceDescriptor: StructureDescriptor!
 
-  """The graph this category belongs to"""
+  """Which nodes this edge category admits as its target"""
   targetDescriptor: StructureDescriptor!
 }
 
@@ -5930,15 +5841,6 @@ input StructureRelationDefinitionInput {
 input StructureRelationFilter {
   """Filter by specific structure relation IDs"""
   ids: [GraphID!] = null
-
-  """Filter structure relations that have a specific property"""
-  hasProperty: String = null
-
-  """Full-text search over structure relation properties"""
-  search: String = null
-
-  """Filter structure relations that match specific property conditions"""
-  matches: [PropertyMatch!] = null
 }
 
 """Ordering options for structure relation queries"""
@@ -5946,14 +5848,8 @@ input StructureRelationOrder {
   """Order by creation timestamp"""
   createdAt: Ordering = null
 
-  """Order by structure relation category"""
-  category: Ordering = null
-
   """Order by structure relation ID"""
   id: Ordering = null
-
-  """Order by a specific property value"""
-  property: PropertyOrder = null
 }
 
 """Pagination options for querying structure relations"""
@@ -5965,7 +5861,7 @@ input StructureRelationPaginationInput {
   limit: Int = 100
 }
 
-"""Input for updating an existing metric"""
+"""Input for superseding a metric value"""
 input SupersedeMetricValueInput {
   key: String!
   value: AnyScalar!
@@ -6051,14 +5947,6 @@ enum TermKind {
   MEASUREMENT
   RELATION
   STRUCTURE_RELATION
-}
-
-input TermOrder @oneOf {
-  key: Ordering
-  kind: Ordering
-  label: Ordering
-  createdAt: Ordering
-  id: Ordering
 }
 
 scalar UnixMilliseconds
@@ -6349,7 +6237,9 @@ input UpdateNaturalEventDefinitionInput {
   """Whether to pin this node role in the UI"""
   pin: Boolean = null
 
-  """The kind of event"""
+  """
+  Whether the event arises in the system itself (INTRINSIC, e.g. mitosis) or is applied from outside (EXTRINSIC, e.g. a protocol step)
+  """
   kind: EventKind!
 
   """Input node roles"""
@@ -6449,7 +6339,9 @@ input UpdateProtocolEventDefinitionInput {
   """Whether to pin this node role in the UI"""
   pin: Boolean = null
 
-  """The kind of event"""
+  """
+  Whether the event arises in the system itself (INTRINSIC, e.g. mitosis) or is applied from outside (EXTRINSIC, e.g. a protocol step)
+  """
   kind: EventKind!
 
   """Input node roles"""

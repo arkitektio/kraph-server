@@ -194,8 +194,10 @@ async def test_a_property_filter_is_refused_rather_than_ignored(
     """`search` / `hasProperty` / `matches` filtered a projected edge's properties.
 
     A claim carries none — `project_edges` writes `category_id` and
-    `__assertion_count` onto the *drawing*, and both are bookkeeping. Refusing
-    says so; narrowing nothing and returning everything would look like an answer.
+    `__assertion_count` onto the *drawing*, and both are bookkeeping. The fields
+    are gone from the edge filter inputs now, so the refusal is GraphQL
+    validation — the schema no longer advertises a question the resolvers
+    always refused at runtime.
     """
     category_id, _ = await _relation_category(test_graph)
 

@@ -106,10 +106,12 @@ async def test_property_filters_are_refused_rather_than_ignored(
 ) -> None:
     """A filter over derived properties is a question about a drawing, so it is refused.
 
-    The same call `_edges.refuse_vertex_filters` makes for edges, and for the same
-    reason: a claim carries no derived properties, and a node no view has drawn has
-    none at all — so quietly narrowing the list by what happens to be cached would be
-    a wrong answer that looks right.
+    The refusal moved from the resolver to the schema: `EntityFilter` no longer
+    carries `search`/`hasProperty`/`matches` at all, so the question cannot be
+    asked. A claim carries no derived properties, and a node no view has drawn
+    has none at all — quietly narrowing the list by what happens to be cached
+    would be a wrong answer that looks right, and advertising an argument every
+    call refused was the runtime version of the same lie.
     """
     category = await test_graph.aget_entity_def("AIS")
 
@@ -120,7 +122,7 @@ async def test_property_filters_are_refused_rather_than_ignored(
     )
 
     assert refused.errors, "A property filter over a claim list must be refused"
-    assert "evidence log" in str(refused.errors[0]), f"Refused for the wrong reason: {refused.errors[0]}"
+    assert "search" in str(refused.errors[0]), f"Refused for the wrong reason: {refused.errors[0]}"
 
 
 @pytest.mark.django_db(transaction=True)

@@ -27,9 +27,8 @@ class StructurePaginationInput:
     offset: Optional[int] = kante.field(default=0, description="Number of items to skip before starting to collect the result set")
 
 
-@kante.pydantic_input(input_models.MetricPagination, all_fields=True, description="Pagination options for querying metrics")
-class MetricPaginationInput:
-    """Pagination options for metric queries."""
+# `MetricPaginationInput` used to sit here, referenced by no root field — see
+# `api/queries/metric.py` for why the metric lists take no such arguments.
 
 
 @kante.pydantic_input(input_models.NaturalEventPagination, all_fields=True, description="Pagination options for querying natural events")

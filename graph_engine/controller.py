@@ -2703,7 +2703,9 @@ class GraphController:
             return queryset
 
         if filters.ids:
-            queryset = queryset.filter(pk__in=[str(gid).split(":")[-1] for gid in filters.ids])
+            # Bare uuids: the `{graph}:{id}` composite this used to strip is gone
+            # from every id the API hands out.
+            queryset = queryset.filter(pk__in=[str(gid) for gid in filters.ids])
 
         if filters.category:
             queryset = queryset.filter(identifier=filters.category)
@@ -2774,17 +2776,15 @@ class GraphController:
 
         terms: List[str] = []
         for order in ordering:
+            # `property` is no longer a field on `StructureOrder`: it used to be
+            # silently reinterpreted as ordering by `object`, which is not what
+            # anyone asking for a property order meant.
             if order.created_at is not None:
                 direction = order.created_at
                 field = "created_at"
             elif order.id is not None:
                 direction = order.id
                 field = "id"
-            elif order.property is not None:
-                # Structures hold no properties of their own; the closest honest
-                # ordering is by the datum they point at.
-                direction = order.property.direction
-                field = "object"
             else:
                 continue
             descending = (direction.value if hasattr(direction, "value") else str(direction)).upper() == "DESC"
