@@ -46,8 +46,8 @@ RECORD_METRIC = """
 """
 
 ENTITY_PROPERTIES = """
-    query Entity($id: GraphID!) {
-        node(id: $id) { ... on Entity { id properties } }
+    query Entity($id: GraphID!, $graph: ID!) {
+        node(id: $id, graph: $graph) { ... on Entity { id properties } }
     }
 """
 
@@ -112,8 +112,8 @@ def _record_observed_at(graph: core_models.Graph, object_id: str, value: float, 
     state_module.merge(metric, projector.refs_informed_by(organization, [structure.pk]))
 
 
-async def _avg_length(api_schema: kante.Schema, ctx: HttpContext, entity_id: str) -> float | None:
-    read = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity_id}, context_value=ctx)
+async def _avg_length(api_schema: kante.Schema, ctx: HttpContext, entity_id: str, graph) -> float | None:
+    read = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity_id, "graph": str(graph.id)}, context_value=ctx)
     assert read.errors is None, f"GraphQL errors: {read.errors}"
     return read.data["node"]["properties"].get("avg_length")
 
@@ -145,7 +145,7 @@ async def test_a_scoped_graph_reads_the_same_value_before_and_after_a_rebuild(
     entity_id, object_id = await _ais_with_roi(api_schema, simple_api_context, test_graph, 10.0)
     await sync_to_async(_record_observed_at)(test_graph, object_id, 1000.0, LONG_AGO)
 
-    incremental = await _avg_length(api_schema, simple_api_context, entity_id)
+    incremental = await _avg_length(api_schema, simple_api_context, entity_id, test_graph)
     assert incremental == pytest.approx(10.0), "Only the measurement observed inside the window may count"
 
     @sync_to_async
@@ -154,7 +154,7 @@ async def test_a_scoped_graph_reads_the_same_value_before_and_after_a_rebuild(
 
     await rebuild()
 
-    rebuilt = await _avg_length(api_schema, simple_api_context, entity_id)
+    rebuilt = await _avg_length(api_schema, simple_api_context, entity_id, test_graph)
     assert rebuilt == pytest.approx(incremental), "A replay must produce the value the ingest did"
 
 
@@ -195,14 +195,14 @@ async def test_a_retraction_after_a_rebuild_does_not_widen_the_scope(
     )
     assert recorded.errors is None, f"GraphQL errors: {recorded.errors}"
 
-    assert await _avg_length(api_schema, simple_api_context, entity_id) == pytest.approx(15.0)
+    assert await _avg_length(api_schema, simple_api_context, entity_id, test_graph) == pytest.approx(15.0)
 
     @sync_to_async
     def rebuild() -> dict:
         return GraphController(engine=age_engine).rebuild_projection(test_graph)
 
     await rebuild()
-    assert await _avg_length(api_schema, simple_api_context, entity_id) == pytest.approx(15.0)
+    assert await _avg_length(api_schema, simple_api_context, entity_id, test_graph) == pytest.approx(15.0)
 
     # Now retract one in-window metric, then materialize. The read below is a
     # traversal, so it shows what the last materialization wrote — a retraction
@@ -224,7 +224,7 @@ async def test_a_retraction_after_a_rebuild_does_not_widen_the_scope(
 
     await retract_one_and_materialize()
 
-    after = await _avg_length(api_schema, simple_api_context, entity_id)
+    after = await _avg_length(api_schema, simple_api_context, entity_id, test_graph)
     assert after == pytest.approx(10.0), "The surviving in-window measurement, and nothing the selector excludes"
     assert after != pytest.approx(505.0), "The out-of-window measurement must not be re-admitted by the recompute"
 

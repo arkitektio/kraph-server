@@ -28,8 +28,8 @@ from core import models as core_models
 from tests import writes
 
 NODE_BY_ID = """
-    query GetNode($id: GraphID!) {
-        node(id: $id) { __typename id }
+    query GetNode($id: GraphID!, $graph: ID!) {
+        node(id: $id, graph: $graph) { __typename id }
     }
 """
 
@@ -53,10 +53,10 @@ async def test_a_drawn_event_is_typed_as_an_event(
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
 ) -> None:
-    """`node(id:)` on a natural event answers `NaturalEvent`, not `Entity`."""
+    """`node(id:, graph:)` on a natural event answers `NaturalEvent`, not `Entity`."""
     event_id = await writes.create_event(api_schema, simple_api_context, "Mitosis")
 
-    read = await api_schema.execute(NODE_BY_ID, variable_values={"id": event_id}, context_value=simple_api_context)
+    read = await api_schema.execute(NODE_BY_ID, variable_values={"id": event_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
 
     assert read.errors is None, f"GraphQL errors: {read.errors}"
     assert read.data["node"]["__typename"] == "NaturalEvent", "The kind comes from the claim; the label is the view's rename of a word"

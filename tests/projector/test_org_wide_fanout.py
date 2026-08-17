@@ -185,8 +185,8 @@ RECORD_METRIC = """
 """
 
 ENTITY_PROPERTIES = """
-    query Entity($id: GraphID!) {
-        node(id: $id) { ... on Entity { id properties } }
+    query Entity($id: GraphID!, $graph: ID!) {
+        node(id: $id, graph: $graph) { ... on Entity { id properties } }
     }
 """
 
@@ -257,7 +257,7 @@ async def test_one_recorded_metric_moves_both_projections(
     assert recorded.errors is None, f"GraphQL errors: {recorded.errors}"
 
     for age_name, entity_id in entity_ids.items():
-        result = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity_id}, context_value=simple_api_context)
+        result = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity_id, "graph": age_name}, context_value=simple_api_context)
         assert result.errors is None, f"GraphQL errors: {result.errors}"
         avg = result.data["node"]["properties"].get("avg_length")
         assert avg == pytest.approx(50.0), f"{age_name} still reads {avg}: mean of 40 and 60 is 50. A projection that did not move is the stale-second-graph bug."

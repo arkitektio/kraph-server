@@ -35,8 +35,8 @@ UPDATE_CATEGORY = """
 """
 
 ENTITY = """
-    query Entity($id: GraphID!) {
-        node(id: $id) { ... on Entity { id properties schemaVersion } }
+    query Entity($id: GraphID!, $graph: ID!) {
+        node(id: $id, graph: $graph) { ... on Entity { id properties schemaVersion } }
     }
 """
 
@@ -49,8 +49,8 @@ MAX_LENGTH = {"key": "max_length", "valueKind": "FLOAT", "derivation": "ROLLUP",
 NAME = {"key": "name", "valueKind": "STRING", "derivation": "ROLLUP", "rule": {"sourceNode": "ToldYouSo", "key": "name", "aggregation": "LATEST"}}
 
 
-async def _node(api_schema: kante.Schema, ctx: HttpContext, entity_id: str) -> dict:
-    result = await api_schema.execute(ENTITY, variable_values={"id": entity_id}, context_value=ctx)
+async def _node(api_schema: kante.Schema, ctx: HttpContext, entity_id: str, graph) -> dict:
+    result = await api_schema.execute(ENTITY, variable_values={"id": entity_id, "graph": str(graph.id)}, context_value=ctx)
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     return result.data["node"]
 
@@ -98,13 +98,13 @@ async def test_an_added_property_reaches_vertices_that_already_existed(
     assert category is not None
 
     entity_id = await _measured_ais(api_schema, simple_api_context)
-    before = (await _node(api_schema, simple_api_context, entity_id))["properties"]
+    before = (await _node(api_schema, simple_api_context, entity_id, test_graph))["properties"]
     assert before["avg_length"] == pytest.approx(40.0)
     assert "max_length" not in before, "The rule does not exist yet"
 
     await _update_ais(api_schema, simple_api_context, category.pk, properties=[AVG_LENGTH, NAME, MAX_LENGTH])
 
-    after = (await _node(api_schema, simple_api_context, entity_id))["properties"]
+    after = (await _node(api_schema, simple_api_context, entity_id, test_graph))["properties"]
     assert after["max_length"] == pytest.approx(40.0), "A property added after the vertex was drawn must reach it"
     assert after["avg_length"] == pytest.approx(40.0), "And the properties that did not change must survive the redraw"
 
@@ -136,13 +136,13 @@ async def test_a_removed_property_and_its_statistics_leave_the_vertex(
     assert category is not None
 
     entity_id = await _measured_ais(api_schema, simple_api_context)
-    assert (await _node(api_schema, simple_api_context, entity_id))["properties"]["avg_length"] == pytest.approx(40.0)
+    assert (await _node(api_schema, simple_api_context, entity_id, test_graph))["properties"]["avg_length"] == pytest.approx(40.0)
 
     # `name` stays; `avg_length` — the one with a value and statistics on the
     # vertex — goes.
     await _update_ais(api_schema, simple_api_context, category.pk, properties=[NAME])
 
-    properties = (await _node(api_schema, simple_api_context, entity_id))["properties"]
+    properties = (await _node(api_schema, simple_api_context, entity_id, test_graph))["properties"]
     assert "avg_length" not in properties, "A property no rule derives must not survive on the vertex"
     assert projector.statistic_key("avg_length", "n") not in properties, "Its statistics are as stale as the value"
     assert projector.statistic_key("avg_length", "spread") not in properties
@@ -167,12 +167,12 @@ async def test_the_redraw_stamps_the_schema_that_produced_it(
     assert category is not None
 
     entity_id = await _measured_ais(api_schema, simple_api_context)
-    before = (await _node(api_schema, simple_api_context, entity_id))["schemaVersion"]
+    before = (await _node(api_schema, simple_api_context, entity_id, test_graph))["schemaVersion"]
     assert before, "A projected entity always names the schema that derived it"
 
     await _update_ais(api_schema, simple_api_context, category.pk, properties=[AVG_LENGTH, NAME, MAX_LENGTH])
 
-    after = (await _node(api_schema, simple_api_context, entity_id))["schemaVersion"]
+    after = (await _node(api_schema, simple_api_context, entity_id, test_graph))["schemaVersion"]
     assert after != before, "A redrawn vertex carries the schema version that redrew it"
 
 

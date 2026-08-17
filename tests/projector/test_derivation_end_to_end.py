@@ -32,14 +32,14 @@ RECORD_METRIC = """
 """
 
 ENTITY = """
-    query Entity($id: GraphID!) {
-        node(id: $id) { ... on Entity { id properties } }
+    query Entity($id: GraphID!, $graph: ID!) {
+        node(id: $id, graph: $graph) { ... on Entity { id properties } }
     }
 """
 
 
-async def _properties(api_schema: kante.Schema, ctx: HttpContext, entity_id: str) -> dict:
-    result = await api_schema.execute(ENTITY, variable_values={"id": entity_id}, context_value=ctx)
+async def _properties(api_schema: kante.Schema, ctx: HttpContext, entity_id: str, graph) -> dict:
+    result = await api_schema.execute(ENTITY, variable_values={"id": entity_id, "graph": str(graph.id)}, context_value=ctx)
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     return result.data["node"]["properties"]
 
@@ -69,7 +69,7 @@ async def test_recording_a_metric_updates_the_derived_value(
     assert created.errors is None, f"GraphQL errors: {created.errors}"
     entity_id = created.data["assertEntityExists"]["instance"]["id"]
 
-    assert (await _properties(api_schema, simple_api_context, entity_id))["avg_length"] == pytest.approx(40.0)
+    assert (await _properties(api_schema, simple_api_context, entity_id, test_graph))["avg_length"] == pytest.approx(40.0)
 
     # A second measurement, recorded against the structure — not the entity.
     recorded = await api_schema.execute(
@@ -87,7 +87,7 @@ async def test_recording_a_metric_updates_the_derived_value(
     )
     assert recorded.errors is None, f"GraphQL errors: {recorded.errors}"
 
-    after = await _properties(api_schema, simple_api_context, entity_id)
+    after = await _properties(api_schema, simple_api_context, entity_id, test_graph)
     assert after["avg_length"] == pytest.approx(45.0), "The entity's MEAN must reflect the new measurement without an explicit recalculate"
 
 
@@ -115,11 +115,11 @@ async def test_the_projection_carries_its_schema_version(
 
     result = await api_schema.execute(
         """
-        query Entity($id: GraphID!) {
-            node(id: $id) { ... on Entity { id schemaVersion } }
+        query Entity($id: GraphID!, $graph: ID!) {
+            node(id: $id, graph: $graph) { ... on Entity { id schemaVersion } }
         }
         """,
-        variable_values={"id": created.data["assertEntityExists"]["instance"]["id"]},
+        variable_values={"id": created.data["assertEntityExists"]["instance"]["id"], "graph": str(test_graph.id)},
         context_value=simple_api_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"

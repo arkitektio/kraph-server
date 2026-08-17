@@ -69,8 +69,8 @@ RETRACT_NATURAL_EVENT = """
 """
 
 ENTITY_PROPERTIES = """
-    query Entity($id: GraphID!) {
-        node(id: $id) { ... on Entity { id properties } }
+    query Entity($id: GraphID!, $graph: ID!) {
+        node(id: $id, graph: $graph) { ... on Entity { id properties } }
     }
 """
 
@@ -261,7 +261,7 @@ async def test_attesting_a_retracted_entity_brings_it_back_unchanged(
     """
     entity_id = await _ais_with_length(api_schema, simple_api_context, test_graph, 42.0)
 
-    before = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity_id}, context_value=simple_api_context)
+    before = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
     assert before.errors is None, f"GraphQL errors: {before.errors}"
     properties_before = before.data["node"]["properties"]
     assert properties_before.get("avg_length") == pytest.approx(42.0), "The rollup must have produced a value to compare against"
@@ -282,7 +282,7 @@ async def test_attesting_a_retracted_entity_brings_it_back_unchanged(
 
     assert await vertices() == 1, "The node is back, drawn from the evidence"
 
-    after = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity_id}, context_value=simple_api_context)
+    after = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
     assert after.errors is None, f"GraphQL errors: {after.errors}"
 
     volatile = {"__last_derived"}
@@ -290,12 +290,7 @@ async def test_attesting_a_retracted_entity_brings_it_back_unchanged(
 
     @sync_to_async
     def claims() -> list[bool]:
-        return list(
-            evidence_models.Standing.objects.for_organization(test_graph.organization)
-            .filter(target_type="node", target_id=entity_id)
-            .order_by("at", "recorded_at")
-            .values_list("stands", flat=True)
-        )
+        return list(evidence_models.Standing.objects.for_organization(test_graph.organization).filter(target_type="node", target_id=entity_id).order_by("at", "recorded_at").values_list("stands", flat=True))
 
     assert await claims() == [False, True], "Both claims stay on the record: nothing was undone, something was added"
 

@@ -8,6 +8,7 @@ from kante.types import Info
 from api import context, filters, order, pagination, types
 from api.queries import _nodes
 from core import models
+from evidence import models as evidence_models
 from graph_engine import input_models, scalars
 
 
@@ -48,20 +49,18 @@ def entities(
     return [types.Entity(_value=node) for node in _nodes.retrieved_in(controller, graph, rows)]
 
 
-def entity(info: Info, id: scalars.GraphID) -> types.Entity:
-    """
-    Fetch a single entity by its id.
+def entity(info: Info, id: scalars.GraphID, graph: strawberry.ID) -> types.Entity:
+    """One entity, as the named view holds it — see `node(id:, graph:)`.
 
-    Args:
-        info: Strawberry Info context
-        id: The entity's uuid
-
-    Returns:
-        Entity object
+    Guards the kind, where it used to wrap whatever row the id named into
+    `Entity` blindly — an event's uuid came back wearing the wrong type.
     """
     controller = context.get_controller()
-    response = controller.get_node(node_id=id, info=info)
-    return types.Entity(_value=response)
+    graph_model = context.get_accessible_graph(info, graph)
+    instance = controller._resolve_instance(str(id), info)
+    if instance.kind != evidence_models.Instance.Kind.ENTITY:
+        raise ValueError(f"Node '{id}' is a {instance.kind}, not an entity. Fetch it with the query matching its kind, or `node(id:, graph:)` for any kind.")
+    return types.Entity(_value=_nodes.one_in_graph(controller, graph_model, instance))
 
 
 # `entities_informed_by` used to sit here, and it was **in no schema** — exported from

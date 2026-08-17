@@ -20,7 +20,7 @@ from api import loaders, order, pagination, filters
 from datalayer.types import MediaStore
 from graph_engine.scalars import AnyScalar, UnixMilliseconds, StructureIdentifier
 from graph_engine.retrieved import RetrievedMetric, RetrievedNode, RetrievedEdge, RetrievedStructure, _as_datetime
-from api.context import get_controller
+from api.context import get_active_organization, get_controller
 from graph_engine import input_models
 import kante
 from core import models
@@ -888,8 +888,8 @@ class Node(Generic[V]):
         return self._value.label
 
     @strawberry.field(description="This node's durable identity — a bare uuid, world-unique and stable across reprojects")
-    def id(self) -> str:
-        return self._value.unique_id
+    def id(self) -> strawberry.ID:
+        return strawberry.ID(self._value.unique_id)
 
     @strawberry.field(description="External ID if set")
     def external_id(self) -> Optional[str]:
@@ -934,8 +934,9 @@ class VersionedNode(Node):
 
         `RetrievedNode.from_row` writes no `__schema_version`, so every row-backed
         reading returned null on a non-null field — a hard error on the exact case
-        the shape exists for. Reachable through `entity(id:)` too, since
-        `projected_instance` stopped raising for a claim no view draws.
+        the shape exists for. The row-backed reading is how a node the view admits
+        but has not drawn yet answers, through `nodes(graph:)` and
+        `entity(id:, graph:)` alike.
         """
         return self._value.schema_version
 
@@ -1070,12 +1071,28 @@ class Entity(VersionedNode, Node[RetrievedNode]):
 # ===========================================
 
 
-@strawberry.type(description="A structure that provides evidence for entities")
-class Structure(Node[RetrievedStructure]):
+@strawberry.type(description="A pointer to an external datum — a claim, not a graph node")
+class Structure:
     """
     A structure represents an evidence source (e.g. ROI, Image) that
     can have measurements attached and inform entities.
+
+    **Not a `Node`.** A structure is a Postgres evidence row with no Apache AGE
+    presence — no view ever draws one (see `AssertedStructure`) — so implementing
+    the projection interface meant inheriting `label` ("The AGE graph label as
+    recently materialized", actually the hard-coded word "Structure") and
+    `externalId` (a vertex property nothing writes, so always null). The fields
+    below are the ones a structure can answer.
     """
+
+    _value: strawberry.Private[RetrievedStructure]
+
+    def __hash__(self):
+        return hash(self._value)
+
+    @strawberry.field(description="This claim's durable identity — the `Structure` primary key, a bare uuid")
+    def id(self) -> strawberry.ID:
+        return strawberry.ID(self._value.unique_id)
 
     @strawberry.field(description="Schema identifier (e.g. '@mikro/roi')")
     def identifier(self) -> StructureIdentifier:
@@ -1197,11 +1214,26 @@ class NaturalEvent(VersionedNode, Event):
 # ===========================================
 
 
-@strawberry.type(description="A metric node representing computed values")
-class Metric(Node[RetrievedMetric]):
+@strawberry.type(description="A measured value about a structure — a claim, not a graph node")
+class Metric:
     """
-    A metric represents a computed or aggregated value in the graph.
+    A metric represents a measured value recorded against a structure.
+
+    **Not a `Node`.** A metric is a Postgres evidence row with no Apache AGE
+    presence — its value is *folded into* vertices as derived properties, it is
+    never a vertex itself — so implementing the projection interface put a
+    hard-coded `label` and an always-null `externalId` beside `assertion` and
+    `kind`, which are evidence-grain and the point of the type.
     """
+
+    _value: strawberry.Private[RetrievedMetric]
+
+    def __hash__(self):
+        return hash(self._value)
+
+    @strawberry.field(description="This claim's durable identity — the `Metric` primary key, a bare uuid")
+    def id(self) -> strawberry.ID:
+        return strawberry.ID(self._value.unique_id)
 
     @strawberry.field(description="ID of the metric kind this instantiates")
     def kind_id(self) -> Optional[str]:
@@ -1348,33 +1380,32 @@ class Edge(Generic[V]):
     # the `Link` primary key and round-trips.
 
     @strawberry.field(description="This claim's durable identity — the `Link` primary key, a bare uuid")
-    def id(self) -> str:
-        return self._value.unique_id
+    def id(self) -> strawberry.ID:
+        return strawberry.ID(self._value.unique_id)
 
     @strawberry.field(description="The edge label/type")
     def label(self) -> str:
         return self._value.label
 
     @strawberry.field(description="The source endpoint, as evidence names it — a bare uuid")
-    def source_id(self) -> str:
-        return self._value.unique_left_id
+    def source_id(self) -> strawberry.ID:
+        return strawberry.ID(self._value.unique_left_id)
 
     @strawberry.field(description="The target endpoint, as evidence names it — a bare uuid")
-    def target_id(self) -> str:
-        return self._value.unique_right_id
+    def target_id(self) -> strawberry.ID:
+        return strawberry.ID(self._value.unique_right_id)
 
-    @kante.django_field(description="Who claimed this, and when. Null for an edge read out of a projection, which carries no provenance")
-    async def assertion(self) -> Optional["Assertion"]:
+    @kante.django_field(description="Who claimed this, and when")
+    async def assertion(self) -> "Assertion":
         """The act that recorded this claim.
 
-        Null rather than absent for an edge built from Apache AGE: the drawing is
-        a projection of the claim and does not carry who made it, so the honest
-        answer there is "not from here" rather than an invented one. Every edge
-        built from a `Link` row has it.
+        Non-null: every edge the API builds is row-backed (`from_link`), and a
+        `Link` row cannot exist without its assertion. This was nullable for an
+        edge built from Apache AGE, a branch nothing can produce any more — the
+        one Cypher-built edge shape, `RetrievedGraphPathRender`, has no producer.
         """
-        if self._value.assertion_id is None:
-            return None
-        return cast(Optional["Assertion"], await loaders.assertion_by_id_loader.load(self._value.assertion_id))
+        assert self._value.assertion_id is not None, "every edge is built from a Link row, which carries its assertion"
+        return cast("Assertion", await loaders.assertion_by_id_loader.load(self._value.assertion_id))
 
     @classmethod
     def to_subtype(cls, value: RetrievedEdge) -> "Edge":
@@ -1424,14 +1455,6 @@ class Relation(Edge[retrieved.RetrievedEdge]):
         """The entity this relation was claimed to reach."""
         return Entity(_value=await _endpoint_node(self._value.target_ref, info))
 
-    @strawberry.field(description="When this relation became valid according to the evidence")
-    def measured_from(self) -> Optional[datetime]:
-        return self._value.valid_from
-
-    @strawberry.field(description="When this relation stopped being valid according to the evidence")
-    def measured_to(self) -> Optional[datetime]:
-        return self._value.valid_to
-
     @strawberry.field(description="When this relation was created")
     def created_at(self) -> Optional[datetime]:
         return self._value.created_at
@@ -1443,27 +1466,12 @@ class Relation(Edge[retrieved.RetrievedEdge]):
             return None
         return await loaders.relation_category_loader.load(self._value.category_id)
 
-    @strawberry.field(description="List of properties derived for this entity")
-    async def rich_properties(self) -> List[RichProperty]:
-        """Combine raw properties with schema definitions for a rich view.
-
-        Empty when no view declares the word — see `NaturalEvent.rich_properties`.
-        """
-        if self._value.category_id is None:
-            return []
-        category = await loaders.relation_category_loader.load(self._value.category_id)
-
-        return [RichProperty(_entity=self._value, _key=var, _category=category) for var in self._value.cleaned_properties]
-
-    @strawberry.field(description="List of the current derived properties for this entity")
-    async def properties(self) -> AnyScalar:
-        """Every derived property, read off the vertex — see `Entity.properties`.
-
-        Events and relations derive properties exactly as entities do; the bio
-        schema's `Mitosis.cell_count` is one. They are materialized the same way,
-        so reading the stored keys is now the whole answer rather than half of it.
-        """
-        return self._value.cleaned_properties
+    # `properties`, `richProperties`, `measuredFrom` and `measuredTo` used to sit
+    # here, and all four were structurally empty: every edge the API builds comes
+    # from `RetrievedEdge.from_link`, which writes only `type` and `category_id` —
+    # both reserved keys — so `cleaned_properties` was always `{}` and
+    # `valid_from`/`valid_to` always null. Edges derive nothing (docs/LOG.md); the
+    # temporal claim fields live on `Metric`, not here.
 
 
 # ===========================================
@@ -1496,14 +1504,6 @@ class StructureRelation(Edge):
     @strawberry.field(description="Category ID linking to StructureRelationCategory model")
     def category_id(self) -> Optional[str]:
         return self._value.category_id
-
-    @strawberry.field(description="When this relation became valid according to the evidence")
-    def measured_from(self) -> Optional[datetime]:
-        return self._value.valid_from
-
-    @strawberry.field(description="When this relation stopped being valid according to the evidence")
-    def measured_to(self) -> Optional[datetime]:
-        return self._value.valid_to
 
     @kante.django_field(description="How the view this was read through draws it, if any view does")
     async def category(self) -> Optional["StructureRelationCategory"]:
@@ -1557,14 +1557,6 @@ class Measurement(Edge):
     async def target(self, info: kante.Info) -> Entity:
         """The entity this measurement is about."""
         return Entity(_value=await _endpoint_node(self._value.target_ref, info))
-
-    @strawberry.field(description="When this relation became valid according to the evidence")
-    async def measured_from(self) -> Optional[datetime]:
-        return self._value.valid_from
-
-    @strawberry.field(description="When this relation stopped being valid according to the evidence")
-    async def measured_to(self) -> Optional[datetime]:
-        return self._value.valid_to
 
 
 @kante.django_type(evidence_models.Assertion, description="Who claimed something, with what tool, and when — one row of the append-only log")
@@ -1952,8 +1944,12 @@ class OutputParticipation(Edge):
 # `Reagent` and the three `*ShadowLink`s used to be here. None was in the SDL and
 # none was constructed anywhere: nothing has ever produced a node typed "REAGENT",
 # and `evidence/models.py` records that `Link` "Replaces the `ShadowLink` vertex".
-# The five members are exactly `retrieved.NodeType`'s five values.
-NodeSubtype = Union[Entity, Structure, NaturalEvent, Metric, ProtocolEvent]
+# `Structure` and `Metric` left next: the three members are exactly
+# `Instance.Kind`'s three values, which is what a vertex's `type` is written
+# from — structures and metrics are evidence rows with no AGE presence, so no
+# vertex can carry their type and the cast could never produce them. Both are
+# constructed directly (`Structure(_value=…)`) everywhere they surface.
+NodeSubtype = Union[Entity, NaturalEvent, ProtocolEvent]
 
 # Union type for all edge subtypes
 # `Assertion` is deliberately absent: it is the evidence row now, not an AGE edge.
@@ -1984,17 +1980,15 @@ def cast_node_to_graphql_type(node: RetrievedNode) -> NodeSubtype:
     match node.node_type:
         case "ENTITY":
             return Entity(_value=node)
-        case "STRUCTURE":
-            return Structure(_value=node)
         case "NATURAL_EVENT":
             return NaturalEvent(_value=node)
-        case "METRIC":
-            return Metric(_value=node)
         case "PROTOCOL_EVENT":
             return ProtocolEvent(_value=node)
         # No `ASSERTION` / `ACTIVITY` branch. Both mapped to `Activity`, a type
         # for a vertex the projector has never written; an assertion is served as
-        # the Django row now.
+        # the Django row now. No `STRUCTURE` / `METRIC` branch either: `type` is
+        # written from `Instance.Kind`, which has exactly the three values above —
+        # a structure or metric is never a vertex, so those cases were unreachable.
         case _:
             raise ValueError(f"Unknown node type: {node.node_type}")
 
@@ -2204,11 +2198,7 @@ _DRAWINGS_DESCRIPTION = (
     "subject still draws the node."
 )
 
-_CLAIM_DESCRIPTION = (
-    "What was claimed, as the log has it. Not a drawing of it: derived properties, a label and a "
-    "category are one view's account and live on each entry in `drawings`. This is addressable "
-    "whether or not any view draws it, which is the case a write has to answer for."
-)
+_CLAIM_DESCRIPTION = "What was claimed, as the log has it. Not a drawing of it: derived properties, a label and a category are one view's account and live on each entry in `drawings`. This is addressable whether or not any view draws it, which is the case a write has to answer for."
 
 _ASSERTION_DESCRIPTION = "The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart."
 
@@ -2592,6 +2582,7 @@ class SetSchemaResult:
 
 GraphStats, GraphStatsResolver = create_stats_type(
     model=models.Graph,
+    scope=lambda info: models.Graph.objects.filter(organization=get_active_organization(info)),
     filters=filters.GraphFilter,
     allowed_fields={
         "created_at": "created_at",
@@ -2602,6 +2593,7 @@ GraphStats, GraphStatsResolver = create_stats_type(
 
 EntityCategoryStats, EntityCategoryStatsResolver = create_stats_type(
     model=models.EntityCategory,
+    scope=lambda info: models.EntityCategory.objects.filter(graph__organization=get_active_organization(info)),
     filters=filters.EntityCategoryFilter,
     allowed_fields={
         "created_at": "created_at",
@@ -2612,6 +2604,7 @@ EntityCategoryStats, EntityCategoryStatsResolver = create_stats_type(
 
 StructureKindStats, StructureKindStatsResolver = create_stats_type(
     model=evidence_models.StructureKind,
+    scope=lambda info: evidence_models.StructureKind.objects.for_organization(get_active_organization(info)),
     filters=filters.StructureKindFilter,
     allowed_fields={
         "created_at": "created_at",
@@ -2622,6 +2615,7 @@ StructureKindStats, StructureKindStatsResolver = create_stats_type(
 
 MetricKindStats, MetricKindStatsResolver = create_stats_type(
     model=evidence_models.MetricKind,
+    scope=lambda info: evidence_models.MetricKind.objects.for_organization(get_active_organization(info)),
     filters=filters.MetricKindFilter,
     allowed_fields={
         "created_at": "created_at",
@@ -2632,6 +2626,7 @@ MetricKindStats, MetricKindStatsResolver = create_stats_type(
 
 MeasurementCategoryStats, MeasurementCategoryStatsResolver = create_stats_type(
     model=models.MeasurementCategory,
+    scope=lambda info: models.MeasurementCategory.objects.filter(graph__organization=get_active_organization(info)),
     filters=filters.MeasurementCategoryFilter,
     allowed_fields={
         "created_at": "created_at",
@@ -2642,6 +2637,7 @@ MeasurementCategoryStats, MeasurementCategoryStatsResolver = create_stats_type(
 
 RelationCategoryStats, RelationCategoryStatsResolver = create_stats_type(
     model=models.RelationCategory,
+    scope=lambda info: models.RelationCategory.objects.filter(graph__organization=get_active_organization(info)),
     filters=filters.RelationCategoryFilter,
     allowed_fields={
         "created_at": "created_at",
@@ -2652,6 +2648,7 @@ RelationCategoryStats, RelationCategoryStatsResolver = create_stats_type(
 
 StructureRelationCategoryStats, StructureRelationCategoryStatsResolver = create_stats_type(
     model=models.StructureRelationCategory,
+    scope=lambda info: models.StructureRelationCategory.objects.filter(graph__organization=get_active_organization(info)),
     filters=filters.StructureRelationCategoryFilter,
     allowed_fields={
         "created_at": "created_at",
@@ -2662,6 +2659,7 @@ StructureRelationCategoryStats, StructureRelationCategoryStatsResolver = create_
 
 ProtocolEventCategoryStats, ProtocolEventCategoryStatsResolver = create_stats_type(
     model=models.ProtocolEventCategory,
+    scope=lambda info: models.ProtocolEventCategory.objects.filter(graph__organization=get_active_organization(info)),
     filters=filters.ProtocolEventCategoryFilter,
     allowed_fields={
         "created_at": "created_at",
@@ -2672,6 +2670,7 @@ ProtocolEventCategoryStats, ProtocolEventCategoryStatsResolver = create_stats_ty
 
 NaturalEventCategoryStats, NaturalEventCategoryStatsResolver = create_stats_type(
     model=models.NaturalEventCategory,
+    scope=lambda info: models.NaturalEventCategory.objects.filter(graph__organization=get_active_organization(info)),
     filters=filters.NaturalEventCategoryFilter,
     allowed_fields={
         "created_at": "created_at",

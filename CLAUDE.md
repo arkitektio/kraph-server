@@ -86,7 +86,7 @@ that fixed that are in `evidence/migrations/0008_instance_and_standing.py`.
 | `Term` | a **word** the organization uses. What a claim names | `evidence.Term` |
 | `Category` | one **view's rule** for a word: `age_name`, `definition`, layout | `core.Category` |
 | `Graph` | a **view** over the organization's claims, with a selector saying which ones count | `core.Graph` |
-| `Node` / `Edge` | what a **graph** has — the API-facing shape. `Node` = `Entity`, `NaturalEvent`, `ProtocolEvent`, `Structure`, `Metric` | GraphQL only |
+| `Node` / `Edge` | what a **graph** has — the API-facing drawing shape. `Node` = `Entity`, `NaturalEvent`, `ProtocolEvent` — exactly `Instance.Kind`. GraphQL `Structure` and `Metric` are claim shapes and implement neither interface: no view ever draws one | GraphQL only |
 | `Entity` | an instance that is **not an event** | `Instance.Kind.ENTITY`, GraphQL `Entity` |
 | drawing | how one view **draws** a claim: a vertex or an edge, and the category it drew it under | `graph_engine.results.NodeDrawing` / `EdgeDrawing` |
 | `Asserted*` | what a **write returns**: the assertion it made, the claim, and the drawings | GraphQL `AssertedEntity`, `AssertedNodes`, … |
@@ -136,10 +136,16 @@ The load-bearing facts:
   where there is one, and `has_property`/`search`/`matches` and property ordering are **refused**
   rather than silently narrowing a claim list by what happens to be cached; the drawing-scoped
   query with the indexed-key guard is `GraphController.list_entities_for_category`, which no
-  GraphQL field is built on. Nothing raises for a node no view draws: `projected_node` returns
-  `RetrievedNode.from_row`, the same shape a write returns before anything is drawn.
-  Anything that reads a vertex pattern should be checked against `projector.create_vertex`, which
-  writes exactly `{id, category_id, type}` and labels with `category.age_name`.
+  GraphQL field is built on. **The singular node fetchers name their view too**:
+  `node(id:, graph:)` and the typed forms go through `api/queries/_nodes.py::one_in_graph`, the
+  same membership-then-drawing path as `nodes(graph:)`, so the singular and plural reads are
+  answer-equivalent — admitted-but-undrawn returns `RetrievedNode.from_row` (the shape a write
+  returns before anything is drawn, `schemaVersion` null), and a node the view does not admit is
+  refused, with `instance(id:)` as the claim-grain reader. They used to take no graph and answer
+  from `drawings[0]`, an arbitrary view (`projected_instance`, deleted with its caller
+  `get_node`). Anything that reads a vertex pattern should be checked against
+  `projector.create_vertex`, which writes exactly `{id, category_id, type}` and labels with
+  `category.age_name`.
 - **What a node *is* comes from the claim, never from the label.** `Instance.kind` is the fact;
   `create_vertex` writes it onto the vertex as `type`, and `RetrievedNode.node_type` reads that and
   nothing else. There is no label-to-kind map any more — a vertex is labelled `category.age_name`

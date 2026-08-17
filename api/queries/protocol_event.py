@@ -8,21 +8,22 @@ from kante.types import Info
 from api import context, filters, order, pagination, types
 from api.queries import _nodes
 from core import models
+from evidence import models as evidence_models
 from graph_engine import input_models, scalars
 
 
-def protocol_event(info: Info, id: scalars.GraphID) -> types.ProtocolEvent:
-    """Fetch a specific protocol event by its uuid."""
+def protocol_event(info: Info, id: scalars.GraphID, graph: strawberry.ID) -> types.ProtocolEvent:
+    """One protocol event, as the named view holds it — see `node(id:, graph:)`.
+
+    The id is the node's own uuid — no graph to take off the front of it — but
+    the *shape* of the answer is a drawing, so the view supplying it is named.
+    """
     controller = context.get_controller()
-
-    # The id is the node's own uuid, so there is no graph to take off the front
-    # of it: the `Instance` row says what was claimed, and `drawings` says which views
-    # draw it.
-    response = controller.get_node(node_id=id, info=info)
-    if response is None:
-        raise ValueError(f"Protocol event with ID {id} not found")
-
-    return types.ProtocolEvent(_value=response)
+    graph_model = context.get_accessible_graph(info, graph)
+    instance = controller._resolve_instance(str(id), info)
+    if instance.kind != evidence_models.Instance.Kind.PROTOCOL_EVENT:
+        raise ValueError(f"Node '{id}' is a {instance.kind}, not a protocol event. Fetch it with the query matching its kind, or `node(id:, graph:)` for any kind.")
+    return types.ProtocolEvent(_value=_nodes.one_in_graph(controller, graph_model, instance))
 
 
 def protocol_events(

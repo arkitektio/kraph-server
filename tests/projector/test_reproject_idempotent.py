@@ -37,8 +37,8 @@ RECORD_METRIC = """
 """
 
 ENTITY_PROPERTIES = """
-    query Entity($id: GraphID!) {
-        node(id: $id) {
+    query Entity($id: GraphID!, $graph: ID!) {
+        node(id: $id, graph: $graph) {
             ... on Entity { id properties }
         }
     }
@@ -109,7 +109,7 @@ async def test_reproject_reproduces_the_projection(
 
     entity_id = await _build_measured_entity(api_schema, simple_api_context, test_graph, [10.0, 30.0, 20.0])
 
-    before = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity_id}, context_value=simple_api_context)
+    before = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
     assert before.errors is None, f"GraphQL errors: {before.errors}"
     properties_before = before.data["node"]["properties"]
 
@@ -124,7 +124,7 @@ async def test_reproject_reproduces_the_projection(
     assert result["nodes"] >= 1
     assert result["projected"] >= 1
 
-    after = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity_id}, context_value=simple_api_context)
+    after = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
     assert after.errors is None, f"GraphQL errors: {after.errors}"
     properties_after = after.data["node"]["properties"]
 
@@ -200,5 +200,5 @@ async def test_instance_refs_survive_a_rebuild(
         uuid.UUID(ref)
     assert result["projected"] == 1
 
-    after = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity_id}, context_value=simple_api_context)
+    after = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
     assert after.errors is None, f"GraphQL errors: {after.errors}"

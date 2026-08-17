@@ -42,17 +42,20 @@ def nodes(
     return [types.Node.to_subtype(node) for node in _nodes.retrieved_in(controller, graph_model, rows)]
 
 
-def node(info: Info, id: scalars.GraphID) -> types.Node:
-    """
-    Fetch a single node by its id.
+def node(info: Info, id: scalars.GraphID, graph: strawberry.ID) -> types.Node:
+    """One node, as the named view holds it.
 
-    Args:
-        info: Strawberry Info context
-        id: The node's uuid
+    A `Node` is a drawing shape — label, category, derived properties — and every
+    one of those is *some view's* answer, so the view has to be named. This used
+    to take no graph and answer from `drawings[0]`: whichever view
+    `graphs_for_refs` yielded first, with nothing on the result saying which.
 
-    Returns:
-        Node object
+    Same contract as `nodes(graph:)`, one node at a time: admitted but not yet
+    drawn comes back as the bare row shape (`schemaVersion` null), and a node
+    this view does not admit is refused. The claim itself, for a node no view
+    admits, is `instance(id:)`.
     """
     controller = context.get_controller()
-    response = controller.get_node(node_id=id, info=info)
-    return types.Node.to_subtype(response)
+    graph_model = context.get_accessible_graph(info, graph)
+    instance = controller._resolve_instance(str(id), info)
+    return types.Node.to_subtype(_nodes.one_in_graph(controller, graph_model, instance))

@@ -84,8 +84,8 @@ CREATE_MEASUREMENT = """
 """
 
 ENTITY_PROPERTIES = """
-    query Entity($id: GraphID!) {
-        node(id: $id) {
+    query Entity($id: GraphID!, $graph: ID!) {
+        node(id: $id, graph: $graph) {
             ... on Entity { id properties }
         }
     }
@@ -325,7 +325,7 @@ async def test_measurement_rolls_its_metrics_up(
     structure = await _structure(api_schema, simple_api_context, metrics=[{"key": "vector_length", "value": 42.0, "valueKind": "FLOAT"}])
     entity = await _ais(api_schema, simple_api_context, edge_graph)
 
-    before = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity}, context_value=simple_api_context)
+    before = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity, "graph": str(edge_graph.id)}, context_value=simple_api_context)
     assert before.errors is None, f"GraphQL errors: {before.errors}"
     assert before.data["node"]["properties"].get("avg_length") is None, "Nothing may derive before the measurement is asserted"
 
@@ -342,7 +342,7 @@ async def test_measurement_rolls_its_metrics_up(
     assert measurement["source"]["object"], "The structure that did the measuring"
     assert measurement["target"]["id"], "and the entity it is about"
 
-    after = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity}, context_value=simple_api_context)
+    after = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity, "graph": str(edge_graph.id)}, context_value=simple_api_context)
     assert after.errors is None, f"GraphQL errors: {after.errors}"
     assert after.data["node"]["properties"].get("avg_length") == pytest.approx(42.0), "Asserting a measurement must move the derived value"
 
@@ -350,11 +350,7 @@ async def test_measurement_rolls_its_metrics_up(
     def link_kinds() -> list[str]:
         from evidence import selector as selector_module
 
-        return sorted(
-            evidence_models.Link.objects.for_organization(edge_graph.organization)
-            .filter(target_ref__in=selector_module.instance_ids_for(edge_graph))
-            .values_list("kind", flat=True)
-        )
+        return sorted(evidence_models.Link.objects.for_organization(edge_graph.organization).filter(target_ref__in=selector_module.instance_ids_for(edge_graph)).values_list("kind", flat=True))
 
     kinds = await link_kinds()
     assert evidence_models.Link.Kind.MEASUREMENT in kinds, "The typed claim names which term of the schema was asserted"

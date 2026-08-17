@@ -5,8 +5,8 @@ be drawn nowhere. Two of its fields could not answer in that case at all:
 `schemaVersion` is non-null in the SDL and a row-backed reading has no value for it,
 and `richProperties` asserted on a category that a claim under an undeclared word
 does not have. Both were reachable through the mutation the moment a client selected
-them, and through `entity(id:)` as soon as `projected_instance` stopped raising for a
-claim no view draws.
+them, and through `entity(id:, graph:)` for a node the view admits but has not
+drawn yet.
 
 So the payload is `assertion` + `instance` (or `link`) + `drawings` now, and these
 tests pin the three things that shape has to get right: the claim answers about
@@ -64,8 +64,8 @@ READ_INSTANCE = """
 """
 
 READ_ENTITY = """
-    query ReadEntity($id: GraphID!) {
-        entity(id: $id) { id schemaVersion richProperties { key } drawnIn { graph { id } } }
+    query ReadEntity($id: GraphID!, $graph: ID!) {
+        entity(id: $id, graph: $graph) { id schemaVersion richProperties { key } drawnIn { graph { id } } }
     }
 """
 
@@ -138,9 +138,7 @@ async def test_the_payload_answers_about_the_claim(
     assert payload["assertion"]["id"] and payload["assertion"]["seq"], "The act, addressable and ordered"
     assert payload["drawings"], "The view declaring AIS drew it"
     assert payload["drawings"][0]["node"]["id"] == claim["id"], "and the drawing is of this claim"
-    assert [entry["graph"]["id"] for entry in claim["drawnIn"]] == [entry["graph"]["id"] for entry in payload["drawings"]], (
-        "`drawnIn` on the claim and `drawings` on the act are the same question, asked of the claim and of the act"
-    )
+    assert [entry["graph"]["id"] for entry in claim["drawnIn"]] == [entry["graph"]["id"] for entry in payload["drawings"]], "`drawnIn` on the claim and `drawings` on the act are the same question, asked of the claim and of the act"
 
 
 @pytest.mark.django_db(transaction=True)
@@ -150,7 +148,7 @@ async def test_a_retraction_shows_up_as_a_standing(
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
 ) -> None:
-    """"Does it still hold" is answerable from the claim, and disagreement is visible.
+    """ "Does it still hold" is answerable from the claim, and disagreement is visible.
 
     The positions are reported and the folding is left to the reader, because for an
     instance there is no organization-wide answer to fold to: a graph's selector
@@ -197,22 +195,34 @@ async def test_reading_an_undrawn_claim_as_an_entity_does_not_fail(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
+    age_engine,
 ) -> None:
     """`schemaVersion` is null and `richProperties` is empty, rather than an error.
 
     Both are properties of a *derivation*, and nothing derived anything here: the
-    claim was retracted, so no view draws it. `schemaVersion` was `String!` over a
-    value only a projection supplies, and `richProperties` opened with
-    `assert category_id is not None`.
+    view admits the node but its projection has not drawn it — the vertex is
+    deleted directly, which is what a projection lagging the log looks like.
+    `schemaVersion` was `String!` over a value only a projection supplies, and
+    `richProperties` opened with `assert category_id is not None`.
+
+    This used to reach the row-backed shape through a *retracted* claim, back when
+    `entity(id:)` took no graph and answered from whichever view came first. A
+    view read is refused for a node the view does not hold now — that case is
+    pinned in `tests/instance/test_entity.py` — so the undrawn shape is produced
+    the way `nodes(graph:)` meets it: admitted, not yet drawn.
     """
     entity_id = await writes.create_entity(api_schema, simple_api_context, "AIS")
-    await api_schema.execute(
-        "mutation Retract($input: RetractEntityInput!) { retractEntity(input: $input) { instance { id } } }",
-        variable_values={"input": {"id": entity_id}},
-        context_value=simple_api_context,
-    )
+    category = await test_graph.aget_entity_def("AIS")
 
-    read = await api_schema.execute(READ_ENTITY, variable_values={"id": entity_id}, context_value=simple_api_context)
+    @sync_to_async
+    def undraw() -> int:
+        age_engine.execute(test_graph, f"MATCH (e:{category.age_name}) WHERE e.id = $eid DETACH DELETE e", {"eid": entity_id})
+        rows = age_engine.execute(test_graph, f"MATCH (e:{category.age_name}) WHERE e.id = $eid RETURN count(e) as c", {"eid": entity_id})
+        return int(rows[0]["c"]) if rows else 0
+
+    assert await undraw() == 0, "The vertex is gone, and no claim was withdrawn"
+
+    read = await api_schema.execute(READ_ENTITY, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
 
     assert read.errors is None, f"GraphQL errors: {read.errors}"
     entity = read.data["entity"]

@@ -317,11 +317,24 @@ so links could be written naming a node that did not exist.
 **Two grains, and the shape says which.** A *claim* read answers from these tables:
 `instance(id:)`, `link(id:)`, `standings(id:)`, and every write payload
 (`assertion` + `instance`/`link` + `drawings`). A *view* read answers from a
-projection: `node(id:)`, `nodes(graph:)`, `entities(entityCategoryId:)` and the rest,
-whose types carry a label, a category and derived properties because a view is what
-supplies those. Nothing answers both at once any more — the payloads used to, handing
-back an `Entity` for a claim that might be drawn nowhere, and two of its fields
-(`schemaVersion`, `richProperties`) could not answer at all in that case.
+projection: `node(id:, graph:)`, `nodes(graph:)`, `entities(entityCategoryId:)` and
+the rest, whose types carry a label, a category and derived properties because a view
+is what supplies those — **so every view read names its view**, the singular
+fetchers included. They used to take no graph and answer from `drawings[0]`,
+whichever view `graphs_for_refs` yielded first, with nothing on the result saying
+which; they now go through the same membership-then-drawing path as `nodes(graph:)`
+(`api/queries/_nodes.py::one_in_graph`), so `node(id, g)` succeeds exactly when
+`nodes(graph: g)` could list the node. Admitted but not yet drawn answers as the
+bare row shape (`schemaVersion` null); a node the view does not admit is refused,
+and the claim-grain reader for it is `instance(id:)`. Nothing answers both grains at
+once any more — the payloads used to, handing back an `Entity` for a claim that
+might be drawn nowhere, and two of its fields (`schemaVersion`, `richProperties`)
+could not answer at all in that case. `Structure` and `Metric` are claim shapes
+outright: neither implements the GraphQL `Node` interface, because neither has any
+AGE presence for the interface's `label`/`externalId` to describe. And every `Edge`
+the API builds is row-backed, so `Edge.assertion` is non-null and the
+always-empty drawing fields (`properties`, `richProperties`,
+`measuredFrom`/`measuredTo`) are gone from the edge types.
 
 Whether a claim still holds is `standings`: every position anyone recorded, newest
 first, with whose assertion — and an empty list meaning nobody has disputed it, since

@@ -34,27 +34,27 @@ class Query:
 
     # The claims themselves
     # =========================
-    # `node(id:)` answers with a drawing — how some view holds the thing. These
-    # answer with the recorded statement, which is what a write returns and what
-    # exists whether or not any view draws it.
+    # `node(id:, graph:)` answers with a drawing — how the named view holds the
+    # thing. These answer with the recorded statement, which is what a write
+    # returns and what exists whether or not any view draws it.
     instance = kante.django_field(queries.instance, description="Get one claimed individual by ID, as the log has it")
     link = kante.django_field(queries.link, description="Get one claim relating two things by ID, as the log has it")
     standings = kante.django_field(queries.standings, description="Every position anyone has taken on one claim, newest first")
 
     # Entity Type Section
     # =========================
-    node = kante.django_field(queries.node, description="Get a node by ID")
+    node = kante.django_field(queries.node, description="Get a node by ID, as the named view holds it. Refused when that view does not admit the node; the claim itself is `instance(id:)`")
     nodes = kante.django_field(queries.nodes, description="List nodes with optional filters, ordering, and pagination")
 
-    entity = kante.django_field(queries.entity, description="Get an entity by ID")
+    entity = kante.django_field(queries.entity, description="Get an entity by ID, as the named view holds it — see `node`")
     entities = kante.django_field(queries.entities, description="List entities with optional filters, ordering, and pagination")
     structure = kante.django_field(queries.structure, description="Get a structure by composite graph ID")
     structures = kante.django_field(queries.structures, description="List structures with optional filters, ordering, and pagination")
     structure_by_identifier = kante.django_field(queries.structure_by_identifier, description="Get a structure by identifier and object. No graph: a structure belongs to the organization and has no vertex in any projection")
     informing_structures = kante.django_field(queries.informing_structures, description="List the structures that are evidence for an entity")
-    natural_event = kante.django_field(queries.natural_event, description="Get a natural event by composite graph ID")
+    natural_event = kante.django_field(queries.natural_event, description="Get a natural event by ID, as the named view holds it — see `node`")
     natural_events = kante.django_field(queries.natural_events, description="List natural events for a natural event category")
-    protocol_event = kante.django_field(queries.protocol_event, description="Get a protocol event by composite graph ID")
+    protocol_event = kante.django_field(queries.protocol_event, description="Get a protocol event by ID, as the named view holds it — see `node`")
     protocol_events = kante.django_field(queries.protocol_events, description="List protocol events for a protocol event category")
     measurement = kante.django_field(queries.measurement, description="Get a measurement by composite graph ID")
     measurements = kante.django_field(queries.measurements, description="List measurements for a measurement category")

@@ -33,8 +33,8 @@ RECORD_METRIC = """
 """
 
 THE_SENTENCE = """
-    query Explain($id: GraphID!) {
-        node(id: $id) {
+    query Explain($id: GraphID!, $graph: ID!) {
+        node(id: $id, graph: $graph) {
             ... on Entity {
                 id
                 validFrom
@@ -113,7 +113,7 @@ async def test_a_derived_value_can_explain_itself(
     """Value, evidence count, spread, sources and window — in one round trip."""
     entity_id = await _entity_with_measurements(api_schema, simple_api_context, test_graph, [40.0, 50.0, 45.0])
 
-    result = await api_schema.execute(THE_SENTENCE, variable_values={"id": entity_id}, context_value=simple_api_context)
+    result = await api_schema.execute(THE_SENTENCE, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
     assert result.errors is None, f"GraphQL errors: {result.errors}"
 
     properties = {p["key"]: p for p in result.data["node"]["richProperties"]}
@@ -136,7 +136,7 @@ async def test_supporting_evidence_is_no_longer_an_empty_list(
     """The measurements behind the number are retrievable, with their units."""
     entity_id = await _entity_with_measurements(api_schema, simple_api_context, test_graph, [40.0, 50.0])
 
-    result = await api_schema.execute(THE_SENTENCE, variable_values={"id": entity_id}, context_value=simple_api_context)
+    result = await api_schema.execute(THE_SENTENCE, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
     assert result.errors is None, f"GraphQL errors: {result.errors}"
 
     avg = next(p for p in result.data["node"]["richProperties"] if p["key"] == "avg_length")
@@ -157,7 +157,7 @@ async def test_the_value_names_who_asserted_it(
     """Provenance reaches the API, not just the database."""
     entity_id = await _entity_with_measurements(api_schema, simple_api_context, test_graph, [40.0])
 
-    result = await api_schema.execute(THE_SENTENCE, variable_values={"id": entity_id}, context_value=simple_api_context)
+    result = await api_schema.execute(THE_SENTENCE, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
     assert result.errors is None, f"GraphQL errors: {result.errors}"
 
     avg = next(p for p in result.data["node"]["richProperties"] if p["key"] == "avg_length")
@@ -182,7 +182,7 @@ async def test_validity_is_the_observation_window(
     """
     entity_id = await _entity_with_measurements(api_schema, simple_api_context, test_graph, [40.0, 50.0])
 
-    result = await api_schema.execute(THE_SENTENCE, variable_values={"id": entity_id}, context_value=simple_api_context)
+    result = await api_schema.execute(THE_SENTENCE, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
     assert result.errors is None, f"GraphQL errors: {result.errors}"
 
     node = result.data["node"]
@@ -208,7 +208,7 @@ async def test_a_property_with_no_evidence_reports_nothing_rather_than_zero(
 
     result = await api_schema.execute(
         THE_SENTENCE,
-        variable_values={"id": created.data["assertEntityExists"]["instance"]["id"]},
+        variable_values={"id": created.data["assertEntityExists"]["instance"]["id"], "graph": str(test_graph.id)},
         context_value=simple_api_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"

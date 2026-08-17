@@ -710,21 +710,19 @@ union ClaimEndpoint = Instance | Structure | Link | Term
 """A CLASSIFIES claim: somebody's word for what a node is"""
 type Classification implements Edge {
   """This claim's durable identity — the `Link` primary key, a bare uuid"""
-  id: String!
+  id: ID!
 
   """The edge label/type"""
   label: String!
 
   """The source endpoint, as evidence names it — a bare uuid"""
-  sourceId: String!
+  sourceId: ID!
 
   """The target endpoint, as evidence names it — a bare uuid"""
-  targetId: String!
+  targetId: ID!
 
-  """
-  Who claimed this, and when. Null for an edge read out of a projection, which carries no provenance
-  """
-  assertion: Assertion
+  """Who claimed this, and when"""
+  assertion: Assertion!
 
   """The node this word was claimed about"""
   source: Node!
@@ -1626,21 +1624,19 @@ enum DerivationType {
 """An INFORMS claim: a structure that is evidence for a node"""
 type Description implements Edge {
   """This claim's durable identity — the `Link` primary key, a bare uuid"""
-  id: String!
+  id: ID!
 
   """The edge label/type"""
   label: String!
 
   """The source endpoint, as evidence names it — a bare uuid"""
-  sourceId: String!
+  sourceId: ID!
 
   """The target endpoint, as evidence names it — a bare uuid"""
-  targetId: String!
+  targetId: ID!
 
-  """
-  Who claimed this, and when. Null for an edge read out of a projection, which carries no provenance
-  """
-  assertion: Assertion
+  """Who claimed this, and when"""
+  assertion: Assertion!
 
   """The structure that is evidence here"""
   source: Structure!
@@ -1652,21 +1648,19 @@ type Description implements Edge {
 """Base interface for all graph edges"""
 interface Edge {
   """This claim's durable identity — the `Link` primary key, a bare uuid"""
-  id: String!
+  id: ID!
 
   """The edge label/type"""
   label: String!
 
   """The source endpoint, as evidence names it — a bare uuid"""
-  sourceId: String!
+  sourceId: ID!
 
   """The target endpoint, as evidence names it — a bare uuid"""
-  targetId: String!
+  targetId: ID!
 
-  """
-  Who claimed this, and when. Null for an edge read out of a projection, which carries no provenance
-  """
-  assertion: Assertion
+  """Who claimed this, and when"""
+  assertion: Assertion!
 }
 
 """Base interface for graph schemas"""
@@ -1930,7 +1924,7 @@ type Entity implements VersionedNode & Node {
   """
   This node's durable identity — a bare uuid, world-unique and stable across reprojects
   """
-  id: String!
+  id: ID!
 
   """External ID if set"""
   externalId: String
@@ -2833,21 +2827,19 @@ type GraphTableRender {
 """A claim that an entity went into an event"""
 type InputParticipation implements Edge {
   """This claim's durable identity — the `Link` primary key, a bare uuid"""
-  id: String!
+  id: ID!
 
   """The edge label/type"""
   label: String!
 
   """The source endpoint, as evidence names it — a bare uuid"""
-  sourceId: String!
+  sourceId: ID!
 
   """The target endpoint, as evidence names it — a bare uuid"""
-  targetId: String!
+  targetId: ID!
 
-  """
-  Who claimed this, and when. Null for an edge read out of a projection, which carries no provenance
-  """
-  assertion: Assertion
+  """Who claimed this, and when"""
+  assertion: Assertion!
 
   """The role the entity played going in"""
   role: String!
@@ -3078,21 +3070,19 @@ input MatchPathInput {
 """A MEASUREMENT claim: a structure measuring an entity"""
 type Measurement implements Edge {
   """This claim's durable identity — the `Link` primary key, a bare uuid"""
-  id: String!
+  id: ID!
 
   """The edge label/type"""
   label: String!
 
   """The source endpoint, as evidence names it — a bare uuid"""
-  sourceId: String!
+  sourceId: ID!
 
   """The target endpoint, as evidence names it — a bare uuid"""
-  targetId: String!
+  targetId: ID!
 
-  """
-  Who claimed this, and when. Null for an edge read out of a projection, which carries no provenance
-  """
-  assertion: Assertion
+  """Who claimed this, and when"""
+  assertion: Assertion!
 
   """How the view this was read through draws it, if any view does"""
   category: MeasurementCategory
@@ -3102,12 +3092,6 @@ type Measurement implements Edge {
 
   """The entity being measured"""
   target: Entity!
-
-  """When this relation became valid according to the evidence"""
-  measuredFrom: DateTime
-
-  """When this relation stopped being valid according to the evidence"""
-  measuredTo: DateTime
 }
 
 """A measurement category/schema definition"""
@@ -3345,20 +3329,10 @@ type MediaUploadGrant {
   uploadFormField: String!
 }
 
-"""A metric node representing computed values"""
-type Metric implements Node {
-  """
-  The AGE graph label as recently materialized (e.g. 'Cell IAC100', 'ROI 1')
-  """
-  label: String!
-
-  """
-  This node's durable identity — a bare uuid, world-unique and stable across reprojects
-  """
-  id: String!
-
-  """External ID if set"""
-  externalId: String
+"""A measured value about a structure — a claim, not a graph node"""
+type Metric {
+  """This claim's durable identity — the `Metric` primary key, a bare uuid"""
+  id: ID!
 
   """ID of the metric kind this instantiates"""
   kindId: String
@@ -3882,7 +3856,7 @@ type NaturalEvent implements VersionedNode & Node & Event {
   """
   This node's durable identity — a bare uuid, world-unique and stable across reprojects
   """
-  id: String!
+  id: ID!
 
   """External ID if set"""
   externalId: String
@@ -4083,7 +4057,7 @@ interface Node {
   """
   This node's durable identity — a bare uuid, world-unique and stable across reprojects
   """
-  id: String!
+  id: ID!
 
   """External ID if set"""
   externalId: String
@@ -4417,21 +4391,19 @@ enum Ordering {
 """A claim that an entity came out of an event"""
 type OutputParticipation implements Edge {
   """This claim's durable identity — the `Link` primary key, a bare uuid"""
-  id: String!
+  id: ID!
 
   """The edge label/type"""
   label: String!
 
   """The source endpoint, as evidence names it — a bare uuid"""
-  sourceId: String!
+  sourceId: ID!
 
   """The target endpoint, as evidence names it — a bare uuid"""
-  targetId: String!
+  targetId: ID!
 
-  """
-  Who claimed this, and when. Null for an edge read out of a projection, which carries no provenance
-  """
-  assertion: Assertion
+  """Who claimed this, and when"""
+  assertion: Assertion!
 
   """The role the entity played coming out"""
   role: String!
@@ -4578,7 +4550,7 @@ type ProtocolEvent implements VersionedNode & Node & Event {
   """
   This node's durable identity — a bare uuid, world-unique and stable across reprojects
   """
-  id: String!
+  id: ID!
 
   """External ID if set"""
   externalId: String
@@ -4935,14 +4907,16 @@ type Query {
   """Every position anyone has taken on one claim, newest first"""
   standings(id: ID!): [Standing!]!
 
-  """Get a node by ID"""
-  node(id: GraphID!): Node!
+  """
+  Get a node by ID, as the named view holds it. Refused when that view does not admit the node; the claim itself is `instance(id:)`
+  """
+  node(id: GraphID!, graph: ID!): Node!
 
   """List nodes with optional filters, ordering, and pagination"""
   nodes(graph: ID!, filters: NodeFilters = null, ordering: [NodeOrder!] = null, pagination: NodePaginationInput = null): [Node!]!
 
-  """Get an entity by ID"""
-  entity(id: GraphID!): Entity!
+  """Get an entity by ID, as the named view holds it — see `node`"""
+  entity(id: GraphID!, graph: ID!): Entity!
 
   """List entities with optional filters, ordering, and pagination"""
   entities(entityCategoryId: ID!, filters: EntityFilter = null, ordering: [EntityOrder!] = null, pagination: EntityPaginationInput = null): [Entity!]!
@@ -4961,14 +4935,14 @@ type Query {
   """List the structures that are evidence for an entity"""
   informingStructures(entityId: String!): [Structure!]!
 
-  """Get a natural event by composite graph ID"""
-  naturalEvent(id: GraphID!): NaturalEvent!
+  """Get a natural event by ID, as the named view holds it — see `node`"""
+  naturalEvent(id: GraphID!, graph: ID!): NaturalEvent!
 
   """List natural events for a natural event category"""
   naturalEvents(naturalEventCategoryId: ID!, filters: NaturalEventFilter = null, ordering: [NaturalEventOrder!] = null, pagination: NaturalEventPaginationInput = null): [NaturalEvent!]!
 
-  """Get a protocol event by composite graph ID"""
-  protocolEvent(id: GraphID!): ProtocolEvent!
+  """Get a protocol event by ID, as the named view holds it — see `node`"""
+  protocolEvent(id: GraphID!, graph: ID!): ProtocolEvent!
 
   """List protocol events for a protocol event category"""
   protocolEvents(protocolEventCategoryId: ID!, filters: ProtocolEventFilter = null, ordering: [ProtocolEventOrder!] = null, pagination: ProtocolEventPaginationInput = null): [ProtocolEvent!]!
@@ -5045,21 +5019,19 @@ type Query {
 """A relation edge between two entities"""
 type Relation implements Edge {
   """This claim's durable identity — the `Link` primary key, a bare uuid"""
-  id: String!
+  id: ID!
 
   """The edge label/type"""
   label: String!
 
   """The source endpoint, as evidence names it — a bare uuid"""
-  sourceId: String!
+  sourceId: ID!
 
   """The target endpoint, as evidence names it — a bare uuid"""
-  targetId: String!
+  targetId: ID!
 
-  """
-  Who claimed this, and when. Null for an edge read out of a projection, which carries no provenance
-  """
-  assertion: Assertion
+  """Who claimed this, and when"""
+  assertion: Assertion!
 
   """The entity this relation runs from"""
   source: Entity!
@@ -5067,23 +5039,11 @@ type Relation implements Edge {
   """The entity this relation runs to"""
   target: Entity!
 
-  """When this relation became valid according to the evidence"""
-  measuredFrom: DateTime
-
-  """When this relation stopped being valid according to the evidence"""
-  measuredTo: DateTime
-
   """When this relation was created"""
   createdAt: DateTime
 
   """How the view this was read through draws it, if any view does"""
   category: RelationCategory
-
-  """List of properties derived for this entity"""
-  richProperties: [RichProperty!]!
-
-  """List of the current derived properties for this entity"""
-  properties: AnyScalar!
 }
 
 """A relation category/schema definition"""
@@ -5453,21 +5413,19 @@ input RoleMappingInput {
 """A claim that two instances are one thing"""
 type Sameness implements Edge {
   """This claim's durable identity — the `Link` primary key, a bare uuid"""
-  id: String!
+  id: ID!
 
   """The edge label/type"""
   label: String!
 
   """The source endpoint, as evidence names it — a bare uuid"""
-  sourceId: String!
+  sourceId: ID!
 
   """The target endpoint, as evidence names it — a bare uuid"""
-  targetId: String!
+  targetId: ID!
 
-  """
-  Who claimed this, and when. Null for an edge read out of a projection, which carries no provenance
-  """
-  assertion: Assertion
+  """Who claimed this, and when"""
+  assertion: Assertion!
 
   """One of the two instances claimed to be the same"""
   source: Entity!
@@ -5582,20 +5540,12 @@ type Standing @key(fields: "id", resolvable: true) {
   assertion: Assertion!
 }
 
-"""A structure that provides evidence for entities"""
-type Structure implements Node {
+"""A pointer to an external datum — a claim, not a graph node"""
+type Structure {
   """
-  The AGE graph label as recently materialized (e.g. 'Cell IAC100', 'ROI 1')
+  This claim's durable identity — the `Structure` primary key, a bare uuid
   """
-  label: String!
-
-  """
-  This node's durable identity — a bare uuid, world-unique and stable across reprojects
-  """
-  id: String!
-
-  """External ID if set"""
-  externalId: String
+  id: ID!
 
   """Schema identifier (e.g. '@mikro/roi')"""
   identifier: StructureIdentifier!
@@ -5800,21 +5750,19 @@ input StructureReferenceInput {
 """A relation edge between two structures"""
 type StructureRelation implements Edge {
   """This claim's durable identity — the `Link` primary key, a bare uuid"""
-  id: String!
+  id: ID!
 
   """The edge label/type"""
   label: String!
 
   """The source endpoint, as evidence names it — a bare uuid"""
-  sourceId: String!
+  sourceId: ID!
 
   """The target endpoint, as evidence names it — a bare uuid"""
-  targetId: String!
+  targetId: ID!
 
-  """
-  Who claimed this, and when. Null for an edge read out of a projection, which carries no provenance
-  """
-  assertion: Assertion
+  """Who claimed this, and when"""
+  assertion: Assertion!
 
   """The structure this relation runs from"""
   source: Structure!
@@ -5827,12 +5775,6 @@ type StructureRelation implements Edge {
 
   """Category ID linking to StructureRelationCategory model"""
   categoryId: String
-
-  """When this relation became valid according to the evidence"""
-  measuredFrom: DateTime
-
-  """When this relation stopped being valid according to the evidence"""
-  measuredTo: DateTime
 
   """How the view this was read through draws it, if any view does"""
   category: StructureRelationCategory
@@ -6768,7 +6710,7 @@ interface VersionedNode implements Node {
   """
   This node's durable identity — a bare uuid, world-unique and stable across reprojects
   """
-  id: String!
+  id: ID!
 
   """External ID if set"""
   externalId: String

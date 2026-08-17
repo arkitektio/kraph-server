@@ -48,6 +48,7 @@ ResolverSpec = Dict[str, Tuple[Callable[[QuerySet, str], Any], Type, str]]
 def create_stats_type(
     model: Type[Model],
     *,
+    scope: Callable[[Info], "QuerySet[Any]"],
     allowed_fields: Dict[str, str],  # GraphQL Enum Name -> Model Field Name
     allowed_datetime_fields: Optional[Dict[str, str]] = None,
     filters: Optional[Type[Any]] = None,
@@ -55,10 +56,15 @@ def create_stats_type(
     type_name: Optional[str] = None,
     enum_name: Optional[str] = None,
     dt_enum_name: Optional[str] = None,
-    prescope: Optional[Callable[[QuerySet, Info], QuerySet]] = None,
 ) -> Tuple[Type[Any], Callable[..., Any]]:
     """
     Build a Strawberry GraphQL Stats type for a Django `model`.
+
+    `scope` produces the base queryset from the request — there is no spelling
+    of "just aggregate all rows", because every model counted here is tenant
+    data. The predecessor (`model.objects.all()` plus an optional `prescope`
+    nobody passed) aggregated across organizations for the core models and
+    raised `UnscopedEvidenceAccess` outright for the evidence ones.
 
     Returns:
         (StatsType, resolver_function)
@@ -232,10 +238,7 @@ def create_stats_type(
 
     # 7. Create the Root Resolver
     def stats_resolver(root: Any, info: Info, filters: Optional[filters] = None) -> StatsType:
-        qs = model.objects.all()
-
-        if prescope:
-            qs = prescope(qs, info)
+        qs = scope(info)
 
         if filters is not None:
             # Ensure strawberry-django filter backend is working

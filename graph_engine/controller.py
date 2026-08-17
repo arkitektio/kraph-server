@@ -621,20 +621,11 @@ class GraphController:
     # `get_informing_structures`, takes a node and no graph, which is the grain an
     # `INFORMS` claim is at.
 
-    def get_node(self, node_id: scalars.GraphID, info: Info | None = None) -> retrieved.RetrievedNode:
-        """One instance, in the node shape the API answers with.
-
-        It was `get_node_for_composite_id(composite_id=…)`, and there is no composite
-        any more: an id used to be `{graph}:{age_vertex_id}` and had to be taken apart
-        to find out which namespace to look in. Now the id is world-unique, the
-        `Instance` row is what it names, and the projection is only consulted to read
-        the drawing back.
-
-        Called `get_node` rather than `get_instance` because of what it returns: the
-        claim as some view draws it, which is what the GraphQL `Node` interface is.
-        `_resolve_instance` is the half that answers with the claim itself.
-        """
-        return self.projected_instance(self._resolve_instance(node_id, info))
+    # `get_node(node_id)` used to sit here — `projected_instance` over
+    # `_resolve_instance`, answering with *some* view's drawing for a caller that
+    # named no view. The singular node fetchers take a `graph` now and go through
+    # `api.queries._nodes.one_in_graph`, the same membership-then-drawing path the
+    # list queries use, so "which view's numbers am I looking at" has one answer.
 
     def get_structure(
         self,
@@ -677,16 +668,13 @@ class GraphController:
         organization = node.organization
         self._assert_can_access(organization, info)
 
-        structure_ids = (
-            claims_module.standing(
-                evidence_models.Link.objects.for_organization(organization).filter(
-                    kind=evidence_models.Link.Kind.INFORMS,
-                    target_ref=node.ref,
-                ),
-                "link",
-            )
-            .values_list("source_ref", flat=True)
-        )
+        structure_ids = claims_module.standing(
+            evidence_models.Link.objects.for_organization(organization).filter(
+                kind=evidence_models.Link.Kind.INFORMS,
+                target_ref=node.ref,
+            ),
+            "link",
+        ).values_list("source_ref", flat=True)
 
         structures = evidence_models.Structure.objects.for_organization(organization).filter(pk__in=list(structure_ids))
         return [retrieved.RetrievedStructure.from_row(self, row) for row in structures]
@@ -1880,28 +1868,13 @@ class GraphController:
             for graph in projector.graphs_for_refs(organization, [node.ref]):
                 projector.reproject_node(self, graph, node)
 
-    def projected_instance(self, node: evidence_models.Instance) -> retrieved.RetrievedNode:
-        """The node, drawn if any view draws it and as the log has it if none does.
-
-        For `get_node`, where the caller asked for one node and one
-        is what it wants.
-
-        **Being drawn nowhere is not an error.** This used to raise `"Node '…' is in
-        no projection: every view declaring its term refused it"` — telling a client
-        that the id it holds names nothing, about a claim sitting in the log. A graph
-        is a view; whether one has drawn a node is a fact about the view, and the
-        claim is readable either way. `RetrievedNode.from_row` is the same shape a
-        write returns before anything is drawn (`docs/rfcs/0003-undrawn-nodes.md`),
-        so a caller reads one object whether there is a vertex behind it or not, and
-        `drawings` is where "which views hold it" is answered.
-
-        Which drawing, when there are several, is still lossy — that is what
-        `drawings_for_instance` is for, and every write goes through it.
-        """
-        drawings = self.drawings_for_instance(node)
-        if not drawings:
-            return retrieved.RetrievedNode.from_row(self, node)
-        return drawings[0].node
+    # `projected_instance` used to sit here: `drawings_for_instance(node)[0].node`,
+    # falling back to `RetrievedNode.from_row` when nothing drew the claim. The
+    # fallback's insight survives — being drawn nowhere is not an error, and the
+    # from_row shape is what `nodes(graph:)` returns for an admitted-but-undrawn
+    # node — but `[0]` handed back an arbitrary view's drawing for a caller that
+    # named no view, which is exactly the lossiness `drawings_for_instance` below
+    # exists to avoid. Its last caller was `get_node`, gone for the same reason.
 
     def drawings_for_instance(self, node: evidence_models.Instance) -> tuple[results.NodeDrawing, ...]:
         """Every view that draws this node, as it draws it.

@@ -35,8 +35,8 @@ CREATE_ENTITY = """
 """
 
 ENTITY = """
-    query Entity($id: GraphID!) {
-        node(id: $id) {
+    query Entity($id: GraphID!, $graph: ID!) {
+        node(id: $id, graph: $graph) {
             ... on Entity {
                 id
                 properties
@@ -47,8 +47,8 @@ ENTITY = """
 """
 
 
-async def _node(api_schema: kante.Schema, ctx: HttpContext, entity_id: str) -> dict:
-    result = await api_schema.execute(ENTITY, variable_values={"id": entity_id}, context_value=ctx)
+async def _node(api_schema: kante.Schema, ctx: HttpContext, entity_id: str, graph) -> dict:
+    result = await api_schema.execute(ENTITY, variable_values={"id": entity_id, "graph": str(graph.id)}, context_value=ctx)
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     return result.data["node"]
 
@@ -98,11 +98,11 @@ async def test_a_value_survives_the_destruction_of_what_derives_it(
 ) -> None:
     """The materialized value is the answer, not a cache in front of a fold."""
     entity_id = await _measured_ais(api_schema, simple_api_context, (40.0, 50.0))
-    assert (await _node(api_schema, simple_api_context, entity_id))["properties"]["avg_length"] == pytest.approx(45.0)
+    assert (await _node(api_schema, simple_api_context, entity_id, test_graph))["properties"]["avg_length"] == pytest.approx(45.0)
 
     assert await _burn_the_state(test_graph.organization) > 0, "There must have been state to destroy"
 
-    after = (await _node(api_schema, simple_api_context, entity_id))["properties"]
+    after = (await _node(api_schema, simple_api_context, entity_id, test_graph))["properties"]
     assert after["avg_length"] == pytest.approx(45.0), "A read that returns the right number with no state to fold is a read that did not fold"
 
 
@@ -123,7 +123,7 @@ async def test_the_statistics_survive_it_too(
     entity_id = await _measured_ais(api_schema, simple_api_context, (40.0, 50.0))
     await _burn_the_state(test_graph.organization)
 
-    rich = {prop["key"]: prop for prop in (await _node(api_schema, simple_api_context, entity_id))["richProperties"]}
+    rich = {prop["key"]: prop for prop in (await _node(api_schema, simple_api_context, entity_id, test_graph))["richProperties"]}
 
     assert rich["avg_length"]["nEvidence"] == 2, "Two measurements stand behind the mean"
     assert rich["avg_length"]["spread"] == pytest.approx(10.0), "50 - 40"
@@ -166,7 +166,7 @@ async def test_the_control_a_rematerialization_loses_the_value(
 
     await redraw()
 
-    after = (await _node(api_schema, simple_api_context, entity_id))["properties"]
+    after = (await _node(api_schema, simple_api_context, entity_id, test_graph))["properties"]
     assert "avg_length" not in after, "With no state to fold, a redraw must leave no value behind — the deletion was real"
 
 
@@ -201,5 +201,5 @@ async def test_a_refold_puts_it_back(
 
     await refold_and_redraw()
 
-    after = (await _node(api_schema, simple_api_context, entity_id))["properties"]
+    after = (await _node(api_schema, simple_api_context, entity_id, test_graph))["properties"]
     assert after["avg_length"] == pytest.approx(45.0), "The metrics were never touched, so the whole derived stack must rebuild from them"

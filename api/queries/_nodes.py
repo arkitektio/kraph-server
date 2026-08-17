@@ -90,6 +90,20 @@ def narrow(rows: Any, filter_model: Any, ordering_models: Iterable[Any], paginat
     return list(rows.order_by(*order_by)[offset : offset + limit])
 
 
+def one_in_graph(controller: Any, graph: Any, instance: Any) -> RetrievedNode:
+    """One node, as the named view holds it — the singular form of `rows_in_graph`.
+
+    Refuses a node the view's rule does not admit, so `node(id:, graph:)` succeeds
+    exactly when `nodes(graph:)` could list it. Admitted but not yet drawn comes
+    back as `RetrievedNode.from_row`, the same as in a list. The claim-grain
+    reader — the one that answers for a node no view admits — is `instance(id:)`.
+    """
+    row = rows_in_graph(graph).filter(pk=str(instance.pk)).first()
+    if row is None:
+        raise ValueError(f"Graph '{graph.age_name}' does not hold node '{instance.pk}': no category of this view declares or derives from the node's word, or its selector does not count the claim. Read the claim itself with `instance(id:)`, and `Instance.drawnIn` says which views hold it.")
+    return retrieved_in(controller, graph, [row])[0]
+
+
 def retrieved_in(controller: Any, graph: Any, rows: list[Any]) -> list[RetrievedNode]:
     """The nodes as this view holds them, falling back to the log where it holds none.
 

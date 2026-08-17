@@ -7,10 +7,10 @@ category.
 
 Until this guard, the API accepted such a rule, `validate_derivation_rules`
 *validated* it, and it was stored in `property_definitions` — so a client got a
-valid schema and a permanently empty property, with no error at any point. Worse
-after the node side stopped folding on read: `Relation.rich_properties` iterates
-`cleaned_properties` off the edge, so the value is simply absent rather than
-lazily computed.
+valid schema and a permanently empty property, with no error at any point.
+(`Relation.richProperties`/`properties` have since been removed from the schema
+outright, for the same structural reason: nothing ever put a derived value on an
+edge for them to read.)
 
 `bio_graph_schema` itself shipped one (`IS_CONNECTED_TO.distance`, a
 `EUCLIDEAN_RANGE` rollup over `ROI.centroid`), which is how long this survived:
