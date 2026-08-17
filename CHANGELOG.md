@@ -1,7 +1,26 @@
 # CHANGELOG
 
 
+## v1.0.0-rc.4 (2026-08-17)
+
+### Features
+
+- More features about the grpah
+  ([`3f97802`](https://github.com/arkitektio/kraph-server/commit/3f9780218cd761b7d6e2387acda9a0631fd169b5))
+
+- More features that bridge the graph
+  ([`62ee0c5`](https://github.com/arkitektio/kraph-server/commit/62ee0c5b7750e666fe2b3f980308e84d4b74f844))
+
+
 ## v1.0.0-rc.3 (2026-08-15)
+
+### Bug Fixes
+
+- Removal of vestigal not evidence back graph writes
+  ([`b8c2c5e`](https://github.com/arkitektio/kraph-server/commit/b8c2c5ed35e5801ff6de8c7b5e172873bc3ced9b))
+
+- Remove of vestigal graph writes
+  ([`077e652`](https://github.com/arkitektio/kraph-server/commit/077e6523822e54cd7a2b453d0c619b3f06ce21a4))
 
 
 ## v1.0.0-rc.2 (2026-08-12)
