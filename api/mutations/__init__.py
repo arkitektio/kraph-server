@@ -21,6 +21,7 @@ from .protocol_event import assert_protocol_event_exists, retract_protocol_event
 from .participation import assert_participation, assert_participations, retract_participation
 from .link import classify_nodes, retract_links
 from .identity import assert_same_instance, retract_same_instance
+from .comment import comment_on_structure, retract_comment, attest_comment
 from .schema import *
 from .schema import create_graph_table_query_through_builder
 from .insights import (
@@ -71,11 +72,14 @@ __all__ = [
     "retract_entity",
     "attest_entity",
     # Node mutations
-        # Structure mutations
+    # Structure mutations
     "assert_structure_exists",
     "retract_structure",
     "update_structure",
     "link_structure_to_entity",
+    "comment_on_structure",
+    "retract_comment",
+    "attest_comment",
     "ensure_structure",
     # Metric mutations
     "assert_metric_value",

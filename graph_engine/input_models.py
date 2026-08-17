@@ -9,6 +9,7 @@ import strawberry
 from strawberry_django import Ordering
 
 from datalayer.scalars import MediaLike
+from evidence.comments import DescendantNode
 from graph_engine.scalars import GraphID
 from graph_engine import scalars
 from core import enums
@@ -1734,6 +1735,35 @@ class RetractLinksInput(StrictModel):
     """Input for retracting several link claims as one act."""
 
     ids: List[str] = Field(..., description="The `Link` primary keys of the claims to retract")
+
+
+class CommentOnStructureInput(StrictModel):
+    """Input for remarking on an external datum.
+
+    Takes `(identifier, object)` — a structure's identity — and mints the
+    structure if this is the first sight of it, as one act, the way
+    `assertMetricValue` does. Shape-compatible with lok's `createComment` input
+    so a lok client can post the same tree here; there is no `notify` flag
+    because kraph has no notification channel to honor it with, and accepting a
+    flag that does nothing is the silent no-op this API keeps removing.
+    """
+
+    identifier: str = Field(..., description="The structure identifier of the datum, e.g. '@mikro/roi'")
+    object: str = Field(..., description="The id of the external object on its service")
+    descendants: List[DescendantNode] = Field(..., min_length=1, description="The rich body of the remark — a tree of LEAF/MENTION/PARAGRAPH nodes")
+    parent: Optional[scalars.GraphID] = Field(default=None, description="The comment this replies to. Must be on the same structure's thread")
+
+
+class RetractCommentInput(StrictModel):
+    """Input for claiming a remark no longer stands — withdrawn or resolved; the assertion records whose position it is."""
+
+    id: scalars.GraphID = Field(..., description="The ID of the comment to retract")
+
+
+class AttestCommentInput(StrictModel):
+    """Input for claiming a remark stands again — reopening, as new evidence."""
+
+    id: scalars.GraphID = Field(..., description="The ID of the comment to attest")
 
 
 class RetractNaturalEventInput(StrictModel):

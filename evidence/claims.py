@@ -114,8 +114,10 @@ def retracted_ids(
 # ===================================================================
 
 #: Which kinds of claim get a cached answer. An instance's standing is folded per
-#: view instead, because a graph's selector decides whose claims it counts.
-CACHED_TARGETS = ("structure", "metric", "link")
+#: view instead, because a graph's selector decides whose claims it counts. A
+#: comment's is organization grain like a structure's — no selector ever scopes
+#: whether a remark stands — so the folded boolean is honest and cached.
+CACHED_TARGETS = ("structure", "metric", "link", "comment")
 
 
 def standing(queryset: Any, target_type: str) -> Any:

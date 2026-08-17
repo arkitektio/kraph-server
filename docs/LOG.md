@@ -17,8 +17,9 @@ Everything below is a consequence of taking that literally.
 ## The three axioms
 
 **Nothing is edited in place**, and the database enforces it. There is no update
-and no delete on `Assertion`, `Standing`, `Structure`, `Metric`, `Link` or `Instance`:
-a trigger refuses both (`evidence/migrations/0005_log_is_append_only.py`).
+and no delete on `Assertion`, `Standing`, `Structure`, `Metric`, `Link`, `Instance`
+or `Comment`: a trigger refuses both (`evidence/migrations/0005_log_is_append_only.py`,
+extended to comments in `0010`).
 Correcting a claim means writing a new one; withdrawing a claim means writing a
 `Standing` that says it no longer stands. The API has no mutation that destroys
 instance data — erasure exists only as `manage.py redact`, which is operator-only,
@@ -162,6 +163,26 @@ rather than an AGE vertex. That is not a gap: both endpoints of a structure
 relation are organization-scoped, so an edge in one graph's projection would be
 the wrong place to keep it.
 
+### `Comment` — a remark about a structure
+
+"This ROI looks mis-segmented." The port of lok's komment app, restated as
+evidence: lok addresses a comment by `(identifier, object)`, which is exactly a
+`Structure`'s identity, so here the comment points at the structure row and the
+structure carries the thread — the same ROI discussed from two experiments is
+one conversation. The rich body is lok's descendant tree
+(LEAF/MENTION/PARAGRAPH), stored verbatim in one JSON column on the one row —
+**never** as rows or vertices of its own — with `text` and `mentions` folded
+from it at write time, because an append-only row has no after-the-fact to
+derive them in. A mention names a **subject** (`Assertion.subject`'s
+vocabulary), never a user row: the evidence layer holds no user foreign keys.
+Threading is a `parent` FK to the same table, `PROTECT` where lok cascades.
+
+What lok kept as mutable columns is evidence here: the author and time are the
+`Assertion`; `resolved`/`resolved_by` are a `Standing` — see below — so
+resolving, withdrawing and reopening are appended positions with provenance,
+not state transitions. Comments take no part in any projection: a structure has
+no AGE presence, so neither does its discussion.
+
 ### `Standing` — whether a claim still holds
 
 "That still stands", or "that no longer does". `stands=True` attests,
@@ -186,8 +207,13 @@ total order over the organization's log — a Postgres sequence, allocated once 
 assertion — not the `recorded_at` timestamp tiebreak this used to name, which
 could collide within a transaction and left the fold order-dependent.
 
-The folded answer lives in `CurrentStanding`, one row per claimed structure, metric
-or link. `Structure`, `Metric` and `Link` used to each cache it in a `stands`
+The folded answer lives in `CurrentStanding`, one row per claimed structure,
+metric, link or comment. For a comment the fold doubles as **resolution**:
+`stands=False` says the remark no longer stands — resolved by a reviewer or
+withdrawn by its author, the standing's own assertion recording whose position
+it was — and `stands=True` reopens it. One conflation, deliberate: both are
+somebody's position that the remark no longer stands, and a separate resolution
+axis would be a state machine wearing a new name. `Structure`, `Metric` and `Link` used to each cache it in a `stands`
 boolean of their own; those columns are gone. They were mutable columns on log
 tables that nothing may rewrite, which is a contradiction the append-only trigger
 would now refuse outright.
@@ -209,7 +235,7 @@ has its own AGE namespace to materialize the scoped number into. Keeping a row p
 view would mean naming a graph inside `evidence/`, which the second axiom forbids.
 
 **`CurrentStanding`** — the folded "does this stand" answer, one row per claimed
-structure, metric or link. A cache of the log, not part of it: it carries no
+structure, metric, link or comment. A cache of the log, not part of it: it carries no
 assertion, `refold_current` rebuilds it wholesale, and it is deliberately mutable
 where the log is not. Instances are absent on purpose — whether an instance stands is a
 per-view question, since a graph's selector decides whose claims it counts, so one
@@ -283,6 +309,8 @@ there is one global answer.
 | `assertRelationExists` | `Assertion`, `Link(RELATION)` |
 | `assertMeasurementExists` | `Assertion`, `Link(MEASUREMENT)` **and** `Link(INFORMS)` — the plain link is what `dirty()` matches, so without it nothing rolls up |
 | `assertStructureRelationExists` | `Assertion`, `Link(STRUCTURE_RELATION)` |
+| `commentOnStructure` | `Assertion`, `Comment`, and the `Structure` if the datum is new — one act. A reply names `parent` and must stay on its thread |
+| `retractComment` / `attestComment` | `Assertion`, `Standing` on the comment — resolve/withdraw and reopen. `Comment.resolved` is the fold |
 | every `retract*` | `Assertion`, `Standing(stands=False)`, the `CurrentStanding` row, and — for nodes — removal of the vertex |
 | every `attest*` | `Assertion`, `Standing(stands=True)`, and the node redrawn into every view whose rules admit it |
 | `createTerm` | a `Term`, or fills in the description of one an ingest minted bare — idempotent on `(kind, key)` |

@@ -40,6 +40,9 @@ class Query:
     instance = kante.django_field(queries.instance, description="Get one claimed individual by ID, as the log has it")
     link = kante.django_field(queries.link, description="Get one claim relating two things by ID, as the log has it")
     standings = kante.django_field(queries.standings, description="Every position anyone has taken on one claim, newest first")
+    comment = kante.django_field(queries.comment, description="Get one remark by ID, as the log has it")
+    comments_for = kante.django_field(queries.comments_for, description="Every remark about one external datum, addressed by (identifier, object), newest first — resolved ones included")
+    my_mentions = kante.django_field(queries.my_mentions, description="Every remark that mentions the caller, newest first")
 
     # Entity Type Section
     # =========================
@@ -207,6 +210,18 @@ class Mutation:
     update_structure = kante.django_mutation(
         description="Append metrics to an existing structure. Its (identifier, object) is immutable",
         resolver=mutations.update_structure,
+    )
+    comment_on_structure = kante.django_mutation(
+        description="Record a remark about an external datum, minting its structure if this is the first sight of it. A reply names its parent and stays on the parent's thread",
+        resolver=mutations.comment_on_structure,
+    )
+    retract_comment = kante.django_mutation(
+        description="Claim a remark no longer stands — resolved by a reviewer or withdrawn by its author; the assertion records whose position it is. The row survives",
+        resolver=mutations.retract_comment,
+    )
+    attest_comment = kante.django_mutation(
+        description="Claim a remark stands again — reopening, as new evidence rather than an undo",
+        resolver=mutations.attest_comment,
     )
     assert_metric_value = kante.django_mutation(
         description="Record a measurement, creating the structure it describes if this is its first sight. One assertion covers both",
@@ -718,6 +733,12 @@ def create_schema(
             # subtypes above if one is left out.
             types.Instance,
             types.Link,
+            # A comment's rich body is served through the `Descendant` interface,
+            # so its concrete kinds are reachable only through it — same runtime
+            # failure as the `Edge` subtypes above if one is left out.
+            types.LeafDescendant,
+            types.MentionDescendant,
+            types.ParagraphDescendant,
             types.Standing,
             types.Term,
         ],

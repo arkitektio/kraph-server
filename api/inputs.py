@@ -9,6 +9,7 @@ import strawberry
 from typing import Optional, List
 from enum import Enum
 
+from core import enums
 from graph_engine import input_models
 from graph_engine.scalars import AnyScalar, GraphID
 from graph_engine import scalars
@@ -425,6 +426,43 @@ class ClassifyNodesInput:
 
 @pydantic.input(model=input_models.RetractLinksInput, all_fields=True, description="Input for retracting several link claims as one act")
 class RetractLinksInput:
+    pass
+
+
+@pydantic.input(model=input_models.DescendantNode, description="One node of a comment's rich body — shape-compatible with lok's komment descendants")
+class DescendantInput:
+    """Recursive by hand, the way lok declares it: strawberry cannot derive a
+    self-referential field, so `children` is annotated lazily. A MENTION's `user`
+    is a subject id — `Assertion.subject`'s vocabulary — not a user row."""
+
+    kind: enums.DescendantKind = strawberry.field(description="LEAF, MENTION or PARAGRAPH")
+    children: Optional[List[Annotated["DescendantInput", strawberry.lazy(__name__)]]] = strawberry.field(default=None, description="The children of this node. Always empty for leafs")
+    text: Optional[str] = strawberry.field(default=None, description="The text of a leaf")
+    bold: Optional[bool] = strawberry.field(default=None, description="Render a leaf bold")
+    italic: Optional[bool] = strawberry.field(default=None, description="Render a leaf italic")
+    underline: Optional[bool] = strawberry.field(default=None, description="Render a leaf underlined")
+    code: Optional[bool] = strawberry.field(default=None, description="Render a leaf as code")
+    user: Optional[str] = strawberry.field(default=None, description="The mentioned subject id, for MENTION nodes")
+    size: Optional[str] = strawberry.field(default=None, description="The size of a paragraph")
+
+
+@pydantic.input(model=input_models.CommentOnStructureInput, description="Input for remarking on an external datum, minting its structure if new")
+class CommentOnStructureInput:
+    """Input for commenting on a structure — the datum named by `(identifier, object)`, as lok names it."""
+
+    identifier: str = strawberry.field(description="The structure identifier of the datum, e.g. '@mikro/roi'")
+    object: str = strawberry.field(description="The id of the external object on its service")
+    descendants: List[DescendantInput] = strawberry.field(description="The rich body of the remark")
+    parent: Optional[GraphID] = strawberry.field(default=None, description="The comment this replies to. Must be on the same structure's thread")
+
+
+@pydantic.input(model=input_models.RetractCommentInput, all_fields=True, description="Input for claiming a remark no longer stands — withdrawn or resolved; the assertion records whose position it is")
+class RetractCommentInput:
+    pass
+
+
+@pydantic.input(model=input_models.AttestCommentInput, all_fields=True, description="Input for claiming a remark stands again — reopening, as new evidence")
+class AttestCommentInput:
     pass
 
 

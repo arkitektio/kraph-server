@@ -291,6 +291,41 @@ def record_metric(
     )
 
 
+def record_comment(
+    organization: Organization,
+    structure: evidence_models.Structure,
+    *,
+    descendants: list[dict[str, Any]],
+    assertion: evidence_models.Assertion,
+    parent: evidence_models.Comment | None = None,
+) -> evidence_models.Comment:
+    """Append a remark about a structure.
+
+    The tree is validated before anything is written — an append-only row cannot
+    be repaired — and `text` and `mentions` are folded from it here, because lok
+    derived them after the fact by mutating the row and there is no after the
+    fact in this log. A reply must stay on its parent's thread: the thread *is*
+    the structure, so a parent pointing at a different one would fork the
+    conversation across two data.
+    """
+    from evidence import comments as comments_module
+
+    if parent is not None and parent.structure_id != structure.pk:
+        raise ValueError(f"Comment '{parent.pk}' is about structure '{parent.structure_id}', not '{structure.pk}'. A reply stays on its parent's thread.")
+
+    validated = comments_module.validate_descendants(descendants)
+
+    return evidence_models.Comment.objects.create_for_organization(
+        organization=organization,
+        structure=structure,
+        parent=parent,
+        assertion=assertion,
+        descendants=validated,
+        text=comments_module.plain_text(validated),
+        mentions=comments_module.extract_mentions(validated),
+    )
+
+
 def create_link(
     organization: Organization,
     *,
@@ -327,6 +362,7 @@ _TARGET_TYPES: dict[type, str] = {
     evidence_models.Metric: "metric",
     evidence_models.Link: "link",
     evidence_models.Instance: "node",
+    evidence_models.Comment: "comment",
 }
 
 

@@ -304,6 +304,19 @@ input AssertStructureRelationExistsInput {
   term: String!
 }
 
+"""An assertion about a comment — a remark recorded about a structure"""
+type AssertedComment {
+  """
+  The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
+  """
+  assertion: Assertion!
+
+  """
+  The remark this act was about — recorded it, withdrew it, or reopened it; the assertion says which
+  """
+  comment: Comment!
+}
+
 """
 An assertion about several edges made as one act, and everywhere they are now drawn
 """
@@ -538,6 +551,12 @@ type Assertion @key(fields: "id", resolvable: true) {
   Position in the organization-spanning log. Monotonic, assigned by the database, and the order a replay runs in
   """
   seq: Int!
+}
+
+"""Input for claiming a remark stands again — reopening, as new evidence"""
+input AttestCommentInput {
+  """The ID of the comment to attest"""
+  id: String!
 }
 
 """Input for claiming that an entity exists"""
@@ -846,6 +865,71 @@ enum ColumnKind {
   NODE
   EDGE
   VALUE
+}
+
+"""A remark somebody made about a structure — a claim, as the log has it"""
+type Comment @key(fields: "id", resolvable: true) {
+  """The claim's durable identity — a bare uuid"""
+  id: ID!
+
+  """When the remark was recorded"""
+  createdAt: DateTime!
+
+  """
+  The plain-text rendering of the body's leaves. Searchable; the body itself is `descendants`
+  """
+  text: String!
+
+  """The act of commenting: who said it, with which app, and when"""
+  assertion: Assertion!
+
+  """
+  The external datum this remark is about. The structure carries the thread
+  """
+  structure: Structure!
+
+  """
+  The comment this replies to, for threading. Null for a top-level remark
+  """
+  parent: Comment
+
+  """
+  The direct replies to this comment, oldest first — a thread reads downward
+  """
+  replies: [Comment!]!
+
+  """
+  The rich body — the tree of paragraphs, leaves and mentions, as it was posted
+  """
+  descendants: [Descendant!]!
+
+  """The subjects mentioned in the body, extracted at write time"""
+  mentions: [String!]!
+
+  """
+  Every position anyone has taken on whether this remark still stands, newest first. Empty means nobody has withdrawn or resolved it
+  """
+  standings: [Standing!]!
+
+  """
+  Whether the winning position says this remark no longer stands — resolved by a reviewer or withdrawn by its author; `standings` says which and by whom. The fold a comment can honestly carry, because nothing scopes it per view
+  """
+  resolved: Boolean!
+}
+
+"""Input for remarking on an external datum, minting its structure if new"""
+input CommentOnStructureInput {
+  """The structure identifier of the datum, e.g. '@mikro/roi'"""
+  identifier: String!
+
+  """The id of the external object on its service"""
+  object: String!
+
+  """The rich body of the remark — a tree of LEAF/MENTION/PARAGRAPH nodes"""
+  descendants: [DescendantInput!]!
+
+  """The comment this replies to. Must be on the same structure's thread"""
+  parent: GraphID = null
 }
 
 enum ConflictPolicy {
@@ -1625,6 +1709,57 @@ enum DerivationType {
   PRIORITY_LATEST
   ROLLUP
   LATEST_ASSERTION_TOOL
+}
+
+"""
+One node of a comment's rich body. The tree lok's komment app renders: paragraphs holding leaves and mentions
+"""
+interface Descendant {
+  """The kind of this node"""
+  kind: DescendantKind!
+
+  """The children of this node. Always empty for leafs"""
+  children: [Descendant!]
+
+  """
+  The subtree as raw JSON, for clients that render it themselves rather than selecting the typed tree
+  """
+  unsafeChildren: AnyScalar
+}
+
+"""
+One node of a comment's rich body — shape-compatible with lok's komment descendants
+"""
+input DescendantInput {
+  """LEAF, MENTION or PARAGRAPH — see `core.enums.DescendantKind`"""
+  kind: DescendantKind!
+
+  """The children of this node. Always empty for leafs"""
+  children: [DescendantInput!] = null
+
+  """The text of a leaf"""
+  text: String = null
+  bold: Boolean = null
+  italic: Boolean = null
+  underline: Boolean = null
+  code: Boolean = null
+
+  """
+  The mentioned subject id — `Assertion.subject`'s vocabulary. Named `user` for shape-compatibility with lok's tree
+  """
+  user: String = null
+
+  """The size of a paragraph"""
+  size: String = null
+}
+
+"""
+The kind of a comment descendant — how one node of the rich-text tree renders
+"""
+enum DescendantKind {
+  LEAF
+  MENTION
+  PARAGRAPH
 }
 
 """An INFORMS claim: a structure that is evidence for a node"""
@@ -2934,6 +3069,35 @@ type Label {
   latestAssertion: Assertion
 }
 
+"""A leaf of styled text. Ends a branch of the tree"""
+type LeafDescendant implements Descendant {
+  """The kind of this node"""
+  kind: DescendantKind!
+
+  """The children of this node. Always empty for leafs"""
+  children: [Descendant!]
+
+  """
+  The subtree as raw JSON, for clients that render it themselves rather than selecting the typed tree
+  """
+  unsafeChildren: AnyScalar
+
+  """The text of the leaf"""
+  text: String
+
+  """Render this text bold"""
+  bold: Boolean
+
+  """Render this text italic"""
+  italic: Boolean
+
+  """Render this text underlined"""
+  underline: Boolean
+
+  """Render this text as code"""
+  code: Boolean
+}
+
 """
 A claim relating two things — as the log has it, whether or not any view draws it
 """
@@ -3309,6 +3473,25 @@ type MediaUploadGrant {
   uploadFormField: String!
 }
 
+"""
+A mention of a subject — the same id `Assertion.subject` carries, never a user row: a comment is evidence, and the evidence layer knows actors by subject
+"""
+type MentionDescendant implements Descendant {
+  """The kind of this node"""
+  kind: DescendantKind!
+
+  """The children of this node. Always empty for leafs"""
+  children: [Descendant!]
+
+  """
+  The subtree as raw JSON, for clients that render it themselves rather than selecting the typed tree
+  """
+  unsafeChildren: AnyScalar
+
+  """The mentioned subject id"""
+  subject: String
+}
+
 """A measured value about a structure — a claim, not a graph node"""
 type Metric {
   """This claim's durable identity — the `Metric` primary key, a bare uuid"""
@@ -3474,6 +3657,21 @@ type Mutation {
   Append metrics to an existing structure. Its (identifier, object) is immutable
   """
   updateStructure(input: UpdateStructureInput!): AssertedStructure!
+
+  """
+  Record a remark about an external datum, minting its structure if this is the first sight of it. A reply names its parent and stays on the parent's thread
+  """
+  commentOnStructure(input: CommentOnStructureInput!): AssertedComment!
+
+  """
+  Claim a remark no longer stands — resolved by a reviewer or withdrawn by its author; the assertion records whose position it is. The row survives
+  """
+  retractComment(input: RetractCommentInput!): AssertedComment!
+
+  """
+  Claim a remark stands again — reopening, as new evidence rather than an undo
+  """
+  attestComment(input: AttestCommentInput!): AssertedComment!
 
   """
   Record a measurement, creating the structure it describes if this is its first sight. One assertion covers both
@@ -4358,6 +4556,23 @@ type OutputParticipation implements Edge {
   source: Event!
 }
 
+"""A paragraph of the comment body"""
+type ParagraphDescendant implements Descendant {
+  """The kind of this node"""
+  kind: DescendantKind!
+
+  """The children of this node. Always empty for leafs"""
+  children: [Descendant!]
+
+  """
+  The subtree as raw JSON, for clients that render it themselves rather than selecting the typed tree
+  """
+  unsafeChildren: AnyScalar
+
+  """The size of the paragraph"""
+  size: String
+}
+
 """One entity's part in an event, inside a batch"""
 input ParticipantInput {
   """The ID of the entity that took part"""
@@ -4828,6 +5043,17 @@ type Query {
   """Every position anyone has taken on one claim, newest first"""
   standings(id: ID!): [Standing!]!
 
+  """Get one remark by ID, as the log has it"""
+  comment(id: GraphID!): Comment!
+
+  """
+  Every remark about one external datum, addressed by (identifier, object), newest first — resolved ones included
+  """
+  commentsFor(identifier: String!, object: ID!): [Comment!]!
+
+  """Every remark that mentions the caller, newest first"""
+  myMentions: [Comment!]!
+
   """
   Get a node by ID, as the named view holds it. Refused when that view does not admit the node; the claim itself is `instance(id:)`
   """
@@ -5189,6 +5415,14 @@ input RequestZarrUploadInput {
   protocol: String! = "https"
 }
 
+"""
+Input for claiming a remark no longer stands — withdrawn or resolved; the assertion records whose position it is
+"""
+input RetractCommentInput {
+  """The ID of the comment to retract"""
+  id: String!
+}
+
 """Input for retracting an entity claim"""
 input RetractEntityInput {
   """The ID of the entity to retract"""
@@ -5485,6 +5719,11 @@ type Structure {
 
   """Every un-retracted measurement of this structure, in observation order"""
   metrics: [Metric!]!
+
+  """
+  The discussion this datum carries: every remark recorded about it, newest first, resolved ones included — resolution is shown, not hidden. Threading is on each comment (`parent`/`replies`)
+  """
+  comments: [Comment!]!
 
   """
   The nodes this structure is evidence for. Where its labels, merges and connections live — a structure is a pointer to an external datum and is never itself claimed to be an AIS
@@ -6715,7 +6954,7 @@ type ZarrUploadGrant {
 
 scalar _Any
 
-union _Entity = Assertion | BigFileStore | EdgePairsQuery | EdgePathQuery | EdgeTableQuery | EntityCategory | Graph | GraphNodesQuery | GraphPairsQuery | GraphPathQuery | GraphTableQuery | Instance | Link | MeasurementCategory | MediaStore | MetricKind | NaturalEventCategory | NodePairsQuery | NodePathQuery | NodeTableQuery | ProtocolEventCategory | RelationCategory | ScatterPlot | Standing | StructureKind | StructureRelationCategory | Term | ZarrStore
+union _Entity = Assertion | BigFileStore | Comment | EdgePairsQuery | EdgePathQuery | EdgeTableQuery | EntityCategory | Graph | GraphNodesQuery | GraphPairsQuery | GraphPathQuery | GraphTableQuery | Instance | Link | MeasurementCategory | MediaStore | MetricKind | NaturalEventCategory | NodePairsQuery | NodePathQuery | NodeTableQuery | ProtocolEventCategory | RelationCategory | ScatterPlot | Standing | StructureKind | StructureRelationCategory | Term | ZarrStore
 
 type _Service {
   sdl: String!

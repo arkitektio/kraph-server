@@ -120,6 +120,7 @@ _LOADER_SPECS: dict[str, tuple[type, str]] = {
     "instance_by_id": (evidence_models.Instance, "id"),
     "link_by_id": (evidence_models.Link, "id"),
     "structure_by_id": (evidence_models.Structure, "id"),
+    "comment_by_id": (evidence_models.Comment, "id"),
 }
 
 
@@ -133,6 +134,7 @@ def _newest_standings(queryset: Any) -> Any:
     """
     return queryset.select_related("assertion").order_by("-at", "-assertion__seq")
 
+
 #: Loaders that return a **list** per key rather than a row. Kept in their own
 #: table because they need `_batch_grouped_by`, not `_batch_by_pk` — see that
 #: function for why asking the wrong one is a silent data-loss bug rather than an
@@ -140,9 +142,14 @@ def _newest_standings(queryset: Any) -> Any:
 _GROUPED_LOADER_SPECS: dict[str, tuple[type, str, Any]] = {
     "metrics_by_structure": (evidence_models.Metric, "structure_id", _standing_metrics),
     # Keyed on `target_id` alone, without `target_type`. The ids are uuid4 primary
-    # keys of four different tables, so one cannot collide with another — and the
+    # keys of five different tables, so one cannot collide with another — and the
     # callers ask about a claim they are holding, not about a type.
     "standings_by_target": (evidence_models.Standing, "target_id", _newest_standings),
+    # Deliberately not narrowed by standing, unlike `metrics_by_structure`: a
+    # resolved remark is shown as resolved, not hidden — hiding it would make
+    # `Comment.resolved` unreachable exactly where it answers.
+    "comments_by_structure": (evidence_models.Comment, "structure_id", lambda queryset: queryset.select_related("assertion").order_by("-created_at")),
+    "replies_by_comment": (evidence_models.Comment, "parent_id", lambda queryset: queryset.select_related("assertion").order_by("created_at")),
 }
 
 
@@ -279,7 +286,10 @@ assertion_by_id_loader = _LoaderProxy("assertion_by_id")
 instance_by_id_loader = _LoaderProxy("instance_by_id")
 link_by_id_loader = _LoaderProxy("link_by_id")
 structure_by_id_loader = _LoaderProxy("structure_by_id")
+comment_by_id_loader = _LoaderProxy("comment_by_id")
 metrics_by_structure_loader = _LoaderProxy("metrics_by_structure")
 standings_by_target_loader = _LoaderProxy("standings_by_target")
+comments_by_structure_loader = _LoaderProxy("comments_by_structure")
+replies_by_comment_loader = _LoaderProxy("replies_by_comment")
 known_about_node_loader = _LoaderProxy("known_about_node")
 informed_nodes_by_structure_loader = _LoaderProxy("informed_nodes_by_structure")

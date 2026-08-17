@@ -217,3 +217,19 @@ class ChangeKind(str, Enum):
 class OrderDirection(str, Enum):
     ASC = "ASC"
     DESC = "DESC"
+
+
+@strawberry.enum(description="The kind of a comment descendant — how one node of the rich-text tree renders")
+class DescendantKind(str, Enum):
+    """One node of a comment's rich-text tree.
+
+    The same three kinds `lok`'s komment app renders, kept value-compatible so a
+    client (or lok itself) can post the identical tree here: a PARAGRAPH holds
+    children, a LEAF holds styled text and ends a branch, a MENTION names a
+    subject — the same string `Assertion.subject` carries, because the evidence
+    layer knows actors by subject id and never by a user row.
+    """
+
+    LEAF = "LEAF"
+    MENTION = "MENTION"
+    PARAGRAPH = "PARAGRAPH"

@@ -59,9 +59,11 @@ from evidence.managers import OrganizationScopedManager
 
 #: The kinds of claim a :class:`Standing` can be about — one per table that holds
 #: recorded statements. A plain tuple rather than a `TextChoices`, because the
-#: values name *other tables* rather than states of this one, and `writer` needs
-#: the mapping in both directions.
-CLAIM_TARGETS = ("structure", "metric", "link", "instance")
+#: values name *other tables* rather than states of this one. The instance value
+#: is ``"node"`` — the historical spelling `writer._TARGET_TYPES` writes and every
+#: stored `Standing.target_type` carries; renaming it would mean rewriting the
+#: log, which `0008_instance_and_standing.py` explains is exactly what is refused.
+CLAIM_TARGETS = ("structure", "metric", "link", "node", "comment")
 
 #: The Postgres sequence backing :attr:`Assertion.seq`.
 #:
@@ -673,9 +675,7 @@ class Link(models.Model):
         max_length=1000,
         null=True,
         blank=True,
-        help_text="Which role the source plays, for participation links. The schema names it; "
-        "it is projected as a property on the edge rather than folded into the edge label, so "
-        "that 'everything that went into this event' stays answerable without enumerating roles.",
+        help_text="Which role the source plays, for participation links. The schema names it; it is projected as a property on the edge rather than folded into the edge label, so that 'everything that went into this event' stays answerable without enumerating roles.",
     )
     assertion = models.ForeignKey(
         Assertion,
@@ -702,6 +702,94 @@ class Link(models.Model):
 
     def __str__(self) -> str:
         return f"{self.source_ref} -{self.kind}-> {self.target_ref}"
+
+
+class Comment(models.Model):
+    """A remark somebody made about a structure. Append-only, like every claim.
+
+    The port of lok's `komment.Comment`, restated in this system's terms. lok
+    addresses a comment by ``(identifier, object)`` — which is exactly a
+    :class:`Structure`'s identity — so here a comment points at the structure row
+    itself, and the structure is what carries the discussion: the same ROI
+    commented on from two experiments is one thread.
+
+    What lok kept as mutable columns is evidence here:
+
+    - ``user`` and ``created_at`` are the :class:`Assertion` — who said it, with
+      which app, and when they said it.
+    - ``resolved`` / ``resolved_by`` were an in-place update. Resolution is a
+      :class:`Standing` now: ``stands=False`` says the remark no longer stands —
+      whether the author withdrew it or a reviewer resolved it, and the standing's
+      own assertion records which — and ``stands=True`` reopens it. Both stay on
+      the record, latest wins, and two people can disagree, exactly as they can
+      about a metric. The folded answer is cached in :class:`CurrentStanding`
+      (comments are organization grain, so the fold is honest here in the way it
+      deliberately is not for instances).
+    - ``mentions`` was an M2M to the user model. The evidence layer knows actors
+      only as subject strings (`Assertion.subject`), so mentions are a JSON list
+      of those, extracted from the descendant tree on write.
+
+    The body itself — ``descendants`` — is the rich tree lok renders
+    (LEAF/MENTION/PARAGRAPH), stored verbatim so a lok frontend can post and
+    render the identical shape; ``text`` is the plain rendering of its leaves,
+    derived on write so the body stays searchable without parsing JSON.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name="comments",
+    )
+    structure = models.ForeignKey(
+        Structure,
+        on_delete=models.PROTECT,
+        related_name="comments",
+        help_text="The external datum this remark is about. The structure carries the thread.",
+    )
+    parent = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="replies",
+        help_text="The comment this replies to, for threading. PROTECT where lok cascades: nothing here deletes.",
+    )
+    assertion = models.ForeignKey(
+        Assertion,
+        on_delete=models.PROTECT,
+        related_name="comments",
+        help_text="The act of commenting: who said it, with which app, and when.",
+    )
+    descendants = models.JSONField(
+        default=list,
+        help_text="The rich representation of the remark — a tree of LEAF/MENTION/PARAGRAPH nodes, shape-compatible with lok's komment descendants.",
+    )
+    text = models.TextField(
+        blank=True,
+        default="",
+        help_text="The plain-text rendering of the descendant tree's leaves, derived on write. Searchable; never authoritative over `descendants`.",
+    )
+    mentions = models.JSONField(
+        default=list,
+        help_text="Subject ids mentioned in the descendant tree, extracted on write. Strings, the same vocabulary as `Assertion.subject` — the evidence layer holds no user rows.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = OrganizationScopedManager()
+    all_objects = models.Manager()
+
+    class Meta:
+        base_manager_name = "all_objects"
+        default_manager_name = "all_objects"
+        indexes = [
+            # The thread read: every remark about one structure, newest first.
+            models.Index(fields=["organization", "structure", "-created_at"]),
+            models.Index(fields=["organization", "parent"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"comment on {self.structure_id}: {self.text[:40]}"
 
 
 class Standing(models.Model):
@@ -746,7 +834,7 @@ class Standing(models.Model):
     )
     target_type = models.CharField(
         max_length=32,
-        help_text="Which table the claim this is about lives in: 'structure', 'metric', 'link' or 'instance'.",
+        help_text="Which table the claim this is about lives in: 'structure', 'metric', 'link', 'comment' or 'node'.",
     )
     target_id = models.CharField(
         max_length=1000,
@@ -1144,11 +1232,7 @@ class InstanceIdentity(models.Model):
     )
     needs_recompute = models.BooleanField(
         default=False,
-        help_text=(
-            "Set when a retraction may have split this component. Union is O(α) and incremental; "
-            "un-union is not expressible incrementally, so the affected component is rebuilt from "
-            "its surviving claims instead. Same escape hatch as `State.needs_recompute`."
-        ),
+        help_text=("Set when a retraction may have split this component. Union is O(α) and incremental; un-union is not expressible incrementally, so the affected component is rebuilt from its surviving claims instead. Same escape hatch as `State.needs_recompute`."),
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

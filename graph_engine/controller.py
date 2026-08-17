@@ -850,7 +850,7 @@ class GraphController:
         structure_id: str,
         info: Info,
     ) -> results.Asserted:
-        """Retract a structure by writing a lifecycle event against it."""
+        """Retract a structure by writing a `Standing(stands=False)` against it."""
         structure = self._resolve_structure(structure_id, info)
         organization = structure.organization
 
@@ -889,6 +889,84 @@ class GraphController:
 
         self.project_from_structures(organization, [structure.pk])
         return results.Asserted.of(assertion, structure)
+
+    def comment_on_structure(
+        self,
+        organization: Any,
+        payload: inputs.CommentOnStructureInput,
+        info: Info,
+    ) -> results.Asserted:
+        """Record a remark about an external datum, minting the structure if it is new.
+
+        One act, one assertion — the same shape as `record_metric`: commenting on a
+        datum nobody has pointed at yet introduces the structure and the remark
+        together, because to the caller it is a single claim. A reply names its
+        `parent` and is validated onto the parent's thread by `writer.record_comment`.
+
+        No projection is touched: a structure has no AGE presence, so neither does
+        its discussion.
+        """
+        parent = self._resolve_comment(str(payload.parent), info, organization=organization) if payload.parent else None
+
+        with transaction.atomic():
+            assertion = self._create_assertion(organization, self._provenance_from_info(info))
+            structure_kind = self.ensure_structure_kind(organization, payload.identifier)
+            structure = writer.ensure_structure(
+                organization,
+                kind=structure_kind,
+                object=payload.object,
+                assertion=assertion,
+            )
+            comment = writer.record_comment(
+                organization,
+                structure,
+                descendants=[node.model_dump(exclude_none=True) for node in payload.descendants],
+                assertion=assertion,
+                parent=parent,
+            )
+
+        return results.Asserted.of(assertion, comment)
+
+    def retract_comment(self, comment_id: str, info: Info) -> results.Asserted:
+        """Claim a remark no longer stands — withdrawn by its author or resolved by a reviewer.
+
+        One operation for both readings, deliberately: each is somebody's position
+        that the remark no longer stands, and the standing's own assertion records
+        whose. The comment row survives, exactly as a retracted metric does.
+        """
+        comment = self._resolve_comment(comment_id, info)
+        organization = comment.organization
+
+        with transaction.atomic():
+            assertion = self._create_assertion(organization, self._provenance_from_info(info))
+            writer.retract(organization, comment, assertion)
+
+        return results.Asserted.of(assertion, comment)
+
+    def attest_comment(self, comment_id: str, info: Info) -> results.Asserted:
+        """Claim a remark stands again — reopening, as new evidence rather than an undo."""
+        comment = self._resolve_comment(comment_id, info)
+        organization = comment.organization
+
+        with transaction.atomic():
+            assertion = self._create_assertion(organization, self._provenance_from_info(info))
+            writer.attest(organization, comment, assertion)
+
+        return results.Asserted.of(assertion, comment)
+
+    def _resolve_comment(self, comment_id: str, info: Info | None = None, organization: Any = None) -> evidence_models.Comment:
+        """Fetch a comment by evidence primary key, then authorize against its organization.
+
+        The same shape as `_resolve_structure`, for the same reason: the client
+        names a globally unique primary key and never a tenant, so authorization
+        comes from what the id points at.
+        """
+        comment = evidence_models.Comment.all_objects.filter(pk=comment_id).select_related("structure").first()
+        if comment is None:
+            raise ValueError(f"Comment not found with id {comment_id}")
+        self._assert_can_access(comment.organization, info)
+        self._assert_same_organization(comment.organization, organization, f"Comment '{comment_id}'")
+        return comment
 
     def create_event(
         self,

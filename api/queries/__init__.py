@@ -19,12 +19,16 @@ from .protocol_event import protocol_event, protocol_events
 from .insights.graph_table import render_graph_table
 from .node import node, nodes
 from .claim import instance, link, standings
+from .comment import comment, comments_for, my_mentions
 
 __all__ = [
     # The claims themselves, read back as claims
     "instance",
     "link",
     "standings",
+    "comment",
+    "comments_for",
+    "my_mentions",
     # Entity queries
     "entity",
     "node",

@@ -1132,6 +1132,14 @@ class Structure:
         controller = get_controller()
         return [Metric(_value=RetrievedMetric.from_row(controller, row)) for row in rows]
 
+    @kante.django_field(description="The discussion this datum carries: every remark recorded about it, newest first, resolved ones included — resolution is shown, not hidden. Threading is on each comment (`parent`/`replies`)")
+    async def comments(self) -> List["Comment"]:
+        """The structure carries the thread — the reason a comment points at a
+        `Structure` rather than repeating `(identifier, object)`: the same ROI
+        discussed from two experiments is one conversation. Batched like
+        `metrics`, and for the same reason."""
+        return cast(List["Comment"], await loaders.comments_by_structure_loader.load(self._value.unique_id))
+
     @kante.django_field(description="The nodes this structure is evidence for. Where its labels, merges and connections live — a structure is a pointer to an external datum and is never itself claimed to be an AIS")
     async def informs(self) -> List["Entity"]:
         """The entities this structure informs.
@@ -1817,6 +1825,145 @@ async def _resolve_claim_endpoint(table: str, ref: str) -> Optional[Any]:
     return await loaders.instance_by_id_loader.load(ref)
 
 
+# ===========================================
+# COMMENTS
+#
+# A `Comment` is a claim — a remark somebody made about a structure — served the
+# way `Instance` and `Link` are: the evidence row itself, with the assertion as
+# its provenance. The rich body is lok's descendant tree, stored verbatim; the
+# types below are how a client renders it, and they mirror lok's komment types
+# so a lok frontend can move to this API without reshaping anything but the
+# mention field, which names a subject rather than a user row.
+# ===========================================
+
+
+@strawberry.interface(description="One node of a comment's rich body. The tree lok's komment app renders: paragraphs holding leaves and mentions")
+class Descendant:
+    _value: strawberry.Private[dict]
+
+    @strawberry.field(description="The kind of this node")
+    def kind(self) -> enums.DescendantKind:
+        return enums.DescendantKind(str(self._value.get("kind")))
+
+    @strawberry.field(description="The children of this node. Always empty for leafs")
+    def children(self) -> Optional[List["Descendant"]]:
+        raw = self._value.get("children")
+        if raw is None:
+            return None
+        return [cast_descendant(child) for child in raw]
+
+    @strawberry.field(description="The subtree as raw JSON, for clients that render it themselves rather than selecting the typed tree")
+    def unsafe_children(self) -> Optional[AnyScalar]:
+        return self._value.get("children")
+
+
+@strawberry.type(description="A leaf of styled text. Ends a branch of the tree")
+class LeafDescendant(Descendant):
+    @strawberry.field(description="The text of the leaf")
+    def text(self) -> Optional[str]:
+        return self._value.get("text")
+
+    @strawberry.field(description="Render this text bold")
+    def bold(self) -> Optional[bool]:
+        return self._value.get("bold")
+
+    @strawberry.field(description="Render this text italic")
+    def italic(self) -> Optional[bool]:
+        return self._value.get("italic")
+
+    @strawberry.field(description="Render this text underlined")
+    def underline(self) -> Optional[bool]:
+        return self._value.get("underline")
+
+    @strawberry.field(description="Render this text as code")
+    def code(self) -> Optional[bool]:
+        return self._value.get("code")
+
+
+@strawberry.type(description="A mention of a subject — the same id `Assertion.subject` carries, never a user row: a comment is evidence, and the evidence layer knows actors by subject")
+class MentionDescendant(Descendant):
+    @strawberry.field(description="The mentioned subject id")
+    def subject(self) -> Optional[str]:
+        return self._value.get("user")
+
+
+@strawberry.type(description="A paragraph of the comment body")
+class ParagraphDescendant(Descendant):
+    @strawberry.field(description="The size of the paragraph")
+    def size(self) -> Optional[str]:
+        return self._value.get("size")
+
+
+def cast_descendant(node: dict) -> Descendant:
+    """Pick the GraphQL type for one stored tree node, from its own `kind`.
+
+    Total over `DescendantKind` because `evidence.comments.validate_descendants`
+    refused anything else at write time — a stored tree is forever, so the write
+    is where the shape is enforced and this dispatch gets to be simple.
+    """
+    match node.get("kind"):
+        case "LEAF":
+            return LeafDescendant(_value=node)
+        case "MENTION":
+            return MentionDescendant(_value=node)
+        case "PARAGRAPH":
+            return ParagraphDescendant(_value=node)
+        case unknown:
+            raise ValueError(f"Stored descendant has unknown kind '{unknown}' — the write-time validation should have refused it")
+
+
+@kante.django_type(evidence_models.Comment, description="A remark somebody made about a structure — a claim, as the log has it")
+class Comment:
+    """One row of `evidence.Comment`, served like `Instance` and `Link`.
+
+    What lok kept as mutable state is read as evidence here: the author and time
+    are the `assertion`, and `resolved` is the fold over `standings` — a
+    retraction is a withdrawal or a resolution, and the standing's own assertion
+    says whose position it was. Unlike an instance, a comment's fold is honest
+    at organization grain: no graph selector ever scopes whether a remark
+    stands, so one boolean is everyone's answer.
+    """
+
+    id: strawberry.ID = strawberry.field(description="The claim's durable identity — a bare uuid")
+    created_at: datetime = kante.django_field(description="When the remark was recorded")
+    text: str = kante.django_field(description="The plain-text rendering of the body's leaves. Searchable; the body itself is `descendants`")
+    assertion: Assertion = kante.django_field(description="The act of commenting: who said it, with which app, and when")
+
+    @kante.django_field(description="The external datum this remark is about. The structure carries the thread")
+    async def structure(self) -> "Structure":
+        row = await loaders.structure_by_id_loader.load(str(cast(evidence_models.Comment, self).structure_id))
+        return Structure(_value=RetrievedStructure.from_row(get_controller(), row))
+
+    @kante.django_field(description="The comment this replies to, for threading. Null for a top-level remark")
+    async def parent(self) -> Optional["Comment"]:
+        parent_id = cast(evidence_models.Comment, self).parent_id
+        if parent_id is None:
+            return None
+        return cast(Optional["Comment"], await loaders.comment_by_id_loader.load(str(parent_id)))
+
+    @strawberry.field(description="The direct replies to this comment, oldest first — a thread reads downward")
+    async def replies(self) -> List["Comment"]:
+        return cast(List["Comment"], await loaders.replies_by_comment_loader.load(str(cast(evidence_models.Comment, self).pk)))
+
+    @strawberry.field(description="The rich body — the tree of paragraphs, leaves and mentions, as it was posted")
+    def descendants(self) -> List[Descendant]:
+        return [cast_descendant(node) for node in cast(evidence_models.Comment, self).descendants]
+
+    @strawberry.field(description="The subjects mentioned in the body, extracted at write time")
+    def mentions(self) -> List[str]:
+        return [str(subject) for subject in cast(evidence_models.Comment, self).mentions]
+
+    @strawberry.field(description="Every position anyone has taken on whether this remark still stands, newest first. Empty means nobody has withdrawn or resolved it")
+    async def standings(self) -> List[Standing]:
+        return cast(List[Standing], await loaders.standings_by_target_loader.load(str(cast(evidence_models.Comment, self).pk)))
+
+    @strawberry.field(description="Whether the winning position says this remark no longer stands — resolved by a reviewer or withdrawn by its author; `standings` says which and by whom. The fold a comment can honestly carry, because nothing scopes it per view")
+    async def resolved(self) -> bool:
+        rows = await loaders.standings_by_target_loader.load(str(cast(evidence_models.Comment, self).pk))
+        newest = rows[0] if rows else None
+        return newest is not None and not newest.stands
+
+
 @sync_to_async
 def _drawings_for_link(link: evidence_models.Link, info: kante.Info) -> List[results.EdgeDrawing]:
     """Every view that draws this claim as an edge, read back from the projections.
@@ -2425,6 +2572,22 @@ class AssertedStructure:
         # Adapted here rather than in the controller: `Asserted.subjects` carries
         # evidence rows, and `Structure` is a reading of one.
         return Structure(_value=RetrievedStructure.from_row(get_controller(), self._value.subject))
+
+
+@strawberry.type(description="An assertion about a comment — a remark recorded about a structure")
+class AssertedComment:
+    """No `drawings`, for the same reason `AssertedStructure` has none: a
+    structure has no AGE presence, so neither does its discussion."""
+
+    _value: strawberry.Private[results.Asserted]
+
+    @strawberry.field(description=_ASSERTION_DESCRIPTION)
+    def assertion(self) -> Assertion:
+        return cast(Assertion, self._value.assertion)
+
+    @strawberry.field(description="The remark this act was about — recorded it, withdrew it, or reopened it; the assertion says which")
+    def comment(self) -> Comment:
+        return cast(Comment, self._value.subject)
 
 
 @strawberry.type(description="An assertion about a metric — a measured value about a structure")
