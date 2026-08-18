@@ -1,15 +1,132 @@
 # CHANGELOG
 
 
+## v1.0.0-rc.5 (2026-08-17)
+
+
 ## v1.0.0-rc.4 (2026-08-17)
 
+### Bug Fixes
+
+- Honest arguments and descriptions across the API surface
+  ([`d8edb76`](https://github.com/arkitektio/kraph-server/commit/d8edb76c28c6e7be8cdb3e5b0e762777dedf0b11))
+
+The cleanup pass deferred from the grain-separation change — every item is a place where the schema
+  said something the resolvers did not do:
+
+- Advertised-but-refused filters are gone from the schema: hasProperty/ search/matches leave the
+  node and edge filter inputs (every resolver refused them at runtime; the runtime guards stay as a
+  backstop for internal pydantic callers), and property/category ordering leaves the node, edge and
+  structure order inputs — it raised on node lists, was silently dropped on edge lists, and was
+  silently reinterpreted as ordering by `object` on structures. StructureFilter keeps all three
+  fields because `structures` genuinely honors them over Metric rows. EntityOrder.property survives
+  at the pydantic layer for the drawing-scoped list_entities_for_category. - The vocabulary lists
+  stop ignoring their arguments: terms/structureKinds/ metricKinds now apply their filters and
+  pagination, and drop the ordering argument nothing ever wired (the order is canonical). TermOrder,
+  StructureKindOrder, MetricKindOrder, MetricFilter, MetricPaginationInput and the PropertyOrder
+  input leave the schema with their last references. - Descriptions stop teaching the removed model:
+  nine root fields no longer say "composite graph ID" (and the last `split(":")` composite parse is
+  gone from the structures filter); retract* inputs no longer describe themselves as "archiving
+  (soft deleting)"; AttestNodeInput no longer references the removed archive* family; classification
+  inputs say "word" where the field is term; participation roles are the caller's own word, not "as
+  the event's category names it". - The Event interface is no longer described as "Interface for
+  edges that track schema version and derivation time"; EventKind says what it is
+  (intrinsic/extrinsic to the sample) instead of three conflicting accounts; Graph fields stop
+  calling the graph "the category"; six edge descriptor fields and four render types lose their
+  copy-pasted descriptions. - Vestigial code goes: LinkStructureResult (the last copy of the removed
+  view-grain write-payload shape), the EdgeType literal now lists exactly the eight producible
+  Link.Kind values instead of four impossible ones, and the RetrievedEdge "Assertion Properties"
+  accessors for an edge type nothing can produce are deleted.
+
+BREAKING CHANGE: hasProperty, search and matches are removed from the entity/node/event/edge filter
+  inputs (they were runtime errors on every call); property and category are removed from the
+  node/edge/structure order inputs; the terms/structureKinds/metricKinds ordering argument and the
+  TermOrder/StructureKindOrder/MetricKindOrder/MetricFilter/ MetricPaginationInput/PropertyOrder
+  inputs are removed (they were silent no-ops); terms/structureKinds/metricKinds now actually apply
+  filters and pagination.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+
 ### Features
+
+- Comments on structures, as evidence
+  ([`6026a07`](https://github.com/arkitektio/kraph-server/commit/6026a07c96a63086025d8705d1c9b6f36416a3aa))
+
+The port of lok's komment app into the evidence model, so lok can carry its comments here: a Comment
+  is a claim about a Structure — lok addresses a comment by (identifier, object), which is exactly a
+  structure's identity — and the structure carries the thread, so the same ROI discussed from two
+  experiments is one conversation.
+
+What lok kept as mutable state arrives as appended rows:
+
+- evidence.Comment: organization-scoped, append-only (the 0005 trigger is extended to it), assertion
+  as author+time, parent FK for threading (PROTECT where lok cascades), and the rich descendant tree
+  (LEAF/MENTION/PARAGRAPH) stored flat in one JSON column on the one row — never as rows or vertices
+  of its own. text and mentions are folded from the tree at write time, because an append-only row
+  has no after-the-fact to derive them in. A mention names a subject (Assertion.subject's
+  vocabulary), never a user row. - Resolution is a Standing: retractComment says the remark no
+  longer stands — resolved by a reviewer or withdrawn by its author, the standing's own assertion
+  recording whose position it was (lok's resolved_by, as provenance) — and attestComment reopens it.
+  Comments join CACHED_TARGETS, so CurrentStanding folds and refold_current replays them;
+  Comment.resolved is the fold, honest at organization grain. - Writes follow the house shape:
+  commentOnStructure takes (identifier, object, descendants, parent) and mints the structure if the
+  datum is new, as one act under one assertion — the same shape as assertMetricValue — returning
+  AssertedComment (assertion + comment, no drawings: a structure has no AGE presence, so neither
+  does its discussion). The two mutations lok left as NotImplementedError arrive as what they were
+  underneath: a reply is a comment naming parent (validated onto the parent's thread),
+  resolveComment is retractComment. - Reads mirror lok's: comment(id:), commentsFor(identifier:,
+  object:), myMentions, plus Structure.comments; threading via parent/replies; the descendant tree
+  is served through a Descendant interface with Leaf/Mention/Paragraph types, shape-compatible with
+  lok's.
+
+No notify flag: kraph has no notification channel, and accepting a flag that does nothing is the
+  silent no-op this API keeps removing.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 
 - More features about the grpah
   ([`3f97802`](https://github.com/arkitektio/kraph-server/commit/3f9780218cd761b7d6e2387acda9a0631fd169b5))
 
 - More features that bridge the graph
   ([`62ee0c5`](https://github.com/arkitektio/kraph-server/commit/62ee0c5b7750e666fe2b3f980308e84d4b74f844))
+
+- Separate claim-grain and view-grain reads on the API surface
+  ([`1599b95`](https://github.com/arkitektio/kraph-server/commit/1599b95367af861a5e46941d6afb7c43803ac5d0))
+
+The read side leaked view-grain shapes over claim-grain answers, with the grain switch invisible to
+  clients. Five structural fixes, one act:
+
+- Singular node fetchers name their view: node/entity/naturalEvent/ protocolEvent take a required
+  graph argument and go through the same membership-then-drawing path as nodes(graph:) —
+  admitted-but-undrawn answers as the bare row shape, a node the view does not admit is refused, and
+  instance(id:) is the claim-grain reader. projected_instance (which answered from drawings[0], an
+  arbitrary view) and get_node are deleted. - Structure and Metric are claims, not Node subtypes:
+  neither has any AGE presence, so the inherited label ("the AGE graph label as recently
+  materialized", actually a hard-coded constant) and the always-null externalId are gone; both are
+  standalone types with their own id: ID!. NodeSubtype is exactly Instance.Kind's three values now.
+  - Honest Edge shape: every edge the API builds is row-backed, so Edge.assertion is non-null, and
+  the structurally-empty properties/richProperties/measuredFrom/measuredTo fields are removed from
+  Relation, StructureRelation and Measurement. - One uuid, one scalar: Node.id, Edge.id and
+  Edge.sourceId/targetId are ID!, matching Instance.id and Link.id/sourceRef/targetRef. - Stats
+  resolvers are tenant-scoped: create_stats_type takes a required scope callable; the old
+  model.objects.all() aggregated across organizations for the core models and raised
+  UnscopedEvidenceAccess outright for structureKindStats/metricKindStats.
+
+BREAKING CHANGE: node(id:), entity(id:), naturalEvent(id:) and protocolEvent(id:) require a graph
+  argument; Structure and Metric no longer implement Node (label/externalId removed); Edge.assertion
+  is non-null; Relation.properties/richProperties and the edge measuredFrom/measuredTo fields are
+  removed; Node.id, Edge.id, Edge.sourceId and Edge.targetId are ID scalars instead of String.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+
+### Breaking Changes
+
+- Hasproperty, search and matches are removed from the entity/node/event/edge filter inputs (they
+  were runtime errors on every call); property and category are removed from the node/edge/structure
+  order inputs; the terms/structureKinds/metricKinds ordering argument and the
+  TermOrder/StructureKindOrder/MetricKindOrder/MetricFilter/ MetricPaginationInput/PropertyOrder
+  inputs are removed (they were silent no-ops); terms/structureKinds/metricKinds now actually apply
+  filters and pagination.
 
 
 ## v1.0.0-rc.3 (2026-08-15)
