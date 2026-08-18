@@ -1,7 +1,15 @@
 # CHANGELOG
 
 
+## v1.0.0-rc.6 (2026-08-18)
+
+
 ## v1.0.0-rc.5 (2026-08-17)
+
+### Features
+
+- More domain specific adaptions
+  ([`0fa921b`](https://github.com/arkitektio/kraph-server/commit/0fa921b32fd931bd7684fb1210198448f325729d))
 
 
 ## v1.0.0-rc.4 (2026-08-17)
