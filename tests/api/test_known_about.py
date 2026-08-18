@@ -47,7 +47,7 @@ RETRACT_CLAIMS = """
 """
 
 PANEL = """
-    query KnownAbout($id: GraphID!) {
+    query KnownAbout($id: ID!) {
         structure(id: $id) {
             id
             metrics { __typename id key value assertion { id subject } }
@@ -382,7 +382,7 @@ async def test_the_panel_does_not_scale_with_the_number_of_subjects(
     try:
         result = await api_schema.execute(
             """
-            query ManyPanels($ids: [GraphID!]!) {
+            query ManyPanels($ids: [ID!]!) {
                 structures(filters: {ids: $ids}) {
                     id
                     metrics { id }

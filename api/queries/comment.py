@@ -13,10 +13,9 @@ from kante.types import Info
 
 from api import context, types
 from evidence import models as evidence_models
-from graph_engine import scalars
 
 
-def comment(info: Info, id: scalars.GraphID) -> types.Comment:
+def comment(info: Info, id: strawberry.ID) -> types.Comment:
     """One remark, as the log has it."""
     controller = context.get_controller()
     return controller._resolve_comment(str(id), info)  # type: ignore[return-value]

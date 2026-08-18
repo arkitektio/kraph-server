@@ -69,7 +69,7 @@ RETRACT_NATURAL_EVENT = """
 """
 
 ENTITY_PROPERTIES = """
-    query Entity($id: GraphID!, $graph: ID!) {
+    query Entity($id: ID!, $graph: ID!) {
         node(id: $id, graph: $graph) { ... on Entity { id properties } }
     }
 """

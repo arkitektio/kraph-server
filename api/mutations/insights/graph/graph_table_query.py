@@ -39,9 +39,17 @@ def delete_graph_table_query(
 def archive_graph_table_query(
     info: Info,
     input: inputs.ArchiveGraphTableQueryInput,
-) -> strawberry.ID:
+) -> types.GraphTableQuery:
+    """Archive a saved graph table query — a soft delete, so the row survives.
+
+    Returns the graph table query itself, and returned a bare `ID` before. `delete`
+    returns an id because the row is gone and an id is all that is left to
+    name it; `archive` leaves the row in place with `archived` set, and
+    `archiveGraph` already returned the object for exactly that reason. The
+    two spellings of one act disagreed about their own result type.
+    """
     model = input.to_pydantic()
     item = scoped(info, models.GraphTableQuery, model.id, what="graph table query")
     item.archived = True
     item.save()
-    return model.id
+    return cast(types.GraphTableQuery, item)

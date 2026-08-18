@@ -159,7 +159,15 @@ class NodeCategoryManager(CategoryManager[T], Generic[T]):
 
         store_id = self._resolve_store_id(definition.image)
         if store_id is not None:
-            defaults["store_id"] = store_id
+            # `image_id`, not `store_id`. `Category` has an `image` FK and no
+            # `store` field at all, so `defaults["store_id"]` named a column that
+            # does not exist — and `update_or_create` splits on that: the create
+            # branch passes defaults to `Model(**kwargs)` and raised `TypeError`,
+            # while the update branch `setattr`s it and Django dropped it on
+            # `save()`. So declaring a category with an image failed the first
+            # time and silently discarded the image every time after. The
+            # `re_materialize` path 70 lines down already had this right.
+            defaults["image_id"] = store_id
         if definition.color is not None:
             defaults["color"] = definition.color
 
@@ -284,7 +292,15 @@ class EdgeCategoryManager(CategoryManager[T], Generic[T]):
 
         store_id = self._resolve_store_id(definition.image)
         if store_id is not None:
-            defaults["store_id"] = store_id
+            # `image_id`, not `store_id`. `Category` has an `image` FK and no
+            # `store` field at all, so `defaults["store_id"]` named a column that
+            # does not exist — and `update_or_create` splits on that: the create
+            # branch passes defaults to `Model(**kwargs)` and raised `TypeError`,
+            # while the update branch `setattr`s it and Django dropped it on
+            # `save()`. So declaring a category with an image failed the first
+            # time and silently discarded the image every time after. The
+            # `re_materialize` path 70 lines down already had this right.
+            defaults["image_id"] = store_id
         if definition.color is not None:
             defaults["color"] = definition.color
 

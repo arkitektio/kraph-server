@@ -15,10 +15,9 @@ from kante.types import Info
 import strawberry
 
 from api import context, types
-from graph_engine import scalars
 
 
-def instance(info: Info, id: scalars.GraphID) -> types.Instance:
+def instance(info: Info, id: strawberry.ID) -> types.Instance:
     """One claimed individual, as the log has it.
 
     Answers for a claim no view admits, which is exactly what distinguishes it from
@@ -31,7 +30,7 @@ def instance(info: Info, id: scalars.GraphID) -> types.Instance:
     return controller._resolve_instance(str(id), info)  # type: ignore[return-value]
 
 
-def link(info: Info, id: scalars.GraphID) -> types.Link:
+def link(info: Info, id: strawberry.ID) -> types.Link:
     """One claim relating two things, as the log has it.
 
     Three of the eight kinds are never drawn — a measurement and a structure relation

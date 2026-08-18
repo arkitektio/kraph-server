@@ -5,6 +5,7 @@ from kante.types import Info
 
 from api import inputs, types
 from core import models
+from datalayer import models as dl_models
 from graph_engine import input_models, materialize
 from ._guards import delete_or_explain, refuse_edge_properties
 from .._scoped import accessible_graph, scoped
@@ -12,7 +13,7 @@ from .._scoped import accessible_graph, scoped
 
 def create_measurement_category(
     info: Info,
-    input: inputs.CreateMeasurementDefinitionInput,
+    input: inputs.CreateMeasurementCategoryInput,
 ) -> types.MeasurementCategory:
     """GraphQL mutation wrapper for creating measurement categories."""
 
@@ -32,7 +33,7 @@ def create_measurement_category(
     return cast(types.MeasurementCategory, ent)
 
 
-def update_measurement_category(info: Info, input: inputs.UpdateMeasurementDefinitionInput) -> types.MeasurementCategory:
+def update_measurement_category(info: Info, input: inputs.UpdateMeasurementCategoryInput) -> types.MeasurementCategory:
     """GraphQL mutation wrapper for updating measurement categories."""
     model = input.to_pydantic()
 
@@ -42,14 +43,14 @@ def update_measurement_category(info: Info, input: inputs.UpdateMeasurementDefin
         assert len(model.color) == 3 or len(model.color) == 4, "Color must be a list of 3 or 4 values RGBA"
 
     if model.image:
-        media_store = models.MediaStore.objects.get(id=model.image)
+        media_store = dl_models.MediaStore.objects.get(id=model.image)
     else:
         media_store = None
 
     item.label = model.label if model.label else item.label
     item.description = model.description if model.description else item.description
     item.color = model.color if model.color else item.color
-    item.store = media_store if media_store else item.store
+    item.image = media_store if media_store else item.image
 
     if model.pin is not None:
         if model.pin:
@@ -64,7 +65,7 @@ def update_measurement_category(info: Info, input: inputs.UpdateMeasurementDefin
 
 def delete_measurement_category(
     info: Info,
-    input: inputs.DeleteMeasurementDefinitionInput,
+    input: inputs.DeleteMeasurementCategoryInput,
 ) -> strawberry.ID:
     model = input.to_pydantic()
     item = scoped(info, models.MeasurementCategory, model.id, what="measurement category")

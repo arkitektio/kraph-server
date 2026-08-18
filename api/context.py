@@ -148,11 +148,38 @@ def get_accessible_graph(
     identifier: str | GraphName,
     actions: list[input_models.Action | str] | None = None,
 ) -> models.Graph:
+    """Resolve a `graph:` argument to the graph it names, then authorize it.
+
+    **The argument means two different things depending on its characters**, and
+    that is deliberate but was undocumented: all digits is read as a primary key,
+    anything else as an `age_name`. The SDL says `graph: ID!` and gives no hint,
+    and the callers are split — `entities`/`naturalEvents`/`protocolEvents` pass
+    `category.graph.age_name` while `node`/`nodes`/`entity` and the participation
+    lists pass whatever string the client sent.
+
+    Two consequences worth naming rather than leaving to be discovered:
+
+    - a graph whose `age_name` is all digits is unreachable by name, because the
+      pk branch claims the string first;
+    - a pk that collides with another graph's `age_name` resolves to whichever
+      branch runs, which is the pk one.
+
+    Both are narrow, and the dispatch is kept because clients and internal callers
+    rely on each half. The pk lookup is scoped to the caller's organization now
+    (it was not), so the ambiguity can no longer be used to reach across tenants —
+    the worst it can do is fail to find a graph that exists.
+    """
     graph = None
     identifier_str = str(identifier)
 
     if identifier_str.isdigit():
-        graph = models.Graph.objects.filter(id=int(identifier_str)).first()
+        # Scoped, like every other read. This was an unscoped `filter(id=…)`, so
+        # a sequential integer resolved a graph belonging to any organization and
+        # left the whole check to `validate_graph_access` below. That check does
+        # decide something now, but resolving another tenant's row first and
+        # refusing it second is a weaker shape than never seeing it.
+        organization = get_active_organization(info)
+        graph = models.Graph.objects.filter(id=int(identifier_str), organization=organization).first()
     else:
         graph = models.Graph.objects.get_graph_from_graph_name(GraphName(identifier_str))
 

@@ -33,7 +33,7 @@ RECORD_METRIC = """
 """
 
 THE_SENTENCE = """
-    query Explain($id: GraphID!, $graph: ID!) {
+    query Explain($id: ID!, $graph: ID!) {
         node(id: $id, graph: $graph) {
             ... on Entity {
                 id

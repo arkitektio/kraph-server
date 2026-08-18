@@ -8,10 +8,10 @@ from kante.types import Info
 from api import context, types, filters, order, pagination
 from api.queries import _edges
 from evidence import models as evidence_models
-from graph_engine import input_models, scalars
+from graph_engine import input_models
 
 
-def input_participation(info: Info, id: scalars.GraphID) -> types.InputParticipation:
+def input_participation(info: Info, id: strawberry.ID) -> types.InputParticipation:
     """Fetch one input participation edge by the id of the claim that made it.
 
     Resolved from the `Link` row, not from Apache AGE. The id a client holds is
@@ -29,7 +29,7 @@ def input_participation(info: Info, id: scalars.GraphID) -> types.InputParticipa
     """
     controller = context.get_controller()
 
-    edge = controller.get_relation_by_id(str(id), info=info)
+    edge = controller.get_relation_by_id(str(id), info=info, kind=evidence_models.Link.Kind.PARTICIPATES_AS_INPUT)
     if edge is None:
         raise ValueError(f"Input participation edge with ID {id} not found")
 
@@ -39,9 +39,9 @@ def input_participation(info: Info, id: scalars.GraphID) -> types.InputParticipa
 def input_participations(
     info: Info,
     graph: strawberry.ID,
-    filters: filters.RelationFilter | None = None,
-    ordering: list[order.RelationOrder] | None = None,
-    pagination: pagination.RelationPaginationInput | None = None,
+    filters: filters.ParticipationFilter | None = None,
+    ordering: list[order.ParticipationOrder] | None = None,
+    pagination: pagination.ParticipationPaginationInput | None = None,
 ) -> List[types.InputParticipation]:
     """Every standing inputparticipation claim about an event this graph contains.
 

@@ -77,7 +77,7 @@ class Query:
     metric = kante.django_field(queries.metric, description="Get a metric by ID")
     metrics = kante.django_field(queries.metrics, description="List every un-retracted metric recorded under one metric kind")
     metrics_for_structure = kante.django_field(queries.metrics_for_structure, description="List every un-retracted metric describing a structure")
-    metrics_for_assertion = kante.django_field(queries.measurements_for_assertion, description="List every metric recorded under one assertion")
+    metrics_for_assertion = kante.django_field(queries.metrics_for_assertion, description="List every metric recorded under one assertion")
 
     # =========================
     # Schema Section
@@ -85,8 +85,8 @@ class Query:
     graph: types.Graph = kante.django_field(description="Get a graph by ID")
     graphs: list[types.Graph] = kante.django_field(description="List all graphs in the graph engine")
 
-    entity_categories: list[types.EntityCategory] = kante.django_field(description="List all entity categories/schemas")
-    entity_category: types.EntityCategory = kante.django_field(description="Get a single entity category/schema by ID")
+    entity_categories: list[types.EntityCategory] = kante.django_field(description="List all entity categories")
+    entity_category: types.EntityCategory = kante.django_field(description="Get a single entity category by ID")
     # Explicit resolvers: kinds have no graph, so `CategoryFilter.graph` — which
     # was the only thing scoping these before — no longer exists to fence them.
     terms = kante.django_field(queries.terms, description="List the organization's words — its vocabulary, independent of any graph")
@@ -95,16 +95,16 @@ class Query:
     structure_kind = kante.django_field(queries.structure_kind, description="Get one structure kind by ID")
     metric_kinds = kante.django_field(queries.metric_kinds, description="List the organization's metric kinds")
     metric_kind = kante.django_field(queries.metric_kind, description="Get one metric kind by ID")
-    measurement_categories: list[types.MeasurementCategory] = kante.django_field(description="List all measurement categories/schemas")
-    measurement_category: types.MeasurementCategory = kante.django_field(description="Get a single measurement category/schema by ID")
-    relation_categories: list[types.RelationCategory] = kante.django_field(description="List all relation categories/schemas")
-    relation_category: types.RelationCategory = kante.django_field(description="Get a single relation category/schema by ID")
-    structure_relation_categories: list[types.StructureRelationCategory] = kante.django_field(description="List all structure relation categories/schemas")
-    structure_relation_category: types.StructureRelationCategory = kante.django_field(description="Get a single structure relation category/schema by ID")
-    natural_event_categories: list[types.NaturalEventCategory] = kante.django_field(description="List all natural event categories/schemas")
-    natural_event_category: types.NaturalEventCategory = kante.django_field(description="Get a single natural event category/schema by ID")
-    protocol_event_categories: list[types.ProtocolEventCategory] = kante.django_field(description="List all protocol event categories/schemas")
-    protocol_event_category: types.ProtocolEventCategory = kante.django_field(description="Get a single protocol event category/schema by ID")
+    measurement_categories: list[types.MeasurementCategory] = kante.django_field(description="List all measurement categories")
+    measurement_category: types.MeasurementCategory = kante.django_field(description="Get a single measurement category by ID")
+    relation_categories: list[types.RelationCategory] = kante.django_field(description="List all relation categories")
+    relation_category: types.RelationCategory = kante.django_field(description="Get a single relation category by ID")
+    structure_relation_categories: list[types.StructureRelationCategory] = kante.django_field(description="List all structure relation categories")
+    structure_relation_category: types.StructureRelationCategory = kante.django_field(description="Get a single structure relation category by ID")
+    natural_event_categories: list[types.NaturalEventCategory] = kante.django_field(description="List all natural event categories")
+    natural_event_category: types.NaturalEventCategory = kante.django_field(description="Get a single natural event category by ID")
+    protocol_event_categories: list[types.ProtocolEventCategory] = kante.django_field(description="List all protocol event categories")
+    protocol_event_category: types.ProtocolEventCategory = kante.django_field(description="Get a single protocol event category by ID")
 
     # The eight `materialized*` fields are gone. They read `MaterializedEdge` — a
     # stored cross-product of the category pairs an edge category permits — which
@@ -194,6 +194,18 @@ class Mutation:
     assert_structure_exists = kante.django_mutation(
         description="Claim that an external datum exists and is worth pointing at. Idempotent by (identifier, object)",
         resolver=mutations.assert_structure_exists,
+    )
+    attest_structure = kante.django_mutation(
+        description="Claim that a structure still stands, after somebody retracted it. New evidence, not an undo — both positions stay on the record",
+        resolver=mutations.attest_structure,
+    )
+    attest_metric = kante.django_mutation(
+        description="Claim that a measurement still stands. The derived values that dropped it are refolded",
+        resolver=mutations.attest_metric,
+    )
+    attest_link = kante.django_mutation(
+        description="Claim that a link claim still stands — a relation, a classification, a participation, a measurement. One act for every kind, as `retractLinks` is",
+        resolver=mutations.attest_link,
     )
     ensure_structure = kante.django_mutation(
         description="Get the structure for an external datum, creating it if this is the first sight of it",
@@ -548,15 +560,15 @@ class Mutation:
     # Schema Section
     # =========================
     create_entity_category = kante.django_mutation(
-        description="Create a new entity category/schema in the graph",
+        description="Create a new entity category in the graph",
         resolver=mutations.create_entity_category,
     )
     delete_entity_category = kante.django_mutation(
-        description="Delete an entity category/schema from the graph",
+        description="Delete an entity category from the graph",
         resolver=mutations.delete_entity_category,
     )
     update_entity_category = kante.django_mutation(
-        description="Update an existing entity category/schema in the graph",
+        description="Update an existing entity category in the graph",
         resolver=mutations.update_entity_category,
     )
     # The organization's vocabulary — the words the evidence log names. A word's
@@ -585,15 +597,15 @@ class Mutation:
         resolver=mutations.update_structure_kind,
     )
     create_structure_relation_category = kante.django_mutation(
-        description="Create a new structure relation category/schema in the graph",
+        description="Create a new structure relation category in the graph",
         resolver=mutations.create_structure_relation_category,
     )
     delete_structure_relation_category = kante.django_mutation(
-        description="Delete a structure relation category/schema from the graph",
+        description="Delete a structure relation category from the graph",
         resolver=mutations.delete_structure_relation_category,
     )
     update_structure_relation_category = kante.django_mutation(
-        description="Update an existing structure relation category/schema in the graph",
+        description="Update an existing structure relation category in the graph",
         resolver=mutations.update_structure_relation_category,
     )
     # No `create`: metric kinds are minted by the write that first records one,
@@ -607,51 +619,51 @@ class Mutation:
         resolver=mutations.update_metric_kind,
     )
     create_measurement_category = kante.django_mutation(
-        description="Create a new measurement category/schema in the graph",
+        description="Create a new measurement category in the graph",
         resolver=mutations.create_measurement_category,
     )
     delete_measurement_category = kante.django_mutation(
-        description="Delete a measurement category/schema from the graph",
+        description="Delete a measurement category from the graph",
         resolver=mutations.delete_measurement_category,
     )
     update_measurement_category = kante.django_mutation(
-        description="Update an existing measurement category/schema in the graph",
+        description="Update an existing measurement category in the graph",
         resolver=mutations.update_measurement_category,
     )
     create_relation_category = kante.django_mutation(
-        description="Create a new relation category/schema in the graph",
+        description="Create a new relation category in the graph",
         resolver=mutations.create_relation_category,
     )
     delete_relation_category = kante.django_mutation(
-        description="Delete a relation category/schema from the graph",
+        description="Delete a relation category from the graph",
         resolver=mutations.delete_relation_category,
     )
     update_relation_category = kante.django_mutation(
-        description="Update an existing relation category/schema in the graph",
+        description="Update an existing relation category in the graph",
         resolver=mutations.update_relation_category,
     )
     create_natural_event_category = kante.django_mutation(
-        description="Create a new natural event category/schema in the graph",
+        description="Create a new natural event category in the graph",
         resolver=mutations.create_natural_event_category,
     )
     delete_natural_event_category = kante.django_mutation(
-        description="Delete a natural event category/schema from the graph",
+        description="Delete a natural event category from the graph",
         resolver=mutations.delete_natural_event_category,
     )
     update_natural_event_category = kante.django_mutation(
-        description="Update an existing natural event category/schema in the graph",
+        description="Update an existing natural event category in the graph",
         resolver=mutations.update_natural_event_category,
     )
     create_protocol_event_category = kante.django_mutation(
-        description="Create a new protocol event category/schema in the graph",
+        description="Create a new protocol event category in the graph",
         resolver=mutations.create_protocol_event_category,
     )
     delete_protocol_event_category = kante.django_mutation(
-        description="Delete a protocol event category/schema from the graph",
+        description="Delete a protocol event category from the graph",
         resolver=mutations.delete_protocol_event_category,
     )
     update_protocol_event_category = kante.django_mutation(
-        description="Update an existing protocol event category/schema in the graph",
+        description="Update an existing protocol event category in the graph",
         resolver=mutations.update_protocol_event_category,
     )
 
@@ -749,11 +761,15 @@ def create_schema(
                     serialize=lambda v: v,  # Implement your serialization logic here
                     parse_value=lambda v: v,  # Implement your parsing logic here
                 ),
-                scalars.GraphID: strawberry.scalar(
-                    name="GraphID",
-                    serialize=lambda v: v,  # Implement your serialization logic here
-                    parse_value=lambda v: v,  # Implement your parsing logic here
-                ),
+                # No `GraphID` scalar. It was a pass-through `NewType` over `str`
+                # (`serialize=lambda v: v`), so it validated nothing, and its own
+                # definition admitted the name was historical: "It is not a graph's
+                # id and has no graph component." It typed roughly half the id
+                # arguments — including organization-scoped claim keys like
+                # `structure(id:)` and `metric(metricId:)` — while `standings(id:)`,
+                # `term(id:)` and every category fetcher used plain `ID`, and every
+                # id the schema *returns* is `ID`. One value, two spellings, one of
+                # them naming a thing it had no part of. It is `ID` now.
                 scalars.StructureObject: strawberry.scalar(
                     name="StructureObject",
                     description="The `StructureObject` scalar type represents a structure object (e.g 1) on a specific identifier)",

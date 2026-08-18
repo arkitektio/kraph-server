@@ -32,7 +32,7 @@ CREATE_ENTITY = """
 """
 
 DELETE_ENTITY_CATEGORY = """
-    mutation DeleteEntityCategory($input: DeleteEntityDefinitionInput!) {
+    mutation DeleteEntityCategory($input: DeleteEntityCategoryInput!) {
         deleteEntityCategory(input: $input)
     }
 """
@@ -50,7 +50,7 @@ CREATE_STRUCTURE = """
 """
 
 DELETE_STRUCTURE_KIND = """
-    mutation DeleteStructureKind($input: DeleteStructureDefinitionInput!) {
+    mutation DeleteStructureKind($input: DeleteStructureKindInput!) {
         deleteStructureKind(input: $input)
     }
 """

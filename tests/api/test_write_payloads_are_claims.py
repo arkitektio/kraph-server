@@ -58,13 +58,13 @@ RETRACT_ENTITY = """
 """
 
 READ_INSTANCE = """
-    query ReadInstance($id: GraphID!) {
+    query ReadInstance($id: ID!) {
         instance(id: $id) { id kind term { key } standings { stands } }
     }
 """
 
 READ_ENTITY = """
-    query ReadEntity($id: GraphID!, $graph: ID!) {
+    query ReadEntity($id: ID!, $graph: ID!) {
         entity(id: $id, graph: $graph) { id schemaVersion richProperties { key } drawnIn { graph { id } } }
     }
 """
@@ -96,7 +96,7 @@ CLASSIFY = """
 """
 
 READ_LINK = """
-    query ReadLink($id: GraphID!) {
+    query ReadLink($id: ID!) {
         link(id: $id) { id kind target { ... on Term { key } ... on Instance { id } } }
     }
 """
@@ -401,7 +401,7 @@ async def test_evidence_can_inform_a_claim_rather_than_a_node(
 
     read = await api_schema.execute(
         """
-        query ReadInforms($id: GraphID!) {
+        query ReadInforms($id: ID!) {
             link(id: $id) {
                 kind
                 source { ... on Structure { id identifier } }

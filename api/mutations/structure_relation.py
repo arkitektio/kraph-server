@@ -55,7 +55,7 @@ def update_structure_relation(info: Info, input: inputs.UpdateStructureRelationI
 
     # Retract then re-assert, never edit in place: the correction and what it
     # corrected both stay on the record. Same shape as `supersede_metric_value`.
-    controller.archive_relation(relation_id=str(model.id), info=info)
+    controller.retract_relation(relation_id=str(model.id), info=info)
 
     return types.AssertedStructureRelation(
         _value=controller.create_structure_relation(
@@ -75,4 +75,4 @@ def retract_structure_relation(info: Info, input: inputs.RetractStructureRelatio
     link = controller.resolve_edge_link(str(model.id), info)
     context.assert_can_access_organization(info, link.organization)
 
-    return types.AssertedStructureRelation(_value=controller.archive_relation(relation_id=str(model.id), info=info))
+    return types.AssertedStructureRelation(_value=controller.retract_relation(relation_id=str(model.id), info=info))

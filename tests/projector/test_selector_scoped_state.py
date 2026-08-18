@@ -46,7 +46,7 @@ RECORD_METRIC = """
 """
 
 ENTITY_PROPERTIES = """
-    query Entity($id: GraphID!, $graph: ID!) {
+    query Entity($id: ID!, $graph: ID!) {
         node(id: $id, graph: $graph) { ... on Entity { id properties } }
     }
 """
@@ -207,7 +207,7 @@ async def test_a_retraction_after_a_rebuild_does_not_widen_the_scope(
     # Now retract one in-window metric, then materialize. The read below is a
     # traversal, so it shows what the last materialization wrote — a retraction
     # that never triggered one would leave the old value standing, which is the
-    # cost of materializing rather than folding on read. `archive_metric` pairs
+    # cost of materializing rather than folding on read. `retract_metric` pairs
     # the two for the same reason; this does it by hand because the test is about
     # the scoped fold, not about the mutation.
     @sync_to_async

@@ -18,7 +18,7 @@ from kante.types import Info
 from api import context, inputs, types
 
 
-def classify_nodes(info: Info, input: inputs.ClassifyNodesInput) -> types.AssertedNodes:
+def classify_nodes(info: Info, input: inputs.ClassifyNodesInput) -> types.AssertedInstances:
     """Claim that several nodes are of a word, without displacing anyone else's claim.
 
     This is the additive alternative to what `updateEntity` used to do: it
@@ -41,10 +41,26 @@ def classify_nodes(info: Info, input: inputs.ClassifyNodesInput) -> types.Assert
     organization = context.get_active_organization(info)
     context.assert_can_access_organization(info, organization)
 
-    return types.AssertedNodes(_value=controller.classify_nodes(organization=organization, classifications=model.classifications, info=info))
+    return types.AssertedInstances(_value=controller.classify_nodes(organization=organization, classifications=model.classifications, info=info))
 
 
-def retract_links(info: Info, input: inputs.RetractLinksInput) -> types.AssertedEdges:
+def attest_link(
+    info: Info,
+    input: inputs.AttestLinkInput,
+) -> types.AssertedLinks:
+    """Claim that a link claim still stands — see `attestStructure`.
+
+    One mutation for every link kind, as `retractLinks` is: a relation, a
+    classification, a participation and a measurement are re-attested by the same
+    act, and the payload reports the row's own `kind`.
+    """
+    controller = context.get_controller()
+
+    model = input.to_pydantic()
+    return types.AssertedLinks(_value=controller.attest_link(str(model.id), info=info))
+
+
+def retract_links(info: Info, input: inputs.RetractLinksInput) -> types.AssertedLinks:
     """Retract several link claims as one act. Retraction is a claim too.
 
     The claims come back as their real kinds — dispatched on the `Link` row's
@@ -62,4 +78,4 @@ def retract_links(info: Info, input: inputs.RetractLinksInput) -> types.Asserted
     model = input.to_pydantic()
     controller = context.get_controller()
 
-    return types.AssertedEdges(_value=controller.retract_links(link_ids=[str(link_id) for link_id in model.ids], info=info))
+    return types.AssertedLinks(_value=controller.retract_links(link_ids=[str(link_id) for link_id in model.ids], info=info))

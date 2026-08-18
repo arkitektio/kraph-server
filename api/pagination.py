@@ -56,6 +56,25 @@ class RelationPaginationInput:
     """Pagination options for relation queries."""
 
 
+@kante.pydantic_input(input_models.RelationPagination, all_fields=True, description="Pagination options for querying participation claims")
+class ParticipationPaginationInput:
+    """Pagination options for participation queries — see `filters.ParticipationFilter`."""
+
+
+@kante.pydantic_input(input_models.StructurePagination, all_fields=True, description="Pagination options for querying the organization's vocabulary")
+class VocabularyPaginationInput:
+    """Pagination for `terms`, `structureKinds` and `metricKinds`.
+
+    All three took `StructurePaginationInput`, which named the wrong concept:
+    a term is a word the organization uses, not a structure. Backed by the same
+    pydantic model — the shape is `limit`/`offset` either way — so this is the
+    name being made true rather than a behaviour change.
+    """
+
+    limit: Optional[int] = kante.field(default=100, description="Maximum number of items to return")
+    offset: Optional[int] = kante.field(default=0, description="Number of items to skip before starting to collect the result set")
+
+
 @kante.input(description="Pagination options for graph queries")
 class GraphPaginationInput:
     """Pagination options for graph queries."""

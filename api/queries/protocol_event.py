@@ -9,10 +9,10 @@ from api import context, filters, order, pagination, types
 from api.queries import _nodes
 from core import models
 from evidence import models as evidence_models
-from graph_engine import input_models, scalars
+from graph_engine import input_models
 
 
-def protocol_event(info: Info, id: scalars.GraphID, graph: strawberry.ID) -> types.ProtocolEvent:
+def protocol_event(info: Info, id: strawberry.ID, graph: strawberry.ID) -> types.ProtocolEvent:
     """One protocol event, as the named view holds it — see `node(id:, graph:)`.
 
     The id is the node's own uuid — no graph to take off the front of it — but

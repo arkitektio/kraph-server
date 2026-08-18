@@ -9,7 +9,7 @@ from api import context, filters, order, pagination, types
 from api.queries import _nodes
 from core import models
 from evidence import models as evidence_models
-from graph_engine import input_models, scalars
+from graph_engine import input_models
 
 
 def entities(
@@ -49,7 +49,7 @@ def entities(
     return [types.Entity(_value=node) for node in _nodes.retrieved_in(controller, graph, rows)]
 
 
-def entity(info: Info, id: scalars.GraphID, graph: strawberry.ID) -> types.Entity:
+def entity(info: Info, id: strawberry.ID, graph: strawberry.ID) -> types.Entity:
     """One entity, as the named view holds it — see `node(id:, graph:)`.
 
     Guards the kind, where it used to wrap whatever row the id named into

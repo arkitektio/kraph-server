@@ -38,7 +38,7 @@ every write, with no per-mutation special case:
 
 Which is why every drawing is **read back from the projection** rather than
 derived from what the write path intended. The two are not the same thing today
-— `controller.archive_node` unprojects from every view declaring the word,
+— `controller.retract_node` unprojects from every view declaring the word,
 ignoring each view's selector — and reading the answer means this layer becomes
 correct for free when that is fixed, instead of having to be fixed twice.
 """

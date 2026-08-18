@@ -138,7 +138,7 @@ async def test_the_single_category_mutation_refuses_it_too(api_schema, simple_ap
     guard on only one of the two surfaces would just move the silent empty result
     to the other.
 
-    Note the field name. `CreateRelationDefinitionInput` extends
+    Note the field name. `CreateRelationCategoryInput` extends
     `EntityDefinitionInput` and so calls it `propertyDefinitions`, where the
     structure-relation and measurement inputs call it `properties`. The resolver
     read `model.properties` and therefore raised `AttributeError` on every call —
@@ -147,7 +147,7 @@ async def test_the_single_category_mutation_refuses_it_too(api_schema, simple_ap
     """
     result = await api_schema.execute(
         """
-        mutation CreateRelationCategory($input: CreateRelationDefinitionInput!) {
+        mutation CreateRelationCategory($input: CreateRelationCategoryInput!) {
             createRelationCategory(input: $input) { id }
         }
         """,
@@ -176,7 +176,7 @@ async def test_creating_a_relation_category_without_properties_works(api_schema,
     """
     result = await api_schema.execute(
         """
-        mutation CreateRelationCategory($input: CreateRelationDefinitionInput!) {
+        mutation CreateRelationCategory($input: CreateRelationCategoryInput!) {
             createRelationCategory(input: $input) { id }
         }
         """,

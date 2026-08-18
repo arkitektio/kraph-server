@@ -28,7 +28,7 @@ from core import models as core_models
 from tests import writes
 
 NODE_BY_ID = """
-    query GetNode($id: GraphID!, $graph: ID!) {
+    query GetNode($id: ID!, $graph: ID!) {
         node(id: $id, graph: $graph) { __typename id }
     }
 """

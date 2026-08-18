@@ -22,7 +22,7 @@ def _resolve(info: Info, kind_id: str) -> evidence_models.MetricKind:
     return kind
 
 
-def update_metric_kind(info: Info, input: inputs.UpdateMetricDefinitionInput) -> types.MetricKind:
+def update_metric_kind(info: Info, input: inputs.UpdateMetricKindInput) -> types.MetricKind:
     """Update a metric kind's presentation.
 
     `value_kind` is deliberately not editable, now for two reasons. It is part of
@@ -47,7 +47,7 @@ def update_metric_kind(info: Info, input: inputs.UpdateMetricDefinitionInput) ->
     return kind
 
 
-def delete_metric_kind(info: Info, input: inputs.DeleteMetricDefinitionInput) -> strawberry.ID:
+def delete_metric_kind(info: Info, input: inputs.DeleteMetricKindInput) -> strawberry.ID:
     """Retire a metric kind, and the measurements recorded under it."""
     model = input.to_pydantic()
     delete_or_explain(_resolve(info, str(model.id)), what="this metric kind", instead="Archive the metrics recorded under it first.")

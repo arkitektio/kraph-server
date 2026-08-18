@@ -11,11 +11,9 @@ from enum import Enum
 
 from core import enums
 from graph_engine import input_models
-from graph_engine.scalars import AnyScalar, GraphID
-from graph_engine import scalars
+from graph_engine.scalars import AnyScalar
 from strawberry.experimental import pydantic
 from typing import Annotated
-from strawberry.scalars import JSON
 
 
 @pydantic.input(model=input_models.CategoryNodePositionInput, all_fields=True, description="Input for specifying the position of a node in the graph visualization")
@@ -163,33 +161,33 @@ class StructureDefinitionInput:
     """Definition of a structure type in the graph schema."""
 
 
-@pydantic.input(model=input_models.CreateNaturalEventDefinitionInput, all_fields=True, description="Input for creating a new natural event definition in the graph schema")
-class CreateNaturalEventDefinitionInput:
+@pydantic.input(model=input_models.CreateNaturalEventCategoryInput, all_fields=True, description="Input for creating a new natural event definition in the graph schema")
+class CreateNaturalEventCategoryInput:
     pass
 
 
-@pydantic.input(model=input_models.UpdateNaturalEventDefinitionInput, all_fields=True, description="Input for updating an existing natural event definition in the graph schema")
-class UpdateNaturalEventDefinitionInput:
+@pydantic.input(model=input_models.UpdateNaturalEventCategoryInput, all_fields=True, description="Input for updating an existing natural event definition in the graph schema")
+class UpdateNaturalEventCategoryInput:
     pass
 
 
-@pydantic.input(model=input_models.DeleteNaturalEventDefinitionInput, all_fields=True, description="Input for deleting an existing natural event definition in the graph schema")
-class DeleteNaturalEventDefinitionInput:
+@pydantic.input(model=input_models.DeleteNaturalEventCategoryInput, all_fields=True, description="Input for deleting an existing natural event definition in the graph schema")
+class DeleteNaturalEventCategoryInput:
     pass
 
 
-@pydantic.input(model=input_models.CreateProtocolEventDefinitionInput, all_fields=True, description="Input for creating a new protocol event definition in the graph schema")
-class CreateProtocolEventDefinitionInput:
+@pydantic.input(model=input_models.CreateProtocolEventCategoryInput, all_fields=True, description="Input for creating a new protocol event definition in the graph schema")
+class CreateProtocolEventCategoryInput:
     pass
 
 
-@pydantic.input(model=input_models.UpdateProtocolEventDefinitionInput, all_fields=True, description="Input for updating an existing protocol event definition in the graph schema")
-class UpdateProtocolEventDefinitionInput:
+@pydantic.input(model=input_models.UpdateProtocolEventCategoryInput, all_fields=True, description="Input for updating an existing protocol event definition in the graph schema")
+class UpdateProtocolEventCategoryInput:
     pass
 
 
-@pydantic.input(model=input_models.DeleteProtocolEventDefinitionInput, all_fields=True, description="Input for deleting an existing protocol event definition in the graph schema")
-class DeleteProtocolEventDefinitionInput:
+@pydantic.input(model=input_models.DeleteProtocolEventCategoryInput, all_fields=True, description="Input for deleting an existing protocol event definition in the graph schema")
+class DeleteProtocolEventCategoryInput:
     pass
 
 
@@ -198,23 +196,23 @@ class DeleteProtocolEventDefinitionInput:
 # ==========================================
 
 
-@pydantic.input(model=input_models.CreateEntityDefinitionInput, all_fields=True, description="Input for creating a new entity definition in the graph schema")
-class CreateEntityDefinitionInput:
+@pydantic.input(model=input_models.CreateEntityCategoryInput, all_fields=True, description="Input for creating a new entity definition in the graph schema")
+class CreateEntityCategoryInput:
     """Input for creating a new entity definition in the graph schema."""
 
     pass
 
 
-@pydantic.input(model=input_models.UpdateEntityDefinitionInput, all_fields=True, description="Input for updating an existing entity definition in the graph schema")
-class UpdateEntityDefinitionInput:
+@pydantic.input(model=input_models.UpdateEntityCategoryInput, all_fields=True, description="Input for updating an existing entity definition in the graph schema")
+class UpdateEntityCategoryInput:
     id: strawberry.ID = strawberry.field(description="The ID of the entity definition to update")
     """Input for updating an existing entity definition in the graph schema."""
 
     pass
 
 
-@pydantic.input(model=input_models.DeleteEntityDefinitionInput, all_fields=True, description="Input for deleting an existing entity definition in the graph schema")
-class DeleteEntityDefinitionInput:
+@pydantic.input(model=input_models.DeleteEntityCategoryInput, all_fields=True, description="Input for deleting an existing entity definition in the graph schema")
+class DeleteEntityCategoryInput:
     id: strawberry.ID = strawberry.field(description="The ID of the entity definition to delete")
     """Input for deleting an existing entity definition in the graph schema."""
 
@@ -232,37 +230,23 @@ class StructureDescriptorInput:
     pass
 
 
-@pydantic.input(model=input_models.CreateStructureRelationDefinitionInput, all_fields=True, description="Input for creating a new structure relation definition in the graph schema")
-class CreateStructureRelationDefinitionInput:
+@pydantic.input(model=input_models.CreateStructureRelationCategoryInput, all_fields=True, description="Input for creating a new structure relation definition in the graph schema")
+class CreateStructureRelationCategoryInput:
     """Input for creating a new structure relation definition in the graph schema."""
 
     pass
 
 
-@pydantic.input(model=input_models.UpdateStructureRelationDefinitionInput, all_fields=True, description="Input for updating an existing structure relation definition in the graph schema")
-class UpdateStructureRelationDefinitionInput:
+@pydantic.input(model=input_models.UpdateStructureRelationCategoryInput, all_fields=True, description="Input for updating an existing structure relation definition in the graph schema")
+class UpdateStructureRelationCategoryInput:
     """Input for updating an existing structure relation definition in the graph schema."""
 
     pass
 
 
-@pydantic.input(model=input_models.DeleteStructureRelationDefinitionInput, all_fields=True, description="Input for deleting an existing structure relation definition in the graph schema")
-class DeleteStructureRelationDefinitionInput:
+@pydantic.input(model=input_models.DeleteStructureRelationCategoryInput, all_fields=True, description="Input for deleting an existing structure relation definition in the graph schema")
+class DeleteStructureRelationCategoryInput:
     """Input for deleting an existing structure relation definition in the graph schema."""
-
-    pass
-
-
-@pydantic.input(model=input_models.ArchiveStructureRelationDefinitionInput, all_fields=True, description="Input for archiving (soft deleting) an existing structure relation definition in the graph schema")
-class ArchiveStructureRelationDefinitionInput:
-    """Input for archiving (soft deleting) an existing structure relation definition in the graph schema."""
-
-    pass
-
-
-@pydantic.input(model=input_models.CreateStructureDefinitionInput, all_fields=True, description="Input for creating a new structure definition in the graph schema")
-class CreateStructureDefinitionInput:
-    """Input for creating a new structure definition in the graph schema."""
 
     pass
 
@@ -282,107 +266,72 @@ class DeleteTermInput:
     """Input for retiring one of the organization's words."""
 
 
-@pydantic.input(model=input_models.UpdateStructureDefinitionInput, all_fields=True, description="Input for updating an existing structure definition in the graph schema")
-class UpdateStructureDefinitionInput:
+@pydantic.input(model=input_models.UpdateStructureKindInput, all_fields=True, description="Input for updating an existing structure definition in the graph schema")
+class UpdateStructureKindInput:
     """Input for updating an existing structure definition in the graph schema."""
 
     pass
 
 
-@pydantic.input(model=input_models.DeleteStructureDefinitionInput, all_fields=True, description="Input for deleting an existing structure definition in the graph schema")
-class DeleteStructureDefinitionInput:
+@pydantic.input(model=input_models.DeleteStructureKindInput, all_fields=True, description="Input for deleting an existing structure definition in the graph schema")
+class DeleteStructureKindInput:
     """Input for deleting an existing structure definition in the graph schema."""
 
     pass
 
 
-@pydantic.input(model=input_models.ArchiveStructureDefinitionInput, all_fields=True, description="Input for archiving (soft deleting) an existing structure definition in the graph schema")
-class ArchiveStructureDefinitionInput:
-    """Input for archiving (soft deleting) an existing structure definition in the graph schema."""
-
-    pass
-
-
-@pydantic.input(model=input_models.CreateMetricDefinitionInput, all_fields=True, description="Input for creating a new metric definition in the graph schema")
-class CreateMetricDefinitionInput:
-    """Input for creating a new metric definition in the graph schema."""
-
-    pass
-
-
-@pydantic.input(model=input_models.UpdateMetricDefinitionInput, all_fields=True, description="Input for updating an existing metric definition in the graph schema")
-class UpdateMetricDefinitionInput:
+@pydantic.input(model=input_models.UpdateMetricKindInput, all_fields=True, description="Input for updating an existing metric definition in the graph schema")
+class UpdateMetricKindInput:
     """Input for updating an existing metric definition in the graph schema."""
 
     pass
 
 
-@pydantic.input(model=input_models.DeleteMetricDefinitionInput, all_fields=True, description="Input for deleting an existing metric definition in the graph schema")
-class DeleteMetricDefinitionInput:
+@pydantic.input(model=input_models.DeleteMetricKindInput, all_fields=True, description="Input for deleting an existing metric definition in the graph schema")
+class DeleteMetricKindInput:
     """Input for deleting an existing metric definition in the graph schema."""
 
     pass
 
 
-@pydantic.input(model=input_models.ArchiveMetricDefinitionInput, all_fields=True, description="Input for archiving (soft deleting) an existing metric definition in the graph schema")
-class ArchiveMetricDefinitionInput:
-    """Input for archiving (soft deleting) an existing metric definition in the graph schema."""
-
-    pass
-
-
-@pydantic.input(model=input_models.CreateRelationDefinitionInput, all_fields=True, description="Input for creating a new relation definition in the graph schema")
-class CreateRelationDefinitionInput:
+@pydantic.input(model=input_models.CreateRelationCategoryInput, all_fields=True, description="Input for creating a new relation definition in the graph schema")
+class CreateRelationCategoryInput:
     """Input for creating a new relation definition in the graph schema."""
 
     pass
 
 
-@pydantic.input(model=input_models.UpdateRelationDefinitionInput, all_fields=True, description="Input for updating an existing relation definition in the graph schema")
-class UpdateRelationDefinitionInput:
+@pydantic.input(model=input_models.UpdateRelationCategoryInput, all_fields=True, description="Input for updating an existing relation definition in the graph schema")
+class UpdateRelationCategoryInput:
     """Input for updating an existing relation definition in the graph schema."""
 
     pass
 
 
-@pydantic.input(model=input_models.DeleteRelationDefinitionInput, all_fields=True, description="Input for deleting an existing relation definition in the graph schema")
-class DeleteRelationDefinitionInput:
+@pydantic.input(model=input_models.DeleteRelationCategoryInput, all_fields=True, description="Input for deleting an existing relation definition in the graph schema")
+class DeleteRelationCategoryInput:
     """Input for deleting an existing relation definition in the graph schema."""
 
     pass
 
 
-@pydantic.input(model=input_models.ArchiveRelationDefinitionInput, all_fields=True, description="Input for archiving (soft deleting) an existing relation definition in the graph schema")
-class ArchiveRelationDefinitionInput:
-    """Input for archiving (soft deleting) an existing relation definition in the graph schema."""
-
-    pass
-
-
-@pydantic.input(model=input_models.CreateMeasurementDefinitionInput, all_fields=True, description="Input for creating a new measurement definition in the graph schema")
-class CreateMeasurementDefinitionInput:
+@pydantic.input(model=input_models.CreateMeasurementCategoryInput, all_fields=True, description="Input for creating a new measurement definition in the graph schema")
+class CreateMeasurementCategoryInput:
     """Input for creating a new measurement definition in the graph schema."""
 
     pass
 
 
-@pydantic.input(model=input_models.UpdateMeasurementDefinitionInput, all_fields=True, description="Input for updating an existing measurement definition in the graph schema")
-class UpdateMeasurementDefinitionInput:
+@pydantic.input(model=input_models.UpdateMeasurementCategoryInput, all_fields=True, description="Input for updating an existing measurement definition in the graph schema")
+class UpdateMeasurementCategoryInput:
     """Input for updating an existing measurement definition in the graph schema."""
 
     pass
 
 
-@pydantic.input(model=input_models.DeleteMeasurementDefinitionInput, all_fields=True, description="Input for deleting an existing measurement definition in the graph schema")
-class DeleteMeasurementDefinitionInput:
+@pydantic.input(model=input_models.DeleteMeasurementCategoryInput, all_fields=True, description="Input for deleting an existing measurement definition in the graph schema")
+class DeleteMeasurementCategoryInput:
     """Input for deleting an existing measurement definition in the graph schema."""
-
-    pass
-
-
-@pydantic.input(model=input_models.ArchiveMeasurementDefinitionInput, all_fields=True, description="Input for archiving (soft deleting) an existing measurement definition in the graph schema")
-class ArchiveMeasurementDefinitionInput:
-    """Input for archiving (soft deleting) an existing measurement definition in the graph schema."""
 
     pass
 
@@ -453,7 +402,7 @@ class CommentOnStructureInput:
     identifier: str = strawberry.field(description="The structure identifier of the datum, e.g. '@mikro/roi'")
     object: str = strawberry.field(description="The id of the external object on its service")
     descendants: List[DescendantInput] = strawberry.field(description="The rich body of the remark")
-    parent: Optional[GraphID] = strawberry.field(default=None, description="The comment this replies to. Must be on the same structure's thread")
+    parent: Optional[strawberry.ID] = strawberry.field(default=None, description="The comment this replies to. Must be on the same structure's thread")
 
 
 @pydantic.input(model=input_models.RetractCommentInput, all_fields=True, description="Input for claiming a remark no longer stands — withdrawn or resolved; the assertion records whose position it is")
@@ -525,7 +474,7 @@ class AssertMetricValueForStructureInput(MetricInput):
 
     key: str = strawberry.field(description="The key/name of the metric")
     value: AnyScalar = strawberry.field(description="The value of the metric, which can be any scalar type (string, number, boolean)")
-    structure: scalars.GraphID = strawberry.field(description="The ID of the structure this metric will be attached to — a bare uuid, its evidence primary key")
+    structure: strawberry.ID = strawberry.field(description="The ID of the structure this metric will be attached to — a bare uuid, its evidence primary key")
     pass
 
     pass
@@ -573,7 +522,7 @@ class UpdateStructureInput:
 class RetractStructureInput:
     """Input for retracting a structure claim."""
 
-    id: scalars.GraphID = strawberry.field(description="The ID of the structure to retract — a bare uuid, its evidence primary key")
+    id: strawberry.ID = strawberry.field(description="The ID of the structure to retract — a bare uuid, its evidence primary key")
 
     pass
 
@@ -589,7 +538,7 @@ class AssertRelationExistsInput:
 class RetractRelationInput:
     """Input for retracting a relation claim."""
 
-    id: scalars.GraphID = strawberry.field(description="The ID of the relation claim to retract — its `Link` primary key")
+    id: strawberry.ID = strawberry.field(description="The ID of the relation claim to retract — its `Link` primary key")
 
     pass
 
@@ -659,7 +608,22 @@ class RetractSameInstanceInput:
 class RetractEntityInput:
     """Input for retracting an entity claim."""
 
-    id: scalars.GraphID = strawberry.field(description="The ID of the entity to retract")
+    id: strawberry.ID = strawberry.field(description="The ID of the entity to retract")
+
+
+@pydantic.input(model=input_models.AttestStructureInput, all_fields=True, description="Input for claiming that a structure still stands")
+class AttestStructureInput:
+    """Input for attesting a structure."""
+
+
+@pydantic.input(model=input_models.AttestMetricInput, all_fields=True, description="Input for claiming that a measurement still stands")
+class AttestMetricInput:
+    """Input for attesting a metric."""
+
+
+@pydantic.input(model=input_models.AttestLinkInput, all_fields=True, description="Input for claiming that a link claim still stands")
+class AttestLinkInput:
+    """Input for attesting a link claim of any kind."""
 
 
 @pydantic.input(model=input_models.AttestEntityInput, all_fields=True, description="Input for claiming that an entity exists")
@@ -850,11 +814,6 @@ class DeleteGraphTableQueryInput:
 @pydantic.input(model=input_models.ArchiveGraphTableQueryInput, all_fields=True, description="Input for archiving a graph table query")
 class ArchiveGraphTableQueryInput:
     id: strawberry.ID = strawberry.field(description="The ID of the graph table query to archive")
-
-
-@pydantic.input(model=input_models.BuildGraphTableQueryInput, all_fields=True, description="Input for building a graph table query from builder arguments")
-class BuildGraphTableQueryInput:
-    pass
 
 
 @pydantic.input(model=input_models.CreateGraphPairsQueryInput, all_fields=True, description="Input for creating a graph pairs query")
@@ -1071,16 +1030,3 @@ class DeleteGraphInput:
 class ArchiveGraphInput:
     pass
 
-
-@strawberry.input(description="Input for validating a schema definition")
-class ValidateSchemaInput:
-    """
-    Input for validating a graph schema before creating a graph
-    from it.
-
-    The definition should be a GraphDefinitionModel-compatible JSON object with:
-    - system_version: Semantic version string (e.g., '1.0.0')
-    - extensions: Object containing structures, entities, relations, events
-    """
-
-    definition: GraphDefinitionInput = strawberry.field(description="The graph schema definition as JSON")

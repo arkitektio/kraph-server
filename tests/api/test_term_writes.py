@@ -27,7 +27,7 @@ from graph_engine import input_models
 from tests import writes
 
 CREATE_ENTITY_CATEGORY = """
-    mutation CreateEntityCategory($input: CreateEntityDefinitionInput!) {
+    mutation CreateEntityCategory($input: CreateEntityCategoryInput!) {
         createEntityCategory(input: $input) { id key }
     }
 """
@@ -229,7 +229,7 @@ async def test_classifying_an_event_claims_an_event_word(
 
 
 RELATION_BY_ID = """
-    query Relation($id: GraphID!) {
+    query Relation($id: ID!) {
         relation(id: $id) { id }
     }
 """

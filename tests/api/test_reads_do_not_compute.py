@@ -35,7 +35,7 @@ CREATE_ENTITY = """
 """
 
 ENTITY = """
-    query Entity($id: GraphID!, $graph: ID!) {
+    query Entity($id: ID!, $graph: ID!) {
         node(id: $id, graph: $graph) {
             ... on Entity {
                 id

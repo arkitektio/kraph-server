@@ -29,13 +29,13 @@ CREATE_ENTITY = """
 """
 
 UPDATE_CATEGORY = """
-    mutation UpdateEntityCategory($input: UpdateEntityDefinitionInput!) {
+    mutation UpdateEntityCategory($input: UpdateEntityCategoryInput!) {
         updateEntityCategory(input: $input) { id }
     }
 """
 
 ENTITY = """
-    query Entity($id: GraphID!, $graph: ID!) {
+    query Entity($id: ID!, $graph: ID!) {
         node(id: $id, graph: $graph) { ... on Entity { id properties schemaVersion } }
     }
 """

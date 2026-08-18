@@ -33,7 +33,7 @@ def _page(queryset: Any, page: pagination.StructurePaginationInput | None) -> li
 def terms(
     info: Info,
     filters: filters.TermFilter | None = None,
-    pagination: pagination.StructurePaginationInput | None = None,
+    pagination: pagination.VocabularyPaginationInput | None = None,
 ) -> List[types.Term]:
     """Every word this organization uses.
 
@@ -58,7 +58,7 @@ def term(info: Info, id: strawberry.ID) -> types.Term:
 def structure_kinds(
     info: Info,
     filters: filters.StructureKindFilter | None = None,
-    pagination: pagination.StructurePaginationInput | None = None,
+    pagination: pagination.VocabularyPaginationInput | None = None,
 ) -> List[types.StructureKind]:
     """Every kind of external datum this organization knows about."""
     organization = context.get_active_organization(info)
@@ -79,7 +79,7 @@ def structure_kind(info: Info, id: strawberry.ID) -> types.StructureKind:
 def metric_kinds(
     info: Info,
     filters: filters.MetricKindFilter | None = None,
-    pagination: pagination.StructurePaginationInput | None = None,
+    pagination: pagination.VocabularyPaginationInput | None = None,
 ) -> List[types.MetricKind]:
     """Every kind of measurement this organization knows about."""
     organization = context.get_active_organization(info)

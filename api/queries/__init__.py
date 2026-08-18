@@ -7,7 +7,7 @@ Contains all GraphQL query resolvers for the graph engine.
 from .entity import entity, entities
 from .structure import structure, structures, structure_by_identifier, informing_structures
 from .kinds import structure_kinds, structure_kind, metric_kinds, metric_kind, terms, term
-from .metric import metrics_for_structure, metric, metrics, measurements_for_assertion
+from .metric import metrics_for_structure, metric, metrics, metrics_for_assertion
 from .measurement import measurement, measurements
 from .relation import relation, relations
 from .structure_relation import structure_relation, structure_relations
@@ -65,7 +65,7 @@ __all__ = [
     "protocol_events",
     # Metric queries
     "metrics_for_structure",
-    "measurements_for_assertion",
+    "metrics_for_assertion",
     "metric",
     "metrics",
     # Assertion queries

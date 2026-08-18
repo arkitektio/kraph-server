@@ -81,6 +81,14 @@ class StructureRelationOrder:
     id: Optional[Ordering] = kante.field(default=None, description="Order by structure relation ID")
 
 
+@kante.pydantic_input(input_models.RelationOrder, description="Ordering options for participation queries")
+class ParticipationOrder:
+    """Ordering options for participation queries — see `filters.ParticipationFilter`."""
+
+    created_at: Optional[Ordering] = kante.field(default=None, description="Order by creation timestamp")
+    id: Optional[Ordering] = kante.field(default=None, description="Order by participation ID")
+
+
 @kante.pydantic_input(input_models.RelationOrder, description="Ordering options for relation queries")
 class RelationOrder:
     """Ordering options for relation queries."""

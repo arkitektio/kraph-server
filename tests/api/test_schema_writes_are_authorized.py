@@ -80,7 +80,7 @@ async def test_another_tenants_category_cannot_be_deleted(
     result = await _run(
         api_schema,
         simple_api_context,
-        "mutation D($input: DeleteEntityDefinitionInput!) { deleteEntityCategory(input: $input) }",
+        "mutation D($input: DeleteEntityCategoryInput!) { deleteEntityCategory(input: $input) }",
         {"input": {"id": str(outsider_category.pk)}},
     )
 
@@ -104,7 +104,7 @@ async def test_another_tenants_category_cannot_be_edited(
     result = await _run(
         api_schema,
         simple_api_context,
-        "mutation U($input: UpdateEntityDefinitionInput!) { updateEntityCategory(input: $input) { id } }",
+        "mutation U($input: UpdateEntityCategoryInput!) { updateEntityCategory(input: $input) { id } }",
         {"input": {"id": str(outsider_category.pk), "label": "Renamed by a stranger"}},
     )
 
@@ -125,7 +125,7 @@ async def test_a_category_cannot_be_created_in_another_tenants_graph(
     result = await _run(
         api_schema,
         simple_api_context,
-        "mutation C($input: CreateEntityDefinitionInput!) { createEntityCategory(input: $input) { id } }",
+        "mutation C($input: CreateEntityCategoryInput!) { createEntityCategory(input: $input) { id } }",
         {"input": {"graph": str(outsider_graph.pk), "key": "Trespass"}},
     )
 
@@ -280,7 +280,7 @@ async def test_the_guard_still_lets_the_owner_through(
     result = await _run(
         api_schema,
         simple_api_context,
-        "mutation C($input: CreateEntityDefinitionInput!) { createEntityCategory(input: $input) { id key } }",
+        "mutation C($input: CreateEntityCategoryInput!) { createEntityCategory(input: $input) { id key } }",
         {"input": {"graph": str(test_graph.pk), "key": "Mine"}},
     )
 

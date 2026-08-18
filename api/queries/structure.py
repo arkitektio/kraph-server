@@ -2,12 +2,11 @@
 Structure query resolvers.
 """
 
-from typing import Optional, List
+from typing import List
 from kante.types import Info
 import strawberry
 
 from api import types, context, filters, order, pagination
-from core import models
 from evidence import models as evidence_models
 from graph_engine import scalars
 from graph_engine import input_models
@@ -40,7 +39,7 @@ def structure_by_identifier(
 
 def structure(
     info: Info,
-    id: scalars.GraphID,
+    id: strawberry.ID,
 ) -> types.Structure:
     """
     Fetch a specific structure by its evidence ID.
@@ -87,7 +86,7 @@ def structures(
         kind = evidence_models.StructureKind.objects.for_organization(organization).filter(id=structure_kind_id).first()
         if kind is None:
             raise ValueError(f"Structure kind {structure_kind_id} not found")
-        filter_model.category = kind.identifier
+        filter_model.kind_identifier = kind.identifier
 
     ordering_models = [order.to_pydantic() for order in ordering] if ordering else []
     pagination_model = pagination.to_pydantic() if pagination else input_models.StructurePagination()

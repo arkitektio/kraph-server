@@ -23,7 +23,7 @@ def _resolve(info: Info, kind_id: str) -> evidence_models.StructureKind:
     return kind
 
 
-def update_structure_kind(info: Info, input: inputs.UpdateStructureDefinitionInput) -> types.StructureKind:
+def update_structure_kind(info: Info, input: inputs.UpdateStructureKindInput) -> types.StructureKind:
     """Update a structure kind's presentation.
 
     Only descriptive fields. `identifier` is the kind's identity within the
@@ -45,7 +45,7 @@ def update_structure_kind(info: Info, input: inputs.UpdateStructureDefinitionInp
     return kind
 
 
-def delete_structure_kind(info: Info, input: inputs.DeleteStructureDefinitionInput) -> strawberry.ID:
+def delete_structure_kind(info: Info, input: inputs.DeleteStructureKindInput) -> strawberry.ID:
     """Retire a structure kind that nothing has been recorded under.
 
     This used to cascade to the structures and metrics recorded under it, and

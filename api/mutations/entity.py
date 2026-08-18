@@ -72,9 +72,9 @@ def retract_entity(
 
     # The id is the entity's uuid, so there is no graph to extract from it and no
     # `get_accessible_graph` call to make here. Authorization comes from the row:
-    # `archive_entity` resolves the node and checks the caller belongs to its
+    # `retract_node` resolves the node and checks the caller belongs to its
     # organization.
-    return types.AssertedEntity(_value=controller.archive_entity(model.id, info=info))
+    return types.AssertedEntity(_value=controller.retract_node(model.id, info=info))
 
 
 def attest_entity(

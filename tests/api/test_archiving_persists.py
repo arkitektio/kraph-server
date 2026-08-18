@@ -145,9 +145,16 @@ async def test_archiving_a_saved_query_persists(
 ) -> None:
     """Nine resolvers, nine identical no-ops, one assertion shape that catches all.
 
-    Each returns a bare `ID`, so there is nothing in the response to check — the
-    row itself is the only witness, which is exactly why a name check could never
-    have found this.
+    **The response is a witness now.** These returned a bare `ID` when this test
+    was written — "there is nothing in the response to check", as it used to say —
+    which is part of why the no-op went unseen. `archive*` returns the archived
+    object, as `archiveGraph` always did: `delete` hands back an id because the row
+    is gone and an id is all that is left to name it, while `archive` leaves the
+    row in place, so handing back an id was the one shape that could not show the
+    caller what happened.
+
+    The re-read stays regardless. It is the assertion that cannot be satisfied by
+    a resolver returning the in-memory object it just set an attribute on.
     """
     model = getattr(core_models, model_name)
 
@@ -164,10 +171,11 @@ async def test_archiving_a_saved_query_persists(
     pk = await make()
 
     result = await api_schema.execute(
-        f"mutation Archive($input: Archive{model_name}Input!) {{ {mutation}(input: $input) }}",
+        f"mutation Archive($input: Archive{model_name}Input!) {{ {mutation}(input: $input) {{ id archived }} }}",
         variable_values={"input": {"id": str(pk)}},
         context_value=authenticated_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data[mutation]["archived"] is True, f"{mutation} must report the state it just set"
 
     assert await archived(pk) is True, f"{mutation} must persist the flag, not set an attribute and drop it"

@@ -67,7 +67,7 @@ def update_relation(info: Info, input: inputs.UpdateRelationInput) -> types.Asse
     organization = link.organization
     context.assert_can_access_organization(info, organization)
 
-    controller.archive_relation(relation_id=str(model.id), info=info)
+    controller.retract_relation(relation_id=str(model.id), info=info)
 
     return types.AssertedRelation(
         _value=controller.create_relation(
@@ -93,4 +93,4 @@ def retract_relation(info: Info, input: inputs.RetractRelationInput) -> types.As
     link = controller.resolve_edge_link(str(model.id), info)
     context.assert_can_access_organization(info, link.organization)
 
-    return types.AssertedRelation(_value=controller.archive_relation(relation_id=str(model.id), info=info))
+    return types.AssertedRelation(_value=controller.retract_relation(relation_id=str(model.id), info=info))

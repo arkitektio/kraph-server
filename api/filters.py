@@ -2,10 +2,9 @@ from typing import List, Optional
 import strawberry
 from core import models, enums
 from evidence import models as evidence_models
-import strawberry_django as kante
 from django.db.models import Q
 import kante
-from graph_engine import scalars, input_models
+from graph_engine import input_models
 from api import inputs
 
 
@@ -14,6 +13,13 @@ class PropertyMatch:
     """The condition to match for a specific property when filtering structures."""
 
 
+# `EntityPaginationInput` and `NodePaginationInput` used to be declared here as
+# well as in `api/pagination.py`, over the same two pydantic models — empty bodies
+# with `all_fields=True` here, explicit `limit`/`offset` there. Nothing imported
+# these copies; every resolver takes `pagination.EntityPaginationInput`. Two
+# declarations of one input in a module whose own header is about pruning dead
+# filter surface.
+#
 # The node and edge filters below carry `ids` and nothing else, deliberately.
 # They used to advertise `hasProperty`, `search` and `matches` — questions about
 # a drawn vertex's derived properties — and every node and edge resolver refused
@@ -27,33 +33,23 @@ class PropertyMatch:
 class EntityFilter:
     """Filter options for entity queries."""
 
-    ids: Optional[List[scalars.GraphID]] = kante.field(default=None, description="Filter by specific entity IDs")
-
-
-@kante.pydantic_input(input_models.EntityPagination, all_fields=True, description="Pagination options for querying entities")
-class EntityPaginationInput:
-    """Filter options for entity queries."""
+    ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific entity IDs")
 
 
 @kante.pydantic_input(input_models.NodeFilters, description="Filter options for querying nodes")
 class NodeFilters:
     """Filter options for node queries."""
 
-    ids: Optional[List[scalars.GraphID]] = kante.field(default=None, description="Filter by specific node IDs")
-
-
-@kante.pydantic_input(input_models.NodePagination, all_fields=True, description="Pagination options for querying nodes")
-class NodePaginationInput:
-    """Filter options for node queries."""
+    ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific node IDs")
 
 
 @kante.pydantic_input(input_models.StructureFilters, description="Filter options for querying structures")
 class StructureFilter:
     """Filter options for structure queries."""
 
-    ids: Optional[List[scalars.GraphID]] = kante.field(default=None, description="Filter by specific structure IDs")
+    ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific structure IDs")
     has_property: Optional[str] = kante.field(default=None, description="Filter structures that have a specific property")
-    search: Optional[str] = kante.field(default=None, description="Full-text search over structure properties")
+    search: Optional[str] = kante.field(default=None, description="Substring match on the structure's `object` — the external datum it points at. Not its properties: `hasProperty` and `matches` are the ones that go over metrics")
     matches: Optional[List[PropertyMatch]] = kante.field(default=None, description="Filter structures that match specific property conditions")
 
 
@@ -66,35 +62,35 @@ class StructureFilter:
 class NaturalEventFilter:
     """Filter options for natural event queries."""
 
-    ids: Optional[List[scalars.GraphID]] = kante.field(default=None, description="Filter by specific natural event IDs")
+    ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific natural event IDs")
 
 
 @kante.pydantic_input(input_models.ProtocolEventFilters, description="Filter options for querying protocol events")
 class ProtocolEventFilter:
     """Filter options for protocol event queries."""
 
-    ids: Optional[List[scalars.GraphID]] = kante.field(default=None, description="Filter by specific protocol event IDs")
+    ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific protocol event IDs")
 
 
 @kante.pydantic_input(input_models.MeasurementFilters, description="Filter options for querying measurements")
 class MeasurementFilter:
     """Filter options for measurement queries."""
 
-    ids: Optional[List[scalars.GraphID]] = kante.field(default=None, description="Filter by specific measurement IDs")
+    ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific measurement IDs")
 
 
 @kante.pydantic_input(input_models.StructureRelationFilters, description="Filter options for querying structure relations")
 class StructureRelationFilter:
     """Filter options for structure relation queries."""
 
-    ids: Optional[List[scalars.GraphID]] = kante.field(default=None, description="Filter by specific structure relation IDs")
+    ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific structure relation IDs")
 
 
 @kante.pydantic_input(input_models.RelationFilters, description="Filter options for querying relations")
 class RelationFilter:
     """Filter options for relation queries."""
 
-    ids: Optional[List[scalars.GraphID]] = kante.field(default=None, description="Filter by specific relation IDs")
+    ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific relation IDs")
 
 
 @kante.filter_type(models.Graph)
@@ -263,6 +259,21 @@ class StructureRelationCategoryFilter(CategoryFilter):
     pass
 
 
+@kante.pydantic_input(input_models.RelationFilters, description="Filter options for querying participation claims")
+class ParticipationFilter:
+    """Filter options for participation queries.
+
+    Its own type, and it was `RelationFilter`. `inputParticipations` and
+    `outputParticipations` list `PARTICIPATES_AS_*` links — a claim that a node
+    took part in an event, which is not a relation — so a client reading the
+    schema was told to reach for the relation vocabulary to filter something else.
+    Backed by the same pydantic model, because the narrowing this actually does
+    (`_edges.narrow`) reads `ids` and nothing else on any of them.
+    """
+
+    ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific participation IDs")
+
+
 @kante.filter_type(models.GraphQuery)
 class GraphQueryFilter:
     pass
@@ -283,38 +294,54 @@ class GraphQueryFilter:
 
 @kante.filter_type(models.GraphQuery)
 class GraphTableQueryFilter(GraphQueryFilter):
-    pass
+    """Adds nothing to `GraphQueryFilter`; the subclass exists to name the field's type.
 
-    @kante.filter_field(description="Full-text search over label and description")
-    def search(self, value: str, prefix: str) -> Q:
-        return Q(**{f"{prefix}label__search": value}) | Q(**{f"{prefix}description__search": value})
+    It used to re-declare `search` verbatim — the same two-`Q` body the parent
+    already defines — as did its three siblings. The parallel `NodeQuery` and
+    `EdgeQuery` families just `pass`, which is what showed the four overrides were
+    copy-paste rather than intent.
+    """
+
+    pass
 
 
 @kante.filter_type(models.GraphQuery)
 class GraphNodesQueryFilter(GraphQueryFilter):
-    pass
+    """Adds nothing to `GraphQueryFilter`; the subclass exists to name the field's type.
 
-    @kante.filter_field(description="Full-text search over label and description")
-    def search(self, value: str, prefix: str) -> Q:
-        return Q(**{f"{prefix}label__search": value}) | Q(**{f"{prefix}description__search": value})
+    It used to re-declare `search` verbatim — the same two-`Q` body the parent
+    already defines — as did its three siblings. The parallel `NodeQuery` and
+    `EdgeQuery` families just `pass`, which is what showed the four overrides were
+    copy-paste rather than intent.
+    """
+
+    pass
 
 
 @kante.filter_type(models.GraphQuery)
 class GraphPairsQueryFilter(GraphQueryFilter):
-    pass
+    """Adds nothing to `GraphQueryFilter`; the subclass exists to name the field's type.
 
-    @kante.filter_field(description="Full-text search over label and description")
-    def search(self, value: str, prefix: str) -> Q:
-        return Q(**{f"{prefix}label__search": value}) | Q(**{f"{prefix}description__search": value})
+    It used to re-declare `search` verbatim — the same two-`Q` body the parent
+    already defines — as did its three siblings. The parallel `NodeQuery` and
+    `EdgeQuery` families just `pass`, which is what showed the four overrides were
+    copy-paste rather than intent.
+    """
+
+    pass
 
 
 @kante.filter_type(models.GraphQuery)
 class GraphPathQueryFilter(GraphQueryFilter):
-    pass
+    """Adds nothing to `GraphQueryFilter`; the subclass exists to name the field's type.
 
-    @kante.filter_field(description="Full-text search over label and description")
-    def search(self, value: str, prefix: str) -> Q:
-        return Q(**{f"{prefix}label__search": value}) | Q(**{f"{prefix}description__search": value})
+    It used to re-declare `search` verbatim — the same two-`Q` body the parent
+    already defines — as did its three siblings. The parallel `NodeQuery` and
+    `EdgeQuery` families just `pass`, which is what showed the four overrides were
+    copy-paste rather than intent.
+    """
+
+    pass
 
 
 @kante.filter_type(models.NodeQuery)

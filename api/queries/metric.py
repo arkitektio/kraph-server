@@ -4,13 +4,12 @@ from typing import List
 import strawberry
 from kante.types import Info
 
-from api import types, context, filters, order, pagination
-from graph_engine import scalars
+from api import types, context
 
 
 def metric(
     info: Info,
-    metric_id: scalars.GraphID,
+    id: strawberry.ID,
 ) -> types.Metric:
     """
     Fetch a single metric by ID.
@@ -18,9 +17,13 @@ def metric(
     Metrics live in the relational evidence base, so the id is a bare primary
     key rather than a `{graph}:{node}` composite.
 
+    The argument is `id`, and it was `metricId` — the only singular fetcher on
+    the surface whose id argument was not called `id`, so a client reading the
+    schema had to remember one exception.
+
     Args:
         info: Strawberry Info context
-        metric_id: The metric's evidence primary key
+        id: The metric's evidence primary key
 
     Returns:
         A Metric object
@@ -30,7 +33,7 @@ def metric(
     """
     controller = context.get_controller()
 
-    return types.Metric(_value=controller.get_metric(str(metric_id), info))
+    return types.Metric(_value=controller.get_metric(str(id), info))
 
 
 def metrics(
@@ -74,7 +77,7 @@ def metrics(
 
 def metrics_for_structure(
     info: Info,
-    structure_id: scalars.GraphID,
+    structure_id: strawberry.ID,
 ) -> List[types.Metric]:
     """
     Fetch all measurements attached to a structure.
@@ -92,12 +95,18 @@ def metrics_for_structure(
     return [types.Metric(_value=r) for r in responses]
 
 
-def measurements_for_assertion(
+def metrics_for_assertion(
     info: Info,
-    assertion_id: scalars.GraphID,
+    assertion_id: strawberry.ID,
 ) -> List[types.Metric]:
     """
-    Fetch all measurements that were asserted by a given assertion.
+    Fetch all metrics that were recorded under a given assertion.
+
+    Named `metrics_for_assertion`, and it was `measurements_for_assertion` while
+    returning `List[types.Metric]` and being wired to the `metricsForAssertion`
+    field. `Metric` and `Measurement` are two different types here — a metric is a
+    claim shape, a measurement is a `Link` a view can draw — so the resolver name
+    and its docstring named the one concept the function has nothing to do with.
 
     This used to be unimplementable: an assertion was an AGE vertex, so its id
     alone did not say which graph to look in. Assertions are organization-scoped

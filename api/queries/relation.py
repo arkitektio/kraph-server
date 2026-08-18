@@ -8,11 +8,11 @@ from kante.types import Info
 from api import context, types, filters, order, pagination
 from api.queries import _edges
 from evidence import models as evidence_models
-from graph_engine import input_models, scalars
+from graph_engine import input_models
 from core import models
 
 
-def relation(info: Info, id: scalars.GraphID) -> types.Relation:
+def relation(info: Info, id: strawberry.ID) -> types.Relation:
     """Fetch one relation by the id of the claim that made it.
 
     Resolved from the `Link` row, not from Apache AGE. The id a client holds is
@@ -30,7 +30,7 @@ def relation(info: Info, id: scalars.GraphID) -> types.Relation:
     """
     controller = context.get_controller()
 
-    edge = controller.get_relation_by_id(str(id), info=info)
+    edge = controller.get_relation_by_id(str(id), info=info, kind=evidence_models.Link.Kind.RELATION)
     if edge is None:
         raise ValueError(f"Relation with ID {id} not found")
 

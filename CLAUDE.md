@@ -73,24 +73,32 @@ fixed, and the text is the record of why. RFC 0003 is implemented.
 
 ### The vocabulary
 
-One word per concept. Each of the first three used to carry two or more meanings, and the renames
-that fixed that are in `evidence/migrations/0008_instance_and_standing.py`.
+**Full reference, sorted by layer: [`docs/VOCABULARY.md`](docs/VOCABULARY.md).** It is the one to
+read when you need to know whether a word names something the organization *recorded*, something
+one view *declared* about it, or something a projection *computed* — three layers with different
+rules about who may change them and what happens when they disagree.
 
-| Word | Means | Lives in |
-|---|---|---|
-| `Assertion` | the **act** — who claimed it, with what tool, when. Carries `seq`, the log's total order | `evidence.Assertion` |
-| *claim* | any **recorded statement**: an `Instance`, a `Link`, a `Metric`, a `Structure`. A prose word, not a table | — |
-| `Instance` | a claimed **individual** — `entity`, `natural_event` or `protocol_event`. Every observation mints its own | `evidence.Instance` |
-| `Standing` | somebody's **position** on whether a claim still holds (`stands=True/False`) | `evidence.Standing` |
-| `CurrentStanding` | the folded answer, a cache. No row for instances — their standing is per view | `evidence.CurrentStanding` |
-| `Term` | a **word** the organization uses. What a claim names | `evidence.Term` |
-| `Category` | one **view's rule** for a word: `age_name`, `definition`, layout | `core.Category` |
-| `Graph` | a **view** over the organization's claims, with a selector saying which ones count | `core.Graph` |
-| `Node` / `Edge` | what a **graph** has — the API-facing drawing shape. `Node` = `Entity`, `NaturalEvent`, `ProtocolEvent` — exactly `Instance.Kind`. GraphQL `Structure` and `Metric` are claim shapes and implement neither interface: no view ever draws one | GraphQL only |
-| `Entity` | an instance that is **not an event** | `Instance.Kind.ENTITY`, GraphQL `Entity` |
-| drawing | how one view **draws** a claim: a vertex or an edge, and the category it drew it under | `graph_engine.results.NodeDrawing` / `EdgeDrawing` |
-| `Asserted*` | what a **write returns**: the assertion it made, the claim, and the drawings | GraphQL `AssertedEntity`, `AssertedNodes`, … |
-| `Standing` (GraphQL) | one position on a claim: `stands`, when, and whose | `api/types.py::Standing` |
+The short version. Each of the first three words used to carry two or more meanings, and the
+renames that fixed that are in `evidence/migrations/0008_instance_and_standing.py`.
+
+| Word | Layer | Means | Lives in |
+|---|---|---|---|
+| `Assertion` | evidence | the **act** — who claimed it, with what tool, when. Carries `seq`, the log's total order | `evidence.Assertion` |
+| *claim* | evidence | any **recorded statement**: an `Instance`, a `Link`, a `Metric`, a `Structure`, a `Comment`. A prose word, not a table | — |
+| `Instance` | evidence | a claimed **individual** — `entity`, `natural_event` or `protocol_event`. Every observation mints its own | `evidence.Instance` |
+| `Link` | evidence | a claim **relating two things**. Eight kinds — see `Link.Kind` | `evidence.Link` |
+| `Standing` | evidence | somebody's **position** on whether a claim still holds (`stands=True/False`) | `evidence.Standing` |
+| `CurrentStanding` | evidence (cache) | the folded answer. No row for instances — their standing is per view | `evidence.CurrentStanding` |
+| `Term` | evidence | a **word** the organization uses. What a claim names | `evidence.Term` |
+| `Graph` | schema | a **view** over the organization's claims, with a selector saying which ones count | `core.Graph` |
+| `Category` | schema | one **view's rule** for a word: `age_name`, `definition`, layout. `Category.term` is the join to evidence | `core.Category` |
+| vertex / AGE edge | projection | what a view **draws**. Entirely rebuildable by `manage.py reproject`; never a source of truth | Apache AGE |
+| drawing | projection | how one view **draws** a claim: a vertex or an edge, and the category it drew it under | `graph_engine.results.NodeDrawing` / `EdgeDrawing` |
+| `Node` / `Edge` | API | the interfaces. `Node` = one `Instance` row typed by kind (exactly `Instance.Kind`); `Edge` = one `Link` row typed by kind (exactly `Link.Kind`). `Edge` does **not** mean "drawable" — several link kinds are never projected | GraphQL only |
+| `Entity` | API | an instance that is **not an event** | `Instance.Kind.ENTITY`, GraphQL `Entity` |
+| `Structure` / `Metric` | API | claim shapes implementing **neither** interface — they are rows of *different tables*, not instances | GraphQL only |
+| `Asserted*` | API | what a **write returns**: the assertion it made, the claim, and the drawings | GraphQL `AssertedEntity`, `AssertedInstances`, … |
+| `Standing` (GraphQL) | API | one position on a claim: `stands`, when, and whose | `api/types.py::Standing` |
 
 Three consequences worth stating, because each was a bug before the words were separated:
 
@@ -152,9 +160,16 @@ The load-bearing facts:
   ("Cell", "Mitosis"), which is one view's rename of a word, so `VocabNodeTypeMap` matched none of
   its five fixed words and defaulted every drawn node to `"ENTITY"`: `node(id:)` and every write's
   `drawings { node }` reported a protocol event as an `Entity`. A vertex with no `type` is one an
-  older projector drew — `manage.py reproject`, not a fallback guess.
+  older projector drew — `manage.py reproject`, not a fallback guess. **The same defect had a second
+  home**, and it was not a label map: `Structure.informs`, `Description.target`, `Measurement.target`
+  and the relation/sameness/participation endpoints each wrapped an unfiltered `Instance` fetch in a
+  hardcoded `Entity(...)`, so an event reached through any of them was reported as an entity. They
+  all dispatch through `cast_node_to_graphql_type` now. If you add an endpoint resolver, dispatch —
+  never construct a subtype directly.
 - **A write is named for the act and returns where the claim landed.** `assertEntityExists`, not
-  `createEntity`; `retract*`, not `archive*`. Each returns the `Assertion` it recorded, the claim,
+  `createEntity`; `retract*`, not `archive*` — and the controller agrees now, where six of its nine
+  methods were still spelled `archive_*` while the API called them `retract`. Each returns the
+  `Assertion` it recorded, the claim,
   and **`drawings`** — every view that draws that claim afterwards, empty when none does. So "no
   view declares this word" is a count rather than a null, and a claim several views draw reports all
   of them instead of the lowest-id one. There is no `lifecycle` field anywhere — a node in a graph

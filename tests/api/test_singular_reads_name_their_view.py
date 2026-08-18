@@ -27,13 +27,13 @@ from core import models as core_models
 from tests import writes
 
 NODE = """
-    query GetNode($id: GraphID!, $graph: ID!) {
+    query GetNode($id: ID!, $graph: ID!) {
         node(id: $id, graph: $graph) { __typename id ... on Entity { schemaVersion } }
     }
 """
 
 INSTANCE = """
-    query GetInstance($id: GraphID!) {
+    query GetInstance($id: ID!) {
         instance(id: $id) { id term { key } }
     }
 """
@@ -102,7 +102,7 @@ async def test_the_typed_fetchers_guard_the_kind(
     event_id = await writes.create_event(api_schema, simple_api_context, "Mitosis")
 
     read = await api_schema.execute(
-        "query GetEntity($id: GraphID!, $graph: ID!) { entity(id: $id, graph: $graph) { id } }",
+        "query GetEntity($id: ID!, $graph: ID!) { entity(id: $id, graph: $graph) { id } }",
         variable_values={"id": event_id, "graph": str(test_graph.id)},
         context_value=simple_api_context,
     )

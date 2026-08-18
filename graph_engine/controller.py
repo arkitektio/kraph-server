@@ -126,14 +126,14 @@ class GraphController:
         self.subject = subject
         self.app_id = app_id
 
-    def create_universal_id(self) -> scalars.GraphID:
+    def create_universal_id(self) -> str:
         """Mint a durable identity for a node or an edge — a bare uuid.
 
-        Typed `GraphID` because that is what every id in this API is now. It was
+        Typed `str` because that is what every id in this API is now. It was
         `GlobalID`, a scalar whose two GraphQL fields required a vertex property
         nothing ever wrote.
         """
-        return scalars.GraphID(str(uuid.uuid4()))
+        return str(str(uuid.uuid4()))
 
     def _create_assertion(self, organization: Any, context: ProvenanceContext) -> evidence_models.Assertion:
         """Record who is making this change, in the relational evidence base.
@@ -534,7 +534,7 @@ class GraphController:
 
         return projector.rematerialize_category(self, category.graph, category, retired_keys=retired_keys)
 
-    def archive_node(self, node_id: Any, info: Info) -> results.Asserted:
+    def retract_node(self, node_id: Any, info: Info) -> results.Asserted:
         """Retract a node — an entity or an event — by its uuid.
 
         One path for all three node kinds. The event archivers each had their own
@@ -569,7 +569,7 @@ class GraphController:
 
         # Read back rather than assumed empty. A retraction is folded under each
         # graph's own selector, so a view that does not count this subject still
-        # draws the node — see `results` and the `archive_node` note in
+        # draws the node — see `results` and the `retract_node` note in
         # `docs/rfcs/0003-undrawn-nodes.md`.
         return results.Asserted.of(assertion, node, self.drawings_for_instance(node))
 
@@ -595,9 +595,12 @@ class GraphController:
 
         return results.Asserted.of(assertion, node, self.drawings_for_instance(node))
 
-    def archive_entity(self, node_id: Any, info: Info) -> results.Asserted:
-        """Retract an entity by its uuid."""
-        return self.archive_node(node_id, info)
+    # `retract_entity` is gone. It was `return self.retract_node(node_id, info)` and
+    # nothing else — one name for one act, kept only so `api/mutations/entity.py`
+    # could call a differently-spelled method than `natural_event.py` calls for
+    # the identical write. An entity, a natural event and a protocol event are
+    # three values of `Instance.kind`, and retracting one is the same act whichever
+    # it is; `retract_node` says so.
 
     # `_stamp_projection` and `_lifecycle_state_for_node` are gone, along with
     # `_get_entity_category_for_local_id`, which existed only to feed them.
@@ -845,7 +848,7 @@ class GraphController:
         state_module.merge(metric, projector.refs_informed_by(organization, [structure.pk]))
         return metric
 
-    def archive_structure(
+    def retract_structure(
         self,
         structure_id: str,
         info: Info,
@@ -1155,7 +1158,7 @@ class GraphController:
         metrics = evidence_models.Metric.objects.for_organization(assertion.organization).filter(assertion_id=assertion.pk)
         return [RetrievedMetric.from_row(self, row) for row in metrics]
 
-    def archive_metric(
+    def retract_metric(
         self,
         metric_id: str,
         info: Info,
@@ -1191,7 +1194,7 @@ class GraphController:
         self.project_from_structures(organization, [metric.structure_id])
         # The retracted metric itself, not its id. Returning a bare string forced
         # the resolver to read the row back to build a payload, which is how
-        # `archive_metric` came to report a metric fetched *after* the retraction
+        # `retract_metric` came to report a metric fetched *after* the retraction
         # under an assertion it had no handle on.
         return results.Asserted.of(assertion, metric)
 
@@ -1240,7 +1243,7 @@ class GraphController:
     def link_structure_to_entity(
         self,
         structure_id: str,
-        entity_id: scalars.GraphID,
+        entity_id: str,
         info: Info,
     ) -> results.Asserted:
         """Assert that a structure is evidence for an entity.
@@ -1274,7 +1277,7 @@ class GraphController:
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            writer.create_link(
+            link = writer.create_link(
                 organization,
                 kind=evidence_models.Link.Kind.INFORMS,
                 source_ref=str(structure.pk),
@@ -1289,7 +1292,12 @@ class GraphController:
         # their statistics, so fanning out to them would re-derive values that
         # cannot have moved.
         self.project_refs(organization, [claim_ref])
-        return results.Asserted.of(assertion, structure)
+        # The subject is the **link**, not the structure. This act does not create
+        # a structure — it resolves one that already exists and records an INFORMS
+        # claim about it — so reporting the structure named the one thing the write
+        # did not produce, and left the claim it *did* produce unaddressable. That
+        # claim is what `description(id:)` reads back.
+        return results.Asserted.of(assertion, link)
 
     # ===================================================================
     # Edges — relations, structure relations and measurements
@@ -1309,8 +1317,8 @@ class GraphController:
 
     def assert_participation(
         self,
-        event_id: scalars.GraphID,
-        entity_id: scalars.GraphID,
+        event_id: str,
+        entity_id: str,
         role: str,
         is_input: bool,
         info: Info,
@@ -1373,7 +1381,7 @@ class GraphController:
 
     def assert_participations(
         self,
-        event_id: scalars.GraphID,
+        event_id: str,
         participants: list[Any],
         info: Info,
     ) -> results.Asserted:
@@ -1648,7 +1656,7 @@ class GraphController:
             # values it fed have to stop counting it.
             self.project_refs(organization, [str(link.target_ref)])
 
-    def archive_participation(
+    def retract_participation(
         self,
         participation_id: str,
         info: Info,
@@ -2275,7 +2283,7 @@ class GraphController:
             raise ValueError(f"Edge {link.pk} is a {link.kind}, which names no term; there is nothing to restate it under")
         return link.term
 
-    def archive_relation(
+    def retract_relation(
         self,
         relation_id: str,
         info: Info,
@@ -2306,6 +2314,84 @@ class GraphController:
         # Read back, not assumed gone: the edge survives wherever another live
         # assertion still states the same proposition.
         return results.Asserted.of(assertion, link, self.drawings_for_edge(link))
+
+    def attest_link(
+        self,
+        link_id: str,
+        info: Info,
+    ) -> results.Asserted:
+        """Claim that a link still stands — the counterpart of `retract_relation`.
+
+        **`attest_*` existed for four claim kinds out of ten**: entity, natural
+        event, protocol event and comment. Structures, metrics, relations,
+        measurements, structure relations, participations and sameness could all
+        be retracted and never re-attested, so a retraction of any of them was in
+        practice one-way through the API — against the rule the write side is
+        built on, that existence is evidence and two people may disagree about it,
+        with each graph's selector deciding whose word it counts.
+
+        Not "un-retract": `writer.attest` records a fresh `Standing(stands=True)`
+        beside the retraction rather than removing it, exactly as `attest_node`
+        does. Both positions stay on the record.
+
+        Covers every link kind in one method for the reason `retract_links` does:
+        the act is the same whichever kind the row is, and the row says which.
+        """
+        from graph_engine import projector
+
+        link = self.resolve_edge_link(link_id, info)
+        organization = link.organization
+
+        with transaction.atomic():
+            assertion = self._create_assertion(organization, self._provenance_from_info(info))
+            writer.attest(organization, link, assertion)
+
+        source_ref, target_ref, term_id = projector.proposition_key(link)
+        self._reproject_proposition_everywhere(organization, source_ref, target_ref, term_id)
+        return results.Asserted.of(assertion, link, self.drawings_for_edge(link))
+
+    def attest_structure(
+        self,
+        structure_id: str,
+        info: Info,
+    ) -> results.Asserted:
+        """Claim that a structure still stands — the counterpart of `retract_structure`."""
+        structure = self._resolve_structure(structure_id, info)
+        organization = structure.organization
+
+        with transaction.atomic():
+            assertion = self._create_assertion(organization, self._provenance_from_info(info))
+            writer.attest(organization, structure, assertion)
+
+        return results.Asserted.of(assertion, structure)
+
+    def attest_metric(
+        self,
+        metric_id: str,
+        info: Info,
+    ) -> results.Asserted:
+        """Claim that a measurement still stands — the counterpart of `retract_metric`.
+
+        Refolds the state the metric feeds, because a metric coming back changes
+        every derived value that dropped it.
+        """
+        from graph_engine import projector
+
+        metric = self._resolve_metric(metric_id, info)
+        organization = metric.organization
+        instance_refs = projector.refs_informed_by(organization, [metric.structure_id])
+
+        with transaction.atomic():
+            assertion = self._create_assertion(organization, self._provenance_from_info(info))
+            result = writer.attest(organization, metric, assertion)
+            if result.moved:
+                # Guarded on the *transition*, exactly as `retract_metric` is and
+                # for the same reason: `state.merge` is a delta, so attesting
+                # twice must not add the contribution twice.
+                state_module.merge(metric, instance_refs)
+
+        self.project_from_structures(organization, [metric.structure_id])
+        return results.Asserted.of(assertion, metric)
 
     def _reproject_proposition(
         self,
@@ -2363,7 +2449,12 @@ class GraphController:
     # Relation Query Methods
     # ===================================================================
 
-    def get_relation_by_id(self, edge_id: str, info: Info | None = None) -> Optional[RetrievedEdge]:
+    def get_relation_by_id(
+        self,
+        edge_id: str,
+        info: Info | None = None,
+        kind: "evidence_models.Link.Kind | None" = None,
+    ) -> Optional[RetrievedEdge]:
         """Read one edge assertion back by its evidence id.
 
         Takes the `Link` primary key, not an AGE edge id. Edges are addressed by
@@ -2375,9 +2466,24 @@ class GraphController:
         `GraphController.__init__` never assigns, so every archive mutation
         raised `AttributeError` after doing its write. Nothing caught it because
         no test reaches the relation surface.
+
+        ``kind`` is what each caller is asking *for*, and passing it is the
+        difference between a fetcher and a coincidence. Six root fields share this
+        method — `relation`, `measurement`, `structureRelation`, `description`,
+        `inputParticipation`, `outputParticipation` — and with no kind filter one
+        `Link` uuid was a valid argument to all six, answering as six different
+        GraphQL types: `measurement(id: <a relation's id>)` returned a
+        `Measurement` whose `source` then read an `Instance` ref as a structure.
+        The node-side singulars have always guarded this way (`api/queries/
+        entity.py` raises "is a {kind}, not an entity"); the edge side did not.
+
+        `None` when the row is of another kind, so the caller raises its own
+        not-found the way it already does for a missing row.
         """
         link = evidence_models.Link.all_objects.filter(pk=edge_id).first()
         if link is None:
+            return None
+        if kind is not None and str(link.kind) != str(kind):
             return None
         self._assert_can_access(link.organization, info)
         return RetrievedEdge.from_link(self, link, category=self._category_for_term(link.term_id))
@@ -2785,8 +2891,8 @@ class GraphController:
             # from every id the API hands out.
             queryset = queryset.filter(pk__in=[str(gid) for gid in filters.ids])
 
-        if filters.category:
-            queryset = queryset.filter(identifier=filters.category)
+        if filters.kind_identifier:
+            queryset = queryset.filter(identifier=filters.kind_identifier)
 
         if filters.search:
             queryset = queryset.filter(object__icontains=filters.search)

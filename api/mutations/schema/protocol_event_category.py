@@ -5,6 +5,7 @@ from kante.types import Info
 
 from api import context, inputs, types
 from core import enums, models
+from datalayer import models as dl_models
 from evidence import writer
 from ._guards import delete_or_explain
 from .._scoped import accessible_graph, scoped
@@ -13,7 +14,7 @@ from ._rematerialize import fingerprint, rematerialize_if_moved
 
 def create_protocol_event_category(
     info: Info,
-    input: inputs.CreateProtocolEventDefinitionInput,
+    input: inputs.CreateProtocolEventCategoryInput,
 ) -> types.ProtocolEventCategory:
     """GraphQL mutation wrapper for creating entity categories."""
 
@@ -24,7 +25,7 @@ def create_protocol_event_category(
 
     media_store = None
     if model.image:
-        media_store = models.MediaStore.objects.get(id=model.image)
+        media_store = dl_models.MediaStore.objects.get(id=model.image)
 
     graph = accessible_graph(info, model.graph)
     # Keyed on `(graph, key)`, which is the pair `Category` is unique on —
@@ -82,7 +83,7 @@ def create_protocol_event_category(
     return cast(types.ProtocolEventCategory, vocab)
 
 
-def update_protocol_event_category(info: Info, input: inputs.UpdateProtocolEventDefinitionInput) -> types.ProtocolEventCategory:
+def update_protocol_event_category(info: Info, input: inputs.UpdateProtocolEventCategoryInput) -> types.ProtocolEventCategory:
     """GraphQL mutation wrapper for updating event categories."""
     model = input.to_pydantic()  # Validate input with Pydantic models
 
@@ -91,7 +92,7 @@ def update_protocol_event_category(info: Info, input: inputs.UpdateProtocolEvent
         assert len(model.color) == 3 or len(model.color) == 4, "Color must be a list of 3 or 4 values RGBA"
 
     if model.image:
-        media_store = models.MediaStore.objects.get(
+        media_store = dl_models.MediaStore.objects.get(
             id=model.image,
         )
     else:
@@ -100,7 +101,7 @@ def update_protocol_event_category(info: Info, input: inputs.UpdateProtocolEvent
     item.label = model.label if model.label else item.label
     item.description = model.description if model.description else item.description
     item.color = model.color if model.color else item.color
-    item.store = media_store if media_store else item.store
+    item.image = media_store if media_store else item.image
 
     if model.pin is not None:
         if model.pin:
@@ -114,7 +115,7 @@ def update_protocol_event_category(info: Info, input: inputs.UpdateProtocolEvent
 
 def delete_protocol_event_category(
     info: Info,
-    input: inputs.DeleteProtocolEventDefinitionInput,
+    input: inputs.DeleteProtocolEventCategoryInput,
 ) -> strawberry.ID:
     model = input.to_pydantic()  # Validate input with Pydantic models
     item = scoped(info, models.ProtocolEventCategory, model.id, what="protocol event category")

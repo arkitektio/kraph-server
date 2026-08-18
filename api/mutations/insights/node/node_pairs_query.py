@@ -38,9 +38,17 @@ def delete_node_pairs_query(
 def archive_node_pairs_query(
     info: Info,
     input: inputs.ArchiveNodePairsQueryInput,
-) -> strawberry.ID:
+) -> types.NodePairsQuery:
+    """Archive a saved node pairs query — a soft delete, so the row survives.
+
+    Returns the node pairs query itself, and returned a bare `ID` before. `delete`
+    returns an id because the row is gone and an id is all that is left to
+    name it; `archive` leaves the row in place with `archived` set, and
+    `archiveGraph` already returned the object for exactly that reason. The
+    two spellings of one act disagreed about their own result type.
+    """
     model = input.to_pydantic()
     item = scoped(info, models.NodePairsQuery, model.id, what="node pairs query")
     item.archived = True
     item.save()
-    return model.id
+    return cast(types.NodePairsQuery, item)

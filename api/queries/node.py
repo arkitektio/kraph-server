@@ -7,7 +7,7 @@ from kante.types import Info
 
 from api import context, filters, order, pagination, types
 from api.queries import _nodes
-from graph_engine import input_models, scalars
+from graph_engine import input_models
 
 
 def nodes(
@@ -42,7 +42,7 @@ def nodes(
     return [types.Node.to_subtype(node) for node in _nodes.retrieved_in(controller, graph_model, rows)]
 
 
-def node(info: Info, id: scalars.GraphID, graph: strawberry.ID) -> types.Node:
+def node(info: Info, id: strawberry.ID, graph: strawberry.ID) -> types.Node:
     """One node, as the named view holds it.
 
     A `Node` is a drawing shape — label, category, derived properties — and every

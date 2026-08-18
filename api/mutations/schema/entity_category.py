@@ -13,7 +13,7 @@ from ._rematerialize import fingerprint, rematerialize_if_moved
 
 def create_entity_category(
     info: Info,
-    input: inputs.CreateEntityDefinitionInput,
+    input: inputs.CreateEntityCategoryInput,
 ) -> types.EntityCategory:
     """GraphQL mutation wrapper for creating entity categories."""
 
@@ -43,7 +43,7 @@ def create_entity_category(
     return cast(types.EntityCategory, ent)
 
 
-def update_entity_category(info: Info, input: inputs.UpdateEntityDefinitionInput) -> types.EntityCategory:
+def update_entity_category(info: Info, input: inputs.UpdateEntityCategoryInput) -> types.EntityCategory:
     """GraphQL mutation wrapper for updating entity categories."""
     model = input.to_pydantic()  # Validate input with Pydantic models
 
@@ -65,7 +65,7 @@ def update_entity_category(info: Info, input: inputs.UpdateEntityDefinitionInput
 
 def delete_entity_category(
     info: Info,
-    input: inputs.DeleteEntityDefinitionInput,
+    input: inputs.DeleteEntityCategoryInput,
 ) -> strawberry.ID:
     model = input.to_pydantic()  # Validate input with Pydantic models
     item = scoped(info, models.EntityCategory, model.id, what="entity category")

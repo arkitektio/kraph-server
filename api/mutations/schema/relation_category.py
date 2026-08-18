@@ -5,6 +5,7 @@ from kante.types import Info
 
 from api import context, inputs, types
 from core import enums, models
+from datalayer import models as dl_models
 from evidence import writer
 from ._guards import delete_or_explain, refuse_edge_properties
 from .._scoped import accessible_graph, scoped
@@ -12,7 +13,7 @@ from .._scoped import accessible_graph, scoped
 
 def create_relation_category(
     info: Info,
-    input: inputs.CreateRelationDefinitionInput,
+    input: inputs.CreateRelationCategoryInput,
 ) -> types.RelationCategory:
     """GraphQL mutation wrapper for creating relation categories."""
 
@@ -22,7 +23,7 @@ def create_relation_category(
     # `validate_derivation_rules` — so the refusal has to be repeated here or the
     # single-category path stays the way to get an uncomputable rule stored.
     #
-    # `property_definitions`, not `properties`. `CreateRelationDefinitionInput`
+    # `property_definitions`, not `properties`. `CreateRelationCategoryInput`
     # extends `EntityDefinitionInput`, which names the field the first way; the
     # sibling structure-relation and measurement inputs name it the second. This
     # resolver read `model.properties` and so raised `AttributeError` on **every**
@@ -34,7 +35,7 @@ def create_relation_category(
 
     media_store = None
     if model.image:
-        media_store = models.MediaStore.objects.get(id=model.image)
+        media_store = dl_models.MediaStore.objects.get(id=model.image)
 
     graph = accessible_graph(info, model.graph)
     # Keyed on `(graph, key)`, which is the pair `Category` is unique on —
@@ -84,7 +85,7 @@ def create_relation_category(
     return cast(types.EntityCategory, vocab)
 
 
-def update_relation_category(info: Info, input: inputs.UpdateRelationDefinitionInput) -> types.RelationCategory:
+def update_relation_category(info: Info, input: inputs.UpdateRelationCategoryInput) -> types.RelationCategory:
     """GraphQL mutation wrapper for updating relation categories."""
     model = input.to_pydantic()  # Validate input with Pydantic models
 
@@ -94,7 +95,7 @@ def update_relation_category(info: Info, input: inputs.UpdateRelationDefinitionI
         assert len(model.color) == 3 or len(model.color) == 4, "Color must be a list of 3 or 4 values RGBA"
 
     if model.image:
-        media_store = models.MediaStore.objects.get(
+        media_store = dl_models.MediaStore.objects.get(
             id=model.image,
         )
     else:
@@ -103,7 +104,7 @@ def update_relation_category(info: Info, input: inputs.UpdateRelationDefinitionI
     item.label = model.label if model.label else item.label
     item.description = model.description if model.description else item.description
     item.color = model.color if model.color else item.color
-    item.store = media_store if media_store else item.store
+    item.image = media_store if media_store else item.image
 
     if model.pin is not None:
         if model.pin:
@@ -131,7 +132,7 @@ def update_relation_category(info: Info, input: inputs.UpdateRelationDefinitionI
 
 def delete_relation_category(
     info: Info,
-    input: inputs.DeleteRelationDefinitionInput,
+    input: inputs.DeleteRelationCategoryInput,
 ) -> strawberry.ID:
     model = input.to_pydantic()  # Validate input with Pydantic models
     item = scoped(info, models.RelationCategory, model.id, what="relation category")

@@ -13,7 +13,7 @@ from .._scoped import accessible_graph, scoped
 
 def create_structure_relation_category(
     info: Info,
-    input: inputs.CreateStructureRelationDefinitionInput,
+    input: inputs.CreateStructureRelationCategoryInput,
 ) -> types.StructureRelationCategory:
     """GraphQL mutation wrapper for creating structure relation categories."""
 
@@ -74,7 +74,7 @@ def create_structure_relation_category(
     return cast(types.StructureRelationCategory, vocab)
 
 
-def update_structure_relation_category(info: Info, input: inputs.UpdateStructureRelationDefinitionInput) -> types.StructureRelationCategory:
+def update_structure_relation_category(info: Info, input: inputs.UpdateStructureRelationCategoryInput) -> types.StructureRelationCategory:
     """GraphQL mutation wrapper for updating structure relation categories."""
     model = input.to_pydantic()  # Validate input with Pydantic models
 
@@ -84,7 +84,7 @@ def update_structure_relation_category(info: Info, input: inputs.UpdateStructure
         assert len(model.color) == 3 or len(model.color) == 4, "Color must be a list of 3 or 4 values RGBA"
 
     if model.image:
-        media_store = models.MediaStore.objects.get(
+        media_store = dl_models.MediaStore.objects.get(
             id=model.image,
         )
     else:
@@ -93,7 +93,7 @@ def update_structure_relation_category(info: Info, input: inputs.UpdateStructure
     item.label = model.label if model.label else item.label
     item.description = model.description if model.description else item.description
     item.color = model.color if model.color else item.color
-    item.store = media_store if media_store else item.store
+    item.image = media_store if media_store else item.image
 
     if model.pin is not None:
         if model.pin:
@@ -113,7 +113,7 @@ def update_structure_relation_category(info: Info, input: inputs.UpdateStructure
 
 def delete_structure_relation_category(
     info: Info,
-    input: inputs.DeleteStructureRelationDefinitionInput,
+    input: inputs.DeleteStructureRelationCategoryInput,
 ) -> strawberry.ID:
     model = input.to_pydantic()  # Validate input with Pydantic models
     item = scoped(info, models.StructureRelationCategory, model.id, what="structure relation category")

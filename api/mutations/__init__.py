@@ -7,8 +7,8 @@ Contains all GraphQL mutation resolvers for the graph engine.
 # `pin_node` is gone. It was a registered schema field whose entire body was
 # `raise NotImplementedError`, so `pinNode` was advertised and could only error.
 from .entity import assert_entity_exists, retract_entity, attest_entity
-from .structure import assert_structure_exists, retract_structure, update_structure, ensure_structure, link_structure_to_entity
-from .metric import assert_metric_value, assert_metric_value_for_structure, supersede_metric_value, retract_metric
+from .structure import assert_structure_exists, retract_structure, attest_structure, update_structure, ensure_structure, link_structure_to_entity
+from .metric import assert_metric_value, assert_metric_value_for_structure, supersede_metric_value, retract_metric, attest_metric
 from .relation import assert_relation_exists, update_relation, retract_relation
 from .measurement import assert_measurement_exists, retract_measurement
 from .structure_relation import (
@@ -19,7 +19,7 @@ from .structure_relation import (
 from .natural_event import assert_natural_event_exists, retract_natural_event, attest_natural_event
 from .protocol_event import assert_protocol_event_exists, retract_protocol_event, attest_protocol_event
 from .participation import assert_participation, assert_participations, retract_participation
-from .link import classify_nodes, retract_links
+from .link import classify_nodes, retract_links, attest_link
 from .identity import assert_same_instance, retract_same_instance
 from .comment import comment_on_structure, retract_comment, attest_comment
 from .schema import *
@@ -71,6 +71,9 @@ __all__ = [
     "assert_entity_exists",
     "retract_entity",
     "attest_entity",
+    "attest_structure",
+    "attest_metric",
+    "attest_link",
     # Node mutations
     # Structure mutations
     "assert_structure_exists",

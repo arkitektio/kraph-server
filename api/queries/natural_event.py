@@ -9,10 +9,10 @@ from api import context, filters, order, pagination, types
 from api.queries import _nodes
 from core import models
 from evidence import models as evidence_models
-from graph_engine import input_models, scalars
+from graph_engine import input_models
 
 
-def natural_event(info: Info, id: scalars.GraphID, graph: strawberry.ID) -> types.NaturalEvent:
+def natural_event(info: Info, id: strawberry.ID, graph: strawberry.ID) -> types.NaturalEvent:
     """One natural event, as the named view holds it — see `node(id:, graph:)`.
 
     The id is the node's own uuid — no graph to take off the front of it — but

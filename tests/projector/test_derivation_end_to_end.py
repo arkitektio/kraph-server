@@ -32,7 +32,7 @@ RECORD_METRIC = """
 """
 
 ENTITY = """
-    query Entity($id: GraphID!, $graph: ID!) {
+    query Entity($id: ID!, $graph: ID!) {
         node(id: $id, graph: $graph) { ... on Entity { id properties } }
     }
 """
@@ -115,7 +115,7 @@ async def test_the_projection_carries_its_schema_version(
 
     result = await api_schema.execute(
         """
-        query Entity($id: GraphID!, $graph: ID!) {
+        query Entity($id: ID!, $graph: ID!) {
             node(id: $id, graph: $graph) { ... on Entity { id schemaVersion } }
         }
         """,

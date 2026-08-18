@@ -94,6 +94,21 @@ def supersede_metric_value(
     return types.AssertedMetric(_value=controller.update_metric(payload=model, info=info))
 
 
+def attest_metric(
+    info: Info,
+    input: inputs.AttestMetricInput,
+) -> types.AssertedMetric:
+    """Claim that a measurement still stands — see `attestStructure`.
+
+    Refolds the derived values the metric feeds, because a measurement coming
+    back changes every statistic that dropped it.
+    """
+    controller = context.get_controller()
+
+    model = input.to_pydantic()
+    return types.AssertedMetric(_value=controller.attest_metric(str(model.id), info=info))
+
+
 def retract_metric(
     info: Info,
     input: inputs.RetractMetricInput,
@@ -106,4 +121,4 @@ def retract_metric(
     controller = context.get_controller()
 
     model = input.to_pydantic()
-    return types.AssertedMetric(_value=controller.archive_metric(metric_id=str(model.id), info=info))
+    return types.AssertedMetric(_value=controller.retract_metric(metric_id=str(model.id), info=info))

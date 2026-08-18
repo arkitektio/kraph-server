@@ -39,14 +39,14 @@ def retract_participation(info: Info, input: inputs.RetractParticipationInput) -
     model = input.to_pydantic()
     controller = context.get_controller()
 
-    return types.AssertedParticipation(_value=controller.archive_participation(participation_id=str(model.id), info=info))
+    return types.AssertedParticipation(_value=controller.retract_participation(participation_id=str(model.id), info=info))
 
 
-def assert_participations(info: Info, input: inputs.AssertParticipationsInput) -> types.AssertedEdges:
+def assert_participations(info: Info, input: inputs.AssertParticipationsInput) -> types.AssertedLinks:
     """Claim that several entities took part in one event, as one act.
 
     One assertion covers the batch, and the result says so: a single
-    `AssertedEdges` rather than one result per participant. Calling
+    `AssertedLinks` rather than one result per participant. Calling
     `assertParticipation` N times records the same act as N assertions, and
     `Assertion.action_id` — the field that would tie them back together — is
     never populated.
@@ -54,7 +54,7 @@ def assert_participations(info: Info, input: inputs.AssertParticipationsInput) -
     model = input.to_pydantic()
     controller = context.get_controller()
 
-    return types.AssertedEdges(
+    return types.AssertedLinks(
         _value=controller.assert_participations(
             event_id=model.event,
             participants=model.participants,

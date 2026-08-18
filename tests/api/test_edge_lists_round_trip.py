@@ -50,7 +50,7 @@ ASSERT_RELATION = """
 """
 
 LIST_RELATIONS = """
-    query Relations($category: ID!, $ids: [GraphID!]) {
+    query Relations($category: ID!, $ids: [ID!]) {
         relations(relationCategoryId: $category, filters: {ids: $ids}) {
             __typename
             id
@@ -62,7 +62,7 @@ LIST_RELATIONS = """
 """
 
 GET_RELATION = """
-    query Relation($id: GraphID!) {
+    query Relation($id: ID!) {
         relation(id: $id) { __typename id }
     }
 """

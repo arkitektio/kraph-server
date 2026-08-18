@@ -38,9 +38,17 @@ def delete_graph_path_query(
 def archive_graph_path_query(
     info: Info,
     input: inputs.ArchiveGraphPathQueryInput,
-) -> strawberry.ID:
+) -> types.GraphPathQuery:
+    """Archive a saved graph path query — a soft delete, so the row survives.
+
+    Returns the graph path query itself, and returned a bare `ID` before. `delete`
+    returns an id because the row is gone and an id is all that is left to
+    name it; `archive` leaves the row in place with `archived` set, and
+    `archiveGraph` already returned the object for exactly that reason. The
+    two spellings of one act disagreed about their own result type.
+    """
     model = input.to_pydantic()
     item = scoped(info, models.GraphPathQuery, model.id, what="graph path query")
     item.archived = True
     item.save()
-    return model.id
+    return cast(types.GraphPathQuery, item)

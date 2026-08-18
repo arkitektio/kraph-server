@@ -1,3 +1,4 @@
+import strawberry
 """INFORMS claim query resolvers.
 
 `descriptions(graph:)` is gone. It matched ``(m:Metric)-[r]->(s:Structure)``, and
@@ -15,10 +16,10 @@ whole component, neither needing a graph.
 from kante.types import Info
 
 from api import context, types
-from graph_engine import scalars
+from evidence import models as evidence_models
 
 
-def description(info: Info, id: scalars.GraphID) -> types.Description:
+def description(info: Info, id: strawberry.ID) -> types.Description:
     """Fetch one description edge by the id of the claim that made it.
 
     Resolved from the `Link` row, not from Apache AGE. The id a client holds is
@@ -36,7 +37,7 @@ def description(info: Info, id: scalars.GraphID) -> types.Description:
     """
     controller = context.get_controller()
 
-    edge = controller.get_relation_by_id(str(id), info=info)
+    edge = controller.get_relation_by_id(str(id), info=info, kind=evidence_models.Link.Kind.INFORMS)
     if edge is None:
         raise ValueError(f"Description edge with ID {id} not found")
 

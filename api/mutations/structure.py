@@ -77,7 +77,7 @@ def retract_structure(
 
     model = input.to_pydantic()
     return types.AssertedStructure(
-        _value=controller.archive_structure(
+        _value=controller.retract_structure(
             structure_id=str(model.id),
             info=info,
         )
@@ -106,10 +106,31 @@ def update_structure(
     )
 
 
+def attest_structure(
+    info: Info,
+    input: inputs.AttestStructureInput,
+) -> types.AssertedStructure:
+    """Claim that a structure still stands.
+
+    The counterpart of `retractStructure`, and it had none. `attest*` covered
+    entity, natural event, protocol event and comment — four claim kinds out of
+    ten — so every other retraction was one-way through the API, against the rule
+    the write side is built on: existence is evidence, and two people may
+    disagree about it.
+
+    Not "un-retract": this records a fresh position beside the retraction rather
+    than removing it.
+    """
+    controller = context.get_controller()
+
+    model = input.to_pydantic()
+    return types.AssertedStructure(_value=controller.attest_structure(str(model.id), info=info))
+
+
 def link_structure_to_entity(
     info: Info,
     input: inputs.LinkStructureInput,
-) -> types.AssertedStructure:
+) -> types.AssertedDescription:
     """
     Assert that a structure is evidence for an entity.
 
@@ -133,7 +154,7 @@ def link_structure_to_entity(
         object=input.structure_object,
     )
 
-    return types.AssertedStructure(
+    return types.AssertedDescription(
         _value=controller.link_structure_to_entity(
             structure_id=str(structure.pk),
             entity_id=input.entity_id,
