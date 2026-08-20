@@ -11,6 +11,14 @@ evidence rather than a status; the projection holding only what exists, so no ve
 **write API naming a term rather than a graph's category**, so a claim can be recorded before any
 view exists to hold it and a view can be declared over history it did not witness.
 
+It also predates everything that made the projection *droppable in practice*: §1's "inside a
+single AGE label space" describes evidence as AGE labels, which it has not been since the
+`evidence` app landed (§4.2's D2 shipped); `rollup.py` and `insights/` no longer exist
+(`graph_engine/aggregate.py` and `api/{mutations,queries}/insights/` are what there is); the
+projection has a named seam (`graph_engine/projection/`), a bookkeeping row and an outbox
+(`graph_engine/models.py`, `watermark.py`), and an incremental `reproject`. Read
+[`VOCABULARY.md`](./VOCABULARY.md) §3 for the current shape of the projection layer.
+
 One conclusion in here was not merely overtaken but **reversed**, and it is load-bearing enough to
 flag up front. §2.1 argues that only filterable properties need materializing and that the rest can
 be derived on read "with no observable difference". The code implemented that faithfully, and the

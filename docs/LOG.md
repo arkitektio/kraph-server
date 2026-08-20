@@ -459,11 +459,21 @@ Recorded so nobody has to rediscover them.
   care; `last_ts` (which compares with `>=`) and `high_water_assertion` (assigned
   unconditionally) did, and were nondeterministic across a rebuild.
 
-  **Still open, one level down:** `seq` is assigned at insert, not at commit, so a
-  reader polling `seq > cursor` can permanently skip a row that committed late.
-  Nothing polls today — projection is synchronous on write — but a catch-up
-  projector must gate on `pg_snapshot_xmin(pg_current_snapshot())` rather than
-  serializing appends, which would throttle bulk ingest.
+  ~~**Still open, one level down:** `seq` is assigned at insert, not at commit, so a
+  reader polling `seq > cursor` can permanently skip a row that committed late.~~
+  **Closed, differently than proposed.** A catch-up projector exists now
+  (`manage.py reproject --incremental`) and it does not poll `seq > cursor` at
+  all. `GraphController._create_assertion` writes a `PendingProjection` row — an
+  outbox — in the same transaction as the assertion, and the write deletes it *by
+  id* once its synchronous projection finished. The cursor a view reports
+  (`Graph.projection { projectedThroughSeq }`) is **derived**:
+  `min(min_pending_seq − 1, max_seq)` for a consistent graph. An uncommitted lower
+  seq either rolls back or commits together with its outbox row, which pulls the
+  cursor under it; a commit-then-crash leaves the row. So neither hazard can put
+  a claim above the cursor that the drawing has not seen, without any snapshot
+  gating and without serializing appends. `graph_engine/watermark.py` states the
+  invariant; `graph_engine/models.py` explains why nothing stores a per-graph
+  "applied through" (the first design did, and it stored a lie).
 - **`Assertion.action_name` has no source.** `action_id` and `action_args` are
   populated from the Rekuest provenance token that `AuthentikateExtension` puts on
   the kante context, and `manage.py redact` writes all three. But no provenance

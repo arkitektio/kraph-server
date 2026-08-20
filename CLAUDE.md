@@ -225,16 +225,50 @@ The load-bearing facts:
   `refold_state` all count every live metric. Which of them a *view* counts is applied on read in
   `projector._scoped_state`. The three used to disagree, so ingest and replay produced different
   numbers from the same evidence.
-- **The engine seam** is `graph_engine/engine/protocol.py::CypherEngine`; `age_engine.py` is the
-  real driver, `engine/testing/mock_cypher_engine.py` the double. New graph code should depend on
-  the protocol, not on `AgeEngine`.
-- `graph_engine/materialize.py` is the bridge schema → Django categories + AGE graph (hashed for
-  versioning); `rollup.py` generates the Cypher for derived/aggregated entity properties;
-  `insights/` renders saved queries as Jinja-templated Cypher.
+- **The projection seam** is `graph_engine/projection/protocol.py::Projector` — the writer half
+  (`draw_node`, `draw_edge`, `write_properties`, `erase_nodes`, namespaces) and the reader half
+  (`drawn_nodes`, `drawn_edge`, `list_drawn`, `render`), phrased in refs/labels/dicts, no query
+  language. `projection/cypher.py::CypherProjector` is the Apache AGE implementation and the only
+  module that emits Cypher for a drawing; `graph_engine/projector.py` decides *what* to draw and
+  calls `controller.projector.*`; `GraphController` holds a projector, not an engine, and runs no
+  query (`tests/projector/test_projector_protocol.py` enforces both). One level down,
+  `engine/protocol.py::CypherEngine` is the Cypher driver seam (`age_engine.py` real,
+  `engine/testing/mock_cypher_engine.py` double), referenced only by the Cypher projector, the
+  driver and the mock. `GraphController(engine=…)` and `materialize(engine=…)` still accept an
+  engine and wrap it — convenience, not a second seam.
+- **Projection bookkeeping** — `graph_engine/models.py`: a `Projection` row per view (status,
+  `schema_hash`, `derived_at`, `rebuilt_at`) and `PendingProjection`, an outbox row written in the
+  evidence transaction by `_create_assertion` and deleted by id once the write's projection
+  finished (`_settle`). The cursor is **derived** (`graph_engine/watermark.py`:
+  `min(min_pending_seq − 1, max_seq)`, 0 while `needs_backfill`/`rebuilding`) and is safe against
+  both a late-committing lower seq and a commit-then-crash; never store a per-graph "applied
+  through" and never sweep the outbox by seq. `Graph.projection { status projectedThroughSeq lag
+  pending schemaStale }` exposes it. `manage.py reproject --incremental --organization <slug>`
+  converges the touched refs of the outstanding assertions in every consistent graph and settles
+  exactly those rows; full `reproject --graph` marks `rebuilding` before the drop and refolds
+  `CategoryAssertedTerm` / flagged identity / `CurrentStanding` before reading them.
+  `rematerialize --stale` reads `Projection.schema_hash` (Postgres), not vertex stamps.
+  `create_vertex` is `MERGE` and `reproject_node` clears first, so every per-node draw converges.
+- **The graph's AGE handle is internal.** `Graph.age_name` is random (`g` + 32 hex,
+  `core.models.new_projection_handle`), never accepted as input, read only by the engine via
+  `get_age_name()`, and never an address: `graph:` arguments are **primary keys**, scoped to the
+  caller's organization. `Graph.ageName` is in the SDL read-only. The `pre_delete` signal in
+  `graph_engine/apps.py` drops the namespace on every deletion path, not only the mutation.
+- **Saved queries are plans.** `GraphQuery.plan` (`graph_engine/query_ir.py::TableQueryPlan`) is the
+  contract — `createGraphTableQuery(input: {plan: …})`, read back as `plan`, compiled per projection
+  kind by `Projector.render_table` (`CypherProjector` emits `MATCH … WITH … WHERE … RETURN`, every
+  value a parameter; render filters name a returned alias). `query: CypherLiteral` is read-only and
+  deprecated; a **legacy** row (plan null) still renders but takes no filter/order/page —
+  `manage.py list_legacy_queries` names them. Only the table kind exists; the node/edge families
+  and the nodes/pairs/path kinds had no execution path and are gone.
+- `graph_engine/materialize.py` is the bridge schema → Django categories + AGE namespace +
+  `Projection` row (hashed for versioning); `aggregate.py` is the pure fold over `State` for
+  derived properties (`rollup.py` is gone); saved queries live in `api/mutations/insights/` and
+  `api/queries/insights/` (there is no `insights/` package and no Jinja).
 - **GraphQL** (`api/`) is Strawberry wrapped by in-house **kante**. Auth is a *Strawberry schema
   extension* (`authentikate.strawberry.extension`), not Django middleware, and
-  `api/extensions/cypher.py::CypherEngineExtension` binds the engine per-operation through a
-  `ContextVar`. Serving is the kante router in `asgi.py` (`/graphql` + SDL at `/schema`);
+  `api/extensions/projection.py::ProjectionExtension` binds the projector per-operation through
+  `graph_engine/projection/context.py::current_projector`. Serving is the kante router in `asgi.py` (`/graphql` + SDL at `/schema`);
   `urls.py` only carries `admin/` and the `/ht` health check.
 - `datalayer/` is the S3/object-store abstraction (presigned upload grants). `rekuest_core/` — a
   vendored Arkitekt port/widget type system — is gone: nothing imported it and it was in no

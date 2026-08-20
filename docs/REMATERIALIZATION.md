@@ -6,9 +6,12 @@ and this file disagree, this file is the one to fix.*
 
 ## Why anything has to be redrawn at all
 
-A read in kraph is a graph query and nothing else. Whatever a client can ask
-about a node is a property **on the vertex** before the query runs — the
-projection does not fold anything at read time.
+A node's *properties* are a graph query and nothing else. Whatever a client can
+ask about a drawn node's derived values is a property **on the vertex** before
+the query runs — the projection folds nothing at read time. (Which nodes a view
+*holds* is a different question, answered from the claims by the view's rule —
+`api/queries/_nodes.py` — whether or not the drawing has caught up; the drawing
+supplies the properties where there is one.)
 
 That was not always true. While the projection held only the `index=True`
 properties and `api/types` derived the rest per read, a category's properties
@@ -113,20 +116,37 @@ the limit is **accepted and stated** rather than hidden, on three grounds:
 
 ## Detecting an unfinished redraw
 
-`projector.project` stamps `__schema_version` on every vertex it writes. A vertex
-carrying a hash older than `GraphSchema.active_for(graph).hash` has not been
-redrawn under the rules currently in force, and `manage.py rematerialize --stale`
-selects on exactly that:
+`graph_engine.models.Projection.schema_hash` records, per graph, the
+`GraphSchema.hash` the drawing was last **fully** derived under. A graph whose
+recorded hash is not the active schema's has not been redrawn under the rules
+currently in force, and `manage.py rematerialize --stale` selects on exactly
+that — `graph_engine.watermark.schema_stale(graph)`, a Postgres comparison.
 
-```cypher
-MATCH (e:<age_name>)
-WHERE e.__schema_version IS NULL OR e.__schema_version <> $version
-RETURN count(e) as behind
-```
+It used to be a Cypher count of vertices whose `__schema_version` stamp differed
+from the active hash. The stamp is still written (it is honest projection-internal
+bookkeeping), but the *ledger* of "which schema is this drawing at" cannot live
+only inside the cache it audits: the `reproject` that fixes a stale drawing
+destroys the stamps, and an operator could not ask Postgres whether a graph was
+behind.
+
+Who writes the hash, and when:
+
+- `rebuild` (a full `reproject`) and `materialize(backfill=True)` — the active hash,
+  since everything was just derived under it;
+- `manage.py rematerialize` — at the end of its per-graph loop, after **every**
+  node category of the graph has been redrawn. Not inside `rematerialize_category`:
+  one category redrawn out of several is not a graph that is current, and
+  `--category` deliberately leaves the ledger alone for that reason;
+- the in-request `rematerialize_if_moved` — only if the graph was current *before*
+  the mutation (the fingerprint records that); otherwise an older debt would be
+  hidden behind a fresher stamp. When the properties did **not** move it still
+  records the new hash, because a relabel changes no derived value and the graph is
+  as current under the new version as it was under the old.
 
 A graph with **no active schema is never stale** by this test — there is no
 version to be behind — because `--stale` exists precisely to make the sweep cost
 nothing when nothing is owed. It is the usual invocation for that reason.
+`Graph.projection { schemaStale }` reports the same answer to a client.
 
 ## Ordering: backfill first, then rematerialize
 
