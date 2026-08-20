@@ -13,6 +13,7 @@ This module follows the pattern from core/types.py where:
 import uuid
 
 import strawberry
+from strawberry.scalars import JSON
 from asgiref.sync import sync_to_async
 from enum import Enum
 from typing import Annotated, Any, Generic, Optional, List, Type, TypeVar, Union, cast
@@ -28,7 +29,7 @@ import kante
 from core import models
 from evidence import claims as claims_module
 from evidence import models as evidence_models
-from graph_engine import results, retrieved, scalars
+from graph_engine import query_ir, results, retrieved, scalars
 from api import filters
 from core import enums
 from stats.gen import create_stats_type
@@ -58,8 +59,6 @@ _ORG_PATH: dict[str, str] = {
     "Graph": "organization",
     "Category": "graph__organization",
     "GraphQuery": "graph__organization",
-    "NodeQuery": "graph__organization",
-    "EdgeQuery": "graph__organization",
 }
 
 
@@ -213,7 +212,9 @@ class Column:
 
 @kante.pydantic_type(input_models.WhereClauseInput, all_fields=True, description="Input type for defining a graph schema")
 class WhereClause:
-    """A column definition for a graph schema."""
+    """One predicate of a saved-query plan."""
+
+    value: JSON = strawberry.field(description="The value compared against — a JSON value, bound as a parameter")
 
 
 @kante.pydantic_type(input_models.MatchPathInput, all_fields=True, description="Input type for creating a new graph")
@@ -226,9 +227,9 @@ class ReturnStatement:
     """A return statement definition for a table query."""
 
 
-@kante.pydantic_type(input_models.BuilderArgsInput, all_fields=True, description="Input type for creating a new graph query")
-class BuilderArgs:
-    """Arguments for building a graph query."""
+@kante.pydantic_type(query_ir.TableQueryPlan, all_fields=True, description="What a saved table query means — matches, wheres, returns, columns — independent of the projection kind that compiles it. The contract a client reads back and rewrites; `query` is its compiled form")
+class TableQueryPlan:
+    """The saved-query plan, as read back."""
 
 
 @kante.pydantic_type(input_models.EventRoleInput, all_fields=True, description="Input type for defining roles in an event category")
@@ -383,7 +384,6 @@ class EdgeCategory:
     description: Optional[str] = strawberry.field(default=None, description="Description of the category")
     purl: Optional[str] = strawberry.field(default=None, description="Persistent URL for this category")
     color: Optional[List[int]] = strawberry.field(default=None, description="Color as RGBA list (0-255)")
-    relevant_edge_queries: List["EdgeQuery"] = strawberry.field(default_factory=list, description="List of relevant queries that use this category as input")
 
     # `materializableAs` used to sit here, returning `[]` unconditionally under a
     # comment admitting it. The `MaterializedEdge` rows it would have read are
@@ -405,7 +405,6 @@ class NodeCategory:
     position_z: Optional[float] = strawberry.field(default=None, description="Z coordinate (optional)")
     width: Optional[float] = strawberry.field(default=None, description="Width for visualization (optional)")
     height: Optional[float] = strawberry.field(default=None, description="Height for visualization (optional)")
-    relevant_node_queries: List["NodeQuery"] = strawberry.field(default_factory=list, description="List of relevant node queries that use this category as input")
 
 
 @kante.interface(description="Base interface for plottable queries")
@@ -429,43 +428,45 @@ class GraphQuery:
     key: str = strawberry.field(description="The key this query is referenced and pinned by, unique within its graph")
     label: str = strawberry.field(description="Human-readable name for this query")
     description: Optional[str] = strawberry.field(default=None, description="Description of this query")
-    query: scalars.CypherLiteral = strawberry.field(description="The Cypher this query runs")
     relevant_for: List["NodeCategory"] = strawberry.field(default_factory=list, description="List of node categories for which this query is relevant")
-    # Same reason as `Graph.is_archived`: nine `archive_*_query` mutations wrote
+    # Same reason as `Graph.is_archived`: the `archive_*_query` mutations wrote
     # this flag and no type ever showed it back.
     archived: bool = strawberry.field(description="Whether this saved query has been archived")
 
+    # `kind_type` serves rows with `only=["kind"]`, so every other column is
+    # deferred and touching one is a query — hence `sync_to_async` on each.
+    @strawberry.field(description="What this query means: its plan. Null only on a legacy row saved as raw Cypher before plans existed — see `legacy`")
+    async def plan(self) -> Optional[TableQueryPlan]:
+        stored = await sync_to_async(lambda: query_ir.TableQueryPlan.from_stored(cast(models.GraphQuery, self).plan))()
+        return TableQueryPlan.from_pydantic(stored) if stored is not None else None
 
-@kind_type(models.GraphQuery, enums.GraphQueryKindChoices.NODES, filters=filters.GraphNodesQueryFilter, pagination=True, ordering=order.GraphNodesQueryOrder, description="Base interface for graph schemas")
-class GraphNodesQuery(GraphQuery):
-    id: strawberry.ID = strawberry.field(description="Database ID of the category")
-    node_category: "NodeCategory" = strawberry.field(description="The node category to query")
+    @strawberry.field(description="True for a row saved as raw Cypher before the plan became the contract. It still renders, but takes no filter, order or page; rebuild it through the builder")
+    async def legacy(self) -> bool:
+        return await sync_to_async(lambda: cast(models.GraphQuery, self).is_legacy)()
+
+    @strawberry.field(
+        description="The query as compiled for the Apache AGE projection — read-only, from `plan`. The stored string for a legacy row",
+        deprecation_reason="The contract is `plan`; this is its compiled form and names a projection kind. Removed in the next major.",
+    )
+    async def query(self) -> Optional[scalars.CypherLiteral]:
+        def compiled() -> Optional[str]:
+            row = cast(models.GraphQuery, self)
+            stored = query_ir.TableQueryPlan.from_stored(row.plan)
+            if stored is None:
+                return row.query or None
+            from graph_engine.projection.cypher import compile_table_plan
+
+            text, _ = compile_table_plan(stored)
+            return text
+
+        text = await sync_to_async(compiled)()
+        return scalars.CypherLiteral(text) if text is not None else None
 
 
 @kind_type(models.GraphQuery, enums.GraphQueryKindChoices.TABLE, filters=filters.GraphTableQueryFilter, pagination=True, ordering=order.GraphTableQueryOrder, description="Base interface for graph schemas")
 class GraphTableQuery(GraphQuery, Plottable):
-    id: strawberry.ID = strawberry.field(description="Database ID of the category")
-    query: scalars.CypherLiteral = strawberry.field(description="The Cypher query to execute for this table query")
-    columns: List[Column] = strawberry.field(description="List of columns to return in the table query result")
-    builder_args: Optional[BuilderArgs] = strawberry.field(default=None, description="If this graph was built using a builder function, the arguments used for building it, which can be used for debugging or rebuilding the graph with different parameters")
-
-
-@kind_type(models.GraphQuery, enums.GraphQueryKindChoices.PAIRS, filters=filters.GraphPairsQueryFilter, pagination=True, ordering=order.GraphPairsQueryOrder, description="Base interface for graph schemas")
-class GraphPairsQuery(GraphQuery):
-    id: strawberry.ID = strawberry.field(description="Database ID of the category")
-    source_category: "NodeCategory" = kante.django_field(field_name="left_category", description="The source node category to query")
-    target_category: "NodeCategory" = kante.django_field(field_name="right_category", description="The target node category to query")
-
-    # `edgeCategory` used to sit here returning `None` unconditionally, with a
-    # docstring conceding that pairs queries have never stored one and the field
-    # has no column behind it.
-
-
-@kind_type(models.GraphQuery, enums.GraphQueryKindChoices.PATH, filters=filters.GraphPathQueryFilter, pagination=True, ordering=order.GraphPathQueryOrder, description="Base interface for graph schemas")
-class GraphPathQuery(GraphQuery):
-    id: strawberry.ID = strawberry.field(description="Database ID of the category")
-    source_category: Optional["NodeCategory"] = kante.django_field(field_name="left_category", description="The node category this path starts from")
-    target_category: Optional["NodeCategory"] = kante.django_field(field_name="right_category", description="The node category this path ends at")
+    id: strawberry.ID = strawberry.field(description="Database ID of this saved query")
+    columns: List[Column] = strawberry.field(description="How the returned aliases are presented")
 
 
 @kind_type(models.Category, enums.CategoryKindChoices.ENTITY, filters=filters.EntityCategoryFilter, pagination=True, ordering=order.EntityCategoryOrder, description="An entity category definition")
@@ -693,78 +694,6 @@ class StructureRelationCategory(EdgeCategory, Category):
         return StructureDescriptor.from_pydantic(cast(models.StructureRelationCategory, cast(models.Category, self).as_kind()).target_definition_model)
 
 
-@org_scoped
-@kante.django_interface(models.NodeQuery, description="Base interface for entity categories")
-class NodeQuery:
-    id: strawberry.ID = strawberry.field(description="Database ID of this saved query")
-    graph: "Graph" = strawberry.field(description="The graph this query belongs to")
-    key: str = strawberry.field(description="The key this query is referenced and pinned by, unique within its graph")
-    label: str = strawberry.field(description="Human-readable name for this query")
-    description: Optional[str] = strawberry.field(default=None, description="Description of this query")
-    query: scalars.CypherLiteral = strawberry.field(description="The Cypher this query runs")
-    relevant_for: List["NodeCategory"] = strawberry.field(default_factory=list, description="List of node categories for which this query is relevant")
-    # Same reason as `Graph.is_archived`: nine `archive_*_query` mutations wrote
-    # this flag and no type ever showed it back.
-    archived: bool = strawberry.field(description="Whether this saved query has been archived")
-
-
-@kind_type(models.NodeQuery, enums.NodeQueryKindChoices.TABLE, filters=filters.NodeTableQueryFilter, pagination=True, ordering=order.NodeTableQueryOrder, description="Base interface for graph schemas")
-class NodeTableQuery(NodeQuery, Plottable):
-    id: strawberry.ID = strawberry.field(description="Database ID of the category")
-    query: scalars.CypherLiteral = strawberry.field(description="The Cypher query to execute for this table query")
-    columns: List[Column] = strawberry.field(description="List of columns to return in the table query result")
-    builder_args: Optional[BuilderArgs] = strawberry.field(default=None, description="If this graph was built using a builder function, the arguments used for building it, which can be used for debugging or rebuilding the graph with different parameters")
-
-
-@kind_type(models.NodeQuery, enums.NodeQueryKindChoices.PAIRS, filters=filters.NodePairsQueryFilter, pagination=True, ordering=order.NodePairsQueryOrder, description="Base interface for graph schemas")
-class NodePairsQuery(NodeQuery):
-    id: strawberry.ID = strawberry.field(description="Database ID of the category")
-    source_category: "NodeCategory" = strawberry.field(description="The source node category to query")
-    target_category: "NodeCategory" = strawberry.field(description="The target node category to query")
-    edge_category: Optional["EdgeCategory"] = strawberry.field(default=None, description="Optional edge category to filter pairs by")
-
-
-@kind_type(models.NodeQuery, enums.NodeQueryKindChoices.PATH, filters=filters.NodePathQueryFilter, pagination=True, ordering=order.NodePathQueryOrder, description="Base interface for graph schemas")
-class NodePathQuery(NodeQuery):
-    id: strawberry.ID = strawberry.field(description="Database ID of the category")
-
-
-@org_scoped
-@kante.django_interface(models.EdgeQuery, description="Base interface for entity categories")
-class EdgeQuery:
-    id: strawberry.ID = strawberry.field(description="Database ID of this saved query")
-    graph: "Graph" = strawberry.field(description="The graph this query belongs to")
-    key: str = strawberry.field(description="The key this query is referenced and pinned by, unique within its graph")
-    label: str = strawberry.field(description="Human-readable name for this query")
-    description: Optional[str] = strawberry.field(default=None, description="Description of this query")
-    query: scalars.CypherLiteral = strawberry.field(description="The Cypher this query runs")
-    relevant_for: List["NodeCategory"] = strawberry.field(default_factory=list, description="List of node categories for which this query is relevant")
-    # Same reason as `Graph.is_archived`: nine `archive_*_query` mutations wrote
-    # this flag and no type ever showed it back.
-    archived: bool = strawberry.field(description="Whether this saved query has been archived")
-
-
-@kind_type(models.EdgeQuery, enums.EdgeQueryKindChoices.TABLE, filters=filters.EdgeTableQueryFilter, pagination=True, ordering=order.EdgeTableQueryOrder, description="Base interface for graph schemas")
-class EdgeTableQuery(EdgeQuery, Plottable):
-    id: strawberry.ID = strawberry.field(description="Database ID of the category")
-    query: scalars.CypherLiteral = strawberry.field(description="The Cypher query to execute for this table query")
-    columns: List[Column] = strawberry.field(description="List of columns to return in the table query result")
-    builder_args: Optional[BuilderArgs] = strawberry.field(default=None, description="If this graph was built using a builder function, the arguments used for building it, which can be used for debugging or rebuilding the graph with different parameters")
-
-
-@kind_type(models.EdgeQuery, enums.EdgeQueryKindChoices.PAIRS, filters=filters.EdgePairsQueryFilter, pagination=True, ordering=order.EdgePairsQueryOrder, description="Base interface for graph schemas")
-class EdgePairsQuery(EdgeQuery):
-    id: strawberry.ID = strawberry.field(description="Database ID of the category")
-    source_category: "NodeCategory" = strawberry.field(description="The source node category to query")
-    target_category: "NodeCategory" = strawberry.field(description="The target node category to query")
-    edge_category: Optional["EdgeCategory"] = strawberry.field(default=None, description="Optional edge category to filter pairs by")
-
-
-@kind_type(models.EdgeQuery, enums.EdgeQueryKindChoices.PATH, filters=filters.EdgePathQueryFilter, pagination=True, ordering=order.EdgePathQueryOrder, description="Base interface for graph schemas")
-class EdgePathQuery(EdgeQuery):
-    id: strawberry.ID = strawberry.field(description="Database ID of the category")
-
-
 # ===========================================
 # PROPERTY TYPE
 # ===========================================
@@ -774,17 +703,13 @@ def _scatter_plot_scoped(cls):
     """Fence `ScatterPlot` to the request's organization.
 
     Its own fence rather than `org_scoped`, because a scatter plot has no
-    `organization` and no `graph`: it reaches a tenant only through whichever of
-    its three query foreign keys is set. All three are nullable, so the filter is
-    a disjunction and a plot referencing no query at all is visible to nobody —
-    which is the safe direction, and such a row cannot render anyway.
+    `organization` and no `graph`: it reaches a tenant through the graph table
+    query it is drawn from.
     """
 
     def get_queryset(cls_, queryset, info, **kwargs):
         organization = get_active_organization(info)
-        return queryset.filter(
-            Q(graph_query__graph__organization=organization) | Q(node_query__graph__organization=organization) | Q(path_query__graph__organization=organization)
-        ).distinct()
+        return queryset.filter(graph_query__graph__organization=organization)
 
     cls.get_queryset = classmethod(get_queryset)
     return cls
@@ -793,7 +718,12 @@ def _scatter_plot_scoped(cls):
 @_scatter_plot_scoped
 @kante.django_type(models.ScatterPlot, filters=filters.ScatterPlotFilter, pagination=True, ordering=order.ScatterPlotOrder, description="A saved scatter-plot configuration over a graph query")
 class ScatterPlot:
-    label: str = strawberry.field(description="Label/name of the scatter plot definition")
+    @strawberry.field(description="Label/name of the scatter plot definition")
+    def label(self) -> str:
+        # The column is `name`; this field was declared `label` over a model
+        # attribute that does not exist, and raised on select.
+        return cast(models.ScatterPlot, self).name
+
     description: Optional[str] = strawberry.field(default=None, description="Description of the scatter plot definition")
     id: strawberry.ID = strawberry.field(description="Database ID of the category")
     id_column: str = strawberry.field(description="The name of the column to use for point identifiers (e.g. structure ID, or entity id)")
@@ -803,20 +733,9 @@ class ScatterPlot:
     size_column: Optional[str] = strawberry.field(default=None, description="The name of the column to use for size values (optional)")
     shape_column: Optional[str] = strawberry.field(default=None, description="The name of the column to use for shape values (optional)")
 
-    @kante.django_field(description="The graph this category belongs to")
-    def query(self) -> Plottable:
-        """Fetch the data points for this scatter plot."""
-        # In a real implementation, we would query the graph for the data points linked to this structure and entity.
-        # For this example, we'll return an empty list for simplicity.
-        model = cast(models.ScatterPlot, self)
-        if model.graph_query:
-            return model.graph_query
-        elif model.node_query:
-            return model.node_query
-        elif model.path_query:
-            return model.path_query
-        else:
-            raise ValueError("ScatterPlot must have either a graph_query, node_query, or path_query")
+    @kante.django_field(description="The saved table query this plot is drawn from")
+    def query(self) -> "GraphTableQuery":
+        return cast(models.ScatterPlot, self).graph_query
 
 
 @strawberry.type(description="A rich property with metadata from schema and graph")
@@ -2950,71 +2869,6 @@ class AssertedMetric:
 # ===========================================
 # RESULT TYPES
 # ===========================================
-@strawberry.type(description="A rendered node-list result for a saved graph nodes query")
-class GraphNodesRender:
-    _value: strawberry.Private[retrieved.RetrievedGraphNodesRender]
-
-    @strawberry.field(description="Internal AGE handle of the rendered view (read-only); address the view through `graph { id }`")
-    def graph_name(self) -> str:
-        return self._value.graph_name
-
-    @strawberry.field(description="The graph rendered by this query")
-    async def graph(self) -> Graph:
-        return await loaders.graph_by_id_loader.load(self._value.graph_id)
-
-    @strawberry.field(description="The graph query used for this render")
-    async def query(self) -> GraphNodesQuery:
-        return await loaders.graph_nodes_query_by_id_loader.load(self._value.graph_query_id)
-
-
-@strawberry.interface(description="Base interface for graph render results")
-class PathLike:
-    nodes: List[Node] = strawberry.field(description="Nodes in the path")
-    edges: List[Edge] = strawberry.field(description="Edges in the path")
-
-
-@strawberry.type(description="A rendered path result for a saved graph path query")
-class GraphPathRender(PathLike):
-    _value: strawberry.Private[retrieved.RetrievedGraphPathRender]
-
-    @strawberry.field(description="Nodes in the rendered path")
-    def nodes(self) -> List[Node]:
-        return [cast_node_to_graphql_type(node) for node in self._value.nodes]
-
-    @strawberry.field(description="Edges in the rendered path")
-    def edges(self) -> List[Edge]:
-        return [cast_edge_to_graphql_type(edge) for edge in self._value.edges]
-
-    @strawberry.field(description="Internal AGE handle of the rendered view (read-only); address the view through `graph { id }`")
-    def graph_name(self) -> str:
-        return self._value.graph_name
-
-    @strawberry.field(description="The graph rendered by this query")
-    async def graph(self) -> Graph:
-        return await loaders.graph_by_id_loader.load(self._value.graph_id)
-
-    @strawberry.field(description="The graph query used for this render")
-    async def query(self) -> GraphPathQuery:
-        return await loaders.graph_path_query_by_id_loader.load(self._value.graph_query_id)
-
-
-@strawberry.type(description="A rendered pairs result for a saved graph pairs query")
-class GraphPairsRender:
-    _value: strawberry.Private[retrieved.RetrievedGraphPairsRender]
-
-    @strawberry.field(description="Internal AGE handle of the rendered view (read-only); address the view through `graph { id }`")
-    def graph_name(self) -> str:
-        return self._value.graph_name
-
-    @strawberry.field(description="The graph rendered by this query")
-    async def graph(self) -> Graph:
-        return await loaders.graph_by_id_loader.load(self._value.graph_id)
-
-    @strawberry.field(description="The graph query used for this render")
-    async def query(self) -> GraphPairsQuery:
-        return await loaders.graph_pairs_query_by_id_loader.load(self._value.graph_query_id)
-
-
 @strawberry.type(description="A rendered table result for a saved graph table query")
 class GraphTableRender:
     _value: strawberry.Private[retrieved.RetrievedGraphTableRender]

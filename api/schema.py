@@ -132,32 +132,10 @@ class Query:
     graph_query: types.GraphQuery = kante.django_field(description="Show a single saved graph query by ID")
     graph_table_queries: list[types.GraphTableQuery] = kante.django_field(description="Show all saved graph table queries")
     graph_table_query: types.GraphTableQuery = kante.django_field(description="Show a single saved graph table query by ID")
-    graph_nodes_queries: list[types.GraphNodesQuery] = kante.django_field(description="Show all saved graph nodes queries")
-    graph_node_query: types.GraphNodesQuery = kante.django_field(description="Show a single saved graph node query by ID")
-    graph_pairs_queries: list[types.GraphPairsQuery] = kante.django_field(description="Show all saved graph pairs queries")
-    graph_pairs_query: types.GraphPairsQuery = kante.django_field(description="Show a single saved graph pairs query by ID")
     # `GraphPathQuery` had a type, a dataloader and all four mutations, and no way
     # to read one back — the only member of the family missing its root fields.
-    graph_path_queries: list[types.GraphPathQuery] = kante.django_field(description="Show all saved graph path queries")
-    graph_path_query: types.GraphPathQuery = kante.django_field(description="Show a single saved graph path query by ID")
 
-    node_queries: list[types.NodeQuery] = kante.django_field(description="Show all saved node queries")
-    node_query: types.NodeQuery = kante.django_field(description="Show a single saved node query by ID")
-    node_table_queries: list[types.NodeTableQuery] = kante.django_field(description="Show all saved node table queries")
-    node_table_query: types.NodeTableQuery = kante.django_field(description="Show a single saved node table query by ID")
-    node_pairs_queries: list[types.NodePairsQuery] = kante.django_field(description="Show all saved node pairs queries")
-    node_pairs_query: types.NodePairsQuery = kante.django_field(description="Show a single saved node pairs query by ID")
-    node_path_queries: list[types.NodePathQuery] = kante.django_field(description="Show all saved node path queries")
-    node_path_query: types.NodePathQuery = kante.django_field(description="Show a single saved node path query by ID")
 
-    edge_queries: list[types.EdgeQuery] = kante.django_field(description="Show all saved edge queries")
-    edge_query: types.EdgeQuery = kante.django_field(description="Show a single saved edge query by ID")
-    edge_table_queries: list[types.EdgeTableQuery] = kante.django_field(description="Show all saved edge table queries")
-    edge_table_query: types.EdgeTableQuery = kante.django_field(description="Show a single saved edge table query by ID")
-    edge_pairs_queries: list[types.EdgePairsQuery] = kante.django_field(description="Show all saved edge pairs queries")
-    edge_pairs_query: types.EdgePairsQuery = kante.django_field(description="Show a single saved edge pairs query by ID")
-    edge_path_queries: list[types.EdgePathQuery] = kante.django_field(description="Show all saved edge path queries")
-    edge_path_query: types.EdgePathQuery = kante.django_field(description="Show a single saved edge path query by ID")
 
     render_graph_table = kante.django_field(queries.render_graph_table, description="Render results for a graph table query")
 
@@ -399,141 +377,13 @@ class Mutation:
         resolver=mutations.archive_graph_table_query,
     )
 
-    create_graph_pairs_query = kante.django_mutation(
-        description="Create a graph pairs query",
-        resolver=mutations.create_graph_pairs_query,
-    )
-    update_graph_pairs_query = kante.django_mutation(
-        description="Update a graph pairs query",
-        resolver=mutations.update_graph_pairs_query,
-    )
-    delete_graph_pairs_query = kante.django_mutation(
-        description="Delete a graph pairs query",
-        resolver=mutations.delete_graph_pairs_query,
-    )
-    archive_graph_pairs_query = kante.django_mutation(
-        description="Archive a graph pairs query",
-        resolver=mutations.archive_graph_pairs_query,
-    )
 
-    create_graph_path_query = kante.django_mutation(
-        description="Create a graph path query",
-        resolver=mutations.create_graph_path_query,
-    )
-    update_graph_path_query = kante.django_mutation(
-        description="Update a graph path query",
-        resolver=mutations.update_graph_path_query,
-    )
-    delete_graph_path_query = kante.django_mutation(
-        description="Delete a graph path query",
-        resolver=mutations.delete_graph_path_query,
-    )
-    archive_graph_path_query = kante.django_mutation(
-        description="Archive a graph path query",
-        resolver=mutations.archive_graph_path_query,
-    )
 
-    create_node_table_query = kante.django_mutation(
-        description="Create a node table query",
-        resolver=mutations.create_node_table_query,
-    )
-    update_node_table_query = kante.django_mutation(
-        description="Update a node table query",
-        resolver=mutations.update_node_table_query,
-    )
-    delete_node_table_query = kante.django_mutation(
-        description="Delete a node table query",
-        resolver=mutations.delete_node_table_query,
-    )
-    archive_node_table_query = kante.django_mutation(
-        description="Archive a node table query",
-        resolver=mutations.archive_node_table_query,
-    )
 
-    create_node_pairs_query = kante.django_mutation(
-        description="Create a node pairs query",
-        resolver=mutations.create_node_pairs_query,
-    )
-    update_node_pairs_query = kante.django_mutation(
-        description="Update a node pairs query",
-        resolver=mutations.update_node_pairs_query,
-    )
-    delete_node_pairs_query = kante.django_mutation(
-        description="Delete a node pairs query",
-        resolver=mutations.delete_node_pairs_query,
-    )
-    archive_node_pairs_query = kante.django_mutation(
-        description="Archive a node pairs query",
-        resolver=mutations.archive_node_pairs_query,
-    )
 
-    create_node_path_query = kante.django_mutation(
-        description="Create a node path query",
-        resolver=mutations.create_node_path_query,
-    )
-    update_node_path_query = kante.django_mutation(
-        description="Update a node path query",
-        resolver=mutations.update_node_path_query,
-    )
-    delete_node_path_query = kante.django_mutation(
-        description="Delete a node path query",
-        resolver=mutations.delete_node_path_query,
-    )
-    archive_node_path_query = kante.django_mutation(
-        description="Archive a node path query",
-        resolver=mutations.archive_node_path_query,
-    )
 
-    create_edge_table_query = kante.django_mutation(
-        description="Create an edge table query",
-        resolver=mutations.create_edge_table_query,
-    )
-    update_edge_table_query = kante.django_mutation(
-        description="Update an edge table query",
-        resolver=mutations.update_edge_table_query,
-    )
-    delete_edge_table_query = kante.django_mutation(
-        description="Delete an edge table query",
-        resolver=mutations.delete_edge_table_query,
-    )
-    archive_edge_table_query = kante.django_mutation(
-        description="Archive an edge table query",
-        resolver=mutations.archive_edge_table_query,
-    )
 
-    create_edge_pairs_query = kante.django_mutation(
-        description="Create an edge pairs query",
-        resolver=mutations.create_edge_pairs_query,
-    )
-    update_edge_pairs_query = kante.django_mutation(
-        description="Update an edge pairs query",
-        resolver=mutations.update_edge_pairs_query,
-    )
-    delete_edge_pairs_query = kante.django_mutation(
-        description="Delete an edge pairs query",
-        resolver=mutations.delete_edge_pairs_query,
-    )
-    archive_edge_pairs_query = kante.django_mutation(
-        description="Archive an edge pairs query",
-        resolver=mutations.archive_edge_pairs_query,
-    )
 
-    create_edge_path_query = kante.django_mutation(
-        description="Create an edge path query",
-        resolver=mutations.create_edge_path_query,
-    )
-    update_edge_path_query = kante.django_mutation(
-        description="Update an edge path query",
-        resolver=mutations.update_edge_path_query,
-    )
-    delete_edge_path_query = kante.django_mutation(
-        description="Delete an edge path query",
-        resolver=mutations.delete_edge_path_query,
-    )
-    archive_edge_path_query = kante.django_mutation(
-        description="Archive an edge path query",
-        resolver=mutations.archive_edge_path_query,
-    )
 
     create_scatter_plot = kante.django_mutation(
         description="Create a scatter plot",
@@ -790,8 +640,8 @@ def create_schema(
                 scalars.AnyScalar: strawberry.scalar(
                     name="AnyScalar",
                     description="The `AnyScalar` scalar type represents an arbitrary JSON-like value",
-                    serialize=lambda v: v,  # Implement your serialization logic here
-                    parse_value=lambda v: v,  # Implement your parsing logic here
+                    serialize=lambda v: v,
+                    parse_value=lambda v: v,
                 ),
                 scalars.CypherLiteral: strawberry.scalar(
                     name="CypherLiteral",

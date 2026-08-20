@@ -229,60 +229,15 @@ class DerivationRule(StrictModel):
 # =======================
 # TEXT MODELS
 # =======================
-class RenderGraphNodesFilter(StrictModel):
-    key: str
-    operator: str
-    value: scalars.AnyScalar
 
 
-class RenderGraphNodesPagination(StrictModel):
-    limit: int
-    offset: int
 
-
-class RenderGraphNodesOrder(StrictModel):
-    key: str
-    direction: str = "asc"
-
-
-class RenderGraphPathFilter(StrictModel):
-    key: Optional[str] = None
-    operator: Optional[str] = None
-    value: Optional[scalars.AnyScalar] = None
-    search: Optional[str] = None
-
-
-class RenderGraphPathPagination(StrictModel):
-    limit: int
-    offset: int
-
-
-class RenderGraphPathOrder(StrictModel):
-    key: str
-    direction: str = "asc"
-
-
-class RenderGraphPairsFilter(StrictModel):
-    key: str
-    operator: str
-    value: scalars.AnyScalar
-
-
-class RenderGraphPairsPagination(StrictModel):
-    limit: int
-    offset: int
-
-
-class RenderGraphPairsOrder(StrictModel):
-    key: str
-    direction: str = "asc"
 
 
 class RenderGraphTableFilter(StrictModel):
-    key: Optional[str] = None
-    operator: Optional[str] = None
-    value: scalars.AnyScalar
-    search: Optional[str] = None
+    key: str = Field(..., description="A returned alias of the plan — what `columns[].key` names")
+    operator: WhereOperator = Field(default=WhereOperator.EQUALS, description="How to compare")
+    value: Any = Field(..., description="The value to compare against; bound as a parameter, never interpolated")
 
 
 class RenderGraphTablePagination(StrictModel):
@@ -686,6 +641,7 @@ class MatchPathInput(StrictModel):
         default=None,
         description="List of booleans indicating the direction of each relationship in the path (True for outgoing, False for incoming)",
     )
+    node_categories: list[str | None] | None = Field(default=None, description="Optional category key per node (parallel to `nodes`), constraining that node of the pattern to a category; null leaves it unconstrained")
 
 
 class WhereClauseInput(StrictModel):
@@ -693,19 +649,30 @@ class WhereClauseInput(StrictModel):
     node: str | None = None
     property: str = Field(..., description="The property name to filter on")
     operator: WhereOperator = Field(..., description="The operator to use for filtering")
-    value: scalars.CypherLiteral = Field(..., description="The value to compare against")
+    value: Any = Field(..., description="The value to compare against. A typed value bound as a parameter, never a Cypher literal")
 
 
 class ReturnStatementInput(StrictModel):
     path: str = Field(..., description="The path ID to return")
     node: str | None = Field(default=None, description="The node ID to return")
     property: str | None = Field(default=None, description="The property name to return")
+    alias: str | None = Field(default=None, description="The column alias this value is returned under — what `columns[].key`, a render filter and a render order name. Generated from path/node/property when omitted")
 
 
 class BuilderArgsInput(StrictModel):
+    """The builder's spelling of a plan. Kept for `createGraphTableQueryThroughBuilder`; `TableQueryPlanInput` is the contract."""
+
     where_clauses: Optional[List[WhereClauseInput]] = Field(default=None, description="Optional filtering conditions for the graph query")
     match_paths: Optional[List[MatchPathInput]] = Field(default=None, description="Optional patterns to match in the graph for this query")
     return_statements: Optional[List[ReturnStatementInput]] = Field(default=None, description="The values to return for each matched pattern in the graph query")
+
+
+class TableQueryPlanInput(StrictModel):
+    """What a saved table query means — the contract, compiled per projection kind (`graph_engine/query_ir.py`)."""
+
+    matches: List[MatchPathInput] = Field(..., description="The paths to match; the first node of the first path is the default subject")
+    wheres: List[WhereClauseInput] = Field(default_factory=list, description="Predicates over matched nodes' properties")
+    returns: List[ReturnStatementInput] = Field(default_factory=list, description="What to return, each under an alias a column can name")
 
 
 class PropertyDefinitionInput(StrictModel):
@@ -1226,305 +1193,53 @@ class MeasurementDefinitionInput(EdgeDefinitionInput):
     properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Derived property definitions")
 
 
-class GraphQueryInput(StrictModel):
-    """Input for a graph query definition."""
+class GraphTableQueryInput(StrictModel):
+    """A saved table query declared inside a graph definition's `extensions` — as a plan, like every saved query."""
 
-    key: str = Field(..., description="Unique key for this graph query, used for referencing in the UI")
-    name: Optional[str] = Field(default=None, description="Human-readable name for this graph query (defaults to 'key' if not provided)")
-    description: Optional[str] = Field(default=None, description="Description of this graph query")
-    query: scalars.CypherLiteral = Field(..., description="The Cypher query string that defines this graph query")
-
-
-class UpdateGraphQueryInput(StrictModel):
-    """Input for updating an existing graph query definition."""
-
-    id: strawberry.ID = Field(..., description="The ID of the graph query to update")
-    key: Optional[str] = Field(default=None, description="Unique key for this graph query, used for referencing in the UI")
-    name: Optional[str] = Field(default=None, description="Human-readable name for this graph query (defaults to 'key' if not provided)")
-    description: Optional[str] = Field(default=None, description="Description of this graph query")
-    query: Optional[scalars.CypherLiteral] = Field(default=None, description="The Cypher query string that defines this graph query")
+    key: str = Field(..., description="Unique key for this query within its graph")
+    name: Optional[str] = Field(default=None, description="Human-readable name (defaults to `key`)")
+    description: Optional[str] = Field(default=None, description="Description of this query")
+    plan: TableQueryPlanInput = Field(..., description="What the query means; compiled by each projection kind")
+    column_input: List[ColumnInput] = Field(default_factory=list, description="How the returned aliases are presented")
 
 
-class GraphTableQueryInput(GraphQueryInput):
-    """Input for a graph table query definition."""
-
-    name: Optional[str] = Field(default=None, description="Human-readable name for this graph query (defaults to 'key' if not provided)")
-    description: Optional[str] = Field(default=None, description="Description of this graph query")
-
-
-class CreateGraphTableQueryInput(GraphTableQueryInput):
-    """Input for creating a graph table query definition."""
+class CreateGraphTableQueryInput(StrictModel):
+    """A saved table query, as a plan. There is no raw-Cypher form any more."""
 
     graph: strawberry.ID = Field(..., description="The graph id this table query will belong to")
-    column_input: List[ColumnInput] = Field(default_factory=list, description="Definitions for the columns returned by this graph query")
-    # No `cypher`, and no second `key`. Both were declared here *and* inherited
-    # from `GraphQueryInput`, so a client had to send the Cypher twice — under two
-    # required names — with nothing saying which one won. `query` is the name the
-    # node and edge families use, so it is the one that survives.
+    key: str = Field(..., description="Unique key for this query within its graph, used for referencing in the UI")
+    name: Optional[str] = Field(default=None, description="Human-readable name (defaults to `key`)")
+    description: Optional[str] = Field(default=None, description="Description of this query")
+    plan: TableQueryPlanInput = Field(..., description="What the query means; compiled by each projection kind")
+    column_input: List[ColumnInput] = Field(default_factory=list, description="How the returned aliases are presented")
 
 
-class CreateGraphTableQueryThroughBuilderInput(GraphTableQueryInput):
-    """Input for creating a graph table query definition using the builder interface."""
-
-    # The Cypher query is generated from ``builder_args`` by the resolver, so it
-    # must not be required as input here (unlike the base GraphQueryInput).
-    query: Optional[scalars.CypherLiteral] = Field(default=None, description="Ignored; the query is generated from the builder arguments")
-    graph: strawberry.ID = Field(..., description="The graph id this table query will belong to")
-    builder_args: BuilderArgsInput = Field(description="Optional additional arguments for the graph query builder to support advanced features like dynamic filtering or pattern matching")
-    column_input: List[ColumnInput] = Field(default_factory=list, description="Definitions for the columns returned by this graph query")
-
-
-class UpdateGraphTableQueryInput(UpdateGraphQueryInput):
-    """Input for updating an existing graph table query definition."""
-
+class UpdateGraphTableQueryInput(StrictModel):
+    id: strawberry.ID = Field(..., description="The ID of the graph table query to update")
+    key: Optional[str] = Field(default=None, description="Unique key for this query within its graph")
+    name: Optional[str] = Field(default=None, description="Human-readable name")
+    description: Optional[str] = Field(default=None, description="Description of this query")
+    plan: Optional[TableQueryPlanInput] = Field(default=None, description="A new plan; omitted means unchanged")
     column_input: Optional[List[ColumnInput]] = Field(default=None, description="Definitions for the columns returned by this graph query")
-    # `key`, `name`, `description`, `id` and the Cypher all come from
-    # `UpdateGraphQueryInput`; they were re-declared here identically. See
-    # `CreateGraphTableQueryInput` for why `cypher` is gone.
+
+
+class CreateGraphTableQueryThroughBuilderInput(StrictModel):
+    """The builder's spelling of `CreateGraphTableQueryInput` — `builder_args` instead of `plan`. Upserts on `(graph, key)`."""
+
+    graph: strawberry.ID = Field(..., description="The graph id this table query will belong to")
+    key: str = Field(..., description="Unique key for this query within its graph")
+    name: Optional[str] = Field(default=None, description="Human-readable name (defaults to `key`)")
+    description: Optional[str] = Field(default=None, description="Description of this query")
+    builder_args: BuilderArgsInput = Field(description="The builder arguments; stored as the query's plan")
+    column_input: List[ColumnInput] = Field(default_factory=list, description="How the returned aliases are presented")
 
 
 class DeleteGraphTableQueryInput(StrictModel):
-    """Input for deleting an existing graph table query definition."""
-
     id: strawberry.ID = Field(..., description="The ID of the graph query to delete")
 
 
 class ArchiveGraphTableQueryInput(StrictModel):
-    """Input for archiving (soft deleting) an existing graph table query definition."""
-
     id: strawberry.ID = Field(..., description="The ID of the graph query to archive")
-
-
-class GraphPairsQueryInput(GraphQueryInput):
-    """Input for a graph pairs query definition."""
-
-    pass
-
-
-class CreateGraphPairsQueryInput(GraphPairsQueryInput):
-    """Input for creating a graph pairs query definition."""
-
-    graph: strawberry.ID = Field(..., description="The graph id this graph pairs query will belong to")
-
-
-class UpdateGraphPairsQueryInput(UpdateGraphQueryInput):
-    """Input for updating an existing graph pairs query definition."""
-
-    pass
-
-
-class DeleteGraphPairsQueryInput(StrictModel):
-    """Input for deleting an existing graph pairs query definition."""
-
-    id: strawberry.ID = Field(..., description="The ID of the graph pairs query to delete")
-
-
-class ArchiveGraphPairsQueryInput(StrictModel):
-    """Input for archiving (soft deleting) an existing graph pairs query definition."""
-
-    id: strawberry.ID = Field(..., description="The ID of the graph pairs query to archive")
-
-
-class GraphPathQueryInput(GraphQueryInput):
-    """Input for a graph path query definition."""
-
-    pass
-
-
-class CreateGraphPathQueryInput(GraphPathQueryInput):
-    """Input for creating a graph path query definition."""
-
-    graph: strawberry.ID = Field(..., description="The graph id this graph path query will belong to")
-
-
-class UpdateGraphPathQueryInput(UpdateGraphQueryInput):
-    """Input for updating an existing graph path query definition."""
-
-    pass
-
-
-class DeleteGraphPathQueryInput(StrictModel):
-    """Input for deleting an existing graph path query definition."""
-
-    id: strawberry.ID = Field(..., description="The ID of the graph path query to delete")
-
-
-class ArchiveGraphPathQueryInput(StrictModel):
-    """Input for archiving (soft deleting) an existing graph path query definition."""
-
-    id: strawberry.ID = Field(..., description="The ID of the graph path query to archive")
-
-
-class NodeQueryInput(StrictModel):
-    key: str = Field(..., description="Unique key for this node query, used for referencing in the UI")
-    name: Optional[str] = Field(default=None, description="Human-readable name for this node query (defaults to 'key' if not provided)")
-    description: Optional[str] = Field(default=None, description="Description of this node query")
-    query: scalars.CypherLiteral = Field(..., description="The Cypher query string that defines this node query")
-    # No `kind`. It is decided by the mutation you called — `createNodeTableQuery`
-    # makes a TABLE query — and `managers.KindedManager` stamps it from the proxy.
-    # As an input it was worse than redundant: the manager uses `setdefault`, so a
-    # client-supplied kind overrode the proxy's, writing a row the matching
-    # manager then filtered out of every read.
-
-
-class UpdateNodeQueryInput(StrictModel):
-    """Input for updating an existing node query definition.
-
-    Everything but the id is optional, which the node and edge update inputs did
-    not manage: they derived from the *create*-shaped base, so `key` and `query`
-    stayed required and changing a description meant resending the Cypher. The
-    graph family already had this shape; now all three do.
-    """
-
-    id: strawberry.ID = Field(..., description="The ID of the node query to update")
-    key: Optional[str] = Field(default=None, description="Unique key for this node query, used for referencing in the UI")
-    name: Optional[str] = Field(default=None, description="Human-readable name for this node query")
-    description: Optional[str] = Field(default=None, description="Description of this node query")
-    query: Optional[scalars.CypherLiteral] = Field(default=None, description="The Cypher query string that defines this node query")
-
-
-class NodeTableQueryInput(NodeQueryInput):
-    column_input: List[ColumnInput] = Field(default_factory=list, description="Definitions for the columns returned by this node table query")
-
-
-class CreateNodeTableQueryInput(NodeTableQueryInput):
-    graph: strawberry.ID = Field(..., description="The graph id this node table query will belong to")
-
-
-class UpdateNodeTableQueryInput(UpdateNodeQueryInput):
-    column_input: Optional[List[ColumnInput]] = Field(default=None, description="Definitions for the columns returned by this node table query")
-
-
-class DeleteNodeTableQueryInput(StrictModel):
-    id: strawberry.ID = Field(..., description="The ID of the node table query to delete")
-
-
-class ArchiveNodeTableQueryInput(StrictModel):
-    id: strawberry.ID = Field(..., description="The ID of the node table query to archive")
-
-
-class NodePairsQueryInput(NodeQueryInput):
-    pass
-
-
-class CreateNodePairsQueryInput(NodePairsQueryInput):
-    graph: strawberry.ID = Field(..., description="The graph id this node pairs query will belong to")
-
-
-class UpdateNodePairsQueryInput(UpdateNodeQueryInput):
-    pass
-
-
-class DeleteNodePairsQueryInput(StrictModel):
-    id: strawberry.ID = Field(..., description="The ID of the node pairs query to delete")
-
-
-class ArchiveNodePairsQueryInput(StrictModel):
-    id: strawberry.ID = Field(..., description="The ID of the node pairs query to archive")
-
-
-class NodePathQueryInput(NodeQueryInput):
-    pass
-
-
-class CreateNodePathQueryInput(NodePathQueryInput):
-    graph: strawberry.ID = Field(..., description="The graph id this node path query will belong to")
-
-
-class UpdateNodePathQueryInput(UpdateNodeQueryInput):
-    pass
-
-
-class DeleteNodePathQueryInput(StrictModel):
-    id: strawberry.ID = Field(..., description="The ID of the node path query to delete")
-
-
-class ArchiveNodePathQueryInput(StrictModel):
-    id: strawberry.ID = Field(..., description="The ID of the node path query to archive")
-
-
-class EdgeQueryInput(StrictModel):
-    key: str = Field(..., description="Unique key for this edge query, used for referencing in the UI")
-    name: Optional[str] = Field(default=None, description="Human-readable name for this edge query (defaults to 'key' if not provided)")
-    description: Optional[str] = Field(default=None, description="Description of this edge query")
-    query: scalars.CypherLiteral = Field(..., description="The Cypher query string that defines this edge query")
-    # No `kind` — see `NodeQueryInput`.
-
-
-class UpdateEdgeQueryInput(StrictModel):
-    """Input for updating an existing edge query definition.
-
-    Everything but the id is optional, which the node and edge update inputs did
-    not manage: they derived from the *create*-shaped base, so `key` and `query`
-    stayed required and changing a description meant resending the Cypher. The
-    graph family already had this shape; now all three do.
-    """
-
-    id: strawberry.ID = Field(..., description="The ID of the edge query to update")
-    key: Optional[str] = Field(default=None, description="Unique key for this edge query, used for referencing in the UI")
-    name: Optional[str] = Field(default=None, description="Human-readable name for this edge query")
-    description: Optional[str] = Field(default=None, description="Description of this edge query")
-    query: Optional[scalars.CypherLiteral] = Field(default=None, description="The Cypher query string that defines this edge query")
-
-
-class EdgeTableQueryInput(EdgeQueryInput):
-    column_input: List[ColumnInput] = Field(default_factory=list, description="Definitions for the columns returned by this edge table query")
-
-
-class CreateEdgeTableQueryInput(EdgeTableQueryInput):
-    graph: strawberry.ID = Field(..., description="The graph id this edge table query will belong to")
-
-
-class UpdateEdgeTableQueryInput(UpdateEdgeQueryInput):
-    column_input: Optional[List[ColumnInput]] = Field(default=None, description="Definitions for the columns returned by this edge table query")
-
-
-class DeleteEdgeTableQueryInput(StrictModel):
-    id: strawberry.ID = Field(..., description="The ID of the edge table query to delete")
-
-
-class ArchiveEdgeTableQueryInput(StrictModel):
-    id: strawberry.ID = Field(..., description="The ID of the edge table query to archive")
-
-
-class EdgePairsQueryInput(EdgeQueryInput):
-    pass
-
-
-class CreateEdgePairsQueryInput(EdgePairsQueryInput):
-    graph: strawberry.ID = Field(..., description="The graph id this edge pairs query will belong to")
-
-
-class UpdateEdgePairsQueryInput(UpdateEdgeQueryInput):
-    pass
-
-
-class DeleteEdgePairsQueryInput(StrictModel):
-    id: strawberry.ID = Field(..., description="The ID of the edge pairs query to delete")
-
-
-class ArchiveEdgePairsQueryInput(StrictModel):
-    id: strawberry.ID = Field(..., description="The ID of the edge pairs query to archive")
-
-
-class EdgePathQueryInput(EdgeQueryInput):
-    pass
-
-
-class CreateEdgePathQueryInput(EdgePathQueryInput):
-    graph: strawberry.ID = Field(..., description="The graph id this edge path query will belong to")
-
-
-class UpdateEdgePathQueryInput(UpdateEdgeQueryInput):
-    pass
-
-
-class DeleteEdgePathQueryInput(StrictModel):
-    id: strawberry.ID = Field(..., description="The ID of the edge path query to delete")
-
-
-class ArchiveEdgePathQueryInput(StrictModel):
-    id: strawberry.ID = Field(..., description="The ID of the edge path query to archive")
 
 
 class PlotInput(StrictModel):
@@ -2043,9 +1758,7 @@ class ScatterPlotMutationInput(StrictModel):
 
     name: str = Field(..., description="The display name of the scatter plot")
     description: Optional[str] = Field(default=None, description="Optional description of the scatter plot")
-    graph_query_id: Optional[int] = Field(default=None, description="Optional graph table query ID used by this scatter plot")
-    node_query_id: Optional[int] = Field(default=None, description="Optional node table query ID used by this scatter plot")
-    path_query_id: Optional[int] = Field(default=None, description="Optional node path query ID used by this scatter plot")
+    graph_query_id: int = Field(..., description="The graph table query this scatter plot is drawn from")
     id_column: str = Field(..., description="Column key used for point identifiers")
     x_column: Optional[str] = Field(default=None, description="Column key used for x-axis values")
     x_id_column: Optional[str] = Field(default=None, description="Column key used for x-axis identifiers")

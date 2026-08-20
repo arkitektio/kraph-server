@@ -901,16 +901,6 @@ class RetrievedMetric(RetrievedNode):
 
 
 @dataclass
-class RetrievedGraphNodesRender:
-    """A list of retrieved nodes, with the graph name for context."""
-
-    graph_name: str
-    graph_id: int
-    graph_query_id: int
-    nodes: List[RetrievedNode]
-
-
-@dataclass
 class RetrievedGraphTableRender:
     """A list of retrieved nodes, with the graph name for context."""
 
@@ -920,45 +910,7 @@ class RetrievedGraphTableRender:
     rows: List[Dict[str, Any]]
 
 
-@dataclass
-class RetrievedGraphPathRender:
-    """A list of retrieved nodes, with the graph name for context."""
 
-    graph_name: str
-    graph_id: int
-    graph_query_id: int
-    nodes: List[RetrievedNode]
-    edges: List[RetrievedEdge]
-
-
-@dataclass
-class Pairs:
-    left: RetrievedNode
-    right: RetrievedNode
-    edge: Optional[RetrievedEdge] = None
-
-
-@dataclass
-class RetrievedGraphPairsRender:
-    """A list of retrieved node pairs, with the graph name for context."""
-
-    graph_name: str
-    graph_id: int
-    graph_query_id: int
-    pairs: List[Pairs]
-
-
-@dataclass
-class RetrievedNodePathRender:
-    """A list of retrieved nodes, with the graph name for context."""
-
-    graph_name: str
-    paths: List[List[RetrievedNode]]
-
-
-@dataclass
-class RetrievedNodeTableRender:
-    """A list of retrieved nodes, with the graph name for context."""
-
-    graph_name: str
-    rows: List[Dict[str, Any]]
+# The nodes / path / pairs render shapes and `RetrievedNodePathRender` /
+# `RetrievedNodeTableRender` used to follow. They had no producer: only the table
+# kind has ever had an execution path, and the saved-query contract is a plan now.

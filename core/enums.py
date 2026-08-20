@@ -37,27 +37,15 @@ EDGE_CATEGORY_KINDS = (
 
 
 class GraphQueryKindChoices(TextChoices):
-    """Which shape of result a saved graph query returns."""
+    """Which shape of result a saved graph query returns.
 
-    NODES = "NODES"
-    PATH = "PATH"
-    PAIRS = "PAIRS"
-    TABLE = "TABLE"
+    Only `TABLE` now. `NODES`, `PATH` and `PAIRS` — and the whole `NodeQuery` /
+    `EdgeQuery` families — had mutations, types and filters but no execution path
+    anywhere: nothing could ever render one. They went with the saved-query
+    contract becoming a plan (`graph_engine/query_ir.py`); a new shape comes
+    back as a plan kind, not as a stored query string.
+    """
 
-
-class NodeQueryKindChoices(TextChoices):
-    """Which shape of result a saved node query returns."""
-
-    PATH = "PATH"
-    PAIRS = "PAIRS"
-    TABLE = "TABLE"
-
-
-class EdgeQueryKindChoices(TextChoices):
-    """Which shape of result a saved edge query returns."""
-
-    PATH = "PATH"
-    PAIRS = "PAIRS"
     TABLE = "TABLE"
 
 
@@ -193,18 +181,6 @@ class ValueKind(str, Enum):
 
 
 @strawberry.enum
-class WhereOperator(str, Enum):
-    EQUALS = "EQUALS"
-    NOT_EQUALS = "NOT_EQUALS"
-    GREATER_THAN = "GREATER_THAN"
-    LESS_THAN = "LESS_THAN"
-    GREATER_THAN_OR_EQUAL = "GREATER_THAN_OR_EQUAL"
-    LESS_THAN_OR_EQUAL = "LESS_THAN_OR_EQUAL"
-    CONTAINS = "CONTAINS"
-    STARTS_WITH = "STARTS_WITH"
-    ENDS_WITH = "ENDS_WITH"
-
-
 @strawberry.enum
 class ChangeKind(str, Enum):
     CREATE = "CREATE"

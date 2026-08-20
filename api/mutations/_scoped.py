@@ -36,17 +36,16 @@ def graph_of(item: Any) -> Any:
     """The graph a row belongs to, however it is reached.
 
     Categories and saved queries carry `graph` directly. A `ScatterPlot`
-    does not — it hangs off whichever of three query FKs is set — so the walk is
+    does not — it reaches one through its `graph_query` — so the walk is
     spelled out here rather than repeated at each call site.
     """
     graph = getattr(item, "graph", None)
     if graph is not None:
         return graph
 
-    for attribute in ("graph_query", "node_query", "path_query"):
-        query = getattr(item, attribute, None)
-        if query is not None:
-            return query.graph
+    query = getattr(item, "graph_query", None)
+    if query is not None:
+        return query.graph
 
     return None
 

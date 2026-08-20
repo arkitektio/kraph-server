@@ -1,49 +1,21 @@
+"""Saved queries and plots.
+
+One saved-query kind: the graph **table** query, saved as a plan
+(`graph_engine/query_ir.py`). The node/edge families and the nodes/pairs/path
+kinds had create/update/delete/archive mutations and no execution path anywhere;
+they went with the contract becoming a plan.
+"""
+
 from .graph import (
-    create_graph_table_query,
-    update_graph_table_query,
-    delete_graph_table_query,
     archive_graph_table_query,
-    create_graph_pairs_query,
-    update_graph_pairs_query,
-    delete_graph_pairs_query,
-    archive_graph_pairs_query,
-    create_graph_path_query,
-    update_graph_path_query,
-    delete_graph_path_query,
-    archive_graph_path_query,
-)
-from .node import (
-    create_node_table_query,
-    update_node_table_query,
-    delete_node_table_query,
-    archive_node_table_query,
-    create_node_pairs_query,
-    update_node_pairs_query,
-    delete_node_pairs_query,
-    archive_node_pairs_query,
-    create_node_path_query,
-    update_node_path_query,
-    delete_node_path_query,
-    archive_node_path_query,
-)
-from .edge import (
-    create_edge_table_query,
-    update_edge_table_query,
-    delete_edge_table_query,
-    archive_edge_table_query,
-    create_edge_pairs_query,
-    update_edge_pairs_query,
-    delete_edge_pairs_query,
-    archive_edge_pairs_query,
-    create_edge_path_query,
-    update_edge_path_query,
-    delete_edge_path_query,
-    archive_edge_path_query,
+    create_graph_table_query,
+    delete_graph_table_query,
+    update_graph_table_query,
 )
 from .plots import (
     create_scatter_plot,
-    update_scatter_plot,
     delete_scatter_plot,
+    update_scatter_plot,
 )
 
 __all__ = [
@@ -51,38 +23,6 @@ __all__ = [
     "update_graph_table_query",
     "delete_graph_table_query",
     "archive_graph_table_query",
-    "create_graph_pairs_query",
-    "update_graph_pairs_query",
-    "delete_graph_pairs_query",
-    "archive_graph_pairs_query",
-    "create_graph_path_query",
-    "update_graph_path_query",
-    "delete_graph_path_query",
-    "archive_graph_path_query",
-    "create_node_table_query",
-    "update_node_table_query",
-    "delete_node_table_query",
-    "archive_node_table_query",
-    "create_node_pairs_query",
-    "update_node_pairs_query",
-    "delete_node_pairs_query",
-    "archive_node_pairs_query",
-    "create_node_path_query",
-    "update_node_path_query",
-    "delete_node_path_query",
-    "archive_node_path_query",
-    "create_edge_table_query",
-    "update_edge_table_query",
-    "delete_edge_table_query",
-    "archive_edge_table_query",
-    "create_edge_pairs_query",
-    "update_edge_pairs_query",
-    "delete_edge_pairs_query",
-    "archive_edge_pairs_query",
-    "create_edge_path_query",
-    "update_edge_path_query",
-    "delete_edge_path_query",
-    "archive_edge_path_query",
     "create_scatter_plot",
     "update_scatter_plot",
     "delete_scatter_plot",

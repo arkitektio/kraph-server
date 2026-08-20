@@ -1273,7 +1273,15 @@ class GraphQuery(KindDiscriminatedModel):
         max_length=1000,
         help_text="The key of the query, used for referencing the query in the frontend and for pinning it",
     )
-    query = models.CharField(max_length=7000, help_text="The query that is used to materialize the graph")
+    # The **plan** is the contract — `graph_engine.query_ir.TableQueryPlan` as
+    # JSON: matches, wheres, returns, columns. It is what a client writes, what
+    # comes back, and what each projection kind compiles (`CypherProjector` →
+    # Cypher). `query` is the compiled form, kept for rows saved before plans
+    # existed: a legacy row has `plan = NULL` and renders through its stored
+    # Cypher; `manage.py list_legacy_queries` names them so they can be rebuilt
+    # through the builder.
+    plan = models.JSONField(null=True, blank=True, help_text="The saved query as a `TableQueryPlan` (matches, wheres, returns, columns). Null only on a legacy row that stores raw Cypher.")
+    query = models.CharField(max_length=7000, null=True, blank=True, help_text="Legacy: raw Cypher saved before plans existed. Read-only; never accepted any more.")
     label = models.CharField(max_length=1000, help_text="The name of the materialized graph")
     description = models.CharField(
         max_length=1000,
@@ -1283,7 +1291,7 @@ class GraphQuery(KindDiscriminatedModel):
     kind = models.CharField(
         max_length=1000,
         choices=enums.GraphQueryKindChoices.choices,
-        help_text="The kind of the materialized graph (i.e path, property, etc.)",
+        help_text="The kind of result this query renders. Only TABLE exists.",
     )
     pinned_by = models.ManyToManyField(
         get_user_model(),
@@ -1295,91 +1303,22 @@ class GraphQuery(KindDiscriminatedModel):
         related_name="relevant_graph_queries",
         help_text="The expression that this query should be mostly used for",
     )
-    returns = models.JSONField(
-        help_text="The returns of the query",
-        default=list,
-        null=True,
-    )
-    matches = models.JSONField(
-        help_text="The matches of the query",
-        default=list,
-        null=True,
-    )
-    wheres = models.JSONField(
-        help_text="The wheres of the query",
-        default=list,
-        null=True,
-    )
-    node_category = models.ForeignKey(
-        NodeCategory,
-        default=None,
-        null=True,
-        on_delete=models.CASCADE,
-        related_name="node_list_queries",
-        help_text="The category this query is associated if its a node_list",
-    )
-    # PATH and PAIRS queries are mutually exclusive kinds, so they share one pair of
-    # endpoint columns rather than carrying two identical pairs.
-    left_category = models.ForeignKey(
-        NodeCategory,
-        default=None,
-        null=True,
-        on_delete=models.CASCADE,
-        related_name="left_graph_queries",
-        help_text="The category this query starts from, if it is a path or pairs query",
-    )
-    right_category = models.ForeignKey(
-        NodeCategory,
-        default=None,
-        null=True,
-        on_delete=models.CASCADE,
-        related_name="right_graph_queries",
-        help_text="The category this query ends at, if it is a path or pairs query",
-    )
     columns = models.JSONField(
-        help_text="The columns (if ViewKind is Table)",
+        help_text="How the returned aliases are presented. Mirrors `plan.columns` for rows that have a plan",
         default=list,
         null=True,
     )
+
+    @property
+    def is_legacy(self) -> bool:
+        """A row saved as raw Cypher before the plan became the contract."""
+        return not self.plan
 
     class Meta:
         """Some Meta options for the GraphQuery model"""
 
         default_related_name = "graph_queries"
         unique_together = ("graph", "key")
-
-
-class GraphNodesQuery(GraphQuery):
-    """A query that is used to materialize a list of nodes"""
-
-    KIND = enums.GraphQueryKindChoices.NODES
-    KINDS = (enums.GraphQueryKindChoices.NODES,)
-    objects = managers.KindedManager()
-
-    class Meta:
-        proxy = True
-
-
-class GraphPathQuery(GraphQuery):
-    """A query that is used to materialize a list of paths"""
-
-    KIND = enums.GraphQueryKindChoices.PATH
-    KINDS = (enums.GraphQueryKindChoices.PATH,)
-    objects = managers.KindedManager()
-
-    class Meta:
-        proxy = True
-
-
-class GraphPairsQuery(GraphQuery):
-    """A query that is used to materialize a list of paths"""
-
-    KIND = enums.GraphQueryKindChoices.PAIRS
-    KINDS = (enums.GraphQueryKindChoices.PAIRS,)
-    objects = managers.KindedManager()
-
-    class Meta:
-        proxy = True
 
 
 class GraphTableQuery(GraphQuery):
@@ -1393,193 +1332,16 @@ class GraphTableQuery(GraphQuery):
         proxy = True
 
 
-class NodeQuery(KindDiscriminatedModel):
-    objects = managers.KindedManager()
-    graph = models.ForeignKey(
-        Graph,
-        on_delete=models.CASCADE,
-        related_name="node_queries",
-        help_text="The graph this query belongs to",
-    )
-    archived = models.BooleanField(default=False, help_text=ARCHIVED_HELP)
-    key = models.CharField(
-        max_length=1000,
-        help_text="The key of the query, used for referencing the query in the frontend and for pinning it",
-    )
-    query = models.CharField(max_length=7000, help_text="The query that is used to materialize the graph")
-    label = models.CharField(max_length=1000, help_text="The name of the materialized graph")
-    description = models.CharField(
-        max_length=1000,
-        help_text="The description of the materialized graph",
-        null=True,
-    )
-    kind = models.CharField(
-        max_length=1000,
-        choices=enums.NodeQueryKindChoices.choices,
-        help_text="The kind of the materialized graph (i.e path, property, etc.)",
-    )
-
-    pinned_by = models.ManyToManyField(
-        get_user_model(),
-        related_name="pinned_node_queries",
-        help_text="The users that have this query active",
-    )
-    relevant_for_nodes = models.ManyToManyField(
-        NodeCategory,
-        related_name="relevant_node_queries",
-        help_text="The entities that this query should be mostly used for",
-    )
-    columns = models.JSONField(
-        help_text="The columns (if ViewKind is Table)",
-        default=list,
-        null=True,
-    )
-
-    @classmethod
-    def active_for_user_and_graph(self, user, graph):
-        return self.objects.filter(graph=graph, pinned_by=user).first()
-
-    class Meta:
-        """Some Meta options for the GraphQuery model"""
-
-        default_related_name = "node_queries"
-        unique_together = ("graph", "key")
-
-
-class NodePathQuery(NodeQuery):
-    KIND = enums.NodeQueryKindChoices.PATH
-    KINDS = (enums.NodeQueryKindChoices.PATH,)
-    objects = managers.KindedManager()
-
-    class Meta:
-        proxy = True
-
-
-class NodePairsQuery(NodeQuery):
-    KIND = enums.NodeQueryKindChoices.PAIRS
-    KINDS = (enums.NodeQueryKindChoices.PAIRS,)
-    objects = managers.KindedManager()
-
-    class Meta:
-        proxy = True
-
-
-class NodeTableQuery(NodeQuery):
-    KIND = enums.NodeQueryKindChoices.TABLE
-    KINDS = (enums.NodeQueryKindChoices.TABLE,)
-    objects = managers.KindedManager()
-
-    class Meta:
-        proxy = True
-
-
-class EdgeQuery(KindDiscriminatedModel):
-    objects = managers.KindedManager()
-    graph = models.ForeignKey(
-        Graph,
-        on_delete=models.CASCADE,
-        related_name="edge_queries",
-        help_text="The graph this query belongs to",
-    )
-    archived = models.BooleanField(default=False, help_text=ARCHIVED_HELP)
-    key = models.CharField(
-        max_length=1000,
-        help_text="The key of the query, used for referencing the query in the frontend and for pinning it",
-    )
-    query = models.CharField(max_length=7000, help_text="The query that is used to materialize the graph")
-    label = models.CharField(max_length=1000, help_text="The name of the materialized graph")
-    description = models.CharField(
-        max_length=1000,
-        help_text="The description of the materialized graph",
-        null=True,
-    )
-    kind = models.CharField(
-        max_length=1000,
-        choices=enums.EdgeQueryKindChoices.choices,
-        help_text="The kind of the materialized graph (i.e path, property, etc.)",
-    )
-
-    pinned_by = models.ManyToManyField(
-        get_user_model(),
-        related_name="pinned_edge_queries",
-        help_text="The users that have this query active",
-    )
-    relevant_for_edges = models.ManyToManyField(
-        EdgeCategory,
-        related_name="relevant_edge_queries",
-        help_text="The entities that this query should be mostly used for",
-    )
-    columns = models.JSONField(
-        help_text="The columns (if ViewKind is Table)",
-        default=list,
-        null=True,
-    )
-
-    @classmethod
-    def active_for_user_and_graph(self, user, graph):
-        return self.objects.filter(graph=graph, pinned_by=user).first()
-
-    class Meta:
-        """Some Meta options for the GraphQuery model"""
-
-        default_related_name = "edge_queries"
-        unique_together = ("graph", "key")
-
-
-class EdgePathQuery(EdgeQuery):
-    KIND = enums.EdgeQueryKindChoices.PATH
-    KINDS = (enums.EdgeQueryKindChoices.PATH,)
-    objects = managers.KindedManager()
-
-    class Meta:
-        proxy = True
-
-
-class EdgePairsQuery(EdgeQuery):
-    KIND = enums.EdgeQueryKindChoices.PAIRS
-    KINDS = (enums.EdgeQueryKindChoices.PAIRS,)
-    objects = managers.KindedManager()
-
-    class Meta:
-        proxy = True
-
-
-class EdgeTableQuery(EdgeQuery):
-    KIND = enums.EdgeQueryKindChoices.TABLE
-    KINDS = (enums.EdgeQueryKindChoices.TABLE,)
-    objects = managers.KindedManager()
-
-    class Meta:
-        proxy = True
-
-
 class ScatterPlot(models.Model):
+    # The one saved query a plot is drawn from. `node_query` / `path_query` used
+    # to sit beside it, pointing at `NodeTableQuery` / `NodePathQuery` — kinds
+    # nothing could render — and `_scoped.graph_of` walked all three to find a
+    # tenant. A plot is over a graph table query.
     graph_query = models.ForeignKey(
         GraphTableQuery,
         on_delete=models.CASCADE,
-        null=True,
-        blank=True,
         related_name="scatter_plots",
-        help_text="The query this scatter plot was trained on",
-    )
-    # `node_query` and `path_query` both used `related_name="scatter_plots"`, which was
-    # only legal while `NodeTableQuery` and `NodePathQuery` were separate tables. They are
-    # proxies of one model now, so the two reverse accessors have to be told apart.
-    node_query = models.ForeignKey(
-        NodeTableQuery,
-        on_delete=models.CASCADE,
-        related_name="node_table_scatter_plots",
-        null=True,
-        blank=True,
-        help_text="The node query this scatter plot was trained on",
-    )
-    path_query = models.ForeignKey(
-        NodePathQuery,
-        on_delete=models.CASCADE,
-        related_name="node_path_scatter_plots",
-        null=True,
-        blank=True,
-        help_text="The path query this scatter plot was trained on",
+        help_text="The graph table query this scatter plot is drawn from",
     )
     name = models.CharField(max_length=1000, help_text="The name of the scatter plot")
     description = models.CharField(

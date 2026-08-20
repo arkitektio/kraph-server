@@ -117,19 +117,10 @@ async def test_an_archived_graph_is_still_reachable_by_id(
     assert result.data["graph"]["isArchived"] is True
 
 
-#: The nine saved-query archive mutations, with the model each writes and the
-#: mutation field name. All nine set `archived` on a field that did not exist;
-#: the six proxy models share three tables, which is why three columns cover them.
+#: The saved-query archive mutation, with the model it writes. There used to be
+#: nine, over kinds nothing could render; only the table kind remains.
 QUERY_ARCHIVERS = [
     ("archiveGraphTableQuery", "GraphTableQuery"),
-    ("archiveGraphPathQuery", "GraphPathQuery"),
-    ("archiveGraphPairsQuery", "GraphPairsQuery"),
-    ("archiveNodeTableQuery", "NodeTableQuery"),
-    ("archiveNodePathQuery", "NodePathQuery"),
-    ("archiveNodePairsQuery", "NodePairsQuery"),
-    ("archiveEdgeTableQuery", "EdgeTableQuery"),
-    ("archiveEdgePathQuery", "EdgePathQuery"),
-    ("archiveEdgePairsQuery", "EdgePairsQuery"),
 ]
 
 

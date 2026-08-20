@@ -109,6 +109,10 @@ class Projector(Protocol):
         """The drawn records under `label` matching a pre-built predicate. The drawing-scoped list."""
         ...
 
+    def render_table(self, graph: Any, plan: Any, *, filters: Any = None, order: Any = None, pagination: Any = None) -> list[Any]:
+        """Compile a `TableQueryPlan` for this projection kind, run it, and hand back its rows."""
+        ...
+
     def render(self, graph: Any, query: str, params: Mapping[str, Any]) -> list[Any]:
-        """Run a saved query against the drawing and hand back its rows."""
+        """Run a legacy raw query against the drawing. Only for rows saved before plans existed."""
         ...

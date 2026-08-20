@@ -1,28 +1,12 @@
-"""Creating and updating a saved query, for all nine kinds at once.
+"""Creating and updating a saved table query — the plan is what is saved.
 
-Nine kinds — graph, node and edge × table, pairs and path — and until now
-**eighteen** of their mutations were `raise NotImplementedError`. Every one was
-mounted, so a client could call `createNodeTableQuery`, have the request
-accepted, and get a 500.
-
-The knock-on was larger than the mutations themselves. `NodeTableQuery`,
-`NodePairsQuery`, `NodePathQuery`, `EdgeTableQuery`, `EdgePairsQuery`,
-`EdgePathQuery`, `GraphPairsQuery` and `GraphPathQuery` had **no constructor
-anywhere in the codebase** — not in a manager, not in `materialize`, nowhere. So
-`nodeQueries`, `edgeQueries` and every `*Queries` field beside them were mounted,
-documented, and could only ever return an empty list. Implementing the writes is
-what makes those reads mean anything.
-
-One module rather than nine copies, because the three families are the same
-shape: `graph`, `key`, `query`, `label`, `description`, `kind`, `columns`
-(`core/models.py`, `GraphQuery` / `NodeQuery` / `EdgeQuery`). The differences are
-which model, and whether the kind carries columns.
+`GraphQuery.plan` (`graph_engine.query_ir.TableQueryPlan`) is the contract: what
+a client sends, what comes back, and what each projection kind compiles. Nothing
+here accepts raw Cypher any more; the old `query` column is read-only legacy.
 
 **Nothing here passes `kind`.** `managers.KindedManager` stamps it from the proxy
-being used, so `models.NodeTableQuery.objects.create(...)` writes `kind="TABLE"`
-by itself. That is also why `kind` was removed from the inputs: the manager sets
-it with `setdefault`, so a client-supplied kind would have *won*, writing a row
-that the matching manager then filtered out of every read.
+being used, so `models.GraphTableQuery.objects.create(...)` writes `kind="TABLE"`
+by itself.
 """
 
 from typing import Any
@@ -30,63 +14,79 @@ from typing import Any
 from kante.types import Info
 
 from api.mutations._scoped import accessible_graph, scoped
+from graph_engine.query_ir import TableQueryPlan
+
+
+def plan_from_input(plan_input: Any, columns: Any) -> TableQueryPlan:
+    """A validated plan from the mutation's input, with the columns folded in."""
+    plan = TableQueryPlan(
+        matches=list(plan_input.matches or []),
+        wheres=list(plan_input.wheres or []),
+        returns=list(plan_input.returns or []),
+        columns=list(columns or []),
+    )
+    # Compile once, against nothing, so a plan that cannot be compiled is refused
+    # at save time rather than at the first render.
+    from graph_engine.projection.cypher import compile_table_plan
+
+    compile_table_plan(plan)
+    return plan
+
+
+def plan_from_builder_args(builder_args: Any, columns: Any) -> TableQueryPlan:
+    """The builder's spelling (`match_paths` / `where_clauses` / `return_statements`) as a plan."""
+
+    class _Shim:
+        matches = list(builder_args.match_paths or [])
+        wheres = list(builder_args.where_clauses or [])
+        returns = list(builder_args.return_statements or [])
+
+    return plan_from_input(_Shim, columns)
 
 
 def create_saved_query(info: Info, model: Any, django_model: Any, what: str) -> Any:
-    """Save a new query against the graph it names.
+    """Save a new table query against the graph it names.
 
-    `accessible_graph` before anything is written, which is the same check
-    `create_entity_category` makes: the graph id arrives from the client, so
-    without it a caller could save a query into another tenant's view — and a
-    saved query is executed later against that view's data.
+    `accessible_graph` before anything is written: the graph id arrives from the
+    client, so without it a caller could save a query into another tenant's view
+    — and a saved query is executed later against that view's data.
     """
     graph = accessible_graph(info, model.graph)
+    plan = plan_from_input(model.plan, model.column_input)
 
-    values: dict[str, Any] = {
-        "graph": graph,
-        "key": model.key,
-        "query": model.query,
+    return django_model.objects.create(
+        graph=graph,
+        key=model.key,
+        plan=plan.to_stored(),
+        columns=[column.model_dump(mode="json") for column in model.column_input],
         # The label is what a UI shows; falling back to the key means a query is
         # never nameless, which `label` being non-null on the model requires.
-        "label": model.name or model.key,
-        "description": model.description,
-    }
-
-    # Only the table kinds carry columns; pairs and path queries have no such
-    # input, and writing `[]` onto them would claim an empty column set rather
-    # than no column set.
-    columns = getattr(model, "column_input", None)
-    if columns is not None:
-        values["columns"] = [column.model_dump(mode="json") for column in columns]
-
-    return django_model.objects.create(**values)
+        label=model.name or model.key,
+        description=model.description,
+    )
 
 
 def update_saved_query(info: Info, model: Any, django_model: Any, what: str) -> Any:
-    """Change a saved query the caller is allowed to reach.
-
-    `scoped` rather than a bare primary-key fetch, for the reason
-    `api/mutations/_scoped.py` gives at length: the client names a pk and never
-    names a tenant, so authorization has to come from the row.
-
-    Patches only what was sent. Every field on the update inputs is optional
-    except the id, so a `None` means "leave it alone" — assigning it would let a
-    client blank a description by omitting it.
-    """
+    """Change a saved query the caller is allowed to reach. Patches only what was sent."""
     item = scoped(info, django_model, model.id, what=what)
 
     if model.key is not None:
         item.key = model.key
-    if model.query is not None:
-        item.query = model.query
     if model.name is not None:
         item.label = model.name
     if model.description is not None:
         item.description = model.description
 
-    columns = getattr(model, "column_input", None)
+    columns = model.column_input
     if columns is not None:
         item.columns = [column.model_dump(mode="json") for column in columns]
+
+    if model.plan is not None:
+        plan = plan_from_input(model.plan, columns if columns is not None else item.columns)
+        item.plan = plan.to_stored()
+        # A row that gets a plan stops being legacy; its stored Cypher is no
+        # longer what renders and is cleared so the two cannot disagree.
+        item.query = None
 
     item.save()
     return item

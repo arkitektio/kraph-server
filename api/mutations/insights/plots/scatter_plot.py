@@ -6,23 +6,15 @@ from api.mutations._scoped import scoped
 from core import models
 
 
-def _resolve_plot_query(info: Info, model) -> tuple[models.GraphTableQuery | None, models.NodeTableQuery | None, models.NodePathQuery | None]:
-    """The one saved query this plot is drawn from, checked against the caller.
+def _resolve_plot_query(info: Info, model) -> models.GraphTableQuery:
+    """The saved table query this plot is drawn from, checked against the caller.
 
-    A plot has no graph of its own — it reaches one through whichever of these
-    three is set, which is why `_scoped.graph_of` walks them. These were bare
-    primary-key fetches, so a plot could be built over another tenant's saved
-    query and would then render that tenant's data through
-    `render_graph_table`.
+    A plot has no graph of its own — it reaches one through its query, which is
+    why `_scoped.graph_of` walks it. This was a bare primary-key fetch, so a plot
+    could be built over another tenant's saved query and would then render that
+    tenant's data through `render_graph_table`.
     """
-    graph_query = scoped(info, models.GraphTableQuery, model.graph_query_id, what="graph table query") if model.graph_query_id else None
-    node_query = scoped(info, models.NodeTableQuery, model.node_query_id, what="node table query") if model.node_query_id else None
-    path_query = scoped(info, models.NodePathQuery, model.path_query_id, what="node path query") if model.path_query_id else None
-
-    if sum(1 for item in [graph_query, node_query, path_query] if item is not None) != 1:
-        raise ValueError("Exactly one of graph_query_id, node_query_id, or path_query_id must be provided")
-
-    return graph_query, node_query, path_query
+    return scoped(info, models.GraphTableQuery, model.graph_query_id, what="graph table query")
 
 
 def _own_plot(info: Info, pk) -> models.ScatterPlot:
@@ -45,12 +37,10 @@ def _own_plot(info: Info, pk) -> models.ScatterPlot:
 
 def create_scatter_plot(info: Info, input: inputs.CreateScatterPlotInput) -> types.ScatterPlot:
     model = input.to_pydantic()
-    graph_query, node_query, path_query = _resolve_plot_query(info, model)
+    graph_query = _resolve_plot_query(info, model)
 
     return models.ScatterPlot.objects.create(
         graph_query=graph_query,
-        node_query=node_query,
-        path_query=path_query,
         name=model.name,
         description=model.description,
         id_column=model.id_column,
@@ -68,11 +58,7 @@ def create_scatter_plot(info: Info, input: inputs.CreateScatterPlotInput) -> typ
 def update_scatter_plot(info: Info, input: inputs.UpdateScatterPlotInput) -> types.ScatterPlot:
     model = input.to_pydantic()
     scatter_plot = _own_plot(info, model.id)
-    graph_query, node_query, path_query = _resolve_plot_query(info, model)
-
-    scatter_plot.graph_query = graph_query
-    scatter_plot.node_query = node_query
-    scatter_plot.path_query = path_query
+    scatter_plot.graph_query = _resolve_plot_query(info, model)
     scatter_plot.name = model.name
     scatter_plot.description = model.description
     scatter_plot.id_column = model.id_column

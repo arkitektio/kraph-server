@@ -134,11 +134,12 @@ async def test_graph_queries_interface_resolves_fragments(
         query="MATCH (n) RETURN n",
         columns=[],
     )
-    await core_models.GraphNodesQuery.objects.acreate(
+    await core_models.GraphTableQuery.objects.acreate(
         graph=test_graph,
         key="interface_fragment_nodes",
         label="Interface Fragment Nodes",
         query="MATCH (n) RETURN n",
+        columns=[],
     )
 
     query = """
@@ -147,9 +148,6 @@ async def test_graph_queries_interface_resolves_fragments(
                 __typename
                 id
                 label
-                ... on GraphNodesQuery {
-                    graph { id }
-                }
                 ... on GraphTableQuery {
                     graph { id }
                     columns { key }
@@ -165,49 +163,13 @@ async def test_graph_queries_interface_resolves_fragments(
 
     by_label = {row["label"]: row for row in result.data["graphQueries"]}
     assert by_label["Interface Fragment Table"]["__typename"] == "GraphTableQuery"
-    assert by_label["Interface Fragment Nodes"]["__typename"] == "GraphNodesQuery"
+    assert by_label["Interface Fragment Nodes"]["__typename"] == "GraphTableQuery"
     assert by_label["Interface Fragment Nodes"]["graph"]["id"] == str(test_graph.id)
 
 
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.asyncio
-async def test_concrete_query_field_is_scoped_to_its_kind(
-    api_schema: kante.Schema,
-    simple_api_context: HttpContext,
-    test_graph: core_models.Graph,
-) -> None:
-    """A field typed as one concrete kind must not return rows of the others.
-
-    Under multi-table inheritance a separate table gave this for free. It now comes
-    from the per-type `get_queryset`, which is easy to forget on a new type.
-    """
-    await core_models.GraphTableQuery.objects.acreate(
-        graph=test_graph,
-        key="scoped_table",
-        label="Scoped Table",
-        query="MATCH (n) RETURN n",
-        columns=[],
-    )
-    await core_models.GraphNodesQuery.objects.acreate(
-        graph=test_graph,
-        key="scoped_nodes",
-        label="Scoped Nodes",
-        query="MATCH (n) RETURN n",
-    )
-
-    result = await api_schema.execute(
-        "query { graphTableQueries { __typename label } }",
-        context_value=simple_api_context,
-    )
-
-    assert result.errors is None, f"GraphQL errors: {result.errors}"
-    assert result.data is not None
-
-    labels = {row["label"] for row in result.data["graphTableQueries"]}
-    assert "Scoped Table" in labels
-    assert "Scoped Nodes" not in labels
-    assert {row["__typename"] for row in result.data["graphTableQueries"]} == {"GraphTableQuery"}
-
+# `test_concrete_query_field_is_scoped_to_its_kind` used to sit here, contrasting a
+# table query with a nodes query under one interface. Only the table kind exists
+# now, so there is no second kind to be scoped against.
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio

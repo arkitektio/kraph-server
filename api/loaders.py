@@ -108,9 +108,6 @@ _LOADER_SPECS: dict[str, tuple[type, str]] = {
     "structure_relation_category": (models.StructureRelationCategory, "id"),
     "measurement_category": (models.MeasurementCategory, "id"),
     "graph_by_id": (models.Graph, "id"),
-    "graph_nodes_query_by_id": (models.GraphNodesQuery, "id"),
-    "graph_path_query_by_id": (models.GraphPathQuery, "id"),
-    "graph_pairs_query_by_id": (models.GraphPairsQuery, "id"),
     "graph_table_query_by_id": (models.GraphTableQuery, "id"),
     "term_by_id": (evidence_models.Term, "id"),
     "assertion_by_id": (evidence_models.Assertion, "id"),
@@ -277,9 +274,6 @@ relation_category_loader = _LoaderProxy("relation_category")
 structure_relation_category_loader = _LoaderProxy("structure_relation_category")
 measurement_category_loader = _LoaderProxy("measurement_category")
 graph_by_id_loader = _LoaderProxy("graph_by_id")
-graph_nodes_query_by_id_loader = _LoaderProxy("graph_nodes_query_by_id")
-graph_path_query_by_id_loader = _LoaderProxy("graph_path_query_by_id")
-graph_pairs_query_by_id_loader = _LoaderProxy("graph_pairs_query_by_id")
 graph_table_query_by_id_loader = _LoaderProxy("graph_table_query_by_id")
 term_by_id_loader = _LoaderProxy("term_by_id")
 assertion_by_id_loader = _LoaderProxy("assertion_by_id")

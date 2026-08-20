@@ -2584,16 +2584,31 @@ class GraphController:
     def render_graph_table_query(
         self, graph_query: models.GraphTableQuery, filters: input_models.RenderGraphTableFilter | None = None, pagination: input_models.RenderGraphTablePagination | None = None, order: input_models.RenderGraphTableOrder | None = None, info: Info | None = None
     ) -> RetrievedGraphTableRender:
-        """Render a set of nodes matching the graph query, with optional filters, pagination, and ordering."""
-        self._ensure_query_access(graph_query.graph, info)
-        query, params = self._compose_graph_table_query(
-            graph_query.query,
-            filters=filters,
-            pagination=pagination,
-            order=order,
-        )
+        """Render a saved table query: its plan, compiled by the projector, plus the render-time filter/order/page.
 
-        result_rows = self.projector.render(graph_query.graph, query, params)
+        The plan is the contract (`graph_engine/query_ir.py`); `Projector.render_table`
+        compiles it for the projection kind in use — which is what makes the render
+        filter land *structurally*, in a `WITH … WHERE` over the returned aliases,
+        where a regex used to splice it before the last `RETURN` of a client's
+        Cypher (wrong for `WITH`, `UNION`, and exactly the aliased columns a client
+        filters on). A **legacy** row — saved as raw Cypher before plans existed —
+        still renders through its stored string, but takes no filter, order or
+        page: those were the splice, and the honest fix is to rebuild the row
+        through the builder (`manage.py list_legacy_queries` names them).
+        """
+        from graph_engine.query_ir import TableQueryPlan
+
+        self._ensure_query_access(graph_query.graph, info)
+
+        plan = TableQueryPlan.from_stored(graph_query.plan)
+        if plan is not None:
+            result_rows = self.projector.render_table(graph_query.graph, plan, filters=filters, order=order, pagination=pagination)
+        else:
+            if filters is not None or order is not None or pagination is not None:
+                raise ValueError(f"Saved query #{graph_query.pk} is a legacy raw-Cypher query and cannot be filtered, ordered or paged; rebuild it through the builder (see `manage.py list_legacy_queries`).")
+            if not graph_query.query:
+                raise ValueError(f"Saved query #{graph_query.pk} has neither a plan nor a legacy query.")
+            result_rows = self.projector.render(graph_query.graph, graph_query.query, {})
 
         row_dicts: list[dict[str, Any]] = []
         column_keys = [column.get("key") for column in (graph_query.columns or []) if isinstance(column, dict) and column.get("key")]
@@ -2616,91 +2631,6 @@ class GraphController:
             graph_query_id=int(graph_query.id),
             rows=row_dicts,
         )
-
-    def _compose_graph_table_query(
-        self,
-        base_query: str,
-        filters: input_models.RenderGraphTableFilter | None = None,
-        pagination: input_models.RenderGraphTablePagination | None = None,
-        order: input_models.RenderGraphTableOrder | None = None,
-    ) -> tuple[str, dict[str, Any]]:
-        query = base_query.strip().rstrip(";")
-        params: dict[str, Any] = {}
-
-        filter_clause, filter_params = self._build_graph_table_filter_clause(filters)
-        params.update(filter_params)
-
-        if filter_clause:
-            query = self._inject_graph_table_filter(query, filter_clause)
-
-        if order:
-            key = self._validate_property_key(order.key)
-            direction = str(order.direction).lower()
-            direction = "DESC" if direction == "desc" else "ASC"
-            query = f"{query}\nORDER BY {key} {direction}"
-
-        if pagination:
-            if pagination.offset is not None and pagination.offset > 0:
-                query = f"{query}\nSKIP {int(pagination.offset)}"
-            if pagination.limit is not None:
-                query = f"{query}\nLIMIT {int(pagination.limit)}"
-
-        return query, params
-
-    def _build_graph_table_filter_clause(
-        self,
-        filters: input_models.RenderGraphTableFilter | None,
-    ) -> tuple[str, dict[str, Any]]:
-        if not filters:
-            return "", {}
-
-        key = self._validate_property_key(filters.key)
-        operator = str(filters.operator).upper()
-        value = self._coerce_filter_value(filters.value)
-        value_param = "graph_table_filter_value"
-
-        params = {value_param: value}
-
-        if operator in {"EQUALS", "EQ", "="}:
-            return f"{key} = ${value_param}", params
-        if operator in {"NOT_EQUALS", "NEQ", "!="}:
-            return f"{key} <> ${value_param}", params
-        if operator in {"GREATER_THAN", "GT", ">"}:
-            return f"{key} > ${value_param}", params
-        if operator in {"LESS_THAN", "LT", "<"}:
-            return f"{key} < ${value_param}", params
-        if operator in {"GREATER_OR_EQUAL", "GREATER_THAN_OR_EQUAL", "GTE", ">="}:
-            return f"{key} >= ${value_param}", params
-        if operator in {"LESS_OR_EQUAL", "LESS_THAN_OR_EQUAL", "LTE", "<="}:
-            return f"{key} <= ${value_param}", params
-        if operator == "CONTAINS":
-            return f"toString({key}) CONTAINS toString(${value_param})", params
-        if operator == "STARTS_WITH":
-            return f"toString({key}) STARTS WITH toString(${value_param})", params
-        if operator == "ENDS_WITH":
-            return f"toString({key}) ENDS WITH toString(${value_param})", params
-        if operator == "IN":
-            return f"{key} IN ${value_param}", params
-        if operator == "NOT_IN":
-            return f"NOT {key} IN ${value_param}", params
-
-        raise ValueError(f"Unsupported filter operator '{operator}'.")
-
-    def _inject_graph_table_filter(self, query: str, filter_clause: str) -> str:
-        return_matches = list(re.finditer(r"\bRETURN\b", query, flags=re.IGNORECASE))
-        if not return_matches:
-            return f"{query}\nWHERE {filter_clause}"
-
-        insert_at = return_matches[-1].start()
-        prefix = query[:insert_at].rstrip()
-        suffix = query[insert_at:].lstrip()
-
-        if re.search(r"\bWHERE\b", prefix, flags=re.IGNORECASE):
-            prefix = f"{prefix}\nAND {filter_clause}"
-        else:
-            prefix = f"{prefix}\nWHERE {filter_clause}"
-
-        return f"{prefix}\n{suffix}"
 
     def _validate_property_key(self, key: str) -> str:
         """What a property key may look like is the projection's rule, not the controller's."""

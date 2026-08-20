@@ -50,63 +50,15 @@ enum AggregationFunction {
 """The `AnyScalar` scalar type represents an arbitrary JSON-like value"""
 scalar AnyScalar
 
-"""Input for archiving an edge pairs query"""
-input ArchiveEdgePairsQueryInput {
-  """The ID of the edge pairs query to archive"""
-  id: ID!
-}
-
-"""Input for archiving an edge path query"""
-input ArchiveEdgePathQueryInput {
-  """The ID of the edge path query to archive"""
-  id: ID!
-}
-
-"""Input for archiving an edge table query"""
-input ArchiveEdgeTableQueryInput {
-  """The ID of the edge table query to archive"""
-  id: ID!
-}
-
 """Input for archiving a graph"""
 input ArchiveGraphInput {
   """The ID of the graph to archive"""
   id: String!
 }
 
-"""Input for archiving a graph pairs query"""
-input ArchiveGraphPairsQueryInput {
-  """The ID of the graph pairs query to archive"""
-  id: ID!
-}
-
-"""Input for archiving a graph path query"""
-input ArchiveGraphPathQueryInput {
-  """The ID of the graph path query to archive"""
-  id: ID!
-}
-
 """Input for archiving a graph table query"""
 input ArchiveGraphTableQueryInput {
   """The ID of the graph query to archive"""
-  id: ID!
-}
-
-"""Input for archiving a node pairs query"""
-input ArchiveNodePairsQueryInput {
-  """The ID of the node pairs query to archive"""
-  id: ID!
-}
-
-"""Input for archiving a node path query"""
-input ArchiveNodePathQueryInput {
-  """The ID of the node path query to archive"""
-  id: ID!
-}
-
-"""Input for archiving a node table query"""
-input ArchiveNodeTableQueryInput {
-  """The ID of the node table query to archive"""
   id: ID!
 }
 
@@ -655,18 +607,6 @@ type BigFileUploadGrant {
   uploadFormField: String!
 }
 
-"""Input type for creating a new graph query"""
-type BuilderArgs {
-  """Optional filtering conditions for the graph query"""
-  whereClauses: [WhereClause!]
-
-  """Optional patterns to match in the graph for this query"""
-  matchPaths: [MatchPath!]
-
-  """The values to return for each matched pattern in the graph query"""
-  returnStatements: [ReturnStatement!]
-}
-
 """Builder arguments for generating a graph table query"""
 input BuilderArgsInput {
   """Optional filtering conditions for the graph query"""
@@ -962,69 +902,6 @@ enum ConflictPolicy {
   FLAG
 }
 
-"""Input for creating a new edge pairs query"""
-input CreateEdgePairsQueryInput {
-  """Unique key for this edge query, used for referencing in the UI"""
-  key: String!
-
-  """
-  Human-readable name for this edge query (defaults to 'key' if not provided)
-  """
-  name: String = null
-
-  """Description of this edge query"""
-  description: String = null
-
-  """The Cypher query string that defines this edge query"""
-  query: String!
-
-  """The graph id this edge pairs query will belong to"""
-  graph: String!
-}
-
-"""Input for creating a new edge path query"""
-input CreateEdgePathQueryInput {
-  """Unique key for this edge query, used for referencing in the UI"""
-  key: String!
-
-  """
-  Human-readable name for this edge query (defaults to 'key' if not provided)
-  """
-  name: String = null
-
-  """Description of this edge query"""
-  description: String = null
-
-  """The Cypher query string that defines this edge query"""
-  query: String!
-
-  """The graph id this edge path query will belong to"""
-  graph: String!
-}
-
-"""Input for creating a new edge table query"""
-input CreateEdgeTableQueryInput {
-  """Unique key for this edge query, used for referencing in the UI"""
-  key: String!
-
-  """
-  Human-readable name for this edge query (defaults to 'key' if not provided)
-  """
-  name: String = null
-
-  """Description of this edge query"""
-  description: String = null
-
-  """The Cypher query string that defines this edge query"""
-  query: String!
-
-  """Definitions for the columns returned by this edge table query"""
-  columnInput: [ColumnInput!]! = []
-
-  """The graph id this edge table query will belong to"""
-  graph: String!
-}
-
 """Input for creating a new entity definition in the graph schema"""
 input CreateEntityCategoryInput {
   """The label of the node participating in the event"""
@@ -1084,94 +961,47 @@ input CreateGraphInput {
   backfill: Boolean! = false
 }
 
-"""Input for creating a graph pairs query"""
-input CreateGraphPairsQueryInput {
-  """Unique key for this graph query, used for referencing in the UI"""
-  key: String!
-
-  """
-  Human-readable name for this graph query (defaults to 'key' if not provided)
-  """
-  name: String = null
-
-  """Description of this graph query"""
-  description: String = null
-
-  """The Cypher query string that defines this graph query"""
-  query: String!
-
-  """The graph id this graph pairs query will belong to"""
-  graph: String!
-}
-
-"""Input for creating a graph path query"""
-input CreateGraphPathQueryInput {
-  """Unique key for this graph query, used for referencing in the UI"""
-  key: String!
-
-  """
-  Human-readable name for this graph query (defaults to 'key' if not provided)
-  """
-  name: String = null
-
-  """Description of this graph query"""
-  description: String = null
-
-  """The Cypher query string that defines this graph query"""
-  query: String!
-
-  """The graph id this graph path query will belong to"""
-  graph: String!
-}
-
 """Input for creating a new graph table query"""
 input CreateGraphTableQueryInput {
-  """Unique key for this graph query, used for referencing in the UI"""
-  key: String!
-
-  """
-  Human-readable name for this graph query (defaults to 'key' if not provided)
-  """
-  name: String = null
-
-  """Description of this graph query"""
-  description: String = null
-
-  """The Cypher query string that defines this graph query"""
-  query: String!
-
   """The graph id this table query will belong to"""
   graph: String!
 
-  """Definitions for the columns returned by this graph query"""
+  """
+  Unique key for this query within its graph, used for referencing in the UI
+  """
+  key: String!
+
+  """Human-readable name (defaults to `key`)"""
+  name: String = null
+
+  """Description of this query"""
+  description: String = null
+
+  """What the query means; compiled by each projection kind"""
+  plan: TableQueryPlanInput!
+
+  """How the returned aliases are presented"""
   columnInput: [ColumnInput!]! = []
 }
 
 """Input for creating a graph table query through builder arguments"""
 input CreateGraphTableQueryThroughBuilderInput {
-  """Unique key for this graph query, used for referencing in the UI"""
-  key: String!
-
-  """
-  Human-readable name for this graph query (defaults to 'key' if not provided)
-  """
-  name: String = null
-
-  """Description of this graph query"""
-  description: String = null
-
-  """Ignored; the query is generated from the builder arguments"""
-  query: String = null
-
   """The graph id this table query will belong to"""
   graph: String!
 
-  """
-  Optional additional arguments for the graph query builder to support advanced features like dynamic filtering or pattern matching
-  """
+  """Unique key for this query within its graph"""
+  key: String!
+
+  """Human-readable name (defaults to `key`)"""
+  name: String = null
+
+  """Description of this query"""
+  description: String = null
+
+  """The builder arguments; stored as the query's plan"""
   builderArgs: BuilderArgsInput!
 
-  """Definitions for the columns returned by this graph query"""
+  """How the returned aliases are presented"""
   columnInput: [ColumnInput!]! = []
 }
 
@@ -1262,69 +1092,6 @@ input CreateNaturalEventCategoryInput {
   Draw the evidence this word already admits. Claims made under it before this category existed are in the organization's evidence base; with this on they are projected into the graph now, instead of waiting for the next reproject. Off by default because the work is proportional to the graph's evidence and happens before this mutation returns.
   """
   backfill: Boolean! = false
-}
-
-"""Input for creating a new node pairs query"""
-input CreateNodePairsQueryInput {
-  """Unique key for this node query, used for referencing in the UI"""
-  key: String!
-
-  """
-  Human-readable name for this node query (defaults to 'key' if not provided)
-  """
-  name: String = null
-
-  """Description of this node query"""
-  description: String = null
-
-  """The Cypher query string that defines this node query"""
-  query: String!
-
-  """The graph id this node pairs query will belong to"""
-  graph: String!
-}
-
-"""Input for creating a new node path query"""
-input CreateNodePathQueryInput {
-  """Unique key for this node query, used for referencing in the UI"""
-  key: String!
-
-  """
-  Human-readable name for this node query (defaults to 'key' if not provided)
-  """
-  name: String = null
-
-  """Description of this node query"""
-  description: String = null
-
-  """The Cypher query string that defines this node query"""
-  query: String!
-
-  """The graph id this node path query will belong to"""
-  graph: String!
-}
-
-"""Input for creating a new node table query"""
-input CreateNodeTableQueryInput {
-  """Unique key for this node query, used for referencing in the UI"""
-  key: String!
-
-  """
-  Human-readable name for this node query (defaults to 'key' if not provided)
-  """
-  name: String = null
-
-  """Description of this node query"""
-  description: String = null
-
-  """The Cypher query string that defines this node query"""
-  query: String!
-
-  """Definitions for the columns returned by this node table query"""
-  columnInput: [ColumnInput!]! = []
-
-  """The graph id this node table query will belong to"""
-  graph: String!
 }
 
 """Input for creating a new protocol event definition in the graph schema"""
@@ -1428,14 +1195,8 @@ input CreateScatterPlotInput {
   """Optional description of the scatter plot"""
   description: String = null
 
-  """Optional graph table query ID used by this scatter plot"""
-  graphQueryId: Int = null
-
-  """Optional node table query ID used by this scatter plot"""
-  nodeQueryId: Int = null
-
-  """Optional node path query ID used by this scatter plot"""
-  pathQueryId: Int = null
+  """The graph table query this scatter plot is drawn from"""
+  graphQueryId: Int!
 
   """Column key used for point identifiers"""
   idColumn: String!
@@ -1537,24 +1298,6 @@ scalar CypherLiteral
 """Date with time (isoformat)"""
 scalar DateTime
 
-"""Input for deleting an edge pairs query"""
-input DeleteEdgePairsQueryInput {
-  """The ID of the edge pairs query to delete"""
-  id: ID!
-}
-
-"""Input for deleting an edge path query"""
-input DeleteEdgePathQueryInput {
-  """The ID of the edge path query to delete"""
-  id: ID!
-}
-
-"""Input for deleting an edge table query"""
-input DeleteEdgeTableQueryInput {
-  """The ID of the edge table query to delete"""
-  id: ID!
-}
-
 """Input for deleting an existing entity definition in the graph schema"""
 input DeleteEntityCategoryInput {
   """The ID of the structure category to delete"""
@@ -1565,18 +1308,6 @@ input DeleteEntityCategoryInput {
 input DeleteGraphInput {
   """The ID of the graph to delete"""
   id: String!
-}
-
-"""Input for deleting a graph pairs query"""
-input DeleteGraphPairsQueryInput {
-  """The ID of the graph pairs query to delete"""
-  id: ID!
-}
-
-"""Input for deleting a graph path query"""
-input DeleteGraphPathQueryInput {
-  """The ID of the graph path query to delete"""
-  id: ID!
 }
 
 """Input for deleting a graph table query"""
@@ -1605,24 +1336,6 @@ Input for deleting an existing natural event definition in the graph schema
 input DeleteNaturalEventCategoryInput {
   """The ID of the event category to delete"""
   id: String!
-}
-
-"""Input for deleting a node pairs query"""
-input DeleteNodePairsQueryInput {
-  """The ID of the node pairs query to delete"""
-  id: ID!
-}
-
-"""Input for deleting a node path query"""
-input DeleteNodePathQueryInput {
-  """The ID of the node path query to delete"""
-  id: ID!
-}
-
-"""Input for deleting a node table query"""
-input DeleteNodeTableQueryInput {
-  """The ID of the node table query to delete"""
-  id: ID!
 }
 
 """
@@ -1848,9 +1561,6 @@ interface EdgeCategory {
 
   """Color as RGBA list (0-255)"""
   color: [Int!]
-
-  """List of relevant queries that use this category as input"""
-  relevantEdgeQueries: [EdgeQuery!]!
 }
 
 """One view that draws a claimed edge, and how it draws it"""
@@ -1865,205 +1575,6 @@ type EdgeDrawing {
 
   """The edge as this view holds it"""
   edge: Edge!
-}
-
-"""Base interface for graph schemas"""
-type EdgePairsQuery implements EdgeQuery @key(fields: "id", resolvable: true) {
-  """Database ID of the category"""
-  id: ID!
-
-  """The graph this query belongs to"""
-  graph: Graph!
-
-  """
-  The key this query is referenced and pinned by, unique within its graph
-  """
-  key: String!
-
-  """Human-readable name for this query"""
-  label: String!
-
-  """Description of this query"""
-  description: String
-
-  """The Cypher this query runs"""
-  query: CypherLiteral!
-
-  """List of node categories for which this query is relevant"""
-  relevantFor: [NodeCategory!]!
-
-  """Whether this saved query has been archived"""
-  archived: Boolean!
-
-  """The source node category to query"""
-  sourceCategory: NodeCategory!
-
-  """The target node category to query"""
-  targetCategory: NodeCategory!
-
-  """Optional edge category to filter pairs by"""
-  edgeCategory: EdgeCategory
-}
-
-input EdgePairsQueryFilter {
-  AND: EdgePairsQueryFilter
-  OR: EdgePairsQueryFilter
-  NOT: EdgePairsQueryFilter
-  DISTINCT: Boolean
-
-  """Filter by list of IDs"""
-  ids: [ID!]
-
-  """Full-text search over label and description"""
-  search: String
-
-  """Only archived queries, or only live ones. Omitted shows both"""
-  archived: Boolean
-}
-
-input EdgePairsQueryOrder @oneOf {
-  label: Ordering
-  id: Ordering
-}
-
-"""Base interface for graph schemas"""
-type EdgePathQuery implements EdgeQuery @key(fields: "id", resolvable: true) {
-  """Database ID of the category"""
-  id: ID!
-
-  """The graph this query belongs to"""
-  graph: Graph!
-
-  """
-  The key this query is referenced and pinned by, unique within its graph
-  """
-  key: String!
-
-  """Human-readable name for this query"""
-  label: String!
-
-  """Description of this query"""
-  description: String
-
-  """The Cypher this query runs"""
-  query: CypherLiteral!
-
-  """List of node categories for which this query is relevant"""
-  relevantFor: [NodeCategory!]!
-
-  """Whether this saved query has been archived"""
-  archived: Boolean!
-}
-
-input EdgePathQueryFilter {
-  AND: EdgePathQueryFilter
-  OR: EdgePathQueryFilter
-  NOT: EdgePathQueryFilter
-  DISTINCT: Boolean
-
-  """Filter by list of IDs"""
-  ids: [ID!]
-
-  """Full-text search over label and description"""
-  search: String
-
-  """Only archived queries, or only live ones. Omitted shows both"""
-  archived: Boolean
-}
-
-input EdgePathQueryOrder @oneOf {
-  label: Ordering
-  id: Ordering
-}
-
-"""Base interface for entity categories"""
-interface EdgeQuery {
-  """Database ID of this saved query"""
-  id: ID!
-
-  """The graph this query belongs to"""
-  graph: Graph!
-
-  """
-  The key this query is referenced and pinned by, unique within its graph
-  """
-  key: String!
-
-  """Human-readable name for this query"""
-  label: String!
-
-  """Description of this query"""
-  description: String
-
-  """The Cypher this query runs"""
-  query: CypherLiteral!
-
-  """List of node categories for which this query is relevant"""
-  relevantFor: [NodeCategory!]!
-
-  """Whether this saved query has been archived"""
-  archived: Boolean!
-}
-
-"""Base interface for graph schemas"""
-type EdgeTableQuery implements EdgeQuery & Plottable @key(fields: "id", resolvable: true) {
-  """Database ID of the category"""
-  id: ID!
-
-  """The graph this query belongs to"""
-  graph: Graph!
-
-  """
-  The key this query is referenced and pinned by, unique within its graph
-  """
-  key: String!
-
-  """Human-readable name for this query"""
-  label: String!
-
-  """Description of this query"""
-  description: String
-
-  """The Cypher query to execute for this table query"""
-  query: CypherLiteral!
-
-  """List of node categories for which this query is relevant"""
-  relevantFor: [NodeCategory!]!
-
-  """Whether this saved query has been archived"""
-  archived: Boolean!
-
-  """List of columns to return in the table query result"""
-  columns: [Column!]!
-
-  """The graph this category belongs to"""
-  scatterPlots: [ScatterPlot!]!
-
-  """
-  If this graph was built using a builder function, the arguments used for building it, which can be used for debugging or rebuilding the graph with different parameters
-  """
-  builderArgs: BuilderArgs
-}
-
-input EdgeTableQueryFilter {
-  AND: EdgeTableQueryFilter
-  OR: EdgeTableQueryFilter
-  NOT: EdgeTableQueryFilter
-  DISTINCT: Boolean
-
-  """Filter by list of IDs"""
-  ids: [ID!]
-
-  """Full-text search over label and description"""
-  search: String
-
-  """Only archived queries, or only live ones. Omitted shows both"""
-  archived: Boolean
-}
-
-input EdgeTableQueryOrder @oneOf {
-  label: Ordering
-  id: Ordering
 }
 
 """
@@ -2185,9 +1696,6 @@ type EntityCategory implements NodeCategory & Category @key(fields: "id", resolv
 
   """Height for visualization (optional)"""
   height: Float
-
-  """List of relevant node queries that use this category as input"""
-  relevantNodeQueries: [NodeQuery!]!
 
   """
   The unique key/identifier for this category, used for linking to entities or structures (e.g. 'Cell', 'ROI')
@@ -2403,9 +1911,6 @@ interface EventCategory implements NodeCategory & Category {
 
   """Height for visualization (optional)"""
   height: Float
-
-  """List of relevant node queries that use this category as input"""
-  relevantNodeQueries: [NodeQuery!]!
 
   """
   The unique key/identifier for this category, used for linking to entities or structures (e.g. 'Cell', 'ROI')
@@ -2671,173 +2176,8 @@ input GraphFilter {
   isArchived: Boolean
 }
 
-"""Base interface for graph schemas"""
-type GraphNodesQuery implements GraphQuery @key(fields: "id", resolvable: true) {
-  """Database ID of the category"""
-  id: ID!
-
-  """The graph this query belongs to"""
-  graph: Graph!
-
-  """
-  The key this query is referenced and pinned by, unique within its graph
-  """
-  key: String!
-
-  """Human-readable name for this query"""
-  label: String!
-
-  """Description of this query"""
-  description: String
-
-  """The Cypher this query runs"""
-  query: CypherLiteral!
-
-  """List of node categories for which this query is relevant"""
-  relevantFor: [NodeCategory!]!
-
-  """Whether this saved query has been archived"""
-  archived: Boolean!
-
-  """The node category to query"""
-  nodeCategory: NodeCategory!
-}
-
-input GraphNodesQueryFilter {
-  AND: GraphNodesQueryFilter
-  OR: GraphNodesQueryFilter
-  NOT: GraphNodesQueryFilter
-  DISTINCT: Boolean
-
-  """Filter by list of IDs"""
-  ids: [ID!]
-
-  """Full-text search over label and description"""
-  search: String
-
-  """Only archived queries, or only live ones. Omitted shows both"""
-  archived: Boolean
-}
-
-input GraphNodesQueryOrder @oneOf {
-  label: Ordering
-  id: Ordering
-}
-
 input GraphOrder @oneOf {
   name: Ordering
-  id: Ordering
-}
-
-"""Base interface for graph schemas"""
-type GraphPairsQuery implements GraphQuery @key(fields: "id", resolvable: true) {
-  """Database ID of the category"""
-  id: ID!
-
-  """The graph this query belongs to"""
-  graph: Graph!
-
-  """
-  The key this query is referenced and pinned by, unique within its graph
-  """
-  key: String!
-
-  """Human-readable name for this query"""
-  label: String!
-
-  """Description of this query"""
-  description: String
-
-  """The Cypher this query runs"""
-  query: CypherLiteral!
-
-  """List of node categories for which this query is relevant"""
-  relevantFor: [NodeCategory!]!
-
-  """Whether this saved query has been archived"""
-  archived: Boolean!
-
-  """The source node category to query"""
-  sourceCategory: NodeCategory!
-
-  """The target node category to query"""
-  targetCategory: NodeCategory!
-}
-
-input GraphPairsQueryFilter {
-  AND: GraphPairsQueryFilter
-  OR: GraphPairsQueryFilter
-  NOT: GraphPairsQueryFilter
-  DISTINCT: Boolean
-
-  """Filter by list of IDs"""
-  ids: [ID!]
-
-  """Full-text search over label and description"""
-  search: String
-
-  """Only archived queries, or only live ones. Omitted shows both"""
-  archived: Boolean
-}
-
-input GraphPairsQueryOrder @oneOf {
-  label: Ordering
-  id: Ordering
-}
-
-"""Base interface for graph schemas"""
-type GraphPathQuery implements GraphQuery @key(fields: "id", resolvable: true) {
-  """Database ID of the category"""
-  id: ID!
-
-  """The graph this query belongs to"""
-  graph: Graph!
-
-  """
-  The key this query is referenced and pinned by, unique within its graph
-  """
-  key: String!
-
-  """Human-readable name for this query"""
-  label: String!
-
-  """Description of this query"""
-  description: String
-
-  """The Cypher this query runs"""
-  query: CypherLiteral!
-
-  """List of node categories for which this query is relevant"""
-  relevantFor: [NodeCategory!]!
-
-  """Whether this saved query has been archived"""
-  archived: Boolean!
-
-  """The node category this path starts from"""
-  sourceCategory: NodeCategory
-
-  """The node category this path ends at"""
-  targetCategory: NodeCategory
-}
-
-input GraphPathQueryFilter {
-  AND: GraphPathQueryFilter
-  OR: GraphPathQueryFilter
-  NOT: GraphPathQueryFilter
-  DISTINCT: Boolean
-
-  """Filter by list of IDs"""
-  ids: [ID!]
-
-  """Full-text search over label and description"""
-  search: String
-
-  """Only archived queries, or only live ones. Omitted shows both"""
-  archived: Boolean
-}
-
-input GraphPathQueryOrder @oneOf {
-  label: Ordering
   id: Ordering
 }
 
@@ -2901,14 +2241,26 @@ interface GraphQuery {
   """Description of this query"""
   description: String
 
-  """The Cypher this query runs"""
-  query: CypherLiteral!
-
   """List of node categories for which this query is relevant"""
   relevantFor: [NodeCategory!]!
 
   """Whether this saved query has been archived"""
   archived: Boolean!
+
+  """
+  What this query means: its plan. Null only on a legacy row saved as raw Cypher before plans existed — see `legacy`
+  """
+  plan: TableQueryPlan
+
+  """
+  True for a row saved as raw Cypher before the plan became the contract. It still renders, but takes no filter, order or page; rebuild it through the builder
+  """
+  legacy: Boolean!
+
+  """
+  The query as compiled for the Apache AGE projection — read-only, from `plan`. The stored string for a legacy row
+  """
+  query: CypherLiteral @deprecated(reason: "The contract is `plan`; this is its compiled form and names a projection kind. Removed in the next major.")
 }
 
 type GraphStats {
@@ -2933,7 +2285,7 @@ type GraphStats {
 
 """Base interface for graph schemas"""
 type GraphTableQuery implements GraphQuery & Plottable @key(fields: "id", resolvable: true) {
-  """Database ID of the category"""
+  """Database ID of this saved query"""
   id: ID!
 
   """The graph this query belongs to"""
@@ -2950,25 +2302,32 @@ type GraphTableQuery implements GraphQuery & Plottable @key(fields: "id", resolv
   """Description of this query"""
   description: String
 
-  """The Cypher query to execute for this table query"""
-  query: CypherLiteral!
-
   """List of node categories for which this query is relevant"""
   relevantFor: [NodeCategory!]!
 
   """Whether this saved query has been archived"""
   archived: Boolean!
 
-  """List of columns to return in the table query result"""
+  """
+  What this query means: its plan. Null only on a legacy row saved as raw Cypher before plans existed — see `legacy`
+  """
+  plan: TableQueryPlan
+
+  """
+  True for a row saved as raw Cypher before the plan became the contract. It still renders, but takes no filter, order or page; rebuild it through the builder
+  """
+  legacy: Boolean!
+
+  """
+  The query as compiled for the Apache AGE projection — read-only, from `plan`. The stored string for a legacy row
+  """
+  query: CypherLiteral @deprecated(reason: "The contract is `plan`; this is its compiled form and names a projection kind. Removed in the next major.")
+
+  """How the returned aliases are presented"""
   columns: [Column!]!
 
   """The graph this category belongs to"""
   scatterPlots: [ScatterPlot!]!
-
-  """
-  If this graph was built using a builder function, the arguments used for building it, which can be used for debugging or rebuilding the graph with different parameters
-  """
-  builderArgs: BuilderArgs
 }
 
 input GraphTableQueryFilter {
@@ -2987,21 +2346,22 @@ input GraphTableQueryFilter {
   archived: Boolean
 }
 
-"""A saved table query over a graph"""
+"""A saved table query declared inside a graph definition, as a plan"""
 input GraphTableQueryInput {
-  """Unique key for this graph query, used for referencing in the UI"""
+  """Unique key for this query within its graph"""
   key: String!
 
-  """
-  Human-readable name for this graph query (defaults to 'key' if not provided)
-  """
+  """Human-readable name (defaults to `key`)"""
   name: String = null
 
-  """Description of this graph query"""
+  """Description of this query"""
   description: String = null
 
-  """The Cypher query string that defines this graph query"""
-  query: String!
+  """What the query means; compiled by each projection kind"""
+  plan: TableQueryPlanInput!
+
+  """How the returned aliases are presented"""
+  columnInput: [ColumnInput!]! = []
 }
 
 input GraphTableQueryOrder @oneOf {
@@ -3276,6 +2636,11 @@ type MatchPath {
   List of booleans indicating the direction of each relationship in the path (True for outgoing, False for incoming)
   """
   relationDirections: [Boolean!]
+
+  """
+  Optional category key per node (parallel to `nodes`), constraining that node of the pattern to a category; null leaves it unconstrained
+  """
+  nodeCategories: [String]
 }
 
 """Input for a graph match path"""
@@ -3299,6 +2664,11 @@ input MatchPathInput {
   List of booleans indicating the direction of each relationship in the path (True for outgoing, False for incoming)
   """
   relationDirections: [Boolean!] = null
+
+  """
+  Optional category key per node (parallel to `nodes`), constraining that node of the pattern to a category; null leaves it unconstrained
+  """
+  nodeCategories: [String] = null
 }
 
 """A MEASUREMENT claim: a structure measuring an entity"""
@@ -3347,9 +2717,6 @@ type MeasurementCategory implements EdgeCategory & Category @key(fields: "id", r
 
   """Color as RGBA list (0-255)"""
   color: [Int!]
-
-  """List of relevant queries that use this category as input"""
-  relevantEdgeQueries: [EdgeQuery!]!
 
   """
   The unique key/identifier for this category, used for linking to entities or structures (e.g. 'Cell', 'ROI')
@@ -3916,102 +3283,6 @@ type Mutation {
   """Archive a graph table query"""
   archiveGraphTableQuery(input: ArchiveGraphTableQueryInput!): GraphTableQuery!
 
-  """Create a graph pairs query"""
-  createGraphPairsQuery(input: CreateGraphPairsQueryInput!): GraphPairsQuery!
-
-  """Update a graph pairs query"""
-  updateGraphPairsQuery(input: UpdateGraphPairsQueryInput!): GraphPairsQuery!
-
-  """Delete a graph pairs query"""
-  deleteGraphPairsQuery(input: DeleteGraphPairsQueryInput!): ID!
-
-  """Archive a graph pairs query"""
-  archiveGraphPairsQuery(input: ArchiveGraphPairsQueryInput!): GraphPairsQuery!
-
-  """Create a graph path query"""
-  createGraphPathQuery(input: CreateGraphPathQueryInput!): GraphPathQuery!
-
-  """Update a graph path query"""
-  updateGraphPathQuery(input: UpdateGraphPathQueryInput!): GraphPathQuery!
-
-  """Delete a graph path query"""
-  deleteGraphPathQuery(input: DeleteGraphPathQueryInput!): ID!
-
-  """Archive a graph path query"""
-  archiveGraphPathQuery(input: ArchiveGraphPathQueryInput!): GraphPathQuery!
-
-  """Create a node table query"""
-  createNodeTableQuery(input: CreateNodeTableQueryInput!): NodeTableQuery!
-
-  """Update a node table query"""
-  updateNodeTableQuery(input: UpdateNodeTableQueryInput!): NodeTableQuery!
-
-  """Delete a node table query"""
-  deleteNodeTableQuery(input: DeleteNodeTableQueryInput!): ID!
-
-  """Archive a node table query"""
-  archiveNodeTableQuery(input: ArchiveNodeTableQueryInput!): NodeTableQuery!
-
-  """Create a node pairs query"""
-  createNodePairsQuery(input: CreateNodePairsQueryInput!): NodePairsQuery!
-
-  """Update a node pairs query"""
-  updateNodePairsQuery(input: UpdateNodePairsQueryInput!): NodePairsQuery!
-
-  """Delete a node pairs query"""
-  deleteNodePairsQuery(input: DeleteNodePairsQueryInput!): ID!
-
-  """Archive a node pairs query"""
-  archiveNodePairsQuery(input: ArchiveNodePairsQueryInput!): NodePairsQuery!
-
-  """Create a node path query"""
-  createNodePathQuery(input: CreateNodePathQueryInput!): NodePathQuery!
-
-  """Update a node path query"""
-  updateNodePathQuery(input: UpdateNodePathQueryInput!): NodePathQuery!
-
-  """Delete a node path query"""
-  deleteNodePathQuery(input: DeleteNodePathQueryInput!): ID!
-
-  """Archive a node path query"""
-  archiveNodePathQuery(input: ArchiveNodePathQueryInput!): NodePathQuery!
-
-  """Create an edge table query"""
-  createEdgeTableQuery(input: CreateEdgeTableQueryInput!): EdgeTableQuery!
-
-  """Update an edge table query"""
-  updateEdgeTableQuery(input: UpdateEdgeTableQueryInput!): EdgeTableQuery!
-
-  """Delete an edge table query"""
-  deleteEdgeTableQuery(input: DeleteEdgeTableQueryInput!): ID!
-
-  """Archive an edge table query"""
-  archiveEdgeTableQuery(input: ArchiveEdgeTableQueryInput!): EdgeTableQuery!
-
-  """Create an edge pairs query"""
-  createEdgePairsQuery(input: CreateEdgePairsQueryInput!): EdgePairsQuery!
-
-  """Update an edge pairs query"""
-  updateEdgePairsQuery(input: UpdateEdgePairsQueryInput!): EdgePairsQuery!
-
-  """Delete an edge pairs query"""
-  deleteEdgePairsQuery(input: DeleteEdgePairsQueryInput!): ID!
-
-  """Archive an edge pairs query"""
-  archiveEdgePairsQuery(input: ArchiveEdgePairsQueryInput!): EdgePairsQuery!
-
-  """Create an edge path query"""
-  createEdgePathQuery(input: CreateEdgePathQueryInput!): EdgePathQuery!
-
-  """Update an edge path query"""
-  updateEdgePathQuery(input: UpdateEdgePathQueryInput!): EdgePathQuery!
-
-  """Delete an edge path query"""
-  deleteEdgePathQuery(input: DeleteEdgePathQueryInput!): ID!
-
-  """Archive an edge path query"""
-  archiveEdgePathQuery(input: ArchiveEdgePathQueryInput!): EdgePathQuery!
-
   """Create a scatter plot"""
   createScatterPlot(input: CreateScatterPlotInput!): ScatterPlot!
 
@@ -4205,9 +3476,6 @@ type NaturalEventCategory implements EventCategory & NodeCategory & Category @ke
   """Height for visualization (optional)"""
   height: Float
 
-  """List of relevant node queries that use this category as input"""
-  relevantNodeQueries: [NodeQuery!]!
-
   """
   The unique key/identifier for this category, used for linking to entities or structures (e.g. 'Cell', 'ROI')
   """
@@ -4399,9 +3667,6 @@ interface NodeCategory {
 
   """Height for visualization (optional)"""
   height: Float
-
-  """List of relevant node queries that use this category as input"""
-  relevantNodeQueries: [NodeQuery!]!
 }
 
 """One view that draws a claimed node, and how it draws it"""
@@ -4442,205 +3707,6 @@ input NodePaginationInput {
 
   """Maximum number of items to return"""
   limit: Int = 100
-}
-
-"""Base interface for graph schemas"""
-type NodePairsQuery implements NodeQuery @key(fields: "id", resolvable: true) {
-  """Database ID of the category"""
-  id: ID!
-
-  """The graph this query belongs to"""
-  graph: Graph!
-
-  """
-  The key this query is referenced and pinned by, unique within its graph
-  """
-  key: String!
-
-  """Human-readable name for this query"""
-  label: String!
-
-  """Description of this query"""
-  description: String
-
-  """The Cypher this query runs"""
-  query: CypherLiteral!
-
-  """List of node categories for which this query is relevant"""
-  relevantFor: [NodeCategory!]!
-
-  """Whether this saved query has been archived"""
-  archived: Boolean!
-
-  """The source node category to query"""
-  sourceCategory: NodeCategory!
-
-  """The target node category to query"""
-  targetCategory: NodeCategory!
-
-  """Optional edge category to filter pairs by"""
-  edgeCategory: EdgeCategory
-}
-
-input NodePairsQueryFilter {
-  AND: NodePairsQueryFilter
-  OR: NodePairsQueryFilter
-  NOT: NodePairsQueryFilter
-  DISTINCT: Boolean
-
-  """Filter by list of IDs"""
-  ids: [ID!]
-
-  """Full-text search over label and description"""
-  search: String
-
-  """Only archived queries, or only live ones. Omitted shows both"""
-  archived: Boolean
-}
-
-input NodePairsQueryOrder @oneOf {
-  label: Ordering
-  id: Ordering
-}
-
-"""Base interface for graph schemas"""
-type NodePathQuery implements NodeQuery @key(fields: "id", resolvable: true) {
-  """Database ID of the category"""
-  id: ID!
-
-  """The graph this query belongs to"""
-  graph: Graph!
-
-  """
-  The key this query is referenced and pinned by, unique within its graph
-  """
-  key: String!
-
-  """Human-readable name for this query"""
-  label: String!
-
-  """Description of this query"""
-  description: String
-
-  """The Cypher this query runs"""
-  query: CypherLiteral!
-
-  """List of node categories for which this query is relevant"""
-  relevantFor: [NodeCategory!]!
-
-  """Whether this saved query has been archived"""
-  archived: Boolean!
-}
-
-input NodePathQueryFilter {
-  AND: NodePathQueryFilter
-  OR: NodePathQueryFilter
-  NOT: NodePathQueryFilter
-  DISTINCT: Boolean
-
-  """Filter by list of IDs"""
-  ids: [ID!]
-
-  """Full-text search over label and description"""
-  search: String
-
-  """Only archived queries, or only live ones. Omitted shows both"""
-  archived: Boolean
-}
-
-input NodePathQueryOrder @oneOf {
-  label: Ordering
-  id: Ordering
-}
-
-"""Base interface for entity categories"""
-interface NodeQuery {
-  """Database ID of this saved query"""
-  id: ID!
-
-  """The graph this query belongs to"""
-  graph: Graph!
-
-  """
-  The key this query is referenced and pinned by, unique within its graph
-  """
-  key: String!
-
-  """Human-readable name for this query"""
-  label: String!
-
-  """Description of this query"""
-  description: String
-
-  """The Cypher this query runs"""
-  query: CypherLiteral!
-
-  """List of node categories for which this query is relevant"""
-  relevantFor: [NodeCategory!]!
-
-  """Whether this saved query has been archived"""
-  archived: Boolean!
-}
-
-"""Base interface for graph schemas"""
-type NodeTableQuery implements NodeQuery & Plottable @key(fields: "id", resolvable: true) {
-  """Database ID of the category"""
-  id: ID!
-
-  """The graph this query belongs to"""
-  graph: Graph!
-
-  """
-  The key this query is referenced and pinned by, unique within its graph
-  """
-  key: String!
-
-  """Human-readable name for this query"""
-  label: String!
-
-  """Description of this query"""
-  description: String
-
-  """The Cypher query to execute for this table query"""
-  query: CypherLiteral!
-
-  """List of node categories for which this query is relevant"""
-  relevantFor: [NodeCategory!]!
-
-  """Whether this saved query has been archived"""
-  archived: Boolean!
-
-  """List of columns to return in the table query result"""
-  columns: [Column!]!
-
-  """The graph this category belongs to"""
-  scatterPlots: [ScatterPlot!]!
-
-  """
-  If this graph was built using a builder function, the arguments used for building it, which can be used for debugging or rebuilding the graph with different parameters
-  """
-  builderArgs: BuilderArgs
-}
-
-input NodeTableQueryFilter {
-  AND: NodeTableQueryFilter
-  OR: NodeTableQueryFilter
-  NOT: NodeTableQueryFilter
-  DISTINCT: Boolean
-
-  """Filter by list of IDs"""
-  ids: [ID!]
-
-  """Full-text search over label and description"""
-  search: String
-
-  """Only archived queries, or only live ones. Omitted shows both"""
-  archived: Boolean
-}
-
-input NodeTableQueryOrder @oneOf {
-  label: Ordering
-  id: Ordering
 }
 
 input OffsetPaginationInput {
@@ -4968,9 +4034,6 @@ type ProtocolEventCategory implements EventCategory & NodeCategory & Category @k
   """Height for visualization (optional)"""
   height: Float
 
-  """List of relevant node queries that use this category as input"""
-  relevantNodeQueries: [NodeQuery!]!
-
   """
   The unique key/identifier for this category, used for linking to entities or structures (e.g. 'Cell', 'ROI')
   """
@@ -5165,72 +4228,6 @@ type Query {
   """Show a single saved graph table query by ID"""
   graphTableQuery(id: ID!): GraphTableQuery!
 
-  """Show all saved graph nodes queries"""
-  graphNodesQueries(filters: GraphNodesQueryFilter, ordering: [GraphNodesQueryOrder!]! = [], pagination: OffsetPaginationInput): [GraphNodesQuery!]!
-
-  """Show a single saved graph node query by ID"""
-  graphNodeQuery(id: ID!): GraphNodesQuery!
-
-  """Show all saved graph pairs queries"""
-  graphPairsQueries(filters: GraphPairsQueryFilter, ordering: [GraphPairsQueryOrder!]! = [], pagination: OffsetPaginationInput): [GraphPairsQuery!]!
-
-  """Show a single saved graph pairs query by ID"""
-  graphPairsQuery(id: ID!): GraphPairsQuery!
-
-  """Show all saved graph path queries"""
-  graphPathQueries(filters: GraphPathQueryFilter, ordering: [GraphPathQueryOrder!]! = [], pagination: OffsetPaginationInput): [GraphPathQuery!]!
-
-  """Show a single saved graph path query by ID"""
-  graphPathQuery(id: ID!): GraphPathQuery!
-
-  """Show all saved node queries"""
-  nodeQueries: [NodeQuery!]!
-
-  """Show a single saved node query by ID"""
-  nodeQuery(id: ID!): NodeQuery!
-
-  """Show all saved node table queries"""
-  nodeTableQueries(filters: NodeTableQueryFilter, ordering: [NodeTableQueryOrder!]! = [], pagination: OffsetPaginationInput): [NodeTableQuery!]!
-
-  """Show a single saved node table query by ID"""
-  nodeTableQuery(id: ID!): NodeTableQuery!
-
-  """Show all saved node pairs queries"""
-  nodePairsQueries(filters: NodePairsQueryFilter, ordering: [NodePairsQueryOrder!]! = [], pagination: OffsetPaginationInput): [NodePairsQuery!]!
-
-  """Show a single saved node pairs query by ID"""
-  nodePairsQuery(id: ID!): NodePairsQuery!
-
-  """Show all saved node path queries"""
-  nodePathQueries(filters: NodePathQueryFilter, ordering: [NodePathQueryOrder!]! = [], pagination: OffsetPaginationInput): [NodePathQuery!]!
-
-  """Show a single saved node path query by ID"""
-  nodePathQuery(id: ID!): NodePathQuery!
-
-  """Show all saved edge queries"""
-  edgeQueries: [EdgeQuery!]!
-
-  """Show a single saved edge query by ID"""
-  edgeQuery(id: ID!): EdgeQuery!
-
-  """Show all saved edge table queries"""
-  edgeTableQueries(filters: EdgeTableQueryFilter, ordering: [EdgeTableQueryOrder!]! = [], pagination: OffsetPaginationInput): [EdgeTableQuery!]!
-
-  """Show a single saved edge table query by ID"""
-  edgeTableQuery(id: ID!): EdgeTableQuery!
-
-  """Show all saved edge pairs queries"""
-  edgePairsQueries(filters: EdgePairsQueryFilter, ordering: [EdgePairsQueryOrder!]! = [], pagination: OffsetPaginationInput): [EdgePairsQuery!]!
-
-  """Show a single saved edge pairs query by ID"""
-  edgePairsQuery(id: ID!): EdgePairsQuery!
-
-  """Show all saved edge path queries"""
-  edgePathQueries(filters: EdgePathQueryFilter, ordering: [EdgePathQueryOrder!]! = [], pagination: OffsetPaginationInput): [EdgePathQuery!]!
-
-  """Show a single saved edge path query by ID"""
-  edgePathQuery(id: ID!): EdgePathQuery!
-
   """Show all saved scatter plots"""
   scatterPlots(filters: ScatterPlotFilter, ordering: [ScatterPlotOrder!]! = [], pagination: OffsetPaginationInput): [ScatterPlot!]!
 
@@ -5422,9 +4419,6 @@ type RelationCategory implements EdgeCategory & Category @key(fields: "id", reso
   """Color as RGBA list (0-255)"""
   color: [Int!]
 
-  """List of relevant queries that use this category as input"""
-  relevantEdgeQueries: [EdgeQuery!]!
-
   """
   The unique key/identifier for this category, used for linking to entities or structures (e.g. 'Cell', 'ROI')
   """
@@ -5572,12 +4566,16 @@ input RelationPaginationInput {
   limit: Int = 100
 }
 
-"""Filters for querying node lists"""
+"""A render-time filter on one returned alias of a saved table query"""
 input RenderGraphTableFilter {
-  key: String = null
-  operator: String = null
-  value: String!
-  search: String = null
+  """A returned alias of the plan — what `columns[].key` names"""
+  key: String!
+
+  """How to compare"""
+  operator: WhereOperator! = EQUALS
+
+  """The value to compare against; bound as a parameter, never interpolated"""
+  value: JSON!
 }
 
 """Ordering options for querying node lists"""
@@ -5722,6 +4720,11 @@ type ReturnStatement {
 
   """The property name to return"""
   property: String
+
+  """
+  The column alias this value is returned under — what `columns[].key`, a render filter and a render order name. Generated from path/node/property when omitted
+  """
+  alias: String
 }
 
 """Input for a return statement in a graph table query builder"""
@@ -5734,6 +4737,11 @@ input ReturnStatementInput {
 
   """The property name to return"""
   property: String = null
+
+  """
+  The column alias this value is returned under — what `columns[].key`, a render filter and a render order name. Generated from path/node/property when omitted
+  """
+  alias: String = null
 }
 
 """A rich property with metadata from schema and graph"""
@@ -5803,9 +4811,6 @@ type Sameness implements Edge {
 
 """A saved scatter-plot configuration over a graph query"""
 type ScatterPlot @key(fields: "id", resolvable: true) {
-  """Label/name of the scatter plot definition"""
-  label: String!
-
   """Description of the scatter plot definition"""
   description: String
 
@@ -5832,8 +4837,11 @@ type ScatterPlot @key(fields: "id", resolvable: true) {
   """The name of the column to use for shape values (optional)"""
   shapeColumn: String
 
-  """The graph this category belongs to"""
-  query: Plottable!
+  """Label/name of the scatter plot definition"""
+  label: String!
+
+  """The saved table query this plot is drawn from"""
+  query: GraphTableQuery!
 }
 
 input ScatterPlotFilter {
@@ -6159,9 +5167,6 @@ type StructureRelationCategory implements EdgeCategory & Category @key(fields: "
   """Color as RGBA list (0-255)"""
   color: [Int!]
 
-  """List of relevant queries that use this category as input"""
-  relevantEdgeQueries: [EdgeQuery!]!
-
   """
   The unique key/identifier for this category, used for linking to entities or structures (e.g. 'Cell', 'ROI')
   """
@@ -6329,6 +5334,44 @@ input SupersedeMetricValueInput {
   id: String!
 }
 
+"""
+What a saved table query means — matches, wheres, returns, columns — independent of the projection kind that compiles it. The contract a client reads back and rewrites; `query` is its compiled form
+"""
+type TableQueryPlan {
+  """Shape version of this plan"""
+  version: Int!
+
+  """
+  The paths to match; the first node of the first path is the default subject
+  """
+  matches: [MatchPath!]!
+
+  """Predicates over matched nodes' properties"""
+  wheres: [WhereClause!]!
+
+  """What to return, each under an alias a column can name"""
+  returns: [ReturnStatement!]!
+
+  """How the returned aliases are presented"""
+  columns: [Column!]!
+}
+
+"""
+What a saved table query means: matches, wheres, returns. Compiled per projection kind
+"""
+input TableQueryPlanInput {
+  """
+  The paths to match; the first node of the first path is the default subject
+  """
+  matches: [MatchPathInput!]!
+
+  """Predicates over matched nodes' properties"""
+  wheres: [WhereClauseInput!]! = []
+
+  """What to return, each under an alias a column can name"""
+  returns: [ReturnStatementInput!]! = []
+}
+
 """A word this organization uses for a kind of thing"""
 type Term @key(fields: "id", resolvable: true) {
   """Database ID of the term"""
@@ -6399,63 +5442,6 @@ enum TermKind {
 
 scalar UnixMilliseconds
 
-"""Input for updating an edge pairs query"""
-input UpdateEdgePairsQueryInput {
-  """The ID of the edge query to update"""
-  id: String!
-
-  """Unique key for this edge query, used for referencing in the UI"""
-  key: String = null
-
-  """Human-readable name for this edge query"""
-  name: String = null
-
-  """Description of this edge query"""
-  description: String = null
-
-  """The Cypher query string that defines this edge query"""
-  query: String = null
-}
-
-"""Input for updating an edge path query"""
-input UpdateEdgePathQueryInput {
-  """The ID of the edge query to update"""
-  id: String!
-
-  """Unique key for this edge query, used for referencing in the UI"""
-  key: String = null
-
-  """Human-readable name for this edge query"""
-  name: String = null
-
-  """Description of this edge query"""
-  description: String = null
-
-  """The Cypher query string that defines this edge query"""
-  query: String = null
-}
-
-"""Input for updating an edge table query"""
-input UpdateEdgeTableQueryInput {
-  """The ID of the edge query to update"""
-  id: String!
-
-  """Unique key for this edge query, used for referencing in the UI"""
-  key: String = null
-
-  """Human-readable name for this edge query"""
-  name: String = null
-
-  """Description of this edge query"""
-  description: String = null
-
-  """The Cypher query string that defines this edge query"""
-  query: String = null
-
-  """Definitions for the columns returned by this edge table query"""
-  columnInput: [ColumnInput!] = null
-}
-
 """Input for updating an existing entity definition in the graph schema"""
 input UpdateEntityCategoryInput {
   """The ID of the definition to update"""
@@ -6511,64 +5497,22 @@ input UpdateGraphInput {
   pin: Boolean = null
 }
 
-"""Input for updating a graph pairs query"""
-input UpdateGraphPairsQueryInput {
-  """The ID of the graph query to update"""
-  id: String!
-
-  """Unique key for this graph query, used for referencing in the UI"""
-  key: String = null
-
-  """
-  Human-readable name for this graph query (defaults to 'key' if not provided)
-  """
-  name: String = null
-
-  """Description of this graph query"""
-  description: String = null
-
-  """The Cypher query string that defines this graph query"""
-  query: String = null
-}
-
-"""Input for updating a graph path query"""
-input UpdateGraphPathQueryInput {
-  """The ID of the graph query to update"""
-  id: String!
-
-  """Unique key for this graph query, used for referencing in the UI"""
-  key: String = null
-
-  """
-  Human-readable name for this graph query (defaults to 'key' if not provided)
-  """
-  name: String = null
-
-  """Description of this graph query"""
-  description: String = null
-
-  """The Cypher query string that defines this graph query"""
-  query: String = null
-}
-
 """Input for updating a graph table query through builder arguments"""
 input UpdateGraphTableQueryInput {
-  """The ID of the graph query to update"""
+  """The ID of the graph table query to update"""
   id: String!
 
-  """Unique key for this graph query, used for referencing in the UI"""
+  """Unique key for this query within its graph"""
   key: String = null
 
-  """
-  Human-readable name for this graph query (defaults to 'key' if not provided)
-  """
+  """Human-readable name"""
   name: String = null
 
-  """Description of this graph query"""
+  """Description of this query"""
   description: String = null
 
-  """The Cypher query string that defines this graph query"""
-  query: String = null
+  """A new plan; omitted means unchanged"""
+  plan: TableQueryPlanInput = null
 
   """Definitions for the columns returned by this graph query"""
   columnInput: [ColumnInput!] = null
@@ -6679,63 +5623,6 @@ input UpdateNaturalEventCategoryInput {
   pin: Boolean = null
 }
 
-"""Input for updating a node pairs query"""
-input UpdateNodePairsQueryInput {
-  """The ID of the node query to update"""
-  id: String!
-
-  """Unique key for this node query, used for referencing in the UI"""
-  key: String = null
-
-  """Human-readable name for this node query"""
-  name: String = null
-
-  """Description of this node query"""
-  description: String = null
-
-  """The Cypher query string that defines this node query"""
-  query: String = null
-}
-
-"""Input for updating a node path query"""
-input UpdateNodePathQueryInput {
-  """The ID of the node query to update"""
-  id: String!
-
-  """Unique key for this node query, used for referencing in the UI"""
-  key: String = null
-
-  """Human-readable name for this node query"""
-  name: String = null
-
-  """Description of this node query"""
-  description: String = null
-
-  """The Cypher query string that defines this node query"""
-  query: String = null
-}
-
-"""Input for updating a node table query"""
-input UpdateNodeTableQueryInput {
-  """The ID of the node query to update"""
-  id: String!
-
-  """Unique key for this node query, used for referencing in the UI"""
-  key: String = null
-
-  """Human-readable name for this node query"""
-  name: String = null
-
-  """Description of this node query"""
-  description: String = null
-
-  """The Cypher query string that defines this node query"""
-  query: String = null
-
-  """Definitions for the columns returned by this node table query"""
-  columnInput: [ColumnInput!] = null
-}
-
 """
 Input for updating an existing protocol event definition in the graph schema
 """
@@ -6819,14 +5706,8 @@ input UpdateScatterPlotInput {
   """Optional description of the scatter plot"""
   description: String = null
 
-  """Optional graph table query ID used by this scatter plot"""
-  graphQueryId: Int = null
-
-  """Optional node table query ID used by this scatter plot"""
-  nodeQueryId: Int = null
-
-  """Optional node path query ID used by this scatter plot"""
-  pathQueryId: Int = null
+  """The graph table query this scatter plot is drawn from"""
+  graphQueryId: Int!
 
   """Column key used for point identifiers"""
   idColumn: String!
@@ -7005,8 +5886,10 @@ type WhereClause {
   """The operator to use for filtering"""
   operator: WhereOperator!
 
-  """The value to compare against"""
-  value: String!
+  """
+  The value to compare against. A typed value bound as a parameter, never a Cypher literal
+  """
+  value: JSON!
 }
 
 """Input for a where clause in a graph table query builder"""
@@ -7020,8 +5903,10 @@ input WhereClauseInput {
   """The operator to use for filtering"""
   operator: WhereOperator!
 
-  """The value to compare against"""
-  value: String!
+  """
+  The value to compare against. A typed value bound as a parameter, never a Cypher literal
+  """
+  value: JSON!
 }
 
 enum WhereOperator {
@@ -7093,7 +5978,7 @@ type ZarrUploadGrant {
 
 scalar _Any
 
-union _Entity = Assertion | BigFileStore | Comment | EdgePairsQuery | EdgePathQuery | EdgeTableQuery | EntityCategory | Graph | GraphNodesQuery | GraphPairsQuery | GraphPathQuery | GraphTableQuery | Instance | Link | MeasurementCategory | MediaStore | MetricKind | NaturalEventCategory | NodePairsQuery | NodePathQuery | NodeTableQuery | ProtocolEventCategory | RelationCategory | ScatterPlot | Standing | StructureKind | StructureRelationCategory | Term | ZarrStore
+union _Entity = Assertion | BigFileStore | Comment | EntityCategory | Graph | GraphTableQuery | Instance | Link | MeasurementCategory | MediaStore | MetricKind | NaturalEventCategory | ProtocolEventCategory | RelationCategory | ScatterPlot | Standing | StructureKind | StructureRelationCategory | Term | ZarrStore
 
 type _Service {
   sdl: String!
