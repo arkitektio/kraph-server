@@ -24,6 +24,7 @@ from graph_engine.retrieved import (
     RetrievedStructure,
 )
 from graph_engine import results, retrieved
+from graph_engine import watermark
 from authentikate.models import Membership
 from core import enums, models
 from graph_engine import input_models as inputs
@@ -143,7 +144,7 @@ class GraphController:
         They are organization-scoped rows now; the graph is only how we learn
         which organization the request is acting for.
         """
-        return writer.create_assertion(
+        assertion = writer.create_assertion(
             organization,
             subject=context.subject,
             app_id=context.app_id,
@@ -151,6 +152,23 @@ class GraphController:
             action_name=context.action_name,
             action_args=context.action_args or {},
         )
+        # The outbox row, in the same transaction as the assertion — every caller
+        # invokes this as the first statement inside its `transaction.atomic()`.
+        # It says "a drawing is owed" until `_settle` says it was made; if the
+        # process dies in between, the row is what `reproject --incremental` reads.
+        # Here and not in `writer.create_assertion`: `redact` and the evidence tests
+        # mint assertions through the writer and project for themselves.
+        watermark.expect(assertion)
+        return assertion
+
+    def _settle(self, assertion: evidence_models.Assertion) -> None:
+        """This assertion's synchronous projection finished everywhere it was owed.
+
+        Called by every write method immediately before it returns, i.e. after the
+        last projector call succeeded. An exception anywhere in the projection
+        skips it, and the outbox row stays — which is the point.
+        """
+        watermark.settle(assertion)
 
     def _provenance_from_info(self, info: Info) -> ProvenanceContext:
         """Who is making this change, and under which run.
@@ -425,6 +443,7 @@ class GraphController:
 
         # Read back *after* every projection, not inside the loop: `drawings` is
         # where the claim stands once the act is complete.
+        self._settle(assertion)
         return results.Asserted.of(assertion, node, self.drawings_for_instance(node))
 
     # ===================================================================
@@ -571,6 +590,7 @@ class GraphController:
         # graph's own selector, so a view that does not count this subject still
         # draws the node — see `results` and the `retract_node` note in
         # `docs/rfcs/0003-undrawn-nodes.md`.
+        self._settle(assertion)
         return results.Asserted.of(assertion, node, self.drawings_for_instance(node))
 
     def attest_node(self, node_id: Any, info: Info) -> results.Asserted:
@@ -593,6 +613,7 @@ class GraphController:
         for graph in projector.graphs_for_refs(organization, [node.ref]):
             projector.reproject_node(self, graph, node)
 
+        self._settle(assertion)
         return results.Asserted.of(assertion, node, self.drawings_for_instance(node))
 
     # `retract_entity` is gone. It was `return self.retract_node(node_id, info)` and
@@ -716,6 +737,7 @@ class GraphController:
         # base and has no AGE presence at all. The absence is structural, which
         # is why the GraphQL result type for structures omits the field rather
         # than always answering `[]`.
+        self._settle(assertion)
         return results.Asserted.of(assertion, structure)
 
     def record_metric(
@@ -746,6 +768,7 @@ class GraphController:
             recorded = self._record_metric(organization, structure, metric, info=info, assertion=assertion)
 
         self.project_from_structures(organization, [structure.pk])
+        self._settle(assertion)
         return results.Asserted.of(assertion, recorded)
 
     def _assert_can_access(self, organization: Any, info: Info | None) -> None:
@@ -861,6 +884,7 @@ class GraphController:
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             writer.retract(organization, structure, assertion)
 
+        self._settle(assertion)
         return results.Asserted.of(assertion, structure)
 
     def update_structure(
@@ -891,6 +915,7 @@ class GraphController:
                 self._record_metric(organization, structure, metric, info=info, assertion=assertion)
 
         self.project_from_structures(organization, [structure.pk])
+        self._settle(assertion)
         return results.Asserted.of(assertion, structure)
 
     def comment_on_structure(
@@ -928,6 +953,7 @@ class GraphController:
                 parent=parent,
             )
 
+        self._settle(assertion)
         return results.Asserted.of(assertion, comment)
 
     def retract_comment(self, comment_id: str, info: Info) -> results.Asserted:
@@ -944,6 +970,7 @@ class GraphController:
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             writer.retract(organization, comment, assertion)
 
+        self._settle(assertion)
         return results.Asserted.of(assertion, comment)
 
     def attest_comment(self, comment_id: str, info: Info) -> results.Asserted:
@@ -955,6 +982,7 @@ class GraphController:
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             writer.attest(organization, comment, assertion)
 
+        self._settle(assertion)
         return results.Asserted.of(assertion, comment)
 
     def _resolve_comment(self, comment_id: str, info: Info | None = None, organization: Any = None) -> evidence_models.Comment:
@@ -1088,6 +1116,7 @@ class GraphController:
         # `engine.execute(graph, …)[0]["e"]`, which raised `IndexError` — not even
         # a message — whenever the graph the caller named did not draw the event.
         # The claim was already durable at that point.
+        self._settle(assertion)
         return results.Asserted.of(assertion, node, self.drawings_for_instance(node))
 
     def create_metric(
@@ -1119,6 +1148,7 @@ class GraphController:
         # metrics folds a thousand times (O(1) each) but projects once.
         self.project_from_structures(organization, [structure.pk])
 
+        self._settle(assertion)
         return results.Asserted.of(assertion, metric)
 
     def _resolve_metric(self, metric_id: str, info: Info | None = None) -> evidence_models.Metric:
@@ -1196,6 +1226,7 @@ class GraphController:
         # the resolver to read the row back to build a payload, which is how
         # `retract_metric` came to report a metric fetched *after* the retraction
         # under an assertion it had no handle on.
+        self._settle(assertion)
         return results.Asserted.of(assertion, metric)
 
     def update_metric(
@@ -1238,6 +1269,7 @@ class GraphController:
         self.project_from_structures(organization, [structure.pk])
         # One assertion covers both halves — the retraction and the replacement
         # are one corrective act, which is why they share a transaction.
+        self._settle(assertion)
         return results.Asserted.of(assertion, replacement)
 
     def link_structure_to_entity(
@@ -1297,6 +1329,7 @@ class GraphController:
         # claim about it — so reporting the structure named the one thing the write
         # did not produce, and left the claim it *did* produce unaddressable. That
         # claim is what `description(id:)` reads back.
+        self._settle(assertion)
         return results.Asserted.of(assertion, link)
 
     # ===================================================================
@@ -1361,6 +1394,7 @@ class GraphController:
         # same event kept a participation edge nobody had retracted and nobody had
         # drawn until its next rebuild.
         self._reproject_participation_everywhere(organization, claim_ref, event_ref, kind, role)
+        self._settle(assertion)
         return results.Asserted.of(assertion, link, self.drawings_for_edge(link))
 
     # ===================================================================
@@ -1429,6 +1463,7 @@ class GraphController:
         # single actor, which is exactly what one assertion means — returning a
         # list of results would have repeated that assertion N times and claimed
         # N acts had happened.
+        self._settle(assertion)
         return results.Asserted(
             assertion=assertion,
             subjects=tuple(links),
@@ -1509,6 +1544,7 @@ class GraphController:
         # replaying the whole graph — so reading drawings any earlier would
         # report vertices that no longer exist.
         nodes = [node for _, _, node in resolved]
+        self._settle(assertion)
         return results.Asserted(
             assertion=assertion,
             subjects=tuple(nodes),
@@ -1602,6 +1638,7 @@ class GraphController:
 
         # After the deferred rebuilds, for the same reason `classify_nodes` reads
         # its drawings last: a rebuild drops and replays a whole graph.
+        self._settle(assertion)
         return results.Asserted(
             assertion=assertion,
             subjects=tuple(links),
@@ -1681,6 +1718,7 @@ class GraphController:
         # Drawings read back, not assumed empty: the edge survives wherever
         # another live claim still states the same participation, which is the
         # point of keeping claims separate from the thing they agree on.
+        self._settle(assertion)
         return results.Asserted.of(assertion, link, self.drawings_for_edge(link))
 
     def _reproject_participation(
@@ -1915,6 +1953,7 @@ class GraphController:
         # each member is reprojected — the same fan-out a classification does.
         self._reproject_instances(organization, refs)
 
+        self._settle(assertion)
         return results.Asserted(
             assertion=assertion,
             subjects=tuple(links),
@@ -1943,6 +1982,7 @@ class GraphController:
         # batch and one withdrawn alone cannot diverge.
         self._reproject_claim(organization, link)
 
+        self._settle(assertion)
         return results.Asserted.of(assertion, link, ())
 
     def _reproject_instances(self, organization: Any, refs: list[str]) -> None:
@@ -2138,6 +2178,7 @@ class GraphController:
         # single projection to prefer — and `Edge.id` is the link's primary key
         # anyway, so nothing a client can select comes from the AGE edge. Which
         # views drew it is `drawings`, where each answer keeps its graph.
+        self._settle(assertion)
         return results.Asserted.of(assertion, link, self.drawings_for_edge(link))
 
     def _attach_supporting_evidence(
@@ -2216,6 +2257,7 @@ class GraphController:
         # No drawings, and none possible: both endpoints are structures, which are
         # Postgres rows with no vertex, so `graphs_for_refs` returns nothing and
         # there is no edge to draw between them.
+        self._settle(assertion)
         return results.Asserted.of(assertion, link)
 
     def create_measurement(
@@ -2260,6 +2302,7 @@ class GraphController:
         # No drawings: a measurement's source is a structure, and nothing projects
         # a MEASUREMENT link to an AGE edge. What it *does* move is the target
         # entity's derived properties, which is what `project_refs` above did.
+        self._settle(assertion)
         return results.Asserted.of(assertion, link)
 
     def resolve_edge_link(self, edge_id: str, info: Info | None = None) -> evidence_models.Link:
@@ -2313,6 +2356,7 @@ class GraphController:
         self._reproject_proposition_everywhere(organization, source_ref, target_ref, term_id)
         # Read back, not assumed gone: the edge survives wherever another live
         # assertion still states the same proposition.
+        self._settle(assertion)
         return results.Asserted.of(assertion, link, self.drawings_for_edge(link))
 
     def attest_link(
@@ -2348,6 +2392,7 @@ class GraphController:
 
         source_ref, target_ref, term_id = projector.proposition_key(link)
         self._reproject_proposition_everywhere(organization, source_ref, target_ref, term_id)
+        self._settle(assertion)
         return results.Asserted.of(assertion, link, self.drawings_for_edge(link))
 
     def attest_structure(
@@ -2363,6 +2408,7 @@ class GraphController:
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             writer.attest(organization, structure, assertion)
 
+        self._settle(assertion)
         return results.Asserted.of(assertion, structure)
 
     def attest_metric(
@@ -2391,6 +2437,7 @@ class GraphController:
                 state_module.merge(metric, instance_refs)
 
         self.project_from_structures(organization, [metric.structure_id])
+        self._settle(assertion)
         return results.Asserted.of(assertion, metric)
 
     def _reproject_proposition(

@@ -14,6 +14,7 @@ import uuid
 
 import strawberry
 from asgiref.sync import sync_to_async
+from enum import Enum
 from typing import Annotated, Any, Generic, Optional, List, Type, TypeVar, Union, cast
 from datetime import datetime
 from api import loaders, order, pagination, filters
@@ -291,6 +292,60 @@ class Graph:
         # In a real implementation, we would check the user's preferences or a pinned categories list.
         # For this example, we'll return False for simplicity.
         return cast(models.Graph, self).pinned_by.filter(id=info.context.request.user.id).exists()
+
+    @strawberry.field(
+        description=(
+            "Where this view's drawing stands relative to the organization's log: the assertion seq it is "
+            "caught up to, how far behind it is, and whether its derived properties are current under the "
+            "active schema. Compare a write's `assertion.seq` with `projectedThroughSeq` to know whether "
+            "this view has drawn it. See `graph_engine/watermark.py` for why the cursor is safe."
+        )
+    )
+    async def projection(self) -> "GraphProjection":
+        from graph_engine import watermark
+
+        position = await sync_to_async(watermark.position)(cast(models.Graph, self))
+        return GraphProjection(
+            kind="age",
+            status=ProjectionStatus(position.status),
+            projected_through_seq=position.cursor,
+            lag=position.lag,
+            pending=position.pending,
+            schema_stale=position.schema_stale,
+            derived_through_seq=position.derived_through_seq,
+            schema_hash=position.schema_hash,
+            derived_at=position.derived_at,
+            rebuilt_at=position.rebuilt_at,
+        )
+
+
+@strawberry.enum(description="Whether a view's drawing reflects the log, has never been drawn, or is mid-replay")
+class ProjectionStatus(Enum):
+    CONSISTENT = "consistent"
+    NEEDS_BACKFILL = "needs_backfill"
+    REBUILDING = "rebuilding"
+
+
+@strawberry.type(
+    description=(
+        "How far along the organization's log one view's drawing is. The projection is a cache of the "
+        "evidence; this says how current a cache it is. `projectedThroughSeq` is a safe cursor: every "
+        "assertion at or below it has been drawn here. `lag` is the distance to the log head; `pending` "
+        "is how many assertions organization-wide nobody has finished drawing. `schemaStale` is the other "
+        "axis — a category's rules moved and the vertices have not been redrawn under them."
+    )
+)
+class GraphProjection:
+    kind: str = strawberry.field(description="Which kind of projection. Only Apache AGE exists today")
+    status: ProjectionStatus
+    projected_through_seq: int = strawberry.field(description="Every assertion with seq at or below this has been drawn in this view. 0 while undrawn or mid-rebuild")
+    lag: int = strawberry.field(description="Assertions between the cursor and the organization's log head")
+    pending: int = strawberry.field(description="Assertions across the organization whose synchronous projection did not finish")
+    schema_stale: bool = strawberry.field(description="The drawing was last fully derived under a schema that is no longer the active one")
+    derived_through_seq: int = strawberry.field(description="Log head the last bulk operation (rebuild, backfill, replay) read at. Informational — the cursor is `projectedThroughSeq`")
+    schema_hash: Optional[str] = strawberry.field(description="GraphSchema hash the drawing was last fully derived under")
+    derived_at: Optional[datetime] = strawberry.field(description="When derived properties were last written here")
+    rebuilt_at: Optional[datetime] = strawberry.field(description="When this view was last dropped and replayed in full")
 
 
 @kante.django_interface(models.Category, description="Base interface for structure categories")
@@ -1022,9 +1077,12 @@ class Node(Generic[V]):
         """
         return self._value.schema_version
 
-    @strawberry.field(description="Timestamp when properties were last derived (unix ms)")
+    @strawberry.field(
+        description="Always null. A per-node wall-clock stamp the projector no longer writes; ask `Graph.projection { derivedAt }` for when the view was last derived",
+        deprecation_reason="`__last_derived` is no longer stamped on vertices — it was the one projected value a rebuild could not reproduce. Read `Graph.projection { derivedAt projectedThroughSeq }` instead. Removed in the next major.",
+    )
     def last_derived(self) -> Optional[UnixMilliseconds]:
-        return self._value.last_derived
+        return None
 
     # =======================================
     # THE PANEL — what the log knows about this thing

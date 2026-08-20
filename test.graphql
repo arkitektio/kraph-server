@@ -2097,8 +2097,10 @@ type Entity implements Node {
   """
   schemaVersion: String
 
-  """Timestamp when properties were last derived (unix ms)"""
-  lastDerived: UnixMilliseconds
+  """
+  Always null. A per-node wall-clock stamp the projector no longer writes; ask `Graph.projection { derivedAt }` for when the view was last derived
+  """
+  lastDerived: UnixMilliseconds @deprecated(reason: "`__last_derived` is no longer stamped on vertices — it was the one projected value a rebuild could not reproduce. Read `Graph.projection { derivedAt projectedThroughSeq }` instead. Removed in the next major.")
 
   """
   Every instance claimed to be this same thing, this one included. A component of one means nobody has merged it
@@ -2596,6 +2598,11 @@ type Graph @key(fields: "id", resolvable: true) {
 
   """Whether the requesting user has pinned this graph for quick access"""
   pinned: Boolean!
+
+  """
+  Where this view's drawing stands relative to the organization's log: the assertion seq it is caught up to, how far behind it is, and whether its derived properties are current under the active schema. Compare a write's `assertion.seq` with `projectedThroughSeq` to know whether this view has drawn it. See `graph_engine/watermark.py` for why the cursor is safe.
+  """
+  projection: GraphProjection!
 }
 
 """A complete graph schema definition"""
@@ -2832,6 +2839,47 @@ input GraphPathQueryFilter {
 input GraphPathQueryOrder @oneOf {
   label: Ordering
   id: Ordering
+}
+
+"""
+How far along the organization's log one view's drawing is. The projection is a cache of the evidence; this says how current a cache it is. `projectedThroughSeq` is a safe cursor: every assertion at or below it has been drawn here. `lag` is the distance to the log head; `pending` is how many assertions organization-wide nobody has finished drawing. `schemaStale` is the other axis — a category's rules moved and the vertices have not been redrawn under them.
+"""
+type GraphProjection {
+  """Which kind of projection. Only Apache AGE exists today"""
+  kind: String!
+  status: ProjectionStatus!
+
+  """
+  Every assertion with seq at or below this has been drawn in this view. 0 while undrawn or mid-rebuild
+  """
+  projectedThroughSeq: Int!
+
+  """Assertions between the cursor and the organization's log head"""
+  lag: Int!
+
+  """
+  Assertions across the organization whose synchronous projection did not finish
+  """
+  pending: Int!
+
+  """
+  The drawing was last fully derived under a schema that is no longer the active one
+  """
+  schemaStale: Boolean!
+
+  """
+  Log head the last bulk operation (rebuild, backfill, replay) read at. Informational — the cursor is `projectedThroughSeq`
+  """
+  derivedThroughSeq: Int!
+
+  """GraphSchema hash the drawing was last fully derived under"""
+  schemaHash: String
+
+  """When derived properties were last written here"""
+  derivedAt: DateTime
+
+  """When this view was last dropped and replayed in full"""
+  rebuiltAt: DateTime
 }
 
 """Base interface for entity categories"""
@@ -4076,8 +4124,10 @@ type NaturalEvent implements Node & Event {
   """
   schemaVersion: String
 
-  """Timestamp when properties were last derived (unix ms)"""
-  lastDerived: UnixMilliseconds
+  """
+  Always null. A per-node wall-clock stamp the projector no longer writes; ask `Graph.projection { derivedAt }` for when the view was last derived
+  """
+  lastDerived: UnixMilliseconds @deprecated(reason: "`__last_derived` is no longer stamped on vertices — it was the one projected value a rebuild could not reproduce. Read `Graph.projection { derivedAt projectedThroughSeq }` instead. Removed in the next major.")
 
   """
   Every instance claimed to be this same thing, this one included. A component of one means nobody has merged it
@@ -4284,8 +4334,10 @@ interface Node {
   """
   schemaVersion: String
 
-  """Timestamp when properties were last derived (unix ms)"""
-  lastDerived: UnixMilliseconds
+  """
+  Always null. A per-node wall-clock stamp the projector no longer writes; ask `Graph.projection { derivedAt }` for when the view was last derived
+  """
+  lastDerived: UnixMilliseconds @deprecated(reason: "`__last_derived` is no longer stamped on vertices — it was the one projected value a rebuild could not reproduce. Read `Graph.projection { derivedAt projectedThroughSeq }` instead. Removed in the next major.")
 
   """
   Every instance claimed to be this same thing, this one included. A component of one means nobody has merged it
@@ -4724,6 +4776,15 @@ input PrefixInput {
   uri: String!
 }
 
+"""
+Whether a view's drawing reflects the log, has never been drawn, or is mid-replay
+"""
+enum ProjectionStatus {
+  CONSISTENT
+  NEEDS_BACKFILL
+  REBUILDING
+}
+
 """A property definition from the graph schema"""
 type PropertyDefinition {
   """
@@ -4826,8 +4887,10 @@ type ProtocolEvent implements Node & Event {
   """
   schemaVersion: String
 
-  """Timestamp when properties were last derived (unix ms)"""
-  lastDerived: UnixMilliseconds
+  """
+  Always null. A per-node wall-clock stamp the projector no longer writes; ask `Graph.projection { derivedAt }` for when the view was last derived
+  """
+  lastDerived: UnixMilliseconds @deprecated(reason: "`__last_derived` is no longer stamped on vertices — it was the one projected value a rebuild could not reproduce. Read `Graph.projection { derivedAt projectedThroughSeq }` instead. Removed in the next major.")
 
   """
   Every instance claimed to be this same thing, this one included. A component of one means nobody has merged it

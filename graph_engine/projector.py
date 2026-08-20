@@ -30,7 +30,6 @@ only ever agree with that vertex's own presence.
 from __future__ import annotations
 
 import logging
-import time
 from typing import Any, Iterable
 
 from django.db.models import Q
@@ -43,6 +42,7 @@ from evidence import selector as selector_module
 from evidence import state as state_module
 from evidence import writer as writer_module
 from graph_engine import aggregate
+from graph_engine import watermark
 from graph_engine.input_models import DerivationType
 
 logger = logging.getLogger(__name__)
@@ -569,7 +569,11 @@ def project(
         values.update(_property_statistics(graph, claim_ref, category))
         values.update(_observation_window(graph, claim_ref))
         values["__schema_version"] = schema_version
-        values["__last_derived"] = int(time.time() * 1000)
+        # No `__last_derived` any more. It was a wall-clock millisecond on every
+        # vertex — the one projected value `reproject` could not reproduce, so the
+        # rebuild tests excluded it by hand — and it answered a per-graph question
+        # per node. "When was this view last derived" is `Projection.derived_at`,
+        # stamped once per call below.
 
         if not _write_properties(controller, graph, claim_ref, category, values):
             # The node has a `Instance` row and a category this graph admits, but no
@@ -584,6 +588,9 @@ def project(
             continue
 
         projected += 1
+
+    if projected:
+        watermark.mark_derived(graph)
 
     return projected
 
@@ -1104,10 +1111,17 @@ def create_vertex(controller: Any, graph: core_models.Graph, node: Any, category
     claim is where it is taken from — and it is written here so that a vertex is
     self-describing to any reader, which is what removes the fallback entirely.
     """
+    # `MERGE` on the id, not `CREATE`: drawing a node that is already drawn —
+    # `attest_node` on a standing node, `project_all` over a populated namespace, an
+    # incremental replay — has to converge on one vertex, not add a second. The
+    # label is part of the pattern, so a node whose *label* moved still needs its
+    # old vertex cleared first; `reproject_node` does that, `rebuild` drops the
+    # namespace, and `project_all` relies on one of the two having happened.
     controller.engine.execute(
         graph,
         f"""
-        CREATE (e:{category.age_name} {{id: $eid, category_id: $cid, type: $ntype}})
+        MERGE (e:{category.age_name} {{id: $eid}})
+        SET e.category_id = $cid, e.type = $ntype
         RETURN id(e) as db_id
         """,
         {"eid": str(node.ref), "cid": category.pk, "ntype": str(node.kind).upper()},
@@ -1163,6 +1177,13 @@ def reproject_node(controller: Any, graph: core_models.Graph, node: Any) -> bool
     just because somebody says it exists, and `resolve_categories` is what
     decides that.
     """
+    # Clear whatever this view drew for the node before, edges and all. The claims
+    # may have moved it under another label, and `create_vertex` merges on
+    # `(label, id)` — so without this a relabelled node would keep its previous
+    # self under the previous label. A node this view no longer admits is thereby
+    # erased rather than left standing, which is what the claims say.
+    unproject(controller, graph, [str(node.ref)])
+
     resolved, _ = resolve_categories(graph, [node])
     category = resolved.get(str(node.ref))
     if category is None:
@@ -1190,7 +1211,11 @@ def project_all(controller: Any, graph: core_models.Graph) -> dict[str, int]:
 
     `MERGE`-shaped throughout — `create_vertex` and `project_edges` are the same
     functions `rebuild` calls — so running this over a populated projection
-    converges rather than duplicating.
+    converges rather than duplicating. (`create_vertex` was a bare `CREATE` for a
+    while and this sentence was false; `tests/projector/test_draw_converges.py`
+    keeps it true.) One thing it cannot do is move a vertex between labels —
+    `MERGE` is per label — which is why a definition change still goes through
+    `rebuild`.
     """
     # Every node this graph contains. `Instance` carries no cached "does it exist"
     # column, so which of these actually get a vertex is decided by
@@ -1335,10 +1360,29 @@ def rebuild(controller: Any, graph: core_models.Graph) -> dict[str, int]:
     a backfilled one have to be the same graph, and one code path is the only way
     to know they are.
     """
-    # Before anything reads standing. Organization-wide for the same reason
-    # `refold_state` is: the answer it caches is organization-grain, so there is
-    # no per-graph slice of it to rebuild.
-    claims_current = claims_module.refold_current(graph.organization)
+    from core import asserted_terms
+    from evidence import identity as identity_module
+
+    organization = graph.organization
+
+    # Every cache the replay reads is refolded or checked **before** the replay
+    # reads it, or the rebuild would only prove the projection can be rebuilt from
+    # other caches. Three of them, all organization-grain:
+    #
+    # - `CategoryAssertedTerm` — which words each definition derives from. It is
+    #   what `selector.term_ids_for` reads to decide membership, so a stale row
+    #   here silently changes which nodes the replay draws. Vocabulary-sized.
+    # - `InstanceIdentity` — the SAME_AS components. A retraction only flags a
+    #   component; the flagged ones are recomputed here.
+    # - `CurrentStanding` — what every "which of these still count" narrowing reads.
+    asserted_terms.refold(organization)
+    identity_module.recompute_stale(organization)
+    claims_current = claims_module.refold_current(organization)
+
+    # The log position this replay is a picture of. Read before enumerating, so an
+    # assertion that commits while the replay runs is either in the picture or
+    # still in the outbox — never silently counted as applied.
+    head = watermark.max_seq(organization)
 
     # Resolved once here purely to fail *before* the drop. A definition that
     # admits nothing, or one that admits a node under two categories, has to raise
@@ -1348,12 +1392,19 @@ def rebuild(controller: Any, graph: core_models.Graph) -> dict[str, int]:
     # of the guarantee, and rebuild is the expensive operation either way.
     resolve_categories(graph, list(selector_module.instances_for(graph).select_related("term")))
 
+    # Marked *before* the drop. A rebuild that dies between here and the end
+    # leaves an empty namespace; `REBUILDING` makes the cursor report everything
+    # as outstanding instead of "caught up" over nothing.
+    watermark.mark_rebuilding(graph)
+
     controller.engine.drop_graph(graph.age_name, cascade=True)
     controller.engine.create_graph(age_name=graph.age_name)
 
     counts = project_all(controller, graph)
     counts["claims"] = claims_current
-    counts["states"] = refold_state(graph.organization)
+    counts["states"] = refold_state(organization)
+
+    watermark.mark_consistent(graph, through_seq=head, schema_hash=watermark.active_schema_hash(graph), rebuilt=True)
     return counts
 
 
@@ -1428,3 +1479,175 @@ def refold_stale(organization: Any) -> int:
     was its previous home and had no production caller at all.
     """
     return state_module.recompute_stale(organization)
+
+
+# ---------------------------------------------------------------------------
+# Incremental replay: apply what the outbox says is owed.
+# ---------------------------------------------------------------------------
+
+
+def touched_refs(organization: Any, assertion_ids: Iterable[Any], since_seq: int | None = None) -> tuple[set[str], bool]:
+    """Every node ref whose drawing one of these assertions could have changed.
+
+    Returns ``(refs, saw_same_as)``. The closure is taken per claim table, each
+    a single `assertion` join — the log's own shape — and every claim kind maps
+    to the node(s) whose vertex, edges or derived properties it can move:
+
+    - an `Instance` — itself;
+    - a `Link` — its node endpoints by kind: RELATION, PARTICIPATES_*, SAME_AS on
+      both sides; CLASSIFIES, INFORMS, MEASUREMENT on the node side only (the
+      other end is a term or a structure). STRUCTURE_RELATION touches no node;
+    - a `Structure` or a `Metric` — every node the structure informs
+      (`refs_informed_by`), since that is what its derived properties fold over;
+    - a `Standing` — by what it is about: a node, a link's endpoints, or the nodes
+      a metric's or structure's structure informs. A comment's standing moves no
+      drawing.
+
+    `since_seq` widens the set belt-and-braces to every claim at or after the
+    lowest outstanding seq, so a replay also repairs a drawing that went wrong
+    without leaving an outbox row. A ref that names no `Instance` (an INFORMS onto
+    a link, say) is harmless: it resolves to no node and is never drawn.
+    """
+    ids = list(assertion_ids)
+    if not ids and since_seq is None:
+        return set(), False
+
+    predicate = Q(assertion_id__in=ids)
+    if since_seq is not None:
+        predicate |= Q(assertion__seq__gte=since_seq)
+
+    refs: set[str] = set()
+    saw_same_as = False
+
+    refs.update(str(pk) for pk in evidence_models.Instance.objects.for_organization(organization).filter(predicate).values_list("id", flat=True))
+
+    both = {evidence_models.Link.Kind.RELATION, evidence_models.Link.Kind.PARTICIPATES_AS_INPUT, evidence_models.Link.Kind.PARTICIPATES_AS_OUTPUT, evidence_models.Link.Kind.SAME_AS}
+    source_side = {evidence_models.Link.Kind.CLASSIFIES}
+    target_side = {evidence_models.Link.Kind.INFORMS, evidence_models.Link.Kind.MEASUREMENT}
+
+    def _link_refs(links: Iterable[Any]) -> None:
+        nonlocal saw_same_as
+        for kind, source_ref, target_ref in links:
+            if kind in both:
+                refs.add(str(source_ref))
+                refs.add(str(target_ref))
+                if kind == evidence_models.Link.Kind.SAME_AS:
+                    saw_same_as = True
+            elif kind in source_side:
+                refs.add(str(source_ref))
+            elif kind in target_side:
+                refs.add(str(target_ref))
+
+    _link_refs(evidence_models.Link.objects.for_organization(organization).filter(predicate).values_list("kind", "source_ref", "target_ref"))
+
+    structure_ids: set[Any] = set(evidence_models.Structure.objects.for_organization(organization).filter(predicate).values_list("id", flat=True))
+    structure_ids.update(evidence_models.Metric.objects.for_organization(organization).filter(predicate).values_list("structure_id", flat=True))
+
+    standings = list(evidence_models.Standing.objects.for_organization(organization).filter(predicate).values_list("target_type", "target_id"))
+    by_type: dict[str, set[str]] = {}
+    for target_type, target_id in standings:
+        by_type.setdefault(str(target_type), set()).add(str(target_id))
+    refs.update(by_type.get("node", set()))
+    if by_type.get("link"):
+        _link_refs(evidence_models.Link.objects.for_organization(organization).filter(id__in=by_type["link"]).values_list("kind", "source_ref", "target_ref"))
+    if by_type.get("metric"):
+        structure_ids.update(evidence_models.Metric.objects.for_organization(organization).filter(id__in=by_type["metric"]).values_list("structure_id", flat=True))
+    if by_type.get("structure"):
+        structure_ids.update(by_type["structure"])
+
+    if structure_ids:
+        refs.update(str(ref) for ref in refs_informed_by(organization, list(structure_ids)))
+
+    return refs, saw_same_as
+
+
+def converge(controller: Any, graph: core_models.Graph, refs: Iterable[str]) -> dict[str, int]:
+    """Make this graph's drawing of these nodes equal what a rebuild would draw.
+
+    Per node, exactly what `reproject_node` does; batched so the category
+    resolution and the edge scans happen once for the set. Clear first, then
+    redraw from the claims: a node the view no longer admits is erased, one whose
+    label moved lands under the new one, and every edge touching the set is
+    re-merged from the active links with its `__assertion_count` recomputed.
+    Folds of untouched nodes cannot have moved — derived properties fold per node
+    over Postgres and read nothing from a neighbour — so nothing else is touched.
+    """
+    touched = {str(ref) for ref in refs}
+    if not touched:
+        return {"nodes": 0, "edges": 0, "participations": 0, "projected": 0, "erased": 0}
+
+    nodes = list(evidence_models.Instance.objects.for_organization(graph.organization).filter(id__in=touched).select_related("term"))
+    erased = unproject(controller, graph, [str(node.ref) for node in nodes])
+
+    resolved, _ = resolve_categories(graph, nodes)
+    for node in nodes:
+        category = resolved.get(str(node.ref))
+        if category is not None:
+            create_vertex(controller, graph, node, category)
+
+    edges = project_edges(controller, graph, [link for link in active_relation_links(graph) if str(link.source_ref) in touched or str(link.target_ref) in touched])
+    participations = project_participation(controller, graph, [link for link in active_participation_links(graph) if str(link.source_ref) in touched or str(link.target_ref) in touched])
+    projected = project(controller, graph, list(resolved))
+
+    return {"nodes": len(resolved), "edges": edges, "participations": participations, "projected": projected, "erased": erased}
+
+
+def replay(controller: Any, organization: Any) -> dict[str, Any]:
+    """Apply every outstanding assertion of the organization to every consistent graph.
+
+    The incremental counterpart of :func:`rebuild`. Organization-scoped by
+    construction: an outbox row is organization-grain, and a CLASSIFIES claim can
+    widen membership in any view, so there is no per-graph slice of "what is
+    owed" to replay. Graphs that are `NEEDS_BACKFILL` or `REBUILDING` are skipped
+    and named — they need a full `rebuild`, and a partial redraw of an undrawn
+    graph would only make its lag dishonest.
+
+    Settles **exactly** the outbox rows it read, by id, after applying them to
+    every graph it processed. A row committed after the snapshot is left for the
+    next replay; a row whose assertion has no claims (a crash between the two
+    transactions of `create_entity`) is settled with nothing to draw.
+    """
+    from evidence import identity as identity_module
+    from graph_engine import models as projection_models
+
+    pending = list(projection_models.PendingProjection.objects.filter(organization=organization).select_related("assertion"))
+    pending_ids = [row.pk for row in pending]
+    lowest = min((int(row.assertion.seq) for row in pending), default=None)
+    head = watermark.max_seq(organization)
+
+    refs, saw_same_as = touched_refs(organization, pending_ids, since_seq=lowest)
+
+    if saw_same_as:
+        # Merges were applied in their own transactions; retractions only flag.
+        # Recompute the flagged components, then widen to every member of the
+        # components the touched nodes sit in — sameness is a property of the
+        # component, and `_reproject_claim` redraws all of them for the same reason.
+        identity_module.recompute_stale(organization)
+        for members in identity_module.component_refs(organization, list(refs)).values():
+            refs.update(str(ref) for ref in members)
+
+    graphs = list(core_models.Graph.objects.filter(organization=organization).order_by("id"))
+    rows = {row.graph_id: row for row in projection_models.Projection.objects.filter(graph__in=graphs)}
+    processed: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+
+    for graph in graphs:
+        row = rows.get(graph.pk) or watermark.projection_for(graph)
+        if row.status != projection_models.Projection.Status.CONSISTENT:
+            skipped.append({"graph": graph, "status": str(row.status)})
+            continue
+        counts = converge(controller, graph, refs)
+        watermark.mark_consistent(graph, through_seq=head, schema_hash=row.schema_hash)
+        processed.append({"graph": graph, **counts})
+
+    settled = watermark.settle_many(pending_ids)
+
+    return {
+        "pending": len(pending_ids),
+        "settled": settled,
+        "lowest_seq": lowest,
+        "head": head,
+        "refs": len(refs),
+        "graphs": processed,
+        "skipped": skipped,
+    }

@@ -24,7 +24,8 @@ if TYPE_CHECKING:
 # Two separate rules apply, and conflating them is what previously leaked internals:
 #   1. These named keys carry node identity/metadata rather than user data.
 #   2. Any key prefixed with `__` is written by the projection layer
-#      (`__schema_version`, `__last_derived`, `__measured__*`) and is never user
+#      (`__schema_version`, `__measured__*`, and `__last_derived` on vertices an
+#      older projector drew) and is never user
 #      data. Filtering by prefix means new
 #      internal keys are excluded automatically instead of leaking until someone
 #      remembers to extend this set.
@@ -346,12 +347,18 @@ class RetrievedNode:
 
     @property
     def last_derived(self) -> Optional[int]:
-        """Timestamp (unix ms) when properties were last derived."""
-        # Check both prefixed and non-prefixed keys
-        val = self.properties.get("__last_derived") or self.properties.get("last_derived")
-        if val is None:
-            return None
-        return int(val) if isinstance(val, (int, float, str)) else None
+        """Always ``None``. Kept only so the deprecated `Node.lastDerived` field resolves.
+
+        `projector.project` used to stamp `__last_derived` — a wall-clock
+        millisecond — onto every vertex it wrote. It was the one projected value
+        `reproject` could not reproduce, so the rebuild tests had to exclude it by
+        hand, and it answered a per-graph question ("when was this view last
+        derived?") per node. That question is `Projection.derived_at` now
+        (`graph_engine/models.py`), read through `Graph.projection`. A vertex an
+        older projector drew may still carry the key; it is reserved and never
+        surfaced in `properties`, and this deliberately does not read it.
+        """
+        return None
 
     # === Validity Properties ===
 

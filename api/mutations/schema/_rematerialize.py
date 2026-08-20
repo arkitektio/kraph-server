@@ -52,16 +52,25 @@ class Fingerprint:
     properties_hash: str
     #: The vertex property keys this category's definition currently owns.
     derived_keys: frozenset[str]
+    #: Whether the graph's drawing was derived under the schema that was active
+    #: when the snapshot was taken. Read **before** the write, because the write
+    #: itself emits a new `GraphSchema` version (`graph_engine/versioning.py`) and
+    #: afterwards the drawing is stale by definition. Decides whether the redraw
+    #: below may record the new hash as "fully derived": only if nothing older was
+    #: already owed — otherwise an earlier debt would be hidden behind a fresher
+    #: stamp.
+    projection_current: bool = True
 
 
 def fingerprint(category: Any) -> Fingerprint:
     """What a category's properties look like right now."""
-    from graph_engine import projector
+    from graph_engine import projector, watermark
     from graph_engine.materialize import compute_properties_hash
 
     return Fingerprint(
         properties_hash=compute_properties_hash(category.property_definitions or []),
         derived_keys=frozenset(projector.derived_property_keys(category)),
+        projection_current=not watermark.schema_stale(category.graph),
     )
 
 
@@ -83,8 +92,20 @@ def rematerialize_if_moved(category: Any, before: Fingerprint) -> int:
     unreachable through the API and the hash does not move. Partial removal —
     dropping one of several — works, and is what the tests exercise.
     """
+    from graph_engine import watermark
+
     after = fingerprint(category)
     if after.properties_hash == before.properties_hash:
+        # Nothing derived moved, so the drawing is as current under the new schema
+        # version as it was under the old one — say so, or a relabel would leave
+        # the graph reading as stale until somebody redrew everything for nothing.
+        if before.projection_current:
+            watermark.record_schema_hash(category.graph, watermark.active_schema_hash(category.graph))
         return 0
 
-    return context.get_controller().rematerialize_category(category, retired_keys=before.derived_keys - after.derived_keys)
+    redrawn = context.get_controller().rematerialize_category(category, retired_keys=before.derived_keys - after.derived_keys)
+    # This category's vertices now carry the new rules; the graph as a whole is
+    # current under the new schema only if it was current under the old one.
+    if before.projection_current:
+        watermark.record_schema_hash(category.graph, watermark.active_schema_hash(category.graph))
+    return redrawn

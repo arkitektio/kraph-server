@@ -32,6 +32,7 @@ from core.management.commands import _graphs
 
 from api.extensions.cypher import cypher_engine
 from core import models
+from graph_engine import watermark
 from graph_engine.controller import GraphController
 from graph_engine.engine.age_engine import AgeEngine
 
@@ -49,7 +50,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--stale",
             action="store_true",
-            help="Only categories with at least one vertex stamped with an older schema version.",
+            help="Only graphs whose projection was last fully derived under a schema that is no longer the active one.",
         )
         parser.add_argument(
             "--dry-run",
@@ -89,6 +90,15 @@ class Command(BaseCommand):
                 projected = controller.rematerialize_category(category)
                 self.stdout.write(self.style.SUCCESS(f"  {projected} vertices redrawn"))
 
+            # Every node category of the graph has now been redrawn under the
+            # active schema — or was already current — so the graph as a whole is.
+            # Recorded here, at the graph level, and not inside
+            # `rematerialize_category`: one category redrawn out of several is not
+            # a graph that is current, and `--category` deliberately leaves the
+            # ledger alone for that reason.
+            if not options["dry_run"] and not options["category"]:
+                watermark.record_schema_hash(graph, watermark.active_schema_hash(graph))
+
     def _select_graphs(self, options) -> list[models.Graph]:
         if options["all"]:
             return list(models.Graph.objects.all())
@@ -114,26 +124,17 @@ class Command(BaseCommand):
         return categories
 
     def _is_stale(self, controller: GraphController, graph: models.Graph, category: models.Category) -> bool:
-        """Does this category draw a vertex derived under an older schema?
+        """Was this graph's drawing last fully derived under a schema that is no longer active?
 
-        A graph with no active schema is never stale by this test: there is no
-        version to be behind. Say so rather than redrawing everything, since
-        `--stale` exists precisely to make the sweep cheap when nothing is owed.
+        Answered from Postgres — `Projection.schema_hash` against
+        `GraphSchema.active_for(graph).hash` — not by counting vertex stamps in
+        Cypher. The stamp still exists on every vertex, but the ledger of "which
+        schema is this drawing at" cannot live only inside the cache it audits:
+        the `reproject` that fixes a stale drawing destroys the stamps. A graph
+        with no active schema is never stale: there is no version to be behind.
+        Per graph, so every node category of a stale graph is redrawn.
         """
-        active = models.GraphSchema.active_for(graph)
-        if active is None:
-            return False
-
-        result = controller.engine.execute(
-            graph,
-            f"""
-            MATCH (e:{category.age_name})
-            WHERE e.__schema_version IS NULL OR e.__schema_version <> $version
-            RETURN count(e) as behind
-            """,
-            {"version": active.hash},
-        )
-        return bool(result) and int(result[0]["behind"]) > 0
+        return watermark.schema_stale(graph)
 
     def _engine(self) -> AgeEngine:
         """The engine bound to this process — see `reproject`, same reasoning."""

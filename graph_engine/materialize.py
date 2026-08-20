@@ -243,6 +243,20 @@ def materialize(
     with versioning.suspended():
         _materialize_categories(graph, definition, user)
 
+    # The projection's bookkeeping row. A view that is not backfilled over evidence
+    # it already admits is honestly `NEEDS_BACKFILL` — its cursor reads 0 and its
+    # lag is the whole log — until somebody runs `reproject`. A view that admits
+    # nothing yet is consistent from the start: every claim that comes is drawn by
+    # the write path.
+    from evidence import selector as selector_module
+    from graph_engine import watermark
+
+    admits_history = selector_module.instances_for(graph).exists()
+    if backfill or not admits_history:
+        watermark.mark_consistent(graph, through_seq=watermark.max_seq(organization), schema_hash=watermark.active_schema_hash(graph))
+    else:
+        watermark.projection_for(graph)  # created in its default state: NEEDS_BACKFILL
+
     if backfill:
         # `project_all`, not `rebuild`. The namespace was created five lines up and
         # is empty, so there is nothing to drop; and `rebuild` ends with
