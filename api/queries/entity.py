@@ -51,7 +51,8 @@ def entities(
 
     rows = _nodes.narrow(_nodes.rows_for_category(entity_category), filter_model, ordering_models, pagination_model)
 
-    return [types.Entity(_value=node) for node in _nodes.retrieved_in(controller, graph, rows)]
+    # Dispatched on the claim's kind — see `api/queries/natural_event.py`.
+    return [types.cast_node_to_graphql_type(node) for node in _nodes.retrieved_in(controller, graph, rows)]  # type: ignore[return-value]
 
 
 def entity(info: Info, id: strawberry.ID, graph: strawberry.ID) -> types.Entity:

@@ -213,10 +213,19 @@ def term_ids_for(graph: Any) -> set[Any]:
     from core import models as core_models
 
     declared: set[Any] = {term_id for term_id in core_models.Category.objects.filter(graph=graph).values_list("term_id", flat=True) if term_id is not None}
-    derived_keys = asserted_terms.keys_for_graph(graph)
 
-    if derived_keys:
-        declared.update(evidence_models.Term.objects.for_organization(graph.organization).filter(key__in=derived_keys).values_list("id", flat=True))
+    # The derived half is matched on **key and kind**, not key alone. A `Term`'s
+    # identity is `(organization, kind, key)` — "Mitosis" the natural-event word
+    # and "Mitosis" the entity word are two terms — and a definition is written on
+    # a category of one kind, so the words it derives from are words of that kind.
+    # Matching on the key alone let an `EntityCategory` defined over the key
+    # "Mitosis" admit event instances classified under the *event* word, which
+    # the plural lists then wrapped as `Entity`.
+    derived = Q()
+    for key, kind in asserted_terms.keys_and_kinds_for_graph(graph):
+        derived |= Q(key=key, kind=kind)
+    if derived:
+        declared.update(evidence_models.Term.objects.for_organization(graph.organization).filter(derived).values_list("id", flat=True))
 
     return declared
 

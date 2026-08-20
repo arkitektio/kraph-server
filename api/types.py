@@ -495,7 +495,8 @@ class EntityCategory(NodeCategory, Category):
 
         rows = _nodes.narrow(_nodes.rows_for_category(category), filter_model, ordering_models, pagination_model)
 
-        return [Entity(_value=node) for node in _nodes.retrieved_in(controller, category.graph, rows)]
+        # Dispatched on the claim's kind — see `api/queries/natural_event.py`.
+        return [cast_node_to_graphql_type(node) for node in _nodes.retrieved_in(controller, category.graph, rows)]  # type: ignore[misc]
 
     @kante.django_field(description="The graph this category belongs to")
     def property_definitions(self) -> List[PropertyDefinition]:

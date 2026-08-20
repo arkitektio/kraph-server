@@ -134,6 +134,18 @@ def keys_for_graph(graph: Any) -> set[str]:
     return {str(key) for key in core_models.CategoryAssertedTerm.objects.filter(graph=graph).values_list("key", flat=True)}
 
 
+def keys_and_kinds_for_graph(graph: Any) -> set[tuple[str, str]]:
+    """Every `(word, kind)` this graph's categories derive from — the kind being the deriving category's.
+
+    A `Term` is identified by kind as well as key, and a definition belongs to a
+    category of one kind, so this is the join `evidence.selector.term_ids_for`
+    needs; the key alone admitted words of the wrong kind.
+    """
+    from core import models as core_models
+
+    return {(str(key), str(kind)) for key, kind in core_models.CategoryAssertedTerm.objects.filter(graph=graph).values_list("key", "category__kind")}
+
+
 def expected(organization: Any) -> set[tuple[Any, str]]:
     """The ``(category_id, key)`` pairs the definitions imply, computed without writing.
 

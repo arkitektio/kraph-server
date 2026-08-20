@@ -737,12 +737,14 @@ def resolve_categories(graph: core_models.Graph, nodes: list[Any]) -> tuple[dict
       selection; a node satisfying nothing in it does not belong to it. The caller
       reports the count, because a definition silently shrinking a graph is the
       class of silence this codebase treats as a defect.
-    - **More than one definition matches.** Apache AGE allows exactly one label
-      per vertex — a deliberate design decision on its side, since every label is
-      its own table — and this code assumes it everywhere (`labels(e)[0]`).
-      Choosing arbitrarily would bury exactly the disagreement the evidence base
-      exists to preserve, so this refuses and names the node, the same way
-      `_value_kinds_for_rule` refuses an ambiguous term rather than picking one.
+    - **More than one definition matches.** A view draws each node under exactly
+      one category — that is the view's *policy*, stated here, not a limit of any
+      store (Apache AGE happens to allow one label per vertex; a table projection
+      would not care). Two definitions both admitting a node is a disagreement
+      inside one view's own rules, and choosing arbitrarily would bury exactly the
+      disagreement the evidence base exists to preserve, so this refuses and names
+      the node — the same way `_value_kinds_for_rule` refuses an ambiguous term
+      rather than picking one. A view that wants both has to say which.
     """
     from evidence import claims as claims_module
     from evidence import selector as selector_module
@@ -781,9 +783,14 @@ def resolve_categories(graph: core_models.Graph, nodes: list[Any]) -> tuple[dict
     # Evaluate each definition once against the whole claim set rather than once
     # per node: a definition is a queryset predicate, so asking it N times would
     # be N queries to answer one question.
+    # Matched on the word's **kind** as well as its key. A `Term` is identified by
+    # `(organization, kind, key)` and a definition sits on a category of one kind,
+    # so "anything claimed Mitosis" on an *entity* category means the entity word
+    # Mitosis, not the natural-event word that happens to share the key — matching
+    # on the key alone let an entity definition admit events.
     matched_by_definition: dict[Any, set[str]] = {}
     for category in defined:
-        refs = set(standing_claims.filter(selector_module.classification_filter(category.definition)).values_list("source_ref", flat=True))
+        refs = set(standing_claims.filter(selector_module.classification_filter(category.definition), term__kind=str(category.kind)).values_list("source_ref", flat=True))
         matched_by_definition[category.pk] = {str(ref) for ref in refs}
 
     by_pk = {category.pk: category for category in categories}
@@ -805,7 +812,7 @@ def resolve_categories(graph: core_models.Graph, nodes: list[Any]) -> tuple[dict
             # (`refs_admitted_by`), and a warning here fired on every list query for
             # as long as the ambiguity existed — the same line `project_all` already
             # emits at rebuild. Whoever can act on it does the logging.
-            skipped[ref] = f"matches more than one defined category ({names}); a vertex carries one label, and choosing between them would hide the disagreement"
+            skipped[ref] = f"matches more than one defined category ({names}); a view draws a node under exactly one category, and choosing between them would hide the disagreement"
             continue
 
         if matches:
