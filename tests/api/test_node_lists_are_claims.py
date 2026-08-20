@@ -141,7 +141,7 @@ async def test_nodes_in_a_graph_are_not_only_entities(
     entity_id = await writes.create_entity(api_schema, simple_api_context, "Cell")
     event_id = await writes.create_event(api_schema, simple_api_context, "Mitosis")
 
-    listed = await api_schema.execute(NODES_IN_GRAPH, variable_values={"graph": str(test_graph.age_name)}, context_value=simple_api_context)
+    listed = await api_schema.execute(NODES_IN_GRAPH, variable_values={"graph": str(test_graph.pk)}, context_value=simple_api_context)
 
     assert listed.errors is None, f"GraphQL errors: {listed.errors}"
     by_id = {node["id"]: node["__typename"] for node in listed.data["nodes"]}
@@ -173,7 +173,6 @@ async def test_listing_another_tenants_category_is_refused(
             membership = Membership.objects.create(user=test_graph.membership.user, organization=other)
         graph = core_models.Graph.objects.create(
             name="NextDoor",
-            age_name=core_models.Graph.create_age_name("NextDoor", other),
             membership=membership,
             organization=other,
             user=test_graph.user,

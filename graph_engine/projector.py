@@ -579,7 +579,7 @@ def project(
                 "%s: no vertex labelled %s to write onto; the projection is behind the evidence. Run `manage.py reproject --graph %s`.",
                 claim_ref,
                 category.age_name,
-                graph.age_name,
+                graph.pk,
             )
             continue
 
@@ -1215,12 +1215,12 @@ def project_all(controller: Any, graph: core_models.Graph) -> dict[str, int]:
     projected = project(controller, graph, [ref for ref in resolved])
 
     if skipped:
-        logger.warning("%s: %d node(s) admitted by no category in this graph and left unprojected.", graph.age_name, len(skipped))
+        logger.warning("graph #%s: %d node(s) admitted by no category in this graph and left unprojected.", graph.pk, len(skipped))
         # Each reason, once, here — where somebody can act on it. `resolve_categories`
         # used to log the ambiguous case itself, which meant every read that consults
         # the rule logged it too.
         for ref, reason in skipped.items():
-            logger.warning("%s: %s: %s", graph.age_name, ref, reason)
+            logger.warning("graph #%s: %s: %s", graph.pk, ref, reason)
 
     # `unclassified` is reported, not swallowed. A definition that narrows a
     # category also shrinks the graph, and a caller that cannot see by how much
@@ -1304,8 +1304,8 @@ def rematerialize_category(
 
     projected = project(controller, graph, refs)
     logger.info(
-        "%s: rematerialized '%s' — %d node(s), %d key(s) swept.",
-        graph.age_name,
+        "graph #%s: rematerialized '%s' — %d node(s), %d key(s) swept.",
+        graph.pk,
         category.key,
         projected,
         len(owned),

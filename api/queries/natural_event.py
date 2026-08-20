@@ -45,7 +45,9 @@ def natural_events(
     if category is None:
         raise ValueError(f"Natural event category {natural_event_category_id} not found")
 
-    graph = context.get_accessible_graph(info, str(category.graph.age_name))
+    # Organization first, then the view's access rules — see `api/queries/entity.py`.
+    context.assert_can_access_organization(info, category.graph.organization)
+    graph = context.validate_graph_access(info, category.graph)
 
     filter_model = filters.to_pydantic() if filters else input_models.NaturalEventFilters()
     ordering_models = [entry.to_pydantic() for entry in ordering] if ordering else []

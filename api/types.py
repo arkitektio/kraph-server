@@ -257,7 +257,7 @@ def _event_roles(stored: Any) -> List[EventRole]:
 @kante.django_type(models.Graph, filters=filters.GraphFilter, pagination=True, ordering=order.GraphOrder, description="One view over the organization's evidence log")
 class Graph:
     id: strawberry.ID = strawberry.field(description="Database ID of the graph")
-    age_name: str = strawberry.field(description="The name of the graph as used in AGE (e.g. 'CellGraph')")
+    age_name: str = strawberry.field(description="Internal handle of the graph's Apache AGE namespace. Random, read-only, and not an identifier: address a graph by `id`.")
     # No `graphId`. It was copy-pasted from `Category`, and a `Graph` has no
     # `graph` foreign key to back it — the field named a column that does not
     # exist. A graph cannot belong to a graph.
@@ -2895,7 +2895,7 @@ class AssertedMetric:
 class GraphNodesRender:
     _value: strawberry.Private[retrieved.RetrievedGraphNodesRender]
 
-    @strawberry.field(description="The graph name used for this render")
+    @strawberry.field(description="Internal AGE handle of the rendered view (read-only); address the view through `graph { id }`")
     def graph_name(self) -> str:
         return self._value.graph_name
 
@@ -2926,7 +2926,7 @@ class GraphPathRender(PathLike):
     def edges(self) -> List[Edge]:
         return [cast_edge_to_graphql_type(edge) for edge in self._value.edges]
 
-    @strawberry.field(description="The graph name used for this render")
+    @strawberry.field(description="Internal AGE handle of the rendered view (read-only); address the view through `graph { id }`")
     def graph_name(self) -> str:
         return self._value.graph_name
 
@@ -2943,7 +2943,7 @@ class GraphPathRender(PathLike):
 class GraphPairsRender:
     _value: strawberry.Private[retrieved.RetrievedGraphPairsRender]
 
-    @strawberry.field(description="The graph name used for this render")
+    @strawberry.field(description="Internal AGE handle of the rendered view (read-only); address the view through `graph { id }`")
     def graph_name(self) -> str:
         return self._value.graph_name
 
@@ -2960,7 +2960,7 @@ class GraphPairsRender:
 class GraphTableRender:
     _value: strawberry.Private[retrieved.RetrievedGraphTableRender]
 
-    @strawberry.field(description="The graph name used for this render")
+    @strawberry.field(description="Internal AGE handle of the rendered view (read-only); address the view through `graph { id }`")
     def graph_name(self) -> str:
         return self._value.graph_name
 

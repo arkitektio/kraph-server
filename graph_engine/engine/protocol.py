@@ -4,10 +4,7 @@ Graph Engine Protocols
 Defines the protocols (interfaces) for graph engines and graph contexts.
 """
 
-from typing import Any, Dict, List, Protocol, runtime_checkable, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from graph_engine.input_models import GraphDefinitionModel
+from typing import Any, Dict, List, Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -20,32 +17,6 @@ class GraphProtocol(Protocol):
     def get_age_name(self) -> str:
         """The Apache AGE graph name (e.g., 'org_123_graph')."""
         ...
-
-
-class SimpleGraph:
-    """
-    A simple implementation of GraphProtocol for testing and basic usage.
-    """
-
-    def __init__(self, age_name: str, definition: "GraphDefinitionModel") -> None:
-        if not age_name:
-            raise ValueError("age_name cannot be empty")
-        if definition is None:
-            raise ValueError("definition cannot be None")
-        self._age_name = age_name
-        self._definition = definition
-
-    def get_age_name(self) -> str:
-        """The Apache AGE graph name. Satisfies GraphProtocol."""
-        return self._age_name
-
-    @property
-    def age_name(self) -> str:
-        return self._age_name
-
-    @property
-    def definition(self) -> "GraphDefinitionModel":
-        return self._definition
 
 
 @runtime_checkable

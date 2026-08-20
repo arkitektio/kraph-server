@@ -28,6 +28,8 @@ that decide how this file reads:
 
 from django.core.management.base import BaseCommand, CommandError
 
+from core.management.commands import _graphs
+
 from api.extensions.cypher import cypher_engine
 from core import models
 from graph_engine.controller import GraphController
@@ -73,10 +75,10 @@ class Command(BaseCommand):
                     continue
 
                 if options["dry_run"]:
-                    self.stdout.write(f"would redraw {graph.age_name}.{category.key}")
+                    self.stdout.write(f"would redraw {_graphs.describe(graph)}.{category.key}")
                     continue
 
-                self.stdout.write(f"redrawing {graph.age_name}.{category.key}…")
+                self.stdout.write(f"redrawing {_graphs.describe(graph)}.{category.key}…")
                 # No `retired_keys`: nothing versions the previous definition, so
                 # out of band there is no way to know which keys a *former*
                 # property owned. What the category owns now is swept and
@@ -90,11 +92,7 @@ class Command(BaseCommand):
     def _select_graphs(self, options) -> list[models.Graph]:
         if options["all"]:
             return list(models.Graph.objects.all())
-
-        identifier = str(options["graph"])
-        if identifier.isdigit():
-            return list(models.Graph.objects.filter(id=int(identifier)))
-        return list(models.Graph.objects.filter(name=identifier) | models.Graph.objects.filter(age_name=identifier))
+        return [_graphs.select_graph(str(options["graph"]))]
 
     def _select_categories(self, graph: models.Graph, options) -> list[models.Category]:
         """The node categories of one graph.

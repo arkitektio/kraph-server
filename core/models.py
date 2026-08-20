@@ -1,4 +1,5 @@
 import random
+import uuid
 from typing import Any
 from django.db import models
 from django.contrib.auth import get_user_model
@@ -59,17 +60,31 @@ def _matching_structure_kinds(organization, descriptor) -> "QuerySet":
     return kinds.distinct()
 
 
-class Graph(models.Model):
-    """An Graph is a collection of Entities.
+def new_projection_handle() -> str:
+    """A fresh, opaque handle for a graph's Apache AGE namespace.
 
-    It is used to group Entities together, for example all groups that
-    are part of a specific sample, or all entities that are part of a specific
-    experiment. Within an entity group, entities are unique according
-    to their name.s
+    Random on purpose. The handle used to be derived from the graph's name and the
+    organization's slug, which made it three things it should never have been:
+    an identifier clients passed back as `graph:` (so a projection detail was the
+    public address of a view), a value built from user input that was interpolated
+    unescaped into `cypher('…')` and `create_graph('…')` (the only defence was an
+    `isalnum()` filter in a different module), and a check-then-create that could
+    still collide across organizations because the dedupe was per-organization
+    while the column is globally unique.
 
+    `g` + 32 hex digits: a leading letter keeps it a legal identifier whether
+    quoted or not, `[a-z0-9]` keeps it safe to interpolate, and 33 bytes sits
+    well under the 63-byte ceiling of the Postgres `name` column AGE stores graph
+    names in. Nothing resolves a graph by it — `graph:` is a primary key.
     """
+    return f"g{uuid.uuid4().hex}"
 
-    objects: managers.GraphManager = managers.GraphManager()
+
+class Graph(models.Model):
+    """A view over the organization's evidence: a selector saying which claims
+    count, the categories saying what its words mean, and one Apache AGE
+    namespace the projection is drawn into.
+    """
 
     node_deletion_allowed = models.BooleanField(
         default=True,
@@ -103,9 +118,15 @@ class Graph(models.Model):
     )
     provenance = ProvenanceField()
     age_name = models.CharField(
-        max_length=1000,
-        help_text="The name of the graph class in the age graph",
+        max_length=63,
         unique=True,
+        editable=False,
+        default=new_projection_handle,
+        help_text=(
+            "Internal handle of this graph's Apache AGE namespace. Random, assigned at "
+            "creation, read only through `get_age_name()` by the engine. Not an identifier: "
+            "a graph is addressed by its primary key. See `new_projection_handle`."
+        ),
     )
     pinned_by = models.ManyToManyField(
         get_user_model(),
@@ -152,17 +173,6 @@ class Graph(models.Model):
             "state and carries no assertion."
         ),
     )
-
-    @classmethod
-    def create_age_name(cls, name: str, organization: Organization) -> str:
-        base_name = "".join(e for e in name if e.isalnum()).lower()
-        org_slug = "".join(e for e in organization.slug if e.isalnum()).lower()
-        age_name = f"{base_name}_{org_slug}"
-        counter = 1
-        while cls.objects.filter(age_name=age_name, organization=organization).exists():
-            age_name = f"{base_name}_{org_slug}_{counter}"
-            counter += 1
-        return age_name
 
     @property
     def rules_model(self) -> list[input_models.ActionRuleInput]:

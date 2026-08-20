@@ -2539,7 +2539,9 @@ type Graph @key(fields: "id", resolvable: true) {
   """Database ID of the graph"""
   id: ID!
 
-  """The name of the graph as used in AGE (e.g. 'CellGraph')"""
+  """
+  Internal handle of the graph's Apache AGE namespace. Random, read-only, and not an identifier: address a graph by `id`.
+  """
   ageName: String!
 
   """Label/name of the graph"""
@@ -2961,7 +2963,9 @@ input GraphTableQueryOrder @oneOf {
 
 """A rendered table result for a saved graph table query"""
 type GraphTableRender {
-  """The graph name used for this render"""
+  """
+  Internal AGE handle of the rendered view (read-only); address the view through `graph { id }`
+  """
   graphName: String!
 
   """The graph rendered by this query"""

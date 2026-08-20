@@ -42,7 +42,7 @@ def test_dry_run_names_the_categories_it_would_redraw(test_graph: core_models.Gr
     call_command("rematerialize", graph=test_graph.name, dry_run=True, stdout=out)
 
     output = out.getvalue()
-    assert f"would redraw {test_graph.age_name}.AIS" in output
+    assert f"would redraw {test_graph.name} (#{test_graph.pk}).AIS" in output
     assert "IS_CONNECTED_TO" not in output, "Relations are edges; `project_edges` derives nothing onto them"
 
 
@@ -88,5 +88,5 @@ def test_it_redraws_and_says_how_much(test_graph: core_models.Graph, age_engine)
     call_command("rematerialize", graph=test_graph.name, category="AIS", stdout=out)
 
     output = out.getvalue()
-    assert f"redrawing {test_graph.age_name}.AIS" in output
+    assert f"redrawing {test_graph.name} (#{test_graph.pk}).AIS" in output
     assert "vertices redrawn" in output

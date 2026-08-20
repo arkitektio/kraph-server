@@ -38,7 +38,12 @@ def entities(
     if entity_category is None:
         raise ValueError(f"Entity category {entity_category_id} not found")
 
-    graph = context.get_accessible_graph(info, str(entity_category.graph.age_name))
+    # Authorized against the organization the category belongs to, like every other
+    # category-scoped list (`api/queries/relation.py`), then the view's own access
+    # rules. This used to round-trip `category.graph.age_name` through the `graph:`
+    # resolver; the handle is internal now and resolves nothing.
+    context.assert_can_access_organization(info, entity_category.graph.organization)
+    graph = context.validate_graph_access(info, entity_category.graph)
 
     filter_model = filters.to_pydantic() if filters else input_models.EntityFilters()
     ordering_models = [entry.to_pydantic() for entry in ordering] if ordering else []

@@ -88,8 +88,6 @@ class AgeEngine:
         params = params or {}
         graph_name = graph.get_age_name()
 
-        print(f"Executing Cypher on graph '{graph_name}': {query} with params {params}")
-
         with graph_cursor(self.connection_name) as cursor:
             # Set statement timeout if configured
             if self.statement_timeout_ms:

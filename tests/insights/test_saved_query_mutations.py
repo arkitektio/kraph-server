@@ -58,7 +58,6 @@ def outsider_graph(db, backend_stack, test_graph: core_models.Graph) -> core_mod
 
     return core_models.Graph.objects.create(
         name="rival_graph",
-        age_name="rival_graph_a_rival_lab",
         user=stranger,
         membership=membership,
         organization=other,

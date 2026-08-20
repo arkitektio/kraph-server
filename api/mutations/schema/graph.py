@@ -77,9 +77,9 @@ def _record_what_deletion_destroys(graph: models.Graph) -> None:
     from evidence import selector as selector_module
 
     logger.warning(
-        "Deleting graph '%s' (%s): %d node(s) lose their only reader; %d categor(ies) and %d schema version(s) go with it, and nothing records what they said.",
+        "Deleting graph '%s' (#%s): %d node(s) lose their only reader; %d categor(ies) and %d schema version(s) go with it, and nothing records what they said.",
         graph.name,
-        graph.age_name,
+        graph.pk,
         selector_module.instances_for(graph).count(),
         models.Category.objects.filter(graph=graph).count(),
         models.GraphSchema.objects.filter(graph=graph).count(),

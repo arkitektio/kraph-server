@@ -51,7 +51,6 @@ def _make_graph(name: str, organization: Organization, user: User) -> core_model
     membership, _ = Membership.objects.get_or_create(user=user, organization=organization)
     return core_models.Graph.objects.create(
         name=name,
-        age_name=f"{name}_{organization.slug}".replace("-", "_"),
         user=user,
         membership=membership,
         organization=organization,

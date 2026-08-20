@@ -217,26 +217,23 @@ def materialize(
     if name is None:
         name = f"graph_{schema_hash}"
 
-    # Create unique age_name
-    age_name = models.Graph.create_age_name(name, organization)
-
-    # Create the Graph
+    # The AGE handle is random and assigned by the model default — see
+    # `core.models.new_projection_handle` for why it is neither derived from the
+    # name nor accepted from anyone.
     graph = models.Graph.objects.create(
         name=name,
         description=description or f"Graph materialized from schema v{definition.system_version}",
-        age_name=age_name,
         user=user,
         organization=organization,
         membership=membership,
         rules=[rule.model_dump(mode="json") for rule in definition.rules],
     )
 
-    # Create the AGE graph in the database
-    try:
-        engine.create_graph(age_name=age_name)
-    except Exception as e:
-        if "already exists" not in str(e):
-            raise
+    # A fresh random handle never names an existing namespace, so "already exists"
+    # is not a path to swallow any more: it would mean a `Graph` row pointing at
+    # somebody else's populated graph, which is exactly the collision the old
+    # name-derived handle could produce.
+    engine.create_graph(age_name=graph.age_name)
 
     # One schema change, not one per category row. Without suspending, the
     # post_save signal would emit a version for every category created below and
@@ -260,8 +257,8 @@ def materialize(
         # candidate was refused by a definition are indistinguishable from the
         # `Graph` row this returns, and the second is the one worth knowing about.
         logger.info(
-            "%s: backfilled %s node(s) and %s edge(s) from existing evidence; %s admitted by no category.",
-            age_name,
+            "graph #%s: backfilled %s node(s) and %s edge(s) from existing evidence; %s admitted by no category.",
+            graph.pk,
             counts["nodes"],
             counts["edges"],
             counts["unclassified"],

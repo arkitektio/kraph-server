@@ -24,5 +24,3 @@ class CypherEngineExtension(SchemaExtension):
 
         yield
         cypher_engine.reset(t1)
-
-        print("GraphQL operation end")

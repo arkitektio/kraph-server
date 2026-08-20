@@ -51,7 +51,6 @@ def foreign_graph(transactional_db, other_organization) -> core_models.Graph:
     membership, _ = Membership.objects.get_or_create(user=user, organization=other_organization)
 
     return core_models.Graph.objects.create(
-        age_name="foreigngraph_atenantyouarenotin",
         name="Foreign Graph",
         description="Belongs to a tenant the caller has no membership in",
         organization=other_organization,

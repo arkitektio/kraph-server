@@ -102,7 +102,7 @@ def one_in_graph(controller: Any, graph: Any, instance: Any) -> RetrievedNode:
     """
     row = rows_in_graph(graph).filter(pk=str(instance.pk)).first()
     if row is None:
-        raise ValueError(f"Graph '{graph.age_name}' does not hold node '{instance.pk}': no category of this view declares or derives from the node's word, or its selector does not count the claim. Read the claim itself with `instance(id:)`, and `Instance.drawnIn` says which views hold it.")
+        raise ValueError(f"Graph '{graph.name}' (#{graph.pk}) does not hold node '{instance.pk}': no category of this view declares or derives from the node's word, or its selector does not count the claim. Read the claim itself with `instance(id:)`, and `Instance.drawnIn` says which views hold it.")
     return retrieved_in(controller, graph, [row])[0]
 
 

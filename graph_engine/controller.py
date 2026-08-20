@@ -506,8 +506,8 @@ class GraphController:
             counts = projector.project_all(self, category.graph)
 
         logger.info(
-            "%s: backfilled '%s' — %s node(s), %s edge(s), %s admitted by no category.",
-            category.graph.age_name,
+            "graph #%s: backfilled '%s' — %s node(s), %s edge(s), %s admitted by no category.",
+            category.graph.pk,
             category.key,
             counts.get("nodes"),
             counts.get("edges"),
@@ -1994,8 +1994,8 @@ class GraphController:
             category = models.Category.objects.filter(pk=projected.category_id).first()
             if category is None:
                 logger.warning(
-                    "%s draws node %s under category_id %s, which no longer exists; reporting no drawing there.",
-                    graph.age_name,
+                    "graph #%s draws node %s under category_id %s, which no longer exists; reporting no drawing there.",
+                    graph.pk,
                     node.pk,
                     projected.category_id,
                 )

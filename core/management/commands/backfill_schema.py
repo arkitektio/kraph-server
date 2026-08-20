@@ -15,6 +15,7 @@ from django.core.management.base import BaseCommand, CommandError
 
 from api.extensions.cypher import cypher_engine
 from core import models
+from core.management.commands import _graphs
 from graph_engine import schema_diff
 from graph_engine.controller import GraphController
 from graph_engine.engine.age_engine import AgeEngine
@@ -60,13 +61,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(f"  re-derived {projected} entities"))
 
     def _graph(self, identifier: str) -> models.Graph:
-        found = models.Graph.objects.filter(name=identifier) | models.Graph.objects.filter(age_name=identifier)
-        if str(identifier).isdigit():
-            found = models.Graph.objects.filter(id=int(identifier))
-        graph = found.first()
-        if graph is None:
-            raise CommandError(f"No graph matching {identifier!r}.")
-        return graph
+        return _graphs.select_graph(identifier)
 
     def _versions(self, graph: models.Graph, options) -> tuple[models.GraphSchema, models.GraphSchema]:
         schemas = models.GraphSchema.objects.filter(graph=graph).order_by("index")

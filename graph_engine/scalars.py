@@ -17,9 +17,9 @@ StructureIdentifier = NewType("StructureIdentifier", str)
 # Scalar for Graph ID (UUID string)
 StructureObject = NewType("StructureObject", str)
 
-# The AGE namespace a graph is drawn in. Internal — it never crosses the API
-# boundary; `api/context.py` uses it to look a graph up by name.
-GraphName = NewType("GraphName", str)
+# `GraphName` is gone too: it typed the Apache AGE namespace so that
+# `api/context.py` could look a graph up by it. The handle is random and internal
+# now, and a graph is addressed by its primary key.
 
 # `GraphID` is gone, and it joins the list below.
 #

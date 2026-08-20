@@ -37,7 +37,8 @@ def test_dry_run_touches_nothing(test_graph: core_models.Graph, age_engine) -> N
 
     output = out.getvalue()
     assert "would rebuild" in output
-    assert test_graph.age_name in output
+    assert f"#{test_graph.pk}" in output
+    assert test_graph.age_name not in output, "the AGE handle is internal; the command names a graph by name and id"
 
 
 @pytest.mark.django_db(transaction=True)

@@ -13,6 +13,7 @@ from django.core.management.base import BaseCommand, CommandError
 
 from api.extensions.cypher import cypher_engine
 from core import models
+from core.management.commands import _graphs
 from graph_engine.controller import GraphController
 from graph_engine.engine.age_engine import AgeEngine
 
@@ -24,7 +25,7 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser) -> None:
         """Declare the command's arguments."""
-        parser.add_argument("--graph", help="Name or id of the graph to rebuild. Omit with --all.")
+        parser.add_argument("--graph", help="Id or name of the graph to rebuild. Omit with --all.")
         parser.add_argument("--all", action="store_true", help="Rebuild every graph.")
         parser.add_argument(
             "--dry-run",
@@ -46,21 +47,17 @@ class Command(BaseCommand):
 
         for graph in graphs:
             if options["dry_run"]:
-                self.stdout.write(f"would rebuild {graph.name} ({graph.age_name})")
+                self.stdout.write(f"would rebuild {_graphs.describe(graph)}")
                 continue
 
-            self.stdout.write(f"rebuilding {graph.name} ({graph.age_name})…")
+            self.stdout.write(f"rebuilding {_graphs.describe(graph)}…")
             result = controller.rebuild_projection(graph)
             self.stdout.write(self.style.SUCCESS(f"  {result['nodes']} nodes, {result['states']} metrics refolded, {result['projected']} entities projected"))
 
     def _select_graphs(self, options) -> list[models.Graph]:
         if options["all"]:
             return list(models.Graph.objects.all())
-
-        identifier = str(options["graph"])
-        if identifier.isdigit():
-            return list(models.Graph.objects.filter(id=int(identifier)))
-        return list(models.Graph.objects.filter(name=identifier) | models.Graph.objects.filter(age_name=identifier))
+        return [_graphs.select_graph(str(options["graph"]))]
 
     def _engine(self) -> AgeEngine:
         """The engine bound to this process.

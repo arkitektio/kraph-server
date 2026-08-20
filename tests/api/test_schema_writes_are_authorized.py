@@ -48,7 +48,6 @@ def outsider_graph(db, backend_stack, test_graph: core_models.Graph) -> core_mod
 
     return core_models.Graph.objects.create(
         name="rival_graph",
-        age_name="rival_graph_a_rival_lab",
         user=stranger,
         membership=membership,
         organization=other,
@@ -192,7 +191,6 @@ async def test_a_colleague_may_rename_a_graph_but_not_archive_it(
         # Same tenant, different owner — which is the whole scenario.
         return core_models.Graph.objects.create(
             name="a_colleagues_graph",
-            age_name="a_colleagues_graph_x",
             user=colleague,
             membership=membership,
             organization=test_graph.organization,

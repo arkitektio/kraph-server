@@ -141,7 +141,6 @@ async def test_stats_answer_and_stay_inside_the_organization(
         core_models.Graph.objects.get_or_create(
             name="NextDoorGraph",
             defaults=dict(
-                age_name=core_models.Graph.create_age_name("NextDoorGraph", other),
                 membership=membership,
                 organization=other,
                 user=test_graph.user,
