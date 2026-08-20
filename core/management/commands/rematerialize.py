@@ -30,11 +30,10 @@ from django.core.management.base import BaseCommand, CommandError
 
 from core.management.commands import _graphs
 
-from api.extensions.cypher import cypher_engine
+from api.extensions.projection import current_or_default
 from core import models
 from graph_engine import watermark
 from graph_engine.controller import GraphController
-from graph_engine.engine.age_engine import AgeEngine
 
 
 class Command(BaseCommand):
@@ -67,8 +66,7 @@ class Command(BaseCommand):
         if not graphs:
             raise CommandError("No matching graphs.")
 
-        engine = self._engine()
-        controller = GraphController(engine=engine)
+        controller = GraphController(projector=current_or_default())
 
         for graph in graphs:
             for category in self._select_categories(graph, options):
@@ -136,16 +134,3 @@ class Command(BaseCommand):
         """
         return watermark.schema_stale(graph)
 
-    def _engine(self) -> AgeEngine:
-        """The engine bound to this process — see `reproject`, same reasoning."""
-        try:
-            engine = cypher_engine.get()
-        except LookupError:
-            engine = None
-
-        if engine is not None:
-            return engine
-
-        engine = AgeEngine()
-        engine.init_db()
-        return engine

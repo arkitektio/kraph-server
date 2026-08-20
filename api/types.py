@@ -1039,7 +1039,7 @@ class Node(Generic[V]):
     #
     # `id` is the identity, and it is a bare uuid.
 
-    @strawberry.field(description="The AGE graph label as recently materialized (e.g. 'Cell IAC100', 'ROI 1')")
+    @strawberry.field(description="The label this view draws the node under — its category's `ageName` — or the claim's word when the view has not drawn it yet")
     def label(self) -> str:
         """Should return the most specific label for this node (e.g. 'Cell' instead of 'Entity') Composed by its propetries"""
         return self._value.label

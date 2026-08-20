@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from .input_models import DerivationType, GraphDefinitionInput
 from .engine.protocol import CypherEngine
+from .projection import CypherProjector, Projector
 from core import models
 from authentikate.models import Organization, Membership, User
 
@@ -170,13 +171,15 @@ def validate_derivation_rules(definition: GraphDefinitionInput) -> None:
 
 def materialize(
     definition: GraphDefinitionInput,
-    engine: CypherEngine,
-    user: User,
-    organization: Organization,
-    membership: Membership,
+    engine: CypherEngine | None = None,
+    user: User | None = None,
+    organization: Organization | None = None,
+    membership: Membership | None = None,
     name: Optional[str] = None,
     description: Optional[str] = None,
     backfill: bool = False,
+    *,
+    projector: Projector | None = None,
 ) -> models.Graph:
     """
     Materialize a graph based on the provided graph definition.
@@ -229,11 +232,19 @@ def materialize(
         rules=[rule.model_dump(mode="json") for rule in definition.rules],
     )
 
+    # The projection kind this view is drawn in. `engine=` is the older spelling
+    # — an Apache AGE engine to wrap — kept because every test and command holds
+    # one; `projector=` is the seam.
+    if projector is None:
+        if engine is None:
+            raise ValueError("materialize needs a projector (or an engine to wrap in the Apache AGE one)")
+        projector = CypherProjector(engine)
+
     # A fresh random handle never names an existing namespace, so "already exists"
     # is not a path to swallow any more: it would mean a `Graph` row pointing at
     # somebody else's populated graph, which is exactly the collision the old
     # name-derived handle could produce.
-    engine.create_graph(age_name=graph.age_name)
+    projector.create_namespace(graph)
 
     # One schema change, not one per category row. Without suspending, the
     # post_save signal would emit a version for every category created below and
@@ -263,10 +274,10 @@ def materialize(
         # `refold_state(organization)`, which re-folds every metric in the
         # organization — not something one new view is entitled to do to statistics
         # its siblings are reading.
-        from graph_engine import projector
+        from graph_engine import projector as projector_module
         from graph_engine.controller import GraphController
 
-        counts = projector.project_all(GraphController(engine=engine), graph)
+        counts = projector_module.project_all(GraphController(projector=projector), graph)
         # `unclassified` too: a backfill that drew nothing and one whose every
         # candidate was refused by a definition are indistinguishable from the
         # `Graph` row this returns, and the second is the one worth knowing about.

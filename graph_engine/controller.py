@@ -16,6 +16,7 @@ from graph_engine.input_models import (
     RelationInput,
 )
 from graph_engine.engine.protocol import CypherEngine
+from graph_engine.projection import CypherProjector, Projector
 from graph_engine.retrieved import (
     RetrievedMetric,
     RetrievedNode,
@@ -121,9 +122,26 @@ def _extract_props(raw_node: Any) -> Dict[str, Any]:
 class GraphController:
     """Controller for interacting with the graph database."""
 
-    def __init__(self, engine: CypherEngine, subject: str | None = None, app_id: str | None = None) -> None:
-        """The GraphController is initialized with a CypherEngine instance for executing queries, and optional context for provenance tracking."""
-        self.engine = engine
+    def __init__(
+        self,
+        engine: CypherEngine | None = None,
+        subject: str | None = None,
+        app_id: str | None = None,
+        *,
+        projector: Projector | None = None,
+    ) -> None:
+        """A controller draws through a `Projector` and never runs a query itself.
+
+        `projector=` is the seam — `graph_engine.projection.Projector`, the writer
+        and reader halves of one projection kind. `engine=` is the older spelling,
+        kept because every test and command holds an Apache AGE engine: it is
+        wrapped in a `CypherProjector`. The controller holds no engine any more;
+        the seven places it used to execute Cypher directly (two of them writes)
+        are `Projector` methods.
+        """
+        # `CypherProjector(None)` is a projector that fails on first use — the
+        # same behaviour `engine=None` had, which the pure-method tests rely on.
+        self.projector: Projector = projector if projector is not None else CypherProjector(engine)  # type: ignore[arg-type]
         self.subject = subject
         self.app_id = app_id
 
@@ -1569,11 +1587,10 @@ class GraphController:
 
     def get_instance_by_ref(self, graph: models.Graph, ref: str) -> retrieved.RetrievedNode:
         """Read a projected node back by its durable ref."""
-        node_uuid = str(ref)
-        result = self.engine.execute(graph, "MATCH (n) WHERE n.id = $nid RETURN n", {"nid": node_uuid})
-        if not result:
+        records = self.projector.drawn_nodes(graph, [str(ref)])
+        if not records:
             raise ValueError(f"No projected node for ref '{ref}'")
-        return RetrievedNode.from_node(self, result[0]["n"], graph_name=graph.age_name)
+        return RetrievedNode.from_node(self, records[0], graph_name=graph.age_name)
 
     def drawn_instances(self, graph: models.Graph, refs: list[str]) -> dict[str, retrieved.RetrievedNode]:
         """How this graph draws each of these nodes, keyed by ref. Missing means undrawn.
@@ -1587,10 +1604,9 @@ class GraphController:
         if not refs:
             return {}
 
-        result = self.engine.execute(graph, "MATCH (n) WHERE n.id IN $nids RETURN n", {"nids": [str(ref) for ref in refs]})
         drawn: dict[str, retrieved.RetrievedNode] = {}
-        for row in result:
-            node = RetrievedNode.from_node(self, row["n"], graph_name=graph.age_name)
+        for record in self.projector.drawn_nodes(graph, [str(ref) for ref in refs]):
+            node = RetrievedNode.from_node(self, record, graph_name=graph.age_name)
             drawn[node.unique_id] = node
         return drawn
 
@@ -1763,24 +1779,15 @@ class GraphController:
         category = category.as_kind()
         is_input = kind == evidence_models.Link.Kind.PARTICIPATES_AS_INPUT
         label = category.AGE_INPUT_EDGE if is_input else category.AGE_OUTPUT_EDGE
-        pattern = f"(entity)-[r:{label}]->(event)" if is_input else f"(event)-[r:{label}]->(entity)"
-
         entity_uuid = str(claim_ref)
         event_uuid = str(event_ref)
+        left, right = (entity_uuid, event_uuid) if is_input else (event_uuid, entity_uuid)
 
         # Nothing claims this participation any more, so the edge states nothing.
         # It goes rather than lingering behind a flag: `rebuild` would not
         # recreate it, and a projection that disagrees with a replay is the
         # failure this layer exists to prevent.
-        self.engine.execute(
-            graph,
-            f"""
-            MATCH {pattern}
-            WHERE entity.id = $entity_uuid AND event.id = $event_uuid AND r.role = $role
-            DELETE r
-            """,
-            {"entity_uuid": entity_uuid, "event_uuid": event_uuid, "role": role},
-        )
+        self.projector.erase_edge(graph, left, right, str(label), {"role": role})
 
     def _assert_same_organization(self, actual: Any, expected: Any, what: str) -> None:
         """Refuse a reference that belongs to a different tenant than the write.
@@ -2028,18 +2035,31 @@ class GraphController:
             except ValueError:
                 continue
 
-            # The category the **vertex** carries, not the one a resolver would
-            # pick now. `projector.create_vertex` writes `category_id` as it
-            # draws, so this is the drawing's own account of itself.
-            category = models.Category.objects.filter(pk=projected.category_id).first()
+            # The category is the **rule's** answer — `resolve_categories`, the
+            # same function that decides membership for `nodes(graph:)` — and
+            # drawn-ness is the projection's. The vertex carries a `category_id`
+            # too, stamped when it was drawn; reading *that* back made the cache
+            # authoritative for what a write reported, so a stale vertex made the
+            # write payload stale and a reproject could silently change it. When
+            # the two disagree the drawing is behind the rule, which is logged,
+            # and the rule is what is reported.
+            resolved, _ = projector.resolve_categories(graph, [node])
+            category = resolved.get(str(node.ref))
             if category is None:
                 logger.warning(
-                    "graph #%s draws node %s under category_id %s, which no longer exists; reporting no drawing there.",
+                    "graph #%s draws node %s but its rule no longer admits it; the projection is behind the rule — run `manage.py reproject`. Reporting no drawing there.",
+                    graph.pk,
+                    node.pk,
+                )
+                continue
+            if projected.category_id is not None and str(projected.category_id) != str(category.pk):
+                logger.warning(
+                    "graph #%s draws node %s under category_id %s but its rule says %s; the projection is behind the rule — run `manage.py reproject`.",
                     graph.pk,
                     node.pk,
                     projected.category_id,
+                    category.pk,
                 )
-                continue
 
             drawings.append(results.NodeDrawing(graph=graph, category=category, node=projected))
 
@@ -2480,17 +2500,7 @@ class GraphController:
         # lingering with a lifecycle flag: `rebuild` would not recreate it, and a
         # projection that disagrees with a replay is the failure this layer is
         # supposed to make impossible.
-        source_uuid = str(source_ref)
-        target_uuid = str(target_ref)
-        self.engine.execute(
-            graph,
-            f"""
-            MATCH (s)-[r:{category.age_name}]->(t)
-            WHERE s.id = $src AND t.id = $tgt
-            DELETE r
-            """,
-            {"src": source_uuid, "tgt": target_uuid},
-        )
+        self.projector.erase_edge(graph, str(source_ref), str(target_ref), category.age_name)
 
     # ===================================================================
     # Relation Query Methods
@@ -2561,22 +2571,14 @@ class GraphController:
         label, reversed_edge = projector.edge_pattern_for(category, link)
         left, right = (str(link.target_ref), str(link.source_ref)) if reversed_edge else (str(link.source_ref), str(link.target_ref))
 
-        result = self.engine.execute(
-            graph,
-            f"""
-            MATCH (s)-[r:{label}]->(t)
-            WHERE s.id = $src AND t.id = $tgt
-            RETURN id(r) as id, id(s) as sid, id(t) as tid
-            """,
-            {"src": left, "tgt": right},
-        )
-        if not result:
+        drawn = self.projector.drawn_edge(graph, left, right, label)
+        if drawn is None:
             return None
 
         edge = RetrievedEdge.from_link(self, link, graph_name=graph.age_name, category=category)
-        edge.edge_id = int(result[0]["id"])
-        edge.left_id = int(result[0]["sid"])
-        edge.right_id = int(result[0]["tid"])
+        edge.edge_id = drawn.edge_id
+        edge.left_id = drawn.left_id
+        edge.right_id = drawn.right_id
         return edge
 
     def render_graph_table_query(
@@ -2591,7 +2593,7 @@ class GraphController:
             order=order,
         )
 
-        result_rows = self.engine.execute(graph_query.graph, query, params)
+        result_rows = self.projector.render(graph_query.graph, query, params)
 
         row_dicts: list[dict[str, Any]] = []
         column_keys = [column.get("key") for column in (graph_query.columns or []) if isinstance(column, dict) and column.get("key")]
@@ -2701,9 +2703,8 @@ class GraphController:
         return f"{prefix}\n{suffix}"
 
     def _validate_property_key(self, key: str) -> str:
-        if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", key):
-            raise ValueError(f"Invalid property key '{key}'.")
-        return key
+        """What a property key may look like is the projection's rule, not the controller's."""
+        return self.projector.validate_key(key)
 
     def indexed_property_keys(self, category: models.Category) -> set[str]:
         """Which of a category's properties are stored on the node — now all of them.
@@ -2890,23 +2891,13 @@ class GraphController:
         order_clause = self._build_entity_order_clause(ordering, variable="e", indexed_keys=indexed_keys)
         pagination_clause = self._build_entity_pagination_clause(pagination)
 
-        # `WHERE true` so the filter can be appended with AND, exactly as
-        # `list_entities` does. Without it this emitted `MATCH (e:X) AND ...`,
-        # which is a Cypher syntax error — so filtering by category has never
-        # worked, and no test passed a filter here to find out.
-        query = f"""
-            MATCH (e: {category.get_age_vertex_name()})
-            WHERE true
-            {("AND " + where_clause[len("WHERE ") :]) if where_clause else ""}
-            RETURN e
-            {order_clause}
-            {pagination_clause}
-        """
+        # The predicate without its leading `WHERE`: the projector appends it to
+        # its own `WHERE true`. (This used to emit `MATCH (e:X) AND ...`, a Cypher
+        # syntax error, so filtering by category had never worked.)
+        predicate = where_clause[len("WHERE ") :] if where_clause else ""
+        records = self.projector.list_drawn(category.graph, category.get_age_vertex_name(), predicate, dict(filter_params), order_clause, pagination_clause)
 
-        params: dict[str, Any] = {**filter_params}
-        result = self.engine.execute(category.graph, query, params)
-
-        return [RetrievedNode.from_node(self, row["e"], graph_name=category.graph.age_name) for row in result]
+        return [RetrievedNode.from_node(self, record, graph_name=category.graph.age_name) for record in records]
 
     def list_structures(self, organization: Any, filters: input_models.StructureFilters | None = None, pagination: input_models.StructurePagination | None = None, ordering: list[input_models.StructureOrder] | None = None, info: Info | None = None) -> List[RetrievedStructure]:
         """List structures from the evidence base.

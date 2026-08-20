@@ -1,0 +1,114 @@
+"""What a projection kind has to be able to do.
+
+Two halves, one protocol. The **writer** half is what `graph_engine.projector`
+calls to draw the evidence — one vertex per instance, one edge per proposition,
+derived properties on the vertex — and what `rebuild` calls to drop and recreate
+a view's namespace. The **reader** half is what the API asks for a *drawing*:
+the nodes a view has drawn, whether it drew an edge, and (for saved queries) a
+rendered table.
+
+Everything here is phrased in the vocabulary of the evidence and the schema —
+refs, labels, category ids, property dicts — and nothing in the vocabulary of a
+graph database. Labels are `Category.age_name`: the view's own word for a
+category, which is what a vertex is labelled with in AGE and what a table would
+be named after elsewhere. Vertex and edge ids are opaque integers that a
+rebuild reassigns; they are carried only because `RetrievedNode`/`RetrievedEdge`
+still name them, and nothing keys on them.
+
+`controller.engine` is gone, and so is the controller's habit of writing
+Cypher itself: the seven places it executed queries directly — two of them
+*writes* (`DELETE r` for a retracted relation or participation) — are the
+methods below. `graph_engine.projector` imports no engine and no query language;
+it calls `controller.projector.<method>`.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Iterable, Mapping, Protocol, runtime_checkable
+
+
+@dataclass(frozen=True)
+class DrawnEdge:
+    """The ids an implementation gives an edge it has drawn. Opaque; never identity."""
+
+    edge_id: int
+    left_id: int
+    right_id: int
+
+
+@runtime_checkable
+class Projector(Protocol):
+    """One projection kind: how a view is drawn and read back."""
+
+    # ------------------------------------------------------------------ namespace
+
+    def create_namespace(self, graph: Any) -> None:
+        """Make the place this graph's drawing lives in. Idempotent is not required: callers create once."""
+        ...
+
+    def drop_namespace(self, graph: Any) -> None:
+        """Destroy the drawing and everything in it. The evidence is untouched by construction."""
+        ...
+
+    # ------------------------------------------------------------------ writer: nodes
+
+    def draw_node(self, graph: Any, ref: str, label: str, category_id: Any, kind: str) -> None:
+        """Draw (or re-draw) one node under `label`, carrying `{id, category_id, type}`.
+
+        Converging: drawing a ref that is already drawn under this label leaves
+        one vertex. It does **not** move a node between labels — the caller clears
+        first (`erase_nodes`) when the label may have changed.
+        """
+        ...
+
+    def write_properties(self, graph: Any, ref: str, label: str, values: Mapping[str, Any]) -> bool:
+        """Set derived properties on a drawn node. Returns whether the node was there to write onto."""
+        ...
+
+    def clear_properties(self, graph: Any, label: str, refs: Iterable[str], keys: Iterable[str]) -> None:
+        """Remove these property keys from these drawn nodes. The sweep before a redraw."""
+        ...
+
+    def erase_nodes(self, graph: Any, refs: Iterable[str]) -> int:
+        """Remove these nodes and every edge touching them. Returns how many nodes were there."""
+        ...
+
+    # ------------------------------------------------------------------ writer: edges
+
+    def draw_edge(self, graph: Any, source_ref: str, target_ref: str, label: str, properties: Mapping[str, Any]) -> bool:
+        """Draw (or re-draw) one edge source → target under `label`, setting `properties`.
+
+        Converging on `(source, target, label)`. Returns False when an endpoint is
+        not drawn, in which case nothing was written — the caller decides whether
+        that is worth a warning.
+        """
+        ...
+
+    def erase_edge(self, graph: Any, source_ref: str, target_ref: str, label: str, match: Mapping[str, Any] | None = None) -> None:
+        """Remove the edge source → target under `label` whose properties match `match` (if given)."""
+        ...
+
+    # ------------------------------------------------------------------ writer: keys
+
+    def validate_key(self, key: str) -> str:
+        """Refuse a property key this projection cannot store or that could not be written safely."""
+        ...
+
+    # ------------------------------------------------------------------ reader
+
+    def drawn_nodes(self, graph: Any, refs: Iterable[str]) -> list[dict[str, Any]]:
+        """The drawn records for these refs — `{id, label, properties}` each; absent means undrawn."""
+        ...
+
+    def drawn_edge(self, graph: Any, source_ref: str, target_ref: str, label: str) -> DrawnEdge | None:
+        """The ids of the edge source → target under `label`, or None if this view does not draw it."""
+        ...
+
+    def list_drawn(self, graph: Any, label: str, where: str, params: Mapping[str, Any], order: str, page: str) -> list[dict[str, Any]]:
+        """The drawn records under `label` matching a pre-built predicate. The drawing-scoped list."""
+        ...
+
+    def render(self, graph: Any, query: str, params: Mapping[str, Any]) -> list[Any]:
+        """Run a saved query against the drawing and hand back its rows."""
+        ...

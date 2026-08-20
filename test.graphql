@@ -2083,7 +2083,7 @@ input EnsureStructureInput {
 """An entity in the knowledge graph with derived properties"""
 type Entity implements Node {
   """
-  The AGE graph label as recently materialized (e.g. 'Cell IAC100', 'ROI 1')
+  The label this view draws the node under — its category's `ageName` — or the claim's word when the view has not drawn it yet
   """
   label: String!
 
@@ -4110,7 +4110,7 @@ type Mutation {
 """A natural event in the knowledge graph"""
 type NaturalEvent implements Node & Event {
   """
-  The AGE graph label as recently materialized (e.g. 'Cell IAC100', 'ROI 1')
+  The label this view draws the node under — its category's `ageName` — or the claim's word when the view has not drawn it yet
   """
   label: String!
 
@@ -4320,7 +4320,7 @@ input NaturalEventPaginationInput {
 """Base interface for all graph nodes"""
 interface Node {
   """
-  The AGE graph label as recently materialized (e.g. 'Cell IAC100', 'ROI 1')
+  The label this view draws the node under — its category's `ageName` — or the claim's word when the view has not drawn it yet
   """
   label: String!
 
@@ -4873,7 +4873,7 @@ enum PropertyType {
 """A protocol event in the graph"""
 type ProtocolEvent implements Node & Event {
   """
-  The AGE graph label as recently materialized (e.g. 'Cell IAC100', 'ROI 1')
+  The label this view draws the node under — its category's `ageName` — or the claim's word when the view has not drawn it yet
   """
   label: String!
 

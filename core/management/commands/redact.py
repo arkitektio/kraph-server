@@ -30,13 +30,12 @@ answerable after the thing itself has left.
 from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, transaction
 
-from api.extensions.cypher import cypher_engine
+from api.extensions.projection import current_or_default
 from authentikate.models import Organization
 from core import models
 from evidence import models as evidence_models
 from evidence import writer
 from graph_engine.controller import GraphController
-from graph_engine.engine.age_engine import AgeEngine
 
 
 class Command(BaseCommand):
@@ -199,21 +198,8 @@ class Command(BaseCommand):
         if not graphs:
             return
 
-        controller = GraphController(engine=self._engine())
+        controller = GraphController(projector=current_or_default())
         for graph in graphs:
             self.stdout.write(f"rebuilding {graph.name} ({graph.age_name})…")
             controller.rebuild_projection(graph)
 
-    def _engine(self) -> AgeEngine:
-        """The engine bound to this process. Same fallback as `reproject`."""
-        try:
-            engine = cypher_engine.get()
-        except LookupError:
-            engine = None
-
-        if engine is not None:
-            return engine
-
-        engine = AgeEngine()
-        engine.init_db()
-        return engine

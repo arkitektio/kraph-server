@@ -25,12 +25,11 @@ from django.core.management.base import BaseCommand, CommandError
 
 from authentikate.models import Organization
 
-from api.extensions.cypher import cypher_engine
+from api.extensions.projection import current_or_default
 from core import models
 from core.management.commands import _graphs
 from graph_engine import watermark
 from graph_engine.controller import GraphController
-from graph_engine.engine.age_engine import AgeEngine
 
 
 class Command(BaseCommand):
@@ -64,8 +63,7 @@ class Command(BaseCommand):
         if not graphs:
             raise CommandError("No matching graphs.")
 
-        engine = self._engine()
-        controller = GraphController(engine=engine)
+        controller = GraphController(projector=current_or_default())
 
         for graph in graphs:
             if options["dry_run"]:
@@ -93,8 +91,7 @@ class Command(BaseCommand):
                 raise CommandError(f"No organization with slug {options['organization']!r}.")
             organizations = [organization]
 
-        engine = self._engine()
-        controller = GraphController(engine=engine)
+        controller = GraphController(projector=current_or_default())
 
         from graph_engine import projector
 
@@ -130,22 +127,3 @@ class Command(BaseCommand):
             return list(models.Graph.objects.all())
         return [_graphs.select_graph(str(options["graph"]))]
 
-    def _engine(self) -> AgeEngine:
-        """The engine bound to this process.
-
-        Outside a GraphQL request there is no `CypherEngineExtension` to bind one
-        through the ContextVar. Note the ContextVar defaults to ``None`` rather
-        than raising `LookupError`, so the fallback has to test the value — not
-        just catch.
-        """
-        try:
-            engine = cypher_engine.get()
-        except LookupError:
-            engine = None
-
-        if engine is not None:
-            return engine
-
-        engine = AgeEngine()
-        engine.init_db()
-        return engine

@@ -22,6 +22,9 @@ class MockCypherEngine:
         self.created_graphs: List[str] = []
         self.dropped_graphs: List[str] = []
 
+    def init_db(self) -> None:
+        """Nothing to prepare. Satisfies CypherEngine."""
+
     def create_graph(self, age_name: str) -> None:
         """Record graph creation. Satisfies CypherEngine."""
         self.created_graphs.append(age_name)

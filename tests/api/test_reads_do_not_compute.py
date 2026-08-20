@@ -157,12 +157,10 @@ async def test_the_control_a_rematerialization_loses_the_value(
 
     @sync_to_async
     def redraw() -> None:
-        from api.extensions.cypher import cypher_engine
-        from graph_engine.engine.age_engine import AgeEngine
+        from api.extensions.projection import current_or_default
 
-        engine = cypher_engine.get() or AgeEngine()
         category = core_models.EntityCategory.objects.get(graph=test_graph, key="AIS")
-        GraphController(engine=engine).rematerialize_category(category)
+        GraphController(projector=current_or_default()).rematerialize_category(category)
 
     await redraw()
 
@@ -190,14 +188,12 @@ async def test_a_refold_puts_it_back(
 
     @sync_to_async
     def refold_and_redraw() -> None:
-        from api.extensions.cypher import cypher_engine
+        from api.extensions.projection import current_or_default
         from graph_engine import projector
-        from graph_engine.engine.age_engine import AgeEngine
 
         projector.refold_state(test_graph.organization)
-        engine = cypher_engine.get() or AgeEngine()
         category = core_models.EntityCategory.objects.get(graph=test_graph, key="AIS")
-        GraphController(engine=engine).rematerialize_category(category)
+        GraphController(projector=current_or_default()).rematerialize_category(category)
 
     await refold_and_redraw()
 

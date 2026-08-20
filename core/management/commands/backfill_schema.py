@@ -13,12 +13,11 @@ projection in a state that needs manual repair.
 
 from django.core.management.base import BaseCommand, CommandError
 
-from api.extensions.cypher import cypher_engine
+from api.extensions.projection import current_or_default
 from core import models
 from core.management.commands import _graphs
 from graph_engine import schema_diff
 from graph_engine.controller import GraphController
-from graph_engine.engine.age_engine import AgeEngine
 
 
 class Command(BaseCommand):
@@ -95,20 +94,8 @@ class Command(BaseCommand):
         """
         from evidence import selector as selector_module
 
-        engine = self._engine()
-        controller = GraphController(engine=engine)
+        controller = GraphController(projector=current_or_default())
 
         refs = [str(node_id) for node_id in selector_module.instances_for(graph).filter(term__key__in=list(category_keys)).values_list("id", flat=True)]
         return controller.project_entities(graph, refs)
 
-    def _engine(self) -> AgeEngine:
-        """The engine bound to this process. See `reproject` for why None is tested."""
-        try:
-            engine = cypher_engine.get()
-        except LookupError:
-            engine = None
-        if engine is not None:
-            return engine
-        engine = AgeEngine()
-        engine.init_db()
-        return engine

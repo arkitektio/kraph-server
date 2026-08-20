@@ -681,36 +681,24 @@ def project_edges(
             )
             continue
 
-        source_uuid = str(source_ref)
-        target_uuid = str(target_ref)
-
-        result = controller.engine.execute(
+        # Converging on `(source, target, label)`; `__assertion_count` is the
+        # edge-side analogue of `State.n` — how many live claims stand behind this
+        # edge, one number that says whether a relation rests on one annotator or
+        # on four independent ones.
+        drawn = controller.projector.draw_edge(
             graph,
-            f"""
-            MATCH (s) WHERE s.id = $src
-            MATCH (t) WHERE t.id = $tgt
-            MERGE (s)-[r:{category.age_name}]->(t)
-            SET r.category_id = $cid,
-                r.__assertion_count = $count
-            RETURN id(r) as edge_id
-            """,
-            {
-                "src": source_uuid,
-                "tgt": target_uuid,
-                "cid": category.pk,
-                # How many live claims stand behind this edge. The edge-side
-                # analogue of `State.n`: one number that says whether a relation
-                # rests on one annotator or on four independent ones.
-                "count": len(assertions),
-            },
+            str(source_ref),
+            str(target_ref),
+            category.age_name,
+            {"category_id": category.pk, "__assertion_count": len(assertions)},
         )
 
-        # An unmatched endpoint yields no rows, so the `MERGE` never fired. This
-        # used to increment regardless, which made the count a claim about how
-        # many edges were written that nothing checked — and once a node can
-        # leave the projection while its `Link` rightly survives, that is a
-        # normal occurrence rather than an impossible one.
-        if not result:
+        # An unmatched endpoint draws nothing. This used to count regardless,
+        # which made the number a claim about how many edges were written that
+        # nothing checked — and once a node can leave the projection while its
+        # `Link` rightly survives, that is a normal occurrence rather than an
+        # impossible one.
+        if not drawn:
             logger.warning(
                 "Relation %s -> %s (%s): one or both endpoints are not in this projection, so no edge was drawn.",
                 source_ref,
@@ -1014,36 +1002,22 @@ def project_participation(
 
         entity_uuid = str(source_ref)
         event_uuid = str(target_ref)
+        left, right = (entity_uuid, event_uuid) if is_input else (event_uuid, entity_uuid)
 
-        pattern = f"(entity)-[r:{label}]->(event)" if is_input else f"(event)-[r:{label}]->(entity)"
-
-        result = controller.engine.execute(
+        # Participation is contestable like everything else: two people claiming
+        # the same cell went into the same event are two rows and one edge, and
+        # the count is what says whether the claim rests on one observer or several.
+        drawn = controller.projector.draw_edge(
             graph,
-            f"""
-            MATCH (entity) WHERE entity.id = $entity_uuid
-            MATCH (event) WHERE event.id = $event_uuid
-            MERGE {pattern}
-            SET r.role = $role,
-                r.category_id = $cid,
-                r.__assertion_count = $count
-            RETURN id(r) as edge_id
-            """,
-            {
-                "entity_uuid": entity_uuid,
-                "event_uuid": event_uuid,
-                "role": role,
-                "cid": category.pk,
-                # Participation is contestable like everything else: two people
-                # claiming the same cell went into the same event are two rows
-                # and one edge, and the count is what says whether the claim
-                # rests on one observer or several.
-                "count": len(claims),
-            },
+            left,
+            right,
+            label,
+            {"role": role, "category_id": category.pk, "__assertion_count": len(claims)},
         )
 
-        # See `project_edges`: no rows means an endpoint is not in this
-        # projection and the `MERGE` never fired, so there is nothing to count.
-        if not result:
+        # See `project_edges`: an endpoint not in this projection draws nothing,
+        # so there is nothing to count.
+        if not drawn:
             logger.warning(
                 "Participation %s -> %s (role %r): one or both endpoints are not in this projection, so no edge was drawn.",
                 source_ref,
@@ -1074,22 +1048,7 @@ def _write_properties(
     silent no-op in Cypher, so without this the caller cannot tell a written
     node from an absent one — and reports both as projected.
     """
-    node_uuid = str(claim_ref)
-
-    set_clause = ", ".join(f"e.{controller._validate_property_key(key)} = $u_{key}" for key in values)
-    params: dict[str, Any] = {f"u_{key}": value for key, value in values.items()}
-    params["node_uuid"] = node_uuid
-
-    result = controller.engine.execute(
-        graph,
-        f"""
-        MATCH (e:{category.age_name}) WHERE e.id = $node_uuid
-        SET {set_clause}
-        RETURN id(e) as node_id
-        """,
-        params,
-    )
-    return bool(result)
+    return controller.projector.write_properties(graph, str(claim_ref), category.age_name, values)
 
 
 def create_vertex(controller: Any, graph: core_models.Graph, node: Any, category: Any) -> None:
@@ -1111,21 +1070,12 @@ def create_vertex(controller: Any, graph: core_models.Graph, node: Any, category
     claim is where it is taken from — and it is written here so that a vertex is
     self-describing to any reader, which is what removes the fallback entirely.
     """
-    # `MERGE` on the id, not `CREATE`: drawing a node that is already drawn —
-    # `attest_node` on a standing node, `project_all` over a populated namespace, an
-    # incremental replay — has to converge on one vertex, not add a second. The
-    # label is part of the pattern, so a node whose *label* moved still needs its
-    # old vertex cleared first; `reproject_node` does that, `rebuild` drops the
+    # Converging: drawing a node that is already drawn — `attest_node` on a
+    # standing node, `project_all` over a populated namespace, an incremental
+    # replay — leaves one vertex. A node whose *label* moved still needs its old
+    # vertex cleared first; `reproject_node` does that, `rebuild` drops the
     # namespace, and `project_all` relies on one of the two having happened.
-    controller.engine.execute(
-        graph,
-        f"""
-        MERGE (e:{category.age_name} {{id: $eid}})
-        SET e.category_id = $cid, e.type = $ntype
-        RETURN id(e) as db_id
-        """,
-        {"eid": str(node.ref), "cid": category.pk, "ntype": str(node.kind).upper()},
-    )
+    controller.projector.draw_node(graph, str(node.ref), category.age_name, category.pk, str(node.kind).upper())
 
 
 def unproject(controller: Any, graph: core_models.Graph, instance_refs: Iterable[str]) -> int:
@@ -1142,27 +1092,7 @@ def unproject(controller: Any, graph: core_models.Graph, instance_refs: Iterable
     untouched — only the drawing goes. If somebody attests the node again, the
     edges are redrawn from those claims, which is exactly what `rebuild` does.
     """
-    removed = 0
-    for claim_ref in instance_refs:
-        # Counted before the delete: AGE reports nothing useful back from
-        # `DETACH DELETE`, and a count that always said "1" would be the same
-        # kind of lie `project_edges` used to tell.
-        found = controller.engine.execute(
-            graph,
-            "MATCH (e) WHERE e.id = $node_uuid RETURN id(e) as db_id",
-            {"node_uuid": str(claim_ref)},
-        )
-        if not found:
-            continue
-
-        controller.engine.execute(
-            graph,
-            "MATCH (e) WHERE e.id = $node_uuid DETACH DELETE e",
-            {"node_uuid": str(claim_ref)},
-        )
-        removed += 1
-
-    return removed
+    return controller.projector.erase_nodes(graph, [str(ref) for ref in instance_refs])
 
 
 def reproject_node(controller: Any, graph: core_models.Graph, node: Any) -> bool:
@@ -1316,16 +1246,7 @@ def rematerialize_category(
 
     owned = sorted(set(retired_keys) | derived_property_keys(category))
     if owned:
-        remove_clause = ", ".join(f"e.{controller._validate_property_key(key)}" for key in owned)
-        controller.engine.execute(
-            graph,
-            f"""
-            MATCH (e:{category.age_name}) WHERE e.id IN $refs
-            REMOVE {remove_clause}
-            RETURN id(e) as node_id
-            """,
-            {"refs": [str(ref) for ref in refs]},
-        )
+        controller.projector.clear_properties(graph, category.age_name, refs, owned)
 
     projected = project(controller, graph, refs)
     logger.info(
@@ -1397,8 +1318,8 @@ def rebuild(controller: Any, graph: core_models.Graph) -> dict[str, int]:
     # as outstanding instead of "caught up" over nothing.
     watermark.mark_rebuilding(graph)
 
-    controller.engine.drop_graph(graph.age_name, cascade=True)
-    controller.engine.create_graph(age_name=graph.age_name)
+    controller.projector.drop_namespace(graph)
+    controller.projector.create_namespace(graph)
 
     counts = project_all(controller, graph)
     counts["claims"] = claims_current

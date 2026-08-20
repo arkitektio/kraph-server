@@ -68,7 +68,12 @@ def _as_datetime(value: Any) -> Optional[datetime]:
 
 
 def is_internal_property_key(key: str) -> bool:
-    """Whether a raw node property key is engine-internal rather than user data."""
+    """A key the Cypher projector writes for itself rather than for the user.
+
+    The `__` prefix is that projector's encoding (`graph_engine/projection/cypher.py`
+    writes `__schema_version`, `__assertion_count`, `__stat__*`); a second projection
+    kind would keep its own bookkeeping out of band and never need this.
+    """
     return key in RESERVED_PROPERTY_KEYS or key.startswith(INTERNAL_PROPERTY_PREFIX)
 
 
@@ -401,14 +406,20 @@ class RetrievedNode:
     # === Hash/Equality ===
 
     def __hash__(self) -> int:
-        """Hashed on the graph and the vertex it was read from"""
-        return hash((self.graph_name, self.vertex_id))
+        """Hashed on the view and the claim: `(graph_name, unique_id)`.
+
+        Not the vertex id. It used to be `(graph_name, vertex_id)`, and `from_row`
+        — the undrawn shape — sets `vertex_id=0`, so every undrawn node hashed and
+        compared equal to every other undrawn node, across kinds; any `set()` over
+        them collapsed to one element. The identity is the claim's uuid.
+        """
+        return hash((self.graph_name, self.unique_id))
 
     def __eq__(self, other: Any) -> bool:
-        """Equality on the graph and the vertex it was read from"""
+        """Equality on the view and the claim — see `__hash__`."""
         if not isinstance(other, RetrievedNode):
             return False
-        return self.graph_name == other.graph_name and self.vertex_id == other.vertex_id
+        return self.graph_name == other.graph_name and self.unique_id == other.unique_id
 
     @classmethod
     def from_node(cls: Type[T], controller: "GraphController", node: Dict[str, Any], graph_name: str = "default_graph") -> T:
@@ -676,14 +687,15 @@ class RetrievedEdge:
     # === Hash/Equality ===
 
     def __hash__(self) -> int:
-        """Hashed on the graph and the edge it was read from"""
-        return hash((self.graph_name, self.edge_id))
+        """Hashed on the view and the claim: `(graph_name, unique_id)` — never the edge id, which
+        `from_link` leaves at 0 for every row-backed edge (see `RetrievedNode.__hash__`)."""
+        return hash((self.graph_name, self.unique_id))
 
     def __eq__(self, other: Any) -> bool:
-        """Equality on the graph and the edge it was read from"""
+        """Equality on the view and the claim — see `__hash__`."""
         if not isinstance(other, RetrievedEdge):
             return False
-        return self.graph_name == other.graph_name and self.edge_id == other.edge_id
+        return self.graph_name == other.graph_name and self.unique_id == other.unique_id
 
 
 # ==========================================

@@ -10,11 +10,12 @@ from strawberry.extensions import QueryDepthLimiter
 from typing import Optional
 from authentikate.strawberry.extension import AuthentikateExtension
 
-from .extensions.cypher import CypherEngineExtension
+from .extensions.projection import ProjectionExtension
 from .loaders import LoaderExtension
 import kante
 from graph_engine.engine.age_engine import AgeEngine
 from graph_engine.engine.protocol import CypherEngine
+from graph_engine.projection import CypherProjector, Projector
 
 
 import strawberry
@@ -679,6 +680,7 @@ class Mutation:
 def create_schema(
     max_depth: int = 10,
     debug: bool = False,
+    projector: Optional[Projector] = None,
     cypher_engine: Optional[CypherEngine] = None,
 ) -> kante.Schema:
     """Build the served GraphQL schema.
@@ -693,7 +695,9 @@ def create_schema(
     Args:
         max_depth: Maximum query depth (default 10)
         debug: Enable debug mode
-        cypher_engine: The CypherEngine instance to use for graph operations
+        projector: The projection kind every operation draws through. One per process.
+        cypher_engine: Convenience — an Apache AGE engine to wrap in a `CypherProjector`,
+            for callers (the tests) that hold an engine rather than a projector.
 
     Returns:
         Configured Kante schema
@@ -706,9 +710,10 @@ def create_schema(
         LoaderExtension(),
     ]
 
-    # Add CypherEngineExtension if an engine is provided
-    if cypher_engine is not None:
-        extensions.append(CypherEngineExtension(engine=cypher_engine))
+    if projector is None and cypher_engine is not None:
+        projector = CypherProjector(cypher_engine)
+    if projector is not None:
+        extensions.append(ProjectionExtension(projector=projector))
 
     return kante.Schema(
         query=Query,
@@ -813,5 +818,8 @@ def print_schema() -> None:
 schema = create_schema(
     max_depth=10,
     debug=True,
-    cypher_engine=AgeEngine(),  # You can pass a CypherEngine instance here if needed
+    # The one place the projection kind is chosen. A second kind would be a
+    # second `Projector` here — and a registry keyed by `Projection.kind` once
+    # two exist.
+    projector=CypherProjector(AgeEngine()),
 )

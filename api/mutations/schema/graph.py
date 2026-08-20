@@ -4,7 +4,7 @@ import strawberry
 from kante.types import Info
 
 from api import inputs, types
-from api.extensions.cypher import get_current_cypher_engine
+from api.extensions.projection import current_or_default
 from core import models
 from graph_engine import input_models, materialize
 from ._guards import delete_or_explain
@@ -21,11 +21,9 @@ def create_graph(
 
     model = input.to_pydantic()  # Validate input with Pydantic models
 
-    cypher = get_current_cypher_engine()
-
     graph = materialize.materialize(
         definition=model.definition or input_models.GraphDefinitionInput(),
-        engine=cypher,
+        projector=current_or_default(),
         user=info.context.request.user,
         organization=info.context.request.organization,
         name=model.name,
@@ -121,19 +119,12 @@ def delete_graph(
     _refuse_unless_archived(graph)
     _record_what_deletion_destroys(graph)
 
-    age_name = graph.age_name
     delete_or_explain(graph, what=f"graph '{graph.name}'", instead="Archive the graph instead — it keeps the projection out of the way without destroying the evidence other graphs read.")
 
-    # Drop the projection too. The row went and the AGE namespace did not, so
-    # every deleted graph left its labels and vertices behind — and the name is
-    # unique, so re-creating a graph by the same name then collided with the
-    # orphan. The projection is a cache; deleting the thing it caches has to take
-    # it with it.
-    try:
-        get_current_cypher_engine().drop_graph(age_name, cascade=True)
-    except Exception:  # noqa: BLE001 - the row is already gone; a stale namespace must not fail the request
-        logger.warning("Deleted graph %s but could not drop its AGE namespace; drop it by hand.", age_name)
-
+    # The projection goes with the row: `graph_engine.apps` drops the namespace
+    # on `pre_delete`, for every path that deletes a `Graph` — this mutation, a
+    # cascade from the organization, a shell. It used to be done here alone, so
+    # every other path left an orphaned namespace behind.
     return model.id
 
 

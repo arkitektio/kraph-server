@@ -28,6 +28,10 @@ class CypherEngine(Protocol):
     The execute method takes a GraphProtocol to know which graph to query.
     """
 
+    def init_db(self) -> None:
+        """Prepare the connection for graph work (load the extension, set the search path). Idempotent."""
+        ...
+
     def execute(
         self,
         graph: GraphProtocol,

@@ -1,7 +1,7 @@
 from kante.types import Info
 from graph_engine.input_models import ProvenanceContext
 from graph_engine import input_models
-from api.extensions.cypher import cypher_engine
+from api.extensions.projection import current_projector
 from graph_engine.controller import GraphController
 from core import models
 
@@ -76,9 +76,10 @@ def get_controller() -> GraphController:
     Returns:
         GraphController with no specific graph context
     """
-    engine = cypher_engine.get()
-
-    return GraphController(engine=engine)
+    # Outside an operation nothing is bound, and the controller is built over a
+    # projector that fails on first use — never earlier. Resolvers called directly
+    # (tests do) must still reach their tenancy checks before anything draws.
+    return GraphController(projector=current_projector.get())
 
 
 def _get_request_scopes(info: Info) -> list[str]:
