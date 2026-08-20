@@ -1,6 +1,183 @@
 # CHANGELOG
 
 
+## v1.0.0-rc.7 (2026-08-20)
+
+### Bug Fixes
+
+- A view's rule admits words of its own kind, and lists dispatch on the claim's kind
+  ([`f2713f5`](https://github.com/arkitektio/kraph-server/commit/f2713f506e4c1ac7b6384f8be4a31257193a5987))
+
+`Term` identity is `(organization, kind, key)`, so "Mitosis" the natural-event word and "Mitosis"
+  the entity word are two terms — but `selector.term_ids_for`'s derived half and
+  `resolve_categories`' per-definition match compared keys alone, so an `EntityCategory` defined as
+  `asserted_as: ["Mitosis"]` admitted every event classified under the event word, and the
+  category-scoped plural lists (`entities()`, `naturalEvents()`, `protocolEvents()`,
+  `Category.entities`) wrapped whatever came back in the list's own type. Same defect class the
+  label-to-kind map was deleted for, reached through a constructor.
+
+`CategoryAssertedTerm` now yields `(key, kind)` pairs (`keys_and_kinds_for_graph`) and both matches
+  join on the deriving category's kind; the plural lists dispatch through
+  `cast_node_to_graphql_type` like every singular read already did.
+
+Also restates the "more than one definition matches" refusal as the view's policy — a view draws
+  each node under exactly one category — rather than as a consequence of Apache AGE allowing one
+  label per vertex. Behaviour unchanged.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+
+### Documentation
+
+- The projection layer as it is now — seam, bookkeeping, plans; RFC 0004
+  ([`2912912`](https://github.com/arkitektio/kraph-server/commit/2912912b19d05d12284eaa99090c667af36d938d))
+
+REMATERIALIZATION.md stops saying "a read is a graph query and nothing else" (properties are;
+  membership is the rule) and describes the Postgres `schema_hash` ledger; LOG.md closes the
+  late-commit `seq` gap (outbox + derived cursor); VOCABULARY.md §3 gains the seam (`Projector`,
+  `CypherProjector`, `current_projector`), the bookkeeping (`Projection`, `PendingProjection`,
+  cursor, handle) and the saved-query plan; ARCHITECTURE.md's header names what it predates;
+  CLAUDE.md's engine/extension/insights bullets are rewritten.
+  `docs/rfcs/0004-the-graph-is-a-projection.md` is the record of the audit and of what shipped and
+  what was deliberately left.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+
+### Features
+
+- Projection bookkeeping — outbox, a safe cursor, and `reproject --incremental`
+  ([`507161c`](https://github.com/arkitektio/kraph-server/commit/507161cef4e92afad50395106947c2219ff24fd5))
+
+The projection had no record of how far along the log it was. Three facts lived only on vertices:
+  which schema a drawing was derived under (`rematerialize --stale` counted vertex stamps in Cypher
+  — the ledger inside the cache it audited, destroyed by the `reproject` that fixes it),
+  `__last_derived` (a wall-clock millisecond, the one projected value a rebuild could not
+  reproduce), and whether a write's projection had actually finished (it had not, if the process
+  died between the evidence commit and the drawing — and nothing knew).
+
+`graph_engine.models.Projection` — one row per view, status / schema_hash / derived_at / rebuilt_at
+  — and `PendingProjection`, an outbox row written in the evidence transaction by
+  `_create_assertion` and deleted **by id only** by the write that drew it (`_settle`) or by an
+  org-wide replay that applied it. The cursor is *derived* from the outbox, never stored
+  (`graph_engine/watermark.py`): `min(min_pending_seq - 1, max_seq)` for a consistent graph, 0 for
+  one that is `NEEDS_BACKFILL` or mid-`REBUILDING`. That makes it safe against both things a bare
+  `seq > N` scan cannot see — an uncommitted lower seq and a commit-then-crash — which the first
+  design (a stored per-graph cursor advanced per write, swept by seq) was not.
+
+`manage.py reproject --incremental --organization <slug> | --all` applies the outstanding assertions
+  to every consistent graph of the organization by converging the touched refs, and settles exactly
+  the rows it read; `--dry-run` prints every cursor. Full drop-and-replay marks `REBUILDING` before
+  the drop and refolds `CategoryAssertedTerm` / flagged identity components / `CurrentStanding`
+  before it reads them. `create_vertex` is `MERGE` and `reproject_node` clears first, so every
+  per-node draw converges — `attest_node` on a standing node and `project_all` over a populated
+  namespace no longer duplicate vertices. `rematerialize --stale` reads `Projection.schema_hash`
+  from Postgres.
+
+`Graph.projection { status projectedThroughSeq lag pending schemaStale … }` exposes it;
+  `Assertion.seq` was already there, so a client can tell whether a view has drawn its write.
+
+BREAKING CHANGE: `Node.lastDerived` is deprecated and always null; `__last_derived` is no longer
+  stamped on vertices.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+
+- Saved queries are plans, compiled per projection kind — raw Cypher leaves the contract
+  ([`662cc6e`](https://github.com/arkitektio/kraph-server/commit/662cc6e72d7ae5a28d732db12a4d306925bec20f))
+
+A saved table query was a Cypher string the client wrote (or the builder wrote and handed back),
+  stored verbatim and executed by `renderGraphTable` with the render filter regex-spliced before its
+  last `RETURN` — wrong for `WITH`, `UNION` and exactly the aliased columns a client filters on. The
+  query language was the public contract (`CypherLiteral` on thirteen output positions), the
+  builder's neutral IR was written by one mutation and readable by no field (`builderArgs` raised on
+  select), and eight of the nine saved-query kinds had mutations, types and filters but no execution
+  path anywhere.
+
+`GraphQuery.plan` — `graph_engine/query_ir.py::TableQueryPlan`: matches, wheres, returns, columns —
+  is the contract now: `createGraphTableQuery(input: {plan: …})`, read back as `plan`, compiled by
+  the projection kind in use through `Projector.render_table` (`CypherProjector` emits `MATCH … WITH
+  … WHERE … RETURN` with every value a parameter and render filters on returned aliases; a second
+  projection kind compiles the same plan to something else). `query` is the compiled form, read-only
+  and deprecated. A **legacy** row saved as raw Cypher still renders but takes no filter/order/page;
+  `manage.py list_legacy_queries` names them. `createGraphTableQueryThroughBuilder` stays one
+  release as an alias that stores a plan. `NodeQuery`, `EdgeQuery`, their proxies and the
+  NODES/PATH/PAIRS kinds are removed with their rows (migration `core 0011`); `ScatterPlot` is over
+  one graph table query and its `label` field resolves. `WhereClauseInput.value` and
+  `RenderGraphTableFilter.value` are JSON values, not Cypher literals; the second, disagreeing
+  `WhereOperator` enum is gone.
+
+BREAKING CHANGE: `createGraphTableQuery`/`updateGraphTableQuery` take `plan` and no `query`;
+  `GraphTableQuery.builderArgs` is removed; `query` is deprecated on `GraphQuery`; the 32
+  node/edge/pairs/path saved-query mutations and their queries, types, inputs and filters are
+  removed; `RenderGraphTableFilter.search` is removed and `operator` is typed.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+
+- The graph's AGE handle is random and internal; `graph:` is a primary key
+  ([`d752a91`](https://github.com/arkitektio/kraph-server/commit/d752a91fe4eb3be2c273cf06fcbb50ead0723d5d))
+
+`Graph.age_name` was `{name}_{org_slug}` with a counter: derived from user input, interpolated
+  unescaped into `cypher('…')` / `create_graph('…')` with an `isalnum()` filter in another module as
+  the only defence, deduplicated per organization against a globally unique column, and — through
+  `get_accessible_graph` — the public address of a view, resolved *unscoped*.
+
+It is `g` + 32 hex now (`core.models.new_projection_handle`), assigned by the model default, never
+  accepted as input, read only by the engine through `GraphProtocol.get_age_name()`. `graph:`
+  arguments resolve by primary key, scoped to the caller's organization; the category-scoped lists
+  authorize against the organization first like `relations()` already did. `GraphManager`,
+  `GraphName`, `SimpleGraph` and `Graph.create_age_name` are gone; the projection commands name a
+  graph by id or name (ambiguous names refused) and print `name (#pk)`.
+
+`Graph.ageName` stays in the SDL, read-only, described as internal.
+
+BREAKING CHANGE: `graph:` no longer accepts a graph's `age_name` string; pass the graph id. Log
+  lines and command output identify graphs by name and id.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+
+### Refactoring
+
+- Name the projection seam — `Projector`, and a controller that runs no query
+  ([`ad1023d`](https://github.com/arkitektio/kraph-server/commit/ad1023d853cc3b4b0572aca914a9eabd97459524))
+
+The projector was a module of free functions duck-typed on `controller.engine` and a private Cypher
+  validator; the controller executed Cypher at seven sites of its own, two of them writes; the API,
+  the commands and `materialize` each held an engine; and the ContextVar was named for the query
+  language. Nothing named the seam a second projection kind would implement.
+
+`graph_engine/projection/protocol.py::Projector` is that seam — a writer half (`draw_node`,
+  `draw_edge`, `write_properties`, `clear_properties`, `erase_nodes`, `erase_edge`, namespaces,
+  `validate_key`) and a reader half (`drawn_nodes`, `drawn_edge`, `list_drawn`, `render`), phrased
+  in refs, labels and property dicts. `projection/cypher.py::CypherProjector` is the Apache AGE
+  implementation and the only module that emits Cypher for a drawing. `graph_engine/projector.py`
+  decides what to draw and calls `controller.projector.*`; `GraphController` holds a projector,
+  never an engine, and runs no query (`test_projector_protocol.py` enforces both by reading the
+  source). `api/extensions/projection.py` binds one per operation through
+  `graph_engine/projection/context.py::current_projector`, with `current_or_default()` replacing
+  four copies of the management commands' engine fallback. `GraphController(engine=…)` and
+  `materialize(engine=…)` still accept an engine and wrap it.
+
+Also: a write's `drawings` now report the **rule's** category (`resolve_categories`) and log when
+  the vertex stamp disagrees, instead of reading the cache back as authoritative;
+  `RetrievedNode`/`RetrievedEdge` hash and compare on `(graph_name, unique_id)`, so two undrawn
+  nodes are two objects; a `pre_delete` signal drops a graph's namespace on every deletion path, not
+  only the `deleteGraph` mutation; `Node.label`'s description says what it is.
+
+BREAKING CHANGE: `api.extensions.cypher` (`CypherEngineExtension`, `cypher_engine`,
+  `get_current_cypher_engine`) is gone; `create_schema` takes `projector=` (or `cypher_engine=` to
+  wrap one).
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+
+### Breaking Changes
+
+- `api.extensions.cypher` (`CypherEngineExtension`, `cypher_engine`, `get_current_cypher_engine`) is
+  gone; `create_schema` takes `projector=` (or `cypher_engine=` to wrap one).
+
+- `creategraphtablequery`/`updategraphtablequery` take `plan` and no `query`;
+  `GraphTableQuery.builderArgs` is removed; `query` is deprecated on `GraphQuery`; the 32
+  node/edge/pairs/path saved-query mutations and their queries, types, inputs and filters are
+  removed; `RenderGraphTableFilter.search` is removed and `operator` is typed.
+
+
 ## v1.0.0-rc.6 (2026-08-18)
 
 
