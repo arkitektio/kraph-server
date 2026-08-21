@@ -1,12 +1,18 @@
 # CHANGELOG
 
 
+## v1.0.0-rc.10 (2026-08-21)
+
+
 ## v1.0.0-rc.9 (2026-08-21)
 
 ### Bug Fixes
 
 - Authentikate 4
   ([`d2a7504`](https://github.com/arkitektio/kraph-server/commit/d2a75041ef14f29196de8f401dca55c014e4d59d))
+
+- Some filters
+  ([`70816c2`](https://github.com/arkitektio/kraph-server/commit/70816c2c88634ed43ccaf7386c1f53d6d970af24))
 
 
 ## v1.0.0-rc.8 (2026-08-20)
