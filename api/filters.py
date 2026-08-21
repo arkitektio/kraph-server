@@ -20,13 +20,25 @@ class PropertyMatch:
 # declarations of one input in a module whose own header is about pruning dead
 # filter surface.
 #
-# The node and edge filters below carry `ids` and nothing else, deliberately.
-# They used to advertise `hasProperty`, `search` and `matches` — questions about
-# a drawn vertex's derived properties — and every node and edge resolver refused
-# them at runtime (`_nodes.refuse_drawing_filters`, `_edges.refuse_vertex_filters`),
-# so a schema-driven client saw three valid arguments that were guaranteed errors.
-# The schema says what the resolvers answer now. `StructureFilter` keeps all
-# three because `structures` genuinely honors them, over `Metric` rows.
+# The node and edge filters below used to advertise `hasProperty`, `search` and
+# `matches` — questions about a drawn vertex's derived properties — and every node
+# and edge resolver refused all three at runtime
+# (`_nodes.refuse_drawing_filters`, `_edges.refuse_vertex_filters`), so a
+# schema-driven client saw three valid arguments that were guaranteed errors. The
+# schema says what the resolvers answer now.
+#
+# `search` came back on the four **node** filters, with a narrower meaning that is
+# answerable: a substring of the claim's own word (`Term.key` / `Term.label`),
+# which is a column of the log rather than a property of a drawing. It therefore
+# finds a node the view admits but has not drawn — the property the whole
+# evidence-grain read is for. `hasProperty` and `matches` did not come back, and
+# are still refused: those genuinely only exist on a vertex.
+#
+# The **edge** filters still carry `ids` alone. `Link.term` would make the same
+# argument work there, but no caller needs it and `_edges.refuse_vertex_filters`
+# is untouched. `StructureFilter` keeps all three because `structures` genuinely
+# honors them, over `Metric` rows — and note its `search` means something else
+# again, the structure's `object`.
 
 
 @kante.pydantic_input(input_models.EntityFilters, description="Filter options for querying entities")
@@ -34,6 +46,7 @@ class EntityFilter:
     """Filter options for entity queries."""
 
     ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific entity IDs")
+    search: Optional[str] = kante.field(default=None, description="Substring match on the claim's term key or label — the word the organization uses for it. A column of the log, not a derived property: a node this view admits but has not drawn yet is still found")
 
 
 @kante.pydantic_input(input_models.NodeFilters, description="Filter options for querying nodes")
@@ -41,6 +54,7 @@ class NodeFilters:
     """Filter options for node queries."""
 
     ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific node IDs")
+    search: Optional[str] = kante.field(default=None, description="Substring match on the claim's term key or label — the word the organization uses for it. A column of the log, not a derived property: a node this view admits but has not drawn yet is still found")
 
 
 @kante.pydantic_input(input_models.StructureFilters, description="Filter options for querying structures")
@@ -63,6 +77,7 @@ class NaturalEventFilter:
     """Filter options for natural event queries."""
 
     ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific natural event IDs")
+    search: Optional[str] = kante.field(default=None, description="Substring match on the claim's term key or label — the word the organization uses for it. A column of the log, not a derived property: a node this view admits but has not drawn yet is still found")
 
 
 @kante.pydantic_input(input_models.ProtocolEventFilters, description="Filter options for querying protocol events")
@@ -70,6 +85,7 @@ class ProtocolEventFilter:
     """Filter options for protocol event queries."""
 
     ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific protocol event IDs")
+    search: Optional[str] = kante.field(default=None, description="Substring match on the claim's term key or label — the word the organization uses for it. A column of the log, not a derived property: a node this view admits but has not drawn yet is still found")
 
 
 @kante.pydantic_input(input_models.MeasurementFilters, description="Filter options for querying measurements")

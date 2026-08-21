@@ -15,25 +15,38 @@ projection is up to date, and it appears with the properties the view derives wh
 there is a vertex to read them from.
 
 **Filters that only ever meant something against a vertex are refused**, exactly as
-`_edges.refuse_vertex_filters` refuses them for edges. `has_property`, `search` and
-`matches` ask about derived properties, which live in the drawing and only exist
-where the view has drawn the node; ordering by a property is the same question. A
-filter that quietly narrows a claim list by what happens to be cached is how a wrong
-answer looks right. The GraphQL filter inputs no longer advertise these fields at
-all (`api/filters.py`), so the guard below is a backstop for internal callers
+`_edges.refuse_vertex_filters` refuses them for edges. `has_property` and `matches`
+ask about derived properties, which live in the drawing and only exist where the
+view has drawn the node; ordering by a property is the same question. A filter that
+quietly narrows a claim list by what happens to be cached is how a wrong answer
+looks right. The GraphQL filter inputs no longer advertise those fields at all
+(`api/filters.py`), so the guard below is a backstop for internal callers
 constructing the pydantic models directly.
+
+**`search` is not one of them, and used to be.** It was refused alongside the other
+two while it meant "full-text over the vertex's properties" — the same cached-answer
+problem. It means something narrower now: a substring of the claim's own word,
+`Term.key` or `Term.label`. Those are columns of the log, joined in by the
+`select_related("term")` both row sources already carry. They are the same kind of
+fact as the `created_at` / `id` ordering below — true of the claim, independent of
+any view, and unchanged by a reproject — so a node this category admits but has not
+drawn is still found by it. That is the property that makes it safe to answer.
 """
 
 from __future__ import annotations
 
 from typing import Any, Iterable
 
+from django.db.models import Q
+
 from evidence import models as evidence_models
 from graph_engine import projector
 from graph_engine.retrieved import RetrievedNode
 
 #: Filters that only ever meant something against a drawn vertex's properties.
-_DRAWING_ONLY_FILTERS = ("has_property", "search", "matches")
+#: `search` was here too, when it meant full-text over those properties. It reads
+#: the claim's term now — see the module docstring.
+_DRAWING_ONLY_FILTERS = ("has_property", "matches")
 
 
 def refuse_drawing_filters(filter_model: Any, ordering_models: Iterable[Any] = ()) -> None:
@@ -66,17 +79,25 @@ def rows_in_graph(graph: Any) -> Any:
 
 
 def narrow(rows: Any, filter_model: Any, ordering_models: Iterable[Any], pagination_model: Any) -> list[Any]:
-    """Apply the ids filter, the ordering and the page. Returns rows.
+    """Apply the ids and search filters, the ordering and the page. Returns rows.
 
-    Ordering is over the log's own columns. `created_at` is when the claim was
-    recorded; `id` breaks ties deterministically, which `id(n) DESC` over reassigned
-    Apache AGE vertex ids never could.
+    Filtering and ordering are both over the log's own columns. `created_at` is when
+    the claim was recorded; `id` breaks ties deterministically, which `id(n) DESC`
+    over reassigned Apache AGE vertex ids never could. `search` is the claim's word —
+    see the module docstring for why that one is answerable and the property filters
+    are not.
     """
     ordering_models = list(ordering_models)
     refuse_drawing_filters(filter_model, ordering_models)
 
     if getattr(filter_model, "ids", None):
         rows = rows.filter(pk__in=[str(node_id) for node_id in filter_model.ids])
+
+    search = getattr(filter_model, "search", None)
+    if search:
+        # `Term.label` is nullable decoration and `key` is the word itself, so a
+        # match on either is a match on how the organization writes this claim down.
+        rows = rows.filter(Q(term__key__icontains=search) | Q(term__label__icontains=search))
 
     order_by: list[str] = []
     for order_model in ordering_models:

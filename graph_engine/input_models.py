@@ -268,7 +268,7 @@ class EntityFilters(StrictModel):
     category: Optional[str] = Field(default=None, description="Filter by entity kind/type")
     ids: Optional[List[str]] = Field(default=None, description="Filter by specific entity IDs")
     has_property: Optional[str] = Field(default=None, description="Filter entities that have a specific property")
-    search: Optional[str] = Field(default=None, description="Full-text search over entity properties")
+    search: Optional[str] = Field(default=None, description="Substring match on the claim's term key or label. A column of the log, not a derived property")
     matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter entities that match specific property conditions")
 
 
@@ -282,7 +282,7 @@ class NodeFilters(StrictModel):
     category: Optional[str] = Field(default=None, description="Filter by node kind/type")
     ids: Optional[List[str]] = Field(default=None, description="Filter by specific node IDs")
     has_property: Optional[str] = Field(default=None, description="Filter nodes that have a specific property")
-    search: Optional[str] = Field(default=None, description="Full-text search over node properties")
+    search: Optional[str] = Field(default=None, description="Substring match on the claim's term key or label. A column of the log, not a derived property")
     matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter nodes that match specific property conditions")
 
 
@@ -352,7 +352,7 @@ class NaturalEventFilters(StrictModel):
     category: Optional[str] = Field(default=None, description="Filter by natural event category ID")
     ids: Optional[List[str]] = Field(default=None, description="Filter by specific natural event IDs")
     has_property: Optional[str] = Field(default=None, description="Filter natural events that have a specific property")
-    search: Optional[str] = Field(default=None, description="Full-text search over natural event properties")
+    search: Optional[str] = Field(default=None, description="Substring match on the claim's term key or label. A column of the log, not a derived property")
     matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter natural events that match specific property conditions")
 
 
@@ -371,7 +371,7 @@ class ProtocolEventFilters(StrictModel):
     category: Optional[str] = Field(default=None, description="Filter by protocol event category ID")
     ids: Optional[List[str]] = Field(default=None, description="Filter by specific protocol event IDs")
     has_property: Optional[str] = Field(default=None, description="Filter protocol events that have a specific property")
-    search: Optional[str] = Field(default=None, description="Full-text search over protocol event properties")
+    search: Optional[str] = Field(default=None, description="Substring match on the claim's term key or label. A column of the log, not a derived property")
     matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter protocol events that match specific property conditions")
 
 

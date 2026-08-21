@@ -40,8 +40,8 @@ ENTITIES = """
 """
 
 NODES_IN_GRAPH = """
-    query Nodes($graph: ID!) {
-        nodes(graph: $graph) { __typename id }
+    query Nodes($graph: ID!, $filters: NodeFilters) {
+        nodes(graph: $graph, filters: $filters) { __typename id }
     }
 """
 
@@ -107,22 +107,26 @@ async def test_property_filters_are_refused_rather_than_ignored(
     """A filter over derived properties is a question about a drawing, so it is refused.
 
     The refusal moved from the resolver to the schema: `EntityFilter` no longer
-    carries `search`/`hasProperty`/`matches` at all, so the question cannot be
-    asked. A claim carries no derived properties, and a node no view has drawn
-    has none at all — quietly narrowing the list by what happens to be cached
-    would be a wrong answer that looks right, and advertising an argument every
-    call refused was the runtime version of the same lie.
+    carries `hasProperty`/`matches` at all, so the question cannot be asked. A claim
+    carries no derived properties, and a node no view has drawn has none at all —
+    quietly narrowing the list by what happens to be cached would be a wrong answer
+    that looks right, and advertising an argument every call refused was the runtime
+    version of the same lie.
+
+    `search` was refused here too, while it meant full-text over those same
+    properties. It means the claim's own word now and is answered rather than
+    refused — see `test_search_narrows_by_the_claims_own_word`.
     """
     category = await test_graph.aget_entity_def("AIS")
 
     refused = await api_schema.execute(
         ENTITIES,
-        variable_values={"id": str(category.pk), "filters": {"search": "anything"}},
+        variable_values={"id": str(category.pk), "filters": {"hasProperty": "avg_length"}},
         context_value=simple_api_context,
     )
 
     assert refused.errors, "A property filter over a claim list must be refused"
-    assert "search" in str(refused.errors[0]), f"Refused for the wrong reason: {refused.errors[0]}"
+    assert "hasProperty" in str(refused.errors[0]), f"Refused for the wrong reason: {refused.errors[0]}"
 
 
 @pytest.mark.django_db(transaction=True)
@@ -186,3 +190,68 @@ async def test_listing_another_tenants_category_is_refused(
 
     assert refused.errors, "Listing a category belonging to another organization must be refused"
     assert "not allowed" in str(refused.errors[0]).lower(), f"Refused for the wrong reason: {refused.errors[0]}"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_search_narrows_by_the_claims_own_word(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+) -> None:
+    """`search` reads `Term.key`, so it narrows a claim list without asking the drawing.
+
+    It used to mean full-text over a vertex's derived properties and was refused
+    alongside `hasProperty` and `matches`. A term is a column of the log — the word
+    the organization uses — so this is the same kind of question as ordering by
+    `created_at`, and it is answerable at claim grain.
+    """
+    cell_id = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    ais_id = await writes.create_entity(api_schema, simple_api_context, "AIS")
+
+    listed = await api_schema.execute(
+        NODES_IN_GRAPH,
+        variable_values={"graph": str(test_graph.pk), "filters": {"search": "Cell"}},
+        context_value=simple_api_context,
+    )
+
+    assert listed.errors is None, f"GraphQL errors: {listed.errors}"
+    found = {node["id"] for node in listed.data["nodes"]}
+    assert cell_id in found, "The claim whose word matches is in the list"
+    assert ais_id not in found, "A claim of a different word is not"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_search_finds_a_claim_the_projection_has_not_drawn(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    age_engine,
+) -> None:
+    """The search is over the log, so a projection that is behind does not hide a match.
+
+    This is the property that makes `search` safe to answer where `hasProperty` and
+    `matches` are not: a filter reading `Term.key` gives the same answer whether or
+    not the view has drawn the node, and survives a reproject. A search that only
+    found drawn vertices would be the refused behaviour wearing a new name.
+    """
+    cell_id = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    category = await test_graph.aget_entity_def("Cell")
+
+    @sync_to_async
+    def undraw() -> int:
+        age_engine.execute(test_graph, f"MATCH (e:{category.age_name}) WHERE e.id = $eid DETACH DELETE e", {"eid": cell_id})
+        rows = age_engine.execute(test_graph, f"MATCH (e:{category.age_name}) WHERE e.id = $eid RETURN count(e) as c", {"eid": cell_id})
+        return int(rows[0]["c"]) if rows else 0
+
+    assert await undraw() == 0, "The vertex is gone, and no claim was withdrawn"
+
+    listed = await api_schema.execute(
+        NODES_IN_GRAPH,
+        variable_values={"graph": str(test_graph.pk), "filters": {"search": "Cell"}},
+        context_value=simple_api_context,
+    )
+
+    assert listed.errors is None, f"GraphQL errors: {listed.errors}"
+    assert cell_id in {node["id"] for node in listed.data["nodes"]}, "The word is the claim's, not the drawing's"
