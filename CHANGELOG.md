@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v1.0.0-rc.11 (2026-09-01)
+
+### Features
+
+- Removal of age preparing for new postges 19
+  ([`137a5b4`](https://github.com/arkitektio/kraph-server/commit/137a5b415d5e77f13b281f0fc53ddbb9e8d0580b))
+
+
 ## v1.0.0-rc.10 (2026-08-21)
 
 
