@@ -16,21 +16,21 @@ from core import models as core_models
 
 
 @pytest.mark.django_db(transaction=True)
-def test_requires_a_target(age_engine) -> None:
+def test_requires_a_target(table_projector) -> None:
     """Refusing to guess is the point: --all is destructive across every graph."""
     with pytest.raises(CommandError, match="--graph"):
         call_command("reproject", stdout=StringIO())
 
 
 @pytest.mark.django_db(transaction=True)
-def test_unknown_graph_is_an_error_not_a_silent_success(age_engine) -> None:
+def test_unknown_graph_is_an_error_not_a_silent_success(table_projector) -> None:
     """A typo in the graph name must not report a successful rebuild of nothing."""
     with pytest.raises(CommandError, match="No matching graphs"):
         call_command("reproject", graph="does-not-exist", stdout=StringIO())
 
 
 @pytest.mark.django_db(transaction=True)
-def test_dry_run_touches_nothing(test_graph: core_models.Graph, age_engine) -> None:
+def test_dry_run_touches_nothing(test_graph: core_models.Graph, table_projector) -> None:
     """--dry-run reports the plan without dropping the projection."""
     out = StringIO()
     call_command("reproject", graph=test_graph.name, dry_run=True, stdout=out)
@@ -42,7 +42,7 @@ def test_dry_run_touches_nothing(test_graph: core_models.Graph, age_engine) -> N
 
 
 @pytest.mark.django_db(transaction=True)
-def test_rebuilds_by_name_and_reports_what_it_did(test_graph: core_models.Graph, age_engine) -> None:
+def test_rebuilds_by_name_and_reports_what_it_did(test_graph: core_models.Graph, table_projector) -> None:
     """The counts in the output are the evidence that it ran."""
     out = StringIO()
     call_command("reproject", graph=test_graph.name, stdout=out)

@@ -192,7 +192,7 @@ class Command(BaseCommand):
         """Rebuild every projection that referenced the destroyed evidence.
 
         Not optional. The projection is a cache of the evidence, so leaving it
-        alone would leave the redacted datum visible in Apache AGE — which is the
+        alone would leave the redacted datum visible in the drawing — which is the
         one outcome this command exists to prevent.
         """
         if not graphs:

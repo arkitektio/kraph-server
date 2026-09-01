@@ -2,9 +2,9 @@
 
 A saved table query is a plan now (`graph_engine/query_ir.py`), compiled by the
 projection kind in use. Rows saved before that store the Cypher a client wrote in
-`GraphQuery.query` and nothing else: they still render, but cannot be filtered,
-ordered or paged, and cannot be drawn by any other projection kind. Rebuilding
-one through the builder (`createGraphTableQueryThroughBuilder`, or
+`GraphQuery.query` and nothing else: they cannot render at all any more — no
+projection kind executes Cypher since Apache AGE was retired (RFC 0005).
+Rebuilding one through the builder (`createGraphTableQueryThroughBuilder`, or
 `updateGraphTableQuery(input: {plan: …})`) is the fix; this command says which.
 """
 

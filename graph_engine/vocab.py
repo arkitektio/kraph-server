@@ -1,6 +1,6 @@
 """The label strings the read side recognises.
 
-**Nothing here is ever written to Apache AGE.** `projector.create_vertex` labels
+**Nothing here is ever written to the drawing.** `Projector.draw_node` labels
 a vertex with `category.age_name` — the category's key, chosen by whoever defined
 the schema — and `project_edges` / `project_participation` label edges the same
 way. So these are names the *reader* invents for rows that have no vertex, not
@@ -9,7 +9,7 @@ names the writer produces.
 Seven more constants used to live here and were read by nothing at all:
 `DESCRIBES`, `INFORMS`, `ASSERTED`, `GENERATED`, `REIFIES_AS_SOURCE`,
 `REIFIES_AS_TARGET` and `ShadowLink`. They named relationship types from an
-earlier design in which provenance and structure-to-entity links were AGE edges;
+earlier design in which provenance and structure-to-entity links were drawn edges;
 `evidence.Link` replaced all of them, and `evidence/models.py` says so. Keeping
 the constants made that design look current to anyone grepping for it — an
 `INFORMS` here and an `evidence.Link.Kind.INFORMS` there, spelled identically,

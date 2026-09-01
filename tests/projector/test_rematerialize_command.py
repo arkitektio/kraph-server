@@ -22,21 +22,21 @@ from core import models as core_models
 
 
 @pytest.mark.django_db(transaction=True)
-def test_requires_a_target(age_engine) -> None:
+def test_requires_a_target(table_projector) -> None:
     """Same refusal as `reproject`: a sweep across every graph is not a default."""
     with pytest.raises(CommandError, match="--graph"):
         call_command("rematerialize", stdout=StringIO())
 
 
 @pytest.mark.django_db(transaction=True)
-def test_unknown_graph_is_an_error_not_a_silent_success(age_engine) -> None:
+def test_unknown_graph_is_an_error_not_a_silent_success(table_projector) -> None:
     """A typo must not report a successful redraw of nothing."""
     with pytest.raises(CommandError, match="No matching graphs"):
         call_command("rematerialize", graph="does-not-exist", stdout=StringIO())
 
 
 @pytest.mark.django_db(transaction=True)
-def test_dry_run_names_the_categories_it_would_redraw(test_graph: core_models.Graph, age_engine) -> None:
+def test_dry_run_names_the_categories_it_would_redraw(test_graph: core_models.Graph, table_projector) -> None:
     """Node categories only — an edge carries nothing derived to go stale."""
     out = StringIO()
     call_command("rematerialize", graph=test_graph.name, dry_run=True, stdout=out)
@@ -47,7 +47,7 @@ def test_dry_run_names_the_categories_it_would_redraw(test_graph: core_models.Gr
 
 
 @pytest.mark.django_db(transaction=True)
-def test_a_single_category_can_be_named(test_graph: core_models.Graph, age_engine) -> None:
+def test_a_single_category_can_be_named(test_graph: core_models.Graph, table_projector) -> None:
     """Because the whole-graph sweep is the expensive thing this avoids."""
     out = StringIO()
     call_command("rematerialize", graph=test_graph.name, category="AIS", dry_run=True, stdout=out)
@@ -58,7 +58,7 @@ def test_a_single_category_can_be_named(test_graph: core_models.Graph, age_engin
 
 
 @pytest.mark.django_db(transaction=True)
-def test_stale_finds_nothing_in_a_freshly_projected_graph(test_graph: core_models.Graph, age_engine) -> None:
+def test_stale_finds_nothing_in_a_freshly_projected_graph(test_graph: core_models.Graph, table_projector) -> None:
     """The check has to be able to say "no work", or it is not a check.
 
     `materialize` projects as it builds, so every vertex carries the active
@@ -82,7 +82,7 @@ def test_stale_finds_nothing_in_a_freshly_projected_graph(test_graph: core_model
 
 
 @pytest.mark.django_db(transaction=True)
-def test_it_redraws_and_says_how_much(test_graph: core_models.Graph, age_engine) -> None:
+def test_it_redraws_and_says_how_much(test_graph: core_models.Graph, table_projector) -> None:
     """The count in the output is the evidence that it ran."""
     out = StringIO()
     call_command("rematerialize", graph=test_graph.name, category="AIS", stdout=out)

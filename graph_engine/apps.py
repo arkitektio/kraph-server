@@ -26,11 +26,11 @@ def connect_projection_lifecycle() -> None:
 
     The `deleteGraph` mutation used to do this itself, and only it: a cascade from
     the organization or the owning user, a shell `delete()`, a test teardown all
-    left an orphaned AGE namespace behind. The handle is random now so the orphan
-    no longer blocks re-creation by name, but a cache of a row that does not exist
-    is still a cache nobody will ever drop. Best effort: a namespace that cannot
-    be dropped must not stop the row from going — it is logged, and
-    `ag_catalog.ag_graph` lists what is left.
+    left an orphaned namespace behind. For the table kind the FK cascade removes
+    the rows regardless, so this signal is belt-and-braces there — but it stays,
+    because it is the protocol's word for cleanup and another projection kind may
+    hold state no cascade reaches. Best effort: a namespace that cannot be
+    dropped must not stop the row from going — it is logged.
     """
     import logging
 

@@ -19,7 +19,7 @@ from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 
 from core import models as core_models
-from tests import writes
+from tests import drawing, writes
 
 ASSERT_ENTITY = """
     mutation AssertEntityExists($input: AssertEntityExistsInput!) {
@@ -195,7 +195,7 @@ async def test_reading_an_undrawn_claim_as_an_entity_does_not_fail(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """`schemaVersion` is null and `richProperties` is empty, rather than an error.
 
@@ -216,9 +216,8 @@ async def test_reading_an_undrawn_claim_as_an_entity_does_not_fail(
 
     @sync_to_async
     def undraw() -> int:
-        age_engine.execute(test_graph, f"MATCH (e:{category.age_name}) WHERE e.id = $eid DETACH DELETE e", {"eid": entity_id})
-        rows = age_engine.execute(test_graph, f"MATCH (e:{category.age_name}) WHERE e.id = $eid RETURN count(e) as c", {"eid": entity_id})
-        return int(rows[0]["c"]) if rows else 0
+        table_projector.erase_nodes(test_graph, [entity_id])
+        return drawing.vertices_with_ref(test_graph, entity_id)
 
     assert await undraw() == 0, "The vertex is gone, and no claim was withdrawn"
 

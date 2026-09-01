@@ -45,5 +45,6 @@ StructureObject = NewType("StructureObject", str)
 # all; `StructureGlobalID` was used by nothing; `GlobalID` typed two fields whose
 # vertex property nothing ever wrote, so they raised.
 
-# Cypher literal scalar for raw Cypher queries or fragments
-CypherLiteral = NewType("CypherLiteral", str)
+# `CypherLiteral` is gone with the Apache AGE projection: it typed the
+# deprecated read-only `GraphQuery.query` field, the compiled form of a plan
+# for a projection kind that no longer exists.

@@ -25,7 +25,7 @@ from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 
 from core import models as core_models
-from tests import writes
+from tests import drawing, writes
 
 NODE_BY_ID = """
     query GetNode($id: ID!, $graph: ID!) {
@@ -69,7 +69,7 @@ async def test_a_claim_the_projection_has_not_drawn_is_still_listed(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """The list is the rule's answer, so a projection that is behind does not hide a claim.
 
@@ -86,9 +86,8 @@ async def test_a_claim_the_projection_has_not_drawn_is_still_listed(
 
     @sync_to_async
     def undraw() -> int:
-        age_engine.execute(test_graph, f"MATCH (e:{category.age_name}) WHERE e.id = $eid DETACH DELETE e", {"eid": entity_id})
-        rows = age_engine.execute(test_graph, f"MATCH (e:{category.age_name}) WHERE e.id = $eid RETURN count(e) as c", {"eid": entity_id})
-        return int(rows[0]["c"]) if rows else 0
+        table_projector.erase_nodes(test_graph, [entity_id])
+        return drawing.vertices_with_ref(test_graph, entity_id)
 
     assert await undraw() == 0, "The vertex is gone, and no claim was withdrawn"
 
@@ -227,7 +226,7 @@ async def test_search_finds_a_claim_the_projection_has_not_drawn(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """The search is over the log, so a projection that is behind does not hide a match.
 
@@ -241,9 +240,8 @@ async def test_search_finds_a_claim_the_projection_has_not_drawn(
 
     @sync_to_async
     def undraw() -> int:
-        age_engine.execute(test_graph, f"MATCH (e:{category.age_name}) WHERE e.id = $eid DETACH DELETE e", {"eid": cell_id})
-        rows = age_engine.execute(test_graph, f"MATCH (e:{category.age_name}) WHERE e.id = $eid RETURN count(e) as c", {"eid": cell_id})
-        return int(rows[0]["c"]) if rows else 0
+        table_projector.erase_nodes(test_graph, [cell_id])
+        return drawing.vertices_with_ref(test_graph, cell_id)
 
     assert await undraw() == 0, "The vertex is gone, and no claim was withdrawn"
 

@@ -24,6 +24,7 @@ from kante.context import HttpContext
 from core import models as core_models
 from evidence import models as evidence_models
 from graph_engine.controller import GraphController
+from tests import drawing
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {
@@ -69,7 +70,7 @@ async def _mitosis(api_schema: kante.Schema, ctx: HttpContext, graph: core_model
     return created.data["assertNaturalEventExists"]["instance"]["id"]
 
 
-def _participations(age_engine, graph: core_models.Graph) -> list[tuple[str, str]]:
+def _participations(table_projector, graph: core_models.Graph) -> list[tuple[str, str]]:
     """Every projected participation edge, as (label, role).
 
     Two queries rather than one `UNION ALL`: AGE rejects the union with "column
@@ -78,8 +79,7 @@ def _participations(age_engine, graph: core_models.Graph) -> list[tuple[str, str
     """
     found: list[tuple[str, str]] = []
     for label in ("WENT_THROUGH", "CAME_OUT_OF"):
-        rows = age_engine.execute(graph, f"MATCH ()-[r:{label}]->() RETURN r.role as role", {})
-        found.extend((label, str(row["role"])) for row in rows)
+        found.extend((label, str(role)) for role in drawing.edge_property_values(graph, label, "role"))
     return sorted(found)
 
 
@@ -89,7 +89,7 @@ async def test_participation_is_projected_with_its_role(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """Both entities reach the event, on the right side, carrying their role."""
     source = await _cell(api_schema, simple_api_context, test_graph)
@@ -98,7 +98,7 @@ async def test_participation_is_projected_with_its_role(
 
     @sync_to_async
     def edges() -> list[tuple[str, str]]:
-        return _participations(age_engine, test_graph)
+        return _participations(table_projector, test_graph)
 
     assert await edges() == [("CAME_OUT_OF", "b"), ("WENT_THROUGH", "a")], "An input and an output edge, each naming the role the schema gave it"
 
@@ -135,7 +135,7 @@ async def test_participation_survives_a_rebuild(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """The honesty test, for participation.
 
@@ -149,9 +149,9 @@ async def test_participation_survives_a_rebuild(
 
     @sync_to_async
     def drop_then_rebuild() -> dict:
-        controller = GraphController(engine=age_engine)
-        age_engine.drop_graph(test_graph.age_name, cascade=True)
-        age_engine.create_graph(age_name=test_graph.age_name)
+        controller = GraphController(projector=table_projector)
+        table_projector.drop_namespace(test_graph)
+        table_projector.create_namespace(test_graph)
         return controller.rebuild_projection(test_graph)
 
     result = await drop_then_rebuild()
@@ -159,7 +159,7 @@ async def test_participation_survives_a_rebuild(
 
     @sync_to_async
     def edges() -> list[tuple[str, str]]:
-        return _participations(age_engine, test_graph)
+        return _participations(table_projector, test_graph)
 
     assert await edges() == [("CAME_OUT_OF", "b"), ("WENT_THROUGH", "a")], "And be present in AGE afterwards, not merely counted"
 
@@ -170,7 +170,7 @@ async def test_a_protocol_event_with_inputs_succeeds_and_is_recorded_as_one(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """Protocol events raised `AttributeError` mid-write and were mislabelled.
 
@@ -216,8 +216,7 @@ async def test_a_protocol_event_with_inputs_succeeds_and_is_recorded_as_one(
 
     @sync_to_async
     def participation_edges() -> list[str]:
-        rows = age_engine.execute(test_graph, "MATCH ()-[r:SUBJECTED_IN]->() RETURN r.role as role", {})
-        return [str(row["role"]) for row in rows]
+        return [str(role) for role in drawing.edge_property_values(test_graph, "SUBJECTED_IN", "role")]
 
     assert await participation_edges() == ["a"], "A protocol event takes the labels its own docstring describes, not a natural event's"
 
@@ -241,9 +240,8 @@ ARCHIVE_PARTICIPATION = """
 """
 
 
-def _assertion_count(age_engine, graph: core_models.Graph, label: str) -> list[int]:
-    rows = age_engine.execute(graph, f"MATCH ()-[r:{label}]->() RETURN r.__assertion_count as c", {})
-    return sorted(int(row["c"]) for row in rows)
+def _assertion_count(table_projector, graph: core_models.Graph, label: str) -> list[int]:
+    return sorted(int(count) for count in drawing.edge_property_values(graph, label, "__assertion_count"))
 
 
 @pytest.mark.django_db(transaction=True)
@@ -252,7 +250,7 @@ async def test_two_observers_can_claim_the_same_participation(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """Who took part is contestable, so agreement is countable.
 
@@ -275,7 +273,7 @@ async def test_two_observers_can_claim_the_same_participation(
     @sync_to_async
     def state() -> tuple[int, list[tuple[str, str]], list[int]]:
         claims = evidence_models.Link.objects.for_organization(test_graph.organization).filter(kind=evidence_models.Link.Kind.PARTICIPATES_AS_INPUT)
-        return claims.count(), _participations(age_engine, test_graph), _assertion_count(age_engine, test_graph, "WENT_THROUGH")
+        return claims.count(), _participations(table_projector, test_graph), _assertion_count(table_projector, test_graph, "WENT_THROUGH")
 
     claim_count, edges, counts = await state()
 
@@ -290,7 +288,7 @@ async def test_retracting_one_participation_claim_keeps_the_edge(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """One observer withdrawing does not undo the other's claim."""
     source = await _cell(api_schema, simple_api_context, test_graph)
@@ -314,7 +312,7 @@ async def test_retracting_one_participation_claim_keeps_the_edge(
     @sync_to_async
     def state() -> tuple[list[tuple[str, str]], list[int], int]:
         events = evidence_models.Standing.objects.for_organization(test_graph.organization).filter(target_type="link")
-        return _participations(age_engine, test_graph), _assertion_count(age_engine, test_graph, "WENT_THROUGH"), events.count()
+        return _participations(table_projector, test_graph), _assertion_count(table_projector, test_graph, "WENT_THROUGH"), events.count()
 
     edges, counts, lifecycle_rows = await state()
 
@@ -329,7 +327,7 @@ async def test_retracting_the_last_participation_claim_removes_the_edge(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """With no live claim the edge states nothing, and a replay must agree."""
     source = await _cell(api_schema, simple_api_context, test_graph)
@@ -347,14 +345,14 @@ async def test_retracting_the_last_participation_claim_removes_the_edge(
 
     @sync_to_async
     def after() -> list[tuple[str, str]]:
-        return _participations(age_engine, test_graph)
+        return _participations(table_projector, test_graph)
 
     assert await after() == [("CAME_OUT_OF", "b")], "The retracted input participation is gone; the output one stands"
 
     @sync_to_async
     def rebuild() -> tuple[dict, list[tuple[str, str]]]:
-        result = GraphController(engine=age_engine).rebuild_projection(test_graph)
-        return result, _participations(age_engine, test_graph)
+        result = GraphController(projector=table_projector).rebuild_projection(test_graph)
+        return result, _participations(table_projector, test_graph)
 
     result, edges = await rebuild()
     assert result["participations"] == 1, "A replay must not resurrect a retracted participation"
@@ -378,7 +376,7 @@ async def test_a_participation_reports_the_view_that_drew_it(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
     is_input: bool,
 ) -> None:
     """Both sides of a participation must be findable, and this is the test that says so.

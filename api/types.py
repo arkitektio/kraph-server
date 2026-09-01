@@ -440,27 +440,9 @@ class GraphQuery:
         stored = await sync_to_async(lambda: query_ir.TableQueryPlan.from_stored(cast(models.GraphQuery, self).plan))()
         return TableQueryPlan.from_pydantic(stored) if stored is not None else None
 
-    @strawberry.field(description="True for a row saved as raw Cypher before the plan became the contract. It still renders, but takes no filter, order or page; rebuild it through the builder")
+    @strawberry.field(description="True for a row saved as raw Cypher before the plan became the contract. Such a row cannot render — no projection kind executes Cypher — until rebuilt through the builder")
     async def legacy(self) -> bool:
         return await sync_to_async(lambda: cast(models.GraphQuery, self).is_legacy)()
-
-    @strawberry.field(
-        description="The query as compiled for the Apache AGE projection — read-only, from `plan`. The stored string for a legacy row",
-        deprecation_reason="The contract is `plan`; this is its compiled form and names a projection kind. Removed in the next major.",
-    )
-    async def query(self) -> Optional[scalars.CypherLiteral]:
-        def compiled() -> Optional[str]:
-            row = cast(models.GraphQuery, self)
-            stored = query_ir.TableQueryPlan.from_stored(row.plan)
-            if stored is None:
-                return row.query or None
-            from graph_engine.projection.cypher import compile_table_plan
-
-            text, _ = compile_table_plan(stored)
-            return text
-
-        text = await sync_to_async(compiled)()
-        return scalars.CypherLiteral(text) if text is not None else None
 
 
 @kind_type(models.GraphQuery, enums.GraphQueryKindChoices.TABLE, filters=filters.GraphTableQueryFilter, pagination=True, ordering=order.GraphTableQueryOrder, description="Base interface for graph schemas")

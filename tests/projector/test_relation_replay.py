@@ -22,6 +22,7 @@ from core import models as core_models
 from evidence import claims as claims_module
 from evidence import models as evidence_models
 from graph_engine.controller import GraphController
+from tests import drawing
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {
@@ -85,9 +86,8 @@ async def _connect(api_schema: kante.Schema, ctx: HttpContext, category: core_mo
     return created.data["assertRelationExists"]["link"]["id"]
 
 
-def _count_edges(age_engine, graph: core_models.Graph, age_name: str) -> int:
-    rows = age_engine.execute(graph, f"MATCH ()-[r:{age_name}]->() RETURN count(r) as c", {})
-    return int(rows[0]["c"]) if rows else 0
+def _count_edges(table_projector, graph: core_models.Graph, age_name: str) -> int:
+    return drawing.edge_count(graph, age_name)
 
 
 @pytest.mark.django_db(transaction=True)
@@ -96,7 +96,7 @@ async def test_relation_survives_a_rebuild(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """Drop the AGE namespace, replay from Postgres, and the edge comes back.
 
@@ -112,15 +112,15 @@ async def test_relation_survives_a_rebuild(
 
     @sync_to_async
     def edges_before() -> int:
-        return _count_edges(age_engine, test_graph, relation_category.age_name)
+        return _count_edges(table_projector, test_graph, relation_category.age_name)
 
     assert await edges_before() == 1, "Asserting a relation must project an edge in the first place"
 
     @sync_to_async
     def drop_then_rebuild() -> dict:
-        controller = GraphController(engine=age_engine)
-        age_engine.drop_graph(test_graph.age_name, cascade=True)
-        age_engine.create_graph(age_name=test_graph.age_name)
+        controller = GraphController(projector=table_projector)
+        table_projector.drop_namespace(test_graph)
+        table_projector.create_namespace(test_graph)
         return controller.rebuild_projection(test_graph)
 
     result = await drop_then_rebuild()
@@ -130,7 +130,7 @@ async def test_relation_survives_a_rebuild(
 
     @sync_to_async
     def edges_after() -> int:
-        return _count_edges(age_engine, test_graph, relation_category.age_name)
+        return _count_edges(table_projector, test_graph, relation_category.age_name)
 
     assert await edges_after() == 1, "The edge must be present in AGE after the replay, not merely counted"
 
@@ -141,7 +141,7 @@ async def test_two_assertions_make_two_rows_and_one_edge(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """Agreement is countable in the evidence base and collapsed in the projection.
 
@@ -162,12 +162,8 @@ async def test_two_assertions_make_two_rows_and_one_edge(
     @sync_to_async
     def rows_and_edges() -> tuple[int, int, int]:
         links = evidence_models.Link.objects.for_organization(test_graph.organization).filter(kind=evidence_models.Link.Kind.RELATION)
-        rows = age_engine.execute(
-            test_graph,
-            f"MATCH ()-[r:{relation_category.age_name}]->() RETURN r.__assertion_count as c",
-            {},
-        )
-        return links.count(), _count_edges(age_engine, test_graph, relation_category.age_name), int(rows[0]["c"])
+        counts = drawing.edge_property_values(test_graph, relation_category.age_name, "__assertion_count")
+        return links.count(), _count_edges(table_projector, test_graph, relation_category.age_name), int(counts[0])
 
     link_count, edge_count, assertion_count = await rows_and_edges()
 
@@ -182,7 +178,7 @@ async def test_archiving_one_of_two_assertions_keeps_the_edge(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """Retracting one claim does not retract the proposition.
 
@@ -204,13 +200,9 @@ async def test_archiving_one_of_two_assertions_keeps_the_edge(
 
     @sync_to_async
     def state() -> tuple[int, int, int]:
-        rows = age_engine.execute(
-            test_graph,
-            f"MATCH ()-[r:{relation_category.age_name}]->() RETURN r.__assertion_count as c",
-            {},
-        )
+        counts = drawing.edge_property_values(test_graph, relation_category.age_name, "__assertion_count")
         events = evidence_models.Standing.objects.for_organization(test_graph.organization).filter(target_type="link", target_id=first)
-        return _count_edges(age_engine, test_graph, relation_category.age_name), int(rows[0]["c"]), events.count()
+        return _count_edges(table_projector, test_graph, relation_category.age_name), int(counts[0]), events.count()
 
     edge_count, assertion_count, lifecycle_rows = await state()
 
@@ -225,7 +217,7 @@ async def test_archiving_the_last_assertion_removes_the_edge_and_the_replay_agre
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """With no live claim the edge states nothing, and a rebuild must say the same.
 
@@ -245,13 +237,13 @@ async def test_archiving_the_last_assertion_removes_the_edge_and_the_replay_agre
 
     @sync_to_async
     def after_archive() -> int:
-        return _count_edges(age_engine, test_graph, relation_category.age_name)
+        return _count_edges(table_projector, test_graph, relation_category.age_name)
 
     assert await after_archive() == 0, "A retracted relation leaves no edge behind"
 
     @sync_to_async
     def rebuild() -> dict:
-        controller = GraphController(engine=age_engine)
+        controller = GraphController(projector=table_projector)
         return controller.rebuild_projection(test_graph)
 
     result = await rebuild()
@@ -259,7 +251,7 @@ async def test_archiving_the_last_assertion_removes_the_edge_and_the_replay_agre
 
     @sync_to_async
     def after_rebuild() -> int:
-        return _count_edges(age_engine, test_graph, relation_category.age_name)
+        return _count_edges(table_projector, test_graph, relation_category.age_name)
 
     assert await after_rebuild() == 0
 
@@ -270,7 +262,7 @@ async def test_updating_a_relation_replaces_the_claim_and_keeps_the_old_one(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """Update is archive-then-reassert, never an edit in place.
 
@@ -303,7 +295,7 @@ async def test_updating_a_relation_replaces_the_claim_and_keeps_the_old_one(
             # log so the log could be immutable.
             claims_module.current(organization, "link", original),
             claims_module.current(organization, "link", replacement),
-            _count_edges(age_engine, test_graph, relation_category.age_name),
+            _count_edges(table_projector, test_graph, relation_category.age_name),
         )
 
     original_status, replacement_status, edge_count = await state()
@@ -319,7 +311,7 @@ async def test_relation_endpoints_key_on_uuids_not_vertex_ids(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """A relation stored against a vertex id would point at nothing after a replay.
 
@@ -357,7 +349,7 @@ async def test_a_relation_reaches_every_view_declaring_its_word(
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
     second_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """One claim, two edges — the edge half of "two views share a word".
 
@@ -381,8 +373,8 @@ async def test_a_relation_reaches_every_view_declaring_its_word(
     @sync_to_async
     def edges() -> tuple[int, int]:
         return (
-            _count_edges(age_engine, test_graph, connected.age_name),
-            _count_edges(age_engine, second_graph, connected.age_name),
+            _count_edges(table_projector, test_graph, connected.age_name),
+            _count_edges(table_projector, second_graph, connected.age_name),
         )
 
     here, there = await edges()

@@ -1,10 +1,10 @@
 """
 Graph Engine Package
 
-A synchronous, provenance-aware graph engine over Apache AGE and Pydantic V2.
+A synchronous, provenance-aware graph engine over Postgres projection tables and Pydantic V2.
 
 Evidence — structures, metrics, assertions — lives in the `evidence` app, not
-here. This package owns the *projection*: turning that evidence into an AGE graph
+here. This package owns the *projection*: turning that evidence into each view's drawing
 and reading it back.
 
 Imports are deferred inside functions to avoid circular imports during Django app

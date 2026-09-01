@@ -163,7 +163,7 @@ def get_accessible_graph(
     """
     identifier_str = str(identifier)
     if not identifier_str.isdigit():
-        raise ValueError(f"`graph:` names a graph by its id; {identifier_str!r} is not one. A graph's AGE handle is internal and does not address it.")
+        raise ValueError(f"`graph:` names a graph by its id; {identifier_str!r} is not one. A graph's projection handle is internal and does not address it.")
 
     organization = get_active_organization(info)
     graph = models.Graph.objects.filter(id=int(identifier_str), organization=organization).first()

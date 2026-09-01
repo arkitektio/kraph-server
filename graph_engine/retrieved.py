@@ -1,7 +1,7 @@
 """The node- and edge-shaped surface `api/types.py` reads.
 
 One shape per side — `RetrievedNode` and `RetrievedEdge` — whether the thing came
-out of an Apache AGE projection or was adapted from an evidence row. That is the
+out of a projection's drawing or was adapted from an evidence row. That is the
 point: a claim no view draws still has to be answerable, so `from_row` /
 `from_link` build the same shape `from_node` does and `row_id` says which it was.
 
@@ -68,11 +68,12 @@ def _as_datetime(value: Any) -> Optional[datetime]:
 
 
 def is_internal_property_key(key: str) -> bool:
-    """A key the Cypher projector writes for itself rather than for the user.
+    """A key the projection layer writes for itself rather than for the user.
 
-    The `__` prefix is that projector's encoding (`graph_engine/projection/cypher.py`
-    writes `__schema_version`, `__assertion_count`, `__stat__*`); a second projection
-    kind would keep its own bookkeeping out of band and never need this.
+    The `__` prefix is the drawing's bookkeeping encoding (`graph_engine.projector`
+    writes `__schema_version`, `__assertion_count`, `__stat__*` through
+    `write_properties`); a projection kind that keeps its bookkeeping out of band
+    would never need this.
     """
     return key in RESERVED_PROPERTY_KEYS or key.startswith(INTERNAL_PROPERTY_PREFIX)
 
@@ -143,10 +144,10 @@ class RetrievedNode:
     """A node as some view holds it — or as the log has it, when no view does.
 
     Attributes:
-        graph_name: The AGE graph this was read from; empty for a row-backed shape
-        vertex_id: The AGE vertex id. Not the identity — see `unique_id`
+        graph_name: The drawing this was read from (the graph's internal handle); empty for a row-backed shape
+        vertex_id: The drawing's vertex id (a `ProjectionVertex` pk). Not the identity — see `unique_id`
         label: The vertex label, which is the drawing category's `age_name`
-        properties: Raw properties from AGE, including the derived ones
+        properties: Raw properties of the drawn record, including the derived ones
         row_id: The evidence primary key, when this was built from a row
     """
 

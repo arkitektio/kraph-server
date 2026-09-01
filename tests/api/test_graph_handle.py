@@ -25,15 +25,15 @@ NODE = """
 """
 
 
-def test_two_graphs_with_one_name_get_distinct_random_handles(transactional_db, age_engine, minimal_schema, authenticated_context) -> None:
+def test_two_graphs_with_one_name_get_distinct_random_handles(transactional_db, table_projector, minimal_schema, authenticated_context) -> None:
     """Same name, same organization, twice — two handles, neither derived from the name."""
     from graph_engine.materialize import materialize
 
     request = authenticated_context.request
     kwargs = dict(user=request._user, organization=request._organization, membership=request.membership, name="Twins")
 
-    first = materialize(minimal_schema, age_engine, **kwargs)
-    second = materialize(minimal_schema, age_engine, **kwargs)
+    first = materialize(minimal_schema, table_projector, **kwargs)
+    second = materialize(minimal_schema, table_projector, **kwargs)
 
     assert first.pk != second.pk
     assert first.age_name != second.age_name

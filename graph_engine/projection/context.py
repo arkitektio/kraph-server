@@ -7,8 +7,8 @@ mutations, the management commands and the `pre_delete` signal in
 layer's own signal handler needs it and `graph_engine` does not import `api`.
 
 Outside an operation nothing has bound one; `current_or_default()` falls back
-to a fresh, initialised Apache AGE projector so that callers do not each carry
-their own copy of that fallback (four management commands used to).
+to a fresh table projector so that callers do not each carry their own copy of
+that fallback (four management commands used to).
 """
 
 from __future__ import annotations
@@ -28,14 +28,11 @@ def get_current_projector() -> Projector | None:
 
 
 def current_or_default() -> Projector:
-    """The bound projector, or a freshly initialised Apache AGE one."""
+    """The bound projector, or a fresh table one — stateless, so fresh is free."""
     bound = current_projector.get()
     if bound is not None:
         return bound
 
-    from graph_engine.engine.age_engine import AgeEngine
-    from graph_engine.projection.cypher import CypherProjector
+    from graph_engine.projection.table import TableProjector
 
-    engine = AgeEngine()
-    engine.init_db()
-    return CypherProjector(engine)
+    return TableProjector()

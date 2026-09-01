@@ -15,7 +15,7 @@ problems:
   dangling id took down every other id loaded alongside it.
 
 Loaders are now built per operation and bound through a ContextVar, mirroring
-`CypherEngineExtension`. Each does one `filter(id__in=...)` and returns `None`
+`ProjectionExtension`. Each does one `filter(id__in=...)` and returns `None`
 for ids it could not find, so a dangling reference resolves to null instead of
 erroring the query.
 """
@@ -251,7 +251,7 @@ class _LoaderProxy:
 class LoaderExtension(SchemaExtension):
     """Bind a fresh set of loaders for the duration of each operation.
 
-    Mirrors `CypherEngineExtension`. Without this the loaders never get reset,
+    Mirrors `ProjectionExtension`. Without this the loaders never get reset,
     and a DataLoader that is never reset is a cache with no eviction and no
     tenant boundary.
     """

@@ -1,21 +1,19 @@
 import time
-from typing import Generator
+# (Generator import removed with the AGE engine fixture)
 import pytest
 import boto3
 from moto import mock_aws
 import os
 
 from graph_engine.controller import GraphController
-from graph_engine.engine.age_engine import AgeEngine
 from api.schema import create_schema
 from authentikate.models import Client, Organization, User, Membership
 from kante.context import HttpContext, UniversalRequest
 from strawberry.http.temporal_response import TemporalResponse
 from dokker import local
-from django.db import connections
-from graph_engine.engine.testing.mock_cypher_engine import MockCypherEngine
 from graph_engine import input_models as models
 from graph_engine.materialize import materialize
+from graph_engine.projection import TableProjector
 from core import models as core_models
 
 
@@ -173,7 +171,7 @@ def bio_graph_schema() -> models.GraphDefinitionInput:
 
 
 @pytest.fixture(scope="function")
-def test_graph(transactional_db, age_engine, bio_graph_schema, authenticated_context) -> core_models.Graph:
+def test_graph(transactional_db, table_projector, bio_graph_schema, authenticated_context) -> core_models.Graph:
     """
     Create a test graph with the bio_graph schema.
 
@@ -184,7 +182,7 @@ def test_graph(transactional_db, age_engine, bio_graph_schema, authenticated_con
     request = authenticated_context.request
     return materialize(
         bio_graph_schema,
-        age_engine,
+        table_projector,
         user=request._user,
         organization=request._organization,
         membership=request.membership,
@@ -193,42 +191,17 @@ def test_graph(transactional_db, age_engine, bio_graph_schema, authenticated_con
 
 
 @pytest.fixture(scope="function")
-def mock_engine() -> MockCypherEngine:
-    """A CypherEngine test double that records queries instead of executing them.
-
-    Needs no database and no docker stack, so it is the right tool for asserting on the
-    Cypher a code path *generates*, as opposed to what AGE does with it.
-    """
-    return MockCypherEngine()
-
-
-@pytest.fixture
-def mock_graph_controller(mock_engine, test_graph):
-    """Create a graph controller with mock engine and test graph."""
+def graph_controller(transactional_db, table_projector, test_graph) -> GraphController:
+    """A ready-to-use GraphController drawing through the table projector."""
     return GraphController(
-        engine=mock_engine,
+        projector=table_projector,
         subject="test_user",
         app_id="test_app",
     )
 
 
 @pytest.fixture(scope="function")
-def graph_controller(transactional_db, age_engine, test_graph) -> GraphController:
-    """
-    Create a graph controller with AGE engine and test graph.
-
-    This fixture provides a ready-to-use GraphController instance
-    that is connected to the test graph and AGE engine.
-    """
-    return GraphController(
-        engine=age_engine,
-        subject="test_user",
-        app_id="test_app",
-    )
-
-
-@pytest.fixture(scope="function")
-def bio_graph(transactional_db, age_engine, bio_graph_schema, authenticated_context) -> core_models.Graph:
+def bio_graph(transactional_db, table_projector, bio_graph_schema, authenticated_context) -> core_models.Graph:
     """
     Create a biological graph with the provided schema.
     Uses transactional_db to maintain database state across the fixture.
@@ -237,7 +210,7 @@ def bio_graph(transactional_db, age_engine, bio_graph_schema, authenticated_cont
     request = authenticated_context.request
     return materialize(
         bio_graph_schema,
-        age_engine,
+        table_projector,
         user=request._user,
         organization=request._organization,
         membership=request.membership,
@@ -284,86 +257,26 @@ def minimal_schema() -> models.GraphDefinitionInput:
     )
 
 
-# The dokker stack in tests/integration/docker-compose.yaml, as pinned by
-# kraph_server/settings_test.py. _drop_all_age_graphs is destructive and unconditional,
-# so it refuses to run anywhere else.
-EXPECTED_TEST_DB_PORT = "5555"
-EXPECTED_TEST_DB_HOST = "localhost"
+@pytest.fixture(scope="function")
+def table_projector(transactional_db, backend_stack) -> TableProjector:
+    """The projection kind the suite draws through.
 
-
-def _assert_disposable_database() -> None:
-    """Refuse to run destructive teardown against anything but the test stack.
-
-    `_drop_all_age_graphs` drops *every* graph in `ag_catalog.ag_graph`, not just the
-    ones a test created. That is correct against the throwaway compose database and
-    catastrophic against a real one. Nothing structurally prevents someone from running
-    the suite with DJANGO_SETTINGS_MODULE pointed at a development database, so check
-    rather than trust.
+    Stateless: the drawing lives in the projection tables of the same test
+    database, so `transactional_db` flushes it between tests — real isolation,
+    where the Apache AGE namespace this replaced had to be dropped by hand and
+    (before that) was deliberately leaked around a type-cache bug.
     """
-    params = connections["default"].get_connection_params()
-    host = str(params.get("host", ""))
-    port = str(params.get("port", ""))
-    name = str(params.get("dbname") or params.get("database") or "")
-    if host != EXPECTED_TEST_DB_HOST or port != EXPECTED_TEST_DB_PORT or not name.startswith("test_"):
-        raise RuntimeError(
-            f"Refusing to drop AGE graphs: connection is {host}:{port}/{name}, "
-            f"not the disposable test stack at {EXPECTED_TEST_DB_HOST}:{EXPECTED_TEST_DB_PORT} "
-            f"with a test_-prefixed database. Run the suite with "
-            f"DJANGO_SETTINGS_MODULE=kraph_server.settings_test against tests/integration/docker-compose.yaml."
-        )
-
-
-def _drop_all_age_graphs(engine: AgeEngine) -> None:
-    """Drop every AGE graph in the test database.
-
-    Graph names are derived from the graph name plus the organization slug, so tests
-    that materialize a graph with the same name collide unless the previous one is gone.
-    """
-    _assert_disposable_database()
-    rows = engine.execute_raw("SELECT name::text FROM ag_catalog.ag_graph")
-    for (name,) in rows:
-        engine.drop_graph(name, cascade=True)
+    return TableProjector()
 
 
 @pytest.fixture(scope="function")
-def age_engine(transactional_db, backend_stack) -> Generator[AgeEngine, None, None]:
-    """
-    Create an AGE engine against a clean graph namespace.
-
-    Previously this fixture deliberately leaked AGE graphs between tests to dodge an
-    AGE type-cache problem: AGE caches label OIDs per *session*, so dropping and
-    recreating a graph of the same name on a live connection raises on the stale OID.
-    Leaking made tests order-dependent and would make the reproject test meaningless,
-    since it cannot distinguish a rebuilt graph from a stale one.
-
-    The actual fix is to drop the graphs and then close the connection, which discards
-    the session-local cache along with it.
-    """
-    engine = AgeEngine()
-    engine.init_db()
-
-    # A previous run that died mid-test can leave graphs behind.
-    _drop_all_age_graphs(engine)
-    connections["default"].close()
-
-    yield engine
-
-    _drop_all_age_graphs(engine)
-    connections["default"].close()
-
-
-@pytest.fixture(scope="function")
-def api_schema(age_engine):
-    """
-    Simple API context for validation tests that don't need database/AGE.
-    Uses a mock engine for tests that just validate schema structure.
-    Provides a proper HttpContext for the AuthentikateExtension.
-    """
+def api_schema(table_projector):
+    """The served schema, drawing through the table projector."""
 
     return create_schema(
         max_depth=10,
         debug=True,
-        cypher_engine=age_engine,
+        projector=table_projector,
     )
 
 

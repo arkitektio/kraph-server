@@ -14,9 +14,8 @@ return shape could not express at all:
   shape.
 
 Both go through the real GraphQL surface, because the shape being tested is the
-API's. And both need the real AGE stack: `MockCypherEngine` returns `[]` for the
-`MATCH (n) WHERE n.id = $nid RETURN n` that reads a drawing back, so a drawings
-assertion against the mock would pass by finding nothing.
+API's. And both need the real database: a drawings assertion against a double
+that reads nothing back would pass by finding nothing.
 """
 
 import uuid

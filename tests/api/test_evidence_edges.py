@@ -30,6 +30,7 @@ from evidence import claims as claims_module
 from evidence import models as evidence_models
 from graph_engine import input_models as models
 from graph_engine.materialize import materialize
+from tests import drawing
 
 CREATE_STRUCTURE = """
     mutation CreateStructure($input: AssertStructureExistsInput!) {
@@ -137,11 +138,11 @@ def edge_schema() -> models.GraphDefinitionInput:
 
 
 @pytest.fixture(scope="function")
-def edge_graph(transactional_db, age_engine, edge_schema, authenticated_context) -> core_models.Graph:
+def edge_graph(transactional_db, table_projector, edge_schema, authenticated_context) -> core_models.Graph:
     request = authenticated_context.request
     return materialize(
         edge_schema,
-        age_engine,
+        table_projector,
         user=request._user,
         organization=request._organization,
         membership=request.membership,
@@ -177,7 +178,7 @@ async def test_structure_relation_is_an_evidence_row_with_no_projection(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     edge_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """The claim is recorded, addressed by its own id, and draws no edge."""
     category = await core_models.StructureRelationCategory.objects.filter(graph=edge_graph, key="CONTAINS").afirst()
@@ -208,8 +209,7 @@ async def test_structure_relation_is_an_evidence_row_with_no_projection(
     @sync_to_async
     def links_and_edges() -> tuple[int, int]:
         links = evidence_models.Link.objects.for_organization(edge_graph.organization).filter(kind=evidence_models.Link.Kind.STRUCTURE_RELATION)
-        rows = age_engine.execute(edge_graph, f"MATCH ()-[r:{category.age_name}]->() RETURN count(r) as c", {})
-        return links.count(), int(rows[0]["c"]) if rows else 0
+        return links.count(), drawing.edge_count(edge_graph, category.age_name)
 
     link_count, edge_count = await links_and_edges()
     assert link_count == 1, "The claim must be recorded as evidence"

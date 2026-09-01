@@ -8,24 +8,28 @@ the nodes a view has drawn, whether it drew an edge, and (for saved queries) a
 rendered table.
 
 Everything here is phrased in the vocabulary of the evidence and the schema —
-refs, labels, category ids, property dicts — and nothing in the vocabulary of a
-graph database. Labels are `Category.age_name`: the view's own word for a
-category, which is what a vertex is labelled with in AGE and what a table would
-be named after elsewhere. Vertex and edge ids are opaque integers that a
-rebuild reassigns; they are carried only because `RetrievedNode`/`RetrievedEdge`
-still name them, and nothing keys on them.
+refs, labels, category ids, property dicts, and (for the list read) a
+structured predicate — and nothing in the vocabulary of a storage engine or a
+query language. Labels are `Category.age_name`: the view's own word for a
+category. Vertex and edge ids are opaque integers that a rebuild reassigns;
+they are carried only because `RetrievedNode`/`RetrievedEdge` still name them,
+and nothing keys on them.
 
 `controller.engine` is gone, and so is the controller's habit of writing
-Cypher itself: the seven places it executed queries directly — two of them
+queries itself: the seven places it executed Cypher directly — two of them
 *writes* (`DELETE r` for a retracted relation or participation) — are the
 methods below. `graph_engine.projector` imports no engine and no query language;
-it calls `controller.projector.<method>`.
+it calls `controller.projector.<method>`. `list_drawn` used to be the one
+method that still took query-language fragments (a Cypher predicate, an ORDER
+BY clause, a SKIP/LIMIT string, built by the controller); it takes a
+:class:`ListDrawnSpec` now, and each projection kind compiles it itself.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 
 @dataclass(frozen=True)
@@ -35,6 +39,57 @@ class DrawnEdge:
     edge_id: int
     left_id: int
     right_id: int
+
+
+#: The comparisons a drawing-scoped list may ask for. The canonical spellings —
+#: the controller normalizes its API's aliases (``EQ``, ``=``, …) before a spec
+#: is built, so an implementation compiles exactly these and refuses the rest.
+LIST_OPERATORS = frozenset({"EQUALS", "NOT_EQUALS", "GREATER_THAN", "LESS_THAN", "GREATER_OR_EQUAL", "LESS_OR_EQUAL", "IN", "NOT_IN", "CONTAINS", "STARTS_WITH", "ENDS_WITH", "IS_NOT_NULL"})
+
+
+@dataclass(frozen=True)
+class PropertyPredicate:
+    """One comparison against a drawn node's record.
+
+    `key` names a property of the drawn record: a derived property, or one of
+    the identity trio — ``id`` (the node's uuid), ``category_id``, ``type``.
+    ``IS_NOT_NULL`` takes no value and means *the view derived this key for
+    this node* — a key present with an explicit null does not count, matching
+    what the Cypher form (`e.key IS NOT NULL`) always meant.
+    """
+
+    key: str
+    operator: str = "EQUALS"
+    value: Any = None
+
+
+@dataclass(frozen=True)
+class DrawnOrder:
+    """One sort key for a drawing-scoped list.
+
+    `key` is a property key as in :class:`PropertyPredicate`, or the sentinel
+    ``__internal_id`` — the drawing's own opaque vertex id, which orders by
+    draw order and is the successor of the Cypher ``id(e)`` ordering.
+    """
+
+    key: str
+    descending: bool = False
+
+
+@dataclass(frozen=True)
+class ListDrawnSpec:
+    """What `list_drawn` is asked: predicates, order, page — as data, not clauses.
+
+    `label` scopes the list to one category's word, exactly as the old
+    label-in-the-MATCH-pattern did. Every field is storage-agnostic; the
+    projection kind compiles it. Predicates are conjunctive.
+    """
+
+    label: str
+    predicates: tuple[PropertyPredicate, ...] = ()
+    order: tuple[DrawnOrder, ...] = ()
+    offset: int = 0
+    limit: int = 200
 
 
 @runtime_checkable
@@ -105,14 +160,10 @@ class Projector(Protocol):
         """The ids of the edge source → target under `label`, or None if this view does not draw it."""
         ...
 
-    def list_drawn(self, graph: Any, label: str, where: str, params: Mapping[str, Any], order: str, page: str) -> list[dict[str, Any]]:
-        """The drawn records under `label` matching a pre-built predicate. The drawing-scoped list."""
+    def list_drawn(self, graph: Any, spec: ListDrawnSpec) -> list[dict[str, Any]]:
+        """The drawn records matching `spec` — the drawing-scoped list, compiled by the kind."""
         ...
 
     def render_table(self, graph: Any, plan: Any, *, filters: Any = None, order: Any = None, pagination: Any = None) -> list[Any]:
         """Compile a `TableQueryPlan` for this projection kind, run it, and hand back its rows."""
-        ...
-
-    def render(self, graph: Any, query: str, params: Mapping[str, Any]) -> list[Any]:
-        """Run a legacy raw query against the drawing. Only for rows saved before plans existed."""
         ...

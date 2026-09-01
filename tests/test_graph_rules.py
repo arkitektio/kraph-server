@@ -60,7 +60,7 @@ def test_a_rule_filtered_to_a_role_the_caller_lacks_does_not_fire(test_graph, au
 
 
 @pytest.mark.django_db(transaction=True)
-def test_materialize_persists_rules_from_definition(age_engine, bio_graph_schema, authenticated_context) -> None:
+def test_materialize_persists_rules_from_definition(table_projector, bio_graph_schema, authenticated_context) -> None:
     request = authenticated_context.request
 
     definition = bio_graph_schema.model_copy(deep=True)
@@ -74,7 +74,7 @@ def test_materialize_persists_rules_from_definition(age_engine, bio_graph_schema
 
     graph = materialize(
         definition=definition,
-        engine=age_engine,
+        projector=table_projector,
         user=request._user,
         organization=request._organization,
         membership=request.membership,

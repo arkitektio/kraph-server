@@ -42,7 +42,7 @@ async def test_a_saved_query_is_a_plan_that_round_trips(api_schema: kante.Schema
         """
         mutation Create($input: CreateGraphTableQueryInput!) {
             createGraphTableQuery(input: $input) {
-                id key label description legacy query
+                id key label description legacy
                 plan { version matches { title nodes } returns { path node alias } wheres { property } columns { key } }
             }
         }
@@ -58,7 +58,6 @@ async def test_a_saved_query_is_a_plan_that_round_trips(api_schema: kante.Schema
     assert made["plan"]["matches"][0]["nodes"] == ["n"]
     assert made["plan"]["returns"][0]["alias"] == "node"
     assert made["plan"]["columns"][0]["key"] == "node", "the columns ride with the plan"
-    assert "MATCH" in made["query"] and "RETURN node" in made["query"], "`query` is the compiled form, read-only"
 
     listed = await api_schema.execute("query { graphTableQueries { id key plan { matches { title } } } }", context_value=simple_api_context)
     assert listed.errors is None, f"GraphQL errors: {listed.errors}"
@@ -133,9 +132,9 @@ async def test_a_saved_query_cannot_be_created_in_another_tenants_graph(api_sche
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_legacy_row_reads_back_as_legacy(api_schema: kante.Schema, simple_api_context: HttpContext, test_graph: core_models.Graph) -> None:
-    """A row saved as raw Cypher before plans existed: no plan, `legacy` true, `query` is the stored string."""
+    """A row saved as raw Cypher before plans existed: no plan, `legacy` true — and no `query` field to read it back, since no projection kind executes Cypher."""
     row = await core_models.GraphTableQuery.objects.acreate(graph=test_graph, key="legacy_row", label="Legacy", query="RETURN 1 AS value", columns=[])
-    result = await api_schema.execute("query($id: ID!) { graphTableQuery(id: $id) { legacy plan { version } query } }", variable_values={"id": str(row.pk)}, context_value=simple_api_context)
+    result = await api_schema.execute("query($id: ID!) { graphTableQuery(id: $id) { legacy plan { version } } }", variable_values={"id": str(row.pk)}, context_value=simple_api_context)
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     got = result.data["graphTableQuery"]
-    assert got["legacy"] is True and got["plan"] is None and got["query"] == "RETURN 1 AS value"
+    assert got["legacy"] is True and got["plan"] is None

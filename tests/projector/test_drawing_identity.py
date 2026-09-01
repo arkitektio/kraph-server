@@ -14,22 +14,23 @@ from asgiref.sync import sync_to_async
 
 from core import models as core_models
 from evidence import models as evidence_models
+from graph_engine import models as graph_engine_models
 from graph_engine.controller import GraphController
-from graph_engine.engine.age_engine import graph_cursor
 from graph_engine.retrieved import RetrievedNode
 from tests import writes
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_drawings_report_the_rules_category_not_the_vertex_stamp(api_schema, simple_api_context, test_graph: core_models.Graph, age_engine) -> None:
+async def test_drawings_report_the_rules_category_not_the_vertex_stamp(api_schema, simple_api_context, test_graph: core_models.Graph, table_projector) -> None:
     entity_id = await writes.create_entity(api_schema, simple_api_context, "AIS")
 
     @sync_to_async
     def stamp_and_read():
-        age_engine.execute(test_graph, "MATCH (e) WHERE e.id = $id SET e.category_id = 999999 RETURN id(e) as i", {"id": entity_id})
+        # Corrupt the cache on purpose: the payload must not read it back.
+        graph_engine_models.ProjectionVertex.objects.filter(graph=test_graph, ref=entity_id).update(category_pk=999999)
         node = evidence_models.Instance.objects.for_organization(test_graph.organization).select_related("term").get(pk=entity_id)
-        drawings = GraphController(engine=age_engine).drawings_for_instance(node)
+        drawings = GraphController(projector=table_projector).drawings_for_instance(node)
         rule = core_models.EntityCategory.objects.get(graph=test_graph, key="AIS")
         return [(drawing.graph.pk, drawing.category.pk) for drawing in drawings], rule.pk
 
@@ -38,14 +39,14 @@ async def test_drawings_report_the_rules_category_not_the_vertex_stamp(api_schem
 
 
 @pytest.mark.django_db(transaction=True)
-def test_two_undrawn_nodes_are_two_objects(test_graph: core_models.Graph, age_engine) -> None:
+def test_two_undrawn_nodes_are_two_objects(test_graph: core_models.Graph, table_projector) -> None:
     from evidence import writer
 
     organization = test_graph.organization
     term = writer.ensure_term(organization, "ENTITY", "AIS")
     assertion = writer.create_assertion(organization, subject="t", app_id="tests", action_id=None, action_name=None, action_args={})
     rows = [evidence_models.Instance.objects.create_for_organization(organization=organization, kind=evidence_models.Instance.Kind.ENTITY, term=term, assertion=assertion) for _ in range(2)]
-    controller = GraphController(engine=age_engine)
+    controller = GraphController(projector=table_projector)
     nodes = [RetrievedNode.from_row(controller, row) for row in rows]
     assert len(set(nodes)) == 2
     assert nodes[0] != nodes[1]
@@ -53,14 +54,8 @@ def test_two_undrawn_nodes_are_two_objects(test_graph: core_models.Graph, age_en
 
 
 @pytest.mark.django_db(transaction=True)
-def test_deleting_a_graph_row_drops_its_namespace(test_graph: core_models.Graph, age_engine) -> None:
-    handle = test_graph.age_name
-
-    def namespaces(name: str) -> int:
-        with graph_cursor(age_engine.connection_name) as cursor:
-            cursor.execute("SELECT count(*) FROM ag_catalog.ag_graph WHERE name = %s", [name])
-            return int(cursor.fetchone()[0])
-
-    assert namespaces(handle) == 1
+def test_deleting_a_graph_row_drops_its_namespace(test_graph: core_models.Graph, table_projector) -> None:
+    table_projector.draw_node(test_graph, "00000000-0000-0000-0000-000000000001", "Cell", None, "ENTITY")
+    assert graph_engine_models.ProjectionVertex.objects.filter(graph=test_graph).exists()
     core_models.Graph.objects.filter(pk=test_graph.pk).delete()
-    assert namespaces(handle) == 0, "the pre_delete signal drops the projection on every deletion path"
+    assert not graph_engine_models.ProjectionVertex.objects.filter(graph_id=test_graph.pk).exists(), "a deleted view takes its drawing with it, on every deletion path"

@@ -24,7 +24,7 @@ from core import models as core_models
 from evidence import models as evidence_models
 from evidence import writer as evidence_writer
 from graph_engine import input_models
-from tests import writes
+from tests import drawing, writes
 
 CREATE_ENTITY_CATEGORY = """
     mutation CreateEntityCategory($input: CreateEntityCategoryInput!) {
@@ -98,7 +98,7 @@ async def test_a_view_that_declares_the_word_later_can_pick_the_claim_up(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """Org-scoped write, then materialization — the whole point of the change.
 
@@ -112,8 +112,7 @@ async def test_a_view_that_declares_the_word_later_can_pick_the_claim_up(
 
     @sync_to_async
     def drawn_in(graph: core_models.Graph) -> int:
-        rows = age_engine.execute(graph, "MATCH (n) WHERE n.id = $nid RETURN n", {"nid": entity_id})
-        return len(rows)
+        return drawing.vertices_with_ref(graph, entity_id)
 
     assert await drawn_in(test_graph) == 0, "Nothing draws it yet"
 
@@ -151,7 +150,7 @@ async def test_a_new_graph_can_be_a_view_over_history(
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
     bio_graph_schema: input_models.GraphDefinitionInput,
-    age_engine,
+    table_projector,
 ) -> None:
     """A graph materialized after the claim holds it.
 
@@ -172,15 +171,15 @@ async def test_a_new_graph_can_be_a_view_over_history(
             organization=request._organization,
             membership=request.membership,
         )
-        quiet = materialize(bio_graph_schema, age_engine, name=f"quiet_{uuid.uuid4().hex[:6]}", **common)
-        asked = materialize(bio_graph_schema, age_engine, name=f"asked_{uuid.uuid4().hex[:6]}", backfill=True, **common)
+        quiet = materialize(bio_graph_schema, table_projector, name=f"quiet_{uuid.uuid4().hex[:6]}", **common)
+        asked = materialize(bio_graph_schema, table_projector, name=f"asked_{uuid.uuid4().hex[:6]}", backfill=True, **common)
         return quiet, asked
 
     quiet, asked = await hindsight()
 
     @sync_to_async
     def drawn_in(graph: core_models.Graph) -> int:
-        return len(age_engine.execute(graph, "MATCH (n) WHERE n.id = $nid RETURN n", {"nid": entity_id}))
+        return drawing.vertices_with_ref(graph, entity_id)
 
     assert await drawn_in(quiet) == 0, "A new view declaring the word comes up empty unless asked"
     assert await drawn_in(asked) == 1, "And holds the organization's history when it is"
@@ -311,7 +310,7 @@ async def test_a_claim_cannot_reach_into_another_organization(
 
     @sync_to_async
     def attempt() -> str:
-        controller = controller_module.GraphController(engine=None)
+        controller = controller_module.GraphController(projector=None)
         try:
             controller._resolve_instance(outsider, None, organization=test_graph.organization)
         except PermissionError as error:
@@ -341,7 +340,7 @@ async def test_a_claim_cannot_reach_into_another_organization(
     def allowed() -> bool:
         from authentikate.models import Organization as Org
 
-        controller = controller_module.GraphController(engine=None)
+        controller = controller_module.GraphController(projector=None)
         other = Org.objects.get(slug="a-different-tenant")
         return controller._resolve_instance(outsider, None, organization=other) is not None
 

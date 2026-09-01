@@ -114,7 +114,7 @@ def test_the_statistics_are_materialized_beside_the_value(
 def test_a_property_without_index_is_now_filterable(
     test_graph: core_models.Graph,
     category_with_both: core_models.EntityCategory,
-    age_engine,
+    table_projector,
 ) -> None:
     """The capability the old split cost you.
 
@@ -124,7 +124,7 @@ def test_a_property_without_index_is_now_filterable(
     """
     from graph_engine import input_models
 
-    controller = GraphController(engine=age_engine)
+    controller = GraphController(projector=table_projector)
 
     results = controller.list_entities_for_category(
         category_with_both,
@@ -137,12 +137,12 @@ def test_a_property_without_index_is_now_filterable(
 def test_filtering_an_indexed_property_is_allowed(
     test_graph: core_models.Graph,
     category_with_both: core_models.EntityCategory,
-    age_engine,
+    table_projector,
 ) -> None:
     """The indexed one stays queryable, which is the whole reason to mark it."""
     from graph_engine import input_models
 
-    controller = GraphController(engine=age_engine)
+    controller = GraphController(projector=table_projector)
 
     results = controller.list_entities_for_category(
         category_with_both,
@@ -155,12 +155,12 @@ def test_filtering_an_indexed_property_is_allowed(
 def test_sorting_a_property_without_index_is_allowed(
     test_graph: core_models.Graph,
     category_with_both: core_models.EntityCategory,
-    age_engine,
+    table_projector,
 ) -> None:
     """Ordering gains the same capability as filtering, for the same reason."""
     from graph_engine import input_models
 
-    controller = GraphController(engine=age_engine)
+    controller = GraphController(projector=table_projector)
 
     results = controller.list_entities_for_category(
         category_with_both,
@@ -190,7 +190,7 @@ def test_a_rule_less_property_is_not_filterable(test_graph: core_models.Graph) -
         property_definitions=[{"key": "nickname", "value_kind": "STRING", "derivation": "LATEST"}, {"key": "plain", "value_kind": "STRING"}],
     )
 
-    controller = GraphController(engine=None)
+    controller = GraphController(projector=None)
     assert "plain" not in controller.indexed_property_keys(category)
     # `id` is the exception, and the only one: `create_entity` writes it onto the
     # node itself, so it is genuinely there to filter on.
@@ -198,7 +198,7 @@ def test_a_rule_less_property_is_not_filterable(test_graph: core_models.Graph) -
 
 
 @pytest.mark.django_db(transaction=True)
-def test_materialize_refuses_a_rule_less_property(age_engine, authenticated_context) -> None:
+def test_materialize_refuses_a_rule_less_property(table_projector, authenticated_context) -> None:
     """Declaring an uncomputable property fails loudly, naming the fix.
 
     Same shape as the existing refusal of rollups over an entity source: the
@@ -224,7 +224,7 @@ def test_materialize_refuses_a_rule_less_property(age_engine, authenticated_cont
     with pytest.raises(ValueError, match="needs a `rule` naming a `source_node`"):
         materialize(
             definition,
-            age_engine,
+            table_projector,
             user=request._user,
             organization=request._organization,
             membership=request.membership,
@@ -233,14 +233,14 @@ def test_materialize_refuses_a_rule_less_property(age_engine, authenticated_cont
 
 
 @pytest.mark.django_db(transaction=True)
-def test_an_unknown_sort_direction_is_rejected(test_graph: core_models.Graph, age_engine) -> None:
+def test_an_unknown_sort_direction_is_rejected(test_graph: core_models.Graph, table_projector) -> None:
     """Directions are interpolated into Cypher, so `.upper()` is not validation.
 
     The direction arrives from a GraphQL variable and lands in the query text.
     Anything but an exact ASC/DESC is an injection — the same hole
     `_validate_property_key` closes for keys, previously left open right beside it.
     """
-    controller = GraphController(engine=age_engine)
+    controller = GraphController(projector=table_projector)
 
     with pytest.raises(ValueError, match="Invalid sort direction"):
         controller._validate_direction("ASC, x DETACH DELETE n //")

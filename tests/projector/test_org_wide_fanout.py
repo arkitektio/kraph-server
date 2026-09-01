@@ -198,7 +198,7 @@ async def test_one_recorded_metric_moves_both_projections(
     simple_api_context,
     test_graph: core_models.Graph,
     second_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """The claim, checked through the mutation rather than around it.
 

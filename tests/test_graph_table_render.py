@@ -1,8 +1,8 @@
 """Rendering a saved table query through the projector.
 
 A plan is compiled by the projection kind in use and executed with the render
-filter/order/page applied *structurally*; a legacy raw-Cypher row still renders,
-but takes none of those.
+filter/order/page applied *structurally*; a legacy raw-Cypher row cannot render
+at all — no projection kind executes Cypher.
 """
 
 import pytest
@@ -12,15 +12,11 @@ from graph_engine import input_models
 from tests import writes
 
 
-def test_a_legacy_raw_cypher_row_still_renders_but_takes_no_filter(graph_controller, test_graph: core_models.Graph) -> None:
+def test_a_legacy_raw_cypher_row_is_refused(graph_controller, test_graph: core_models.Graph) -> None:
     graph_query = core_models.GraphTableQuery.objects.create(graph=test_graph, key="legacy_render", label="Legacy", query="RETURN 1 AS value", columns=[{"key": "value", "type": "integer", "value_kind": "INT"}])
 
-    rendered = graph_controller.render_graph_table_query(graph_query)
-    assert rendered.graph_name == str(test_graph.age_name)
-    assert len(rendered.rows) == 1 and rendered.rows[0]["value"] == 1
-
     with pytest.raises(ValueError, match="legacy"):
-        graph_controller.render_graph_table_query(graph_query, order=input_models.RenderGraphTableOrder(key="value", direction="desc"))
+        graph_controller.render_graph_table_query(graph_query)
 
 
 @pytest.mark.django_db(transaction=True)

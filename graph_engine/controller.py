@@ -15,8 +15,7 @@ from graph_engine.input_models import (
     ProvenanceContext,
     RelationInput,
 )
-from graph_engine.engine.protocol import CypherEngine
-from graph_engine.projection import CypherProjector, Projector
+from graph_engine.projection import DrawnOrder, ListDrawnSpec, Projector, PropertyPredicate
 from graph_engine.retrieved import (
     RetrievedMetric,
     RetrievedNode,
@@ -124,24 +123,22 @@ class GraphController:
 
     def __init__(
         self,
-        engine: CypherEngine | None = None,
+        projector: Projector | None = None,
         subject: str | None = None,
         app_id: str | None = None,
-        *,
-        projector: Projector | None = None,
     ) -> None:
         """A controller draws through a `Projector` and never runs a query itself.
 
         `projector=` is the seam — `graph_engine.projection.Projector`, the writer
-        and reader halves of one projection kind. `engine=` is the older spelling,
-        kept because every test and command holds an Apache AGE engine: it is
-        wrapped in a `CypherProjector`. The controller holds no engine any more;
-        the seven places it used to execute Cypher directly (two of them writes)
-        are `Projector` methods.
+        and reader halves of one projection kind. The default is the table
+        projector: stateless, so a fresh one is free, and touching the database
+        only on first use. The controller holds no engine; the seven places it
+        used to execute Cypher directly (two of them writes) are `Projector`
+        methods.
         """
-        # `CypherProjector(None)` is a projector that fails on first use — the
-        # same behaviour `engine=None` had, which the pure-method tests rely on.
-        self.projector: Projector = projector if projector is not None else CypherProjector(engine)  # type: ignore[arg-type]
+        from graph_engine.projection.table import TableProjector
+
+        self.projector: Projector = projector if projector is not None else TableProjector()
         self.subject = subject
         self.app_id = app_id
 
@@ -2588,27 +2585,22 @@ class GraphController:
 
         The plan is the contract (`graph_engine/query_ir.py`); `Projector.render_table`
         compiles it for the projection kind in use — which is what makes the render
-        filter land *structurally*, in a `WITH … WHERE` over the returned aliases,
-        where a regex used to splice it before the last `RETURN` of a client's
-        Cypher (wrong for `WITH`, `UNION`, and exactly the aliased columns a client
-        filters on). A **legacy** row — saved as raw Cypher before plans existed —
-        still renders through its stored string, but takes no filter, order or
-        page: those were the splice, and the honest fix is to rebuild the row
-        through the builder (`manage.py list_legacy_queries` names them).
+        filter land *structurally*, over the returned aliases, where a regex used
+        to splice it before the last `RETURN` of a client's Cypher (wrong for
+        `WITH`, `UNION`, and exactly the aliased columns a client filters on). A
+        **legacy** row — saved as raw Cypher before plans existed — cannot render
+        at all any more: Cypher left with Apache AGE, and no projection kind
+        executes it. Rebuild the row through the builder (`manage.py
+        list_legacy_queries` names any that exist).
         """
         from graph_engine.query_ir import TableQueryPlan
 
         self._ensure_query_access(graph_query.graph, info)
 
         plan = TableQueryPlan.from_stored(graph_query.plan)
-        if plan is not None:
-            result_rows = self.projector.render_table(graph_query.graph, plan, filters=filters, order=order, pagination=pagination)
-        else:
-            if filters is not None or order is not None or pagination is not None:
-                raise ValueError(f"Saved query #{graph_query.pk} is a legacy raw-Cypher query and cannot be filtered, ordered or paged; rebuild it through the builder (see `manage.py list_legacy_queries`).")
-            if not graph_query.query:
-                raise ValueError(f"Saved query #{graph_query.pk} has neither a plan nor a legacy query.")
-            result_rows = self.projector.render(graph_query.graph, graph_query.query, {})
+        if plan is None:
+            raise ValueError(f"Saved query #{graph_query.pk} is a legacy raw-Cypher row and no projection kind executes Cypher; rebuild it through the builder (see `manage.py list_legacy_queries`).")
+        result_rows = self.projector.render_table(graph_query.graph, plan, filters=filters, order=order, pagination=pagination)
 
         row_dicts: list[dict[str, Any]] = []
         column_keys = [column.get("key") for column in (graph_query.columns or []) if isinstance(column, dict) and column.get("key")]
@@ -2670,13 +2662,9 @@ class GraphController:
         return validated
 
     def _validate_direction(self, direction: Any) -> str:
-        """Whitelist a sort direction before it is interpolated into Cypher.
-
-        `.upper()` is not validation. The direction reaches this from a GraphQL
-        variable and lands directly in the query text, so anything other than an
-        exact ASC/DESC is a Cypher injection — the same hole `_validate_property_key`
-        closes for keys, left open for the clause right next to them.
-        """
+        """Whitelist a sort direction. `.upper()` is not validation: the value
+        reaches this from a GraphQL variable, and anything but an exact ASC/DESC
+        is refused before it becomes a `DrawnOrder`."""
         value = (direction.value if hasattr(direction, "value") else str(direction)).upper()
         if value not in {"ASC", "DESC"}:
             raise ValueError(f"Invalid sort direction '{direction}'. Expected ASC or DESC.")
@@ -2697,105 +2685,87 @@ class GraphController:
         except ValueError:
             return value
 
-    def _build_entity_where_clause(self, filters: input_models.EntityFilters | None, variable: str = "e", indexed_keys: set[str] | None = None) -> tuple[str, dict[str, Any]]:
-        params: dict[str, Any] = {}
-        clauses: list[str] = []
+    #: Every accepted spelling of a list operator, mapped to the canonical name
+    #: a `PropertyPredicate` carries (`graph_engine.projection.LIST_OPERATORS`).
+    _CANONICAL_OPERATORS = {
+        "EQUALS": "EQUALS",
+        "EQ": "EQUALS",
+        "=": "EQUALS",
+        "NOT_EQUALS": "NOT_EQUALS",
+        "NEQ": "NOT_EQUALS",
+        "!=": "NOT_EQUALS",
+        "GREATER_THAN": "GREATER_THAN",
+        "GT": "GREATER_THAN",
+        ">": "GREATER_THAN",
+        "LESS_THAN": "LESS_THAN",
+        "LT": "LESS_THAN",
+        "<": "LESS_THAN",
+        "GREATER_OR_EQUAL": "GREATER_OR_EQUAL",
+        "GREATER_THAN_OR_EQUAL": "GREATER_OR_EQUAL",
+        "GTE": "GREATER_OR_EQUAL",
+        ">=": "GREATER_OR_EQUAL",
+        "LESS_OR_EQUAL": "LESS_OR_EQUAL",
+        "LESS_THAN_OR_EQUAL": "LESS_OR_EQUAL",
+        "LTE": "LESS_OR_EQUAL",
+        "<=": "LESS_OR_EQUAL",
+        "CONTAINS": "CONTAINS",
+        "STARTS_WITH": "STARTS_WITH",
+        "ENDS_WITH": "ENDS_WITH",
+        "IN": "IN",
+        "NOT_IN": "NOT_IN",
+    }
 
+    def _entity_predicates(self, filters: input_models.EntityFilters | None, indexed_keys: set[str] | None = None) -> tuple[PropertyPredicate, ...]:
+        """The drawing-list predicates a filter set means — data, not clauses.
+
+        The controller's half of the seam: it validates (`_assert_indexed`,
+        operator spellings) and normalizes; the projection kind compiles. The
+        `category` filter is not here — it names the label the list is already
+        scoped to, so `list_entities_for_category` answers it without a query.
+        """
         if not filters:
-            return "", params
+            return ()
 
-        if filters.category:
-            params["filter_category"] = filters.category
-            clauses.append(f"labels({variable})[0] = $filter_category")
+        predicates: list[PropertyPredicate] = []
 
         if filters.ids:
-            # The node's own uuid, held as a vertex property — not `id(e)`, the
-            # AGE vertex id. A client's id is the durable one, and the vertex id
-            # is reassigned by every reproject.
-            params["filter_ids"] = [str(entity_id) for entity_id in filters.ids]
-            clauses.append(f"{variable}.id IN $filter_ids")
+            # The node's own uuid — never the drawing's vertex id, which is
+            # reassigned by every reproject.
+            predicates.append(PropertyPredicate(key="id", operator="IN", value=[str(entity_id) for entity_id in filters.ids]))
 
         if filters.search:
-            params["filter_search"] = filters.search
-            clauses.append(f"{variable}.label CONTAINS $filter_search")
+            predicates.append(PropertyPredicate(key="label", operator="CONTAINS", value=filters.search))
 
         if filters.has_property:
-            key = self._assert_indexed(filters.has_property, indexed_keys)
-            clauses.append(f"{variable}.{key} IS NOT NULL")
+            predicates.append(PropertyPredicate(key=self._assert_indexed(filters.has_property, indexed_keys), operator="IS_NOT_NULL"))
 
-        if filters.matches:
-            for index, match in enumerate(filters.matches):
-                key = self._assert_indexed(match.key, indexed_keys)
-                operator = match.operator.value if hasattr(match.operator, "value") else str(match.operator)
-                operator = operator.upper()
+        for match in filters.matches or []:
+            key = self._assert_indexed(match.key, indexed_keys)
+            operator = (match.operator.value if hasattr(match.operator, "value") else str(match.operator)).upper()
+            if operator not in self._CANONICAL_OPERATORS:
+                raise ValueError(f"Unsupported filter operator '{operator}'.")
+            # An id is matched as the uuid string it is; other values get the
+            # tolerant coercion the string-typed GraphQL input calls for.
+            value = str(match.value) if key == "id" else self._coerce_filter_value(match.value)
+            predicates.append(PropertyPredicate(key=key, operator=self._CANONICAL_OPERATORS[operator], value=value))
 
-                value_param = f"match_value_{index}"
-                coerced_value = self._coerce_filter_value(match.value)
-                field_expr = f"{variable}.{key}"
+        return tuple(predicates)
 
-                if key == "id":
-                    # Matched as the uuid string it is. The old branch tried three
-                    # ways to turn an id into the integer AGE vertex id, because
-                    # that is what `id(e)` compares against; there is nothing left
-                    # to unpick now that a node's id is its uuid.
-                    coerced_value = str(match.value)
-
-                params[value_param] = coerced_value
-
-                if operator in {"EQUALS", "EQ", "="}:
-                    clauses.append(f"{field_expr} = ${value_param}")
-                elif operator in {"NOT_EQUALS", "NEQ", "!="}:
-                    clauses.append(f"{field_expr} <> ${value_param}")
-                elif operator in {"GREATER_THAN", "GT", ">"}:
-                    clauses.append(f"{field_expr} > ${value_param}")
-                elif operator in {"LESS_THAN", "LT", "<"}:
-                    clauses.append(f"{field_expr} < ${value_param}")
-                elif operator in {"GREATER_OR_EQUAL", "GREATER_THAN_OR_EQUAL", "GTE", ">="}:
-                    clauses.append(f"{field_expr} >= ${value_param}")
-                elif operator in {"LESS_OR_EQUAL", "LESS_THAN_OR_EQUAL", "LTE", "<="}:
-                    clauses.append(f"{field_expr} <= ${value_param}")
-                elif operator == "CONTAINS":
-                    clauses.append(f"{field_expr} CONTAINS ${value_param}")
-                elif operator == "STARTS_WITH":
-                    clauses.append(f"{field_expr} STARTS WITH ${value_param}")
-                elif operator == "ENDS_WITH":
-                    clauses.append(f"{field_expr} ENDS WITH ${value_param}")
-                elif operator == "IN":
-                    clauses.append(f"{field_expr} IN ${value_param}")
-                elif operator == "NOT_IN":
-                    clauses.append(f"NOT {field_expr} IN ${value_param}")
-                else:
-                    raise ValueError(f"Unsupported filter operator '{operator}'.")
-
-        return ("WHERE " + " AND ".join(clauses)) if clauses else "", params
-
-    def _build_entity_order_clause(self, order: list[input_models.EntityOrder] | None, variable: str = "e", indexed_keys: set[str] | None = None) -> str:
+    def _entity_order(self, order: list[input_models.EntityOrder] | None, indexed_keys: set[str] | None = None) -> tuple[DrawnOrder, ...]:
         if not order:
-            return ""
+            return ()
 
-        clauses = []
+        terms: list[DrawnOrder] = []
         for o in order:
             if o.property is not None:
                 key = self._assert_indexed(o.property.key, indexed_keys)
-                direction = self._validate_direction(o.property.direction)
-                clauses.append(f"{variable}.{key} {direction}")
+                terms.append(DrawnOrder(key=key, descending=self._validate_direction(o.property.direction) == "DESC"))
             elif o.created_at is not None:
-                direction = self._validate_direction(o.created_at)
-                clauses.append(f"{variable}.created_at {direction}")
+                terms.append(DrawnOrder(key="created_at", descending=self._validate_direction(o.created_at) == "DESC"))
             elif o.id is not None:
-                direction = self._validate_direction(o.id)
-                clauses.append(f"id({variable}) {direction}")
-        if not clauses:
-            return ""
-        return f"ORDER BY {', '.join(clauses)}"
-
-    def _build_entity_pagination_clause(self, pagination: input_models.EntityPagination | None) -> str:
-        if not pagination:
-            return "SKIP 0 LIMIT 200"
-
-        offset = pagination.offset if pagination.offset is not None else 0
-        limit = pagination.limit if pagination.limit is not None else 200
-        return f"SKIP {offset} LIMIT {limit}"
+                # Draw order: the drawing's own opaque vertex id.
+                terms.append(DrawnOrder(key="__internal_id", descending=self._validate_direction(o.id) == "DESC"))
+        return tuple(terms)
 
     # `list_entities(graph=…)` used to sit here, and it was what `nodes(graph:)` and
     # `entities(entityCategoryId:)` were built on. It matched `labels(e)[0] IN
@@ -2816,16 +2786,23 @@ class GraphController:
         """
         self._ensure_query_access(category.graph, info)
 
-        indexed_keys = self.indexed_property_keys(category)
-        where_clause, filter_params = self._build_entity_where_clause(filters, variable="e", indexed_keys=indexed_keys)
-        order_clause = self._build_entity_order_clause(ordering, variable="e", indexed_keys=indexed_keys)
-        pagination_clause = self._build_entity_pagination_clause(pagination)
+        label = category.get_age_vertex_name()
 
-        # The predicate without its leading `WHERE`: the projector appends it to
-        # its own `WHERE true`. (This used to emit `MATCH (e:X) AND ...`, a Cypher
-        # syntax error, so filtering by category had never worked.)
-        predicate = where_clause[len("WHERE ") :] if where_clause else ""
-        records = self.projector.list_drawn(category.graph, category.get_age_vertex_name(), predicate, dict(filter_params), order_clause, pagination_clause)
+        # A `category` filter on a category-scoped list either names this list's
+        # own label — a no-op — or a different one, which matches nothing. Both
+        # answered in Python; the projection never sees the filter.
+        if filters is not None and filters.category and str(filters.category) != str(label):
+            return []
+
+        indexed_keys = self.indexed_property_keys(category)
+        spec = ListDrawnSpec(
+            label=label,
+            predicates=self._entity_predicates(filters, indexed_keys=indexed_keys),
+            order=self._entity_order(ordering, indexed_keys=indexed_keys),
+            offset=pagination.offset if pagination and pagination.offset is not None else 0,
+            limit=pagination.limit if pagination and pagination.limit is not None else 200,
+        )
+        records = self.projector.list_drawn(category.graph, spec)
 
         return [RetrievedNode.from_node(self, record, graph_name=category.graph.age_name) for record in records]
 

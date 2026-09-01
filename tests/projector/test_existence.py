@@ -31,6 +31,7 @@ from core import models as core_models
 from evidence import claims as claims_module
 from evidence import models as evidence_models
 from graph_engine.controller import GraphController
+from tests import drawing
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {
@@ -130,14 +131,12 @@ async def _mitosis(api_schema: kante.Schema, ctx: HttpContext, graph: core_model
     return created.data["assertNaturalEventExists"]["instance"]["id"]
 
 
-def _vertices(age_engine, graph: core_models.Graph, node_id: str) -> int:
-    rows = age_engine.execute(graph, "MATCH (e) WHERE e.id = $eid RETURN count(e) as c", {"eid": node_id})
-    return int(rows[0]["c"]) if rows else 0
+def _vertices(table_projector, graph: core_models.Graph, node_id: str) -> int:
+    return drawing.vertices_with_ref(graph, node_id)
 
 
-def _edges(age_engine, graph: core_models.Graph, age_name: str) -> int:
-    rows = age_engine.execute(graph, f"MATCH ()-[r:{age_name}]->() RETURN count(r) as c", {})
-    return int(rows[0]["c"]) if rows else 0
+def _edges(table_projector, graph: core_models.Graph, age_name: str) -> int:
+    return drawing.edge_count(graph, age_name)
 
 
 @pytest.mark.django_db(transaction=True)
@@ -146,7 +145,7 @@ async def test_archiving_a_natural_event_removes_its_vertex(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """The event archive path, which had no behavioural coverage at all.
 
@@ -161,7 +160,7 @@ async def test_archiving_a_natural_event_removes_its_vertex(
 
     @sync_to_async
     def vertices() -> int:
-        return _vertices(age_engine, test_graph, event_id)
+        return _vertices(table_projector, test_graph, event_id)
 
     assert await vertices() == 1
 
@@ -188,7 +187,7 @@ async def test_archiving_an_entity_removes_its_edges_but_keeps_the_claims(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """`DETACH` takes the drawing, never the evidence.
 
@@ -212,7 +211,7 @@ async def test_archiving_an_entity_removes_its_edges_but_keeps_the_claims(
 
     @sync_to_async
     def edges() -> int:
-        return _edges(age_engine, test_graph, relation_category.age_name)
+        return _edges(table_projector, test_graph, relation_category.age_name)
 
     assert await edges() == 1, "The relation must be drawn before we take an endpoint away"
 
@@ -236,7 +235,7 @@ async def test_archiving_an_entity_removes_its_edges_but_keeps_the_claims(
     # drift: `rebuild` declines to draw the same edge, for the same reason.
     @sync_to_async
     def rebuild() -> dict:
-        return GraphController(engine=age_engine).rebuild_projection(test_graph)
+        return GraphController(projector=table_projector).rebuild_projection(test_graph)
 
     result = await rebuild()
     assert result["edges"] == 0, "The replay must not draw an edge whose endpoint is not in the graph"
@@ -249,7 +248,7 @@ async def test_attesting_a_retracted_entity_brings_it_back_unchanged(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """Attesting is new evidence, and it reconstructs from evidence alone.
 
@@ -271,7 +270,7 @@ async def test_attesting_a_retracted_entity_brings_it_back_unchanged(
 
     @sync_to_async
     def vertices() -> int:
-        return _vertices(age_engine, test_graph, entity_id)
+        return _vertices(table_projector, test_graph, entity_id)
 
     assert await vertices() == 0
 
@@ -301,7 +300,7 @@ async def test_two_graphs_can_disagree_about_whether_a_node_exists(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """The reason existence is a fold and not a flag.
 
@@ -323,7 +322,7 @@ async def test_two_graphs_can_disagree_about_whether_a_node_exists(
 
     @sync_to_async
     def vertices() -> int:
-        return _vertices(age_engine, test_graph, entity_id)
+        return _vertices(table_projector, test_graph, entity_id)
 
     assert await vertices() == 0, "The graph counts the retraction, so the node goes"
 
@@ -334,8 +333,8 @@ async def test_two_graphs_can_disagree_about_whether_a_node_exists(
         # absent — and silence is not dissent.
         test_graph.selector = {"assertion_filter": {"subjects": ["somebody-who-said-nothing"]}}
         test_graph.save()
-        GraphController(engine=age_engine).rebuild_projection(test_graph)
-        return _vertices(age_engine, test_graph, entity_id)
+        GraphController(projector=table_projector).rebuild_projection(test_graph)
+        return _vertices(table_projector, test_graph, entity_id)
 
     assert await rebuild_counting_only_someone_else() == 1, "A graph that does not count the retraction still holds the node"
 
@@ -347,7 +346,7 @@ async def test_a_word_two_graphs_declare_is_seen_by_both(
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
     second_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """One claim, two views — the reason the log names a term and not a category.
 
@@ -377,7 +376,7 @@ async def test_a_word_two_graphs_declare_is_seen_by_both(
 
     @sync_to_async
     def vertices() -> tuple[int, int]:
-        return _vertices(age_engine, test_graph, entity_id), _vertices(age_engine, second_graph, entity_id)
+        return _vertices(table_projector, test_graph, entity_id), _vertices(table_projector, second_graph, entity_id)
 
     here, there = await vertices()
     assert here == 1, "The view the entity was created through holds it"
@@ -387,7 +386,7 @@ async def test_a_word_two_graphs_declare_is_seen_by_both(
     # there is nothing for the two to drift apart about.
     @sync_to_async
     def rebuild_second() -> dict:
-        return GraphController(engine=age_engine).rebuild_projection(second_graph)
+        return GraphController(projector=table_projector).rebuild_projection(second_graph)
 
     result = await rebuild_second()
     assert result["nodes"] >= 1, "A replay of the second view reconstructs the node from the shared claim"

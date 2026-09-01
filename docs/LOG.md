@@ -1,9 +1,16 @@
 # The append-only log: what is recorded
 
-Every claim the system holds lives in the `evidence` app. Apache AGE holds a
-*projection* of it — droppable, rebuildable, never authoritative. This document is
+Every claim the system holds lives in the `evidence` app. The projection tables
+(`graph_engine.models.ProjectionVertex` / `ProjectionEdge`) hold each view's
+*drawing* of it — droppable, rebuildable, never authoritative. This document is
 the vocabulary: what a claim can say, who writes it, who reads it, and what is
 deliberately not a claim at all.
+
+> Vocabulary note: where this document says "AGE vertex", "AGE edge" or "AGE
+> namespace", read "drawn vertex/edge — a projection-table row" and "the view's
+> rows". Apache AGE was retired by
+> [RFC 0005](./rfcs/0005-retire-the-cypher-projection.md); the drawing's
+> semantics described here are unchanged, only its storage moved.
 
 The governing rule, from [`BIOLOGIST.md`](BIOLOGIST.md):
 
@@ -331,12 +338,15 @@ keyed on the old ref stopped describing it. Their jobs are now done by
 `Link(CLASSIFIES)` (what it is) and `attest*` (that it is there) — none of which
 touch identity.
 
-Write ordering is load-bearing where the two stores meet. AGE cannot join a Django
-transaction, so one of the two orderings has to be the recoverable one: the
-**evidence is always written first**, and the projection follows. A crash between
-them leaves evidence with no projection, which `reproject` fixes. The other way
-round left a vertex the log had never heard of — still queryable, still resolvable,
-so links could be written naming a node that did not exist.
+Write ordering is load-bearing: the **evidence is always written first**, and the
+projection follows. Under Apache AGE the two stores could not share a transaction,
+so a crash between them left evidence with no projection (which `reproject`
+fixes) — and the other ordering left a vertex the log had never heard of, still
+queryable, so links could be written naming a node that did not exist. With the
+table projection the drawing commits in the *same transaction* as the assertion,
+so the gap is gone in steady state — but the ordering rule stays, because it is
+what keeps a backfill, a rebuild, and any future asynchronous projection kind
+recoverable rather than authoritative.
 
 ---
 

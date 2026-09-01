@@ -13,9 +13,7 @@ from authentikate.strawberry.extension import AuthentikateExtension
 from .extensions.projection import ProjectionExtension
 from .loaders import LoaderExtension
 import kante
-from graph_engine.engine.age_engine import AgeEngine
-from graph_engine.engine.protocol import CypherEngine
-from graph_engine.projection import CypherProjector, Projector
+from graph_engine.projection import Projector, TableProjector
 
 
 import strawberry
@@ -531,7 +529,6 @@ def create_schema(
     max_depth: int = 10,
     debug: bool = False,
     projector: Optional[Projector] = None,
-    cypher_engine: Optional[CypherEngine] = None,
 ) -> kante.Schema:
     """Build the served GraphQL schema.
 
@@ -546,8 +543,6 @@ def create_schema(
         max_depth: Maximum query depth (default 10)
         debug: Enable debug mode
         projector: The projection kind every operation draws through. One per process.
-        cypher_engine: Convenience — an Apache AGE engine to wrap in a `CypherProjector`,
-            for callers (the tests) that hold an engine rather than a projector.
 
     Returns:
         Configured Kante schema
@@ -560,8 +555,6 @@ def create_schema(
         LoaderExtension(),
     ]
 
-    if projector is None and cypher_engine is not None:
-        projector = CypherProjector(cypher_engine)
     if projector is not None:
         extensions.append(ProjectionExtension(projector=projector))
 
@@ -643,12 +636,6 @@ def create_schema(
                     serialize=lambda v: v,
                     parse_value=lambda v: v,
                 ),
-                scalars.CypherLiteral: strawberry.scalar(
-                    name="CypherLiteral",
-                    description="The `CypherLiteral` scalar type represents a raw Cypher query or fragment",
-                    serialize=lambda v: v,  # Implement your serialization logic here
-                    parse_value=lambda v: v,  # Implement your parsing logic here
-                ),
             }
         ),
     )
@@ -671,5 +658,5 @@ schema = create_schema(
     # The one place the projection kind is chosen. A second kind would be a
     # second `Projector` here — and a registry keyed by `Projection.kind` once
     # two exist.
-    projector=CypherProjector(AgeEngine()),
+    projector=TableProjector(),
 )

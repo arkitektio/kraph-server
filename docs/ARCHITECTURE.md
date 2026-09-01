@@ -19,6 +19,13 @@ projection has a named seam (`graph_engine/projection/`), a bookkeeping row and 
 (`graph_engine/models.py`, `watermark.py`), and an incremental `reproject`. Read
 [`VOCABULARY.md`](./VOCABULARY.md) §3 for the current shape of the projection layer.
 
+Finally, it predates the end of Apache AGE itself: the drawing lives in ordinary Postgres tables
+now (`graph_engine.models.ProjectionVertex` / `ProjectionEdge`, drawn by
+`graph_engine/projection/table.py::TableProjector`), and there is no Cypher, no agtype and no
+engine layer anywhere in the repo. Every mention of AGE, Cypher round-trips, or agtype below
+describes the implementation this document was reasoning about, not the one that exists — see
+[`rfcs/0005-retire-the-cypher-projection.md`](./rfcs/0005-retire-the-cypher-projection.md).
+
 One conclusion in here was not merely overtaken but **reversed**, and it is load-bearing enough to
 flag up front. §2.1 argues that only filterable properties need materializing and that the rest can
 be derived on read "with no observable difference". The code implemented that faithfully, and the

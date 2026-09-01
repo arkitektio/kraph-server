@@ -3,7 +3,10 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 Kraph is the knowledge-graph service of the Arkitekt framework: a Django + Strawberry GraphQL
-server on top of PostgreSQL with the **Apache AGE** (Cypher) extension.
+server on top of plain PostgreSQL. The graph is a **projection**: an append-only evidence log
+(`evidence/`) is the source of truth, and each view's drawing lives in two ordinary Postgres
+tables (`graph_engine.models.ProjectionVertex` / `ProjectionEdge`). Apache AGE and Cypher are
+gone — see `docs/rfcs/0005-retire-the-cypher-projection.md` for why and what must not regress.
 
 ## Commands
 
@@ -37,15 +40,17 @@ Notes:
 ### Tests need Docker — always
 
 `tests/conftest.py::backend_stack` is session-scoped and uses `dokker` to `down()` then `up()`
-`tests/integration/docker-compose.yaml` (Postgres+AGE on **5555**, redis on **6666**, seaweedfs on
+`tests/integration/docker-compose.yaml` (Postgres on **5555**, redis on **6666**, seaweedfs on
 **18888**). Those ports must be free. `kraph_server/settings_test.py` hardcodes
 `localhost:5555 / test / test`, so that compose file is the only supported test database — even a
 single test pays the full stack bring-up. Settings module is wired in `pyproject.toml`, so plain
 `uv run pytest` is correct.
 
-**AGE graphs are deliberately not dropped between tests** (see the `age_engine` fixture comment:
-dropping invalidates the AGE type cache). Graph state leaks across a session — a test that passes
-alone but fails in the suite is usually this, not your change.
+The drawing lives in the projection tables of the same test database, so `transactional_db`
+flushes it between tests — real isolation. (Under AGE this was impossible: a type-cache bug
+forced graph state to leak across the session, and "passes alone, fails in the suite" was the
+signature. That whole class is gone.) Tests assert on drawings through `tests/drawing.py`, never
+by importing the projection models into production code paths.
 
 ### Local `manage.py` gotcha
 
@@ -92,7 +97,7 @@ renames that fixed that are in `evidence/migrations/0008_instance_and_standing.p
 | `Term` | evidence | a **word** the organization uses. What a claim names | `evidence.Term` |
 | `Graph` | schema | a **view** over the organization's claims, with a selector saying which ones count | `core.Graph` |
 | `Category` | schema | one **view's rule** for a word: `age_name`, `definition`, layout. `Category.term` is the join to evidence | `core.Category` |
-| vertex / AGE edge | projection | what a view **draws**. Entirely rebuildable by `manage.py reproject`; never a source of truth | Apache AGE |
+| vertex / edge (drawn) | projection | what a view **draws**. Entirely rebuildable by `manage.py reproject`; never a source of truth | `graph_engine.models.ProjectionVertex` / `ProjectionEdge` |
 | drawing | projection | how one view **draws** a claim: a vertex or an edge, and the category it drew it under | `graph_engine.results.NodeDrawing` / `EdgeDrawing` |
 | `Node` / `Edge` | API | the interfaces. `Node` = one `Instance` row typed by kind (exactly `Instance.Kind`); `Edge` = one `Link` row typed by kind (exactly `Link.Kind`). `Edge` does **not** mean "drawable" — several link kinds are never projected | GraphQL only |
 | `Entity` | API | an instance that is **not an event** | `Instance.Kind.ENTITY`, GraphQL `Entity` |
@@ -103,7 +108,7 @@ renames that fixed that are in `evidence/migrations/0008_instance_and_standing.p
 Three consequences worth stating, because each was a bug before the words were separated:
 
 - **`Node` is graph-facing only.** `evidence.Instance` is narrower (no structures, no metrics) and
-  an AGE vertex is narrower still. A `RetrievedNode` spans all of it, so its vertex-only fields are
+  a drawn vertex is narrower still. A `RetrievedNode` spans all of it, so its vertex-only fields are
   named for what they are: `vertex_id` (reassigned by every reproject — `unique_id` is the identity)
   and, on edges, `edge_id`.
 - **"Entity" never means "any node".** It used to, in ~108 identifiers — `project(entity_refs=…)`,
@@ -116,8 +121,9 @@ The load-bearing facts:
 
 - **Two layers.** Django rows in `core/models.py` ending in `*Category` are the *schema/ontology*
   (what node and edge kinds a `Graph` allows). Instance data is **also** Django rows now — the
-  `evidence` app is the source of truth, and Apache AGE holds a droppable projection of it. (This
-  used to say instance data is never a Django row; that inverted when the evidence base landed.)
+  `evidence` app is the source of truth, and the projection tables hold a droppable drawing of it.
+  (This used to say instance data is never a Django row; that inverted when the evidence base
+  landed. Apache AGE held the drawing until RFC 0005 retired it.)
 - **The log names a word, not a category.** `Category` is graph-native — created from the schema
   definition, holding `age_name`, `definition`, derivation rules and layout — and stays so. But
   `Instance.term` and `Link.term` point at organization-scoped `evidence.Term`, so a `CLASSIFIES` claim
@@ -131,7 +137,7 @@ The load-bearing facts:
   the history a newly declared word already admits.
 - **And so does the read API, now.** Every id in the schema is a **bare uuid** — `Node.id` and
   `Edge.id` and nothing else. `graphId`, `globalId`, `localId`, `Node.graph`, `Node.pinned` and the
-  `GlobalID`/`LocalID`/`StructureGlobalID` scalars are gone: each named an Apache AGE vertex that a
+  `GlobalID`/`LocalID`/`StructureGlobalID` scalars are gone: each named a drawn vertex that a
   reproject reassigns, a graph a node may not belong to singly, or (for `globalId`) a vertex
   property nothing has ever written, so it *raised*. The composite `{graph}:{vertex_id}` parsers
   went with them. **Edge list queries read `evidence.Link`**, not Cypher
@@ -151,11 +157,12 @@ The load-bearing facts:
   returns before anything is drawn, `schemaVersion` null), and a node the view does not admit is
   refused, with `instance(id:)` as the claim-grain reader. They used to take no graph and answer
   from `drawings[0]`, an arbitrary view (`projected_instance`, deleted with its caller
-  `get_node`). Anything that reads a vertex pattern should be checked against
-  `projector.create_vertex`, which writes exactly `{id, category_id, type}` and labels with
+  `get_node`). Anything that reads a drawn record should be checked against
+  `Projector.draw_node` (`graph_engine/projection/table.py`), which stores exactly the identity
+  trio `{id, category_id, type}` beside the derived properties and labels with
   `category.age_name`.
 - **What a node *is* comes from the claim, never from the label.** `Instance.kind` is the fact;
-  `create_vertex` writes it onto the vertex as `type`, and `RetrievedNode.node_type` reads that and
+  `draw_node` writes it onto the vertex as `type`, and `RetrievedNode.node_type` reads that and
   nothing else. There is no label-to-kind map any more — a vertex is labelled `category.age_name`
   ("Cell", "Mitosis"), which is one view's rename of a word, so `VocabNodeTypeMap` matched none of
   its five fixed words and defaulted every drawn node to `"ENTITY"`: `node(id:)` and every write's
@@ -191,16 +198,18 @@ The load-bearing facts:
   `ClaimEndpoint` union by dispatching on `kind` — never by inspecting a ref, since every ref is a
   bare uuid addressing one of four tables (`api/types.py::_ENDPOINT_TABLES`).
 - **All graph writes go through `GraphController`** (`graph_engine/controller.py`), which records
-  an `Assertion` — a Postgres row, not an AGE vertex — and projects into Cypher. Corrections are
-  additive: there is no `updateEntity` and no hard delete for instance data. Evidence is written
-  **before** the projection, always; the reverse ordering left vertices the log had never heard of.
+  an `Assertion` — a Postgres row, never a drawn vertex — and draws through the projector.
+  Corrections are additive: there is no `updateEntity` and no hard delete for instance data.
+  Evidence is written **before** the projection, always — and since the drawing is rows in the
+  same database now, the draw commits in the *same transaction* as the assertion, so in steady
+  state the outbox settles with the write and `lag` is structurally zero.
 - **The graph carries no lifecycle state**, and neither does the API. If the claims do not say a
   node exists, it has no vertex — not a vertex with a flag, and not a `lifecycle` field either. Retracting is a `Standing(stands=False)` and removes the drawing
-  (`projector.unproject`, `DETACH`); `attest*` writes `Standing(stands=True)` and redraws it. There is
+  (`projector.unproject`; edges go by FK cascade — the `DETACH`); `attest*` writes `Standing(stands=True)` and redraws it. There is
   no "unarchive": existence is evidence, and two people may disagree about it, with each graph's
   selector deciding whose word it counts.
 - **Identity is a bare uuid.** `Node.id` *is* the identity — no `{age_name}:` prefix, and never the
-  Apache AGE vertex id, which is reassigned by every reproject. GraphQL node ids are that uuid.
+  drawing's vertex id (a `ProjectionVertex` pk), which is reassigned by every reproject. GraphQL node ids are that uuid.
   Graph membership is decided in exactly two functions, `evidence.selector.instances_for` and
   `graph_ids_for_instance_ids` — and the two agree: both count the words a graph's categories declare
   **and** the words their definitions derive from. Since writes name terms, the second one is the
@@ -227,15 +236,14 @@ The load-bearing facts:
   numbers from the same evidence.
 - **The projection seam** is `graph_engine/projection/protocol.py::Projector` — the writer half
   (`draw_node`, `draw_edge`, `write_properties`, `erase_nodes`, namespaces) and the reader half
-  (`drawn_nodes`, `drawn_edge`, `list_drawn`, `render`), phrased in refs/labels/dicts, no query
-  language. `projection/cypher.py::CypherProjector` is the Apache AGE implementation and the only
-  module that emits Cypher for a drawing; `graph_engine/projector.py` decides *what* to draw and
-  calls `controller.projector.*`; `GraphController` holds a projector, not an engine, and runs no
-  query (`tests/projector/test_projector_protocol.py` enforces both). One level down,
-  `engine/protocol.py::CypherEngine` is the Cypher driver seam (`age_engine.py` real,
-  `engine/testing/mock_cypher_engine.py` double), referenced only by the Cypher projector, the
-  driver and the mock. `GraphController(engine=…)` and `materialize(engine=…)` still accept an
-  engine and wrap it — convenience, not a second seam.
+  (`drawn_nodes`, `drawn_edge`, `list_drawn`, `render_table`), phrased in refs/labels/dicts and
+  structured specs, no query language (`list_drawn` takes a `ListDrawnSpec`, not clause strings).
+  `projection/table.py::TableProjector` is the Postgres-table implementation and the **only**
+  module that reads or writes `ProjectionVertex`/`ProjectionEdge`; `graph_engine/projector.py`
+  decides *what* to draw and calls `controller.projector.*`; `GraphController` holds a projector
+  and runs no query. `tests/projector/test_projector_protocol.py` enforces all three, including a
+  repo-wide scan that no other production module names the projection tables. There is no engine
+  layer any more — `CypherEngine`, `AgeEngine` and the mock went with Apache AGE (RFC 0005).
 - **Projection bookkeeping** — `graph_engine/models.py`: a `Projection` row per view (status,
   `schema_hash`, `derived_at`, `rebuilt_at`) and `PendingProjection`, an outbox row written in the
   evidence transaction by `_create_assertion` and deleted by id once the write's projection
@@ -248,20 +256,23 @@ The load-bearing facts:
   exactly those rows; full `reproject --graph` marks `rebuilding` before the drop and refolds
   `CategoryAssertedTerm` / flagged identity / `CurrentStanding` before reading them.
   `rematerialize --stale` reads `Projection.schema_hash` (Postgres), not vertex stamps.
-  `create_vertex` is `MERGE` and `reproject_node` clears first, so every per-node draw converges.
-- **The graph's AGE handle is internal.** `Graph.age_name` is random (`g` + 32 hex,
-  `core.models.new_projection_handle`), never accepted as input, read only by the engine via
-  `get_age_name()`, and never an address: `graph:` arguments are **primary keys**, scoped to the
-  caller's organization. `Graph.ageName` is in the SDL read-only. The `pre_delete` signal in
-  `graph_engine/apps.py` drops the namespace on every deletion path, not only the mutation.
+  `draw_node` is an upsert on the `(graph, ref)` unique constraint and `reproject_node` clears
+  first, so every per-node draw converges.
+- **The graph's projection handle is internal.** `Graph.age_name` is random (`g` + 32 hex,
+  `core.models.new_projection_handle`), never accepted as input, and never an address: `graph:`
+  arguments are **primary keys**, scoped to the caller's organization. With the table projection
+  the handle is vestigial — the namespace is the `graph` FK on the rows, and a deleted `Graph`
+  takes its drawing by cascade (the `pre_delete` signal in `graph_engine/apps.py` still calls
+  `drop_namespace` for any kind that needs one). Renaming the column is cosmetic follow-up.
 - **Saved queries are plans.** `GraphQuery.plan` (`graph_engine/query_ir.py::TableQueryPlan`) is the
   contract — `createGraphTableQuery(input: {plan: …})`, read back as `plan`, compiled per projection
-  kind by `Projector.render_table` (`CypherProjector` emits `MATCH … WITH … WHERE … RETURN`, every
-  value a parameter; render filters name a returned alias). `query: CypherLiteral` is read-only and
-  deprecated; a **legacy** row (plan null) still renders but takes no filter/order/page —
-  `manage.py list_legacy_queries` names them. Only the table kind exists; the node/edge families
-  and the nodes/pairs/path kinds had no execution path and are gone.
-- `graph_engine/materialize.py` is the bridge schema → Django categories + AGE namespace +
+  kind by `Projector.render_table` (`compile_table_plan_sql` emits one join tree per match path,
+  every client value a parameter; render filters name a returned alias, applied outside the
+  compiled body). The `query: CypherLiteral` read-back field is gone with Cypher; a **legacy** row
+  (plan null, raw Cypher stored) no longer renders at all — `manage.py list_legacy_queries` names
+  any so they can be rebuilt through the builder. Only the table kind exists; the node/edge
+  families and the nodes/pairs/path kinds had no execution path and are gone.
+- `graph_engine/materialize.py` is the bridge schema → Django categories + projection namespace +
   `Projection` row (hashed for versioning); `aggregate.py` is the pure fold over `State` for
   derived properties (`rollup.py` is gone); saved queries live in `api/mutations/insights/` and
   `api/queries/insights/` (there is no `insights/` package and no Jinja).

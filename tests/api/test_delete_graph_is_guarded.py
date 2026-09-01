@@ -128,7 +128,7 @@ async def test_an_archived_graph_holding_nodes_is_still_deletable(
 async def test_an_empty_archived_graph_is_deletable(
     api_schema: kante.Schema,
     authenticated_context: HttpContext,
-    age_engine,
+    table_projector,
 ) -> None:
     """The guard has to let something through, or it is a removal, not a guard.
 
@@ -144,7 +144,7 @@ async def test_an_empty_archived_graph_is_deletable(
     def make() -> core_models.Graph:
         graph = materialize(
             input_models.GraphDefinitionInput(system_version="1.0.0", extensions=input_models.GraphExtensionsInput()),
-            age_engine,
+            table_projector,
             user=request._user,
             organization=request._organization,
             membership=request.membership,

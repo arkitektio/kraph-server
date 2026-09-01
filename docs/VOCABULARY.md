@@ -12,7 +12,7 @@ The three layers, in the order data moves through them:
 |---|---|---|---|
 | **Evidence** | *What did somebody claim?* | Postgres, `evidence/` | **No.** Append-only. Losing it loses the facts. |
 | **Schema** | *What does one view make of those claims?* | Postgres, `core/` | No, but deleting it takes no evidence with it. |
-| **Projection** | *What does that view look like, drawn?* | Apache AGE, plus the `graph_engine.Projection` row that says how far along the log the drawing is | **Yes.** `manage.py reproject` rebuilds it from the other two; `reproject --incremental` applies what the outbox says is owed. |
+| **Projection** | *What does that view look like, drawn?* | `graph_engine.models.ProjectionVertex`/`ProjectionEdge` (ordinary Postgres tables), plus the `graph_engine.Projection` row that says how far along the log the drawing is | **Yes.** `manage.py reproject` rebuilds it from the other two; `reproject --incremental` applies what the outbox says is owed. |
 
 The single most load-bearing consequence: **a projection is a cache and the
 evidence is not.** If a projected value and a claim disagree, the claim wins and
@@ -90,7 +90,7 @@ Deleting any of it is free and takes no evidence with it. The `PROTECT` is on
 | Word | Means | Where |
 |---|---|---|
 | `Graph` | A **view** over the organization's claims, with a `selector` saying which ones count. Not a container — a reconstruction | `core.Graph` |
-| `Category` | One **view's rule for a word**: its `age_name` (the AGE label), `definition`, derivation rules, layout, colour. `Category.term` is the join to the evidence layer | `core.Category` |
+| `Category` | One **view's rule for a word**: its `age_name` (the drawing's label), `definition`, derivation rules, layout, colour. `Category.term` is the join to the evidence layer | `core.Category` |
 | `GraphSchema` | A **versioned, immutable** schema definition. Each graph has one active at a time; `index` increments | `core.GraphSchema` |
 | `CategoryAssertedTerm` | The **joinable half** of `Category.definition` — which words a category *derives* from, normalized out of JSON. Stores the **key**, not a `Term` FK, because a definition routinely names a word nobody has minted | `core.CategoryAssertedTerm` |
 | `GraphOntology` / `OntologyReference` | External ontology bindings (PURLs) for a graph and its categories | `core.GraphOntology`, `core.OntologyReference` |
@@ -122,7 +122,7 @@ Also `core/models.py`, also graph-scoped. One kind: the **table** query.
 
 | Table | Means | Where |
 |---|---|---|
-| `GraphQuery` (proxy `GraphTableQuery`) | A saved table query. Its **plan** — `graph_engine.query_ir.TableQueryPlan`: matches, wheres, returns, columns — is the contract a client writes and reads back; each projection kind compiles it (`Projector.render_table`). `query` is the compiled Cypher, read-only and deprecated; a **legacy** row (plan null) still renders through it and `manage.py list_legacy_queries` names it | `core.GraphQuery` |
+| `GraphQuery` (proxy `GraphTableQuery`) | A saved table query. Its **plan** — `graph_engine.query_ir.TableQueryPlan`: matches, wheres, returns, columns — is the contract a client writes and reads back; each projection kind compiles it (`Projector.render_table`). the `query` read-back field is gone with Cypher; a **legacy** row (plan null, raw Cypher stored) cannot render at all, and `manage.py list_legacy_queries` names it so it can be rebuilt | `core.GraphQuery` |
 | `ScatterPlot` | Chart configuration over one table query's columns | `core.ScatterPlot` |
 
 > `NodeQuery`, `EdgeQuery`, their proxies, and the `NODES` / `PATH` / `PAIRS` kinds
@@ -133,7 +133,7 @@ Also `core/models.py`, also graph-scoped. One kind: the **table** query.
 
 ## 3. Projection — what the view looks like, drawn
 
-Apache AGE vertices and edges, plus the derived properties on them. **Entirely
+Drawn vertices and edges — rows of the projection tables — plus the derived properties on them. **Entirely
 rebuildable**: `manage.py reproject` drops and replays it from evidence + schema.
 Nothing here is a source of truth.
 
@@ -142,7 +142,7 @@ Nothing here is a source of truth.
 | Word | Means | Where |
 |---|---|---|
 | `Projector` | The **protocol** one projection kind implements: a writer half (`draw_node`, `draw_edge`, `write_properties`, `erase_nodes`, `create_namespace`/`drop_namespace`, …) and a reader half (`drawn_nodes`, `drawn_edge`, `list_drawn`, `render`). Phrased in refs, labels and property dicts — no query language | `graph_engine/projection/protocol.py` |
-| `CypherProjector` | The Apache AGE implementation, and the **only** module that emits Cypher for a drawing | `graph_engine/projection/cypher.py` |
+| `TableProjector` | The Postgres-table implementation, and the **only** module that reads or writes the projection tables | `graph_engine/projection/table.py` |
 | `current_projector` | Which projector the operation draws through — bound per GraphQL operation by `api/extensions/projection.py`, read by `get_controller()`, the commands and the `pre_delete` signal | `graph_engine/projection/context.py` |
 
 `graph_engine/projector.py` decides *what* to draw and never says how; `GraphController`
@@ -158,7 +158,7 @@ kind — a per-view table — implements `Projector` and is chosen in `api/schem
 | `PendingProjection` | The **outbox**: an assertion whose synchronous projection has not finished. Written in the evidence transaction; deleted **by id only** by the write that drew it or by an org-wide replay that applied it | `graph_engine.models.PendingProjection` |
 | *cursor* (`projectedThroughSeq`) | `min(min_pending_seq − 1, max_seq)` for a consistent graph, 0 otherwise. **Derived, never stored.** Every committed assertion at or below it is drawn | `graph_engine/watermark.py` |
 | *lag* | `max_seq − cursor` | `watermark.position` |
-| *handle* | `Graph.age_name` — the AGE namespace, random (`g` + 32 hex), internal, read only by the engine through `get_age_name()`. Never an address: `graph:` is a primary key | `core.models.new_projection_handle` |
+| *handle* | `Graph.age_name` — random (`g` + 32 hex), internal, vestigial now that the namespace is the `graph` key on the rows. Never an address: `graph:` is a primary key | `core.models.new_projection_handle` |
 
 ### What actually gets drawn
 
@@ -168,10 +168,10 @@ vertex with `category.age_name`. Everything else on it is derived.
 | Concept | Drawn? | Why |
 |---|---|---|
 | `Instance` (entity, natural event, protocol event) | **yes**, one vertex each | |
-| `Link` of kind `RELATION`, `PARTICIPATES_AS_*` | **yes**, an AGE edge | |
+| `Link` of kind `RELATION`, `PARTICIPATES_AS_*` | **yes**, a drawn edge | |
 | `Link` of kind `MEASUREMENT`, `STRUCTURE_RELATION` | **no** | endpoints have no vertex, or nothing projects it |
 | `Link` of kind `INFORMS`, `CLASSIFIES`, `SAME_AS` | **no** | read from evidence directly |
-| `Structure`, `Metric`, `Assertion`, `Comment` | **no** | Postgres rows with no AGE presence at all |
+| `Structure`, `Metric`, `Assertion`, `Comment` | **no** | evidence rows with no drawn presence at all |
 
 ### Vertex properties
 
@@ -180,14 +180,14 @@ vertex with `category.age_name`. Everything else on it is derived.
 | `id` | `create_vertex` | the `Instance` uuid — **the identity** |
 | `category_id` | `create_vertex` | the `core.Category` pk this view drew it under |
 | `type` | `create_vertex` | from `Instance.kind`. **The claim's own account**, never inferred from the label |
-| `__schema_version`, `__measured__*` | `project` | derived; the `__` prefix is the Cypher projector's own encoding (`__last_derived` is no longer written — "when was this view derived" is `Projection.derived_at`) |
+| `__schema_version`, `__measured__*` | `project` | derived; the `__` prefix is the projection layer's own encoding (`__last_derived` is no longer written — "when was this view derived" is `Projection.derived_at`) |
 | everything else | `project` / `rollup` | derived properties from the category's rules |
 
 > A vertex's **label** is `category.age_name` — one view's private rename of a
 > word ("Cell", "Mitosis"). It is *not* a type discriminator. Reading kind off the
 > label is the defect `VocabNodeTypeMap` was deleted for.
 >
-> The AGE **vertex id** is reassigned by every reproject and is never the
+> The drawing's **vertex id** is reassigned by every reproject and is never the
 > identity. `RetrievedNode.vertex_id` is named for what it is so the name prevents
 > the confusion.
 
@@ -205,7 +205,7 @@ from a vertex **or** from an evidence row.
 
 > `RetrievedRelation`, `RetrievedInforms`, `RetrievedDescribes`, `RetrievedAsserts`,
 > `RetrievedReifiesAsSource` and `RetrievedEvent` are **constructed nowhere**.
-> They are leftovers from the design in which provenance was an AGE edge.
+> They are leftovers from the design in which provenance was a drawn edge.
 
 ### Drawings
 
@@ -254,7 +254,7 @@ view does not admit; the claim-grain reader for the same row is `instance(id:)`.
 ## Three consequences, each of which was a bug before the words were separated
 
 - **`Node` is graph-facing only.** `evidence.Instance` is narrower (no structures,
-  no metrics) and an AGE vertex is narrower still. `RetrievedNode` spans all of
+  no metrics) and a drawn vertex is narrower still. `RetrievedNode` spans all of
   it, so its vertex-only fields are named for what they are.
 - **"Entity" never means "any node".** It used to, in ~108 identifiers. Those are
   `instance_refs`, `RetrievedNode` and `instance_refs_informed_by` now.
@@ -265,14 +265,14 @@ view does not admit; the claim-grain reader for the same row is `instance(id:)`.
 ## Where identity lives
 
 **Every id in the API is a bare uuid**, and it is the evidence row's primary key.
-There is no composite form, no `GraphID` scalar, and never the AGE vertex id.
+There is no composite form, no `GraphID` scalar, and never the drawing's vertex id.
 
 | Thing | Its id |
 |---|---|
 | `Instance`, `Link`, `Structure`, `Metric`, `Comment`, `Assertion` | evidence primary key (uuid) |
 | `Graph`, `Category`, `GraphSchema`, saved queries, `ScatterPlot` | Django integer pk |
-| a `Graph`'s AGE namespace | `Graph.age_name`, random and internal — **not** an address; `graph:` takes the pk |
-| an AGE vertex | **has none that survives** — reassigned by every reproject |
+| a `Graph`'s drawing | the `graph` key on the projection rows (`Graph.age_name` is a vestigial handle) — **not** an address; `graph:` takes the pk |
+| a drawn vertex | **has none that survives** — reassigned by every reproject |
 
 ## See also
 

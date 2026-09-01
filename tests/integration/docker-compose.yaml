@@ -1,9 +1,11 @@
 
 services:
    db:
-      image: jhnnsrs/daten:dev
+      # Stock Postgres: the projection is ordinary tables now, so the custom
+      # Postgres+AGE image (jhnnsrs/daten) is not needed anywhere any more.
+      image: postgres:17
       environment:
-         POSTGRES_MULTIPLE_DATABASES: testdb
+         POSTGRES_DB: testdb
          POSTGRES_PASSWORD: test
          POSTGRES_USER: test
       labels:

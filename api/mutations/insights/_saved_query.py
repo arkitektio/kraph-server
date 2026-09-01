@@ -27,9 +27,9 @@ def plan_from_input(plan_input: Any, columns: Any) -> TableQueryPlan:
     )
     # Compile once, against nothing, so a plan that cannot be compiled is refused
     # at save time rather than at the first render.
-    from graph_engine.projection.cypher import compile_table_plan
+    from graph_engine.projection.table import TableProjector, compile_table_plan_sql
 
-    compile_table_plan(plan)
+    compile_table_plan_sql(TableProjector(), plan)
     return plan
 
 

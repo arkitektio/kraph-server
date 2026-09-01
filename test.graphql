@@ -1290,11 +1290,6 @@ input CreateTermInput {
   image: String = null
 }
 
-"""
-The `CypherLiteral` scalar type represents a raw Cypher query or fragment
-"""
-scalar CypherLiteral
-
 """Date with time (isoformat)"""
 scalar DateTime
 
@@ -1849,6 +1844,11 @@ input EntityDescriptorInput {
 input EntityFilter {
   """Filter by specific entity IDs"""
   ids: [ID!] = null
+
+  """
+  Substring match on the claim's term key or label. A column of the log, not a derived property
+  """
+  search: String = null
 }
 
 """Ordering options for entity queries"""
@@ -2253,14 +2253,9 @@ interface GraphQuery {
   plan: TableQueryPlan
 
   """
-  True for a row saved as raw Cypher before the plan became the contract. It still renders, but takes no filter, order or page; rebuild it through the builder
+  True for a row saved as raw Cypher before the plan became the contract. Such a row cannot render — no projection kind executes Cypher — until rebuilt through the builder
   """
   legacy: Boolean!
-
-  """
-  The query as compiled for the Apache AGE projection — read-only, from `plan`. The stored string for a legacy row
-  """
-  query: CypherLiteral @deprecated(reason: "The contract is `plan`; this is its compiled form and names a projection kind. Removed in the next major.")
 }
 
 type GraphStats {
@@ -2314,14 +2309,9 @@ type GraphTableQuery implements GraphQuery & Plottable @key(fields: "id", resolv
   plan: TableQueryPlan
 
   """
-  True for a row saved as raw Cypher before the plan became the contract. It still renders, but takes no filter, order or page; rebuild it through the builder
+  True for a row saved as raw Cypher before the plan became the contract. Such a row cannot render — no projection kind executes Cypher — until rebuilt through the builder
   """
   legacy: Boolean!
-
-  """
-  The query as compiled for the Apache AGE projection — read-only, from `plan`. The stored string for a legacy row
-  """
-  query: CypherLiteral @deprecated(reason: "The contract is `plan`; this is its compiled form and names a projection kind. Removed in the next major.")
 
   """How the returned aliases are presented"""
   columns: [Column!]!
@@ -3565,6 +3555,11 @@ type NaturalEventCategoryStats {
 input NaturalEventFilter {
   """Filter by specific natural event IDs"""
   ids: [ID!] = null
+
+  """
+  Substring match on the claim's term key or label. A column of the log, not a derived property
+  """
+  search: String = null
 }
 
 """Ordering options for natural event queries"""
@@ -3689,6 +3684,11 @@ type NodeDrawing {
 input NodeFilters {
   """Filter by specific node IDs"""
   ids: [ID!] = null
+
+  """
+  Substring match on the claim's term key or label. A column of the log, not a derived property
+  """
+  search: String = null
 }
 
 """Ordering options for node queries"""
@@ -4123,6 +4123,11 @@ type ProtocolEventCategoryStats {
 input ProtocolEventFilter {
   """Filter by specific protocol event IDs"""
   ids: [ID!] = null
+
+  """
+  Substring match on the claim's term key or label. A column of the log, not a derived property
+  """
+  search: String = null
 }
 
 """Ordering options for protocol event queries"""

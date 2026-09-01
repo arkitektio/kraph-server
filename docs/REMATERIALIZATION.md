@@ -50,7 +50,7 @@ consequences:
 
 - **A mutation that changes nothing costs nothing.** Most `update_*_category`
   calls are relabelling — a new colour, a description, a pin — and an equal hash
-  returns without touching AGE. This is the common case, and it is the reason the
+  returns without touching the drawing. This is the common case, and it is the reason the
   synchronous redraw is tolerable at all.
 - **The hash answers a question `created` cannot.** `create_*_category` is an
   `update_or_create` and the manager swallows the `created` flag, so a "create"
@@ -72,8 +72,8 @@ removal — dropping one of several — works, and is what the tests exercise.
 
 ## Retired keys: the one thing only the mutation can do
 
-Cypher `SET` only adds and overwrites. Anything a previous pass wrote that this
-one does not would sit on the vertex forever, answering queries with a value no
+`write_properties` only adds and overwrites. Anything a previous pass wrote that
+this one does not would sit on the vertex forever, answering queries with a value no
 rule still derives — and nothing would correct it, because the code that would
 have is exactly the code that stopped running.
 
@@ -101,7 +101,7 @@ is already gone. `manage.py reproject` can, by dropping the namespace entirely.
 
 It runs inside the request and is **unbounded in the size of the graph**:
 `refs_drawn_as` resolves every node the graph contains, and `project` issues one
-Cypher write per node. A category drawing a hundred thousand entities is not a
+projection write per node. A category drawing a hundred thousand entities is not a
 mutation any client should wait on.
 
 This service has no job queue to hand it to. `channels-redis` is present, but for
@@ -122,7 +122,7 @@ recorded hash is not the active schema's has not been redrawn under the rules
 currently in force, and `manage.py rematerialize --stale` selects on exactly
 that — `graph_engine.watermark.schema_stale(graph)`, a Postgres comparison.
 
-It used to be a Cypher count of vertices whose `__schema_version` stamp differed
+It used to be a count over the drawing of vertices whose `__schema_version` stamp differed
 from the active hash. The stamp is still written (it is honest projection-internal
 bookkeeping), but the *ledger* of "which schema is this drawing at" cannot live
 only inside the cache it audits: the `reproject` that fixes a stale drawing

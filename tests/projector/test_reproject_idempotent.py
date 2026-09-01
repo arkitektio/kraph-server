@@ -99,7 +99,7 @@ async def test_reproject_reproduces_the_projection(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """Drop the AGE graph, replay from evidence, compare properties.
 
@@ -117,7 +117,7 @@ async def test_reproject_reproduces_the_projection(
 
     @sync_to_async
     def rebuild() -> dict:
-        controller = GraphController(engine=age_engine)
+        controller = GraphController(projector=table_projector)
         return controller.rebuild_projection(test_graph)
 
     result = await rebuild()
@@ -140,7 +140,7 @@ async def test_rebuild_survives_the_age_namespace_being_destroyed(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """Nothing may be read out of AGE to perform the rebuild.
 
@@ -154,9 +154,9 @@ async def test_rebuild_survives_the_age_namespace_being_destroyed(
 
     @sync_to_async
     def drop_then_rebuild() -> dict:
-        controller = GraphController(engine=age_engine)
-        age_engine.drop_graph(test_graph.age_name, cascade=True)
-        age_engine.create_graph(age_name=test_graph.age_name)
+        controller = GraphController(projector=table_projector)
+        table_projector.drop_namespace(test_graph)
+        table_projector.create_namespace(test_graph)
         return controller.rebuild_projection(test_graph)
 
     result = await drop_then_rebuild()
@@ -172,7 +172,7 @@ async def test_instance_refs_survive_a_rebuild(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """Evidence links must still resolve after the vertex ids change.
 
@@ -187,7 +187,7 @@ async def test_instance_refs_survive_a_rebuild(
 
     @sync_to_async
     def refs_and_rebuild() -> tuple[list[str], dict]:
-        controller = GraphController(engine=age_engine)
+        controller = GraphController(projector=table_projector)
         refs = list(evidence_models.Link.objects.for_organization(test_graph.organization).filter(kind=evidence_models.Link.Kind.INFORMS).values_list("target_ref", flat=True))
         return refs, controller.rebuild_projection(test_graph)
 

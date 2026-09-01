@@ -46,7 +46,7 @@ async def test_a_view_that_does_not_admit_the_node_refuses_it(
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
     minimal_schema,
-    age_engine,
+    table_projector,
     authenticated_context,
 ) -> None:
     """Declared-in-A, not-in-B: A answers the drawing, B refuses, the claim answers either way.
@@ -64,7 +64,7 @@ async def test_a_view_that_does_not_admit_the_node_refuses_it(
         request = authenticated_context.request
         return materialize(
             minimal_schema,
-            age_engine,
+            table_projector,
             user=request._user,
             organization=request._organization,
             membership=request.membership,

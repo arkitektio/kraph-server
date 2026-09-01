@@ -13,8 +13,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from .input_models import DerivationType, GraphDefinitionInput
-from .engine.protocol import CypherEngine
-from .projection import CypherProjector, Projector
+from .projection import Projector
 from core import models
 from authentikate.models import Organization, Membership, User
 
@@ -171,15 +170,13 @@ def validate_derivation_rules(definition: GraphDefinitionInput) -> None:
 
 def materialize(
     definition: GraphDefinitionInput,
-    engine: CypherEngine | None = None,
+    projector: Projector | None = None,
     user: User | None = None,
     organization: Organization | None = None,
     membership: Membership | None = None,
     name: Optional[str] = None,
     description: Optional[str] = None,
     backfill: bool = False,
-    *,
-    projector: Projector | None = None,
 ) -> models.Graph:
     """
     Materialize a graph based on the provided graph definition.
@@ -193,7 +190,7 @@ def materialize(
 
     Args:
         definition: GraphDefinitionModel containing the graph schema definition
-        engine: The CypherEngine to execute queries against
+        projector: The projection kind the new view is drawn in (default: the table projector)
         name: Optional name for the graph (defaults to "graph_{hash}")
         description: Optional description for the graph
         user: Optional user for the graph (required for production)
@@ -220,7 +217,7 @@ def materialize(
     if name is None:
         name = f"graph_{schema_hash}"
 
-    # The AGE handle is random and assigned by the model default — see
+    # The projection handle is random and assigned by the model default — see
     # `core.models.new_projection_handle` for why it is neither derived from the
     # name nor accepted from anyone.
     graph = models.Graph.objects.create(
@@ -232,18 +229,15 @@ def materialize(
         rules=[rule.model_dump(mode="json") for rule in definition.rules],
     )
 
-    # The projection kind this view is drawn in. `engine=` is the older spelling
-    # — an Apache AGE engine to wrap — kept because every test and command holds
-    # one; `projector=` is the seam.
+    # The projection kind this view is drawn in.
     if projector is None:
-        if engine is None:
-            raise ValueError("materialize needs a projector (or an engine to wrap in the Apache AGE one)")
-        projector = CypherProjector(engine)
+        from graph_engine.projection.table import TableProjector
 
-    # A fresh random handle never names an existing namespace, so "already exists"
-    # is not a path to swallow any more: it would mean a `Graph` row pointing at
-    # somebody else's populated graph, which is exactly the collision the old
-    # name-derived handle could produce.
+        projector = TableProjector()
+
+    # For the table kind this is a no-op — the namespace is the graph key on the
+    # rows — but the call stays: it is the protocol's word for "make the place
+    # this view's drawing lives in", and another kind may need one.
     projector.create_namespace(graph)
 
     # One schema change, not one per category row. Without suspending, the

@@ -1275,11 +1275,11 @@ class GraphQuery(KindDiscriminatedModel):
     )
     # The **plan** is the contract — `graph_engine.query_ir.TableQueryPlan` as
     # JSON: matches, wheres, returns, columns. It is what a client writes, what
-    # comes back, and what each projection kind compiles (`CypherProjector` →
-    # Cypher). `query` is the compiled form, kept for rows saved before plans
-    # existed: a legacy row has `plan = NULL` and renders through its stored
-    # Cypher; `manage.py list_legacy_queries` names them so they can be rebuilt
-    # through the builder.
+    # comes back, and what each projection kind compiles (`TableProjector` →
+    # SQL). `query` is a fossil: raw Cypher from rows saved before plans
+    # existed. A legacy row has `plan = NULL` and cannot render at all — no
+    # projection kind executes Cypher — so `manage.py list_legacy_queries`
+    # names them to be rebuilt through the builder.
     plan = models.JSONField(null=True, blank=True, help_text="The saved query as a `TableQueryPlan` (matches, wheres, returns, columns). Null only on a legacy row that stores raw Cypher.")
     query = models.CharField(max_length=7000, null=True, blank=True, help_text="Legacy: raw Cypher saved before plans existed. Read-only; never accepted any more.")
     label = models.CharField(max_length=1000, help_text="The name of the materialized graph")

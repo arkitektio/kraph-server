@@ -124,7 +124,7 @@ async def test_a_scoped_graph_reads_the_same_value_before_and_after_a_rebuild(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """Ingest and replay must agree under a non-empty selector.
 
@@ -150,7 +150,7 @@ async def test_a_scoped_graph_reads_the_same_value_before_and_after_a_rebuild(
 
     @sync_to_async
     def rebuild() -> dict:
-        return GraphController(engine=age_engine).rebuild_projection(test_graph)
+        return GraphController(projector=table_projector).rebuild_projection(test_graph)
 
     await rebuild()
 
@@ -164,7 +164,7 @@ async def test_a_retraction_after_a_rebuild_does_not_widen_the_scope(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """The sharper case, and the one that survived the obvious fix.
 
@@ -199,7 +199,7 @@ async def test_a_retraction_after_a_rebuild_does_not_widen_the_scope(
 
     @sync_to_async
     def rebuild() -> dict:
-        return GraphController(engine=age_engine).rebuild_projection(test_graph)
+        return GraphController(projector=table_projector).rebuild_projection(test_graph)
 
     await rebuild()
     assert await _avg_length(api_schema, simple_api_context, entity_id, test_graph) == pytest.approx(15.0)
@@ -216,7 +216,7 @@ async def test_a_retraction_after_a_rebuild_does_not_widen_the_scope(
 
         metric = evidence_models.Metric.objects.for_organization(test_graph.organization).filter(structure__identifier="ROI", value_num=20.0).first()
         assert metric is not None
-        controller = GraphController(engine=age_engine)
+        controller = GraphController(projector=table_projector)
         instance_refs = projector.refs_informed_by(test_graph.organization, [metric.structure_id])
         writer.retract(test_graph.organization, metric, metric.assertion)
         state_module.retract(metric, instance_refs)
@@ -235,7 +235,7 @@ async def test_edge_state_survives_a_rebuild(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """State keyed on an edge is folded by the rebuild too.
 
@@ -300,7 +300,7 @@ async def test_edge_state_survives_a_rebuild(
 
     @sync_to_async
     def rebuild() -> dict:
-        return GraphController(engine=age_engine).rebuild_projection(test_graph)
+        return GraphController(projector=table_projector).rebuild_projection(test_graph)
 
     await rebuild()
 

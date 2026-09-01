@@ -9,10 +9,11 @@ unusable by any projection kind but Apache AGE.
 The contract is the **plan** now — this module — stored as JSON in
 `GraphQuery.plan`, accepted as `TableQueryPlanInput`, returned as
 `TableQueryPlan`, and compiled per projection kind
-(`graph_engine/projection/cypher.py::compile_table_plan` for AGE). A plan says
-which paths to match, which predicates to apply, which values to return under
-which aliases, and how the result's columns are described. The `query` field
-still exists, deprecated, as the compiled form — read-only, for one release.
+(`graph_engine/projection/table.py::compile_table_plan_sql` for the table
+kind). A plan says which paths to match, which predicates to apply, which
+values to return under which aliases, and how the result's columns are
+described. The model's `query` column survives only on legacy rows saved as
+raw Cypher before plans existed; nothing renders it any more.
 
 `version` is stamped so a later shape can be told from this one without guessing.
 """

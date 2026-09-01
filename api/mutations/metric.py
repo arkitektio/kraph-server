@@ -8,7 +8,7 @@ and then authorizes the caller against *its* organization.
 
 **Named for values, not existence.** A metric asserts that something *measures*
 45.2µm; `assertMetricExists` would name the wrong thing. Nothing projects a
-metric into Apache AGE either, so :class:`api.types.AssertedMetric` carries no
+metric into the drawing either, so :class:`api.types.AssertedMetric` carries no
 `drawings` field.
 """
 

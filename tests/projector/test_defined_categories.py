@@ -28,6 +28,7 @@ from evidence import models as evidence_models
 from evidence import selector as selector_module
 from evidence import writer
 from graph_engine.controller import GraphController
+from tests import drawing
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {
@@ -79,7 +80,7 @@ def _retract_classifications(graph: core_models.Graph, ref: str) -> None:
         writer.retract(graph.organization, link, assertion)
 
 
-def _labels(age_engine, graph: core_models.Graph, keys: list[str]) -> dict[str, int]:
+def _labels(table_projector, graph: core_models.Graph, keys: list[str]) -> dict[str, int]:
     """How many vertices carry each category's label, keyed by category key.
 
     Resolves `age_name` from the row rather than assuming the key lowercases to
@@ -89,16 +90,14 @@ def _labels(age_engine, graph: core_models.Graph, keys: list[str]) -> dict[str, 
     for key in keys:
         category = core_models.Category.objects.filter(graph=graph, key=key).first()
         assert category is not None, f"no category {key!r} in this graph"
-        rows = age_engine.execute(graph, f"MATCH (e:{category.age_name}) RETURN count(e) as c", {})
-        counts[key] = int(rows[0]["c"]) if rows else 0
+        counts[key] = drawing.vertex_count(graph, category.age_name)
     return counts
 
 
-def _ids_with_label(age_engine, graph: core_models.Graph, key: str) -> list[str]:
+def _ids_with_label(table_projector, graph: core_models.Graph, key: str) -> list[str]:
     """The `id` property of every vertex carrying this category's label."""
     category = core_models.Category.objects.get(graph=graph, key=key)
-    rows = age_engine.execute(graph, f"MATCH (e:{category.age_name}) RETURN e.id as id", {})
-    return [str(row["id"]) for row in rows]
+    return drawing.refs_with_label(graph, category.age_name)
 
 
 @pytest.mark.django_db(transaction=True)
@@ -139,7 +138,7 @@ async def test_a_definition_narrows_what_the_graph_contains(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """"In this graph, AIS means the ones Johannes called AIS."
 
@@ -165,7 +164,7 @@ async def test_a_definition_narrows_what_the_graph_contains(
         ais.definition = {"asserted_as": "AIS", "assertion_filter": {"subjects": [JOHANNES]}}
         ais.save()
 
-        return GraphController(engine=age_engine).rebuild_projection(test_graph)
+        return GraphController(projector=table_projector).rebuild_projection(test_graph)
 
     result = await define_and_rebuild()
 
@@ -174,7 +173,7 @@ async def test_a_definition_narrows_what_the_graph_contains(
 
     @sync_to_async
     def counts() -> dict[str, int]:
-        return _labels(age_engine, test_graph, ["AIS"])
+        return _labels(table_projector, test_graph, ["AIS"])
 
     assert (await counts())["AIS"] == 1
 
@@ -185,7 +184,7 @@ async def test_changing_a_definition_moves_membership_and_writes_no_evidence(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """The whole claim.
 
@@ -208,14 +207,14 @@ async def test_changing_a_definition_moves_membership_and_writes_no_evidence(
 
         ais.definition = {"asserted_as": "AIS", "assertion_filter": {"subjects": [JOHANNES]}}
         ais.save()
-        GraphController(engine=age_engine).rebuild_projection(test_graph)
+        GraphController(projector=table_projector).rebuild_projection(test_graph)
         return _evidence_row_count(test_graph)
 
     before = await setup()
 
     @sync_to_async
     def which_node_is_in() -> str:
-        ids = _ids_with_label(age_engine, test_graph, "AIS")
+        ids = _ids_with_label(table_projector, test_graph, "AIS")
         assert len(ids) == 1, f"expected exactly one projected AIS, got {ids}"
         return ids[0]
 
@@ -226,8 +225,8 @@ async def test_changing_a_definition_moves_membership_and_writes_no_evidence(
         ais = core_models.EntityCategory.objects.get(graph=test_graph, key="AIS")
         ais.definition = {"asserted_as": "AIS", "assertion_filter": {"subjects": [CHRISTIAN]}}
         ais.save()
-        GraphController(engine=age_engine).rebuild_projection(test_graph)
-        ids = _ids_with_label(age_engine, test_graph, "AIS")
+        GraphController(projector=table_projector).rebuild_projection(test_graph)
+        ids = _ids_with_label(table_projector, test_graph, "AIS")
         assert len(ids) == 1, f"expected exactly one projected AIS, got {ids}"
         return ids[0], _evidence_row_count(test_graph)
 
@@ -259,7 +258,7 @@ async def test_definitions_can_partition_one_term_by_annotator(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """"Split AIS into AISprox if Johannes called it and AISdistal if Christian did."
 
@@ -287,7 +286,7 @@ async def test_definitions_can_partition_one_term_by_annotator(
                 definition={"asserted_as": "AIS", "assertion_filter": {"subjects": [subject]}},
             )
 
-        return GraphController(engine=age_engine).rebuild_projection(test_graph)
+        return GraphController(projector=table_projector).rebuild_projection(test_graph)
 
     result = await partition()
     assert result["nodes"] == 2, "Both nodes are admitted, each by a different definition"
@@ -295,7 +294,7 @@ async def test_definitions_can_partition_one_term_by_annotator(
 
     @sync_to_async
     def counts() -> dict[str, int]:
-        return _labels(age_engine, test_graph, ["AISprox", "AISdistal", "AIS"])
+        return _labels(table_projector, test_graph, ["AISprox", "AISdistal", "AIS"])
 
     got = await counts()
     assert got["AISprox"] == 1, "Johannes's node carries the proximal term"
@@ -309,7 +308,7 @@ async def test_a_node_matching_two_definitions_is_refused_not_guessed(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """A vertex carries one label, so a node both definitions admit has no answer.
 
@@ -340,7 +339,7 @@ async def test_a_node_matching_two_definitions_is_refused_not_guessed(
                 definition={"asserted_as": "AIS", "assertion_filter": {"subjects": [subject]}},
             )
 
-        return GraphController(engine=age_engine).rebuild_projection(test_graph)
+        return GraphController(projector=table_projector).rebuild_projection(test_graph)
 
     result = await both_claim_it()
 
@@ -349,7 +348,7 @@ async def test_a_node_matching_two_definitions_is_refused_not_guessed(
 
     @sync_to_async
     def counts() -> dict[str, int]:
-        return _labels(age_engine, test_graph, ["AISprox", "AISdistal", "AIS"])
+        return _labels(table_projector, test_graph, ["AISprox", "AISdistal", "AIS"])
 
     assert await counts() == {"AISprox": 0, "AISdistal": 0, "AIS": 0}
 
@@ -360,7 +359,7 @@ async def test_a_primitive_category_behaves_exactly_as_before(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """A graph that declares no definitions must be unchanged by any of this.
 
@@ -373,8 +372,8 @@ async def test_a_primitive_category_behaves_exactly_as_before(
 
     @sync_to_async
     def rebuild() -> tuple[dict, dict[str, int]]:
-        result = GraphController(engine=age_engine).rebuild_projection(test_graph)
-        return result, _labels(age_engine, test_graph, ["AIS"])
+        result = GraphController(projector=table_projector).rebuild_projection(test_graph)
+        return result, _labels(table_projector, test_graph, ["AIS"])
 
     result, counts = await rebuild()
 
@@ -389,7 +388,7 @@ async def test_a_category_can_derive_from_several_words_the_graph_never_declares
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """"Neuron here means anything claimed Pyramidal or Interneuron."
 
@@ -447,7 +446,7 @@ async def test_a_category_can_derive_from_several_words_the_graph_never_declares
             definition={"asserted_as": ["Pyramidal", "Interneuron"]},
         )
 
-        return GraphController(engine=age_engine).rebuild_projection(test_graph)
+        return GraphController(projector=table_projector).rebuild_projection(test_graph)
 
     result = await regroup()
     assert result["nodes"] == 2, "Both nodes are admitted by the one definition, from words the graph never declares"
@@ -455,7 +454,7 @@ async def test_a_category_can_derive_from_several_words_the_graph_never_declares
 
     @sync_to_async
     def counts() -> dict[str, int]:
-        return _labels(age_engine, test_graph, ["Neuron", "AIS"])
+        return _labels(table_projector, test_graph, ["Neuron", "AIS"])
 
     got = await counts()
     assert got["Neuron"] == 2, "Grouped under the heading this view gives them"
@@ -468,7 +467,7 @@ async def test_a_single_word_definition_still_reads_as_one(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    age_engine,
+    table_projector,
 ) -> None:
     """`asserted_as` accepts a bare string as well as a list.
 

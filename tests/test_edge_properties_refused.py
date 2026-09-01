@@ -68,7 +68,7 @@ def _schema(extensions: models.GraphExtensionsInput) -> models.GraphDefinitionIn
         ),
     ],
 )
-def test_a_schema_declaring_edge_properties_is_refused(extensions, age_engine, authenticated_context) -> None:
+def test_a_schema_declaring_edge_properties_is_refused(extensions, table_projector, authenticated_context) -> None:
     """Refused before any category exists, naming the fix.
 
     Same shape as the existing refusal of a rule-less node property: the schema
@@ -80,7 +80,7 @@ def test_a_schema_declaring_edge_properties_is_refused(extensions, age_engine, a
     with pytest.raises(ValueError, match="an edge carries no derived properties"):
         materialize(
             _schema(extensions),
-            age_engine,
+            table_projector,
             user=request._user,
             organization=request._organization,
             membership=request.membership,
@@ -89,7 +89,7 @@ def test_a_schema_declaring_edge_properties_is_refused(extensions, age_engine, a
 
 
 @pytest.mark.django_db(transaction=True)
-def test_events_keep_their_properties(age_engine, authenticated_context) -> None:
+def test_events_keep_their_properties(table_projector, authenticated_context) -> None:
     """The guard has to distinguish edges from nodes, and an event is a node.
 
     `NaturalEventCategory` and `ProtocolEventCategory` are `NodeCategory`
@@ -115,7 +115,7 @@ def test_events_keep_their_properties(age_engine, authenticated_context) -> None
                 ],
             )
         ),
-        age_engine,
+        table_projector,
         user=request._user,
         organization=request._organization,
         membership=request.membership,

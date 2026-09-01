@@ -78,7 +78,7 @@ async def test_a_projection_failure_leaves_the_row_and_holds_every_cursor(api_sc
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_a_new_view_over_admitted_evidence_needs_a_backfill_until_it_gets_one(api_schema, simple_api_context, test_graph: core_models.Graph, age_engine, bio_graph_schema, authenticated_context) -> None:
+async def test_a_new_view_over_admitted_evidence_needs_a_backfill_until_it_gets_one(api_schema, simple_api_context, test_graph: core_models.Graph, table_projector, bio_graph_schema, authenticated_context) -> None:
     from graph_engine.materialize import materialize
 
     await writes.create_entity(api_schema, simple_api_context, "AIS")
@@ -86,7 +86,7 @@ async def test_a_new_view_over_admitted_evidence_needs_a_backfill_until_it_gets_
     @sync_to_async
     def second_view(backfill: bool) -> core_models.Graph:
         request = authenticated_context.request
-        return materialize(bio_graph_schema, age_engine, user=request._user, organization=request._organization, membership=request.membership, name=f"second_{backfill}", backfill=backfill)
+        return materialize(bio_graph_schema, table_projector, user=request._user, organization=request._organization, membership=request.membership, name=f"second_{backfill}", backfill=backfill)
 
     @sync_to_async
     def position(graph):
@@ -105,14 +105,14 @@ async def test_a_new_view_over_admitted_evidence_needs_a_backfill_until_it_gets_
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_a_view_over_nothing_it_admits_starts_consistent(age_engine, minimal_schema, authenticated_context) -> None:
+async def test_a_view_over_nothing_it_admits_starts_consistent(table_projector, minimal_schema, authenticated_context) -> None:
     """No backfill needed when there is nothing to backfill: the write path will draw everything that comes."""
     from graph_engine.materialize import materialize
 
     @sync_to_async
     def make():
         request = authenticated_context.request
-        graph = materialize(minimal_schema, age_engine, user=request._user, organization=request._organization, membership=request.membership, name="empty_view")
+        graph = materialize(minimal_schema, table_projector, user=request._user, organization=request._organization, membership=request.membership, name="empty_view")
         return watermark.position(graph)
 
     position = await make()
@@ -122,12 +122,12 @@ async def test_a_view_over_nothing_it_admits_starts_consistent(age_engine, minim
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_rebuild_marks_consistent_and_a_dead_rebuild_is_honest(api_schema, simple_api_context, test_graph: core_models.Graph, age_engine, monkeypatch) -> None:
+async def test_rebuild_marks_consistent_and_a_dead_rebuild_is_honest(api_schema, simple_api_context, test_graph: core_models.Graph, table_projector, monkeypatch) -> None:
     await writes.create_entity(api_schema, simple_api_context, "AIS")
 
     @sync_to_async
     def rebuild():
-        GraphController(engine=age_engine).rebuild_projection(test_graph)
+        GraphController(projector=table_projector).rebuild_projection(test_graph)
         return watermark.position(test_graph), watermark.active_schema_hash(test_graph)
 
     position, active_hash = await rebuild()
@@ -145,7 +145,7 @@ async def test_rebuild_marks_consistent_and_a_dead_rebuild_is_honest(api_schema,
     @sync_to_async
     def failing_rebuild():
         with pytest.raises(RuntimeError):
-            GraphController(engine=age_engine).rebuild_projection(test_graph)
+            GraphController(projector=table_projector).rebuild_projection(test_graph)
         return watermark.position(test_graph), watermark.active_schema_hash(test_graph)
 
     position, active_hash = await failing_rebuild()
