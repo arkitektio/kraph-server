@@ -1326,7 +1326,7 @@ def rebuild(controller: Any, graph: core_models.Graph) -> dict[str, int]:
     watermark.mark_rebuilding(graph)
 
     controller.projector.drop_namespace(graph)
-    controller.projector.create_namespace(graph)
+    controller.projector.refresh_namespace(graph)
 
     counts = project_all(controller, graph)
     counts["claims"] = claims_current

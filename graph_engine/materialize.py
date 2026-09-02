@@ -235,18 +235,21 @@ def materialize(
 
         projector = TableProjector()
 
-    # For the table kind this is a no-op — the namespace is the graph key on the
-    # rows — but the call stays: it is the protocol's word for "make the place
-    # this view's drawing lives in", and another kind may need one.
-    projector.create_namespace(graph)
-
     # One schema change, not one per category row. Without suspending, the
     # post_save signal would emit a version for every category created below and
-    # the history would describe insertion order rather than user intent.
+    # the history would describe insertion order rather than user intent. The
+    # namespace-refresh signal shares the gate for the same reason: one refresh
+    # below, not one DDL round per category row.
     from graph_engine import versioning
 
     with versioning.suspended():
         _materialize_categories(graph, definition, user)
+
+    # After the categories, deliberately: the namespace is derived *from* them
+    # (one view per node category, one per admitted endpoint pair, one property
+    # graph — RFC 0006). The old `create_namespace` ran before they existed,
+    # which was harmless only because it had nothing to derive.
+    projector.refresh_namespace(graph)
 
     # The projection's bookkeeping row. A view that is not backfilled over evidence
     # it already admits is honestly `NEEDS_BACKFILL` — its cursor reads 0 and its

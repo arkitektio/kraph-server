@@ -98,12 +98,22 @@ class Projector(Protocol):
 
     # ------------------------------------------------------------------ namespace
 
-    def create_namespace(self, graph: Any) -> None:
-        """Make the place this graph's drawing lives in. Idempotent is not required: callers create once."""
+    def refresh_namespace(self, graph: Any) -> None:
+        """(Re)derive the place this graph's drawing is queried from, from the view's categories.
+
+        Idempotent and re-runnable: the namespace is a **derived artifact**,
+        rebuilt wholesale from `Category` rows exactly as the drawing is rebuilt
+        from evidence (RFC 0006). Called after materialize declares the
+        categories, after a rebuild's drop, and by the category-write signal.
+        """
         ...
 
     def drop_namespace(self, graph: Any) -> None:
-        """Destroy the drawing and everything in it. The evidence is untouched by construction."""
+        """Destroy the drawing, its namespace, and everything in them. The evidence is untouched by construction."""
+        ...
+
+    def validate_plan(self, plan: Any) -> None:
+        """Refuse a structurally invalid saved-query plan — the save-time check, no view in scope."""
         ...
 
     # ------------------------------------------------------------------ writer: nodes

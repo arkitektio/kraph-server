@@ -3,10 +3,14 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 Kraph is the knowledge-graph service of the Arkitekt framework: a Django + Strawberry GraphQL
-server on top of plain PostgreSQL. The graph is a **projection**: an append-only evidence log
-(`evidence/`) is the source of truth, and each view's drawing lives in two ordinary Postgres
-tables (`graph_engine.models.ProjectionVertex` / `ProjectionEdge`). Apache AGE and Cypher are
-gone — see `docs/rfcs/0005-retire-the-cypher-projection.md` for why and what must not regress.
+server on top of plain PostgreSQL **19** (SQL/PGQ). The graph is a **projection**: an append-only
+evidence log (`evidence/`) is the source of truth, and each view's drawing lives in two ordinary
+Postgres tables (`graph_engine.models.ProjectionVertex` / `ProjectionEdge`). Apache AGE and
+Cypher are gone — see `docs/rfcs/0005-retire-the-cypher-projection.md` for why and what must not
+regress. Each graph additionally has a **namespace**: a per-graph Postgres schema (named by
+`Graph.age_name`) holding per-category views and one SQL/PGQ property graph, *derived from the
+categories* by `refresh_namespace` and enforced write-side by a composite FK — see
+`docs/rfcs/0006-the-namespace-is-a-derived-artifact.md`.
 
 ## Commands
 
@@ -239,11 +243,29 @@ The load-bearing facts:
   (`drawn_nodes`, `drawn_edge`, `list_drawn`, `render_table`), phrased in refs/labels/dicts and
   structured specs, no query language (`list_drawn` takes a `ListDrawnSpec`, not clause strings).
   `projection/table.py::TableProjector` is the Postgres-table implementation and the **only**
-  module that reads or writes `ProjectionVertex`/`ProjectionEdge`; `graph_engine/projector.py`
-  decides *what* to draw and calls `controller.projector.*`; `GraphController` holds a projector
-  and runs no query. `tests/projector/test_projector_protocol.py` enforces all three, including a
-  repo-wide scan that no other production module names the projection tables. There is no engine
-  layer any more — `CypherEngine`, `AgeEngine` and the mock went with Apache AGE (RFC 0005).
+  module that reads or writes `ProjectionVertex`/`ProjectionEdge` — and the only one that speaks
+  namespace DDL (`CREATE PROPERTY GRAPH`, `GRAPH_TABLE`, `CREATE/DROP SCHEMA`);
+  `graph_engine/projector.py` decides *what* to draw and calls `controller.projector.*`;
+  `graph_engine/namespace.py` decides what a namespace *declares* (pure spec, no SQL);
+  `GraphController` holds a projector and runs no query.
+  `tests/projector/test_projector_protocol.py` enforces all of it, including repo-wide scans that
+  no other production module names the projection tables or the DDL. There is no engine layer any
+  more — `CypherEngine`, `AgeEngine` and the mock went with Apache AGE (RFC 0005).
+- **The namespace is a derived artifact** (RFC 0006). `Projector.refresh_namespace(graph)`
+  drops and recreates the per-graph schema wholesale from `core.Category` rows: one view per node
+  category, one per (edge label × admitted endpoint pair — descriptors expanded by
+  `graph_engine/namespace.py`, open descriptors over every entity-like category, capped loudly),
+  one property graph with per-category labels (`MATCH (a IS "Cell")` dispatches). Category writes
+  refresh it via signals in `graph_engine/apps.py` **in the same transaction** (DDL is
+  transactional — no second staleness ledger; the signal is `is_suspended()`-gated because
+  `materialize` refreshes once itself, after its categories exist). Out-of-band repair:
+  `manage.py refresh_namespaces`. Write-side, a raw composite FK
+  `ProjectionVertex(graph, category_pk) → Category(graph, id) ON DELETE CASCADE`
+  (graph_engine migration 0005; the edge FKs are DB-level CASCADE for the same reason) makes the
+  database refuse a vertex drawn under a category its graph does not declare. Measurement and
+  structure-relation categories draw nothing and appear nowhere; an edge drawn outside the
+  declared endpoint pairs exists in the base tables but not in the property graph — the namespace
+  is the schema's shape, not a mirror.
 - **Projection bookkeeping** — `graph_engine/models.py`: a `Projection` row per view (status,
   `schema_hash`, `derived_at`, `rebuilt_at`) and `PendingProjection`, an outbox row written in the
   evidence transaction by `_create_assertion` and deleted by id once the write's projection
@@ -260,15 +282,21 @@ The load-bearing facts:
   first, so every per-node draw converges.
 - **The graph's projection handle is internal.** `Graph.age_name` is random (`g` + 32 hex,
   `core.models.new_projection_handle`), never accepted as input, and never an address: `graph:`
-  arguments are **primary keys**, scoped to the caller's organization. With the table projection
-  the handle is vestigial — the namespace is the `graph` FK on the rows, and a deleted `Graph`
-  takes its drawing by cascade (the `pre_delete` signal in `graph_engine/apps.py` still calls
-  `drop_namespace` for any kind that needs one). Renaming the column is cosmetic follow-up.
+  arguments are **primary keys**, scoped to the caller's organization. Since RFC 0006 the handle
+  names something real again — the per-graph Postgres schema the namespace lives in — but as a
+  name for *output* only. A deleted `Graph` takes its rows by FK cascade, and its **DDL** by the
+  `pre_delete`/`post_delete` signals in `graph_engine/apps.py` (no cascade reaches DDL; the
+  category-cascade ordering there is subtle — read the docstring before touching it).
 - **Saved queries are plans.** `GraphQuery.plan` (`graph_engine/query_ir.py::TableQueryPlan`) is the
   contract — `createGraphTableQuery(input: {plan: …})`, read back as `plan`, compiled per projection
-  kind by `Projector.render_table` (`compile_table_plan_sql` emits one join tree per match path,
-  every client value a parameter; render filters name a returned alias, applied outside the
-  compiled body). The `query: CypherLiteral` read-back field is gone with Cypher; a **legacy** row
+  kind by `Projector.render_table`. `compile_table_plan_sql` emits **one `GRAPH_TABLE` per match
+  path** against the graph's property graph (PG 19 refuses comma-joined patterns; paths share no
+  variables, so CROSS JOIN for required and `LEFT JOIN (…) ON TRUE` for optional reproduce
+  MATCH/OPTIONAL MATCH), every client value a parameter — labels are the one identifier
+  exception, resolved against `namespace.declared_labels(graph)` with unknown labels refused by
+  name; save-time validation is `Projector.validate_plan` (structural, no graph, nothing
+  executed); render filters name a returned alias, applied outside the
+  compiled body. The `query: CypherLiteral` read-back field is gone with Cypher; a **legacy** row
   (plan null, raw Cypher stored) no longer renders at all — `manage.py list_legacy_queries` names
   any so they can be rebuilt through the builder. Only the table kind exists; the node/edge
   families and the nodes/pairs/path kinds had no execution path and are gone.

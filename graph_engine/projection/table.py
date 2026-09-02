@@ -9,14 +9,22 @@ a projection" is unchanged — the rows are derived, rebuildable by `manage.py
 reproject`, carry no foreign key that evidence or core depends on, and are
 free to destroy.
 
-Every piece of SQL the projection layer runs lives here, phrased once; the
-controller and `graph_engine.projector` never see a query string
-(`tests/projector/test_projector_protocol.py` enforces both directions). The
+Every piece of SQL the projection layer runs lives here, phrased once — the
+row DML, the namespace DDL (`refresh_namespace` spelling a
+`graph_engine.namespace.NamespaceSpec` as schemas, views and one SQL/PGQ
+property graph per graph), and the `GRAPH_TABLE` queries `render_table`
+compiles; the controller and `graph_engine.projector` never see a query string
+(`tests/projector/test_projector_protocol.py` enforces every direction). The
 two entry points that *compile* — `list_drawn` over a
 :class:`~graph_engine.projection.protocol.ListDrawnSpec` and `render_table`
-over a `TableQueryPlan` — bind every client value as a parameter; the only
-interpolated identifiers are sanitized aliases and table names from
-`Model._meta`.
+over a `TableQueryPlan` — bind every client **value** as a parameter; the
+interpolated identifiers are sanitized aliases, table names from
+`Model._meta`, and (the one addition RFC 0006 sanctions) SQL/PGQ **labels**,
+which the standard makes identifiers: a plan's label strings are resolved
+against the graph's declared labels and the *category row's own value* is
+interpolated, quoted whole — never the client's bytes. Namespace DDL
+additionally interpolates `int()`-cast pks and quoted label literals, because
+Postgres DDL takes no bind parameters at all.
 
 Property comparisons are jsonb-typed: the client value is JSON-encoded in
 Python and cast with ``::jsonb``, so a number compares as a number and a
@@ -37,6 +45,32 @@ from django.db import connection
 from graph_engine.projection.protocol import LIST_OPERATORS, DrawnEdge, ListDrawnSpec
 
 _KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _quote_ident(name: str) -> str:
+    """A double-quoted SQL identifier, `""`-escaped. Refuses NUL bytes.
+
+    Length is *not* checked here — the spec builder refuses over-long labels by
+    name (`graph_engine.namespace`), which is a better error than a quote helper
+    could give.
+    """
+    name = str(name)
+    if "\x00" in name:
+        raise ValueError("identifier contains a NUL byte")
+    return '"' + name.replace('"', '""') + '"'
+
+
+def _quote_literal(value: str) -> str:
+    """A single-quoted SQL string literal, `''`-escaped. Refuses NUL bytes.
+
+    Used only in namespace DDL, where the values are labels read from this
+    database's own `Category` rows — `CREATE VIEW` cannot take bind parameters,
+    so the literal is quoted here instead.
+    """
+    value = str(value)
+    if "\x00" in value:
+        raise ValueError("literal contains a NUL byte")
+    return "'" + value.replace("'", "''") + "'"
 
 #: The record keys that live in real columns rather than in the `properties`
 #: jsonb — the identity trio every drawn record carries.
@@ -72,12 +106,49 @@ class TableProjector:
 
     # ------------------------------------------------------------------ namespace
 
-    def create_namespace(self, graph: Any) -> None:
-        """Nothing to make: the namespace is the `graph` key on the rows."""
+    def refresh_namespace(self, graph: Any) -> None:
+        """(Re)derive this graph's queryable namespace from its categories.
+
+        One Postgres schema named by the graph's handle (`Graph.age_name`),
+        holding one view per node category, one view per (edge label x admitted
+        endpoint pair), and one SQL/PGQ property graph (inner name ``graph``)
+        over them. Drop-and-recreate, wholesale: the namespace is a **derived
+        artifact** — a pure function of the `Category` rows, exactly as the
+        drawing is of the evidence — so rebuilding it is always safe and
+        idempotent (RFC 0006). What it contains is decided by
+        `graph_engine.namespace.namespace_spec`; this method only spells it.
+
+        DDL is transactional in Postgres: called inside a category write's
+        transaction, the namespace and the row change commit or roll back
+        together, which is why there is no second staleness ledger.
+        """
+        from graph_engine.namespace import namespace_spec
+
+        spec = namespace_spec(graph)
+        statements = [f"DROP SCHEMA IF EXISTS {_quote_ident(spec.schema_name)} CASCADE"]
+        statements.extend(compile_namespace_ddl(self, spec))
+        with connection.cursor() as cursor:
+            for statement in statements:
+                cursor.execute(statement)
 
     def drop_namespace(self, graph: Any) -> None:
+        # The schema first: it holds the property graph and views, whose
+        # dependency tracking would otherwise refuse nothing here — but a
+        # dropped graph must leave neither rows nor DDL behind, and no FK
+        # cascade reaches DDL.
+        with connection.cursor() as cursor:
+            cursor.execute(f"DROP SCHEMA IF EXISTS {_quote_ident(str(graph.age_name))} CASCADE")
         self._models.ProjectionEdge.objects.filter(graph=graph).delete()
         self._models.ProjectionVertex.objects.filter(graph=graph).delete()
+
+    def validate_plan(self, plan: Any) -> None:
+        """Refuse a structurally invalid plan at save time.
+
+        Compiles without a graph — full parse, alias and key validation, but no
+        label resolution (labels are checked at render, where the view is known)
+        and nothing executed.
+        """
+        compile_table_plan_sql(self, plan)
 
     # ------------------------------------------------------------------ writer: nodes
 
@@ -217,8 +288,7 @@ class TableProjector:
         return records
 
     def render_table(self, graph: Any, plan: Any, *, filters: Any = None, order: Any = None, pagination: Any = None) -> list[Any]:
-        sql, params = compile_table_plan_sql(self, plan, filters=filters, order=order, pagination=pagination)
-        params["graph_pk"] = graph.pk
+        sql, params = compile_table_plan_sql(self, plan, graph=graph, filters=filters, order=order, pagination=pagination)
         with connection.cursor() as cursor:
             cursor.execute(sql, params)
             columns = [col[0] for col in cursor.description]
@@ -320,35 +390,115 @@ class TableProjector:
 
 
 # ---------------------------------------------------------------------------
+# The namespace: compiling a NamespaceSpec to DDL.
+# ---------------------------------------------------------------------------
+
+#: The uniform property set every vertex element exposes. Identical across
+#: labels on purpose: an unlabelled pattern variable spans all labels, so
+#: `COLUMNS (v.__props)` must compile whatever the variable binds to.
+_VERTEX_ELEMENT_PROPERTIES = "id AS __vid, ref::text AS __ref, label AS __label, category_pk AS __category_id, kind AS __kind, properties AS __props"
+_EDGE_ELEMENT_PROPERTIES = "id AS __eid, properties AS __eprops"
+
+
+def compile_namespace_ddl(projector: TableProjector, spec: Any) -> list[str]:
+    """The DDL statements that build one graph's namespace from its spec.
+
+    `CREATE SCHEMA`, one `CREATE VIEW` per element table, one
+    `CREATE PROPERTY GRAPH`. No bind parameters — Postgres DDL takes none — so
+    the interpolations are: quoted identifiers, quoted label literals read from
+    this database's own `Category` rows (never client input), and integer pks
+    cast through `int()`. The caller wraps these with the `DROP SCHEMA` that
+    makes the rebuild wholesale.
+    """
+    schema = _quote_ident(spec.schema_name)
+    graph_pk = int(spec.graph_pk)
+    vertex_table = projector._vertex_table()
+    edge_table = projector._edge_table()
+
+    statements = [f"CREATE SCHEMA {schema}"]
+
+    for vertex in spec.vertices:
+        statements.append(
+            f"CREATE VIEW {schema}.{_quote_ident(vertex.view_name)} AS "
+            f"SELECT id, ref, label, category_pk, kind, properties FROM {vertex_table} "
+            f"WHERE graph_id = {graph_pk} AND category_pk = {int(vertex.category_pk)}"
+        )
+
+    for edge in spec.edges:
+        statements.append(
+            f"CREATE VIEW {schema}.{_quote_ident(edge.view_name)} AS "
+            f"SELECT e.id, e.source_id, e.target_id, e.properties "
+            f"FROM {edge_table} e "
+            f"JOIN {vertex_table} s ON s.id = e.source_id "
+            f"JOIN {vertex_table} t ON t.id = e.target_id "
+            f"WHERE e.graph_id = {graph_pk} AND e.label = {_quote_literal(edge.label)} "
+            f"AND s.category_pk = {int(edge.source_pk)} AND t.category_pk = {int(edge.target_pk)}"
+        )
+
+    vertex_views = {int(vertex.category_pk): vertex.view_name for vertex in spec.vertices}
+    vertex_clauses = [
+        f"{schema}.{_quote_ident(vertex.view_name)} AS {_quote_ident(vertex.view_name)} KEY (id) "
+        f"LABEL {_quote_ident(vertex.label)} PROPERTIES ({_VERTEX_ELEMENT_PROPERTIES})"
+        for vertex in spec.vertices
+    ]
+    edge_clauses = [
+        f"{schema}.{_quote_ident(edge.view_name)} AS {_quote_ident(edge.view_name)} KEY (id) "
+        f"SOURCE KEY (source_id) REFERENCES {_quote_ident(vertex_views[int(edge.source_pk)])} (id) "
+        f"DESTINATION KEY (target_id) REFERENCES {_quote_ident(vertex_views[int(edge.target_pk)])} (id) "
+        f"LABEL {_quote_ident(edge.label)} PROPERTIES ({_EDGE_ELEMENT_PROPERTIES})"
+        for edge in spec.edges
+    ]
+
+    property_graph = f"CREATE PROPERTY GRAPH {schema}.graph"
+    if vertex_clauses:
+        property_graph += " VERTEX TABLES (" + ", ".join(vertex_clauses) + ")"
+    if edge_clauses:
+        property_graph += " EDGE TABLES (" + ", ".join(edge_clauses) + ")"
+    statements.append(property_graph)
+
+    return statements
+
+
+# ---------------------------------------------------------------------------
 # Saved table queries: compiling a plan to SQL.
 # ---------------------------------------------------------------------------
 
 
-def compile_table_plan_sql(projector: TableProjector, plan: Any, *, filters: Any = None, order: Any = None, pagination: Any = None) -> tuple[str, dict[str, Any]]:
+#: The exposed-column suffixes every node variable carries out of its
+#: GRAPH_TABLE — the uniform vertex element properties, one column each.
+_NODE_COLUMN_SUFFIXES = ("__vid", "__ref", "__label", "__category_id", "__kind", "__props")
+
+
+def compile_table_plan_sql(projector: TableProjector, plan: Any, *, graph: Any = None, filters: Any = None, order: Any = None, pagination: Any = None) -> tuple[str, dict[str, Any]]:
     """Compile a `TableQueryPlan` (plus a render-time filter/order/page) to SQL.
 
-    The same contract `compile_table_plan` had for Cypher: every client value is
-    a parameter, identifiers are sanitized, and the render filter lands on a
-    *returned alias* — here by wrapping the compiled query so the alias is a
-    real column in scope. Structure:
+    The execution path is the graph's **namespace**: each match path becomes one
+    ``GRAPH_TABLE`` over the per-graph property graph (PostgreSQL 19 has no
+    comma-joined path patterns in one clause), combined off a seed row —
+    `CROSS JOIN` for a required path, `LEFT JOIN (…) ON TRUE` for an optional
+    one, which is `MATCH` versus `OPTIONAL MATCH`; paths share no variables, so
+    the product is exactly what separate `MATCH` clauses meant. Structure:
 
         SELECT <aliases> FROM (
-            SELECT <expr AS alias>, …                 -- the plan's returns
+            SELECT <return exprs>                       -- the plan's returns
             FROM (SELECT 1) AS _one
-            <CROSS/LEFT JOIN one join tree per path>  -- the plan's matches
-            WHERE <plan predicates>                   -- the plan's wheres
+            CROSS JOIN GRAPH_TABLE ("g…".graph MATCH <path> COLUMNS (…)) AS _p0
+            LEFT JOIN (SELECT * FROM GRAPH_TABLE (…)) AS _p1 ON TRUE
+            WHERE <plan predicates over exposed columns> -- the plan's wheres
         ) AS _t
-        WHERE <render filter on an alias>             -- renderGraphTable(filters:)
-        ORDER BY <alias> / OFFSET / LIMIT             -- (order:, pagination:)
+        WHERE <render filter on an alias>               -- renderGraphTable(filters:)
+        ORDER BY <alias> / OFFSET / LIMIT               -- (order:, pagination:)
 
-    Each match path becomes one join tree — vertex, edge, vertex, … with the
-    connectivity and label constraints in its ON clause — hung off the `_one`
-    seed row: `CROSS JOIN` for a required path, `LEFT JOIN … ON (…)` for an
-    optional one, which is exactly `MATCH` versus `OPTIONAL MATCH`. Paths in a
-    plan share no node variables (they are namespaced per path), so trees
-    combine by product, as separate `MATCH` clauses did.
+    Every client **value** is still a bind parameter. Labels are the one thing
+    that cannot be: SQL/PGQ labels are identifiers, so with a `graph` in scope a
+    plan's label strings are resolved against the namespace's declared labels
+    (`graph_engine.namespace.declared_labels`) and the *category row's own
+    value* is interpolated, quoted — never the client's bytes; an unknown label
+    is refused by name, an honest upgrade over binding a parameter that matches
+    nothing. Without a `graph` (save-time validation) the compile is structural:
+    labels are length-guarded and quoted permissively, and nothing executes.
 
-    A whole-node return is rendered as the drawn record —
+    A whole-node return is rebuilt as the drawn record —
     ``{id, label, properties}`` — so a saved query's rows look the same as any
     other read of the drawing.
     """
@@ -359,16 +509,33 @@ def compile_table_plan_sql(projector: TableProjector, plan: Any, *, filters: Any
     if not matches:
         raise ValueError("A table query plan needs at least one match path")
 
-    vertex_table = projector._vertex_table()
-    edge_table = projector._edge_table()
+    vertex_labels: frozenset[str] | None = None
+    edge_labels: frozenset[str] | None = None
+    if graph is not None:
+        from graph_engine.namespace import declared_labels
+
+        vertex_labels, edge_labels = declared_labels(graph)
+        graph_ref = f"{_quote_ident(str(graph.age_name))}.graph"
+    else:
+        graph_ref = '"__unbound__".graph'
+
+    def quote_label(label: str, declared: frozenset[str] | None, what: str) -> str:
+        label = str(label)
+        if "\x00" in label or len(label.encode()) > 63:
+            raise ValueError(f"Invalid {what} label {label!r}.")
+        if declared is not None and label not in declared:
+            raise ValueError(f"Unknown {what} label {label!r}: this graph declares {', '.join(sorted(declared)) or 'none'}.")
+        return _quote_ident(label)
 
     path_nodes: dict[str, dict[str, str]] = {}
     default_path_node: dict[str, str] = {}
+    node_home: dict[str, str] = {}
     join_clauses: list[str] = []
     where_parts: list[str] = []
 
     for path_index, path in enumerate(matches):
         path_key = path.title or f"path_{path_index}"
+        path_alias = f"_p{path_index}"
         path_nodes[path_key] = {}
         if not path.nodes:
             raise ValueError(f"Match path '{path_key}' requires at least one node")
@@ -378,40 +545,59 @@ def compile_table_plan_sql(projector: TableProjector, plan: Any, *, filters: Any
             var_name = sanitize_identifier(f"{path_key}_{node}", f"n_{path_index}_{node_index}")
             node_vars.append(var_name)
             path_nodes[path_key][str(node)] = var_name
+            node_home[var_name] = path_alias
         default_path_node[path_key] = node_vars[0]
 
         labels = list(getattr(path, "node_categories", None) or [])
-        conditions: list[str] = []
-        tables: list[str] = []
-
+        pattern_parts: list[str] = []
         for node_index, var in enumerate(node_vars):
-            tables.append(f"{vertex_table} {var}")
-            conditions.append(f"{var}.graph_id = %(graph_pk)s")
             label = labels[node_index] if node_index < len(labels) else None
             if label:
-                params[f"nl_{path_index}_{node_index}"] = str(label)
-                conditions.append(f"{var}.label = %(nl_{path_index}_{node_index})s")
+                pattern_parts.append(f"({var} IS {quote_label(label, vertex_labels, 'node')})")
+            else:
+                pattern_parts.append(f"({var})")
+            if node_index < len(node_vars) - 1:
+                rel_index = node_index
+                relation = None
+                if path.relations and rel_index < len(path.relations) and path.relations[rel_index]:
+                    relation = str(path.relations[rel_index])
+                edge = f"[IS {quote_label(relation, edge_labels, 'edge')}]" if relation else "[]"
+                direction_out = True
+                if path.relation_directions and rel_index < len(path.relation_directions):
+                    direction_out = bool(path.relation_directions[rel_index])
+                pattern_parts.append(f"-{edge}->" if direction_out else f"<-{edge}-")
 
-        for rel_index in range(len(node_vars) - 1):
-            edge_var = sanitize_identifier(f"{path_key}_edge_{rel_index}", f"e_{path_index}_{rel_index}")
-            tables.append(f"{edge_table} {edge_var}")
-            conditions.append(f"{edge_var}.graph_id = %(graph_pk)s")
-            if path.relations and rel_index < len(path.relations) and path.relations[rel_index]:
-                params[f"el_{path_index}_{rel_index}"] = str(path.relations[rel_index])
-                conditions.append(f"{edge_var}.label = %(el_{path_index}_{rel_index})s")
-            direction_out = True
-            if path.relation_directions and rel_index < len(path.relation_directions):
-                direction_out = bool(path.relation_directions[rel_index])
-            left, right = (node_vars[rel_index], node_vars[rel_index + 1]) if direction_out else (node_vars[rel_index + 1], node_vars[rel_index])
-            conditions.append(f"{edge_var}.source_id = {left}.id")
-            conditions.append(f"{edge_var}.target_id = {right}.id")
-
-        tree = tables[0] if len(tables) == 1 else "(" + " CROSS JOIN ".join(tables) + ")"
+        columns = ", ".join(f'{var}.{suffix} AS "{var}{suffix}"' for var in node_vars for suffix in _NODE_COLUMN_SUFFIXES)
+        graph_table = f"GRAPH_TABLE ({graph_ref} MATCH {''.join(pattern_parts)} COLUMNS ({columns}))"
         if path.optional:
-            join_clauses.append(f"LEFT JOIN {tree} ON ({' AND '.join(conditions)})")
+            join_clauses.append(f"LEFT JOIN (SELECT * FROM {graph_table}) AS {path_alias} ON TRUE")
         else:
-            join_clauses.append(f"CROSS JOIN {tree}")
-            where_parts.extend(conditions)
+            join_clauses.append(f"CROSS JOIN {graph_table} AS {path_alias}")
+
+    def column(var: str, suffix: str) -> str:
+        return f'{node_home[var]}."{var}{suffix}"'
+
+    def prop_jsonb(var: str, key: str, slot: str) -> str:
+        key = projector.validate_key(key)
+        if key == "id":
+            return f"to_jsonb({column(var, '__ref')})"
+        if key == "category_id":
+            return f"to_jsonb({column(var, '__category_id')})"
+        if key == "type":
+            return f"to_jsonb({column(var, '__kind')})"
+        params[f"k_{slot}"] = key
+        return f"({column(var, '__props')} -> %(k_{slot})s)"
+
+    def prop_text(var: str, key: str, slot: str) -> str:
+        key = projector.validate_key(key)
+        if key == "id":
+            return column(var, "__ref")
+        if key == "category_id":
+            return f"{column(var, '__category_id')}::text"
+        if key == "type":
+            return column(var, "__kind")
+        params[f"k_{slot}"] = key
+        return f"({column(var, '__props')} ->> %(k_{slot})s)"
 
     def resolve(path_key: str, node: Any, what: str) -> str:
         var = None
@@ -431,8 +617,8 @@ def compile_table_plan_sql(projector: TableProjector, plan: Any, *, filters: Any
         slot = f"w{index}"
         where_parts.append(
             TableProjector._compare_sql(
-                projector._prop_jsonb(var, where.property, params, slot),
-                projector._prop_text(var, where.property, params, f"{slot}t"),
+                prop_jsonb(var, where.property, slot),
+                prop_text(var, where.property, f"{slot}t"),
                 operator,
                 where.value,
                 params,
@@ -441,7 +627,11 @@ def compile_table_plan_sql(projector: TableProjector, plan: Any, *, filters: Any
         )
 
     def node_record(var: str) -> str:
-        return f"jsonb_build_object('id', {var}.id, 'label', {var}.label, 'properties', coalesce({var}.properties, '{{}}'::jsonb) || jsonb_build_object('id', {var}.ref::text, 'category_id', {var}.category_pk, 'type', {var}.kind))"
+        return (
+            f"jsonb_build_object('id', {column(var, '__vid')}, 'label', {column(var, '__label')}, "
+            f"'properties', coalesce({column(var, '__props')}, '{{}}'::jsonb) || "
+            f"jsonb_build_object('id', {column(var, '__ref')}, 'category_id', {column(var, '__category_id')}, 'type', {column(var, '__kind')}))"
+        )
 
     return_parts: list[str] = []
     aliases: list[str] = []
@@ -452,7 +642,7 @@ def compile_table_plan_sql(projector: TableProjector, plan: Any, *, filters: Any
             if not is_identifier(ret.property):
                 raise ValueError(f"Invalid property key '{ret.property}'.")
             alias = sanitize_identifier(requested or f"{ret.path}_{ret.node or 'node'}_{ret.property}_{index}", f"c_{index}")
-            return_parts.append(f"{projector._prop_jsonb(var, ret.property, params, f'r{index}')} AS \"{alias}\"")
+            return_parts.append(f"{prop_jsonb(var, ret.property, f'r{index}')} AS \"{alias}\"")
         else:
             alias = sanitize_identifier(requested or f"{ret.path}_{ret.node or 'node'}_{index}", f"node_{index}")
             return_parts.append(f'{node_record(var)} AS "{alias}"')

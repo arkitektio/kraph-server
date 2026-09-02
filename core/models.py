@@ -123,9 +123,11 @@ class Graph(models.Model):
         editable=False,
         default=new_projection_handle,
         help_text=(
-            "Internal handle of this graph's Apache AGE namespace. Random, assigned at "
-            "creation, read only through `get_age_name()` by the engine. Not an identifier: "
-            "a graph is addressed by its primary key. See `new_projection_handle`."
+            "Internal handle naming this graph's namespace: the per-graph Postgres schema "
+            "holding its views and SQL/PGQ property graph, derived from the categories by "
+            "`refresh_namespace` (RFC 0006). Random, assigned at creation, a name for "
+            "*output* only — never accepted as input: a graph is addressed by its primary "
+            "key. See `new_projection_handle`."
         ),
     )
     pinned_by = models.ManyToManyField(
@@ -179,10 +181,6 @@ class Graph(models.Model):
         from graph_engine.input_models import ActionRuleInput
 
         return [ActionRuleInput(**rule) for rule in self.rules] if self.rules else []
-
-    def get_age_name(self) -> str:
-        """Get the Apache AGE graph name for this graph, which is used to identify the graph in the AGE database."""
-        return self.age_name
 
     def get_entity_def(self, key: str) -> "EntityCategory":
         """Get the entity definition for a specific label from the active schema."""
@@ -676,6 +674,15 @@ class Category(KindDiscriminatedModel):
     class Meta:
         default_related_name = "categories"
         unique_together = ("graph", "age_name"), ("graph", "key")
+        constraints = [
+            # (graph, id) is trivially unique, but Postgres requires the exact
+            # column set to exist as a unique index before it can be the target
+            # of the composite foreign key that ties a drawn vertex to a
+            # category *of its own graph* (graph_engine migration
+            # 0005_vertex_category_fk). That FK is the write-side enforcement of
+            # "only declared categories end up in a graph" — RFC 0006.
+            models.UniqueConstraint(fields=["graph", "id"], name="category_graph_and_id"),
+        ]
 
     def save(self, *args, **kwargs):
         """Stamp the kind, then make sure this category declares a word.

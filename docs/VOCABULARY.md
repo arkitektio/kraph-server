@@ -141,7 +141,8 @@ Nothing here is a source of truth.
 
 | Word | Means | Where |
 |---|---|---|
-| `Projector` | The **protocol** one projection kind implements: a writer half (`draw_node`, `draw_edge`, `write_properties`, `erase_nodes`, `create_namespace`/`drop_namespace`, …) and a reader half (`drawn_nodes`, `drawn_edge`, `list_drawn`, `render`). Phrased in refs, labels and property dicts — no query language | `graph_engine/projection/protocol.py` |
+| `Projector` | The **protocol** one projection kind implements: a writer half (`draw_node`, `draw_edge`, `write_properties`, `erase_nodes`, `refresh_namespace`/`drop_namespace`, …) and a reader half (`drawn_nodes`, `drawn_edge`, `list_drawn`, `render_table`). Phrased in refs, labels and property dicts — no query language | `graph_engine/projection/protocol.py` |
+| *namespace* | The per-graph Postgres schema (named by the *handle*) holding one view per node category, one per admitted endpoint pair, and one SQL/PGQ property graph — **derived** from the `Category` rows by `refresh_namespace`, droppable and rebuilt wholesale (RFC 0006). What `GRAPH_TABLE` queries; the schema's shape of the drawing, not a mirror of it | `graph_engine/namespace.py` (spec), `projection/table.py` (DDL) |
 | `TableProjector` | The Postgres-table implementation, and the **only** module that reads or writes the projection tables | `graph_engine/projection/table.py` |
 | `current_projector` | Which projector the operation draws through — bound per GraphQL operation by `api/extensions/projection.py`, read by `get_controller()`, the commands and the `pre_delete` signal | `graph_engine/projection/context.py` |
 
@@ -158,7 +159,7 @@ kind — a per-view table — implements `Projector` and is chosen in `api/schem
 | `PendingProjection` | The **outbox**: an assertion whose synchronous projection has not finished. Written in the evidence transaction; deleted **by id only** by the write that drew it or by an org-wide replay that applied it | `graph_engine.models.PendingProjection` |
 | *cursor* (`projectedThroughSeq`) | `min(min_pending_seq − 1, max_seq)` for a consistent graph, 0 otherwise. **Derived, never stored.** Every committed assertion at or below it is drawn | `graph_engine/watermark.py` |
 | *lag* | `max_seq − cursor` | `watermark.position` |
-| *handle* | `Graph.age_name` — random (`g` + 32 hex), internal, vestigial now that the namespace is the `graph` key on the rows. Never an address: `graph:` is a primary key | `core.models.new_projection_handle` |
+| *handle* | `Graph.age_name` — random (`g` + 32 hex), internal. Since RFC 0006 it names the graph's *namespace* schema — a name for output only. Never an address: `graph:` is a primary key | `core.models.new_projection_handle` |
 
 ### What actually gets drawn
 

@@ -3,7 +3,9 @@ services:
    db:
       # Stock Postgres: the projection is ordinary tables now, so the custom
       # Postgres+AGE image (jhnnsrs/daten) is not needed anywhere any more.
-      image: postgres:17
+      # 19beta3 to match the deployment's daten base (GA expected Sept/Oct 2026;
+      # move both to the release tag together).
+      image: postgres:19beta3
       environment:
          POSTGRES_DB: testdb
          POSTGRES_PASSWORD: test

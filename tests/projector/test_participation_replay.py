@@ -151,7 +151,7 @@ async def test_participation_survives_a_rebuild(
     def drop_then_rebuild() -> dict:
         controller = GraphController(projector=table_projector)
         table_projector.drop_namespace(test_graph)
-        table_projector.create_namespace(test_graph)
+        table_projector.refresh_namespace(test_graph)
         return controller.rebuild_projection(test_graph)
 
     result = await drop_then_rebuild()

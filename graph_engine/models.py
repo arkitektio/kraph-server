@@ -105,14 +105,31 @@ class ProjectionVertex(models.Model):
     graph = models.ForeignKey("core.Graph", on_delete=models.CASCADE, related_name="projection_vertices")
     ref = models.UUIDField(help_text="The drawn claim's uuid. A value, not a FK: the drawing never holds evidence in place.")
     label = models.CharField(max_length=1000, help_text="The view's word for the category (`Category.age_name`).")
-    category_pk = models.BigIntegerField(null=True, blank=True, help_text="The category row that admitted this node.")
+    category_pk = models.BigIntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            "The category row that admitted this node. A plain integer to Django, but backed by a "
+            "raw composite foreign key `(graph_id, category_pk) REFERENCES core_category (graph_id, id)` "
+            "ON DELETE CASCADE (migration 0005 — Django cannot express a composite FK), so the database "
+            "itself refuses a vertex drawn under a category its graph does not declare, and a deleted "
+            "category takes its drawings with it. NULL passes the constraint (MATCH SIMPLE): only rows "
+            "an older projector drew carry it, and `manage.py reproject` is their repair. RFC 0006."
+        ),
+    )
     kind = models.CharField(max_length=32, help_text="The claim's `Instance.Kind` (ENTITY, NATURAL_EVENT, PROTOCOL_EVENT).")
     properties = models.JSONField(default=dict, blank=True, help_text="Derived properties only; identity lives in the columns.")
 
     class Meta:
         default_related_name = "projection_vertices"
         constraints = [models.UniqueConstraint(fields=["graph", "ref"], name="one_vertex_per_ref_per_view")]
-        indexes = [models.Index(fields=["graph", "label"])]
+        indexes = [
+            models.Index(fields=["graph", "label"]),
+            # Serves both the composite FK's delete-cascade lookups and the
+            # per-category vertex views of the graph's PGQ namespace, which
+            # filter on `(graph_id, category_pk)` (RFC 0006).
+            models.Index(fields=["graph", "category_pk"]),
+        ]
 
     def __str__(self) -> str:
         return f"vertex {self.ref} ({self.label}) in graph #{self.graph_id}"
@@ -123,6 +140,9 @@ class ProjectionEdge(models.Model):
 
     Endpoints are foreign keys to the drawn vertices, so erasing a node takes
     every edge touching it — the `DETACH` the protocol promises — by cascade.
+    That cascade is **database-level** (migration 0005 rewrites Django's NO
+    ACTION constraints to `ON DELETE CASCADE`), because the composite category
+    FK on the vertex deletes rows below the ORM, where only SQL can follow.
     Converges on ``(source, target, label)`` exactly as the Cypher ``MERGE``
     pattern did; `graph` is carried redundantly so dropping a namespace and
     listing a view's edges never join through a vertex.

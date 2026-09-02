@@ -25,11 +25,13 @@ def plan_from_input(plan_input: Any, columns: Any) -> TableQueryPlan:
         returns=list(plan_input.returns or []),
         columns=list(columns or []),
     )
-    # Compile once, against nothing, so a plan that cannot be compiled is refused
-    # at save time rather than at the first render.
-    from graph_engine.projection.table import TableProjector, compile_table_plan_sql
+    # Validate once, against nothing, so a plan that cannot be compiled is
+    # refused at save time rather than at the first render. Through the bound
+    # projector, not a hand-made TableProjector: the projection kind is the
+    # seam, and save-time validation is part of it.
+    from graph_engine.projection.context import current_or_default
 
-    compile_table_plan_sql(TableProjector(), plan)
+    current_or_default().validate_plan(plan)
     return plan
 
 

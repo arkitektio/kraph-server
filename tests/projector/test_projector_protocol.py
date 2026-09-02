@@ -50,6 +50,39 @@ def test_controller_executes_no_queries_itself() -> None:
         assert keyword not in code, f"{keyword} in controller.py; the drawing's rows belong to graph_engine/projection/table.py"
 
 
+def test_namespace_module_names_no_storage_and_no_ddl() -> None:
+    """`graph_engine/namespace.py` decides what a namespace declares; never how.
+
+    It reads `core.Category` rows and produces a spec. The DDL that spells the
+    spec — schemas, views, the property graph — is `table.py`'s alone, the same
+    what/how split `projector.py` keeps for the drawing itself.
+    """
+    code = _code_only(REPO / "graph_engine" / "namespace.py")
+    for keyword in ("SELECT ", "INSERT ", "CREATE ", "DROP ", "GRAPH_TABLE", "ProjectionVertex", "ProjectionEdge"):
+        assert keyword not in code, f"storage vocabulary ({keyword!r}) in namespace.py; DDL belongs in graph_engine/projection/table.py"
+
+
+def test_only_the_table_projector_speaks_namespace_ddl() -> None:
+    """SQL/PGQ DDL and GRAPH_TABLE queries live in exactly one module.
+
+    The namespace is regenerable DDL (RFC 0006); the moment a resolver or a
+    command writes its own `CREATE PROPERTY GRAPH` or `GRAPH_TABLE`, the
+    namespace stops being the projector's derived artifact. Migrations are
+    excluded like everywhere else — they are generated snapshots.
+    """
+    allowed = {REPO / "graph_engine" / "projection" / "table.py"}
+    offenders: list[str] = []
+    for package in ("api", "core", "evidence", "graph_engine", "kraph_server", "datalayer"):
+        for path in (REPO / package).rglob("*.py"):
+            if path in allowed or "migrations" in path.parts or "core-backup-do-not-delete" in path.parts:
+                continue
+            code = _code_only(path)
+            for keyword in ("CREATE PROPERTY GRAPH", "GRAPH_TABLE", "CREATE SCHEMA", "DROP SCHEMA"):
+                if keyword in code:
+                    offenders.append(f"{path.relative_to(REPO)} ({keyword})")
+    assert not offenders, f"modules speaking namespace DDL directly: {offenders}"
+
+
 def test_only_the_table_projector_touches_the_drawings_tables() -> None:
     """The drawing stays a projection because exactly one module addresses it.
 

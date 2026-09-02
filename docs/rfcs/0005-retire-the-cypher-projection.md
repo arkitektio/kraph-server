@@ -97,7 +97,9 @@ through the builder.
   things that still exist — the graph's opaque projection handle and the view's
   label for a word. Renaming them (`projection_handle`, `label`) is cosmetic
   follow-up; `Category.age_name` remains RFC 0001's question. Nothing may
-  re-grow an *address* out of either.
+  re-grow an *address* out of either. *(Amended by RFC 0006: `Graph.age_name`
+  now names the graph's derived SQL/PGQ namespace — a name for output; the
+  never-an-input half stands unamended.)*
 - **`Projection.kind`** (default `"table"`) and the one-place projector choice
   in `api/schema.py`. Still the seam for a second kind — a search index, or a
   real graph engine if variable-length traversal ever becomes a real
@@ -105,14 +107,19 @@ through the builder.
   frontend* over these same tables if ad-hoc graph syntax is ever wanted: labels
   in PGQ attach to relations, so it would be per-label views plus one
   `CREATE PROPERTY GRAPH` per view, maintained by `materialize` — a frontend,
-  never the storage.
+  never the storage. *(Built — RFC 0006, with one correction: the fence test
+  keeps DDL out of `materialize.py`, so the namespace is maintained by
+  `Projector.refresh_namespace` and materialize merely calls it.)*
 
 ## What would count as regressing this RFC
 
 - A resolver, loader, or management command importing `ProjectionVertex` /
   `ProjectionEdge` directly (the fence test fails).
 - An FK from an evidence or core row into a projection table, or the reverse
-  beyond the existing `graph` key.
+  beyond the existing `graph` key. *(Amended by RFC 0006: the composite
+  `(graph, category)` FK from the drawn vertex to its admitting category is
+  sanctioned — derived-references-its-rule, cascade outward; evidence remains
+  referenced by nothing.)*
 - A read that answers a *claim* question (membership, existence, standing) from
   the projection tables because they were closer to hand.
 - Storing a per-graph "applied through seq" again — the outbox/watermark

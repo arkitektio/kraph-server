@@ -27,8 +27,12 @@ async def test_drawings_report_the_rules_category_not_the_vertex_stamp(api_schem
 
     @sync_to_async
     def stamp_and_read():
-        # Corrupt the cache on purpose: the payload must not read it back.
-        graph_engine_models.ProjectionVertex.objects.filter(graph=test_graph, ref=entity_id).update(category_pk=999999)
+        # Corrupt the cache on purpose: the payload must not read it back. The
+        # composite FK (RFC 0006) refuses an invented id, so the worst corruption
+        # still expressible is a *declared but wrong* category of the same graph —
+        # which is exactly the stale-vertex shape the original bug had.
+        wrong = core_models.EntityCategory.objects.get(graph=test_graph, key="Cell")
+        graph_engine_models.ProjectionVertex.objects.filter(graph=test_graph, ref=entity_id).update(category_pk=wrong.pk)
         node = evidence_models.Instance.objects.for_organization(test_graph.organization).select_related("term").get(pk=entity_id)
         drawings = GraphController(projector=table_projector).drawings_for_instance(node)
         rule = core_models.EntityCategory.objects.get(graph=test_graph, key="AIS")
