@@ -1,12 +1,18 @@
 # CHANGELOG
 
 
+## v1.0.0-rc.12 (2026-09-02)
+
+
 ## v1.0.0-rc.11 (2026-09-01)
 
 ### Features
 
 - Removal of age preparing for new postges 19
   ([`137a5b4`](https://github.com/arkitektio/kraph-server/commit/137a5b415d5e77f13b281f0fc53ddbb9e8d0580b))
+
+- With postgres 19
+  ([`f7557e1`](https://github.com/arkitektio/kraph-server/commit/f7557e17e78c112641b95e2bd138c5e021630a9d))
 
 
 ## v1.0.0-rc.10 (2026-08-21)
