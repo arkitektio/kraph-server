@@ -508,6 +508,30 @@ type Assertion @key(fields: "id", resolvable: true) {
   seq: Int!
 }
 
+"""Whose claims count: any-of within a field, all fields must hold"""
+type AssertionFilter {
+  """Only claims by these subjects (annotators, models)"""
+  subjects: [String!]
+
+  """Only claims made through these apps"""
+  appIds: [String!]
+
+  """Only claims made by these actions"""
+  actionNames: [String!]
+}
+
+"""Whose claims count: any-of within a field, all fields must hold"""
+input AssertionFilterInput {
+  """Only claims by these subjects (annotators, models)"""
+  subjects: [String!] = null
+
+  """Only claims made through these apps"""
+  appIds: [String!] = null
+
+  """Only claims made by these actions"""
+  actionNames: [String!] = null
+}
+
 """Input for claiming a remark stands again — reopening, as new evidence"""
 input AttestCommentInput {
   """The ID of the comment to attest"""
@@ -661,11 +685,90 @@ interface Category {
   """
   term: Term
 
+  """
+  What this category *means*: a predicate over classification claims (RFC 0007). Null on a primitive category, whose membership is whatever was asserted under its word
+  """
+  definition: CategoryDefinition
+
   """List of relevant queries that use this category as input"""
   relevantQueries: [GraphQuery!]!
 
   """Whether the requesting user has pinned this graph for quick access"""
   pinned: Boolean!
+}
+
+"""
+What a category means: a union of clauses over classification claims. Flat fields for one clause, anyOf for several — a stored definition never carries both
+"""
+type CategoryDefinition {
+  """Flat form: the words this definition derives from"""
+  assertedAs: [String!]
+
+  """Flat form: whose claims count"""
+  assertionFilter: AssertionFilter
+
+  """Flat form: claims asserted at or before this moment"""
+  asOf: DateTime
+
+  """Flat form: claims asserted at or after this moment"""
+  since: DateTime
+
+  """Several clauses; the definition matches a claim when any clause does"""
+  anyOf: [CategoryDefinitionClause!]
+}
+
+"""
+One clause of a category definition: these words, by these people, in this window (RFC 0007)
+"""
+type CategoryDefinitionClause {
+  """The words this clause derives from — any of them"""
+  assertedAs: [String!]!
+
+  """Whose claims count for this clause"""
+  assertionFilter: AssertionFilter
+
+  """Only claims asserted at or before this moment"""
+  asOf: DateTime
+
+  """Only claims asserted at or after this moment"""
+  since: DateTime
+}
+
+"""
+One clause of a category definition: these words, by these people, in this window (RFC 0007)
+"""
+input CategoryDefinitionClauseInput {
+  """The words this clause derives from — any of them"""
+  assertedAs: [String!]!
+
+  """Whose claims count for this clause"""
+  assertionFilter: AssertionFilterInput = null
+
+  """Only claims asserted at or before this moment"""
+  asOf: DateTime = null
+
+  """Only claims asserted at or after this moment"""
+  since: DateTime = null
+}
+
+"""
+What a category means: a union of clauses over classification claims — flat form for one clause, anyOf for several, never both (RFC 0007)
+"""
+input CategoryDefinitionInput {
+  """Flat form: the words this definition derives from"""
+  assertedAs: [String!] = null
+
+  """Flat form: whose claims count"""
+  assertionFilter: AssertionFilterInput = null
+
+  """Flat form: claims asserted at or before this moment"""
+  asOf: DateTime = null
+
+  """Flat form: claims asserted at or after this moment"""
+  since: DateTime = null
+
+  """Several clauses; the definition matches a claim when any clause does"""
+  anyOf: [CategoryDefinitionClauseInput!] = null
 }
 
 """Input for specifying the position of a node in the graph visualization"""
@@ -935,6 +1038,11 @@ input CreateEntityCategoryInput {
   """Property definitions"""
   propertyDefinitions: [PropertyDefinitionInput!]! = []
 
+  """
+  What this category *means*: a predicate over classification claims (RFC 0007). Omitted means primitive — membership is whatever was asserted under this word
+  """
+  definition: CategoryDefinitionInput = null
+
   """The graph id this entity will belong to"""
   graph: String!
 
@@ -954,6 +1062,11 @@ input CreateGraphInput {
 
   """The complete graph schema definition"""
   definition: GraphDefinitionInput
+
+  """
+  Which of the organization's claims this view counts. Omitted means everything
+  """
+  selector: GraphSelectorInput = null
 
   """
   Draw the evidence this graph's words already admit. A graph is a view over the organization's evidence, so a new one can be a view over history: with this on, every node and edge already claimed under a word this schema declares is projected as the graph is created. Off by default because the work is proportional to the organization's evidence and happens before this mutation returns.
@@ -1177,6 +1290,11 @@ input CreateRelationCategoryInput {
 
   """Property definitions"""
   propertyDefinitions: [PropertyDefinitionInput!]! = []
+
+  """
+  What this category *means*: a predicate over classification claims (RFC 0007). Omitted means primitive — membership is whatever was asserted under this word
+  """
+  definition: CategoryDefinitionInput = null
 
   """The graph id this entity will belong to"""
   graph: String!
@@ -1711,6 +1829,11 @@ type EntityCategory implements NodeCategory & Category @key(fields: "id", resolv
   """
   term: Term
 
+  """
+  What this category *means*: a predicate over classification claims (RFC 0007). Null on a primitive category, whose membership is whatever was asserted under its word
+  """
+  definition: CategoryDefinition
+
   """List of relevant queries that use this category as input"""
   relevantQueries: [GraphQuery!]!
 
@@ -1814,6 +1937,11 @@ input EntityDefinitionInput {
 
   """Property definitions"""
   propertyDefinitions: [PropertyDefinitionInput!]! = []
+
+  """
+  What this category *means*: a predicate over classification claims (RFC 0007). Omitted means primitive — membership is whatever was asserted under this word
+  """
+  definition: CategoryDefinitionInput = null
 }
 
 """Input type for creating a new graph query"""
@@ -1930,6 +2058,11 @@ interface EventCategory implements NodeCategory & Category {
   The organization's word this category declares. Claims name the term, not this row — so a category is what the word means *here*, and another graph declaring the same word sees the same claims.
   """
   term: Term
+
+  """
+  What this category *means*: a predicate over classification claims (RFC 0007). Null on a primitive category, whose membership is whatever was asserted under its word
+  """
+  definition: CategoryDefinition
 
   """List of relevant queries that use this category as input"""
   relevantQueries: [GraphQuery!]!
@@ -2101,6 +2234,11 @@ type Graph @key(fields: "id", resolvable: true) {
   """List of graph queries defined in this graph"""
   queries: [GraphQuery!]!
 
+  """
+  Which of the organization's claims this view counts. Null means everything — the default
+  """
+  selector: GraphSelector
+
   """Whether the requesting user has pinned this graph for quick access"""
   pinned: Boolean!
 
@@ -2256,6 +2394,52 @@ interface GraphQuery {
   True for a row saved as raw Cypher before the plan became the contract. Such a row cannot render — no projection kind executes Cypher — until rebuilt through the builder
   """
   legacy: Boolean!
+}
+
+"""
+Which of the organization's claims a graph counts. Null means everything the organization knows
+"""
+type GraphSelector {
+  """Structure identifiers in scope (metrics only)"""
+  categoryKeys: [String!]
+
+  """Whose claims count"""
+  assertionFilter: AssertionFilter
+
+  """Claims asserted at or before this moment"""
+  asOf: DateTime
+
+  """Claims asserted at or after this moment"""
+  since: DateTime
+
+  """Measurements taken at or after this moment (metrics only)"""
+  observedFrom: DateTime
+
+  """Measurements taken at or before this moment (metrics only)"""
+  observedTo: DateTime
+}
+
+"""
+Which of the organization's claims a graph counts: annotators, apps, actions, and belief/observation time bounds
+"""
+input GraphSelectorInput {
+  """Structure identifiers in scope (metrics only)"""
+  categoryKeys: [String!] = null
+
+  """Whose claims count"""
+  assertionFilter: AssertionFilterInput = null
+
+  """Claims asserted at or before this moment"""
+  asOf: DateTime = null
+
+  """Claims asserted at or after this moment"""
+  since: DateTime = null
+
+  """Measurements taken at or after this moment (metrics only)"""
+  observedFrom: DateTime = null
+
+  """Measurements taken at or before this moment (metrics only)"""
+  observedTo: DateTime = null
 }
 
 type GraphStats {
@@ -2726,6 +2910,11 @@ type MeasurementCategory implements EdgeCategory & Category @key(fields: "id", r
   The organization's word this category declares. Claims name the term, not this row — so a category is what the word means *here*, and another graph declaring the same word sees the same claims.
   """
   term: Term
+
+  """
+  What this category *means*: a predicate over classification claims (RFC 0007). Null on a primitive category, whose membership is whatever was asserted under its word
+  """
+  definition: CategoryDefinition
 
   """List of relevant queries that use this category as input"""
   relevantQueries: [GraphQuery!]!
@@ -3485,6 +3674,11 @@ type NaturalEventCategory implements EventCategory & NodeCategory & Category @ke
   """
   term: Term
 
+  """
+  What this category *means*: a predicate over classification claims (RFC 0007). Null on a primitive category, whose membership is whatever was asserted under its word
+  """
+  definition: CategoryDefinition
+
   """List of relevant queries that use this category as input"""
   relevantQueries: [GraphQuery!]!
 
@@ -4053,6 +4247,11 @@ type ProtocolEventCategory implements EventCategory & NodeCategory & Category @k
   """
   term: Term
 
+  """
+  What this category *means*: a predicate over classification claims (RFC 0007). Null on a primitive category, whose membership is whatever was asserted under its word
+  """
+  definition: CategoryDefinition
+
   """List of relevant queries that use this category as input"""
   relevantQueries: [GraphQuery!]!
 
@@ -4442,6 +4641,11 @@ type RelationCategory implements EdgeCategory & Category @key(fields: "id", reso
   The organization's word this category declares. Claims name the term, not this row — so a category is what the word means *here*, and another graph declaring the same word sees the same claims.
   """
   term: Term
+
+  """
+  What this category *means*: a predicate over classification claims (RFC 0007). Null on a primitive category, whose membership is whatever was asserted under its word
+  """
+  definition: CategoryDefinition
 
   """List of relevant queries that use this category as input"""
   relevantQueries: [GraphQuery!]!
@@ -5191,6 +5395,11 @@ type StructureRelationCategory implements EdgeCategory & Category @key(fields: "
   """
   term: Term
 
+  """
+  What this category *means*: a predicate over classification claims (RFC 0007). Null on a primitive category, whose membership is whatever was asserted under its word
+  """
+  definition: CategoryDefinition
+
   """List of relevant queries that use this category as input"""
   relevantQueries: [GraphQuery!]!
 
@@ -5482,6 +5691,16 @@ input UpdateEntityCategoryInput {
 
   """Property definitions"""
   propertyDefinitions: [PropertyDefinitionInput!] = null
+
+  """
+  New meaning for this category (RFC 0007). Omitted means unchanged; to make the category primitive again, use clearDefinition
+  """
+  definition: CategoryDefinitionInput = null
+
+  """
+  Reset the category to primitive — membership becomes whatever was asserted under its word
+  """
+  clearDefinition: Boolean! = false
 }
 
 """Input for updating an existing graph"""
@@ -5500,6 +5719,11 @@ input UpdateGraphInput {
 
   """Optional pin flag update for the user making the request"""
   pin: Boolean = null
+
+  """
+  New claim scope for this view. Omitted means unchanged; the drawing is rebuilt under the new scope before the mutation returns
+  """
+  selector: GraphSelectorInput = null
 }
 
 """Input for updating a graph table query through builder arguments"""

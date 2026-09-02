@@ -28,7 +28,7 @@ from evidence import models as evidence_models
 from evidence import selector as selector_module
 from evidence import writer
 from graph_engine.controller import GraphController
-from tests import drawing
+from tests import claims, drawing
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {
@@ -52,32 +52,10 @@ async def _an_ais(api_schema: kante.Schema, ctx: HttpContext, graph: core_models
     return created.data["assertEntityExists"]["instance"]["id"]
 
 
-def _claim(graph: core_models.Graph, ref: str, category: core_models.Category, subject: str) -> evidence_models.Link:
-    """One annotator's claim that a node is of a category."""
-    assertion = writer.create_assertion(graph.organization, subject=subject, app_id="pytest")
-    return writer.create_link(
-        graph.organization,
-        kind=evidence_models.Link.Kind.CLASSIFIES,
-        source_ref=ref,
-        target_ref=str(category.term_id),
-        assertion=assertion,
-        term=category.term,
-    )
-
-
-def _retract_classifications(graph: core_models.Graph, ref: str) -> None:
-    """Withdraw every standing classification of a node, as a claim.
-
-    Through `writer.retract`, not a queryset `.update(stands=False)`. That used to
-    work because `Link` carried its own cached answer, so a test could flip the
-    projection with no `Standing` behind it — a shape nothing structurally prevented
-    application code from copying. The column is gone and standing is folded from
-    the log, so withdrawing a claim now means making one.
-    """
-    assertion = writer.create_assertion(graph.organization, subject="pytest", app_id="pytest")
-    links = evidence_models.Link.objects.for_organization(graph.organization).filter(kind=evidence_models.Link.Kind.CLASSIFIES, source_ref=ref)
-    for link in links:
-        writer.retract(graph.organization, link, assertion)
+# The claim spellings live in `tests/claims.py` now, shared with the
+# subsumption tests, which additionally need `asserted_at`.
+_claim = claims.classify
+_retract_classifications = claims.retract_classifications
 
 
 def _labels(table_projector, graph: core_models.Graph, keys: list[str]) -> dict[str, int]:

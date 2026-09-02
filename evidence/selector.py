@@ -17,6 +17,7 @@ organization knows")::
           "action_names": ["segment"]
       },
       "as_of":            "2026-03-03T00:00:00Z",  # asserted_at upper bound
+      "since":            "2026-01-01T00:00:00Z",  # asserted_at lower bound
       "observed_window":  ["2025-01-01", "2025-12-31"]   # measured_at range
     }
 
@@ -46,8 +47,78 @@ def _parse_window(window: Any) -> tuple[Any, Any]:
     raise ValueError(f"observed_window must be a [from, to] pair or a {{from, to}} object, got {window!r}")
 
 
+#: The assertion columns a filter may name, shared by all three filters so the
+#: three siblings cannot drift apart in what "whose claims count" means.
+_ASSERTION_FILTER_COLUMNS = (
+    ("subjects", "assertion__subject__in"),
+    ("app_ids", "assertion__app_id__in"),
+    ("action_names", "assertion__action_name__in"),
+)
+
+
+def _assertion_predicate(source: dict[str, Any], *, asserted_at_column: str = "assertion__asserted_at") -> Q:
+    """The who-and-when half of one clause or selector.
+
+    `assertion_filter` (subjects / app_ids / action_names, each an *any of*
+    list, ANDed across fields), `as_of` (asserted_at upper bound) and `since`
+    (asserted_at lower bound). `metric_filter` passes its denormalized
+    `asserted_at` column; everything else filters through the assertion join.
+    """
+    predicate = Q()
+    assertion_filter = source.get("assertion_filter") or {}
+    for field, column in _ASSERTION_FILTER_COLUMNS:
+        values = assertion_filter.get(field)
+        if values:
+            predicate &= Q(**{column: values})
+
+    as_of = source.get("as_of")
+    if as_of:
+        predicate &= Q(**{f"{asserted_at_column}__lte": as_of})
+
+    since = source.get("since")
+    if since:
+        predicate &= Q(**{f"{asserted_at_column}__gte": since})
+
+    return predicate
+
+
+def _clauses(definition: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """A definition as its list of clauses.
+
+    The flat form is one clause; `any_of` is several, one level deep. **Every
+    reader of a definition must consume this** — the predicate
+    (`classification_filter`) and the vocabulary (`asserted_as_keys`) walking
+    the shape differently is exactly how a definition comes to match claims the
+    graph cannot see. The read side is permissive: when both `any_of` and flat
+    keys are present (refused at every write path, but definitions are JSON),
+    `any_of` wins whole, so both readers still agree and the failure mode is a
+    dead flat half, never divergence. Non-dict entries are skipped.
+    """
+    if not definition:
+        return []
+    any_of = definition.get("any_of")
+    if any_of is not None:
+        return [clause for clause in any_of if isinstance(clause, dict)]
+    return [definition]
+
+
+def _clause_words(clause: dict[str, Any]) -> list[str]:
+    """One clause's `asserted_as`, bare string accepted."""
+    asserted_as = clause.get("asserted_as")
+    if not asserted_as:
+        return []
+    if isinstance(asserted_as, str):
+        return [asserted_as]
+    return [str(key) for key in asserted_as]
+
+
 def metric_filter(selector: dict[str, Any] | None) -> Q:
-    """The predicate a metric must satisfy to be in a projection's scope."""
+    """The predicate a metric must satisfy to be in a projection's scope.
+
+    Belief-time bounds are ``as_of`` (upper) and ``since`` (lower), both on the
+    `asserted_at` column denormalized onto `Metric`; observation time is the
+    two-sided ``observed_window`` over `measured_at`.
+    """
     predicate = Q()
     if not selector:
         return predicate
@@ -57,15 +128,7 @@ def metric_filter(selector: dict[str, Any] | None) -> Q:
     if category_keys:
         predicate &= Q(structure__identifier__in=category_keys)
 
-    assertion_filter = selector.get("assertion_filter") or {}
-    for field, column in (("subjects", "assertion__subject__in"), ("app_ids", "assertion__app_id__in"), ("action_names", "assertion__action_name__in")):
-        values = assertion_filter.get(field)
-        if values:
-            predicate &= Q(**{column: values})
-
-    as_of = selector.get("as_of")
-    if as_of:
-        predicate &= Q(asserted_at__lte=as_of)
+    predicate &= _assertion_predicate(selector, asserted_at_column="asserted_at")
 
     observed_from, observed_to = _parse_window(selector.get("observed_window"))
     if observed_from:
@@ -77,24 +140,36 @@ def metric_filter(selector: dict[str, Any] | None) -> Q:
 
 
 def asserted_as_keys(definition: dict[str, Any] | None) -> list[str]:
-    """The words a definition derives from.
+    """The words a definition derives from — the union over its clauses.
 
     One place, because two read it — the predicate that matches claims, and
     `term_ids_for`, which has to widen a graph's membership to cover them. Those
     disagreeing would make a definition that matches claims the graph cannot see.
+    Everything downstream of the vocabulary — `CategoryAssertedTerm`, membership,
+    `refs_admitted_by`, `backfill_category`'s rebuild decision — reads the shape
+    only through here.
 
-    Accepts a bare string as well as a list. Definitions are hand-written JSON,
-    and one word is the common case.
+    Accepts a bare string as well as a list, per clause. Definitions are
+    hand-written JSON, and one word is the common case. Order is clause order,
+    first occurrence wins.
     """
-    if not definition:
-        return []
+    seen: dict[str, None] = {}
+    for clause in _clauses(definition):
+        for key in _clause_words(clause):
+            seen.setdefault(key, None)
+    return list(seen)
 
-    asserted_as = definition.get("asserted_as")
-    if not asserted_as:
-        return []
-    if isinstance(asserted_as, str):
-        return [asserted_as]
-    return [str(key) for key in asserted_as]
+
+def definition_matches_every_word(definition: dict[str, Any] | None) -> bool:
+    """Whether some clause of this definition names no words at all.
+
+    Such a clause matches claims of *any* word (see `classification_filter`), so
+    a candidate narrowing keyed on `asserted_as_keys` would silently drop the
+    nodes it admits — the caller must skip the narrowing instead. This is the
+    read-side tolerance; every write path requires `asserted_as` per clause.
+    """
+    clauses = _clauses(definition)
+    return any(not _clause_words(clause) for clause in clauses)
 
 
 def classification_filter(definition: dict[str, Any] | None) -> Q:
@@ -105,50 +180,88 @@ def classification_filter(definition: dict[str, Any] | None) -> Q:
     "which claims count" — asked about different tables. `metric_filter` asks it
     of `Metric`, this asks it of `Link(kind=CLASSIFIES)` joined to its assertion.
 
-    Definition shape (every key optional; an empty definition means the category
-    is *primitive* and membership is whatever was asserted)::
+    A definition is a **union of clauses** (RFC 0007). Each clause binds its own
+    words, annotators and time bounds, and the definition matches a claim iff
+    *any* clause does — which is what makes "'Cell' means what Peter called Cell,
+    and what Karl called StemCell after Dec 5" one category::
+
+        {
+          "any_of": [
+            {"asserted_as": ["Cell"],     "assertion_filter": {"subjects": ["peter"]}},
+            {"asserted_as": ["StemCell"], "assertion_filter": {"subjects": ["karl"]},
+             "since": "2026-12-05T00:00:00Z"}
+          ]
+        }
+
+    The flat form is still accepted and means a single clause (every key
+    optional; an empty definition means the category is *primitive* and
+    membership is whatever was asserted)::
 
         {
           "asserted_as":      ["Pyramidal", "Interneuron"],   # which words were claimed
           "assertion_filter": {"subjects": ["johannes"], "app_ids": [...], "action_names": [...]},
-          "as_of":            "2026-08-15T00:00:00Z"          # asserted_at upper bound
+          "as_of":            "2026-08-15T00:00:00Z",         # asserted_at upper bound
+          "since":            "2026-01-01T00:00:00Z"          # asserted_at lower bound
         }
 
-    ``asserted_as`` takes **one word or several**, and several means *any of*. A
-    category is a rule over claims, and there is no reason a view's "Neuron"
-    should not be "anything claimed Pyramidal or Interneuron" — that is ordinary
-    ontology, and restricting it to a single word made a defined category a
-    rename rather than a definition. A bare string is still accepted and means
-    the obvious thing.
+    Flat keys and ``any_of`` together are refused at every write path; here on
+    the read side ``any_of`` wins whole (see `_clauses`). Clauses nest one level
+    only — a clause has no ``any_of``.
+
+    ``asserted_as`` takes **one word or several**, and several means *any of*
+    within the clause. A category is a rule over claims, and there is no reason
+    a view's "Neuron" should not be "anything claimed Pyramidal or Interneuron"
+    — that is ordinary ontology, and restricting it to a single word made a
+    defined category a rename rather than a definition. A bare string is still
+    accepted and means the obvious thing. What clauses add is *binding*: a
+    subject or a date scoped to one word rather than smeared across all of them
+    — the flat cross-product was the reason "Peter's Cells or Karl's late
+    StemCells" was inexpressible.
 
     Note this is separate from the word a category *mints* claims under, which is
     `Category.term` and is genuinely singular: creating an entity of this category
     claims exactly one word. A category derives from many and asserts as one.
 
     There is no `observed_window` counterpart: a classification is a claim about
-    a thing, not a measurement of it, so it has only belief time. `as_of` filters
-    `Assertion.asserted_at` through the join, where `metric_filter` can use the
-    column denormalized onto `Metric`.
+    a thing, not a measurement of it, so it has only belief time. `as_of`/`since`
+    filter `Assertion.asserted_at` through the join, where `metric_filter` can
+    use the column denormalized onto `Metric`.
+
+    Two edge cases are handled explicitly because Django collapses the empty
+    ``Q()`` in an OR (``Q() | Q(x)`` is ``Q(x)``, and a naive fold over zero
+    clauses returns the match-everything ``Q()``):
+
+    - ``any_of: []`` (refused at the write) reads as **matches nothing**.
+    - a clause with no constraints reads as **matches everything** the graph's
+      vocabulary can see — the generalization of a flat ``{"as_of": …}``-only
+      definition, which always meant every word.
     """
-    predicate = Q()
     if not definition:
-        return predicate
+        return Q()
 
-    asserted_as = asserted_as_keys(definition)
-    if asserted_as:
-        predicate &= Q(term__key__in=asserted_as)
+    clauses = _clauses(definition)
+    if not clauses:
+        # An explicitly empty union matches nothing — never the collapsed Q().
+        return Q(pk__in=[])
 
-    assertion_filter = definition.get("assertion_filter") or {}
-    for field, column in (("subjects", "assertion__subject__in"), ("app_ids", "assertion__app_id__in"), ("action_names", "assertion__action_name__in")):
-        values = assertion_filter.get(field)
-        if values:
-            predicate &= Q(**{column: values})
+    predicates = []
+    for clause in clauses:
+        predicate = Q()
+        words = _clause_words(clause)
+        if words:
+            predicate &= Q(term__key__in=words)
+        predicate &= _assertion_predicate(clause)
+        predicates.append(predicate)
 
-    as_of = definition.get("as_of")
-    if as_of:
-        predicate &= Q(assertion__asserted_at__lte=as_of)
+    if any(not predicate.children for predicate in predicates):
+        # One unconstrained clause admits every claim; OR-ing it would silently
+        # vanish, so say it outright.
+        return Q()
 
-    return predicate
+    combined = predicates[0]
+    for predicate in predicates[1:]:
+        combined |= predicate
+    return combined
 
 
 def claim_filter(selector: dict[str, Any] | None) -> Q:
@@ -161,24 +274,13 @@ def claim_filter(selector: dict[str, Any] | None) -> Q:
     scoped to one annotator gets that annotator's answer about what is there.
 
     No ``observed_window``: a claim about whether a thing exists is not a
-    measurement of it, so it has belief time only. ``as_of`` filters through the
-    assertion, as `classification_filter` does.
+    measurement of it, so it has belief time only. ``as_of`` (upper) and
+    ``since`` (lower) filter through the assertion, as `classification_filter`
+    does.
     """
-    predicate = Q()
     if not selector:
-        return predicate
-
-    assertion_filter = selector.get("assertion_filter") or {}
-    for field, column in (("subjects", "assertion__subject__in"), ("app_ids", "assertion__app_id__in"), ("action_names", "assertion__action_name__in")):
-        values = assertion_filter.get(field)
-        if values:
-            predicate &= Q(**{column: values})
-
-    as_of = selector.get("as_of")
-    if as_of:
-        predicate &= Q(assertion__asserted_at__lte=as_of)
-
-    return predicate
+        return Q()
+    return _assertion_predicate(selector)
 
 
 def term_ids_for(graph: Any) -> set[Any]:

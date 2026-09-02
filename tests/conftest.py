@@ -294,3 +294,237 @@ def simple_api_context(db, backend_stack) -> HttpContext:
     request.set_membership(membership)  # type: ignore
 
     return HttpContext(request=request, response=TemporalResponse(), headers={"Authorization": "Bearer test"}, type="http")
+
+
+# ---------------------------------------------------------------------------
+# More graph schemas. Each is a different *shape* of view — minimal, open
+# descriptors, protocol lane, and a consensus pair that shares a word — so the
+# namespace machinery (RFC 0006) is exercised against more than one schema.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def minimal_graph_schema() -> models.GraphDefinitionInput:
+    """The smallest possible view: one entity word, no edges of any kind."""
+    return models.GraphDefinitionInput(
+        system_version="1.0.0",
+        extensions=models.GraphExtensionsInput(
+            entities=[models.EntityDefinitionInput(key="Specimen", property_definitions=[])],
+        ),
+    )
+
+
+@pytest.fixture(scope="function")
+def minimal_graph(transactional_db, table_projector, minimal_graph_schema, authenticated_context) -> core_models.Graph:
+    request = authenticated_context.request
+    return materialize(minimal_graph_schema, table_projector, user=request._user, organization=request._organization, membership=request.membership, name="minimal")
+
+
+@pytest.fixture
+def interactome_graph_schema() -> models.GraphDefinitionInput:
+    """Open and closed descriptors side by side.
+
+    `interacts_with` declares no source or target filter at all — the open
+    descriptor, which the namespace expands over every entity-like category —
+    while `binds` is closed to Protein -> Site.
+    """
+    return models.GraphDefinitionInput(
+        system_version="1.0.0",
+        extensions=models.GraphExtensionsInput(
+            entities=[
+                models.EntityDefinitionInput(key="Protein", property_definitions=[]),
+                models.EntityDefinitionInput(key="Complex", property_definitions=[]),
+                models.EntityDefinitionInput(key="Site", property_definitions=[]),
+            ],
+            relations=[
+                models.RelationDefinitionInput(key="interacts_with", source=models.EntityDescriptorInput(), target=models.EntityDescriptorInput()),
+                models.RelationDefinitionInput(key="binds", source=models.EntityDescriptorInput(keys=["Protein"]), target=models.EntityDescriptorInput(keys=["Site"])),
+            ],
+        ),
+    )
+
+
+@pytest.fixture(scope="function")
+def interactome_graph(transactional_db, table_projector, interactome_graph_schema, authenticated_context) -> core_models.Graph:
+    request = authenticated_context.request
+    return materialize(interactome_graph_schema, table_projector, user=request._user, organization=request._organization, membership=request.membership, name="interactome")
+
+
+@pytest.fixture
+def lab_graph_schema() -> models.GraphDefinitionInput:
+    """The protocol lane's entity words. Protocol event and reagent categories
+    cannot be declared in a schema (`GraphExtensionsInput` has no field for
+    them), so the `lab_graph` fixture adds those through the ORM — which is
+    also what exercises the category-write signal for both kinds."""
+    return models.GraphDefinitionInput(
+        system_version="1.0.0",
+        extensions=models.GraphExtensionsInput(
+            entities=[
+                models.EntityDefinitionInput(key="Sample", property_definitions=[]),
+                models.EntityDefinitionInput(key="Slide", property_definitions=[]),
+            ],
+        ),
+    )
+
+
+@pytest.fixture(scope="function")
+def lab_graph(transactional_db, table_projector, lab_graph_schema, authenticated_context) -> core_models.Graph:
+    request = authenticated_context.request
+    graph = materialize(lab_graph_schema, table_projector, user=request._user, organization=request._organization, membership=request.membership, name="lab")
+    core_models.ReagentCategory.objects.create(graph=graph, key="PFA", age_name="PFA", label="PFA")
+    core_models.ProtocolEventCategory.objects.create(
+        graph=graph,
+        key="Fixation",
+        age_name="Fixation",
+        label="Fixation",
+        source_entity_roles=[{"key": "Sample", "role": "specimen", "descriptor": {"keys": ["Sample"]}}],
+        target_entity_roles=[{"key": "Slide", "role": "mounted", "descriptor": {"keys": ["Slide"]}}],
+    )
+    return graph
+
+
+@pytest.fixture
+def cytology_graph_schema() -> models.GraphDefinitionInput:
+    """One half of the consensus pair: declares the shared word `Cell`.
+
+    Both halves derive a `size` property from the **same** metric claims
+    (`ROI.size`), under different rules — MEAN here, MAX in oncology — so the
+    same evidence reads as different knowledge per view.
+    """
+    return models.GraphDefinitionInput(
+        system_version="1.0.0",
+        extensions=models.GraphExtensionsInput(
+            entities=[
+                models.EntityDefinitionInput(
+                    key="Cell",
+                    property_definitions=[
+                        models.PropertyDefinitionInput(key="size", type=models.PropertyType.FLOAT, derivation=models.DerivationType.ROLLUP, rule=models.DerivationRuleInput(source_node="ROI", key="size", aggregation=models.AggregationFunction.MEAN)),
+                    ],
+                ),
+                models.EntityDefinitionInput(key="Nucleus", property_definitions=[]),
+            ],
+            relations=[
+                models.RelationDefinitionInput(key="has_nucleus", source=models.EntityDescriptorInput(keys=["Cell"]), target=models.EntityDescriptorInput(keys=["Nucleus"])),
+            ],
+        ),
+    )
+
+
+@pytest.fixture
+def oncology_graph_schema() -> models.GraphDefinitionInput:
+    """The other half: also declares `Cell`, plus words of its own — and reads
+    the same `ROI.size` metrics as MAX where cytology reads MEAN."""
+    return models.GraphDefinitionInput(
+        system_version="1.0.0",
+        extensions=models.GraphExtensionsInput(
+            entities=[
+                models.EntityDefinitionInput(
+                    key="Cell",
+                    property_definitions=[
+                        models.PropertyDefinitionInput(key="size", type=models.PropertyType.FLOAT, derivation=models.DerivationType.ROLLUP, rule=models.DerivationRuleInput(source_node="ROI", key="size", aggregation=models.AggregationFunction.MAX)),
+                    ],
+                ),
+                models.EntityDefinitionInput(key="Tumor", property_definitions=[]),
+            ],
+            relations=[
+                models.RelationDefinitionInput(key="part_of", source=models.EntityDescriptorInput(keys=["Cell"]), target=models.EntityDescriptorInput(keys=["Tumor"])),
+            ],
+        ),
+    )
+
+
+@pytest.fixture(scope="function")
+def cytology_graph(transactional_db, table_projector, cytology_graph_schema, authenticated_context) -> core_models.Graph:
+    request = authenticated_context.request
+    return materialize(cytology_graph_schema, table_projector, user=request._user, organization=request._organization, membership=request.membership, name="cytology")
+
+
+@pytest.fixture(scope="function")
+def oncology_graph(transactional_db, table_projector, oncology_graph_schema, authenticated_context) -> core_models.Graph:
+    request = authenticated_context.request
+    return materialize(oncology_graph_schema, table_projector, user=request._user, organization=request._organization, membership=request.membership, name="oncology")
+
+
+@pytest.fixture(scope="function")
+def census_graph(transactional_db, table_projector, authenticated_context) -> core_models.Graph:
+    """A view that declares no word of its own — its one category **derives**
+    from the word `Cell` (`definition.asserted_as`, flat form = one clause),
+    so it reads other views' claims under its own name. Declared in the schema
+    itself (RFC 0007): a graph's meaning is part of its definition document."""
+    request = authenticated_context.request
+    return materialize(
+        models.GraphDefinitionInput(
+            system_version="1.0.0",
+            extensions=models.GraphExtensionsInput(
+                entities=[
+                    models.EntityDefinitionInput(
+                        key="ObservedCell",
+                        label="Observed cell",
+                        definition=models.CategoryDefinitionInput(asserted_as=["Cell"]),
+                    ),
+                ],
+            ),
+        ),
+        table_projector,
+        user=request._user,
+        organization=request._organization,
+        membership=request.membership,
+        name="census",
+    )
+
+
+@pytest.fixture(scope="function")
+def literal_graph(transactional_db, table_projector, authenticated_context) -> core_models.Graph:
+    """Declares `Cell` and `StemCell` primitively — membership is whatever was
+    asserted, under each word's own label. The contrast for `subsumption_graph`."""
+    request = authenticated_context.request
+    return materialize(
+        models.GraphDefinitionInput(
+            system_version="1.0.0",
+            extensions=models.GraphExtensionsInput(
+                entities=[
+                    models.EntityDefinitionInput(key="Cell", property_definitions=[]),
+                    models.EntityDefinitionInput(key="StemCell", property_definitions=[]),
+                ],
+            ),
+        ),
+        table_projector,
+        user=request._user,
+        organization=request._organization,
+        membership=request.membership,
+        name="literal",
+    )
+
+
+@pytest.fixture(scope="function")
+def subsumption_graph(transactional_db, table_projector, authenticated_context) -> core_models.Graph:
+    """One category, a union of clauses: "'Cell' means what Peter called Cell,
+    and what Karl called StemCell after Dec 5" (RFC 0007). Declares no word of
+    its own — both words arrive through the definition, which the **schema
+    itself** carries: a graph's meaning is part of its definition document."""
+    from datetime import datetime, timezone
+
+    request = authenticated_context.request
+    return materialize(
+        models.GraphDefinitionInput(
+            system_version="1.0.0",
+            extensions=models.GraphExtensionsInput(
+                entities=[
+                    models.EntityDefinitionInput(
+                        key="Cell",
+                        definition=models.CategoryDefinitionInput(
+                            any_of=[
+                                models.CategoryDefinitionClauseInput(asserted_as=["Cell"], assertion_filter=models.AssertionFilterInput(subjects=["peter"])),
+                                models.CategoryDefinitionClauseInput(asserted_as=["StemCell"], assertion_filter=models.AssertionFilterInput(subjects=["karl"]), since=datetime(2026, 12, 5, tzinfo=timezone.utc)),
+                            ]
+                        ),
+                    ),
+                ],
+            ),
+        ),
+        table_projector,
+        user=request._user,
+        organization=request._organization,
+        membership=request.membership,
+        name="subsumption",
+    )

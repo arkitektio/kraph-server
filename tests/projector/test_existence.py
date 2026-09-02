@@ -391,3 +391,37 @@ async def test_a_word_two_graphs_declare_is_seen_by_both(
     result = await rebuild_second()
     assert result["nodes"] >= 1, "A replay of the second view reconstructs the node from the shared claim"
     assert (await vertices())[1] == 1
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_a_selector_since_ignores_earlier_retractions(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    table_projector,
+) -> None:
+    """`since` is the lower half of belief time, and it scopes existence too.
+
+    A graph whose selector starts counting *after* a retraction was asserted is
+    not bound by it: the fold sees no position at all, and silence means the
+    node stands. The mirror of `as_of`, which recovers the belief *before* a
+    retraction.
+    """
+    from datetime import timedelta
+
+    from asgiref.sync import sync_to_async
+    from django.utils import timezone as django_timezone
+
+    entity_id = await _cell(api_schema, simple_api_context, test_graph)
+    archived = await api_schema.execute(RETRACT_ENTITY, variable_values={"input": {"id": entity_id}}, context_value=simple_api_context)
+    assert archived.errors is None, f"GraphQL errors: {archived.errors}"
+
+    @sync_to_async
+    def rebuild_counting_only_the_future() -> int:
+        test_graph.selector = {"since": (django_timezone.now() + timedelta(days=1)).isoformat()}
+        test_graph.save()
+        GraphController(projector=table_projector).rebuild_projection(test_graph)
+        return _vertices(table_projector, test_graph, entity_id)
+
+    assert await rebuild_counting_only_the_future() == 1, "the retraction predates the window this graph counts, so nothing says the node is absent"

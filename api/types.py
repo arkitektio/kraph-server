@@ -255,6 +255,26 @@ def _event_roles(stored: Any) -> List[EventRole]:
     return roles
 
 
+@kante.pydantic_type(input_models.AssertionFilterInput, all_fields=True, description="Whose claims count: any-of within a field, all fields must hold")
+class AssertionFilter:
+    """The who half of a clause or selector, as read back."""
+
+
+@kante.pydantic_type(input_models.CategoryDefinitionClauseInput, all_fields=True, description="One clause of a category definition: these words, by these people, in this window (RFC 0007)")
+class CategoryDefinitionClause:
+    """One clause, as read back."""
+
+
+@kante.pydantic_type(input_models.CategoryDefinitionInput, all_fields=True, description="What a category means: a union of clauses over classification claims. Flat fields for one clause, anyOf for several — a stored definition never carries both")
+class CategoryDefinition:
+    """A category's meaning, as read back. Null on a primitive category."""
+
+
+@kante.pydantic_type(input_models.GraphSelectorInput, all_fields=True, description="Which of the organization's claims a graph counts. Null means everything the organization knows")
+class GraphSelector:
+    """A graph's claim scope, as read back."""
+
+
 @org_scoped
 @kante.django_type(models.Graph, filters=filters.GraphFilter, pagination=True, ordering=order.GraphOrder, description="One view over the organization's evidence log")
 class Graph:
@@ -268,6 +288,11 @@ class Graph:
     purl: Optional[str] = strawberry.field(default=None, description="Persistent URL for this graph")
     color: Optional[List[int]] = strawberry.field(default=None, description="Color as RGBA list (0-255)")
     name: str = strawberry.field(description="Name of the graph")
+
+    @strawberry.field(description="Which of the organization's claims this view counts. Null means everything — the default")
+    async def selector(self) -> Optional[GraphSelector]:
+        stored = await sync_to_async(lambda: input_models.GraphSelectorInput.from_stored(cast(models.Graph, self).selector))()
+        return GraphSelector.from_pydantic(stored) if stored is not None else None
     image: MediaStore | None = strawberry.field(description="An image representing this graph, for visualization purposes")
     # Readable, because a flag a client can write and never observe is how
     # `archiveGraph` managed to do nothing for as long as it did.
@@ -361,6 +386,11 @@ class Category:
     image: MediaStore | None = strawberry.field(description="An image representing this category, for visualization purposes")
     graph: Graph = strawberry.field(description="The graph this category belongs to")
     term: Optional["Term"] = kante.django_field(description="The organization's word this category declares. Claims name the term, not this row — so a category is what the word means *here*, and another graph declaring the same word sees the same claims.")
+
+    @strawberry.field(description="What this category *means*: a predicate over classification claims (RFC 0007). Null on a primitive category, whose membership is whatever was asserted under its word")
+    async def definition(self) -> Optional[CategoryDefinition]:
+        stored = await sync_to_async(lambda: input_models.CategoryDefinitionInput.from_stored(cast(models.Category, self).definition))()
+        return CategoryDefinition.from_pydantic(stored) if stored is not None else None
 
     @kante.django_field(description="List of relevant queries that use this category as input")
     def relevant_queries(self) -> List["GraphQuery"]:

@@ -179,6 +179,8 @@ class EntityCategoryManager(NodeCategoryManager["core_models.EntityCategory"]):
                 "instance_kind": definition.instance_kind,
                 "property_definitions": property_defs,
                 "schema_hash": props_hash,
+                # The category's *meaning* (RFC 0007). Empty means primitive.
+                "definition": definition.definition.to_stored() if definition.definition else {},
             },
         )
 
@@ -213,6 +215,14 @@ class EntityCategoryManager(NodeCategoryManager["core_models.EntityCategory"]):
         category.instance_kind = definition.instance_kind or category.instance_kind
         category.property_definitions = property_defs or category.property_definitions
         category.schema_hash = props_hash or category.schema_hash
+
+        # The category's meaning (RFC 0007): a new predicate replaces the old one
+        # whole; `clear_definition` resets to primitive; absent means unchanged.
+        # The input model refuses both at once.
+        if getattr(definition, "clear_definition", False):
+            category.definition = {}
+        elif getattr(definition, "definition", None) is not None:
+            category.definition = definition.definition.to_stored()
 
         store_id = self._resolve_store_id(definition.image)
         if store_id is not None:

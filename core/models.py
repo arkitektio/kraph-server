@@ -149,13 +149,15 @@ class Graph(models.Model):
             "this selector into a droppable cache, never maintained on write — otherwise "
             "every ingest would have to know about every projection. "
             "Shape: {category_keys: [...], assertion_filter: {subjects, app_ids, "
-            "action_names}, as_of: timestamp, observed_window: [from, to]}. "
+            "action_names}, as_of: timestamp, since: timestamp, observed_window: [from, to]} — "
+            "`as_of`/`since` are the belief-time upper and lower bounds. "
             "Read in three places, all at projection or read time: which metrics a derived "
             "property counts, whose classification claims a defined category admits, and whose "
             "existence claims decide whether a node is in this view at all. "
             "**Changing it requires a reproject**: the projection is a cache of the answer this "
             "selector produced, so editing the selector without rebuilding leaves the graph "
-            "showing the previous one."
+            "showing the previous one — which is why `updateGraph(selector:)` rebuilds before "
+            "returning."
         ),
     )
     is_archived = models.BooleanField(
@@ -561,12 +563,16 @@ class Category(KindDiscriminatedModel):
             "conditions, evaluated at projection time, so 'AIS' can mean 'asserted AIS by Johannes "
             "before August' in one graph and something else in another without touching a single "
             "piece of evidence. "
-            "Shape: {asserted_as: <term key or list of them>, assertion_filter: {subjects, app_ids, "
-            "action_names}, as_of: timestamp}. `asserted_as` takes several words and means *any of*, "
-            "so a view's 'Neuron' can be 'anything claimed Pyramidal or Interneuron' — a category "
-            "derives from many words while `term` is the single one it asserts as. Naming a word "
-            "this graph declares no category for is fine and is the interesting case; "
-            "`evidence.selector.term_ids_for` widens membership to cover it."
+            "A definition is a **union of clauses** (RFC 0007): {any_of: [{asserted_as, "
+            "assertion_filter: {subjects, app_ids, action_names}, as_of, since}, ...]} — each "
+            "clause binds its own words, annotators and time bounds, so 'Cell' can mean 'what "
+            "Peter called Cell, and what Karl called StemCell after Dec 5'. The flat form (the "
+            "same keys at top level) is still accepted and means one clause; `since` is the "
+            "asserted_at lower bound `as_of` never had. `asserted_as` takes several words and "
+            "means *any of* within its clause — a category derives from many words while `term` "
+            "is the single one it asserts as. Naming a word this graph declares no category for "
+            "is fine and is the interesting case; `evidence.selector.term_ids_for` widens "
+            "membership to cover it. Canonical shape docs: `evidence.selector.classification_filter`."
         ),
     )
     color = models.JSONField(

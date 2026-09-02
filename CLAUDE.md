@@ -219,7 +219,9 @@ The load-bearing facts:
   **and** the words their definitions derive from. Since writes name terms, the second one is the
   only thing deciding where a write lands, so a write path that fans out over graphs goes through
   `projector.graphs_for_refs` and never `_graph_for_ref`, which returns an arbitrary declarer.
-  The derived half of that rule — the words a `definition.asserted_as` names, which is a string
+  The derived half of that rule — the words a `definition.asserted_as` names, across its `any_of`
+  clauses (a definition is a **union of clauses**, each binding its own words/annotators/time
+  bounds — RFC 0007; `since` is the `asserted_at` lower bound beside `as_of`), which is a string
   inside JSON and so un-joinable — is normalized into `core.CategoryAssertedTerm`, maintained by a
   signal in `versioning.connect()` that deliberately does **not** share `is_suspended()`
   (`materialize` runs suspended, and that is when the index matters most). It stores the **key**,

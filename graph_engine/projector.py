@@ -863,7 +863,11 @@ def refs_admitted_by(category: core_models.Category) -> set[str]:
     standing_claims = selector_module.classification_claims_for(graph)
 
     asserted_as = selector_module.asserted_as_keys(category.definition) if category.definition else []
-    if asserted_as:
+    if category.definition and selector_module.definition_matches_every_word(category.definition):
+        # A clause with no words matches claims of any word — narrowing by the
+        # other clauses' words would silently drop what it admits.
+        claimed = standing_claims
+    elif asserted_as:
         claimed = standing_claims.filter(term__key__in=asserted_as)
     else:
         claimed = standing_claims.filter(term_id=category.term_id)

@@ -9,7 +9,7 @@ instances from the schema definition.
 import hashlib
 import json
 import logging
-from typing import Optional
+from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 from .input_models import DerivationType, GraphDefinitionInput
@@ -177,6 +177,7 @@ def materialize(
     name: Optional[str] = None,
     description: Optional[str] = None,
     backfill: bool = False,
+    selector: Any = None,
 ) -> models.Graph:
     """
     Materialize a graph based on the provided graph definition.
@@ -227,6 +228,10 @@ def materialize(
         organization=organization,
         membership=membership,
         rules=[rule.model_dump(mode="json") for rule in definition.rules],
+        # Written before any backfill, deliberately: the backfill below folds
+        # existence and metrics under this scope, so a selector arriving later
+        # would describe a drawing it did not shape.
+        selector=selector.to_stored() if hasattr(selector, "to_stored") else (selector or {}),
     )
 
     # The projection kind this view is drawn in.

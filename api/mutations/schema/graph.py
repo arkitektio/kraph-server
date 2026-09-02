@@ -30,6 +30,7 @@ def create_graph(
         description=model.description,
         membership=info.context.request.membership,
         backfill=model.backfill,
+        selector=model.selector,
     )
 
     return graph
@@ -191,7 +192,25 @@ def update_graph(
         else:
             graph.pinned_by.remove(info.context.request.user)
 
+    selector_changed = False
+    if model.selector is not None:
+        new_selector = model.selector.to_stored()
+        selector_changed = new_selector != (graph.selector or {})
+        graph.selector = new_selector
+
     graph.save()
+
+    if selector_changed:
+        # The selector decides whose existence claims and metrics the view
+        # counts, so the drawing standing right now was folded under the *old*
+        # scope. Rebuild before returning — a mutation that edits the scope and
+        # leaves the drawing showing the previous one is the class of silence
+        # this codebase refuses. Synchronous and O(graph), the same accepted
+        # limit as every schema edit; tenancy-scoped like renaming, because a
+        # shared view is the organization's to curate.
+        from api import context
+
+        context.get_controller().rebuild_projection(graph)
 
     return graph
 

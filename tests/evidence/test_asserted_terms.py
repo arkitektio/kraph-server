@@ -255,3 +255,27 @@ def test_deciding_where_a_write_lands_does_not_scale_with_the_ontology(
         selector.graph_ids_for_instance_ids(organization, [node.ref])
 
     assert not any("definition" in query["sql"] for query in captured.captured_queries), "Deciding where a write lands must not read a single definition blob"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_an_any_of_definition_indexes_the_union_of_its_clauses(graph_a: core_models.Graph) -> None:
+    """Clauses bind filters per word (RFC 0007); the vocabulary is their union."""
+    category = core_models.EntityCategory.objects.create(
+        graph=graph_a,
+        key="Cell",
+        age_name="cell",
+        definition={
+            "any_of": [
+                {"asserted_as": ["Cell"], "assertion_filter": {"subjects": ["peter"]}},
+                {"asserted_as": ["StemCell"], "assertion_filter": {"subjects": ["karl"]}, "since": "2026-12-05T00:00:00+00:00"},
+            ]
+        },
+    )
+
+    assert {row.key for row in core_models.CategoryAssertedTerm.objects.filter(category=category)} == {"Cell", "StemCell"}
+    assert asserted_terms.expected(graph_a.organization) == asserted_terms.stored(graph_a.organization), "the --check contract holds for the clause shape"
+
+    # Dropping a clause drops its word — the rewrite-not-append rule, per clause.
+    category.definition = {"any_of": [{"asserted_as": ["Cell"], "assertion_filter": {"subjects": ["peter"]}}]}
+    category.save()
+    assert {row.key for row in core_models.CategoryAssertedTerm.objects.filter(category=category)} == {"Cell"}

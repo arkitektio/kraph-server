@@ -830,11 +830,174 @@ class MetricDefinitionInput(NodeDefinitionInput):
     pass
 
 
+class AssertionFilterInput(StrictModel):
+    """Whose claims count: any-of within a field, all fields must hold."""
+
+    subjects: Optional[List[str]] = Field(default=None, description="Only claims by these subjects (annotators, models)")
+    app_ids: Optional[List[str]] = Field(default=None, description="Only claims made through these apps")
+    action_names: Optional[List[str]] = Field(default=None, description="Only claims made by these actions")
+
+    def to_stored(self) -> Dict[str, Any]:
+        return {key: value for key, value in (("subjects", self.subjects), ("app_ids", self.app_ids), ("action_names", self.action_names)) if value}
+
+
+class CategoryDefinitionClauseInput(StrictModel):
+    """One clause of a category definition: these words, by these people, in this window.
+
+    Clauses bind their filters to their own words — that is the whole point
+    (RFC 0007): "what Peter called Cell, and what Karl called StemCell after
+    Dec 5" is two clauses, where the flat form could only say the cross-product.
+    `asserted_as` is required per clause: a word-less clause matches every claim
+    the graph can see, which is never what a written definition means.
+    """
+
+    asserted_as: List[str] = Field(..., min_length=1, description="The words this clause derives from — any of them")
+    assertion_filter: Optional[AssertionFilterInput] = Field(default=None, description="Whose claims count for this clause")
+    as_of: Optional[datetime] = Field(default=None, description="Only claims asserted at or before this moment")
+    since: Optional[datetime] = Field(default=None, description="Only claims asserted at or after this moment")
+
+    def to_stored(self) -> Dict[str, Any]:
+        stored: Dict[str, Any] = {"asserted_as": list(self.asserted_as)}
+        if self.assertion_filter and self.assertion_filter.to_stored():
+            stored["assertion_filter"] = self.assertion_filter.to_stored()
+        if self.as_of:
+            stored["as_of"] = self.as_of.isoformat()
+        if self.since:
+            stored["since"] = self.since.isoformat()
+        return stored
+
+
+class CategoryDefinitionInput(StrictModel):
+    """A category's meaning: a union of clauses over classification claims.
+
+    Either the flat form (one clause, spelled inline) or `any_of` (several
+    clauses) — never both, refused here so the stored JSON can never carry a
+    dead half. Nesting is one level by construction: a clause has no `any_of`.
+    An entirely empty input is refused too — a primitive category is expressed
+    by *omitting* the definition (or `clearDefinition` on update), not by an
+    empty predicate.
+    """
+
+    asserted_as: Optional[List[str]] = Field(default=None, description="Flat form: the words this definition derives from")
+    assertion_filter: Optional[AssertionFilterInput] = Field(default=None, description="Flat form: whose claims count")
+    as_of: Optional[datetime] = Field(default=None, description="Flat form: claims asserted at or before this moment")
+    since: Optional[datetime] = Field(default=None, description="Flat form: claims asserted at or after this moment")
+    any_of: Optional[List[CategoryDefinitionClauseInput]] = Field(default=None, min_length=1, description="Several clauses; the definition matches a claim when any clause does")
+
+    @model_validator(mode="after")
+    def flat_and_clauses_are_exclusive(self) -> "CategoryDefinitionInput":
+        flat = [name for name in ("asserted_as", "assertion_filter", "as_of", "since") if getattr(self, name)]
+        if self.any_of is not None and flat:
+            raise ValueError(f"A definition is either flat or `any_of`, not both — move {', '.join(flat)} into a clause.")
+        if self.any_of is None and not flat:
+            raise ValueError("An empty definition means the category is primitive — omit `definition` instead of sending an empty one.")
+        if self.any_of is None and not self.asserted_as:
+            raise ValueError("A definition must name the words it derives from (`asserted_as`).")
+        return self
+
+    def to_stored(self) -> Dict[str, Any]:
+        """The exact JSON `Category.definition` stores."""
+        if self.any_of is not None:
+            return {"any_of": [clause.to_stored() for clause in self.any_of]}
+        clause = CategoryDefinitionClauseInput(asserted_as=list(self.asserted_as or []), assertion_filter=self.assertion_filter, as_of=self.as_of, since=self.since)
+        return clause.to_stored()
+
+    @classmethod
+    def _clause_from_stored(cls, stored: Any) -> Optional[CategoryDefinitionClauseInput]:
+        if not isinstance(stored, dict):
+            return None
+        asserted_as = stored.get("asserted_as")
+        if isinstance(asserted_as, str):
+            asserted_as = [asserted_as]
+        if not asserted_as or not isinstance(asserted_as, list):
+            return None
+        raw_filter = stored.get("assertion_filter") or {}
+        try:
+            return CategoryDefinitionClauseInput(
+                asserted_as=[str(key) for key in asserted_as],
+                assertion_filter=AssertionFilterInput(subjects=raw_filter.get("subjects"), app_ids=raw_filter.get("app_ids"), action_names=raw_filter.get("action_names")) if raw_filter else None,
+                as_of=stored.get("as_of"),
+                since=stored.get("since"),
+            )
+        except (ValueError, TypeError):
+            return None
+
+    @classmethod
+    def from_stored(cls, stored: Any) -> Optional["CategoryDefinitionInput"]:
+        """The stored JSON as a model, tolerantly: hand-written or historic shapes
+        this cannot spell read back as None (primitive) or with bad clauses
+        skipped, never as an error — this is the read side."""
+        if not stored or not isinstance(stored, dict):
+            return None
+        if stored.get("any_of") is not None:
+            clauses = [clause for clause in (cls._clause_from_stored(entry) for entry in stored["any_of"]) if clause is not None]
+            return cls(any_of=clauses) if clauses else None
+        clause = cls._clause_from_stored(stored)
+        if clause is None:
+            return None
+        return cls(asserted_as=clause.asserted_as, assertion_filter=clause.assertion_filter, as_of=clause.as_of, since=clause.since)
+
+
+class GraphSelectorInput(StrictModel):
+    """Which of the organization's claims a graph counts.
+
+    The window is flattened to `observed_from`/`observed_to` (the stored shape's
+    `observed_window` pair) because `from` is not a spellable field name.
+    """
+
+    category_keys: Optional[List[str]] = Field(default=None, description="Structure identifiers in scope (metrics only)")
+    assertion_filter: Optional[AssertionFilterInput] = Field(default=None, description="Whose claims count")
+    as_of: Optional[datetime] = Field(default=None, description="Claims asserted at or before this moment")
+    since: Optional[datetime] = Field(default=None, description="Claims asserted at or after this moment")
+    observed_from: Optional[datetime] = Field(default=None, description="Measurements taken at or after this moment (metrics only)")
+    observed_to: Optional[datetime] = Field(default=None, description="Measurements taken at or before this moment (metrics only)")
+
+    def to_stored(self) -> Dict[str, Any]:
+        """The exact JSON `Graph.selector` stores. Empty dict means everything."""
+        stored: Dict[str, Any] = {}
+        if self.category_keys:
+            stored["category_keys"] = list(self.category_keys)
+        if self.assertion_filter and self.assertion_filter.to_stored():
+            stored["assertion_filter"] = self.assertion_filter.to_stored()
+        if self.as_of:
+            stored["as_of"] = self.as_of.isoformat()
+        if self.since:
+            stored["since"] = self.since.isoformat()
+        if self.observed_from or self.observed_to:
+            stored["observed_window"] = {"from": self.observed_from.isoformat() if self.observed_from else None, "to": self.observed_to.isoformat() if self.observed_to else None}
+        return stored
+
+    @classmethod
+    def from_stored(cls, stored: Any) -> Optional["GraphSelectorInput"]:
+        """The stored JSON as a model, tolerantly; both window spellings accepted."""
+        if not stored or not isinstance(stored, dict):
+            return None
+        window = stored.get("observed_window")
+        observed_from = observed_to = None
+        if isinstance(window, dict):
+            observed_from, observed_to = window.get("from"), window.get("to")
+        elif isinstance(window, (list, tuple)) and len(window) == 2:
+            observed_from, observed_to = window
+        raw_filter = stored.get("assertion_filter") or {}
+        try:
+            return cls(
+                category_keys=stored.get("category_keys"),
+                assertion_filter=AssertionFilterInput(subjects=raw_filter.get("subjects"), app_ids=raw_filter.get("app_ids"), action_names=raw_filter.get("action_names")) if raw_filter else None,
+                as_of=stored.get("as_of"),
+                since=stored.get("since"),
+                observed_from=observed_from,
+                observed_to=observed_to,
+            )
+        except (ValueError, TypeError):
+            return None
+
+
 class EntityDefinitionInput(NodeDefinitionInput):
     """Input for an entity definition."""
 
     instance_kind: Optional[str] = Field(default=None, description="Optional instance kind for this entity category (e.g. 'neuron', 'synapse', 'behavior'). This is used for further categorization and filtering of entities within the graph.")
     property_definitions: List[PropertyDefinitionInput] = Field(default_factory=list, description="Property definitions")
+    definition: Optional[CategoryDefinitionInput] = Field(default=None, description="What this category *means*: a predicate over classification claims (RFC 0007). Omitted means primitive — membership is whatever was asserted under this word")
 
     @field_validator("property_definitions")
     @classmethod
@@ -854,6 +1017,14 @@ class UpdateEntityCategoryInput(UpdateDefinitionInput):
 
     instance_kind: Optional[str] = Field(default=None, description="Optional instance kind for this entity category (e.g. 'neuron', 'synapse', 'behavior'). This is used for further categorization and filtering of entities within the graph.")
     property_definitions: Optional[List[PropertyDefinitionInput]] = Field(default=None, description="Property definitions")
+    definition: Optional[CategoryDefinitionInput] = Field(default=None, description="New meaning for this category (RFC 0007). Omitted means unchanged; to make the category primitive again, use clearDefinition")
+    clear_definition: bool = Field(default=False, description="Reset the category to primitive — membership becomes whatever was asserted under its word")
+
+    @model_validator(mode="after")
+    def definition_and_clear_are_exclusive(self) -> "UpdateEntityCategoryInput":
+        if self.definition is not None and self.clear_definition:
+            raise ValueError("Pass a new `definition` or `clearDefinition`, not both.")
+        return self
 
     @field_validator("property_definitions")
     @classmethod
@@ -1877,6 +2048,7 @@ class CreateGraphFromSchema(StrictModel):
     name: str = Field(..., description="Name of the graph")
     description: Optional[str] = Field(None, description="Description of the graph")
     definition: Optional[GraphDefinitionInput] = Field(default_factory=lambda: GraphDefinitionInput(), description="The complete graph schema definition")
+    selector: Optional[GraphSelectorInput] = Field(default=None, description="Which of the organization's claims this view counts. Omitted means everything")
     backfill: bool = Field(
         default=False,
         description=(
@@ -1898,6 +2070,7 @@ class UpdateGraphInput(StrictModel):
     description: Optional[str] = Field(default=None, description="New graph description")
     archived: Optional[bool] = Field(default=None, description="Optional archived flag update")
     pin: Optional[bool] = Field(default=None, description="Optional pin flag update for the user making the request")
+    selector: Optional[GraphSelectorInput] = Field(default=None, description="New claim scope for this view. Omitted means unchanged; the drawing is rebuilt under the new scope before the mutation returns")
 
 
 class DeleteGraphInput(StrictModel):

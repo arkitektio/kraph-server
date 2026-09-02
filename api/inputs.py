@@ -52,6 +52,34 @@ class DerivationRuleInput:
     pass
 
 
+@pydantic.input(model=input_models.AssertionFilterInput, all_fields=True, description="Whose claims count: any-of within a field, all fields must hold")
+class AssertionFilterInput:
+    """Whose claims count."""
+
+    pass
+
+
+@pydantic.input(model=input_models.CategoryDefinitionClauseInput, all_fields=True, description="One clause of a category definition: these words, by these people, in this window (RFC 0007)")
+class CategoryDefinitionClauseInput:
+    """One clause of a category definition."""
+
+    pass
+
+
+@pydantic.input(model=input_models.CategoryDefinitionInput, all_fields=True, description="What a category means: a union of clauses over classification claims — flat form for one clause, anyOf for several, never both (RFC 0007)")
+class CategoryDefinitionInput:
+    """A category's meaning, as a predicate over claims."""
+
+    pass
+
+
+@pydantic.input(model=input_models.GraphSelectorInput, all_fields=True, description="Which of the organization's claims a graph counts: annotators, apps, actions, and belief/observation time bounds")
+class GraphSelectorInput:
+    """A graph's claim scope."""
+
+    pass
+
+
 @pydantic.input(model=input_models.PropertyDefinitionInput, all_fields=True, description="Definition of a property on an entity, structure, or relation")
 class PropertyDefinitionInput:
     """Definition of a property on an entity, structure, or relation."""

@@ -593,13 +593,20 @@ class GraphController:
             writer.retract(organization, node, assertion)
 
         # The vertex goes **after** the claim commits, and the ordering is the
-        # point. AGE cannot join a Django transaction, so one of the two failure
-        # directions has to be the recoverable one. This way a crash in between
-        # leaves the log saying "retracted" and a vertex still standing, which
-        # `reproject` fixes. The other way round would delete a vertex with no
-        # claim behind it, and the next replay would put it straight back.
-        for graph, refs in projector.graphs_for_refs(organization, [node.ref]).items():
-            projector.unproject(self, graph, refs)
+        # point: a crash in between leaves the log saying "retracted" and a
+        # vertex still standing, which `reproject` fixes. The other way round
+        # would delete a vertex with no claim behind it, and the next replay
+        # would put it straight back.
+        #
+        # Through `reproject_node`, not a blanket `unproject` — the same call
+        # `attest_node` makes, because the two are the same act with the
+        # opposite sign. A retraction is folded under each graph's own selector
+        # (`resolve_categories` -> `retracted_ids` -> `claim_filter`), so a view
+        # that does not count this subject redraws the node and keeps it; the
+        # blanket erase made the write path disagree with the very next rebuild,
+        # exactly the divergence this layer exists to prevent.
+        for graph in projector.graphs_for_refs(organization, [node.ref]):
+            projector.reproject_node(self, graph, node)
 
         # Read back rather than assumed empty. A retraction is folded under each
         # graph's own selector, so a view that does not count this subject still

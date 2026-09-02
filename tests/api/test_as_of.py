@@ -131,3 +131,11 @@ def test_an_empty_selector_means_everything(organization: Organization, revised_
     graph.selector = {}
 
     assert len(list(selector_module.metrics_for(graph))) == 2
+
+
+def test_since_recovers_the_later_belief(organization: Organization, revised_measurement: core_models.Graph) -> None:
+    """The lower bound `as_of` never had: "only what we have believed since March 3"."""
+    graph = revised_measurement
+    graph.selector = {"since": MARCH_3.isoformat()}
+
+    assert [m.value for m in selector_module.metrics_for(graph)] == [47.9], "the original March 1 claim is before the bound"

@@ -49,16 +49,26 @@ def update_entity_category(info: Info, input: inputs.UpdateEntityCategoryInput) 
 
     item = scoped(info, models.EntityCategory, model.id, what="entity category")
 
-    # Before the write: nothing versions `property_definitions`, so the old
-    # definition is unrecoverable one line later. See `_rematerialize`.
+    # Before the write: nothing versions `property_definitions` or `definition`,
+    # so the old ones are unrecoverable one line later. See `_rematerialize`.
     before = fingerprint(item)
+    meaning_before = dict(item.definition or {})
 
     models.EntityCategory.objects.update_from_entity_definition(item, model)
 
-    # Synchronous, and unbounded in the size of the graph — see
-    # `_rematerialize`'s module docstring for why that is the accepted limit and
-    # what to run when it bites.
-    rematerialize_if_moved(item, before)
+    if dict(item.definition or {}) != meaning_before:
+        # A definition change moves *membership* — nodes enter, leave, or move
+        # between labels — and only a rebuild moves a label honestly (the same
+        # reasoning as `backfill_category` for defined categories). It also
+        # redraws every derived property, so the rematerialize below would be
+        # redundant work on top. Synchronous and O(graph): the accepted limit,
+        # per `_rematerialize`'s module docstring.
+        context.get_controller().rebuild_projection(item.graph)
+    else:
+        # Synchronous, and unbounded in the size of the graph — see
+        # `_rematerialize`'s module docstring for why that is the accepted limit
+        # and what to run when it bites.
+        rematerialize_if_moved(item, before)
 
     return item
 
