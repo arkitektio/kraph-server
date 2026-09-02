@@ -1,7 +1,15 @@
 # CHANGELOG
 
 
+## v1.0.0-rc.13 (2026-09-02)
+
+
 ## v1.0.0-rc.12 (2026-09-02)
+
+### Features
+
+- Transition to pg 19
+  ([`2dabf6e`](https://github.com/arkitektio/kraph-server/commit/2dabf6ea970b587c3aa2bf495f9342278b95a6b9))
 
 
 ## v1.0.0-rc.11 (2026-09-01)
