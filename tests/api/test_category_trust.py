@@ -70,7 +70,7 @@ DEFINITION = {
                             "sourceNode": "ROI",
                             "key": "vector_length",
                             "aggregation": "MEAN",
-                            "evidence": [{"field": "APP", "operator": "IS", "value": "segmenter-v3"}],
+                            "evidence": {"rules": [{"when": [{"field": "APP", "operator": "IS", "value": "segmenter-v3"}]}]},
                         },
                     }
                 ],

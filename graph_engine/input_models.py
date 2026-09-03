@@ -579,8 +579,9 @@ class ClaimField(str, Enum):
     APP = "APP"  #: through which app
     ACTION = "ACTION"  #: by which action (may be absent on a claim)
     KIND = "KIND"  #: what the claim *says* — which folds this rule covers (RFC 0011)
+    KEY = "KEY"  #: the metric key — measurement rules only (RFC 0014)
     ASSERTED_AT = "ASSERTED_AT"  #: belief time
-    MEASURED_AT = "MEASURED_AT"  #: observation time — metric rules only
+    MEASURED_AT = "MEASURED_AT"  #: observation time — measurement rules only
 
 
 class ClaimKind(str, Enum):
@@ -631,8 +632,11 @@ class ClaimOperator(str, Enum):
     SINCE = "SINCE"  #: time >= value
 
 
-_IDENTITY_FIELDS = frozenset({ClaimField.WORD, ClaimField.SUBJECT, ClaimField.APP, ClaimField.ACTION})
+_IDENTITY_FIELDS = frozenset({ClaimField.WORD, ClaimField.SUBJECT, ClaimField.APP, ClaimField.ACTION, ClaimField.KEY})
 _TIME_FIELDS = frozenset({ClaimField.ASSERTED_AT, ClaimField.MEASURED_AT})
+#: Only a metric row has these: legal in a property's `rule.evidence` and in
+#: the `when` of a MEASUREMENT-only definition rule, nowhere else (RFC 0014).
+_METRIC_ONLY_FIELDS = frozenset({ClaimField.MEASURED_AT, ClaimField.KEY})
 _IDENTITY_OPERATORS = frozenset({ClaimOperator.IS, ClaimOperator.IN, ClaimOperator.NOT_IN})
 _TIME_OPERATORS = frozenset({ClaimOperator.BEFORE, ClaimOperator.SINCE})
 
@@ -646,7 +650,7 @@ class ClaimConditionInput(StrictModel):
 
     field: ClaimField = Field(..., description="What this condition looks at")
     operator: ClaimOperator = Field(..., description="How it compares. BEFORE/SINCE are inclusive")
-    value: Any = Field(..., description="One string for IS, a non-empty string list for IN/NOT_IN, a datetime for BEFORE/SINCE. For field KIND: kinds from CLASSIFICATION, EXISTENCE, SAMENESS, EVIDENCE, MEASUREMENT")
+    value: Any = Field(..., description="One string for IS, a non-empty string list for IN/NOT_IN, a datetime for BEFORE/SINCE. For field KIND: kinds from CLASSIFICATION, EXISTENCE, SAMENESS, EVIDENCE, MEASUREMENT. For field KEY: metric keys")
 
     @model_validator(mode="after")
     def value_fits_field_and_operator(self) -> "ClaimConditionInput":
@@ -719,6 +723,30 @@ class ClaimRuleInput(StrictModel):
         return stored
 
 
+class MetricEvidenceInput(StrictModel):
+    """A property's own metric rule (RFC 0014): the definition's rule list, over
+    metric rows. Same logic — any rule admits, all `when` hold, `unless`
+    subtracts — minus WORD (a metric names no word) and KIND (a metric row has
+    no kind), plus KEY and MEASURED_AT anywhere, `unless` included."""
+
+    rules: List[ClaimRuleInput] = Field(..., min_length=1, description="A metric counts when any rule matches")
+
+    @model_validator(mode="after")
+    def rules_are_metric_shaped(self) -> "MetricEvidenceInput":
+        for index, rule in enumerate(self.rules):
+            groups = [rule.when] + [group.when for group in rule.unless or []]
+            for conditions in groups:
+                for condition in conditions:
+                    if condition.field == ClaimField.WORD:
+                        raise ValueError(f"rules[{index}]: a metric names no WORD — evidence conditions take SUBJECT, APP, ACTION, KEY, ASSERTED_AT or MEASURED_AT.")
+                    if condition.field == ClaimField.KIND:
+                        raise ValueError(f"rules[{index}]: a metric row has no KIND to test — evidence conditions take SUBJECT, APP, ACTION, KEY, ASSERTED_AT or MEASURED_AT.")
+        return self
+
+    def to_stored(self) -> Dict[str, Any]:
+        return {"rules": [rule.to_stored() for rule in self.rules]}
+
+
 class DerivationRuleInput(StrictModel):
     """Input for a derivation rule configuration."""
 
@@ -732,16 +760,15 @@ class DerivationRuleInput(StrictModel):
     )
     aggregation: Optional[AggregationFunction] = Field(default=None, description="Aggregation function (MEAN, SUM, MAX, MIN, COUNT, etc.)")
 
-    evidence: Optional[List[ClaimConditionInput]] = Field(
+    evidence: Optional[MetricEvidenceInput] = Field(
         default=None,
-        min_length=1,
         description=(
-            "This property's own metric rule: conditions (all must hold) over SUBJECT/APP/ACTION/"
-            "ASSERTED_AT/MEASURED_AT. When present it replaces the owning category's rules as the "
+            "This property's own metric rule: a rule list over SUBJECT/APP/ACTION/KEY/"
+            "ASSERTED_AT/MEASURED_AT — any rule admits, all its `when` conditions must hold, "
+            "`unless` groups subtract. When present it replaces the owning category's rules as the "
             "metric scope (classification annotators and measurement producers are usually "
             "different populations, so intersecting them would routinely produce nothing); when "
-            "absent, the category's rules apply to the metrics' assertions too, and a primitive "
-            "category folds everything."
+            "absent, the category's MEASUREMENT rules apply, and a primitive category folds everything."
         ),
     )
     subject_priority: List[str] = Field(
@@ -757,11 +784,6 @@ class DerivationRuleInput(StrictModel):
     def evidence_needs_a_source(self) -> "DerivationRuleInput":
         if self.evidence is not None and not self.source_node:
             raise ValueError("An evidence filter needs a `source_node`: a rule that names no source reads no metrics, so the filter would be silently inert.")
-        for condition in self.evidence or []:
-            if condition.field == ClaimField.WORD:
-                raise ValueError("A metric names no WORD — evidence conditions take SUBJECT, APP, ACTION, ASSERTED_AT or MEASURED_AT.")
-            if condition.field == ClaimField.KIND:
-                raise ValueError("A metric row has no KIND to test — evidence conditions take SUBJECT, APP, ACTION, ASSERTED_AT or MEASURED_AT.")
         return self
 
 
@@ -1005,14 +1027,14 @@ class CategoryDefinitionInput(StrictModel):
                 raise ValueError(f"rules[{index}]: a WORD condition means nothing on a rule that does not cover CLASSIFICATION — a standing or a SAME_AS claim names no word.")
 
             for condition in rule.when:
-                if condition.field == ClaimField.MEASURED_AT and not measurement_only:
-                    raise ValueError(f"rules[{index}]: MEASURED_AT is meaningful only on a rule covering MEASUREMENT alone — other claims have no observation time.")
+                if condition.field in _METRIC_ONLY_FIELDS and not measurement_only:
+                    raise ValueError(f"rules[{index}]: {condition.field.value} is meaningful only on a rule covering MEASUREMENT alone — other claims have no metric key or observation time.")
             for group in rule.unless or []:
                 for condition in group.when:
                     if condition.field == ClaimField.WORD:
                         raise ValueError(f"rules[{index}]: an `unless` group may not name a WORD — exceptions are about who and when, not vocabulary.")
-                    if condition.field == ClaimField.MEASURED_AT:
-                        raise ValueError(f"rules[{index}]: a claim has no observation time — MEASURED_AT belongs in `when` of a MEASUREMENT-only rule, or in a property's `rule.evidence`.")
+                    if condition.field in _METRIC_ONLY_FIELDS:
+                        raise ValueError(f"rules[{index}]: a claim has no metric key or observation time — {condition.field.value} belongs in `when` of a MEASUREMENT-only rule, or in a property's `rule.evidence`.")
         return self
 
     def to_stored(self) -> Dict[str, Any]:

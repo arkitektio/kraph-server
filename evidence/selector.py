@@ -34,6 +34,9 @@ Two readings of the same rules, and the split is the design:
   claims and standings *count* for things already of this category. Applied to
   existence standings, the standings of link claims, INFORMS routing, and (by
   default) the metrics a property folds.
+- :func:`rule_metric_filter` — a property's own ``rule.evidence``, the same
+  rule list minus WORD and KIND, plus the two fields only a metric row has,
+  KEY and MEASURED_AT (RFC 0014).
 
 ``as_of`` is the one that matters scientifically: "the category as we believed
 it on March 3rd" stops being a fork of the data and becomes a filter.
@@ -67,7 +70,11 @@ _IDENTITY_COLUMNS = {
     "SUBJECT": "assertion__subject",
     "APP": "assertion__app_id",
     "ACTION": "assertion__action_name",
+    "KEY": "key",  # the metric key — only a metric row has one (RFC 0014)
 }
+#: Fields only a `Metric` row can answer. Skipped unless the caller says the
+#: predicate targets metrics — a `Standing` or an `Instance` has neither.
+_METRIC_ONLY_FIELDS = frozenset({"MEASURED_AT", "KEY"})
 
 #: `ACTION` is the one nullable column: a human's claim carries no action, and
 #: SQL's NOT IN over NULL would silently drop it — compiled around, below.
@@ -145,12 +152,13 @@ def _condition_q(condition: dict[str, Any], *, asserted_at_column: str) -> Q | N
     return None
 
 
-def _rule_trust_q(rule: dict[str, Any], *, asserted_at_column: str, include_measured_at: bool = False) -> Q:
-    """One rule's who-and-when predicate: AND of `when` (WORD skipped), minus
-    any `unless` group (each group an AND of its conditions)."""
+def _rule_trust_q(rule: dict[str, Any], *, asserted_at_column: str, include_metric_fields: bool = False) -> Q:
+    """One rule's who-and-when predicate: AND of `when` (WORD skipped, the
+    metric-only fields skipped unless the predicate targets metric rows),
+    minus any `unless` group (each group an AND of its conditions)."""
     predicate = Q()
     for condition in _conditions(rule):
-        if not include_measured_at and str(condition.get("field")) == "MEASURED_AT":
+        if not include_metric_fields and str(condition.get("field")) in _METRIC_ONLY_FIELDS:
             continue
         compiled = _condition_q(condition, asserted_at_column=asserted_at_column)
         if compiled is not None:
@@ -161,6 +169,8 @@ def _rule_trust_q(rule: dict[str, Any], *, asserted_at_column: str, include_meas
             continue
         blocked = Q()
         for condition in _conditions(group):
+            if not include_metric_fields and str(condition.get("field")) in _METRIC_ONLY_FIELDS:
+                continue
             compiled = _condition_q(condition, asserted_at_column=asserted_at_column)
             if compiled is not None:
                 blocked &= compiled
@@ -184,7 +194,7 @@ def _rule_words(rule: dict[str, Any]) -> list[str]:
     return words
 
 
-def trust_filter(definition: dict[str, Any] | None, *, kind: str, asserted_at_column: str = "assertion__asserted_at", include_measured_at: bool = False) -> Q:
+def trust_filter(definition: dict[str, Any] | None, *, kind: str, asserted_at_column: str = "assertion__asserted_at", include_metric_fields: bool = False) -> Q:
     """Whose claims of one **kind** count for things of this category.
 
     ``kind`` is required (a `ClaimKind` value — RFC 0011): only the rules whose
@@ -210,7 +220,7 @@ def trust_filter(definition: dict[str, Any] | None, *, kind: str, asserted_at_co
     if not applicable:
         return Q(pk__in=[])
 
-    predicates = [_rule_trust_q(rule, asserted_at_column=asserted_at_column, include_measured_at=include_measured_at) for rule in applicable]
+    predicates = [_rule_trust_q(rule, asserted_at_column=asserted_at_column, include_metric_fields=include_metric_fields) for rule in applicable]
     if any(not predicate.children for predicate in predicates):
         return Q()
 
@@ -228,30 +238,49 @@ def trust_predicate(definition: dict[str, Any] | None, *, kind: str) -> Q | None
     return predicate if predicate.children else None
 
 
+def _evidence_rules(rule: Any) -> list[dict[str, Any]] | None:
+    """A property's stored ``evidence`` rule list, or None when it has none.
+
+    Accepts the pydantic `DerivationRuleInput` (a live request) or the dict
+    `defined_properties` re-parses from `Category.property_definitions`.
+    """
+    evidence = getattr(rule, "evidence", None) if rule is not None else None
+    if evidence is None:
+        return None
+    stored = evidence.to_stored() if hasattr(evidence, "to_stored") else evidence
+    if not isinstance(stored, dict):
+        return None
+    return [entry for entry in (stored.get("rules") or []) if isinstance(entry, dict)]
+
+
+def _union(predicates: list[Q]) -> Q:
+    combined = Q(pk__in=[])
+    for predicate in predicates:
+        combined |= predicate
+    return combined
+
+
 def rule_metric_filter(rule: Any) -> Q:
     """The predicate a metric must satisfy for one derived property (RFC 0009).
 
-    Compiles the rule's ``evidence`` — a plain conjunction of conditions in the
-    RFC 0010 language, MEASURED_AT included — with belief time on the
-    `asserted_at` column denormalized onto `Metric`. A rule with no evidence
-    constrains nothing here; the category's rules are the default, see
-    :func:`metric_scope`.
+    Compiles the rule's ``evidence`` — a **rule list** with the definition's
+    logic (RFC 0014): any rule admits, all of a rule's `when` conditions must
+    hold, `unless` groups subtract; KEY and MEASURED_AT included — with belief
+    time on the `asserted_at` column denormalized onto `Metric`. A rule with no
+    evidence constrains nothing here; the category's rules are the default,
+    see :func:`metric_scope`.
     """
-    conditions = getattr(rule, "evidence", None) if rule is not None else None
-    predicate = Q()
-    for condition in conditions or []:
-        stored = condition.to_stored() if hasattr(condition, "to_stored") else condition
-        compiled = _condition_q(stored, asserted_at_column="asserted_at")
-        if compiled is not None:
-            predicate &= compiled
-    return predicate
+    rules = _evidence_rules(rule)
+    if rules is None:
+        return Q()
+    return _union([_rule_trust_q(entry, asserted_at_column="asserted_at", include_metric_fields=True) for entry in rules])
 
 
 def metric_scope(definition: dict[str, Any] | None, rule: Any) -> tuple[Q, Q | None]:
     """(claim predicate, standing predicate) for the metrics one property folds.
 
     **Replacement with a default, not intersection.** When the rule carries
-    ``evidence`` conditions, they *are* the property's metric rule — the
+    ``evidence`` rules, they *are* the property's metric rule — the
     category's rules name who may say what exists and what it is called, and
     the people measuring are usually a different population (pipelines,
     instruments), so ANDing the two would routinely produce an empty fold. When
@@ -261,23 +290,19 @@ def metric_scope(definition: dict[str, Any] | None, rule: Any) -> tuple[Q, Q | N
     The standing predicate follows the same source — whose retraction of a
     metric counts is decided by whichever rule admitted the metric — but is
     phrased over ``assertion__*`` paths (a `Standing` has no denormalized
-    `asserted_at`) and skips ``MEASURED_AT``: a position on a claim is not a
-    measurement.
+    `asserted_at`) and skips ``KEY`` and ``MEASURED_AT``: a position on a claim
+    is not a measurement. ``None`` when any admitting rule then constrains
+    nobody, the same edge `trust_predicate` takes.
     """
-    conditions = getattr(rule, "evidence", None) if rule is not None else None
-    if conditions is not None:
+    rules = _evidence_rules(rule)
+    if rules is not None:
         claim = rule_metric_filter(rule)
-        standing = Q()
-        for condition in conditions:
-            stored = condition.to_stored() if hasattr(condition, "to_stored") else condition
-            if str(stored.get("field")) == "MEASURED_AT":
-                continue
-            compiled = _condition_q(stored, asserted_at_column="assertion__asserted_at")
-            if compiled is not None:
-                standing &= compiled
-        return claim, (standing if standing.children else None)
+        halves = [_rule_trust_q(entry, asserted_at_column="assertion__asserted_at") for entry in rules]
+        if any(not half.children for half in halves):
+            return claim, None
+        return claim, _union(halves)
 
-    claim = trust_filter(definition, kind="MEASUREMENT", asserted_at_column="asserted_at", include_measured_at=True)
+    claim = trust_filter(definition, kind="MEASUREMENT", asserted_at_column="asserted_at", include_metric_fields=True)
     return claim, trust_predicate(definition, kind="MEASUREMENT")
 
 

@@ -116,6 +116,31 @@ def good_schemas() -> dict[str, models.GraphDefinitionInput]:
             entities=[_entity("Cell")],
             measurements=[_measurement("SHOWS", _definition_input(rules.rule(rules.word("SHOWS"), rules.not_by("untrusted-bot"))))],
         ),
+        "entity-measurement-rules-name-keys": _schema(
+            entities=[
+                _entity(
+                    "Cell",
+                    _definition_input(
+                        rules.rule(rules.word("Cell"), rules.not_kind("MEASUREMENT")),
+                        rules.rule(rules.of_kind("MEASUREMENT"), rules.via("app-a"), rules.key("vector_length")),
+                        rules.rule(rules.of_kind("MEASUREMENT"), rules.via("app-b"), rules.key("area", "volume")),
+                    ),
+                    properties=[
+                        models.PropertyDefinitionInput(
+                            key="avg_area",
+                            type=models.PropertyType.FLOAT,
+                            derivation=models.DerivationType.ROLLUP,
+                            rule=models.DerivationRuleInput(
+                                source_node="ROI",
+                                key="area",
+                                aggregation=models.AggregationFunction.MEAN,
+                                evidence=rules.evidence(rules.rule(rules.via("app-b")), rules.rule(rules.via("app-c"), rules.measured_before(DEC5), unless=[[rules.by("intern")]])),
+                            ),
+                        )
+                    ],
+                )
+            ]
+        ),
         "all-five-defined": _schema(
             entities=[_entity("Cell", _definition_input(rules.rule(rules.word("Cell"), rules.by("peter"))))],
             relations=[_relation("TOUCHES", _definition_input(rules.rule(rules.word("TOUCHES"), rules.by("peter"))))],
@@ -138,6 +163,10 @@ def test_bad_schemas_are_refused() -> None:
         _measurement("SHOWS", _definition_input(rules.rule(rules.word("SHOWS"), rules.measured_since(DEC5))))
     with pytest.raises(ValidationError, match="KIND"):  # KIND in an unless group, on an event
         _event("Mitosis", models.CategoryDefinitionInput.model_validate(rules.definition(rules.rule(rules.word("Mitosis"), unless=[[rules.of_kind("SAMENESS")]]))))
+    with pytest.raises(ValidationError, match="KEY"):  # a metric key on a classification rule
+        _entity("Cell", _definition_input(rules.rule(rules.word("Cell"), rules.key("area"))))
+    with pytest.raises(ValidationError):  # the flat evidence list is not an input any more
+        models.DerivationRuleInput(source_node="ROI", key="area", evidence=[rules.via("app-b")])
     with pytest.raises(ValidationError):  # empty rule list on a relation
         _relation("TOUCHES", models.CategoryDefinitionInput(rules=[]))
 

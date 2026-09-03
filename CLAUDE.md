@@ -260,7 +260,8 @@ The load-bearing facts:
   `metric_scope`; `_rules` is the only walker of the stored shape. **The shape is a rule
   system (RFC 0010)**: `{rules: [{when: [(field, operator, value), …], unless: [{when: […]}]}]}`
   — rules = any, when = all, unless subtracts; fields WORD/SUBJECT/APP/ACTION/KIND/ASSERTED_AT
-  (+ MEASURED_AT in `rule.evidence` and in MEASUREMENT-only rules), operators
+  (+ KEY and MEASURED_AT in `rule.evidence` and in MEASUREMENT-only rules — RFC 0014; `rule.evidence`
+  is the same rule list minus WORD/KIND, `MetricEvidenceInput`), operators
   IS/IN/NOT_IN/BEFORE/SINCE; a rule covering CLASSIFICATION names its WORD(s). **KIND (RFC
   0011)** scopes a rule to what a claim *says* — CLASSIFICATION/EXISTENCE/SAMENESS/EVIDENCE/
   MEASUREMENT; a rule covers every kind its KIND conditions do not exclude (`rule_covers`, the

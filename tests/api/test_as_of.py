@@ -37,7 +37,7 @@ def _metrics(organization: Organization, rule: input_models.DerivationRuleInput 
 
 
 def _rule(*conditions: dict) -> input_models.DerivationRuleInput:
-    return input_models.DerivationRuleInput(source_node="ROI", key="vector_length", evidence=[input_models.ClaimConditionInput.model_validate(c) for c in conditions])
+    return input_models.DerivationRuleInput(source_node="ROI", key="vector_length", evidence=rules.evidence(rules.rule(*conditions)))
 
 
 @pytest.fixture

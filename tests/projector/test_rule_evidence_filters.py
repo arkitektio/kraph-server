@@ -24,7 +24,7 @@ SUMMER_START = datetime(2026, 6, 1, tzinfo=timezone.utc)
 SUMMER_END = datetime(2026, 8, 31, tzinfo=timezone.utc)
 
 
-def _definition(*, rule_evidence: list | None = None, category_definition: models.CategoryDefinitionInput | None = None) -> models.GraphDefinitionInput:
+def _definition(*, rule_evidence: dict | None = None, category_definition: models.CategoryDefinitionInput | None = None) -> models.GraphDefinitionInput:
     return models.GraphDefinitionInput(
         system_version="1.0.0",
         extensions=models.GraphExtensionsInput(
@@ -59,7 +59,7 @@ def _fold(graph: core_models.Graph, table_projector, ref: str) -> dict:
 @pytest.mark.django_db(transaction=True)
 def test_rule_evidence_applies_on_an_unscoped_category(transactional_db, table_projector, authenticated_context) -> None:
     """The gating fix: a primitive category, and the rule's filter still narrows."""
-    graph = _graph(_definition(rule_evidence=[R.via("good-tool")]), table_projector, authenticated_context, "rule-unscoped")
+    graph = _graph(_definition(rule_evidence=R.evidence(R.rule(R.via("good-tool")))), table_projector, authenticated_context, "rule-unscoped")
     org = graph.organization
     ref = claims.mint(org, "Probe", "anyone")
     claims.measure(org, ref, obj="r1", key="vector_length", value=10.0, subject="pipeline", app_id="good-tool")
@@ -88,7 +88,7 @@ def test_rule_evidence_replaces_the_default(transactional_db, table_projector, a
     also constrain the rows (classification annotators rarely produce metrics)."""
     category_definition = models.CategoryDefinitionInput.model_validate(R.definition(R.rule(R.word("Probe"), R.by("peter"))))
     graph = _graph(
-        _definition(category_definition=category_definition, rule_evidence=[R.via("good-tool")]),
+        _definition(category_definition=category_definition, rule_evidence=R.evidence(R.rule(R.via("good-tool")))),
         table_projector,
         authenticated_context,
         "rule-replaces",
@@ -103,7 +103,7 @@ def test_rule_evidence_replaces_the_default(transactional_db, table_projector, a
 
 @pytest.mark.django_db(transaction=True)
 def test_observed_window_narrows_measured_at(transactional_db, table_projector, authenticated_context) -> None:
-    graph = _graph(_definition(rule_evidence=[R.measured_since(SUMMER_START), R.measured_before(SUMMER_END)]), table_projector, authenticated_context, "rule-window")
+    graph = _graph(_definition(rule_evidence=R.evidence(R.rule(R.measured_since(SUMMER_START), R.measured_before(SUMMER_END)))), table_projector, authenticated_context, "rule-window")
     org = graph.organization
     ref = claims.mint(org, "Probe", "anyone")
     claims.measure(org, ref, obj="r1", key="vector_length", value=10.0, subject="pipeline", measured_at=datetime(2026, 7, 1, tzinfo=timezone.utc))
@@ -129,7 +129,7 @@ def test_priority_latest_cannot_be_won_by_an_excluded_source(transactional_db, t
                                 source_node="ROI",
                                 key="vector_length",
                                 subject_priority=["expert", "pipeline"],
-                                evidence=[models.ClaimConditionInput.model_validate(R.by("pipeline"))],
+                                evidence=R.evidence(R.rule(R.by("pipeline"))),
                             ),
                         )
                     ],
@@ -148,7 +148,7 @@ def test_priority_latest_cannot_be_won_by_an_excluded_source(transactional_db, t
 
 def test_evidence_without_a_source_is_refused() -> None:
     with pytest.raises(ValidationError, match="source_node"):
-        models.DerivationRuleInput(evidence=[models.ClaimConditionInput.model_validate(R.by("x"))])
+        models.DerivationRuleInput(evidence=R.evidence(R.rule(R.by("x"))))
 
 
 def test_conflict_policy_is_gone() -> None:
@@ -160,8 +160,8 @@ def test_conflict_policy_is_gone() -> None:
 
 def test_a_rule_evidence_change_moves_the_definition_hash() -> None:
     """Trust edits are versioned: the hash the staleness machinery reads moves."""
-    plain = _definition(rule_evidence=[R.via("a")])
-    other = _definition(rule_evidence=[R.via("b")])
+    plain = _definition(rule_evidence=R.evidence(R.rule(R.via("a"))))
+    other = _definition(rule_evidence=R.evidence(R.rule(R.via("b"))))
     assert compute_definition_hash(plain) != compute_definition_hash(other)
 
 
@@ -187,3 +187,85 @@ def test_a_measurement_only_rule_is_the_category_default_metric_scope(transactio
     claims.measure(org, ref, obj="m3", key="vector_length", value=900.0, subject="pipeline", app_id="good-tool", measured_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
     properties = _fold(graph, table_projector, ref)
     assert properties.get("avg_length") == pytest.approx(10.0), f"only the trusted app inside the window folds: {properties}"
+
+
+# --------------------------------------------------------------------------- a rule list, and KEY (RFC 0014)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_rule_evidence_rules_union(transactional_db, table_projector, authenticated_context) -> None:
+    """"segmenter-v3, or segmenter-v2 measured before June" — two rules, any admits."""
+    evidence = R.evidence(R.rule(R.via("segmenter-v3")), R.rule(R.via("segmenter-v2"), R.measured_before(SUMMER_START)))
+    graph = _graph(_definition(rule_evidence=evidence), table_projector, authenticated_context, "rule-union")
+    org = graph.organization
+    ref = claims.mint(org, "Probe", "anyone")
+    claims.measure(org, ref, obj="r1", key="vector_length", value=10.0, subject="pipeline", app_id="segmenter-v3", measured_at=datetime(2026, 7, 1, tzinfo=timezone.utc))
+    claims.measure(org, ref, obj="r2", key="vector_length", value=30.0, subject="pipeline", app_id="segmenter-v2", measured_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
+    claims.measure(org, ref, obj="r3", key="vector_length", value=900.0, subject="pipeline", app_id="segmenter-v2", measured_at=datetime(2026, 7, 1, tzinfo=timezone.utc))
+    properties = _fold(graph, table_projector, ref)
+    assert properties.get("avg_length") == pytest.approx(20.0), f"v3 always, v2 only before June: {properties}"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_rule_evidence_unless_subtracts(transactional_db, table_projector, authenticated_context) -> None:
+    evidence = R.evidence(R.rule(R.not_by("bot"), unless=[[R.via("old-pipeline")]]))
+    graph = _graph(_definition(rule_evidence=evidence), table_projector, authenticated_context, "rule-unless")
+    org = graph.organization
+    ref = claims.mint(org, "Probe", "anyone")
+    claims.measure(org, ref, obj="r1", key="vector_length", value=10.0, subject="peter", app_id="curation-ui")
+    claims.measure(org, ref, obj="r2", key="vector_length", value=500.0, subject="peter", app_id="old-pipeline")
+    claims.measure(org, ref, obj="r3", key="vector_length", value=900.0, subject="bot", app_id="curation-ui")
+    properties = _fold(graph, table_projector, ref)
+    assert properties.get("avg_length") == pytest.approx(10.0), f"the exception blocks the old pipeline, the NOT_IN the bot: {properties}"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_key_in_rule_evidence(transactional_db, table_projector, authenticated_context) -> None:
+    """The property reads `vector_length`; the evidence says app B counts only
+    for `area`, so B's vector_length never folds while A's does."""
+    evidence = R.evidence(R.rule(R.via("app-a")), R.rule(R.via("app-b"), R.key("area")))
+    graph = _graph(_definition(rule_evidence=evidence), table_projector, authenticated_context, "rule-key")
+    org = graph.organization
+    ref = claims.mint(org, "Probe", "anyone")
+    claims.measure(org, ref, obj="r1", key="vector_length", value=10.0, subject="pipeline", app_id="app-a")
+    claims.measure(org, ref, obj="r2", key="vector_length", value=900.0, subject="pipeline", app_id="app-b")
+    properties = _fold(graph, table_projector, ref)
+    assert properties.get("avg_length") == pytest.approx(10.0), f"app-b is trusted for area only: {properties}"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_key_in_a_measurement_only_category_rule(transactional_db, table_projector, authenticated_context) -> None:
+    """The category default: app A for vector_length, app B for area. Two
+    properties without their own evidence, each folds only its app."""
+    category_definition = models.CategoryDefinitionInput.model_validate(
+        R.definition(
+            R.rule(R.word("Probe"), R.not_kind("MEASUREMENT")),
+            R.rule(R.of_kind("MEASUREMENT"), R.via("app-a"), R.key("vector_length")),
+            R.rule(R.of_kind("MEASUREMENT"), R.via("app-b"), R.key("area")),
+        )
+    )
+    definition = models.GraphDefinitionInput(
+        system_version="1.0.0",
+        extensions=models.GraphExtensionsInput(
+            entities=[
+                models.EntityDefinitionInput(
+                    key="Probe",
+                    definition=category_definition,
+                    property_definitions=[
+                        models.PropertyDefinitionInput(key="avg_length", type=models.PropertyType.FLOAT, derivation=models.DerivationType.ROLLUP, rule=models.DerivationRuleInput(source_node="ROI", key="vector_length", aggregation=models.AggregationFunction.MEAN)),
+                        models.PropertyDefinitionInput(key="avg_area", type=models.PropertyType.FLOAT, derivation=models.DerivationType.ROLLUP, rule=models.DerivationRuleInput(source_node="ROI", key="area", aggregation=models.AggregationFunction.MEAN)),
+                    ],
+                )
+            ]
+        ),
+    )
+    graph = _graph(definition, table_projector, authenticated_context, "category-key")
+    org = graph.organization
+    ref = claims.mint(org, "Probe", "anyone")
+    claims.measure(org, ref, obj="r1", key="vector_length", value=10.0, subject="pipeline", app_id="app-a")
+    claims.measure(org, ref, obj="r2", key="vector_length", value=900.0, subject="pipeline", app_id="app-b")
+    claims.measure(org, ref, obj="r3", key="area", value=5.0, subject="pipeline", app_id="app-b")
+    claims.measure(org, ref, obj="r4", key="area", value=700.0, subject="pipeline", app_id="app-a")
+    properties = _fold(graph, table_projector, ref)
+    assert properties.get("avg_length") == pytest.approx(10.0), f"vector_length comes from app-a only: {properties}"
+    assert properties.get("avg_area") == pytest.approx(5.0), f"area comes from app-b only: {properties}"

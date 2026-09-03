@@ -56,6 +56,15 @@ def measured_since(moment: Any) -> dict:
     return condition("MEASURED_AT", "SINCE", moment)
 
 
+def key(*keys: str) -> dict:
+    """The metric key — measurement rules only (RFC 0014)."""
+    return condition("KEY", "IS", keys[0]) if len(keys) == 1 else condition("KEY", "IN", list(keys))
+
+
+def not_key(*keys: str) -> dict:
+    return condition("KEY", "NOT_IN", list(keys))
+
+
 def rule(*conditions: dict, unless: list[list[dict]] | None = None) -> dict:
     built: dict = {"when": list(conditions)}
     if unless:
@@ -65,6 +74,11 @@ def rule(*conditions: dict, unless: list[list[dict]] | None = None) -> dict:
 
 def definition(*rules: dict) -> dict:
     """A definition: a claim counts when any rule matches."""
+    return {"rules": list(rules)}
+
+
+def evidence(*rules: dict) -> dict:
+    """A property's `rule.evidence`: the same rule list, minus WORD and KIND (RFC 0014)."""
     return {"rules": list(rules)}
 
 

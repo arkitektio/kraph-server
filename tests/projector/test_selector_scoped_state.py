@@ -142,10 +142,16 @@ async def test_a_scoped_graph_reads_the_same_value_before_and_after_a_rebuild(
         category = core_models.EntityCategory.objects.get(graph=test_graph, key="AIS")
         for prop in category.property_definitions:
             if prop.get("key") == "avg_length":
-                prop["rule"]["evidence"] = [
-                    {"field": "MEASURED_AT", "operator": "SINCE", "value": WINDOW[0]},
-                    {"field": "MEASURED_AT", "operator": "BEFORE", "value": WINDOW[1]},
-                ]
+                prop["rule"]["evidence"] = {
+                    "rules": [
+                        {
+                            "when": [
+                                {"field": "MEASURED_AT", "operator": "SINCE", "value": WINDOW[0]},
+                                {"field": "MEASURED_AT", "operator": "BEFORE", "value": WINDOW[1]},
+                            ]
+                        }
+                    ]
+                }
         category.save()
 
     await scope_to_window()
@@ -191,10 +197,16 @@ async def test_a_retraction_after_a_rebuild_does_not_widen_the_scope(
         category = core_models.EntityCategory.objects.get(graph=test_graph, key="AIS")
         for prop in category.property_definitions:
             if prop.get("key") == "avg_length":
-                prop["rule"]["evidence"] = [
-                    {"field": "MEASURED_AT", "operator": "SINCE", "value": WINDOW[0]},
-                    {"field": "MEASURED_AT", "operator": "BEFORE", "value": WINDOW[1]},
-                ]
+                prop["rule"]["evidence"] = {
+                    "rules": [
+                        {
+                            "when": [
+                                {"field": "MEASURED_AT", "operator": "SINCE", "value": WINDOW[0]},
+                                {"field": "MEASURED_AT", "operator": "BEFORE", "value": WINDOW[1]},
+                            ]
+                        }
+                    ]
+                }
         category.save()
 
     await scope_to_window()

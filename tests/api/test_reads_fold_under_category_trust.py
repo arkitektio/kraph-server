@@ -59,7 +59,7 @@ async def test_supporting_evidence_agrees_with_the_fold(api_schema: kante.Schema
                 {
                     "key": "Probe",
                     "propertyDefinitions": [
-                        {"key": "avg_length", "valueKind": "FLOAT", "derivation": "ROLLUP", "rule": {"sourceNode": "ROI", "key": "vector_length", "aggregation": "MEAN", "evidence": [rules.via("good-tool")]}}
+                        {"key": "avg_length", "valueKind": "FLOAT", "derivation": "ROLLUP", "rule": {"sourceNode": "ROI", "key": "vector_length", "aggregation": "MEAN", "evidence": rules.evidence(rules.rule(rules.via("good-tool")))}}
                     ],
                 }
             ]

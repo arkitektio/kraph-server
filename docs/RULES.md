@@ -2,7 +2,7 @@
 
 This document describes how a graph decides which evidence it shows. It is the
 reference for `Category.definition` and `rule.evidence`. The RFCs (0007 to
-0012) record why the design is the way it is; this document only says what it
+0014) record why the design is the way it is; this document only says what it
 does. `EXAMPLE.md` shows one full schema and what it makes of the log.
 
 ## The idea
@@ -26,7 +26,7 @@ category has no rules, everything counts, which is the default.
   matching `update*Category` mutation. Changing it rebuilds the drawing before
   the mutation returns where something is drawn; structure relations and
   measurements are not drawn, so their lists just read the new rules.
-- `PropertyDefinition.rule.evidence` holds a filter for one derived property.
+- `PropertyDefinition.rule.evidence` holds the rules for one derived property.
   It overrides the category's rules for that property's measurements only.
 
 A category without a definition is called primitive. Any claim naming its word
@@ -70,6 +70,7 @@ That is all of it. There is no other nesting.
 | `ACTION` | which action produced it | action ids; many claims have none |
 | `KIND` | what the claim says (see below) | `CLASSIFICATION`, `EXISTENCE`, `SAMENESS`, `EVIDENCE`, `MEASUREMENT` |
 | `ASSERTED_AT` | when the claim was made | datetime |
+| `KEY` | the metric key | strings, e.g. `"vector_length"`; measurements only |
 | `MEASURED_AT` | when the observation happened | datetime; measurements only |
 
 ## Operators
@@ -125,8 +126,24 @@ accident.
 Two constraints follow from what the kinds mean. A rule that covers
 CLASSIFICATION must have a `WORD` condition, because classification is about
 words; a rule that does not cover it must not have one, because retractions and
-merges do not name words. `MEASURED_AT` is only allowed in a rule that covers
-MEASUREMENT alone.
+merges do not name words. `KEY` and `MEASURED_AT` are only allowed in the
+`when` of a rule that covers MEASUREMENT alone; other claims have no key and no
+observation time, so they cannot appear in an `unless` either.
+
+With `KEY`, a category can trust one key from one producer and another key
+from another, without one property per producer:
+
+```jsonc
+{ "when": [ { "field": "KIND", "operator": "IS", "value": "MEASUREMENT" },
+            { "field": "APP",  "operator": "IS", "value": "segmenter-v3" },
+            { "field": "KEY",  "operator": "IS", "value": "vector_length" } ] },
+{ "when": [ { "field": "KIND", "operator": "IS", "value": "MEASUREMENT" },
+            { "field": "APP",  "operator": "IS", "value": "area-tool" },
+            { "field": "KEY",  "operator": "IS", "value": "area" } ] }
+```
+
+A property reading `vector_length` folds segmenter-v3's values only; one
+reading `area` folds area-tool's only.
 
 ## Sameness is within a category
 
@@ -140,28 +157,44 @@ The organization-wide component (what you see without a graph in scope) still
 unions every standing sameness claim. The per-view component applies the
 category's rules and the within-category constraint.
 
-## Property filters
+## Property rules
 
-A derived property can narrow its own measurements:
+A derived property can carry its own rules for its measurements:
 
 ```jsonc
 { "key": "avg_length", "valueKind": "FLOAT", "derivation": "ROLLUP",
   "rule": {
     "sourceNode": "ROI", "key": "vector_length", "aggregation": "MEAN",
-    "evidence": [
-      { "field": "APP",         "operator": "IS",    "value": "segmenter-v3" },
-      { "field": "MEASURED_AT", "operator": "SINCE", "value": "2026-06-01T00:00:00Z" }
-    ]
+    "evidence": {
+      "rules": [
+        { "when": [ { "field": "APP", "operator": "IS", "value": "segmenter-v3" } ] },
+        { "when": [ { "field": "APP",         "operator": "IS",     "value": "segmenter-v2" },
+                    { "field": "MEASURED_AT", "operator": "BEFORE", "value": "2026-06-01T00:00:00Z" } ],
+          "unless": [ { "when": [ { "field": "ACTION", "operator": "IS", "value": "old-pipeline" } ] } ] }
+      ]
+    }
   }
 }
 ```
 
-`evidence` is a plain list of conditions; all must hold. When it is present, it
-replaces the category's rules for this property's measurements. When it is
-absent, the category's MEASUREMENT rules apply, and for a primitive category
-everything does. It replaces rather than intersects because the people who
-classify things and the pipelines that measure them are usually different, and
-requiring both would usually leave nothing.
+`evidence` is a rule list with the same logic as a definition: a measurement
+counts if any rule matches; a rule matches when every `when` condition holds
+and no `unless` group applies. The one above reads "segmenter-v3, or
+segmenter-v2 for anything measured before June that did not come through the
+old pipeline".
+
+Two differences from a definition, both from what a measurement is. `WORD`
+and `KIND` are not allowed: a measurement names no word (the key is `KEY`)
+and has no kind. `KEY` and `MEASURED_AT` are allowed everywhere, `unless`
+included. `rule.key` still says which key the property reads; a `KEY`
+condition says which rows the rule admits, and the two combine.
+
+When `evidence` is present, it replaces the category's rules for this
+property's measurements. When it is absent, the category's MEASUREMENT rules
+apply, and for a primitive category everything does. It replaces rather than
+intersects because the people who classify things and the pipelines that
+measure them are usually different, and requiring both would usually leave
+nothing.
 
 ## Time
 
@@ -190,15 +223,17 @@ Settled and implemented:
 - definitions on all five category families (entities, relations, events,
   structure relations, measurements)
 - per-view, within-category sameness
-- `rule.evidence` on properties
+- `rule.evidence` on properties, as a rule list with `unless`
+- `KEY` in measurement rules
 
-Not settled, or simply not built:
+Decided against:
 
-- `rule.evidence` is a flat list. It has no `unless` and no unions. If a
-  property ever needs "app A, or app B after June", the definition-style rule
-  list is the intended extension.
-- Conditions cannot test the metric key. Which key a property reads is
-  `rule.key`, outside the condition language.
+- A whole-graph "as of" cursor. Freezing a view at a date is an
+  `ASSERTED_AT BEFORE` condition in every category's rules; a graph-wide one
+  would be the graph-level scope RFC 0009 removed.
+
+Separate from all of this:
+
 - Who may *edit* definitions is separate from all of this and fixed: the
   graph's owner, an organization admin, or a superuser (RFC 0013). Everyone in
   the organization can still read and record claims.

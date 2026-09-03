@@ -553,7 +553,7 @@ def _observation_window(graph: core_models.Graph, claim_ref: str, category: core
     # property's `rule.evidence` — the per-property windows are the
     # `__stat__X__from/to` statistics, which inherit the rule in
     # `_property_statistics`.
-    trust = selector_module.trust_filter(category.definition, kind="MEASUREMENT", asserted_at_column="asserted_at", include_measured_at=True)
+    trust = selector_module.trust_filter(category.definition, kind="MEASUREMENT", asserted_at_column="asserted_at", include_metric_fields=True)
     window = claims_module.standing(
         evidence_models.Metric.objects.for_organization(graph.organization).filter(
             trust,

@@ -687,7 +687,7 @@ type ClaimCondition {
   operator: ClaimOperator!
 
   """
-  One string for IS, a non-empty string list for IN/NOT_IN, a datetime for BEFORE/SINCE. For field KIND: kinds from CLASSIFICATION, EXISTENCE, SAMENESS, EVIDENCE, MEASUREMENT
+  One string for IS, a non-empty string list for IN/NOT_IN, a datetime for BEFORE/SINCE. For field KIND: kinds from CLASSIFICATION, EXISTENCE, SAMENESS, EVIDENCE, MEASUREMENT. For field KEY: metric keys
   """
   value: JSON!
 }
@@ -715,7 +715,7 @@ input ClaimConditionInput {
   operator: ClaimOperator!
 
   """
-  One string for IS, a non-empty string list for IN/NOT_IN, a datetime for BEFORE/SINCE. For field KIND: kinds from CLASSIFICATION, EXISTENCE, SAMENESS, EVIDENCE, MEASUREMENT
+  One string for IS, a non-empty string list for IN/NOT_IN, a datetime for BEFORE/SINCE. For field KIND: kinds from CLASSIFICATION, EXISTENCE, SAMENESS, EVIDENCE, MEASUREMENT. For field KEY: metric keys
   """
   value: AnyScalar!
 }
@@ -731,6 +731,7 @@ enum ClaimField {
   APP
   ACTION
   KIND
+  KEY
   ASSERTED_AT
   MEASURED_AT
 }
@@ -1489,9 +1490,9 @@ type DerivationRule {
   aggregation: AggregationFunction
 
   """
-  This property's own metric rule: conditions (all must hold) over SUBJECT/APP/ACTION/ASSERTED_AT/MEASURED_AT. When present it replaces the owning category's rules as the metric scope (classification annotators and measurement producers are usually different populations, so intersecting them would routinely produce nothing); when absent, the category's rules apply to the metrics' assertions too, and a primitive category folds everything.
+  This property's own metric rule: a rule list over SUBJECT/APP/ACTION/KEY/ASSERTED_AT/MEASURED_AT — any rule admits, all its `when` conditions must hold, `unless` groups subtract. When present it replaces the owning category's rules as the metric scope (classification annotators and measurement producers are usually different populations, so intersecting them would routinely produce nothing); when absent, the category's MEASUREMENT rules apply, and a primitive category folds everything.
   """
-  evidence: [ClaimCondition!]
+  evidence: MetricEvidence
 
   """
   Subjects in descending order of trust, for PRIORITY_LATEST. The first subject with any measurement wins; subjects not listed are considered only if none of the listed ones have measured.
@@ -1519,9 +1520,9 @@ input DerivationRuleInput {
   aggregation: AggregationFunction = null
 
   """
-  This property's own metric rule: conditions (all must hold) over SUBJECT/APP/ACTION/ASSERTED_AT/MEASURED_AT. When present it replaces the owning category's rules as the metric scope (classification annotators and measurement producers are usually different populations, so intersecting them would routinely produce nothing); when absent, the category's rules apply to the metrics' assertions too, and a primitive category folds everything.
+  This property's own metric rule: a rule list over SUBJECT/APP/ACTION/KEY/ASSERTED_AT/MEASURED_AT — any rule admits, all its `when` conditions must hold, `unless` groups subtract. When present it replaces the owning category's rules as the metric scope (classification annotators and measurement producers are usually different populations, so intersecting them would routinely produce nothing); when absent, the category's MEASUREMENT rules apply, and a primitive category folds everything.
   """
-  evidence: [ClaimConditionInput!] = null
+  evidence: MetricEvidenceInput = null
 
   """
   Subjects in descending order of trust, for PRIORITY_LATEST. The first subject with any measurement wins; subjects not listed are considered only if none of the listed ones have measured.
@@ -3082,6 +3083,20 @@ type Metric {
 
   """Who measured this, and when they claimed it"""
   assertion: Assertion
+}
+
+"""A property's own metric rule: a rule list over metric rows (RFC 0014)"""
+type MetricEvidence {
+  """A metric counts when any rule matches"""
+  rules: [ClaimRule!]!
+}
+
+"""
+A property's own metric rule: the definition's rule list over metric rows — no WORD or KIND, KEY and MEASURED_AT allowed anywhere
+"""
+input MetricEvidenceInput {
+  """A metric counts when any rule matches"""
+  rules: [ClaimRuleInput!]!
 }
 
 """One measured value about a structure"""

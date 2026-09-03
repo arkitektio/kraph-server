@@ -92,28 +92,46 @@ This is the `createGraph` input, with comments.
                   { "field": "SUBJECT", "operator": "IS", "value": "curator" }
                 ] },
 
-              // Rule D: by default, measurements count only from segmenter-v3,
+              // Rule D: by default, lengths count only from segmenter-v3,
               //    observed after the microscope was recalibrated in June.
               { "when": [
                   { "field": "KIND",        "operator": "IS",    "value": "MEASUREMENT" },
                   { "field": "APP",         "operator": "IS",    "value": "segmenter-v3" },
+                  { "field": "KEY",         "operator": "IS",    "value": "vector_length" },
                   { "field": "MEASURED_AT", "operator": "SINCE", "value": "2026-06-01T00:00:00Z" }
+                ] },
+
+              // Rule E: areas come from a different tool, any time.
+              { "when": [
+                  { "field": "KIND", "operator": "IS", "value": "MEASUREMENT" },
+                  { "field": "APP",  "operator": "IS", "value": "area-tool" },
+                  { "field": "KEY",  "operator": "IS", "value": "area" }
                 ] }
             ]
           },
           "propertyDefinitions": [
 
-            // Uses rule D: the category's default for measurements.
+            // Uses the category's MEASUREMENT rules. Only rule D admits
+            // `vector_length` rows, so this is segmenter-v3 since June.
             { "key": "length", "valueKind": "FLOAT", "derivation": "ROLLUP",
               "rule": { "sourceNode": "ROI", "key": "vector_length", "aggregation": "MEAN" } },
 
-            // Has its own filter. It replaces rule D for this property; it
-            // does not intersect with it.
+            // Same rules, other key: rule E admits `area` rows from area-tool.
+            { "key": "area", "valueKind": "FLOAT", "derivation": "ROLLUP",
+              "rule": { "sourceNode": "ROI", "key": "area", "aggregation": "MEAN" } },
+
+            // Has its own rules. They replace D and E for this property; they
+            // do not intersect with them. "segmenter-v3, or segmenter-v2 for
+            // anything measured before June that did not come through the old
+            // pipeline".
             { "key": "any_length", "valueKind": "FLOAT", "derivation": "ROLLUP",
               "rule": { "sourceNode": "ROI", "key": "vector_length", "aggregation": "MEAN",
-                        "evidence": [
-                          { "field": "APP", "operator": "NOT_IN", "value": ["untrusted-bot"] }
-                        ] } }
+                        "evidence": { "rules": [
+                          { "when": [ { "field": "APP", "operator": "IS", "value": "segmenter-v3" } ] },
+                          { "when": [ { "field": "APP",         "operator": "IS",     "value": "segmenter-v2" },
+                                      { "field": "MEASURED_AT", "operator": "BEFORE", "value": "2026-06-01T00:00:00Z" } ],
+                            "unless": [ { "when": [ { "field": "ACTION", "operator": "IS", "value": "old-pipeline" } ] } ] }
+                        ] } } }
           ]
         }
       ],
@@ -191,11 +209,15 @@ one: never merges in any view. Sameness is within a category.
 `instance(id:)` still gives the organization-wide component.
 
 **Properties.** `length` averages `vector_length` over the ROIs that inform the
-node, counting only measurements from `segmenter-v3` observed since June, which
-is rule D, the category's MEASUREMENT default. `any_length` ignores rule D and
-applies its own list: everything except the bot. Which ROIs inform the node at
-all is the EVIDENCE kind; rules A and B cover it, so Peter's and Karl's INFORMS
-links route measurements in and a bot's INFORMS link does not.
+node, counting only measurements from `segmenter-v3` observed since June: of
+the category's MEASUREMENT rules, only rule D admits `vector_length` rows.
+`area` reads `area` rows, which only rule E admits, so it is area-tool's
+values from any time. A `vector_length` from area-tool, or an `area` from
+segmenter-v3, counts for nothing. `any_length` ignores D and E and applies its
+own rules: segmenter-v3, or segmenter-v2's pre-June observations unless they
+came through the old pipeline. Which ROIs inform the node at all is the
+EVIDENCE kind; rules A and B cover it, so Peter's and Karl's INFORMS links
+route measurements in and a bot's INFORMS link does not.
 
 **Edges.** `PART_OF` from Karl: drawn. From Peter: not. Karl retracts his edge:
 gone (his rule covers EXISTENCE). Peter retracts Karl's edge: still drawn.
@@ -214,16 +236,11 @@ needs no rebuild.
 organization, or a superuser can create, update or delete these categories.
 Everyone in the organization can read the graph and record claims.
 
-## What this cannot express yet
+## What this does not express
 
-- A property's `rule.evidence` is a flat list of conditions. It has no
-  `unless` and no unions. "segmenter-v3, or segmenter-v2 before June" is
-  writable for a category (two MEASUREMENT rules) but not for a single
-  property. The definition-style rule list is the intended extension.
-- A condition cannot test the metric key. Which key a property reads is
-  `rule.key`, outside the rule language, so "count `vector_length` from app A
-  but `area` from app B" needs two properties.
-- There is no whole-graph "as of" cursor. Freezing the view at a date means
-  an `ASSERTED_AT BEFORE` condition in every category's rules.
+There is no whole-graph "as of" cursor. Freezing the view at a date means an
+`ASSERTED_AT BEFORE` condition in every category's rules. That is by decision
+(RFC 0014): a graph-wide cursor would be the graph-level scope RFC 0009
+removed, under a different name.
 
 `RULES.md`, "What is settled and what is not", is the canonical list.

@@ -193,6 +193,11 @@ class ClaimRule:
     """One rule, as read back."""
 
 
+@kante.pydantic_type(input_models.MetricEvidenceInput, all_fields=True, description="A property's own metric rule: a rule list over metric rows (RFC 0014)")
+class MetricEvidence:
+    """A property's metric rule list, as read back."""
+
+
 @kante.pydantic_type(input_models.DerivationRuleInput, all_fields=True, description="A derivation rule in the graph schema")
 class DerivationRule:
     """A derivation rule in the graph schema, which defines how to derive new entities or relations based on existing ones."""

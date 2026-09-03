@@ -77,6 +77,13 @@ class CategoryDefinitionInput:
 # definitions and in `rule.evidence`, so a graph has no claim scope of its own.
 
 
+@pydantic.input(model=input_models.MetricEvidenceInput, all_fields=True, description="A property's own metric rule: the definition's rule list over metric rows — no WORD or KIND, KEY and MEASURED_AT allowed anywhere")
+class MetricEvidenceInput:
+    """A property's own metric rule (RFC 0014)."""
+
+    pass
+
+
 @pydantic.input(model=input_models.DerivationRuleInput, all_fields=True, description="Configuration for property derivation rules")
 class DerivationRuleInput:
     """Configuration for property derivation rules."""
