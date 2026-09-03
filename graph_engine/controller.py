@@ -601,7 +601,7 @@ class GraphController:
         # Through `reproject_node`, not a blanket `unproject` — the same call
         # `attest_node` makes, because the two are the same act with the
         # opposite sign. A retraction is folded under each graph's own selector
-        # (`resolve_categories` -> `retracted_ids` -> `claim_filter`), so a view
+        # (`resolve_categories` -> `retracted_ids` -> the category's `trust_filter`), so a view
         # that does not count this subject redraws the node and keeps it; the
         # blanket erase made the write path disagree with the very next rebuild,
         # exactly the divergence this layer exists to prevent.
@@ -1753,17 +1753,35 @@ class GraphController:
         """Bring one participation edge back in line with the claims behind it."""
         from graph_engine import projector
 
-        survivors = list(
-            claims_module.standing(
-                evidence_models.Link.objects.for_organization(organization).filter(
-                    kind=kind,
-                    source_ref=claim_ref,
-                    target_ref=event_ref,
-                    role=role,
-                ),
-                "link",
-            ).select_related("term")
+        # Under the event category's trust, exactly as `active_participation_links`
+        # — the two lanes must not disagree about which claims exist (RFC 0009).
+        # The claims may name several words (a defined event category derives
+        # from more than one), so the fold is per claim-term's category.
+        from graph_engine import projector as projector_module
+
+        by_term = projector_module.categories_by_term(graph)
+        base = evidence_models.Link.objects.for_organization(organization).filter(
+            kind=kind,
+            source_ref=claim_ref,
+            target_ref=event_ref,
+            role=role,
         )
+        survivors = []
+        seen: set[Any] = set()
+        for term_id in set(base.values_list("term_id", flat=True)):
+            category = by_term.get(term_id)
+            if category is None:
+                continue
+            if category.definition:
+                claims = base.filter(selector_module.classification_filter(category.definition), term__kind=str(category.kind))
+                predicate = selector_module.trust_predicate(category.definition, kind="EXISTENCE")
+            else:
+                claims = base.filter(term_id=category.term_id)
+                predicate = None
+            for link in claims_module.standing(claims, "link", predicate=predicate).select_related("term"):
+                if link.pk not in seen:
+                    seen.add(link.pk)
+                    survivors.append(link)
 
         if survivors:
             projector.project_participation(self, graph, survivors)
@@ -2479,17 +2497,32 @@ class GraphController:
         """
         from graph_engine import projector
 
-        survivors = list(
-            claims_module.standing(
-                evidence_models.Link.objects.for_organization(organization).filter(
-                    kind=evidence_models.Link.Kind.RELATION,
-                    source_ref=source_ref,
-                    target_ref=target_ref,
-                    term_id=term_id,
-                ),
-                "link",
-            ).select_related("term")
+        # Survivors under the *relation category's* trust (RFC 0009): the claim
+        # scope and the standing fold both take the category's clauses, so a
+        # retraction by somebody that category ignores leaves its edge standing
+        # here — the write path agrees with the next rebuild, which reads the
+        # same predicates through `active_relation_links`.
+        from graph_engine import projector as projector_module
+
+        category_for_term = projector_module.categories_by_term(graph).get(term_id)
+        base = evidence_models.Link.objects.for_organization(organization).filter(
+            kind=evidence_models.Link.Kind.RELATION,
+            source_ref=source_ref,
+            target_ref=target_ref,
+            term_id=term_id,
         )
+        if category_for_term is None:
+            survivors = []
+        elif category_for_term.definition:
+            survivors = list(
+                claims_module.standing(
+                    base.filter(selector_module.classification_filter(category_for_term.definition), term__kind=str(category_for_term.kind)),
+                    "link",
+                    predicate=selector_module.trust_predicate(category_for_term.definition, kind="EXISTENCE"),
+                ).select_related("term")
+            )
+        else:
+            survivors = list(claims_module.standing(base, "link").select_related("term"))
 
         if survivors:
             projector.project_edges(self, graph, survivors)

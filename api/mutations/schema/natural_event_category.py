@@ -8,7 +8,7 @@ from core import enums, models
 from datalayer import models as dl_models
 from evidence import writer
 from ._guards import delete_or_explain
-from .._scoped import accessible_graph, scoped
+from .._scoped import accessible_graph, schema_graph, schema_scoped, scoped
 from ._rematerialize import fingerprint, rematerialize_if_moved
 
 
@@ -27,7 +27,7 @@ def create_natural_event_category(
     if model.image:
         media_store = dl_models.MediaStore.objects.get(id=model.image)
 
-    graph = accessible_graph(info, model.graph)
+    graph = schema_graph(info, model.graph)
     # Keyed on `(graph, key)`, which is the pair `Category` is unique on —
     # and `key` is what a claim names. This used to key on `(graph, age_name)`
     # and never set `key` at all, so every category created here landed with
@@ -87,7 +87,7 @@ def update_natural_event_category(info: Info, input: inputs.UpdateNaturalEventCa
     """GraphQL mutation wrapper for updating event categories."""
     model = input.to_pydantic()  # Validate input with Pydantic models
 
-    item = scoped(info, models.NaturalEventCategory, model.id, what="natural event category")
+    item = schema_scoped(info, models.NaturalEventCategory, model.id, what="natural event category")
     if model.color:
         assert len(model.color) == 3 or len(model.color) == 4, "Color must be a list of 3 or 4 values RGBA"
 
@@ -103,6 +103,14 @@ def update_natural_event_category(info: Info, input: inputs.UpdateNaturalEventCa
     item.color = model.color if model.color else item.color
     item.image = media_store if media_store else item.image
 
+    # The category's rule (RFC 0009): replaced whole, cleared to primitive, or
+    # left alone — the input refuses both at once.
+    meaning_before = dict(item.definition or {})
+    if getattr(model, "clear_definition", False):
+        item.definition = {}
+    elif getattr(model, "definition", None) is not None:
+        item.definition = model.definition.to_stored()
+
     if model.pin is not None:
         if model.pin:
             item.pinned_by.add(info.context.request.user)
@@ -110,6 +118,13 @@ def update_natural_event_category(info: Info, input: inputs.UpdateNaturalEventCa
             item.pinned_by.remove(info.context.request.user)
 
     item.save()
+
+    if dict(item.definition or {}) != meaning_before:
+        # A rule change moves which events this category admits, whose existence
+        # standings count, and which participation claims draw its edges; only a
+        # rebuild moves that honestly.
+        context.get_controller().rebuild_projection(item.graph)
+
     return cast(types.NaturalEventCategory, item)
 
 
@@ -118,6 +133,6 @@ def delete_natural_event_category(
     input: inputs.DeleteNaturalEventCategoryInput,
 ) -> strawberry.ID:
     model = input.to_pydantic()  # Validate input with Pydantic models
-    item = scoped(info, models.NaturalEventCategory, model.id, what="natural event category")
+    item = schema_scoped(info, models.NaturalEventCategory, model.id, what="natural event category")
     delete_or_explain(item, what=f"natural event category '{item.key}'", instead="Archive the events recorded under it first.")
     return model.id

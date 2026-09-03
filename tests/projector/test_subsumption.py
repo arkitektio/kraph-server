@@ -11,6 +11,8 @@ knowledge, now across annotator and time as well as aggregation.
 from datetime import datetime, timezone
 
 import pytest
+
+from tests import rules
 from asgiref.sync import sync_to_async
 
 from core import models as core_models
@@ -113,8 +115,8 @@ async def test_clauses_do_not_cross_multiply(api_schema, simple_api_context, sub
             request,
             "flat-cross-product",
             "Cell",
-            # One asserted_as list, one subject list: the binding is lost.
-            input_models.CategoryDefinitionInput(asserted_as=["Cell", "StemCell"], assertion_filter=input_models.AssertionFilterInput(subjects=[PETER, KARL])),
+            # One WORD list, one SUBJECT list in one rule: the binding is lost.
+            input_models.CategoryDefinitionInput.model_validate(rules.definition(rules.rule(rules.word("Cell", "StemCell"), rules.by(PETER, KARL)))),
         )
         _rebuild(table_projector, flat_graph)
         flat = {row[0] for row in namespaces.graph_table(flat_graph, 'MATCH (c IS "Cell") COLUMNS (c.__ref AS ref)')}
@@ -138,7 +140,7 @@ async def test_a_flat_since_bound_admits_only_later_claims(api_schema, simple_ap
             request,
             "late-stems",
             "LateStem",
-            input_models.CategoryDefinitionInput(asserted_as=["StemCell"], assertion_filter=input_models.AssertionFilterInput(subjects=[KARL]), since=datetime(2026, 12, 5, tzinfo=timezone.utc)),
+            input_models.CategoryDefinitionInput.model_validate(rules.definition(rules.rule(rules.word("StemCell"), rules.by(KARL), rules.since(datetime(2026, 12, 5, tzinfo=timezone.utc))))),
         )
         _rebuild(table_projector, graph)
         return {row[0] for row in namespaces.graph_table(graph, 'MATCH (s IS "LateStem") COLUMNS (s.__ref AS ref)')}

@@ -177,7 +177,6 @@ def materialize(
     name: Optional[str] = None,
     description: Optional[str] = None,
     backfill: bool = False,
-    selector: Any = None,
 ) -> models.Graph:
     """
     Materialize a graph based on the provided graph definition.
@@ -211,6 +210,8 @@ def materialize(
     # cannot be computed.
     validate_derivation_rules(definition)
 
+    from django.db import transaction
+
     # Compute schema hash for versioning
     schema_hash = compute_definition_hash(definition)
 
@@ -218,6 +219,18 @@ def materialize(
     if name is None:
         name = f"graph_{schema_hash}"
 
+    return _materialize_atomically(definition, projector, user, organization, membership, name, description, backfill, schema_hash)
+
+
+@__import__("django").db.transaction.atomic
+def _materialize_atomically(definition, projector, user, organization, membership, name, description, backfill, schema_hash):
+    """One transaction for the whole bring-up.
+
+    A `NamespaceSpecError` from `refresh_namespace` used to leave a committed
+    `Graph` and its categories with no namespace behind them — repairable only
+    by hand (`manage.py refresh_namespaces`). Atomic, so a refused schema
+    leaves nothing.
+    """
     # The projection handle is random and assigned by the model default — see
     # `core.models.new_projection_handle` for why it is neither derived from the
     # name nor accepted from anyone.
@@ -227,11 +240,9 @@ def materialize(
         user=user,
         organization=organization,
         membership=membership,
-        rules=[rule.model_dump(mode="json") for rule in definition.rules],
-        # Written before any backfill, deliberately: the backfill below folds
-        # existence and metrics under this scope, so a selector arriving later
-        # would describe a drawing it did not shape.
-        selector=selector.to_stored() if hasattr(selector, "to_stored") else (selector or {}),
+        # No selector and no access rules: what counts as evidence is each
+        # category's definition (RFC 0009); who may change the schema is RBAC
+        # (RFC 0013). Both live outside this row.
     )
 
     # The projection kind this view is drawn in.
@@ -334,6 +345,8 @@ def _materialize_categories(graph, definition: GraphDefinitionInput, user) -> No
             source_definition=source_def,
             target_definition=target_def,
             property_definitions=[p.model_dump(mode="json") for p in relation_def.properties],
+            # The category's complete rule (RFC 0009). Empty means primitive.
+            definition=relation_def.definition.to_stored() if relation_def.definition else {},
         )
 
     # Create StructureRelationCategories
@@ -353,6 +366,7 @@ def _materialize_categories(graph, definition: GraphDefinitionInput, user) -> No
             source_definition=structure_relation_def.source.model_dump(mode="json"),
             target_definition=structure_relation_def.target.model_dump(mode="json"),
             property_definitions=[p.model_dump(mode="json") for p in structure_relation_def.properties],
+            definition=structure_relation_def.definition.to_stored() if structure_relation_def.definition else {},
         )
 
     # Create MeasurementCategories
@@ -367,6 +381,7 @@ def _materialize_categories(graph, definition: GraphDefinitionInput, user) -> No
             source_definition=measurement_def.source.model_dump(mode="json"),
             target_definition=measurement_def.target.model_dump(mode="json"),
             property_definitions=[p.model_dump(mode="json") for p in measurement_def.properties],
+            definition=measurement_def.definition.to_stored() if measurement_def.definition else {},
         )
 
     # Create NaturalEventCategories
@@ -382,6 +397,7 @@ def _materialize_categories(graph, definition: GraphDefinitionInput, user) -> No
             graph=graph,
             term=term_for(core_enums.CategoryKindChoices.NATURAL_EVENT, event_def.key),
             age_name=event_def.key,
+            definition=event_def.definition.to_stored() if event_def.definition else {},
             # Set like every other category kind. Events were the one kind that
             # left `key` null, so `filter(key=...)` — how the rest of the codebase
             # finds a category — could never find an event, and

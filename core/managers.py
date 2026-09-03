@@ -271,6 +271,8 @@ class EdgeCategoryManager(CategoryManager[T], Generic[T]):
             "age_name": resolved_age_name,
             "source_definition": definition.source.model_dump(mode="json"),
             "target_definition": definition.target.model_dump(mode="json"),
+            # The category's complete rule (RFC 0012). Empty means primitive.
+            "definition": definition.definition.to_stored() if getattr(definition, "definition", None) else {},
             # See `NodeCategoryManager._term_for` — the same reasoning for edges.
             "term": await sync_to_async(self._term_for)(graph, definition.key),
             **(other_defaults or {}),

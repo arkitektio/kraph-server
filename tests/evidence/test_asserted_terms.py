@@ -1,8 +1,8 @@
 """Indexing the words a category's definition derives from.
 
 A graph sees a word two ways: it **declares** one (`Category.term`, an ordinary
-foreign key) or it **derives** from one, by naming it in
-`definition.asserted_as`. Only the second was un-joinable, so
+foreign key) or it **derives** from one, by naming it in a WORD condition of
+its definition's rules (RFC 0010). Only the second was un-joinable, so
 `selector._graph_ids_by_term` — which every instance write goes through — read
 every category in the organization and pulled every `definition` blob out of the
 database to loop over in Python.
@@ -13,6 +13,8 @@ maintained incrementally or rebuilt, and **the reads actually use it**.
 """
 
 import pytest
+
+from tests import rules
 from authentikate.models import Organization
 
 from core import asserted_terms, models as core_models
@@ -21,11 +23,12 @@ from evidence import models as evidence_models, selector, writer
 
 def _defined(graph: core_models.Graph, key: str, asserted_as) -> core_models.EntityCategory:
     """An entity category defined over claims rather than declared primitively."""
+    words = [asserted_as] if isinstance(asserted_as, str) else list(asserted_as)
     return core_models.EntityCategory.objects.create(
         graph=graph,
         key=key,
         age_name=key.lower(),
-        definition={"asserted_as": asserted_as},
+        definition=rules.definition(rules.rule(rules.word(*words))),
     )
 
 
@@ -49,7 +52,7 @@ def test_changing_a_definition_rewrites_rather_than_appends(graph_a: core_models
     """
     category = _defined(graph_a, "Neuron", ["Pyramidal"])
 
-    category.definition = {"asserted_as": ["Interneuron"]}
+    category.definition = rules.definition(rules.rule(rules.word("Interneuron")))
     category.save()
 
     assert {row.key for row in core_models.CategoryAssertedTerm.objects.filter(category=category)} == {"Interneuron"}
@@ -84,7 +87,7 @@ def test_a_primitive_category_indexes_nothing(graph_a: core_models.Graph) -> Non
 
 @pytest.mark.django_db(transaction=True)
 def test_a_bare_string_is_one_word(graph_a: core_models.Graph) -> None:
-    """`asserted_as` accepts a single word, and definitions are hand-written JSON.
+    """A WORD IS condition names a single word.
 
     Read through `selector.asserted_as_keys` rather than re-implemented here, so
     the index cannot come to a different conclusion than the predicate that
@@ -134,7 +137,7 @@ def test_a_definition_edited_behind_the_signal_is_reported(organization: Organiz
     """
     category = _defined(graph_a, "Neuron", ["Pyramidal"])
 
-    core_models.Category.objects.filter(pk=category.pk).update(definition={"asserted_as": ["Interneuron"]})
+    core_models.Category.objects.filter(pk=category.pk).update(definition=rules.definition(rules.rule(rules.word("Interneuron"))))
 
     stored = asserted_terms.stored(organization)
     expected = asserted_terms.expected(organization)
@@ -258,24 +261,22 @@ def test_deciding_where_a_write_lands_does_not_scale_with_the_ontology(
 
 
 @pytest.mark.django_db(transaction=True)
-def test_an_any_of_definition_indexes_the_union_of_its_clauses(graph_a: core_models.Graph) -> None:
-    """Clauses bind filters per word (RFC 0007); the vocabulary is their union."""
+def test_a_multi_rule_definition_indexes_the_union_of_its_rules(graph_a: core_models.Graph) -> None:
+    """Rules bind conditions per word (RFC 0010); the vocabulary is their union."""
     category = core_models.EntityCategory.objects.create(
         graph=graph_a,
         key="Cell",
         age_name="cell",
-        definition={
-            "any_of": [
-                {"asserted_as": ["Cell"], "assertion_filter": {"subjects": ["peter"]}},
-                {"asserted_as": ["StemCell"], "assertion_filter": {"subjects": ["karl"]}, "since": "2026-12-05T00:00:00+00:00"},
-            ]
-        },
+        definition=rules.definition(
+            rules.rule(rules.word("Cell"), rules.by("peter")),
+            rules.rule(rules.word("StemCell"), rules.by("karl"), rules.since("2026-12-05T00:00:00+00:00")),
+        ),
     )
 
     assert {row.key for row in core_models.CategoryAssertedTerm.objects.filter(category=category)} == {"Cell", "StemCell"}
-    assert asserted_terms.expected(graph_a.organization) == asserted_terms.stored(graph_a.organization), "the --check contract holds for the clause shape"
+    assert asserted_terms.expected(graph_a.organization) == asserted_terms.stored(graph_a.organization), "the --check contract holds for the rule shape"
 
-    # Dropping a clause drops its word — the rewrite-not-append rule, per clause.
-    category.definition = {"any_of": [{"asserted_as": ["Cell"], "assertion_filter": {"subjects": ["peter"]}}]}
+    # Dropping a rule drops its word — the rewrite-not-append rule, per rule.
+    category.definition = rules.definition(rules.rule(rules.word("Cell"), rules.by("peter")))
     category.save()
     assert {row.key for row in core_models.CategoryAssertedTerm.objects.filter(category=category)} == {"Cell"}

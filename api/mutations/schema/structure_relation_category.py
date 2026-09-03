@@ -8,7 +8,7 @@ from core import enums, models
 from evidence import writer
 from datalayer import models as dl_models
 from ._guards import delete_or_explain, refuse_edge_properties
-from .._scoped import accessible_graph, scoped
+from .._scoped import accessible_graph, schema_graph, schema_scoped, scoped
 
 
 def create_structure_relation_category(
@@ -30,7 +30,7 @@ def create_structure_relation_category(
     if model.image:
         media_store = dl_models.MediaStore.objects.get(id=model.image)
 
-    graph = accessible_graph(info, model.graph)
+    graph = schema_graph(info, model.graph)
     # Keyed on `(graph, key)`, which is the pair `Category` is unique on —
     # and `key` is what a claim names. This used to key on `(graph, age_name)`
     # and never set `key` at all, so every category created here landed with
@@ -47,6 +47,8 @@ def create_structure_relation_category(
             # Always empty — `refuse_edge_properties` has already rejected
             # anything else. See `create_relation_category` for the same note.
             property_definitions=[],
+            # The category's complete rule (RFC 0012). Empty means primitive.
+            definition=model.definition.to_stored() if model.definition else {},
         ),
     )
 
@@ -78,7 +80,7 @@ def update_structure_relation_category(info: Info, input: inputs.UpdateStructure
     """GraphQL mutation wrapper for updating structure relation categories."""
     model = input.to_pydantic()  # Validate input with Pydantic models
 
-    item = scoped(info, models.StructureRelationCategory, model.id, what="structure relation category")
+    item = schema_scoped(info, models.StructureRelationCategory, model.id, what="structure relation category")
 
     if model.color:
         assert len(model.color) == 3 or len(model.color) == 4, "Color must be a list of 3 or 4 values RGBA"
@@ -89,6 +91,15 @@ def update_structure_relation_category(info: Info, input: inputs.UpdateStructure
         )
     else:
         media_store = None
+
+
+    # The category's rule (RFC 0012): replaced whole, cleared to primitive, or
+    # left alone — the input refuses both at once.
+    meaning_before = dict(item.definition or {})
+    if getattr(model, "clear_definition", False):
+        item.definition = {}
+    elif getattr(model, "definition", None) is not None:
+        item.definition = model.definition.to_stored()
 
     item.label = model.label if model.label else item.label
     item.description = model.description if model.description else item.description
@@ -103,6 +114,11 @@ def update_structure_relation_category(info: Info, input: inputs.UpdateStructure
 
     item.save()
 
+    # No rebuild on a rule change: nothing is drawn for this category — the
+    # claim lists read the rules live (`links_for_category`), and the
+    # vocabulary index follows via the category-save signal.
+    del meaning_before
+
     # No rematerialization owed, for the same two reasons as
     # `update_relation_category`: this resolver writes no `property_definitions`,
     # and a structure relation is an edge, which `projector.project_edges` draws
@@ -116,6 +132,6 @@ def delete_structure_relation_category(
     input: inputs.DeleteStructureRelationCategoryInput,
 ) -> strawberry.ID:
     model = input.to_pydantic()  # Validate input with Pydantic models
-    item = scoped(info, models.StructureRelationCategory, model.id, what="structure relation category")
+    item = schema_scoped(info, models.StructureRelationCategory, model.id, what="structure relation category")
     delete_or_explain(item, what=f"structure relation category '{item.key}'", instead="Archive the structure relations asserted under it first.")
     return model.id

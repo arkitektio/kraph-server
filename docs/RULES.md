@@ -1,0 +1,204 @@
+# Rules
+
+This document describes how a graph decides which evidence it shows. It is the
+reference for `Category.definition` and `rule.evidence`. The RFCs (0007 to
+0012) record why the design is the way it is; this document only says what it
+does. `EXAMPLE.md` shows one full schema and what it makes of the log.
+
+## The idea
+
+Everything anyone records is a claim in the organization's log: "this is an
+AIS", "these two are the same cell", "this ROI measured 45.2", "this no longer
+exists". Claims are never edited or deleted. A graph is a view over that log.
+
+A graph does not filter the log directly. Its categories do. A category is the
+graph's rule for one word, and the rule says which claims count for that word:
+who may classify things under it, who may retract them, who may merge them,
+whose measurements feed its properties. There is no graph-wide filter. If a
+category has no rules, everything counts, which is the default.
+
+## Where rules live
+
+- `Category.definition` holds the rules for one category. Every family can
+  carry one: entities, relations, events (natural and protocol), structure
+  relations and measurements. It is set in the graph definition at
+  `createGraph` (or `createProtocolEventCategory`), and changed with the
+  matching `update*Category` mutation. Changing it rebuilds the drawing before
+  the mutation returns where something is drawn; structure relations and
+  measurements are not drawn, so their lists just read the new rules.
+- `PropertyDefinition.rule.evidence` holds a filter for one derived property.
+  It overrides the category's rules for that property's measurements only.
+
+A category without a definition is called primitive. Any claim naming its word
+counts, from anyone.
+
+## The shape
+
+```jsonc
+"definition": {
+  "rules": [
+    {
+      "when":   [ condition, ... ],
+      "unless": [ { "when": [ condition, ... ] }, ... ]   // optional
+    }
+  ]
+}
+```
+
+A condition is:
+
+```jsonc
+{ "field": "SUBJECT", "operator": "IS", "value": "peter" }
+```
+
+The logic:
+
+- A claim counts if any rule matches it.
+- A rule matches when every condition in `when` holds and no `unless` group
+  applies.
+- An `unless` group applies when every condition in it holds.
+
+That is all of it. There is no other nesting.
+
+## Fields
+
+| Field | What it tests | Values |
+|---|---|---|
+| `WORD` | the term the claim names | strings, e.g. `"AIS"` |
+| `SUBJECT` | who made the assertion | user ids |
+| `APP` | which app it came through | app ids |
+| `ACTION` | which action produced it | action ids; many claims have none |
+| `KIND` | what the claim says (see below) | `CLASSIFICATION`, `EXISTENCE`, `SAMENESS`, `EVIDENCE`, `MEASUREMENT` |
+| `ASSERTED_AT` | when the claim was made | datetime |
+| `MEASURED_AT` | when the observation happened | datetime; measurements only |
+
+## Operators
+
+| Operator | Meaning | Value |
+|---|---|---|
+| `IS` | equals | one string |
+| `IN` | any of | list of strings |
+| `NOT_IN` | none of | list of strings |
+| `BEFORE` | at or before | datetime |
+| `SINCE` | at or after | datetime |
+
+`BEFORE` and `SINCE` work on the time fields, the rest on everything else.
+`NOT_IN` on `ACTION` keeps claims that have no action at all; excluding an
+action does not exclude the people who never used one.
+
+Invalid combinations are rejected when the definition is written, with an error
+that names the problem. Nothing is silently ignored.
+
+## KIND: what a claim says
+
+Claims about a category's things come in five kinds:
+
+- `CLASSIFICATION`: "this is an AIS". Decides what the category admits.
+- `EXISTENCE`: "this is gone" / "this is really there". Retractions and
+  attestations.
+- `SAMENESS`: "these two are one individual".
+- `EVIDENCE`: "this ROI informs this cell". The links that route measurements
+  to a node.
+- `MEASUREMENT`: the measurements themselves, when a property has no
+  `rule.evidence` of its own.
+
+A rule without a `KIND` condition covers all five. A rule with one covers only
+what the condition allows. Rules grant; they do not override each other. So if
+one rule grants Peter everything and another grants the curator sameness, Peter
+can still merge, because the first rule covers sameness too. To reserve merging
+for the curator, take sameness away from Peter's rule:
+
+```jsonc
+"rules": [
+  { "when": [ { "field": "WORD",    "operator": "IS",     "value": "AIS" },
+              { "field": "SUBJECT", "operator": "IS",     "value": "peter" },
+              { "field": "KIND",    "operator": "NOT_IN", "value": ["SAMENESS"] } ] },
+  { "when": [ { "field": "KIND",    "operator": "IS",     "value": "SAMENESS" },
+              { "field": "SUBJECT", "operator": "IS",     "value": "curator" } ] }
+]
+```
+
+If no rule covers a kind, nothing counts for that kind in this category. You
+can only get there by writing a `NOT_IN` in every rule, so it never happens by
+accident.
+
+Two constraints follow from what the kinds mean. A rule that covers
+CLASSIFICATION must have a `WORD` condition, because classification is about
+words; a rule that does not cover it must not have one, because retractions and
+merges do not name words. `MEASURED_AT` is only allowed in a rule that covers
+MEASUREMENT alone.
+
+## Sameness is within a category
+
+A sameness claim merges two observations into one individual. That only makes
+sense inside one category: an AIS observed by Peter and an AxonInitialSegment
+observed by Karl can be the same axon initial segment, because the category
+defines both words as one kind of thing. An AIS and a Cell can never be merged
+in a view, no matter who claims it. A thing is one kind of thing.
+
+The organization-wide component (what you see without a graph in scope) still
+unions every standing sameness claim. The per-view component applies the
+category's rules and the within-category constraint.
+
+## Property filters
+
+A derived property can narrow its own measurements:
+
+```jsonc
+{ "key": "avg_length", "valueKind": "FLOAT", "derivation": "ROLLUP",
+  "rule": {
+    "sourceNode": "ROI", "key": "vector_length", "aggregation": "MEAN",
+    "evidence": [
+      { "field": "APP",         "operator": "IS",    "value": "segmenter-v3" },
+      { "field": "MEASURED_AT", "operator": "SINCE", "value": "2026-06-01T00:00:00Z" }
+    ]
+  }
+}
+```
+
+`evidence` is a plain list of conditions; all must hold. When it is present, it
+replaces the category's rules for this property's measurements. When it is
+absent, the category's MEASUREMENT rules apply, and for a primitive category
+everything does. It replaces rather than intersects because the people who
+classify things and the pipelines that measure them are usually different, and
+requiring both would usually leave nothing.
+
+## Time
+
+`ASSERTED_AT` is when someone said it. `MEASURED_AT` is when the world was
+observed. A correction made in March about a measurement taken in June differs
+from the original only in `ASSERTED_AT`. "The category as we believed it on
+March 3rd" is `ASSERTED_AT BEFORE 2026-03-03`, per rule. There is no graph-wide
+time cursor; if you want the whole view frozen, put the bound in every
+category's rules.
+
+## Versioning and rebuilds
+
+Definitions are part of the schema. Editing one creates a schema version and
+rebuilds the graph's drawing before the mutation returns. Editing a
+`rule.evidence` moves the schema hash; `manage.py rematerialize --stale` picks
+it up.
+
+## What is settled and what is not
+
+Settled and implemented:
+
+- the rule shape (`rules` / `when` / `unless`, conditions as field, operator,
+  value)
+- all fields and operators above, including `KIND` with its five values
+- per-view existence, edge trust, evidence routing and measurement scope
+- definitions on all five category families (entities, relations, events,
+  structure relations, measurements)
+- per-view, within-category sameness
+- `rule.evidence` on properties
+
+Not settled, or simply not built:
+
+- `rule.evidence` is a flat list. It has no `unless` and no unions. If a
+  property ever needs "app A, or app B after June", the definition-style rule
+  list is the intended extension.
+- Conditions cannot test the metric key. Which key a property reads is
+  `rule.key`, outside the condition language.
+- Who may *edit* definitions is separate from all of this and fixed: the
+  graph's owner, an organization admin, or a superuser (RFC 0013). Everyone in
+  the organization can still read and record claims.

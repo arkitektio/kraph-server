@@ -176,6 +176,23 @@ class OntologyReference:
     term_id: str = strawberry.field(description="The ontology term ID (e.g., '0008150')")
 
 
+@kante.pydantic_type(input_models.ClaimConditionInput, all_fields=True, description="One condition: (field, operator, value) - the rule vocabulary (RFC 0010)")
+class ClaimCondition:
+    """One condition, as read back."""
+
+    value: JSON = strawberry.field(description="One string for IS, a string list for IN/NOT_IN, an ISO datetime for BEFORE/SINCE. For field KIND: one of CLASSIFICATION, EXISTENCE, SAMENESS, EVIDENCE, MEASUREMENT")
+
+
+@kante.pydantic_type(input_models.ClaimConditionGroupInput, all_fields=True, description="An exception: a conjunction that, when it holds whole, blocks its rule")
+class ClaimConditionGroup:
+    """One exception group, as read back."""
+
+
+@kante.pydantic_type(input_models.ClaimRuleInput, all_fields=True, description="One rule: matches when all `when` conditions hold and no `unless` group does")
+class ClaimRule:
+    """One rule, as read back."""
+
+
 @kante.pydantic_type(input_models.DerivationRuleInput, all_fields=True, description="A derivation rule in the graph schema")
 class DerivationRule:
     """A derivation rule in the graph schema, which defines how to derive new entities or relations based on existing ones."""
@@ -255,24 +272,9 @@ def _event_roles(stored: Any) -> List[EventRole]:
     return roles
 
 
-@kante.pydantic_type(input_models.AssertionFilterInput, all_fields=True, description="Whose claims count: any-of within a field, all fields must hold")
-class AssertionFilter:
-    """The who half of a clause or selector, as read back."""
-
-
-@kante.pydantic_type(input_models.CategoryDefinitionClauseInput, all_fields=True, description="One clause of a category definition: these words, by these people, in this window (RFC 0007)")
-class CategoryDefinitionClause:
-    """One clause, as read back."""
-
-
-@kante.pydantic_type(input_models.CategoryDefinitionInput, all_fields=True, description="What a category means: a union of clauses over classification claims. Flat fields for one clause, anyOf for several — a stored definition never carries both")
+@kante.pydantic_type(input_models.CategoryDefinitionInput, all_fields=True, description="A category's complete rule: a claim counts if any rule matches; a rule matches when all its when-conditions hold and no unless-group does (RFC 0010)")
 class CategoryDefinition:
     """A category's meaning, as read back. Null on a primitive category."""
-
-
-@kante.pydantic_type(input_models.GraphSelectorInput, all_fields=True, description="Which of the organization's claims a graph counts. Null means everything the organization knows")
-class GraphSelector:
-    """A graph's claim scope, as read back."""
 
 
 @org_scoped
@@ -289,10 +291,9 @@ class Graph:
     color: Optional[List[int]] = strawberry.field(default=None, description="Color as RGBA list (0-255)")
     name: str = strawberry.field(description="Name of the graph")
 
-    @strawberry.field(description="Which of the organization's claims this view counts. Null means everything — the default")
-    async def selector(self) -> Optional[GraphSelector]:
-        stored = await sync_to_async(lambda: input_models.GraphSelectorInput.from_stored(cast(models.Graph, self).selector))()
-        return GraphSelector.from_pydantic(stored) if stored is not None else None
+    # `selector` is gone (RFC 0009): a graph has no claim scope of its own —
+    # each category's `definition` is the complete rule for its word, and
+    # `rule.evidence` is each derived property's metric rule.
     image: MediaStore | None = strawberry.field(description="An image representing this graph, for visualization purposes")
     # Readable, because a flag a client can write and never observe is how
     # `archiveGraph` managed to do nothing for as long as it did.
@@ -863,6 +864,8 @@ class RichProperty:
         from evidence import models as evidence_models
         from graph_engine import projector
 
+        from evidence import selector as selector_module
+
         rule = self._rule()
         graph = self._category.graph
         source = _structure_kind_for(graph, rule)
@@ -870,38 +873,31 @@ class RichProperty:
             return []
 
         key = rule.key if rule and rule.key else self._key
-        # Narrowed the same way the value itself was derived. Listing metrics the
-        # fold never counted would make the explanation disagree with the number
-        # it is supposed to explain.
+        # Narrowed the same way the value itself was derived — the INFORMS
+        # routing under the category's clauses, the metric rows under
+        # `metric_scope(category.definition, rule)`, exactly as `_scoped_state`
+        # folds them (RFC 0009). This used to apply no scoping at all, so the
+        # explanation disagreed with the number it explained.
         value_kinds = projector._value_kinds_for_rule(graph, source, key, rule)
         if value_kinds is None:
             return []
 
-        structure_ids = list(
-            claims_module.standing(
-                evidence_models.Link.objects.for_organization(graph.organization).filter(
-                    kind=evidence_models.Link.Kind.INFORMS,
-                    target_ref=self._entity.durable_ref,
-                ),
-                "link",
-            ).values_list("source_ref", flat=True)
-        )
-        parsed = []
-        for ref in structure_ids:
-            try:
-                parsed.append(uuid.UUID(str(ref)))
-            except ValueError:
-                continue
+        parsed = projector._structure_ids_informing(graph, self._entity.durable_ref, self._category.definition)
+        if not parsed:
+            return []
 
+        metric_q, standing_predicate = selector_module.metric_scope(self._category.definition, rule)
         return list(
             claims_module.standing(
                 evidence_models.Metric.objects.for_organization(graph.organization).filter(
+                    metric_q,
                     structure_id__in=parsed,
                     structure__kind=source,
                     key=key,
                     value_kind__in=list(value_kinds),
                 ),
                 "metric",
+                predicate=standing_predicate,
             )
             .select_related("assertion", "structure")
             .order_by("measured_at")
@@ -1033,22 +1029,22 @@ class Node(Generic[V]):
 
     @strawberry.field(description="Every instance claimed to be this same thing, this one included. A component of one means nobody has merged it")
     async def component(self) -> List[strawberry.ID]:
-        known = await loaders.known_about_node_loader.load(self._value.unique_id)
+        known = await loaders.known_about_node_loader.load((self._value.graph_name, self._value.unique_id))
         return [cast(strawberry.ID, ref) for ref in known.component]
 
     @strawberry.field(description="What anyone has called this thing, with how many assertions say so. Two words means two people disagreed; one word with a count of two means they agreed")
     async def labels(self) -> List["Label"]:
-        known = await loaders.known_about_node_loader.load(self._value.unique_id)
+        known = await loaders.known_about_node_loader.load((self._value.graph_name, self._value.unique_id))
         return [Label(_value=label) for label in known.labels]
 
     @strawberry.field(description="The standing claims that this instance and another are one thing, with who said so. Exposed so a merge is visible and contestable rather than silent")
     async def same_as(self) -> List["Sameness"]:
-        known = await loaders.known_about_node_loader.load(self._value.unique_id)
+        known = await loaders.known_about_node_loader.load((self._value.graph_name, self._value.unique_id))
         return [Sameness(_value=RetrievedEdge.from_link(get_controller(), link)) for link in known.sameness]
 
     @strawberry.field(description="Every standing claim connecting this thing to something else — relations, participations and the structures that inform it. Needs no graph query: they are all evidence rows, and the drawing of them is a projection")
     async def connections(self) -> List["Edge"]:
-        known = await loaders.known_about_node_loader.load(self._value.unique_id)
+        known = await loaders.known_about_node_loader.load((self._value.graph_name, self._value.unique_id))
         return [cast(Edge, cast_edge_to_graphql_type(RetrievedEdge.from_link(get_controller(), link))) for link in known.connections]
 
     @kante.django_field(description="Every view that actually draws this thing, and the category it draws it under. Read back from each projection, so a graph that declares the word but whose definition refuses the node is not listed")
@@ -1868,22 +1864,22 @@ class Instance:
 
     @strawberry.field(description="Every instance claimed to be this same thing, this one included. A component of one means nobody has merged it")
     async def component(self) -> List[strawberry.ID]:
-        known = await loaders.known_about_node_loader.load(str(cast(evidence_models.Instance, self).pk))
+        known = await loaders.known_about_node_loader.load(("", str(cast(evidence_models.Instance, self).pk)))
         return [cast(strawberry.ID, ref) for ref in known.component]
 
     @strawberry.field(description="What anyone has called this thing, with how many assertions say so. Two words means two people disagreed; one word with a count of two means they agreed")
     async def labels(self) -> List["Label"]:
-        known = await loaders.known_about_node_loader.load(str(cast(evidence_models.Instance, self).pk))
+        known = await loaders.known_about_node_loader.load(("", str(cast(evidence_models.Instance, self).pk)))
         return [Label(_value=label) for label in known.labels]
 
     @strawberry.field(description="The standing claims that this instance and another are one thing, with who said so")
     async def same_as(self) -> List["Link"]:
-        known = await loaders.known_about_node_loader.load(str(cast(evidence_models.Instance, self).pk))
+        known = await loaders.known_about_node_loader.load(("", str(cast(evidence_models.Instance, self).pk)))
         return cast(List["Link"], list(known.sameness))
 
     @strawberry.field(description="Every standing claim connecting this thing to something else — relations, participations, classifications and the structures that inform it")
     async def connections(self) -> List["Link"]:
-        known = await loaders.known_about_node_loader.load(str(cast(evidence_models.Instance, self).pk))
+        known = await loaders.known_about_node_loader.load(("", str(cast(evidence_models.Instance, self).pk)))
         return cast(List["Link"], list(known.connections))
 
     @kante.django_field(description="Every view that actually draws this claim, and the category it draws it under. Empty means no view does, which is an ordinary answer")

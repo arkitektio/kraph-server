@@ -45,23 +45,23 @@ class MetricInput:
     timestamp: Optional[int] = strawberry.field(default=None, description="When the measurement was observed, unix epoch milliseconds")
 
 
-@pydantic.input(model=input_models.DerivationRuleInput, all_fields=True, description="Configuration for property derivation rules")
-class DerivationRuleInput:
-    """Configuration for property derivation rules."""
+@pydantic.input(model=input_models.ClaimConditionInput, all_fields=True, description="One condition: (field, operator, value) — IS/IN/NOT_IN on WORD/SUBJECT/APP/ACTION, BEFORE/SINCE on ASSERTED_AT/MEASURED_AT (RFC 0010)")
+class ClaimConditionInput:
+    """One (field, operator, value) condition."""
+
+    value: AnyScalar = strawberry.field(description="One string for IS, a string list for IN/NOT_IN, an ISO datetime for BEFORE/SINCE. For field KIND: one of CLASSIFICATION, EXISTENCE, SAMENESS, EVIDENCE, MEASUREMENT")
+
+
+@pydantic.input(model=input_models.ClaimConditionGroupInput, all_fields=True, description="An exception: a conjunction that, when it holds whole, blocks its rule")
+class ClaimConditionGroupInput:
+    """One exception group."""
 
     pass
 
 
-@pydantic.input(model=input_models.AssertionFilterInput, all_fields=True, description="Whose claims count: any-of within a field, all fields must hold")
-class AssertionFilterInput:
-    """Whose claims count."""
-
-    pass
-
-
-@pydantic.input(model=input_models.CategoryDefinitionClauseInput, all_fields=True, description="One clause of a category definition: these words, by these people, in this window (RFC 0007)")
-class CategoryDefinitionClauseInput:
-    """One clause of a category definition."""
+@pydantic.input(model=input_models.ClaimRuleInput, all_fields=True, description="One rule: matches when all `when` conditions hold and no `unless` group does")
+class ClaimRuleInput:
+    """One rule."""
 
     pass
 
@@ -73,9 +73,13 @@ class CategoryDefinitionInput:
     pass
 
 
-@pydantic.input(model=input_models.GraphSelectorInput, all_fields=True, description="Which of the organization's claims a graph counts: annotators, apps, actions, and belief/observation time bounds")
-class GraphSelectorInput:
-    """A graph's claim scope."""
+# `GraphSelectorInput` is gone (RFC 0009): trust lives in the category
+# definitions and in `rule.evidence`, so a graph has no claim scope of its own.
+
+
+@pydantic.input(model=input_models.DerivationRuleInput, all_fields=True, description="Configuration for property derivation rules")
+class DerivationRuleInput:
+    """Configuration for property derivation rules."""
 
     pass
 
@@ -823,16 +827,6 @@ class StructureRelationDefinitionInput:
 
 @pydantic.input(model=input_models.GraphExtensionsInput, all_fields=True, description="The categories a graph schema declares")
 class GraphExtensionsInput:
-    pass
-
-
-@pydantic.input(model=input_models.ActionFilterInput, all_fields=True, description="Simple boolean filter over request context for action rules")
-class ActionFilterInput:
-    pass
-
-
-@pydantic.input(model=input_models.ActionRuleInput, all_fields=True, description="Allow/deny rule for a graph action")
-class ActionRuleInput:
     pass
 
 

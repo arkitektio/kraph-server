@@ -120,19 +120,46 @@ def retracted_ids(
 CACHED_TARGETS = ("structure", "metric", "link", "comment")
 
 
-def standing(queryset: Any, target_type: str) -> Any:
+def standing(queryset: Any, target_type: str, predicate: Q | None = None) -> Any:
     """Narrow a queryset of log rows to the ones that currently stand.
 
     The replacement for `.filter(stands=True)`, which used to read a boolean on
-    the log row itself. An anti-join against the retracted subset rather than a
-    join against the standing one, because absence of a claim means a thing
-    stands: the vast majority of rows have no `CurrentStanding` at all, and the small
-    side of the comparison is the one worth scanning.
+    the log row itself.
+
+    Without a predicate this is the organization-wide answer: an anti-join
+    against `CurrentStanding`'s retracted subset — absence of a claim means a
+    thing stands, the vast majority of rows have no cached row at all, and the
+    small side of the comparison is the one worth scanning.
+
+    With a predicate it becomes **one view's answer** (RFC 0008): the newest
+    predicate-matching `Standing` about each row decides, folded directly from
+    the log — the cache cannot serve here, because it deliberately folds
+    everybody's positions. A retraction by somebody the predicate excludes is
+    not this view's retraction; a row nobody the view counts has spoken about
+    stands, because silence is not dissent. The predicate is
+    `selector.claim_filter(graph.selector)` in every caller; passing the empty
+    `Q()` explicitly is the caller's bug — hand in ``None`` and take the cache.
     """
+    from django.db.models import CharField, OuterRef, Subquery
+    from django.db.models.functions import Cast
+
     from evidence import models as evidence_models
 
-    retracted = evidence_models.CurrentStanding.all_objects.filter(target_type=target_type, stands=False).values("target_id")
-    return queryset.exclude(pk__in=retracted)
+    if predicate is None:
+        retracted = evidence_models.CurrentStanding.all_objects.filter(target_type=target_type, stands=False).values("target_id")
+        return queryset.exclude(pk__in=retracted)
+
+    latest = (
+        evidence_models.Standing.all_objects.filter(target_type=target_type, target_id=Cast(OuterRef("pk"), output_field=CharField()))
+        .filter(predicate)
+        .order_by(*_LATEST)
+        .values("stands")[:1]
+    )
+    # NULL (no position this view counts) is not False: unmentioned rows stand.
+    # Spelled as a filter, not `exclude(_view_stands=False)` — under SQL's
+    # three-valued logic `NOT (NULL = FALSE)` is NULL, which would silently
+    # drop every undisputed row.
+    return queryset.annotate(_view_stands=Subquery(latest)).filter(Q(_view_stands=True) | Q(_view_stands__isnull=True))
 
 
 def current(organization: Any, target_type: str, target_id: Any) -> bool:

@@ -4,7 +4,7 @@
 "Mitosis" the entity word are two terms. A definition is written on a category of
 one kind, so the words it derives from are words of that kind — but
 `selector.term_ids_for` and `resolve_categories` matched on the key alone, so an
-`EntityCategory` defined as `asserted_as: ["Mitosis"]` admitted every *event*
+`EntityCategory` defined over the word "Mitosis" admitted every *event*
 classified under the event word, and `entities()` wrapped them as `Entity`. The
 same defect class the label map was deleted for, reached through a constructor.
 """
@@ -16,7 +16,7 @@ from core import models as core_models
 from evidence import models as evidence_models
 from core import asserted_terms
 from graph_engine import projector
-from tests import writes
+from tests import rules, writes
 
 ENTITIES = """
     query($category: ID!) {
@@ -32,7 +32,7 @@ async def test_an_entity_category_defined_over_an_event_word_admits_no_events(ap
 
     @sync_to_async
     def defined_over_mitosis():
-        category = core_models.EntityCategory.objects.create(graph=test_graph, key="MitoticThing", label="Mitotic thing", age_name="MitoticThing", definition={"asserted_as": ["Mitosis"]})
+        category = core_models.EntityCategory.objects.create(graph=test_graph, key="MitoticThing", label="Mitotic thing", age_name="MitoticThing", definition=rules.definition(rules.rule(rules.word("Mitosis"))))
         admitted = projector.refs_admitted_by(category)
         return category.pk, admitted, asserted_terms.keys_and_kinds_for_graph(test_graph)
 

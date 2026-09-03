@@ -16,6 +16,8 @@ import uuid
 
 import kante
 import pytest
+
+from tests import rules
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 
@@ -327,7 +329,7 @@ async def test_a_view_that_declares_the_word_but_refuses_the_node_is_not_listed(
     def define_ais_narrowly() -> None:
         category = core_models.EntityCategory.objects.filter(graph=test_graph, key="AIS").first()
         assert category is not None, "The bio schema declares AIS"
-        category.definition = {"asserted_as": "AIS", "assertion_filter": {"subjects": ["somebody-else-entirely"]}}
+        category.definition = rules.definition(rules.rule(rules.word("AIS"), rules.by("somebody-else-entirely")))
         category.save()
 
     await define_ais_narrowly()

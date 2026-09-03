@@ -228,10 +228,25 @@ def namespace_spec(graph: Any) -> NamespaceSpec:
             and not (c.source_definition or {}).get("keys")
             and not (c.source_definition or {}).get("ontology_terms")
         ]
+        # Events explode the same way: an event category with empty role lists
+        # expands its participation edges over every entity-like category
+        # (`_role_endpoints`), and a diagnostic that named only relations left
+        # the event half of the blowup anonymous.
+        open_events = [
+            f"#{c.pk} ({c.key!r})"
+            for c in categories
+            if c.kind in (str(core_enums.CategoryKindChoices.NATURAL_EVENT), str(core_enums.CategoryKindChoices.PROTOCOL_EVENT))
+            and (not (c.source_entity_roles or []) or not (c.target_entity_roles or []))
+        ]
+        offenders = []
+        if open_relations:
+            offenders.append(f"relation categories {', '.join(open_relations)}")
+        if open_events:
+            offenders.append(f"event categories with open roles {', '.join(open_events)}")
         raise NamespaceSpecError(
             f"graph #{graph.pk} would need {total} element tables (cap {NAMESPACE_MAX_ELEMENT_TABLES}): "
-            f"open source/target descriptors expand over every entity category — narrow the descriptors on "
-            f"relation categories {', '.join(open_relations) or '(none open — many categories)'}"
+            f"open source/target descriptors and role lists expand over every entity category — narrow "
+            f"{'; '.join(offenders) or 'the descriptors (none open — many categories)'}"
         )
 
     return NamespaceSpec(

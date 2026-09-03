@@ -30,7 +30,6 @@ def create_graph(
         description=model.description,
         membership=info.context.request.membership,
         backfill=model.backfill,
-        selector=model.selector,
     )
 
     return graph
@@ -52,7 +51,7 @@ def _refuse_unless_archived(graph: models.Graph) -> None:
     `_record_what_deletion_destroys`.
     """
     if not graph.is_archived:
-        raise ValueError(f"Cannot delete graph '{graph.name}': archive it first. Deleting a graph is irreversible and takes every rule for reading the evidence with it — its categories, their definitions, its selector and its whole schema history. Archiving is reversible; if the graph is still wanted later, nothing has been lost.")
+        raise ValueError(f"Cannot delete graph '{graph.name}': archive it first. Deleting a graph is irreversible and takes every rule for reading the evidence with it — its categories, their definitions and its whole schema history. Archiving is reversible; if the graph is still wanted later, nothing has been lost.")
 
 
 def _record_what_deletion_destroys(graph: models.Graph) -> None:
@@ -61,7 +60,7 @@ def _record_what_deletion_destroys(graph: models.Graph) -> None:
     The evidence survives a deletion — it is organization-scoped, which is the
     second axiom paying for itself. What does not survive is every rule for
     reading it: which words this view declared, what they meant here
-    (`Category.definition`), whose claims counted (`Graph.selector`), and the
+    (`Category.definition`, the complete rule for its word since RFC 0009), and the
     whole `GraphSchema` chain. The node count is the number that matters, because
     it says how much evidence just lost its only reader.
 
@@ -192,25 +191,11 @@ def update_graph(
         else:
             graph.pinned_by.remove(info.context.request.user)
 
-    selector_changed = False
-    if model.selector is not None:
-        new_selector = model.selector.to_stored()
-        selector_changed = new_selector != (graph.selector or {})
-        graph.selector = new_selector
-
     graph.save()
 
-    if selector_changed:
-        # The selector decides whose existence claims and metrics the view
-        # counts, so the drawing standing right now was folded under the *old*
-        # scope. Rebuild before returning — a mutation that edits the scope and
-        # leaves the drawing showing the previous one is the class of silence
-        # this codebase refuses. Synchronous and O(graph), the same accepted
-        # limit as every schema edit; tenancy-scoped like renaming, because a
-        # shared view is the organization's to curate.
-        from api import context
-
-        context.get_controller().rebuild_projection(graph)
+    # No `selector` branch any more (RFC 0009): what counts as evidence is a
+    # property of the category definitions, and editing one of *those* triggers
+    # the rebuild in its own mutation.
 
     return graph
 

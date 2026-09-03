@@ -1,6 +1,11 @@
 # RFC 0007 — A definition is a union of clauses
 
-- **Status:** **Implemented.** A record, like 0004–0006: it exists so the next
+- **Status:** **Implemented**, amended by RFC 0009 and superseded in *shape* by RFC 0010 (the clause syntax was replaced by explicit (field, operator, value) rules; the union-of-conjunctions semantics this RFC established survives): the clause language this RFC
+  built for classification now governs *everything* about a category — existence,
+  its edges, the default metric scope — and `Graph.selector`, which this RFC left
+  beside the definitions, is gone. The open versioning item (definitions absent
+  from `snapshot_definition`) is closed by 0009.
+- (original status) A record, like 0004–0006: it exists so the next
   person knows what the clause language can and cannot say, why it is one level
   deep, and which asymmetry was looked at and deliberately left.
 - **Question:** A big part of what these graphs are *for* is statements like
@@ -93,7 +98,10 @@ so a scoped view keeps its node at write time, not only after a reproject.
 
 ## Deliberately left
 
-- **Link standing is organization-wide.** Instance existence folds per view
+- **Link standing is organization-wide.** *(Amended by RFC 0008: somebody
+  asked. Link claims and their standings now fold per view — the test named
+  below became `test_link_claims_and_their_retractions_fold_per_view`,
+  asserting the opposite.)* Instance existence folds per view
   (`resolve_categories` → `retracted_ids` → `claim_filter`), but every other
   claim kind folds through `CurrentStanding`, which is a selector-less cache —
   so a *link* retracted by somebody a view does not count still loses its edge

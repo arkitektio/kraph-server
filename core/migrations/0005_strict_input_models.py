@@ -80,7 +80,6 @@ def _strip(value, allowed, label, dropped):
 def sweep_unknown_keys(apps, schema_editor):
     """Remove keys no input model has a field for."""
     from graph_engine.input_models import (
-        ActionRuleInput,
         EntityDescriptorInput,
         PropertyDefinitionInput,
         StructureDescriptorInput,
@@ -90,7 +89,10 @@ def sweep_unknown_keys(apps, schema_editor):
     Category = apps.get_model("core", "Category")
     dropped = []
 
-    rule_keys = _allowed(ActionRuleInput)
+    # `ActionRuleInput` no longer exists (`Graph.rules` was removed, RFC 0013);
+    # its field set at the time this migration was written is frozen here so
+    # the sweep stays replayable.
+    rule_keys = {"action", "allow", "filter"}
     for graph in Graph.objects.iterator():
         rules = graph.rules or []
         changed = False

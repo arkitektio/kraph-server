@@ -1,28 +1,42 @@
-"""Turning a graph's selector into the evidence it projects.
+"""Turning a view's rules into the evidence it projects.
 
-A ``Graph`` is a view over its organization's evidence, and ``Graph.selector``
-says which part. Evaluating it produces a queryset, never a stored membership
-flag: writes stay projection-agnostic, so ingesting a metric does not have to
-know about every graph that might one day want it. That is what keeps bulk
-ingest O(N) instead of O(N x projections).
+A ``Graph`` is a view over its organization's evidence, and since RFC 0009 the
+rules saying which part are **per category**: a category's ``definition`` — the
+union of clauses RFC 0007 built — is the complete rule for its word, and a
+derived property's ``rule.evidence`` is that property's own metric rule. There
+is no graph-level selector any more; nothing here reads one.
 
-Selector shape (every key optional; an empty selector means "everything this
-organization knows")::
+Evaluating a rule produces a queryset, never a stored membership flag: writes
+stay projection-agnostic, so ingesting a metric does not have to know about
+every graph that might one day want it. That is what keeps bulk ingest O(N)
+instead of O(N x projections).
 
-    {
-      "category_keys":    ["ROI", "Image"],       # which structure kinds are in scope
-      "assertion_filter": {                        # whose evidence counts
-          "subjects":     ["AI_Model_X"],
-          "app_ids":      ["mikro"],
-          "action_names": ["segment"]
-      },
-      "as_of":            "2026-03-03T00:00:00Z",  # asserted_at upper bound
-      "since":            "2026-01-01T00:00:00Z",  # asserted_at lower bound
-      "observed_window":  ["2025-01-01", "2025-12-31"]   # measured_at range
-    }
+One rule is a list of (field, operator, value) conditions (RFC 0010) — the same
+triple-with-operator language the saved-query plans use. A claim counts if any
+rule matches; a rule matches when all its ``when`` conditions hold and no
+``unless`` group does; a group holds when all its conditions do::
 
-``as_of`` is the one that matters scientifically: "the graph as we believed it on
-March 3rd" stops being a fork of the data and becomes a filter.
+    {"rules": [
+        {"when": [
+            {"field": "WORD",        "operator": "IS",     "value": "AIS"},
+            {"field": "SUBJECT",     "operator": "IS",     "value": "peter"},
+            {"field": "ASSERTED_AT", "operator": "BEFORE", "value": "2026-12-05T00:00:00Z"}
+         ],
+         "unless": [{"when": [{"field": "APP", "operator": "IS", "value": "sloppy-import"}]}]}
+    ]}
+
+Two readings of the same rules, and the split is the design:
+
+- :func:`classification_filter` — the **whole** rule, WORD conditions included:
+  which claims *mean* this category. Applied to CLASSIFIES claims, and (RFC
+  0009) to a relation or event category's own link claims.
+- :func:`trust_filter` — the who-and-when conditions, WORD ignored: whose
+  claims and standings *count* for things already of this category. Applied to
+  existence standings, the standings of link claims, INFORMS routing, and (by
+  default) the metrics a property folds.
+
+``as_of`` is the one that matters scientifically: "the category as we believed
+it on March 3rd" stops being a fork of the data and becomes a filter.
 """
 
 from __future__ import annotations
@@ -47,215 +61,157 @@ def _parse_window(window: Any) -> tuple[Any, Any]:
     raise ValueError(f"observed_window must be a [from, to] pair or a {{from, to}} object, got {window!r}")
 
 
-#: The assertion columns a filter may name, shared by all three filters so the
-#: three siblings cannot drift apart in what "whose claims count" means.
-_ASSERTION_FILTER_COLUMNS = (
-    ("subjects", "assertion__subject__in"),
-    ("app_ids", "assertion__app_id__in"),
-    ("action_names", "assertion__action_name__in"),
-)
+#: How each identity field reaches the database, shared by every compiler below
+#: so the readings of "whose claims count" cannot drift apart.
+_IDENTITY_COLUMNS = {
+    "SUBJECT": "assertion__subject",
+    "APP": "assertion__app_id",
+    "ACTION": "assertion__action_name",
+}
+
+#: `ACTION` is the one nullable column: a human's claim carries no action, and
+#: SQL's NOT IN over NULL would silently drop it — compiled around, below.
+_NULLABLE_IDENTITY_FIELDS = frozenset({"ACTION"})
 
 
-def _assertion_predicate(source: dict[str, Any], *, asserted_at_column: str = "assertion__asserted_at") -> Q:
-    """The who-and-when half of one clause or selector.
+def _rules(definition: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """A definition as its list of rules — **the** single reader of the stored shape.
 
-    `assertion_filter` (subjects / app_ids / action_names, each an *any of*
-    list, ANDed across fields), `as_of` (asserted_at upper bound) and `since`
-    (asserted_at lower bound). `metric_filter` passes its denormalized
-    `asserted_at` column; everything else filters through the assertion join.
-    """
-    predicate = Q()
-    assertion_filter = source.get("assertion_filter") or {}
-    for field, column in _ASSERTION_FILTER_COLUMNS:
-        values = assertion_filter.get(field)
-        if values:
-            predicate &= Q(**{column: values})
-
-    as_of = source.get("as_of")
-    if as_of:
-        predicate &= Q(**{f"{asserted_at_column}__lte": as_of})
-
-    since = source.get("since")
-    if since:
-        predicate &= Q(**{f"{asserted_at_column}__gte": since})
-
-    return predicate
-
-
-def _clauses(definition: dict[str, Any] | None) -> list[dict[str, Any]]:
-    """A definition as its list of clauses.
-
-    The flat form is one clause; `any_of` is several, one level deep. **Every
-    reader of a definition must consume this** — the predicate
-    (`classification_filter`) and the vocabulary (`asserted_as_keys`) walking
-    the shape differently is exactly how a definition comes to match claims the
-    graph cannot see. The read side is permissive: when both `any_of` and flat
-    keys are present (refused at every write path, but definitions are JSON),
-    `any_of` wins whole, so both readers still agree and the failure mode is a
-    dead flat half, never divergence. Non-dict entries are skipped.
+    Every consumer of a definition goes through this: the predicates
+    (`classification_filter`, `trust_filter`) and the vocabulary
+    (`asserted_as_keys`) walking the shape differently is exactly how a
+    definition comes to match claims the graph cannot see. Non-dict entries are
+    skipped; the pre-RFC-0010 clause shape is not read (cleared by
+    `core/migrations/0017`).
     """
     if not definition:
         return []
-    any_of = definition.get("any_of")
-    if any_of is not None:
-        return [clause for clause in any_of if isinstance(clause, dict)]
-    return [definition]
-
-
-def _clause_words(clause: dict[str, Any]) -> list[str]:
-    """One clause's `asserted_as`, bare string accepted."""
-    asserted_as = clause.get("asserted_as")
-    if not asserted_as:
+    rules = definition.get("rules")
+    if not isinstance(rules, list):
         return []
-    if isinstance(asserted_as, str):
-        return [asserted_as]
-    return [str(key) for key in asserted_as]
+    return [rule for rule in rules if isinstance(rule, dict)]
 
 
-def metric_filter(selector: dict[str, Any] | None) -> Q:
-    """The predicate a metric must satisfy to be in a projection's scope.
+def _conditions(container: dict[str, Any]) -> list[dict[str, Any]]:
+    return [condition for condition in (container.get("when") or []) if isinstance(condition, dict)]
 
-    Belief-time bounds are ``as_of`` (upper) and ``since`` (lower), both on the
-    `asserted_at` column denormalized onto `Metric`; observation time is the
-    two-sided ``observed_window`` over `measured_at`.
+
+def _condition_q(condition: dict[str, Any], *, asserted_at_column: str) -> Q | None:
+    """One (field, operator, value) condition as a predicate, or None to skip it.
+
+    WORD is handled by the callers (`classification_filter` includes it,
+    `trust_filter` skips it), so it returns None here. An unknown field or
+    operator also returns None — read-side tolerance; the write path refuses
+    both.
     """
+    field = str(condition.get("field", ""))
+    operator = str(condition.get("operator", ""))
+    value = condition.get("value")
+
+    if field in ("WORD", "KIND"):
+        # Meta-conditions: WORD is the callers' business (`classification_filter`
+        # includes it, `trust_filter` skips it), KIND decides which rules apply
+        # at all (`rule_covers`) — neither is a database predicate.
+        return None
+
+    if field in _IDENTITY_COLUMNS:
+        column = _IDENTITY_COLUMNS[field]
+        values = [value] if isinstance(value, str) else list(value or [])
+        if not values:
+            return None
+        if operator in ("IS", "IN"):
+            return Q(**{f"{column}__in": values})
+        if operator == "NOT_IN":
+            negated = ~Q(**{f"{column}__in": values})
+            if field in _NULLABLE_IDENTITY_FIELDS:
+                # "Everyone except the bot" must keep claims with no action at
+                # all: SQL NOT IN swallows NULL rows, so say the null case out
+                # loud instead of inheriting it.
+                negated |= Q(**{f"{column}__isnull": True})
+            return negated
+        return None
+
+    if field == "ASSERTED_AT":
+        column = asserted_at_column
+    elif field == "MEASURED_AT":
+        column = "measured_at"
+    else:
+        return None
+
+    if operator == "BEFORE":
+        return Q(**{f"{column}__lte": value})
+    if operator == "SINCE":
+        return Q(**{f"{column}__gte": value})
+    return None
+
+
+def _rule_trust_q(rule: dict[str, Any], *, asserted_at_column: str, include_measured_at: bool = False) -> Q:
+    """One rule's who-and-when predicate: AND of `when` (WORD skipped), minus
+    any `unless` group (each group an AND of its conditions)."""
     predicate = Q()
-    if not selector:
-        return predicate
+    for condition in _conditions(rule):
+        if not include_measured_at and str(condition.get("field")) == "MEASURED_AT":
+            continue
+        compiled = _condition_q(condition, asserted_at_column=asserted_at_column)
+        if compiled is not None:
+            predicate &= compiled
 
-    # Structure identifiers, not category keys — a structure kind has no key.
-    category_keys = selector.get("category_keys")
-    if category_keys:
-        predicate &= Q(structure__identifier__in=category_keys)
-
-    predicate &= _assertion_predicate(selector, asserted_at_column="asserted_at")
-
-    observed_from, observed_to = _parse_window(selector.get("observed_window"))
-    if observed_from:
-        predicate &= Q(measured_at__gte=observed_from)
-    if observed_to:
-        predicate &= Q(measured_at__lte=observed_to)
+    for group in rule.get("unless") or []:
+        if not isinstance(group, dict):
+            continue
+        blocked = Q()
+        for condition in _conditions(group):
+            compiled = _condition_q(condition, asserted_at_column=asserted_at_column)
+            if compiled is not None:
+                blocked &= compiled
+        if blocked.children:
+            predicate &= ~blocked
 
     return predicate
 
 
-def asserted_as_keys(definition: dict[str, Any] | None) -> list[str]:
-    """The words a definition derives from — the union over its clauses.
+def _rule_words(rule: dict[str, Any]) -> list[str]:
+    """One rule's WORD-condition values, in order."""
+    words: list[str] = []
+    for condition in _conditions(rule):
+        if str(condition.get("field")) != "WORD":
+            continue
+        value = condition.get("value")
+        if isinstance(value, str):
+            words.append(value)
+        elif isinstance(value, list):
+            words.extend(str(entry) for entry in value)
+    return words
 
-    One place, because two read it — the predicate that matches claims, and
-    `term_ids_for`, which has to widen a graph's membership to cover them. Those
-    disagreeing would make a definition that matches claims the graph cannot see.
-    Everything downstream of the vocabulary — `CategoryAssertedTerm`, membership,
-    `refs_admitted_by`, `backfill_category`'s rebuild decision — reads the shape
-    only through here.
 
-    Accepts a bare string as well as a list, per clause. Definitions are
-    hand-written JSON, and one word is the common case. Order is clause order,
-    first occurrence wins.
+def trust_filter(definition: dict[str, Any] | None, *, kind: str, asserted_at_column: str = "assertion__asserted_at", include_measured_at: bool = False) -> Q:
+    """Whose claims of one **kind** count for things of this category.
+
+    ``kind`` is required (a `ClaimKind` value — RFC 0011): only the rules whose
+    KIND conditions do not exclude it apply, so "Peter decides what exists,
+    only the curator may merge" is two rules in one list. Within an applicable
+    rule the reading is the who-and-when one: WORD and KIND conditions are
+    skipped (a word says which claims *mean* the category; KIND said which
+    rules apply), `unless` groups subtract from their own rule.
+
+    `Q()`-collapse edges, decided once: **no applicable rule for this kind**
+    matches nothing — the explicit contradiction, never the collapsed `Q()`
+    (strict grants: a kind carved out of every rule was carved out on purpose);
+    an applicable rule with no who/when constraints matches everything. An
+    empty definition — a *primitive* category — trusts everybody for every
+    kind: the old unscoped behaviour, still the default.
     """
-    seen: dict[str, None] = {}
-    for clause in _clauses(definition):
-        for key in _clause_words(clause):
-            seen.setdefault(key, None)
-    return list(seen)
+    from graph_engine.input_models import rule_covers
 
-
-def definition_matches_every_word(definition: dict[str, Any] | None) -> bool:
-    """Whether some clause of this definition names no words at all.
-
-    Such a clause matches claims of *any* word (see `classification_filter`), so
-    a candidate narrowing keyed on `asserted_as_keys` would silently drop the
-    nodes it admits — the caller must skip the narrowing instead. This is the
-    read-side tolerance; every write path requires `asserted_as` per clause.
-    """
-    clauses = _clauses(definition)
-    return any(not _clause_words(clause) for clause in clauses)
-
-
-def classification_filter(definition: dict[str, Any] | None) -> Q:
-    """The predicate a classification claim must satisfy to mean a defined category.
-
-    The sibling of :func:`metric_filter`, and deliberately the same shape: a
-    category's definition and a graph's selector are the same kind of statement —
-    "which claims count" — asked about different tables. `metric_filter` asks it
-    of `Metric`, this asks it of `Link(kind=CLASSIFIES)` joined to its assertion.
-
-    A definition is a **union of clauses** (RFC 0007). Each clause binds its own
-    words, annotators and time bounds, and the definition matches a claim iff
-    *any* clause does — which is what makes "'Cell' means what Peter called Cell,
-    and what Karl called StemCell after Dec 5" one category::
-
-        {
-          "any_of": [
-            {"asserted_as": ["Cell"],     "assertion_filter": {"subjects": ["peter"]}},
-            {"asserted_as": ["StemCell"], "assertion_filter": {"subjects": ["karl"]},
-             "since": "2026-12-05T00:00:00Z"}
-          ]
-        }
-
-    The flat form is still accepted and means a single clause (every key
-    optional; an empty definition means the category is *primitive* and
-    membership is whatever was asserted)::
-
-        {
-          "asserted_as":      ["Pyramidal", "Interneuron"],   # which words were claimed
-          "assertion_filter": {"subjects": ["johannes"], "app_ids": [...], "action_names": [...]},
-          "as_of":            "2026-08-15T00:00:00Z",         # asserted_at upper bound
-          "since":            "2026-01-01T00:00:00Z"          # asserted_at lower bound
-        }
-
-    Flat keys and ``any_of`` together are refused at every write path; here on
-    the read side ``any_of`` wins whole (see `_clauses`). Clauses nest one level
-    only — a clause has no ``any_of``.
-
-    ``asserted_as`` takes **one word or several**, and several means *any of*
-    within the clause. A category is a rule over claims, and there is no reason
-    a view's "Neuron" should not be "anything claimed Pyramidal or Interneuron"
-    — that is ordinary ontology, and restricting it to a single word made a
-    defined category a rename rather than a definition. A bare string is still
-    accepted and means the obvious thing. What clauses add is *binding*: a
-    subject or a date scoped to one word rather than smeared across all of them
-    — the flat cross-product was the reason "Peter's Cells or Karl's late
-    StemCells" was inexpressible.
-
-    Note this is separate from the word a category *mints* claims under, which is
-    `Category.term` and is genuinely singular: creating an entity of this category
-    claims exactly one word. A category derives from many and asserts as one.
-
-    There is no `observed_window` counterpart: a classification is a claim about
-    a thing, not a measurement of it, so it has only belief time. `as_of`/`since`
-    filter `Assertion.asserted_at` through the join, where `metric_filter` can
-    use the column denormalized onto `Metric`.
-
-    Two edge cases are handled explicitly because Django collapses the empty
-    ``Q()`` in an OR (``Q() | Q(x)`` is ``Q(x)``, and a naive fold over zero
-    clauses returns the match-everything ``Q()``):
-
-    - ``any_of: []`` (refused at the write) reads as **matches nothing**.
-    - a clause with no constraints reads as **matches everything** the graph's
-      vocabulary can see — the generalization of a flat ``{"as_of": …}``-only
-      definition, which always meant every word.
-    """
     if not definition:
         return Q()
 
-    clauses = _clauses(definition)
-    if not clauses:
-        # An explicitly empty union matches nothing — never the collapsed Q().
+    applicable = [rule for rule in _rules(definition) if rule_covers(rule, kind)]
+    if not applicable:
         return Q(pk__in=[])
 
-    predicates = []
-    for clause in clauses:
-        predicate = Q()
-        words = _clause_words(clause)
-        if words:
-            predicate &= Q(term__key__in=words)
-        predicate &= _assertion_predicate(clause)
-        predicates.append(predicate)
-
+    predicates = [_rule_trust_q(rule, asserted_at_column=asserted_at_column, include_measured_at=include_measured_at) for rule in applicable]
     if any(not predicate.children for predicate in predicates):
-        # One unconstrained clause admits every claim; OR-ing it would silently
-        # vanish, so say it outright.
         return Q()
 
     combined = predicates[0]
@@ -264,23 +220,144 @@ def classification_filter(definition: dict[str, Any] | None) -> Q:
     return combined
 
 
-def claim_filter(selector: dict[str, Any] | None) -> Q:
-    """Whose existence claims a graph counts.
+def trust_predicate(definition: dict[str, Any] | None, *, kind: str) -> Q | None:
+    """`trust_filter`, spelled for `claims.standing`: ``None`` when the
+    definition constrains nobody for this kind, so an unscoped category takes
+    the `CurrentStanding` fast path instead of folding the log per row."""
+    predicate = trust_filter(definition, kind=kind)
+    return predicate if predicate.children else None
 
-    The third member of the family, alongside :func:`metric_filter` and
-    :func:`classification_filter` — the same "which claims count" question asked
-    of :class:`~evidence.models.Standing`. That symmetry is the point: whether a
-    node exists is contestable in exactly the way its category is, so a graph
-    scoped to one annotator gets that annotator's answer about what is there.
 
-    No ``observed_window``: a claim about whether a thing exists is not a
-    measurement of it, so it has belief time only. ``as_of`` (upper) and
-    ``since`` (lower) filter through the assertion, as `classification_filter`
-    does.
+def rule_metric_filter(rule: Any) -> Q:
+    """The predicate a metric must satisfy for one derived property (RFC 0009).
+
+    Compiles the rule's ``evidence`` — a plain conjunction of conditions in the
+    RFC 0010 language, MEASURED_AT included — with belief time on the
+    `asserted_at` column denormalized onto `Metric`. A rule with no evidence
+    constrains nothing here; the category's rules are the default, see
+    :func:`metric_scope`.
     """
-    if not selector:
+    conditions = getattr(rule, "evidence", None) if rule is not None else None
+    predicate = Q()
+    for condition in conditions or []:
+        stored = condition.to_stored() if hasattr(condition, "to_stored") else condition
+        compiled = _condition_q(stored, asserted_at_column="asserted_at")
+        if compiled is not None:
+            predicate &= compiled
+    return predicate
+
+
+def metric_scope(definition: dict[str, Any] | None, rule: Any) -> tuple[Q, Q | None]:
+    """(claim predicate, standing predicate) for the metrics one property folds.
+
+    **Replacement with a default, not intersection.** When the rule carries
+    ``evidence`` conditions, they *are* the property's metric rule — the
+    category's rules name who may say what exists and what it is called, and
+    the people measuring are usually a different population (pipelines,
+    instruments), so ANDing the two would routinely produce an empty fold. When
+    the rule says nothing, the category's rules apply to the metrics'
+    assertions too, and a primitive category folds everything.
+
+    The standing predicate follows the same source — whose retraction of a
+    metric counts is decided by whichever rule admitted the metric — but is
+    phrased over ``assertion__*`` paths (a `Standing` has no denormalized
+    `asserted_at`) and skips ``MEASURED_AT``: a position on a claim is not a
+    measurement.
+    """
+    conditions = getattr(rule, "evidence", None) if rule is not None else None
+    if conditions is not None:
+        claim = rule_metric_filter(rule)
+        standing = Q()
+        for condition in conditions:
+            stored = condition.to_stored() if hasattr(condition, "to_stored") else condition
+            if str(stored.get("field")) == "MEASURED_AT":
+                continue
+            compiled = _condition_q(stored, asserted_at_column="assertion__asserted_at")
+            if compiled is not None:
+                standing &= compiled
+        return claim, (standing if standing.children else None)
+
+    claim = trust_filter(definition, kind="MEASUREMENT", asserted_at_column="asserted_at", include_measured_at=True)
+    return claim, trust_predicate(definition, kind="MEASUREMENT")
+
+
+def asserted_as_keys(definition: dict[str, Any] | None) -> list[str]:
+    """The words a definition derives from — the union over its rules' WORD conditions.
+
+    One place, because two read it — the predicate that matches claims, and
+    `term_ids_for`, which has to widen a graph's membership to cover them. Those
+    disagreeing would make a definition that matches claims the graph cannot see.
+    Everything downstream of the vocabulary — `CategoryAssertedTerm`, membership,
+    `refs_admitted_by`, `backfill_category`'s rebuild decision — reads the shape
+    only through here. Order is rule order, first occurrence wins.
+
+    Every written rule carries a WORD condition (the write path refuses one
+    without), so there is no wordless case any more —
+    `definition_matches_every_word` went with the clause shape.
+    """
+    from graph_engine.input_models import rule_covers
+
+    seen: dict[str, None] = {}
+    for rule in _rules(definition):
+        if not rule_covers(rule, "CLASSIFICATION"):
+            # A SAMENESS- or EXISTENCE-only rule names no vocabulary (RFC 0011);
+            # the write path refuses WORD conditions on it anyway.
+            continue
+        for key in _rule_words(rule):
+            seen.setdefault(key, None)
+    return list(seen)
+
+
+def classification_filter(definition: dict[str, Any] | None) -> Q:
+    """The predicate a claim must satisfy to *mean* a defined category.
+
+    The whole-rule reading (RFC 0010): WORD conditions included, so this is the
+    one that decides which claims a definition admits. A definition matches a
+    claim iff **any rule** does; a rule matches when **all** its `when`
+    conditions hold and **no** `unless` group does. Applied to
+    `Link(kind=CLASSIFIES)` for node categories and to a relation or event
+    category's own link claims (RFC 0009) — always joined to the claim's
+    assertion.
+
+    An empty definition means the category is *primitive* — membership is
+    whatever was asserted — and matches everything its word can see. A stored
+    `rules: []` (unspellable at the write; read-side defense) matches nothing —
+    the explicit contradiction, never the collapsed ``Q()``.
+    """
+    from graph_engine.input_models import rule_covers
+
+    if not definition:
         return Q()
-    return _assertion_predicate(selector)
+
+    rules = [rule for rule in _rules(definition) if rule_covers(rule, "CLASSIFICATION")]
+    if not rules:
+        return Q(pk__in=[])
+
+    predicates = []
+    for rule in rules:
+        predicate = _rule_trust_q(rule, asserted_at_column="assertion__asserted_at")
+        words = _rule_words(rule)
+        if words:
+            predicate &= Q(term__key__in=words)
+        predicates.append(predicate)
+
+    if any(not predicate.children for predicate in predicates):
+        # A written rule always names words, so this is read-side defense for a
+        # hand-stored rule that names nothing: it admits every claim, and OR-ing
+        # it would silently vanish, so say it outright.
+        return Q()
+
+    combined = predicates[0]
+    for predicate in predicates[1:]:
+        combined |= predicate
+    return combined
+
+
+
+# `claim_filter` / `view_predicate` are gone with `Graph.selector` (RFC 0009).
+# Whose claims and standings count is the *category's* rule now: use
+# `trust_filter` / `trust_predicate` with the category's definition, and
+# `classification_filter` where the words matter too.
 
 
 def term_ids_for(graph: Any) -> set[Any]:
@@ -465,6 +542,21 @@ def graph_ids_for_instance_ids(organization: Any, refs: Any) -> list[tuple[str, 
     return pairs
 
 
+def classification_claims(graph: Any) -> QuerySet[Any]:
+    """Every classification claim in this graph's vocabulary, standing *not*
+    folded — the base a per-category fold narrows first
+    (`projector.resolve_categories` folds each defined category's matches under
+    that category's own `trust_predicate`)."""
+    return (
+        evidence_models.Link.objects.for_organization(graph.organization)
+        .filter(
+            kind=evidence_models.Link.Kind.CLASSIFIES,
+            term__in=term_ids_for(graph),
+        )
+        .select_related("term", "assertion")
+    )
+
+
 def classification_claims_for(graph: Any) -> QuerySet[Any]:
     """Every live classification claim stated in this graph's vocabulary.
 
@@ -479,6 +571,12 @@ def classification_claims_for(graph: Any) -> QuerySet[Any]:
     rather than a delete, so nothing about the row itself says it is gone; the
     anti-join against `CurrentStanding` is the only thing that does.
     """
+    # Standing folds organization-grain here (the fast path): which claims mean
+    # a *defined* category — and whose retractions of them count — is that
+    # category's own question, folded under its clauses where the definition is
+    # applied (`projector.resolve_categories`). This queryset serves the
+    # primitive fallback and candidate narrowing, where the organization's
+    # answer is the right one.
     return claims_module.standing(
         evidence_models.Link.objects.for_organization(graph.organization).filter(
             kind=evidence_models.Link.Kind.CLASSIFIES,
@@ -489,15 +587,18 @@ def classification_claims_for(graph: Any) -> QuerySet[Any]:
 
 
 def metrics_for(graph: Any) -> QuerySet[Any]:
-    """Every active metric this graph projects, in observation order."""
+    """Every active metric in this graph's organization, in observation order.
+
+    Organization grain: which metrics one *property* counts is that property's
+    rule (`metric_scope`), applied where the fold happens."""
     standing = claims_module.standing(
-        evidence_models.Metric.objects.for_organization(graph.organization).filter(metric_filter(graph.selector)),
+        evidence_models.Metric.objects.for_organization(graph.organization),
         "metric",
     )
     return standing.select_related("structure", "structure__kind", "assertion").order_by("measured_at")
 
 
-def informs_links_for(graph: Any) -> QuerySet[Any]:
+def informs_links_for(graph: Any, *, definition: dict[str, Any] | None = None) -> QuerySet[Any]:
     """Every active INFORMS link whose target is a node of this graph.
 
     Membership comes from :func:`instances_for`, not from a prefix on the ref.
@@ -505,13 +606,25 @@ def informs_links_for(graph: Any) -> QuerySet[Any]:
     `_attach_supporting_evidence` writes against a `Link` pk — because an edge
     ref is not among this graph's node ids. The old prefix test excluded them
     by accident; this excludes them on purpose.
+
+    Both halves of the trust apply, per category (RFC 0009): the link **claim**
+    itself must be by somebody the target node's category trusts — whose claim
+    *connects* evidence to a node is that node's rule, so an untrusted annotator
+    cannot route their structures under a trusted node — and the link's
+    **standing** folds under the same predicate. With no ``definition`` (the
+    dirty-tracking fan-out, which runs before any category is in scope, and
+    every primitive category) both halves are organization grain.
     """
+    definition_trust = trust_filter(definition, kind="EVIDENCE")
     return claims_module.standing(
-        evidence_models.Link.objects.for_organization(graph.organization).filter(
+        evidence_models.Link.objects.for_organization(graph.organization)
+        .filter(
             kind=evidence_models.Link.Kind.INFORMS,
             target_ref__in=instance_refs_for(graph),
-        ),
+        )
+        .filter(definition_trust),
         "link",
+        predicate=trust_predicate(definition, kind="EVIDENCE"),
     )
 
 

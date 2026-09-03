@@ -166,8 +166,13 @@ def _derived_properties(category: core_models.Category) -> list[Any]:
     return [prop for prop in (category.defined_properties or []) if is_derived(prop)]
 
 
-def _structure_ids_informing(graph: core_models.Graph, claim_ref: str) -> list[Any]:
+def _structure_ids_informing(graph: core_models.Graph, claim_ref: str, definition: dict[str, Any] | None = None) -> list[Any]:
     """The structure primary keys whose measurements reach this entity.
+
+    ``definition`` is the node's category rule (RFC 0009): whose INFORMS claims
+    may route evidence under this node is that category's question, so the fold
+    paths pass it and the routing folds under its clauses. Without one — the
+    dirty fan-out, a primitive category — the routing is organization grain.
 
     Parsed to real UUIDs rather than left as strings: `source_ref` is an opaque
     CharField, and Postgres will not compare one against a `uuid` column. The
@@ -177,7 +182,7 @@ def _structure_ids_informing(graph: core_models.Graph, claim_ref: str) -> list[A
     """
     import uuid as uuid_module
 
-    refs = selector_module.informs_links_for(graph).filter(target_ref=claim_ref).values_list("source_ref", flat=True)
+    refs = selector_module.informs_links_for(graph, definition=definition).filter(target_ref=claim_ref).values_list("source_ref", flat=True)
     return [uuid_module.UUID(str(ref)) for ref in refs]
 
 
@@ -188,6 +193,7 @@ def _priority_scoped_value(
     key: str,
     value_kinds: Iterable[str],
     prop: Any,
+    category: core_models.Category,
 ) -> Any:
     """The latest value from the most-trusted source that has one.
 
@@ -210,21 +216,27 @@ def _priority_scoped_value(
     ordering = list(getattr(rule, "tool_priority", []) if by_tool else getattr(rule, "subject_priority", []))
     field = "assertion__app_id" if by_tool else "assertion__subject"
 
-    structure_ids = _structure_ids_informing(graph, claim_ref)
+    structure_ids = _structure_ids_informing(graph, claim_ref, category.definition)
     if not structure_ids:
         return None
 
     # `value_kind__in` rather than the state grain: this path never reads State,
     # so it has to apply the same narrowing itself or it would rank a STRING
-    # measurement against a FLOAT one under the same key.
+    # measurement against a FLOAT one under the same key. The metric scope is
+    # the property's own rule — `rule.evidence` when present, else the owning
+    # category's clauses (RFC 0009) — so an excluded source cannot win even
+    # when `subject_priority` ranks it first.
+    metric_q, standing_predicate = selector_module.metric_scope(category.definition, rule)
     base = claims_module.standing(
         evidence_models.Metric.objects.for_organization(graph.organization).filter(
+            metric_q,
             structure_id__in=structure_ids,
             structure__kind=source_kind,
             key=key,
             value_kind__in=list(value_kinds),
         ),
         "metric",
+        predicate=standing_predicate,
     )
 
     for source in ordering:
@@ -358,7 +370,7 @@ def _property_statistics(
         if value_kinds is None:
             continue
 
-        state = _scoped_state(graph, claim_ref, source_kind, key, value_kinds) if graph.selector else state_module.state_for(graph.organization, claim_ref, source_kind, key, value_kinds)
+        state = _scoped_state(graph, claim_ref, source_kind, key, value_kinds, category, prop) if _rule_constrains(category, prop) else state_module.state_for(graph.organization, claim_ref, source_kind, key, value_kinds)
         if state is None:
             continue
 
@@ -428,9 +440,9 @@ def derive_properties(
             continue
 
         if prop.derivation in (DerivationType.PRIORITY_LATEST, DerivationType.LATEST_ASSERTION_TOOL):
-            value = _priority_scoped_value(graph, claim_ref, source_kind, key, value_kinds, prop)
+            value = _priority_scoped_value(graph, claim_ref, source_kind, key, value_kinds, prop, category)
         else:
-            state = _scoped_state(graph, claim_ref, source_kind, key, value_kinds) if graph.selector else state_module.state_for(organization, claim_ref, source_kind, key, value_kinds)
+            state = _scoped_state(graph, claim_ref, source_kind, key, value_kinds, category, prop) if _rule_constrains(category, prop) else state_module.state_for(organization, claim_ref, source_kind, key, value_kinds)
 
             aggregation = rule.aggregation if rule and rule.aggregation else None
             if prop.derivation == DerivationType.LATEST and aggregation is None:
@@ -446,39 +458,59 @@ def derive_properties(
     return values
 
 
+def _rule_constrains(category: core_models.Category, prop: Any) -> bool:
+    """Whether this property's fold must bypass the cached org-grain vector.
+
+    True when the property carries its own `rule.evidence`, or the owning
+    category's clauses constrain trust. A primitive category with a plain rule
+    reads the stored `State` row — the fast path, and the common case. Without
+    this, a rule filter on an unconstrained category would be silently inert —
+    the class of silence this codebase refuses.
+    """
+    if getattr(prop.rule, "evidence", None) is not None:
+        return True
+    return selector_module.trust_predicate(category.definition, kind="MEASUREMENT") is not None
+
+
 def _scoped_state(
     graph: core_models.Graph,
     claim_ref: str,
     source_kind: Any,
     key: str,
     value_kinds: Iterable[str],
+    category: core_models.Category,
+    prop: Any,
 ) -> Any:
-    """Fold this entity's metrics under the graph's selector, without storing it.
+    """Fold this entity's metrics under the property's rule, without storing it.
 
     The read-time half of the decision that `State` is organization grain. The
-    stored vector counts every live metric, which is the right answer for a graph
-    that counts everything — the normal case, and the only one in production,
-    since nothing writes `Graph.selector`. A graph that counts less cannot share
-    that row, and storing a second one per view is what would put a graph
-    foreign key into `evidence/` — the one thing that app may not grow.
+    stored vector counts every live metric, which is the right answer when
+    nothing narrows — a primitive category with no `rule.evidence`, the common
+    case. A property that counts less cannot share that row, and storing a
+    second one per rule is what would put a graph foreign key into `evidence/`
+    — the one thing that app may not grow.
 
     So it pays for the narrowing on read instead: the metrics directly, folded
-    into an unsaved vector. The same trade `_priority_scoped_value` already
-    makes, and for the same reason.
+    into an unsaved vector, under `metric_scope(category.definition, rule)` —
+    the property's own evidence filter when it has one, the category's clauses
+    otherwise (RFC 0009). The same trade `_priority_scoped_value` makes.
     """
-    structure_ids = _structure_ids_informing(graph, claim_ref)
+    rule = prop.rule
+    structure_ids = _structure_ids_informing(graph, claim_ref, category.definition)
     if not structure_ids:
         return None
 
+    metric_q, standing_predicate = selector_module.metric_scope(category.definition, rule)
     metrics = claims_module.standing(
         evidence_models.Metric.objects.for_organization(graph.organization).filter(
-            selector_module.metric_filter(graph.selector),
+            metric_q,
             structure_id__in=structure_ids,
             structure__kind=source_kind,
             key=key,
             value_kind__in=list(value_kinds),
         ),
         "metric",
+        predicate=standing_predicate,
     )
 
     # `value_kind` is set only to keep the unsaved row well-formed, and it is
@@ -497,7 +529,7 @@ def _scoped_state(
     return state_module.fold(metrics, vector)
 
 
-def _observation_window(graph: core_models.Graph, claim_ref: str) -> dict[str, Any]:
+def _observation_window(graph: core_models.Graph, claim_ref: str, category: core_models.Category) -> dict[str, Any]:
     """When the evidence behind this node was observed.
 
     `valid_from` and `valid_to` are read by six GraphQL fields that have always
@@ -510,13 +542,25 @@ def _observation_window(graph: core_models.Graph, claim_ref: str) -> dict[str, A
 
     from evidence import models as evidence_models
 
-    structure_ids = _structure_ids_informing(graph, claim_ref)
+    structure_ids = _structure_ids_informing(graph, claim_ref, category.definition)
     if not structure_ids:
         return {"valid_from": None, "valid_to": None}
 
+    # Under the category's clauses, like every other metric read (RFC 0009): a
+    # window stretched by a measurement whose assertion the node's category
+    # does not trust was the same leak `_priority_scoped_value` had. This is
+    # node-grain, so it takes the category default and deliberately **not** any
+    # property's `rule.evidence` — the per-property windows are the
+    # `__stat__X__from/to` statistics, which inherit the rule in
+    # `_property_statistics`.
+    trust = selector_module.trust_filter(category.definition, kind="MEASUREMENT", asserted_at_column="asserted_at", include_measured_at=True)
     window = claims_module.standing(
-        evidence_models.Metric.objects.for_organization(graph.organization).filter(structure_id__in=structure_ids),
+        evidence_models.Metric.objects.for_organization(graph.organization).filter(
+            trust,
+            structure_id__in=structure_ids,
+        ),
         "metric",
+        predicate=selector_module.trust_predicate(category.definition, kind="MEASUREMENT"),
     ).aggregate(earliest=Min("measured_at"), latest=Max("measured_at"))
 
     return {
@@ -567,7 +611,7 @@ def project(
         # all of them.
         values = derive_properties(graph, claim_ref, category)
         values.update(_property_statistics(graph, claim_ref, category))
-        values.update(_observation_window(graph, claim_ref))
+        values.update(_observation_window(graph, claim_ref, category))
         values["__schema_version"] = schema_version
         # No `__last_derived` any more. It was a wall-clock millisecond on every
         # vertex — the one projected value `reproject` could not reproduce, so the
@@ -622,29 +666,62 @@ def categories_by_term(graph: core_models.Graph) -> dict[Any, Any]:
     # category with no term declares no word, so nothing can ever claim it — and
     # keying a dict on `None` would quietly make one such category the answer for
     # every unnamed link.
-    return {category.term_id: category for category in core_models.Category.objects.filter(graph=graph, term_id__isnull=False)}
+    categories = list(core_models.Category.objects.filter(graph=graph, term_id__isnull=False))
+    by_term = {category.term_id: category for category in categories}
+
+    # The derived half (RFC 0009): a defined relation or event category may
+    # admit claims stated in *other* words (its clauses' `asserted_as`), and an
+    # edge drawn from such a claim still needs this view's label. Resolved by
+    # (key, kind of the defining category), declared categories winning; a word
+    # two definitions of the same kind both derive from is left unmapped — the
+    # same one-category-per-claim refusal `resolve_categories` makes for nodes.
+    from evidence import models as term_models
+    from evidence import selector as selector_module
+
+    derived_keys: dict[tuple[str, str], list[Any]] = {}
+    for category in categories:
+        if not category.definition:
+            continue
+        for key in selector_module.asserted_as_keys(category.definition):
+            derived_keys.setdefault((key, str(category.kind)), []).append(category)
+
+    if derived_keys:
+        wanted = term_models.Term.objects.for_organization(graph.organization).filter(key__in={key for key, _ in derived_keys})
+        for term_id, key, kind in wanted.values_list("id", "key", "kind"):
+            if term_id in by_term:
+                continue
+            candidates = derived_keys.get((str(key), str(kind)), [])
+            if len(candidates) == 1:
+                by_term[term_id] = candidates[0]
+            elif len(candidates) > 1:
+                logger.warning("word %r (%s) is derived from by %d categories in graph #%s; claims naming it draw under none of them.", key, kind, len(candidates), graph.pk)
+
+    return by_term
 
 
 def active_relation_links(graph: core_models.Graph) -> list[evidence_models.Link]:
     """Every live relation assertion this graph projects.
 
-    Scoped by the word claimed rather than by a prefix on the source ref: a
-    relation names one of the organization's terms, and this graph declares a
-    category for some of them.
-
-    Filtered on the cached `status` rather than through the lifecycle log:
-    `Link` caches its own status (`writer.archive` writes both in one
-    transaction), so unlike nodes there is no separate log to consult.
+    Scoped **per relation category** (RFC 0009): each category's `definition`
+    is its complete rule — which claims (by word, annotator, app, window) draw
+    its edges, and whose **standings** count for them, so a retraction by
+    somebody a category does not trust does not take its edge. A primitive
+    relation category draws any claim naming its word, standings organization
+    grain — the old behaviour. `__assertion_count` follows for free: it counts
+    the claims these querysets return.
     """
-    return list(
-        claims_module.standing(
-            evidence_models.Link.objects.for_organization(graph.organization).filter(
-                kind=evidence_models.Link.Kind.RELATION,
-                term__in=selector_module.term_ids_for(graph),
-            ),
-            "link",
-        ).select_related("term")
-    )
+    base = evidence_models.Link.objects.for_organization(graph.organization).filter(kind=evidence_models.Link.Kind.RELATION)
+    links: dict[Any, evidence_models.Link] = {}
+    for category in core_models.RelationCategory.objects.filter(graph=graph, term_id__isnull=False):
+        if category.definition:
+            claims = base.filter(selector_module.classification_filter(category.definition), term__kind=str(category.kind))
+            predicate = selector_module.trust_predicate(category.definition, kind="EXISTENCE")
+        else:
+            claims = base.filter(term_id=category.term_id)
+            predicate = None
+        for link in claims_module.standing(claims, "link", predicate=predicate).select_related("term"):
+            links.setdefault(link.pk, link)
+    return list(links.values())
 
 
 def project_edges(
@@ -728,10 +805,12 @@ def resolve_categories(graph: core_models.Graph, nodes: list[Any]) -> tuple[dict
     Three refusals, all deliberate:
 
     - **The claims say it does not exist.** Somebody retracted it, and nobody
-      this graph counts has attested it since. A node the evidence says is not
-      there is not in the view — there is no such thing as a node that is present
-      but flagged. Note this is folded under *this graph's* selector, so a
-      retraction by somebody a graph does not listen to does not remove it there.
+      this node's category counts has attested it since. A node the evidence
+      says is not there is not in the view — there is no such thing as a node
+      that is present but flagged. Since RFC 0009 this folds under the *resolved
+      category's* clauses — the category is resolved first, then its trust rule
+      decides whose retraction counts — so a retraction by somebody a category
+      does not listen to does not remove its nodes here.
     - **No definition matches, and the node's own claims name no primitive
       category this graph declares** — the node is not in the view. A graph is a
       selection; a node satisfying nothing in it does not belong to it. The caller
@@ -756,25 +835,11 @@ def resolve_categories(graph: core_models.Graph, nodes: list[Any]) -> tuple[dict
     defined = [category for category in categories if category.definition]
     by_term = {category.term_id: category for category in categories}
 
-    # Existence first, and in bulk. Asked once for the whole batch rather than
-    # once per node, for the same reason the definitions are evaluated once: a
-    # rebuild resolves every node in the graph, and per-node would be N queries
-    # to answer one question.
-    retracted = claims_module.retracted_ids(
-        graph.organization,
-        "node",
-        [str(node.ref) for node in nodes],
-        selector_module.claim_filter(graph.selector),
-    )
-
-    # Built once and reused below. `classification_claims_for` is not free — it
-    # resolves the graph's whole vocabulary first, which is two queries of its own
-    # — and it used to be called again *inside* the definition loop, so a graph
-    # with a dozen defined categories paid for its vocabulary a dozen times to
-    # answer one question. A queryset is lazy, so reusing the object costs
-    # nothing; each `.filter()` below still issues its own query, which is the
-    # part that genuinely has to happen per definition.
-    standing_claims = selector_module.classification_claims_for(graph)
+    # The unfolded claim base, built once. A defined category folds the claims
+    # *and their standings* under its own clauses; the primitive fallback folds
+    # standing organization-grain — the old unscoped behaviour.
+    claim_base = selector_module.classification_claims(graph)
+    standing_claims = claims_module.standing(claim_base, "link")
 
     claims_by_ref: dict[str, list[Any]] = {}
     for claim in standing_claims:
@@ -788,10 +853,16 @@ def resolve_categories(graph: core_models.Graph, nodes: list[Any]) -> tuple[dict
     # so "anything claimed Mitosis" on an *entity* category means the entity word
     # Mitosis, not the natural-event word that happens to share the key — matching
     # on the key alone let an entity definition admit events.
+    # Standing folds under *this category's* trust (RFC 0009): a classification
+    # retracted by somebody the category does not count still admits here.
     matched_by_definition: dict[Any, set[str]] = {}
     for category in defined:
-        refs = set(standing_claims.filter(selector_module.classification_filter(category.definition), term__kind=str(category.kind)).values_list("source_ref", flat=True))
-        matched_by_definition[category.pk] = {str(ref) for ref in refs}
+        matched = claims_module.standing(
+            claim_base.filter(selector_module.classification_filter(category.definition), term__kind=str(category.kind)),
+            "link",
+            predicate=selector_module.trust_predicate(category.definition, kind="CLASSIFICATION"),
+        )
+        matched_by_definition[category.pk] = {str(ref) for ref in matched.values_list("source_ref", flat=True)}
 
     by_pk = {category.pk: category for category in categories}
     resolved: dict[str, Any] = {}
@@ -799,10 +870,6 @@ def resolve_categories(graph: core_models.Graph, nodes: list[Any]) -> tuple[dict
 
     for node in nodes:
         ref = str(node.ref)
-
-        if ref in retracted:
-            skipped[ref] = "the claims this graph counts say it does not exist"
-            continue
 
         matches = [by_pk[pk] for pk, refs in matched_by_definition.items() if ref in refs]
 
@@ -836,6 +903,26 @@ def resolve_categories(graph: core_models.Graph, nodes: list[Any]) -> tuple[dict
 
         skipped[ref] = "no category in this graph admits it: every term it was asserted as is defined, and none of those definitions match"
 
+    # Existence last, per resolved category, in bulk per category (RFC 0009):
+    # the category is what says whose retractions count for its nodes, so it
+    # has to be known before the fold. One query per category rather than per
+    # node — a rebuild resolves every node in the graph.
+    refs_by_category: dict[Any, list[str]] = {}
+    for ref, category in resolved.items():
+        refs_by_category.setdefault(category.pk, []).append(ref)
+
+    for category_pk, refs in refs_by_category.items():
+        category = by_pk[category_pk]
+        retracted = claims_module.retracted_ids(
+            graph.organization,
+            "node",
+            refs,
+            selector_module.trust_filter(category.definition, kind="EXISTENCE"),
+        )
+        for ref in retracted:
+            resolved.pop(ref, None)
+            skipped[ref] = "the claims this node's category counts say it does not exist"
+
     return resolved, skipped
 
 
@@ -862,12 +949,10 @@ def refs_admitted_by(category: core_models.Category) -> set[str]:
     graph = category.graph
     standing_claims = selector_module.classification_claims_for(graph)
 
+    # Every written rule names its words (RFC 0010 refuses one that does not),
+    # so the wordless-matches-everything branch is gone with the clause shape.
     asserted_as = selector_module.asserted_as_keys(category.definition) if category.definition else []
-    if category.definition and selector_module.definition_matches_every_word(category.definition):
-        # A clause with no words matches claims of any word — narrowing by the
-        # other clauses' words would silently drop what it admits.
-        claimed = standing_claims
-    elif asserted_as:
+    if asserted_as:
         claimed = standing_claims.filter(term__key__in=asserted_as)
     else:
         claimed = standing_claims.filter(term_id=category.term_id)
@@ -959,18 +1044,25 @@ def participation_key(link: evidence_models.Link) -> tuple[str, str, str, Any]:
 def active_participation_links(graph: core_models.Graph) -> list[evidence_models.Link]:
     """Every live participation claim this graph projects.
 
-    Scoped by the event category the claim names, for the same reason
-    :func:`active_relation_links` is.
+    Scoped **per event category** (RFC 0009), for the same reason
+    :func:`active_relation_links` is: the event category's `definition` governs
+    which participation claims draw its edges and whose standings count for
+    them. The two lanes (this and `_reproject_participation`) share their
+    grouping keys and must not disagree about which claims exist.
     """
-    return list(
-        claims_module.standing(
-            evidence_models.Link.objects.for_organization(graph.organization).filter(
-                kind__in=PARTICIPATION_KINDS,
-                term__in=selector_module.term_ids_for(graph),
-            ),
-            "link",
-        ).select_related("term")
-    )
+    base = evidence_models.Link.objects.for_organization(graph.organization).filter(kind__in=PARTICIPATION_KINDS)
+    event_categories = list(core_models.NaturalEventCategory.objects.filter(graph=graph, term_id__isnull=False)) + list(core_models.ProtocolEventCategory.objects.filter(graph=graph, term_id__isnull=False))
+    links: dict[Any, evidence_models.Link] = {}
+    for category in event_categories:
+        if category.definition:
+            claims = base.filter(selector_module.classification_filter(category.definition), term__kind=str(category.kind))
+            predicate = selector_module.trust_predicate(category.definition, kind="EXISTENCE")
+        else:
+            claims = base.filter(term_id=category.term_id)
+            predicate = None
+        for link in claims_module.standing(claims, "link", predicate=predicate).select_related("term"):
+            links.setdefault(link.pk, link)
+    return list(links.values())
 
 
 def project_participation(
@@ -1350,15 +1442,15 @@ def refold_state(organization: Any) -> int:
     **Organization-wide, and no selector.** Two things were wrong with the
     per-graph version, and they were the same thing twice.
 
-    It applied `graph.selector` to the metrics while `state.merge` — the
+    It applied the view's scope to the metrics while `state.merge` — the
     incremental path — did not, so a rebuild and an ingest produced different
     rows from the same evidence. Worse, `recompute` did not apply it either and
     ran lazily on any row a retraction marked stale, so one retraction after a
     rebuild silently re-admitted out-of-scope metrics into a row that had just
     been made correct. State is organization grain now and nothing folds under a
-    selector, so there is no longer anything for the three writers to disagree
-    about. Which metrics a *view* counts is answered at read time, in
-    :func:`derive_properties`.
+    view-level scope, so there is no longer anything for the three writers to
+    disagree about. Which metrics a *property* counts is answered at read time,
+    in :func:`derive_properties` via `metric_scope` (RFC 0009).
 
     And it scoped the rows by `informs_links_for(graph)`, which only matches
     nodes — so state keyed on an *edge* (`_attach_supporting_evidence` keys those

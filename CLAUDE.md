@@ -74,6 +74,11 @@ evidence/provenance model: [`docs/BIOLOGIST.md`](docs/BIOLOGIST.md). When a cate
 properties change and every vertex it draws goes stale — what redraws them, in-request versus
 `manage.py rematerialize`: [`docs/REMATERIALIZATION.md`](docs/REMATERIALIZATION.md).
 
+How a category's rules decide which evidence counts — the reference for
+`Category.definition` and `rule.evidence`: [`docs/RULES.md`](docs/RULES.md). One full schema walked
+through, and the ordering that matters — claims name words and know no graph; a graph is a view
+that draws what its categories admit: [`docs/EXAMPLE.md`](docs/EXAMPLE.md).
+
 Design questions live in [`docs/rfcs/`](docs/rfcs/README.md). Check the **status line** before
 acting on one. While it is open, the RFC proposes no code change and a defect it names is
 deliberately left in the code, because it is the subject being decided — don't "fix" one as
@@ -99,7 +104,7 @@ renames that fixed that are in `evidence/migrations/0008_instance_and_standing.p
 | `Standing` | evidence | somebody's **position** on whether a claim still holds (`stands=True/False`) | `evidence.Standing` |
 | `CurrentStanding` | evidence (cache) | the folded answer. No row for instances — their standing is per view | `evidence.CurrentStanding` |
 | `Term` | evidence | a **word** the organization uses. What a claim names | `evidence.Term` |
-| `Graph` | schema | a **view** over the organization's claims, with a selector saying which ones count | `core.Graph` |
+| `Graph` | schema | a **view** over the organization's claims. No selector (RFC 0009): whose claims count is each *category's* rule | `core.Graph` |
 | `Category` | schema | one **view's rule** for a word: `age_name`, `definition`, layout. `Category.term` is the join to evidence | `core.Category` |
 | vertex / edge (drawn) | projection | what a view **draws**. Entirely rebuildable by `manage.py reproject`; never a source of truth | `graph_engine.models.ProjectionVertex` / `ProjectionEdge` |
 | drawing | projection | how one view **draws** a claim: a vertex or an edge, and the category it drew it under | `graph_engine.results.NodeDrawing` / `EdgeDrawing` |
@@ -195,7 +200,7 @@ The load-bearing facts:
   carries no category and no label: a claim names a **word** (`term`), and what a view makes of that
   word lives in its drawing. **There is no folded `stands` on either**: whether an instance exists
   has no organization-wide answer — `CurrentStanding` deliberately holds no row for one, because a
-  graph's selector decides whose claims it counts — so the positions are reported as
+  node's category decides whose claims it counts (RFC 0009) — so the positions are reported as
   `standings` (newest first, empty meaning nobody disputed it) and the per-view answer is
   `drawings`. `Instance` and `Link` are also
   readable by id (`instance(id:)`, `link(id:)`), and `Link.source`/`target` resolve through the
@@ -210,8 +215,9 @@ The load-bearing facts:
 - **The graph carries no lifecycle state**, and neither does the API. If the claims do not say a
   node exists, it has no vertex — not a vertex with a flag, and not a `lifecycle` field either. Retracting is a `Standing(stands=False)` and removes the drawing
   (`projector.unproject`; edges go by FK cascade — the `DETACH`); `attest*` writes `Standing(stands=True)` and redraws it. There is
-  no "unarchive": existence is evidence, and two people may disagree about it, with each graph's
-  selector deciding whose word it counts.
+  no "unarchive": existence is evidence, and two people may disagree about it, with each node's
+  *category clauses* deciding whose word counts (RFC 0009: `resolve_categories` resolves the
+  category first, then folds retraction under its `trust_filter`).
 - **Identity is a bare uuid.** `Node.id` *is* the identity — no `{age_name}:` prefix, and never the
   drawing's vertex id (a `ProjectionVertex` pk), which is reassigned by every reproject. GraphQL node ids are that uuid.
   Graph membership is decided in exactly two functions, `evidence.selector.instances_for` and
@@ -235,11 +241,38 @@ The load-bearing facts:
   --check` is the backstop. Everything the panel reports — `evidence/panel.py`, surfaced as
   `Entity.labels/sameAs/connections/component` and `Structure.metrics/informs` — is unioned over the
   **component**, never over one instance. The projection still draws one vertex per `Instance`; see
-  `docs/LOG.md`.
-- **`State` is organization grain**, and nothing folds under a selector — `merge`, `recompute` and
-  `refold_state` all count every live metric. Which of them a *view* counts is applied on read in
-  `projector._scoped_state`. The three used to disagree, so ingest and replay produced different
-  numbers from the same evidence.
+  `docs/LOG.md`. The *cache* is organization grain; a **scoped view's** component is a read-time
+  walk of the sameness claims it counts (`identity.component_refs_for_view`, threaded through the
+  panel and the `(graph_handle, ref)` loader keys — RFC 0008).
+- **`State` is organization grain**, and nothing folds under a graph-level scope — `merge`,
+  `recompute` and `refold_state` all count every live metric. Which metrics a *property* counts
+  is applied on read by `metric_scope(category.definition, rule)` in `projector._scoped_state`:
+  the property's own `rule.evidence` when present (replacement, not intersection — measurement
+  producers and classification annotators are different populations), else the owning category's
+  clauses, else everything. **Trust is the category's rule (RFC 0009)**: there is no
+  `Graph.selector` — a category's `definition` clauses govern its classification, its nodes'
+  existence standings, its edges' claims *and* standings (relations per `RelationCategory`,
+  participations per event category, both lanes dispatching through `categories_by_term`, which
+  also maps derived words), and INFORMS routing. The panel and sameness are organization grain
+  again (deliberate 0008 rollback; `component_refs_for_view` is gone). `evidence/selector.py` is
+  still the single home: `classification_filter` (whole rule, WORD included),
+  `trust_filter`/`trust_predicate` (who-and-when, WORD skipped), `rule_metric_filter`,
+  `metric_scope`; `_rules` is the only walker of the stored shape. **The shape is a rule
+  system (RFC 0010)**: `{rules: [{when: [(field, operator, value), …], unless: [{when: […]}]}]}`
+  — rules = any, when = all, unless subtracts; fields WORD/SUBJECT/APP/ACTION/KIND/ASSERTED_AT
+  (+ MEASURED_AT in `rule.evidence` and in MEASUREMENT-only rules), operators
+  IS/IN/NOT_IN/BEFORE/SINCE; a rule covering CLASSIFICATION names its WORD(s). **KIND (RFC
+  0011)** scopes a rule to what a claim *says* — CLASSIFICATION/EXISTENCE/SAMENESS/EVIDENCE/
+  MEASUREMENT; a rule covers every kind its KIND conditions do not exclude (`rule_covers`, the
+  one coverage implementation), `trust_filter(kind=…)` is a required keyword at every call site,
+  an uncovered kind counts **nothing**. Sameness is view-scoped again — rule-driven and **within
+  a category, across words** (`identity.view_sameness_links`; no cross-category merges; the
+  org-grain cache is the no-view answer). Tests build the shape via `tests/rules.py`.
+- **Schema changes are RBAC (RFC 0013).** `Graph.rules` (per-action allow/deny) is gone; every
+  category create/update/delete goes through `schema_graph`/`schema_scoped`
+  (`api/mutations/_scoped.py`) → `Graph.validate_definition_editable`: owner, organization admin
+  (`Membership.roles` contains "admin"), or superuser. Reads and instance writes stay
+  organization-scoped.
 - **The projection seam** is `graph_engine/projection/protocol.py::Projector` — the writer half
   (`draw_node`, `draw_edge`, `write_properties`, `erase_nodes`, namespaces) and the reader half
   (`drawn_nodes`, `drawn_edge`, `list_drawn`, `render_table`), phrased in refs/labels/dicts and

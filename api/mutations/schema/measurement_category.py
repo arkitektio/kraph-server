@@ -8,7 +8,7 @@ from core import models
 from datalayer import models as dl_models
 from graph_engine import input_models, materialize
 from ._guards import delete_or_explain, refuse_edge_properties
-from .._scoped import accessible_graph, scoped
+from .._scoped import accessible_graph, schema_graph, schema_scoped, scoped
 
 
 def create_measurement_category(
@@ -23,7 +23,7 @@ def create_measurement_category(
     # from its `Link` row. See `refuse_edge_properties`.
     refuse_edge_properties(model.key, getattr(model, "properties", None))
 
-    graph = accessible_graph(info, model.graph)
+    graph = schema_graph(info, model.graph)
 
     ent = models.MeasurementCategory.objects.create_from_measurement_definition(
         graph,
@@ -37,7 +37,7 @@ def update_measurement_category(info: Info, input: inputs.UpdateMeasurementCateg
     """GraphQL mutation wrapper for updating measurement categories."""
     model = input.to_pydantic()
 
-    item = scoped(info, models.MeasurementCategory, model.id, what="measurement category")
+    item = schema_scoped(info, models.MeasurementCategory, model.id, what="measurement category")
 
     if model.color:
         assert len(model.color) == 3 or len(model.color) == 4, "Color must be a list of 3 or 4 values RGBA"
@@ -46,6 +46,15 @@ def update_measurement_category(info: Info, input: inputs.UpdateMeasurementCateg
         media_store = dl_models.MediaStore.objects.get(id=model.image)
     else:
         media_store = None
+
+
+    # The category's rule (RFC 0012): replaced whole, cleared to primitive, or
+    # left alone — the input refuses both at once.
+    meaning_before = dict(item.definition or {})
+    if getattr(model, "clear_definition", False):
+        item.definition = {}
+    elif getattr(model, "definition", None) is not None:
+        item.definition = model.definition.to_stored()
 
     item.label = model.label if model.label else item.label
     item.description = model.description if model.description else item.description
@@ -60,6 +69,11 @@ def update_measurement_category(info: Info, input: inputs.UpdateMeasurementCateg
 
     item.save()
 
+    # No rebuild on a rule change: nothing is drawn for this category — the
+    # claim lists read the rules live (`links_for_category`), and the
+    # vocabulary index follows via the category-save signal.
+    del meaning_before
+
     return item
 
 
@@ -68,6 +82,6 @@ def delete_measurement_category(
     input: inputs.DeleteMeasurementCategoryInput,
 ) -> strawberry.ID:
     model = input.to_pydantic()
-    item = scoped(info, models.MeasurementCategory, model.id, what="measurement category")
+    item = schema_scoped(info, models.MeasurementCategory, model.id, what="measurement category")
     delete_or_explain(item, what=f"measurement category '{item.key}'", instead="Archive the measurements asserted under it first.")
     return model.id

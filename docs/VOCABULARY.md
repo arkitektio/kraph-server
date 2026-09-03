@@ -45,7 +45,7 @@ Append-only: corrections are new rows, never edits, and there is no hard delete.
 | Word | Means | Where |
 |---|---|---|
 | `Standing` | Somebody's **position** on whether a claim still holds (`stands=True/False`). Retraction and attestation both write one | `evidence.Standing` |
-| `CurrentStanding` | The folded answer, a **cache** over `Standing`. Holds **no row for an instance** — whether an instance exists has no organization-wide answer, because a graph's selector decides whose claims it counts | `evidence.CurrentStanding` |
+| `CurrentStanding` | The folded answer, a **cache** over `Standing`. Holds **no row for an instance** — whether an instance exists has no organization-wide answer, because the node's category clauses decide whose claims count (RFC 0009) | `evidence.CurrentStanding` |
 
 ### The organization's vocabulary
 
@@ -89,7 +89,7 @@ Deleting any of it is free and takes no evidence with it. The `PROTECT` is on
 
 | Word | Means | Where |
 |---|---|---|
-| `Graph` | A **view** over the organization's claims, with a `selector` saying which ones count. Not a container — a reconstruction | `core.Graph` |
+| `Graph` | A **view** over the organization's claims. No selector (RFC 0009): each category's `definition` is the complete rule for its word. Not a container — a reconstruction | `core.Graph` |
 | `Category` | One **view's rule for a word**: its `age_name` (the drawing's label), `definition`, derivation rules, layout, colour. `Category.term` is the join to the evidence layer | `core.Category` |
 | `GraphSchema` | A **versioned, immutable** schema definition. Each graph has one active at a time; `index` increments | `core.GraphSchema` |
 | `CategoryAssertedTerm` | The **joinable half** of `Category.definition` — which words a category *derives* from, normalized out of JSON. Stores the **key**, not a `Term` FK, because a definition routinely names a word nobody has minted | `core.CategoryAssertedTerm` |

@@ -20,6 +20,8 @@ zero writes for the same reason.
 
 import kante
 import pytest
+
+from tests import rules
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 
@@ -139,7 +141,7 @@ async def test_a_definition_narrows_what_the_graph_contains(
             _retract_classifications(test_graph, node.ref)
             _claim(test_graph, node.ref, ais, subject)
 
-        ais.definition = {"asserted_as": "AIS", "assertion_filter": {"subjects": [JOHANNES]}}
+        ais.definition = rules.definition(rules.rule(rules.word("AIS"), rules.by(JOHANNES)))
         ais.save()
 
         return GraphController(projector=table_projector).rebuild_projection(test_graph)
@@ -183,7 +185,7 @@ async def test_changing_a_definition_moves_membership_and_writes_no_evidence(
             _retract_classifications(test_graph, node.ref)
             _claim(test_graph, node.ref, ais, subject)
 
-        ais.definition = {"asserted_as": "AIS", "assertion_filter": {"subjects": [JOHANNES]}}
+        ais.definition = rules.definition(rules.rule(rules.word("AIS"), rules.by(JOHANNES)))
         ais.save()
         GraphController(projector=table_projector).rebuild_projection(test_graph)
         return _evidence_row_count(test_graph)
@@ -201,7 +203,7 @@ async def test_changing_a_definition_moves_membership_and_writes_no_evidence(
     @sync_to_async
     def redefine() -> tuple[str, int]:
         ais = core_models.EntityCategory.objects.get(graph=test_graph, key="AIS")
-        ais.definition = {"asserted_as": "AIS", "assertion_filter": {"subjects": [CHRISTIAN]}}
+        ais.definition = rules.definition(rules.rule(rules.word("AIS"), rules.by(CHRISTIAN)))
         ais.save()
         GraphController(projector=table_projector).rebuild_projection(test_graph)
         ids = _ids_with_label(table_projector, test_graph, "AIS")
@@ -261,7 +263,7 @@ async def test_definitions_can_partition_one_term_by_annotator(
                 key=key,
                 age_name=key.lower(),
                 label=key,
-                definition={"asserted_as": "AIS", "assertion_filter": {"subjects": [subject]}},
+                definition=rules.definition(rules.rule(rules.word("AIS"), rules.by(subject))),
             )
 
         return GraphController(projector=table_projector).rebuild_projection(test_graph)
@@ -314,7 +316,7 @@ async def test_a_node_matching_two_definitions_is_refused_not_guessed(
                 key=key,
                 age_name=key.lower(),
                 label=key,
-                definition={"asserted_as": "AIS", "assertion_filter": {"subjects": [subject]}},
+                definition=rules.definition(rules.rule(rules.word("AIS"), rules.by(subject))),
             )
 
         return GraphController(projector=table_projector).rebuild_projection(test_graph)
@@ -372,7 +374,7 @@ async def test_a_category_can_derive_from_several_words_the_graph_never_declares
 
     Two things this holds up, and both were broken.
 
-    `asserted_as` took a single word, so a defined category was a rename rather
+    A definition used to take a single word, so a defined category was a rename rather
     than a definition — it could not express a union, which is the ordinary
     ontology operation of grouping several claimed kinds under one heading.
 
@@ -421,7 +423,7 @@ async def test_a_category_can_derive_from_several_words_the_graph_never_declares
             key="Neuron",
             age_name="neuron",
             label="Neuron",
-            definition={"asserted_as": ["Pyramidal", "Interneuron"]},
+            definition=rules.definition(rules.rule(rules.word("Pyramidal", "Interneuron"))),
         )
 
         return GraphController(projector=table_projector).rebuild_projection(test_graph)
@@ -447,12 +449,12 @@ async def test_a_single_word_definition_still_reads_as_one(
     test_graph: core_models.Graph,
     table_projector,
 ) -> None:
-    """`asserted_as` accepts a bare string as well as a list.
+    """A WORD condition's value may be one word (IS) or several (IN).
 
-    Definitions are hand-written JSON and one word is the common case, so the
-    scalar form has to keep meaning the obvious thing.
+    Definitions are hand-written JSON, and the vocabulary is always read
+    through `asserted_as_keys`, whatever the operator.
     """
-    assert selector_module.asserted_as_keys({"asserted_as": "AIS"}) == ["AIS"]
-    assert selector_module.asserted_as_keys({"asserted_as": ["AIS", "Soma"]}) == ["AIS", "Soma"]
+    assert selector_module.asserted_as_keys(rules.definition(rules.rule(rules.word("AIS")))) == ["AIS"]
+    assert selector_module.asserted_as_keys(rules.definition(rules.rule(rules.word("AIS", "Soma")))) == ["AIS", "Soma"]
     assert selector_module.asserted_as_keys({}) == []
     assert selector_module.asserted_as_keys(None) == []

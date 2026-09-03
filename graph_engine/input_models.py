@@ -89,25 +89,11 @@ class DerivationType(str, Enum):
     LATEST_ASSERTION_TOOL = "LATEST_ASSERTION_TOOL"
 
 
-class ConflictPolicy(str, Enum):
-    """How to resolve two subjects disagreeing about the same property.
-
-    Aggregation answers "combine these measurements"; conflict policy answers
-    "these measurements should not be combined, because they come from sources
-    that disagree". A human annotator and a segmentation model both reporting a
-    cell's length are not two samples of one quantity — averaging them produces a
-    number neither of them claimed.
-    """
-
-    #: Fold everything together regardless of who asserted it. The default,
-    #: because it is what the aggregation functions already do.
-    COMBINE = "COMBINE"
-    #: Take the most recent claim from the highest-priority subject.
-    SUBJECT_PRIORITY = "SUBJECT_PRIORITY"
-    #: Take the most recent claim from the tool that made it, ignoring others.
-    LATEST_TOOL = "LATEST_TOOL"
-    #: Do not resolve. Surface that the sources disagree and let a human decide.
-    FLAG = "FLAG"
+# `ConflictPolicy` is gone (RFC 0009). It was read by nothing — the projector
+# dispatches on `derivation` alone — and every real way of saying "whose numbers
+# count" exists: PRIORITY_LATEST / LATEST_ASSERTION_TOOL rank sources, and
+# `DerivationRuleInput.evidence` filters them. A knob nothing reads is the class
+# of silence this codebase refuses.
 
 
 class AggregationFunction(str, Enum):
@@ -130,14 +116,9 @@ class PropertyType(str, Enum):
     POINT_3D = "point_3d"
 
 
-class Action(str, Enum):
-    AUTO_ADD_STRUCTURES = "AUTO_ADD_STRUCTURES"
-    AUTO_ADD_STRUCTURE_DEFINITIONS = "AUTO_ADD_STRUCTURE_DEFINITIONS"
-    AUTO_ADD_METRICS = "AUTO_ADD_METRICS"
-    ADD_STRUCTURE_DEFINITIONS = "ADD_STRUCTURE_DEFINITIONS"
-    ADD_ENTITY_DEFINITIONS = "ADD_ENTITY_DEFINITIONS"
-    ADD_RELATION_DEFINITIONS = "ADD_RELATION_DEFINITIONS"
-    CREATE_BUILDER_ARG = "CREATE_BUILDER_ARG"
+# The `Action` enum is gone with `Graph.rules` (RFC 0013): per-action
+# allow/deny lists are replaced by plain RBAC — a graph's definition is edited
+# by its owner, an organization admin, or a superuser.
 
 
 class WhereOperator(str, Enum):
@@ -590,6 +571,154 @@ class OntologyReferenceInput(StrictModel):
 # These mirror the base_models but are used for input validation
 
 
+class ClaimField(str, Enum):
+    """What a condition looks at on a claim (RFC 0010)."""
+
+    WORD = "WORD"  #: the term key the claim names
+    SUBJECT = "SUBJECT"  #: who asserted it
+    APP = "APP"  #: through which app
+    ACTION = "ACTION"  #: by which action (may be absent on a claim)
+    KIND = "KIND"  #: what the claim *says* — which folds this rule covers (RFC 0011)
+    ASSERTED_AT = "ASSERTED_AT"  #: belief time
+    MEASURED_AT = "MEASURED_AT"  #: observation time — metric rules only
+
+
+class ClaimKind(str, Enum):
+    """What a claim says about a category's things (RFC 0011) — the values a
+    KIND condition takes. A rule covers every kind its KIND conditions do not
+    exclude; a rule with no KIND condition covers them all."""
+
+    CLASSIFICATION = "CLASSIFICATION"  #: which claims admit/label — the whole-rule reading, WORD included
+    EXISTENCE = "EXISTENCE"  #: whose standings count — retraction/attest of nodes, and of an edge category's links
+    SAMENESS = "SAMENESS"  #: whose SAME_AS may merge this category's nodes (within the category, across words)
+    EVIDENCE = "EVIDENCE"  #: whose INFORMS may route evidence under this category's nodes
+    MEASUREMENT = "MEASUREMENT"  #: the default metric scope, when a property has no `rule.evidence`
+
+
+_CLAIM_KIND_VALUES = frozenset(kind.value for kind in ClaimKind)
+
+
+def rule_covers(stored_rule: Any, kind: str) -> bool:
+    """Whether one stored rule applies when folding claims of `kind`.
+
+    **The one coverage implementation** — the write-time validator and the
+    compiler (`evidence/selector.py`) both call this, so they cannot disagree.
+    A rule covers every kind its KIND conditions do not exclude; several KIND
+    conditions AND; a rule with none covers everything; malformed conditions
+    are skipped (read-side tolerance — the write path refuses them).
+    """
+    kind = str(kind)
+    for condition in (stored_rule.get("when") or []) if isinstance(stored_rule, dict) else []:
+        if not isinstance(condition, dict) or str(condition.get("field")) != "KIND":
+            continue
+        operator = str(condition.get("operator"))
+        value = condition.get("value")
+        values = [value] if isinstance(value, str) else list(value or [])
+        if operator in ("IS", "IN") and kind not in values:
+            return False
+        if operator == "NOT_IN" and kind in values:
+            return False
+    return True
+
+
+class ClaimOperator(str, Enum):
+    """How a condition compares (RFC 0010). BEFORE and SINCE are inclusive."""
+
+    IS = "IS"  #: equals one value
+    IN = "IN"  #: any of these values
+    NOT_IN = "NOT_IN"  #: none of these values
+    BEFORE = "BEFORE"  #: time <= value
+    SINCE = "SINCE"  #: time >= value
+
+
+_IDENTITY_FIELDS = frozenset({ClaimField.WORD, ClaimField.SUBJECT, ClaimField.APP, ClaimField.ACTION})
+_TIME_FIELDS = frozenset({ClaimField.ASSERTED_AT, ClaimField.MEASURED_AT})
+_IDENTITY_OPERATORS = frozenset({ClaimOperator.IS, ClaimOperator.IN, ClaimOperator.NOT_IN})
+_TIME_OPERATORS = frozenset({ClaimOperator.BEFORE, ClaimOperator.SINCE})
+
+
+class ClaimConditionInput(StrictModel):
+    """One condition: (field, operator, value) — the whole rule vocabulary.
+
+    The same triple-with-operator language the saved-query plans use
+    (`WhereClauseInput`); there is one formal system on this platform, not two.
+    """
+
+    field: ClaimField = Field(..., description="What this condition looks at")
+    operator: ClaimOperator = Field(..., description="How it compares. BEFORE/SINCE are inclusive")
+    value: Any = Field(..., description="One string for IS, a non-empty string list for IN/NOT_IN, a datetime for BEFORE/SINCE. For field KIND: kinds from CLASSIFICATION, EXISTENCE, SAMENESS, EVIDENCE, MEASUREMENT")
+
+    @model_validator(mode="after")
+    def value_fits_field_and_operator(self) -> "ClaimConditionInput":
+        if self.field in _TIME_FIELDS:
+            if self.operator not in _TIME_OPERATORS:
+                raise ValueError(f"{self.field.value} takes BEFORE or SINCE, not {self.operator.value}.")
+            if isinstance(self.value, str):
+                try:
+                    self.value = datetime.fromisoformat(self.value.replace("Z", "+00:00"))
+                except ValueError as error:
+                    raise ValueError(f"{self.field.value} {self.operator.value} needs a datetime, got {self.value!r}.") from error
+            if not isinstance(self.value, datetime):
+                raise ValueError(f"{self.field.value} {self.operator.value} needs a datetime, got {type(self.value).__name__}.")
+            return self
+
+        if self.operator not in _IDENTITY_OPERATORS:
+            raise ValueError(f"{self.field.value} takes IS, IN or NOT_IN, not {self.operator.value}.")
+        if self.field == ClaimField.KIND:
+            values = [self.value] if isinstance(self.value, str) else (self.value if isinstance(self.value, list) else [])
+            bad = [entry for entry in values if entry not in _CLAIM_KIND_VALUES] or (["(none)"] if not values else [])
+            if bad:
+                raise ValueError(f"KIND takes {sorted(_CLAIM_KIND_VALUES)}, got {bad}.")
+            if self.operator == ClaimOperator.IS and not isinstance(self.value, str):
+                raise ValueError("KIND IS takes one kind; use IN for several.")
+            if self.operator in (ClaimOperator.IN, ClaimOperator.NOT_IN) and not isinstance(self.value, list):
+                raise ValueError(f"KIND {self.operator.value} takes a list of kinds.")
+            return self
+        if self.field == ClaimField.WORD and self.operator == ClaimOperator.NOT_IN:
+            raise ValueError("WORD takes IS or IN: a definition names the words it derives from, it does not exclude them.")
+        if self.operator == ClaimOperator.IS:
+            if not isinstance(self.value, str) or not self.value:
+                raise ValueError(f"{self.field.value} IS needs one non-empty string, got {self.value!r}.")
+        else:
+            if not isinstance(self.value, list) or not self.value or not all(isinstance(entry, str) and entry for entry in self.value):
+                raise ValueError(f"{self.field.value} {self.operator.value} needs a non-empty list of strings, got {self.value!r}.")
+        return self
+
+    def to_stored(self) -> Dict[str, Any]:
+        value = self.value.isoformat() if isinstance(self.value, datetime) else self.value
+        return {"field": self.field.value, "operator": self.operator.value, "value": value}
+
+
+class ClaimConditionGroupInput(StrictModel):
+    """One exception: a conjunction that, when it holds whole, blocks its rule."""
+
+    when: List[ClaimConditionInput] = Field(..., min_length=1, description="All of these must hold for the exception to apply")
+
+    def to_stored(self) -> Dict[str, Any]:
+        return {"when": [condition.to_stored() for condition in self.when]}
+
+
+class ClaimRuleInput(StrictModel):
+    """One rule: matches when ALL `when` conditions hold and NO `unless` group does."""
+
+    when: List[ClaimConditionInput] = Field(..., min_length=1, description="All of these must hold")
+    unless: Optional[List[ClaimConditionGroupInput]] = Field(default=None, min_length=1, description="Exceptions: the rule does not match when any group holds whole")
+
+    @model_validator(mode="after")
+    def unless_carries_no_kind(self) -> "ClaimRuleInput":
+        for group in self.unless or []:
+            for condition in group.when:
+                if condition.field == ClaimField.KIND:
+                    raise ValueError("KIND belongs in `when` — to exclude a kind from a rule, use KIND NOT_IN there, not an exception group.")
+        return self
+
+    def to_stored(self) -> Dict[str, Any]:
+        stored: Dict[str, Any] = {"when": [condition.to_stored() for condition in self.when]}
+        if self.unless:
+            stored["unless"] = [group.to_stored() for group in self.unless]
+        return stored
+
+
 class DerivationRuleInput(StrictModel):
     """Input for a derivation rule configuration."""
 
@@ -603,9 +732,17 @@ class DerivationRuleInput(StrictModel):
     )
     aggregation: Optional[AggregationFunction] = Field(default=None, description="Aggregation function (MEAN, SUM, MAX, MIN, COUNT, etc.)")
 
-    conflict_policy: ConflictPolicy = Field(
-        default=ConflictPolicy.COMBINE,
-        description="How to resolve disagreement between subjects. COMBINE folds everything together.",
+    evidence: Optional[List[ClaimConditionInput]] = Field(
+        default=None,
+        min_length=1,
+        description=(
+            "This property's own metric rule: conditions (all must hold) over SUBJECT/APP/ACTION/"
+            "ASSERTED_AT/MEASURED_AT. When present it replaces the owning category's rules as the "
+            "metric scope (classification annotators and measurement producers are usually "
+            "different populations, so intersecting them would routinely produce nothing); when "
+            "absent, the category's rules apply to the metrics' assertions too, and a primitive "
+            "category folds everything."
+        ),
     )
     subject_priority: List[str] = Field(
         default_factory=list,
@@ -615,6 +752,17 @@ class DerivationRuleInput(StrictModel):
         default_factory=list,
         description="App ids in descending order of trust, for LATEST_ASSERTION_TOOL.",
     )
+
+    @model_validator(mode="after")
+    def evidence_needs_a_source(self) -> "DerivationRuleInput":
+        if self.evidence is not None and not self.source_node:
+            raise ValueError("An evidence filter needs a `source_node`: a rule that names no source reads no metrics, so the filter would be silently inert.")
+        for condition in self.evidence or []:
+            if condition.field == ClaimField.WORD:
+                raise ValueError("A metric names no WORD — evidence conditions take SUBJECT, APP, ACTION, ASSERTED_AT or MEASURED_AT.")
+            if condition.field == ClaimField.KIND:
+                raise ValueError("A metric row has no KIND to test — evidence conditions take SUBJECT, APP, ACTION, ASSERTED_AT or MEASURED_AT.")
+        return self
 
 
 class ColumnInput(StrictModel):
@@ -830,164 +978,58 @@ class MetricDefinitionInput(NodeDefinitionInput):
     pass
 
 
-class AssertionFilterInput(StrictModel):
-    """Whose claims count: any-of within a field, all fields must hold."""
-
-    subjects: Optional[List[str]] = Field(default=None, description="Only claims by these subjects (annotators, models)")
-    app_ids: Optional[List[str]] = Field(default=None, description="Only claims made through these apps")
-    action_names: Optional[List[str]] = Field(default=None, description="Only claims made by these actions")
-
-    def to_stored(self) -> Dict[str, Any]:
-        return {key: value for key, value in (("subjects", self.subjects), ("app_ids", self.app_ids), ("action_names", self.action_names)) if value}
-
-
-class CategoryDefinitionClauseInput(StrictModel):
-    """One clause of a category definition: these words, by these people, in this window.
-
-    Clauses bind their filters to their own words — that is the whole point
-    (RFC 0007): "what Peter called Cell, and what Karl called StemCell after
-    Dec 5" is two clauses, where the flat form could only say the cross-product.
-    `asserted_as` is required per clause: a word-less clause matches every claim
-    the graph can see, which is never what a written definition means.
-    """
-
-    asserted_as: List[str] = Field(..., min_length=1, description="The words this clause derives from — any of them")
-    assertion_filter: Optional[AssertionFilterInput] = Field(default=None, description="Whose claims count for this clause")
-    as_of: Optional[datetime] = Field(default=None, description="Only claims asserted at or before this moment")
-    since: Optional[datetime] = Field(default=None, description="Only claims asserted at or after this moment")
-
-    def to_stored(self) -> Dict[str, Any]:
-        stored: Dict[str, Any] = {"asserted_as": list(self.asserted_as)}
-        if self.assertion_filter and self.assertion_filter.to_stored():
-            stored["assertion_filter"] = self.assertion_filter.to_stored()
-        if self.as_of:
-            stored["as_of"] = self.as_of.isoformat()
-        if self.since:
-            stored["since"] = self.since.isoformat()
-        return stored
-
-
 class CategoryDefinitionInput(StrictModel):
-    """A category's meaning: a union of clauses over classification claims.
+    """A category's complete rule (RFC 0009), as an explicit rule list (RFC 0010).
 
-    Either the flat form (one clause, spelled inline) or `any_of` (several
-    clauses) — never both, refused here so the stored JSON can never carry a
-    dead half. Nesting is one level by construction: a clause has no `any_of`.
-    An entirely empty input is refused too — a primitive category is expressed
-    by *omitting* the definition (or `clearDefinition` on update), not by an
-    empty predicate.
+    Three sentences of semantics, all visible in the structure: a claim counts
+    if **any rule** matches; a rule matches when **all** its `when` conditions
+    hold and **no** `unless` group does; a group holds when all its conditions
+    do. Every rule names the word(s) it derives from — the wordless clause that
+    used to mean "every word" is unspellable now. A *primitive* category is
+    expressed by omitting the definition, never by an empty one.
     """
 
-    asserted_as: Optional[List[str]] = Field(default=None, description="Flat form: the words this definition derives from")
-    assertion_filter: Optional[AssertionFilterInput] = Field(default=None, description="Flat form: whose claims count")
-    as_of: Optional[datetime] = Field(default=None, description="Flat form: claims asserted at or before this moment")
-    since: Optional[datetime] = Field(default=None, description="Flat form: claims asserted at or after this moment")
-    any_of: Optional[List[CategoryDefinitionClauseInput]] = Field(default=None, min_length=1, description="Several clauses; the definition matches a claim when any clause does")
+    rules: List[ClaimRuleInput] = Field(..., min_length=1, description="A claim counts when any rule matches")
 
     @model_validator(mode="after")
-    def flat_and_clauses_are_exclusive(self) -> "CategoryDefinitionInput":
-        flat = [name for name in ("asserted_as", "assertion_filter", "as_of", "since") if getattr(self, name)]
-        if self.any_of is not None and flat:
-            raise ValueError(f"A definition is either flat or `any_of`, not both — move {', '.join(flat)} into a clause.")
-        if self.any_of is None and not flat:
-            raise ValueError("An empty definition means the category is primitive — omit `definition` instead of sending an empty one.")
-        if self.any_of is None and not self.asserted_as:
-            raise ValueError("A definition must name the words it derives from (`asserted_as`).")
+    def rules_are_definition_shaped(self) -> "CategoryDefinitionInput":
+        for index, rule in enumerate(self.rules):
+            stored = rule.to_stored()
+            covers_classification = rule_covers(stored, ClaimKind.CLASSIFICATION.value)
+            measurement_only = rule_covers(stored, ClaimKind.MEASUREMENT.value) and not any(rule_covers(stored, kind.value) for kind in ClaimKind if kind != ClaimKind.MEASUREMENT)
+
+            has_word = any(condition.field == ClaimField.WORD for condition in rule.when)
+            if covers_classification and not has_word:
+                raise ValueError(f"rules[{index}]: a rule covering CLASSIFICATION must name the word(s) it derives from — add a WORD condition, or scope the rule with KIND.")
+            if not covers_classification and has_word:
+                raise ValueError(f"rules[{index}]: a WORD condition means nothing on a rule that does not cover CLASSIFICATION — a standing or a SAME_AS claim names no word.")
+
+            for condition in rule.when:
+                if condition.field == ClaimField.MEASURED_AT and not measurement_only:
+                    raise ValueError(f"rules[{index}]: MEASURED_AT is meaningful only on a rule covering MEASUREMENT alone — other claims have no observation time.")
+            for group in rule.unless or []:
+                for condition in group.when:
+                    if condition.field == ClaimField.WORD:
+                        raise ValueError(f"rules[{index}]: an `unless` group may not name a WORD — exceptions are about who and when, not vocabulary.")
+                    if condition.field == ClaimField.MEASURED_AT:
+                        raise ValueError(f"rules[{index}]: a claim has no observation time — MEASURED_AT belongs in `when` of a MEASUREMENT-only rule, or in a property's `rule.evidence`.")
         return self
 
     def to_stored(self) -> Dict[str, Any]:
         """The exact JSON `Category.definition` stores."""
-        if self.any_of is not None:
-            return {"any_of": [clause.to_stored() for clause in self.any_of]}
-        clause = CategoryDefinitionClauseInput(asserted_as=list(self.asserted_as or []), assertion_filter=self.assertion_filter, as_of=self.as_of, since=self.since)
-        return clause.to_stored()
-
-    @classmethod
-    def _clause_from_stored(cls, stored: Any) -> Optional[CategoryDefinitionClauseInput]:
-        if not isinstance(stored, dict):
-            return None
-        asserted_as = stored.get("asserted_as")
-        if isinstance(asserted_as, str):
-            asserted_as = [asserted_as]
-        if not asserted_as or not isinstance(asserted_as, list):
-            return None
-        raw_filter = stored.get("assertion_filter") or {}
-        try:
-            return CategoryDefinitionClauseInput(
-                asserted_as=[str(key) for key in asserted_as],
-                assertion_filter=AssertionFilterInput(subjects=raw_filter.get("subjects"), app_ids=raw_filter.get("app_ids"), action_names=raw_filter.get("action_names")) if raw_filter else None,
-                as_of=stored.get("as_of"),
-                since=stored.get("since"),
-            )
-        except (ValueError, TypeError):
-            return None
+        return {"rules": [rule.to_stored() for rule in self.rules]}
 
     @classmethod
     def from_stored(cls, stored: Any) -> Optional["CategoryDefinitionInput"]:
-        """The stored JSON as a model, tolerantly: hand-written or historic shapes
-        this cannot spell read back as None (primitive) or with bad clauses
-        skipped, never as an error — this is the read side."""
-        if not stored or not isinstance(stored, dict):
+        """The stored JSON as a model, tolerantly: non-dict garbage and shapes
+        this cannot spell read back as None (primitive), never as an error —
+        this is the read side. The old clause shape is NOT read: RFC 0010 was a
+        clean break, and `core/migrations/0017` cleared what stored it.
+        """
+        if not stored or not isinstance(stored, dict) or not isinstance(stored.get("rules"), list):
             return None
-        if stored.get("any_of") is not None:
-            clauses = [clause for clause in (cls._clause_from_stored(entry) for entry in stored["any_of"]) if clause is not None]
-            return cls(any_of=clauses) if clauses else None
-        clause = cls._clause_from_stored(stored)
-        if clause is None:
-            return None
-        return cls(asserted_as=clause.asserted_as, assertion_filter=clause.assertion_filter, as_of=clause.as_of, since=clause.since)
-
-
-class GraphSelectorInput(StrictModel):
-    """Which of the organization's claims a graph counts.
-
-    The window is flattened to `observed_from`/`observed_to` (the stored shape's
-    `observed_window` pair) because `from` is not a spellable field name.
-    """
-
-    category_keys: Optional[List[str]] = Field(default=None, description="Structure identifiers in scope (metrics only)")
-    assertion_filter: Optional[AssertionFilterInput] = Field(default=None, description="Whose claims count")
-    as_of: Optional[datetime] = Field(default=None, description="Claims asserted at or before this moment")
-    since: Optional[datetime] = Field(default=None, description="Claims asserted at or after this moment")
-    observed_from: Optional[datetime] = Field(default=None, description="Measurements taken at or after this moment (metrics only)")
-    observed_to: Optional[datetime] = Field(default=None, description="Measurements taken at or before this moment (metrics only)")
-
-    def to_stored(self) -> Dict[str, Any]:
-        """The exact JSON `Graph.selector` stores. Empty dict means everything."""
-        stored: Dict[str, Any] = {}
-        if self.category_keys:
-            stored["category_keys"] = list(self.category_keys)
-        if self.assertion_filter and self.assertion_filter.to_stored():
-            stored["assertion_filter"] = self.assertion_filter.to_stored()
-        if self.as_of:
-            stored["as_of"] = self.as_of.isoformat()
-        if self.since:
-            stored["since"] = self.since.isoformat()
-        if self.observed_from or self.observed_to:
-            stored["observed_window"] = {"from": self.observed_from.isoformat() if self.observed_from else None, "to": self.observed_to.isoformat() if self.observed_to else None}
-        return stored
-
-    @classmethod
-    def from_stored(cls, stored: Any) -> Optional["GraphSelectorInput"]:
-        """The stored JSON as a model, tolerantly; both window spellings accepted."""
-        if not stored or not isinstance(stored, dict):
-            return None
-        window = stored.get("observed_window")
-        observed_from = observed_to = None
-        if isinstance(window, dict):
-            observed_from, observed_to = window.get("from"), window.get("to")
-        elif isinstance(window, (list, tuple)) and len(window) == 2:
-            observed_from, observed_to = window
-        raw_filter = stored.get("assertion_filter") or {}
         try:
-            return cls(
-                category_keys=stored.get("category_keys"),
-                assertion_filter=AssertionFilterInput(subjects=raw_filter.get("subjects"), app_ids=raw_filter.get("app_ids"), action_names=raw_filter.get("action_names")) if raw_filter else None,
-                as_of=stored.get("as_of"),
-                since=stored.get("since"),
-                observed_from=observed_from,
-                observed_to=observed_to,
-            )
+            return cls.model_validate({"rules": stored["rules"]})
         except (ValueError, TypeError):
             return None
 
@@ -1235,6 +1277,7 @@ class EventDefinitionInput(NodeDefinitionInput):
     inputs: List[EventRoleInput] = Field(default_factory=list, description="Input node roles")
     outputs: List[EventRoleInput] = Field(default_factory=list, description="Output node roles")
     properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Property definitions")
+    definition: Optional[CategoryDefinitionInput] = Field(default=None, description="This event category's complete rule (RFC 0009): which classification claims admit an event, whose existence standings count, and whose participation claims draw its edges. Omitted means primitive")
 
 
 class NaturalEventDefinitionInput(EventDefinitionInput):
@@ -1268,6 +1311,15 @@ class UpdateNaturalEventCategoryInput(UpdateDefinitionInput):
     worse than one that is refused, and these were required as well as discarded.
     """
 
+    definition: Optional[CategoryDefinitionInput] = Field(default=None, description="New rule for this category (RFC 0009). Omitted means unchanged; to make it primitive again, use clearDefinition")
+    clear_definition: bool = Field(default=False, description="Reset the category to primitive — any claim naming its word counts, standings organization grain")
+
+    @model_validator(mode="after")
+    def definition_and_clear_are_exclusive(self):
+        if self.definition is not None and self.clear_definition:
+            raise ValueError("Pass a new `definition` or `clearDefinition`, not both.")
+        return self
+
     id: str = Field(..., description="The ID of the natural event category to update")
 
 
@@ -1297,6 +1349,16 @@ class UpdateProtocolEventCategoryInput(UpdateDefinitionInput):
     description, colour, image and pin. A field that is accepted and discarded is
     worse than one that is refused, and these were required as well as discarded.
     """
+
+    definition: Optional[CategoryDefinitionInput] = Field(default=None, description="New rule for this category (RFC 0012). Omitted means unchanged; to make it primitive again, use clearDefinition")
+    clear_definition: bool = Field(default=False, description="Reset the category to primitive — any claim naming its word counts, standings organization grain")
+
+    @model_validator(mode="after")
+    def definition_and_clear_are_exclusive(self):
+        if self.definition is not None and self.clear_definition:
+            raise ValueError("Pass a new `definition` or `clearDefinition`, not both.")
+        return self
+
 
     id: str = Field(..., description="The ID of the protocol event category to update")
 
@@ -1343,6 +1405,7 @@ class RelationDefinitionInput(EdgeDefinitionInput):
     """Input for a relation definition."""
 
     properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Derived property definitions")
+    definition: Optional[CategoryDefinitionInput] = Field(default=None, description="This relation category's complete rule (RFC 0009): which relation claims draw its edges — by word, annotator, app and window — and whose standings count for them. Omitted means primitive: any claim naming its word draws")
 
 
 class StructureRelationDefinitionInput(DefinitionInput):
@@ -1354,6 +1417,7 @@ class StructureRelationDefinitionInput(DefinitionInput):
     source: StructureDescriptorInput = Field(..., description="Source entity type(s)")
     target: StructureDescriptorInput = Field(..., description="Target entity type(s)")
     cardinality: Cardinality = Field(default=Cardinality.ONE_TO_ONE, description="Relation cardinality")
+    definition: Optional[CategoryDefinitionInput] = Field(default=None, description="This structure-relation category's complete rule (RFC 0012): which structure-relation claims count — by word, annotator, app and window — and whose standings fold. Omitted means primitive")
 
 
 class MeasurementDefinitionInput(EdgeDefinitionInput):
@@ -1362,6 +1426,7 @@ class MeasurementDefinitionInput(EdgeDefinitionInput):
     source: StructureDescriptorInput = Field(..., description="Source entity type(s)")
     target: EntityDescriptorInput = Field(..., description="Target entity type(s)")
     properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Derived property definitions")
+    definition: Optional[CategoryDefinitionInput] = Field(default=None, description="This measurement category's complete rule (RFC 0012): which measurement claims count and whose standings fold. Omitted means primitive")
 
 
 class GraphTableQueryInput(StrictModel):
@@ -1460,6 +1525,15 @@ class UpdateRelationCategoryInput(UpdateDefinitionInput):
     worse than one that is refused, and these were required as well as discarded.
     """
 
+    definition: Optional[CategoryDefinitionInput] = Field(default=None, description="New rule for this category (RFC 0009). Omitted means unchanged; to make it primitive again, use clearDefinition")
+    clear_definition: bool = Field(default=False, description="Reset the category to primitive — any claim naming its word counts, standings organization grain")
+
+    @model_validator(mode="after")
+    def definition_and_clear_are_exclusive(self):
+        if self.definition is not None and self.clear_definition:
+            raise ValueError("Pass a new `definition` or `clearDefinition`, not both.")
+        return self
+
     id: str = Field(..., description="The ID of the relation category to update")
 
 
@@ -1486,6 +1560,16 @@ class UpdateMeasurementCategoryInput(UpdateDefinitionInput):
     worse than one that is refused, and these were required as well as discarded.
     """
 
+    definition: Optional[CategoryDefinitionInput] = Field(default=None, description="New rule for this category (RFC 0012). Omitted means unchanged; to make it primitive again, use clearDefinition")
+    clear_definition: bool = Field(default=False, description="Reset the category to primitive — any claim naming its word counts, standings organization grain")
+
+    @model_validator(mode="after")
+    def definition_and_clear_are_exclusive(self):
+        if self.definition is not None and self.clear_definition:
+            raise ValueError("Pass a new `definition` or `clearDefinition`, not both.")
+        return self
+
+
     id: str = Field(..., description="The ID of the measurement category to update")
 
 
@@ -1511,6 +1595,16 @@ class UpdateStructureRelationCategoryInput(UpdateDefinitionInput):
     description, colour, image and pin. A field that is accepted and discarded is
     worse than one that is refused, and these were required as well as discarded.
     """
+
+    definition: Optional[CategoryDefinitionInput] = Field(default=None, description="New rule for this category (RFC 0012). Omitted means unchanged; to make it primitive again, use clearDefinition")
+    clear_definition: bool = Field(default=False, description="Reset the category to primitive — any claim naming its word counts, standings organization grain")
+
+    @model_validator(mode="after")
+    def definition_and_clear_are_exclusive(self):
+        if self.definition is not None and self.clear_definition:
+            raise ValueError("Pass a new `definition` or `clearDefinition`, not both.")
+        return self
+
 
     id: str = Field(..., description="The ID of the structure relation category to update")
 
@@ -1982,17 +2076,6 @@ class GraphExtensionsInput(StrictModel):
     scatter_plots: List[ScatterPlotInput] = Field(default_factory=list, description="Scatter plot definitions")
 
 
-class ActionFilterInput(StrictModel):
-    required_roles: List[str] = Field(default_factory=list, description="All roles that must be present on the request")
-    required_scopes: List[str] = Field(default_factory=list, description="All scopes that must be present on the request")
-
-
-class ActionRuleInput(StrictModel):
-    action: Action = Field(..., description="Action this rule controls")
-    allow: bool = Field(True, description="Whether this rule allows or denies the action")
-    filter: ActionFilterInput = Field(default_factory=lambda: ActionFilterInput(), description="Simple boolean filter against request context")
-
-
 class GraphDefinitionInput(StrictModel):
     """
     Input model for a complete graph schema definition.
@@ -2002,7 +2085,6 @@ class GraphDefinitionInput(StrictModel):
     """
 
     system_version: str = Field(default="0.0.1", description="Semantic version for this schema definition (e.g., '1.0.0')")
-    rules: List[ActionRuleInput] = Field(default_factory=list, description="Action-level allow/deny rules evaluated against request context")
     extensions: GraphExtensionsInput = Field(default_factory=lambda: GraphExtensionsInput(), description="The graph extensions containing all type definitions")
 
     @field_validator("system_version")
@@ -2019,27 +2101,8 @@ class GraphInput(StrictModel):
     definition: GraphDefinitionInput = Field(default_factory=lambda: GraphDefinitionInput(), description="The complete graph schema definition")
 
 
-class SetSchemaPayload(StrictModel):
-    """Payload for setting a new schema on a graph."""
-
-    version: str = Field(..., description="Semantic version for this schema (e.g., '1.0.0', '1.1.0')")
-    definition: GraphDefinitionInput = Field(..., description="The complete graph schema definition")
-    description: Optional[str] = Field(None, description="Description of changes in this schema version")
-    activate: bool = Field(True, description="Whether to immediately activate this schema")
-
-    @field_validator("version")
-    @classmethod
-    def validate_version(cls, v: str) -> str:
-        return validate_semver(v)
-
-
-class SetSchemaResult(StrictModel):
-    """Result of setting a new schema."""
-
-    schema_id: int = Field(..., description="Database ID of the created schema")
-    version: str = Field(..., description="Version string of the schema")
-    index: int = Field(..., description="Sequential index of this schema")
-    is_active: bool = Field(..., description="Whether this schema is now active")
+# `SetSchemaPayload` / `SetSchemaResult` are gone: they were wired to no
+# mutation, so the fields were decoration.
 
 
 class CreateGraphFromSchema(StrictModel):
@@ -2048,7 +2111,6 @@ class CreateGraphFromSchema(StrictModel):
     name: str = Field(..., description="Name of the graph")
     description: Optional[str] = Field(None, description="Description of the graph")
     definition: Optional[GraphDefinitionInput] = Field(default_factory=lambda: GraphDefinitionInput(), description="The complete graph schema definition")
-    selector: Optional[GraphSelectorInput] = Field(default=None, description="Which of the organization's claims this view counts. Omitted means everything")
     backfill: bool = Field(
         default=False,
         description=(
@@ -2070,7 +2132,6 @@ class UpdateGraphInput(StrictModel):
     description: Optional[str] = Field(default=None, description="New graph description")
     archived: Optional[bool] = Field(default=None, description="Optional archived flag update")
     pin: Optional[bool] = Field(default=None, description="Optional pin flag update for the user making the request")
-    selector: Optional[GraphSelectorInput] = Field(default=None, description="New claim scope for this view. Omitted means unchanged; the drawing is rebuilt under the new scope before the mutation returns")
 
 
 class DeleteGraphInput(StrictModel):

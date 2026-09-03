@@ -7,7 +7,7 @@ from api import context, inputs, types
 from core import models
 from datalayer import models as datalayer_models
 from ._guards import delete_or_explain
-from .._scoped import accessible_graph, scoped
+from .._scoped import accessible_graph, schema_graph, schema_scoped, scoped
 from ._rematerialize import fingerprint, rematerialize_if_moved
 
 
@@ -19,7 +19,7 @@ def create_entity_category(
 
     model = input.to_pydantic()  # Validate input with Pydantic models
 
-    graph = accessible_graph(info, model.graph)
+    graph = schema_graph(info, model.graph)
 
     # An upsert, so this may well be an edit to a category that already draws
     # vertices — the manager does not report which. See `_rematerialize`.
@@ -47,7 +47,7 @@ def update_entity_category(info: Info, input: inputs.UpdateEntityCategoryInput) 
     """GraphQL mutation wrapper for updating entity categories."""
     model = input.to_pydantic()  # Validate input with Pydantic models
 
-    item = scoped(info, models.EntityCategory, model.id, what="entity category")
+    item = schema_scoped(info, models.EntityCategory, model.id, what="entity category")
 
     # Before the write: nothing versions `property_definitions` or `definition`,
     # so the old ones are unrecoverable one line later. See `_rematerialize`.
@@ -78,6 +78,6 @@ def delete_entity_category(
     input: inputs.DeleteEntityCategoryInput,
 ) -> strawberry.ID:
     model = input.to_pydantic()  # Validate input with Pydantic models
-    item = scoped(info, models.EntityCategory, model.id, what="entity category")
+    item = schema_scoped(info, models.EntityCategory, model.id, what="entity category")
     delete_or_explain(item, what=f"entity category '{item.key}'", instead="Archive the entities first, or leave the category in place — an unused category costs nothing.")
     return model.id

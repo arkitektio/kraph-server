@@ -11,10 +11,14 @@ asymmetry :mod:`evidence.state` has, for the same reason:
   expensive path, reached only when a retraction may have broken it apart.
 
 Nothing here decides *whether* a claim counts. The fold counts every standing
-`SAME_AS`; a graph whose selector refuses one applies that on read. `CLAUDE.md`
-records what the alternative costs: `merge`, `recompute` and `refold_state` once
-disagreed about which metrics counted, so ingest and replay produced different
-numbers from the same evidence.
+`SAME_AS`; a view that refuses one (a category's KIND SAMENESS rule, RFC 0011) applies that on read — which is
+:func:`component_refs_for_view` (RFC 0008): a walk of the trusted claims for the
+scoped view, the cached component for everyone else. The *cache* stays
+organization grain on purpose; `CLAUDE.md` records what the alternative costs:
+`merge`, `recompute` and `refold_state` once disagreed about which metrics
+counted, so ingest and replay produced different numbers from the same evidence
+— and a per-view cache would put a graph foreign key into `evidence/`, which
+this app may not grow.
 
 **The representative is the lowest uuid in the component.** Not the first
 asserted — identity must not depend on arrival order, and a deterministic rule is
@@ -86,6 +90,85 @@ def component_refs(organization: Any, node_refs: Iterable[str]) -> dict[str, lis
     # An unmerged node has no rows under its own id, so the default stands: a
     # component of one, which is what "nobody has merged this" means.
     return {ref: sorted(members.get(canonical[ref], [ref])) for ref in refs}
+
+
+def view_sameness_links(graph: Any, refs: Iterable[str]) -> list[Any]:
+    """The SAME_AS claims a view counts that touch these refs — one hop.
+
+    RFC 0011: sameness is **within a category, across words** (an AIS and an
+    AxonInitialSegment may be one individual; an AIS and a Cell may not — a
+    thing is one kind of thing). A claim counts here when both endpoints
+    resolve to the *same* category in this view and the claim and its standing
+    fold under that category's `KIND SAMENESS` trust. A primitive category
+    trusts everybody, but still never unions across categories.
+    """
+    from django.db.models import Q
+
+    from evidence import models as inner_models
+    from evidence import selector as selector_module
+    from graph_engine import projector as projector_module
+
+    wanted = [str(ref) for ref in refs]
+    if not wanted:
+        return []
+
+    touching = inner_models.Link.objects.for_organization(graph.organization).filter(kind=SAME_AS).filter(Q(source_ref__in=wanted) | Q(target_ref__in=wanted))
+    links = list(touching.only("id", "source_ref", "target_ref"))
+    if not links:
+        return []
+
+    endpoint_refs = {str(link.source_ref) for link in links} | {str(link.target_ref) for link in links}
+    nodes = list(inner_models.Instance.objects.for_organization(graph.organization).filter(id__in=endpoint_refs).select_related("term"))
+    resolved, _ = projector_module.resolve_categories(graph, nodes)
+
+    by_category: dict[Any, list[Any]] = defaultdict(list)
+    for link in links:
+        source = resolved.get(str(link.source_ref))
+        target = resolved.get(str(link.target_ref))
+        if source is None or target is None or source.pk != target.pk:
+            continue
+        by_category[source.pk].append(link)
+
+    categories = {category.pk: category for category in resolved.values()}
+    surviving: list[Any] = []
+    for category_pk, candidate_links in by_category.items():
+        category = categories[category_pk]
+        admitted = claims_module.standing(
+            inner_models.Link.objects.for_organization(graph.organization)
+            .filter(pk__in=[link.pk for link in candidate_links])
+            .filter(selector_module.trust_filter(category.definition, kind="SAMENESS")),
+            "link",
+            predicate=selector_module.trust_predicate(category.definition, kind="SAMENESS"),
+        )
+        surviving.extend(admitted)
+    return surviving
+
+
+def component_refs_for_view(graph: Any, node_refs: Iterable[str]) -> dict[str, list[str]]:
+    """One view's components: sameness folded under each category's rule.
+
+    The rule-driven successor of the selector walk RFC 0009 deleted (RFC 0011):
+    the frontier loop `recompute` uses, but each hop keeps only the claims
+    :func:`view_sameness_links` admits — same-category endpoints, the
+    category's `KIND SAMENESS` trust for the claim and its standing. The
+    organization-grain cache (`component_refs`) remains the no-view answer.
+    """
+    refs = [str(ref) for ref in node_refs]
+
+    adjacency: dict[str, set[str]] = defaultdict(set)
+    seen: set[str] = set()
+    frontier = set(refs)
+    while frontier:
+        seen |= frontier
+        discovered: set[str] = set()
+        for link in view_sameness_links(graph, frontier):
+            source, target = str(link.source_ref), str(link.target_ref)
+            adjacency[source].add(target)
+            adjacency[target].add(source)
+            discovered |= {source, target}
+        frontier = discovered - seen
+
+    return {ref: sorted(_reachable(ref, adjacency)) for ref in refs}
 
 
 @transaction.atomic

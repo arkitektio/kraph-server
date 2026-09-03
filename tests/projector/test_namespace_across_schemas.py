@@ -225,7 +225,7 @@ async def test_a_view_reads_another_words_claims_under_its_own_name(api_schema, 
     """Same claims, different knowledge — the definitional half.
 
     The census view declares no word of its own: its one category *derives*
-    from `Cell` (`definition.asserted_as`). A claim written under `Cell` draws
+    from `Cell` (a WORD condition in its definition). A claim written under `Cell` draws
     in cytology under the label `Cell` and in census under `ObservedCell` —
     one claim, two vocabularies, and neither view owns the evidence.
     """

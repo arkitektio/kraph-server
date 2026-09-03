@@ -89,3 +89,21 @@ def accessible_graph(info, pk):
 
     context.validate_graph_access(info, graph)
     return graph
+
+
+def schema_scoped(info: Any, model: Any, identifier: Any, *, what: str) -> Any:
+    """`scoped`, plus the definition-editing RBAC (RFC 0013).
+
+    For the mutations that change what a graph's words mean. Tenancy first
+    (the row must be reachable at all), then owner-or-admin on its graph.
+    """
+    item = scoped(info, model, identifier, what=what)
+    graph_of(item).validate_definition_editable(info)
+    return item
+
+
+def schema_graph(info: Any, identifier: Any) -> Any:
+    """`accessible_graph`, plus the definition-editing RBAC (RFC 0013)."""
+    graph = accessible_graph(info, identifier)
+    graph.validate_definition_editable(info)
+    return graph

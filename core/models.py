@@ -81,9 +81,9 @@ def new_projection_handle() -> str:
 
 
 class Graph(models.Model):
-    """A view over the organization's evidence: a selector saying which claims
-    count, the categories saying what its words mean, and one Apache AGE
-    namespace the projection is drawn into.
+    """A view over the organization's evidence: categories saying what its
+    words mean — and, since RFC 0009, whose claims count for each of them —
+    drawn into one projection namespace.
     """
 
     node_deletion_allowed = models.BooleanField(
@@ -135,31 +135,12 @@ class Graph(models.Model):
         related_name="pinned_graphs",
         help_text="The users that have this query active",
     )
-    rules = models.JSONField(
-        default=list,
-        blank=True,
-        help_text="Action-level allow/deny rules evaluated against request context",
-    )
-    selector = models.JSONField(
-        default=dict,
-        blank=True,
-        help_text=(
-            "Declarative definition of which of the organization's evidence this graph "
-            "projects. A graph is a view now, not a silo: membership is evaluated from "
-            "this selector into a droppable cache, never maintained on write — otherwise "
-            "every ingest would have to know about every projection. "
-            "Shape: {category_keys: [...], assertion_filter: {subjects, app_ids, "
-            "action_names}, as_of: timestamp, since: timestamp, observed_window: [from, to]} — "
-            "`as_of`/`since` are the belief-time upper and lower bounds. "
-            "Read in three places, all at projection or read time: which metrics a derived "
-            "property counts, whose classification claims a defined category admits, and whose "
-            "existence claims decide whether a node is in this view at all. "
-            "**Changing it requires a reproject**: the projection is a cache of the answer this "
-            "selector produced, so editing the selector without rebuilding leaves the graph "
-            "showing the previous one — which is why `updateGraph(selector:)` rebuilds before "
-            "returning."
-        ),
-    )
+    # `rules` (per-action allow/deny lists) are gone (RFC 0013). Changing a
+    # graph's definition is plain RBAC: the owner, an organization admin, or a
+    # superuser — see `validate_definition_editable`.
+    # `selector` is gone (RFC 0009): a graph has no claim scope of its own.
+    # What counts as evidence is each category's `definition` — the complete
+    # rule for its word — and each derived property's `rule.evidence`.
     is_archived = models.BooleanField(
         default=False,
         help_text=(
@@ -177,12 +158,6 @@ class Graph(models.Model):
             "state and carries no assertion."
         ),
     )
-
-    @property
-    def rules_model(self) -> list[input_models.ActionRuleInput]:
-        from graph_engine.input_models import ActionRuleInput
-
-        return [ActionRuleInput(**rule) for rule in self.rules] if self.rules else []
 
     def get_entity_def(self, key: str) -> "EntityCategory":
         """Get the entity definition for a specific label from the active schema."""
@@ -247,66 +222,25 @@ class Graph(models.Model):
             return GraphDefinitionModel.model_validate(schema.definition)
         return None
 
-    def can_auto_add_structures(self, info: Info) -> bool:
-        """Whether this graph allows automatically adding structures when recording metrics with new structure identifiers."""
-        return self.can_perform_action(info=info, action="AUTO_ADD_STRUCTURES")
+    def validate_definition_editable(self, info: Info | Any) -> None:
+        """Refuse a schema change from anyone but the owner, an admin, or a superuser.
 
-    def _extract_request_roles(self, info: Info | Any) -> set[str]:
-        return set()
+        This replaced the per-action `rules` lists (RFC 0013). Tenancy
+        (`validate_accessible`) still governs reading and instance writes; this
+        guard is only for the mutations that change what the graph's words
+        mean — creating, updating or deleting categories.
+        """
+        request = info.context.request
+        user = getattr(request, "user", None)
+        if getattr(user, "is_superuser", False):
+            return
+        if user is not None and self.user_id == getattr(user, "id", None):
+            return
+        membership = getattr(request, "membership", None)
+        if membership is not None and getattr(membership, "organization_id", None) == self.organization_id and "admin" in list(getattr(membership, "roles", None) or []):
+            return
+        raise PermissionError(f"Changing graph '{self.name}' needs its owner or an organization admin — the schema is the view's contract, and tenancy alone does not grant rewriting it.")
 
-    def _extract_request_scopes(self, request: Any) -> set[str]:
-        return set()
-
-    def _rule_filter_matches(self, rule_filter: input_models.ActionFilterInput, request: Any) -> bool:
-        required_roles = rule_filter.required_roles if rule_filter else None
-        if required_roles:
-            request_roles = self._extract_request_roles(info=request)
-            if not set(map(str, required_roles)).issubset(request_roles):
-                return False
-
-        required_scopes = rule_filter.required_scopes if rule_filter else None
-        if required_scopes:
-            request_scopes = self._extract_request_scopes(request)
-            if not set(map(str, required_scopes)).issubset(request_scopes):
-                return False
-
-        return True
-
-    def can_perform_action(self, info: Info | Any, action: input_models.Action) -> bool:
-        # DO NOT CHANGE THIS THIS PART WE WILL ONLY EXTRAX ROLES AND SCOPES HERE AND THEN CHECK THEM IN THE RULES, THIS WAY WE CAN SUPPORT BOTH A FLAT RULE STRUCTURE AND A NESTED ONE WITH ACTIONS AS KEYS
-        scopes = self._extract_request_scopes(info)
-        roles = self._extract_request_roles(info)
-        for rule in self.rules_model:
-            rule_action = rule.action
-            if rule_action and rule_action != action:
-                continue
-
-            rule_filter = rule.filter
-            if not self._rule_filter_matches(rule_filter, info.context.request):
-                continue
-
-            if rule.allow:
-                return True
-            else:
-                return False
-
-        return True
-
-    def validate_action_allowed(self, info: Info | Any, action: str) -> None:
-        if not self.can_perform_action(info=info, action=action):
-            raise PermissionError(f"Action {action} is not allowed in this graph for the current user context")
-
-    @property
-    def allow_adding_structure_definitions(self) -> bool:
-        return True
-
-    @property
-    def allow_auto_add_structures(self) -> bool:
-        return True
-
-    @property
-    def allow_auto_add_structure_definitions(self) -> bool:
-        return True
 
     @property
     def allow_adding_entity_definitions(self) -> bool:

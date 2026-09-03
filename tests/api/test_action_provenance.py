@@ -158,7 +158,7 @@ async def test_a_selector_can_filter_by_the_run(
 ) -> None:
     """What populating `action_id` buys: "count only what this analysis produced".
 
-    Note the filter that is still dead. `assertion_filter.action_names` has no
+    Note the condition that is still dead. An `ACTION` condition has no
     source — a provenance token attests causation and carries no human-readable
     name for the action, and neither does `koherent.Task`, which is built from the
     same claims. Filtering by run means filtering on `action_id`.

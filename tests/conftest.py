@@ -15,6 +15,7 @@ from graph_engine import input_models as models
 from graph_engine.materialize import materialize
 from graph_engine.projection import TableProjector
 from core import models as core_models
+from tests import rules
 
 
 @pytest.fixture(scope="function")
@@ -448,7 +449,7 @@ def oncology_graph(transactional_db, table_projector, oncology_graph_schema, aut
 @pytest.fixture(scope="function")
 def census_graph(transactional_db, table_projector, authenticated_context) -> core_models.Graph:
     """A view that declares no word of its own — its one category **derives**
-    from the word `Cell` (`definition.asserted_as`, flat form = one clause),
+    from the word `Cell` (a rule whose WORD condition names it, RFC 0010),
     so it reads other views' claims under its own name. Declared in the schema
     itself (RFC 0007): a graph's meaning is part of its definition document."""
     request = authenticated_context.request
@@ -460,7 +461,7 @@ def census_graph(transactional_db, table_projector, authenticated_context) -> co
                     models.EntityDefinitionInput(
                         key="ObservedCell",
                         label="Observed cell",
-                        definition=models.CategoryDefinitionInput(asserted_as=["Cell"]),
+                        definition=models.CategoryDefinitionInput.model_validate(rules.definition(rules.rule(rules.word("Cell")))),
                     ),
                 ],
             ),
@@ -512,11 +513,11 @@ def subsumption_graph(transactional_db, table_projector, authenticated_context) 
                 entities=[
                     models.EntityDefinitionInput(
                         key="Cell",
-                        definition=models.CategoryDefinitionInput(
-                            any_of=[
-                                models.CategoryDefinitionClauseInput(asserted_as=["Cell"], assertion_filter=models.AssertionFilterInput(subjects=["peter"])),
-                                models.CategoryDefinitionClauseInput(asserted_as=["StemCell"], assertion_filter=models.AssertionFilterInput(subjects=["karl"]), since=datetime(2026, 12, 5, tzinfo=timezone.utc)),
-                            ]
+                        definition=models.CategoryDefinitionInput.model_validate(
+                            rules.definition(
+                                rules.rule(rules.word("Cell"), rules.by("peter")),
+                                rules.rule(rules.word("StemCell"), rules.by("karl"), rules.since(datetime(2026, 12, 5, tzinfo=timezone.utc))),
+                            )
                         ),
                     ),
                 ],

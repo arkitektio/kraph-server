@@ -77,8 +77,17 @@ class Label:
     latest_assertion_id: Any
 
 
-def components_for(organization: Any, refs: Iterable[str]) -> dict[str, list[str]]:
-    """The component each ref belongs to. Two queries for the whole page."""
+# Labels and connections are **organization grain** (RFC 0009): they answer
+# "what does the log say", whoever said it. Components and sameness fold per
+# view again since RFC 0011 — rule-driven, within each node's category — while
+# the claim-grain reads (no graph) keep the organization's cached answer.
+
+
+def components_for(organization: Any, refs: Iterable[str], graph: Any = None) -> dict[str, list[str]]:
+    """The component each ref belongs to. Two queries for the whole page — or,
+    with a view in scope, the per-category walk (RFC 0011)."""
+    if graph is not None:
+        return identity_module.component_refs_for_view(graph, refs)
     return identity_module.component_refs(organization, refs)
 
 
@@ -111,10 +120,12 @@ def labels_for(organization: Any, refs: Iterable[str]) -> dict[str, list[Label]]
 
     rows = (
         claims_module.standing(
-            evidence_models.Link.objects.for_organization(organization).filter(
+            evidence_models.Link.objects.for_organization(organization)
+            .filter(
                 kind=evidence_models.Link.Kind.CLASSIFIES,
                 source_ref__in=wanted,
-            ),
+            )
+            ,
             "link",
         )
         .values("source_ref", "term_id")
@@ -152,8 +163,9 @@ def labels_for(organization: Any, refs: Iterable[str]) -> dict[str, list[Label]]
     return dict(grouped)
 
 
-def sameness_for(organization: Any, refs: Iterable[str]) -> dict[str, list[Any]]:
-    """The standing sameness claims touching each ref. One query.
+def sameness_for(organization: Any, refs: Iterable[str], graph: Any = None) -> dict[str, list[Any]]:
+    """The standing sameness claims touching each ref. One query — or, with a
+    view in scope, the claims its categories admit (RFC 0011).
 
     Exposed alongside the component rather than folded into it, so a merge is
     visible and contestable instead of silent: the panel can say *who* said two
@@ -163,10 +175,13 @@ def sameness_for(organization: Any, refs: Iterable[str]) -> dict[str, list[Any]]
     if not wanted:
         return {}
 
-    links = claims_module.standing(
-        evidence_models.Link.objects.for_organization(organization).filter(_touching(wanted), kind=evidence_models.Link.Kind.SAME_AS),
-        "link",
-    ).select_related("assertion")
+    if graph is not None:
+        links = identity_module.view_sameness_links(graph, wanted)
+    else:
+        links = claims_module.standing(
+            evidence_models.Link.objects.for_organization(organization).filter(_touching(wanted), kind=evidence_models.Link.Kind.SAME_AS),
+            "link",
+        ).select_related("assertion")
 
     return _group_by_endpoint(links, wanted)
 
@@ -253,7 +268,7 @@ class Known:
     connections: list[Any]
 
 
-def known_about(refs: Iterable[str]) -> list[Known]:
+def known_about(refs: Iterable[str], graph: Any = None) -> list[Known]:
     """The whole panel, for a page of nodes, in a constant number of queries.
 
     Batched as one function rather than four loaders because all four questions
@@ -284,13 +299,13 @@ def known_about(refs: Iterable[str]) -> list[Known]:
     for organization_id, node_refs in by_organization.items():
         organization = organizations[organization_id]
 
-        components = components_for(organization, node_refs)
+        components = components_for(organization, node_refs, graph=graph)
         # Every member of every component on the page, asked for once. The three
         # reads below are one query each regardless of how many nodes that is.
         every_member = sorted({member for members in components.values() for member in members})
 
         labels = labels_for(organization, every_member)
-        sameness = sameness_for(organization, every_member)
+        sameness = sameness_for(organization, every_member, graph=graph)
         connections = connections_for(organization, every_member)
 
         for ref in node_refs:

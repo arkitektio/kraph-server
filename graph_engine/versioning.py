@@ -70,7 +70,14 @@ def snapshot_definition(graph: core_models.Graph) -> dict[str, Any]:
     active = core_models.GraphSchema.active_for(graph)
     version = active.version if active else "1.0.0"
 
-    entities = [{"key": category.key, "description": category.description, "property_definitions": _property_definitions(category)} for category in graph.entity_categories.order_by("key")]
+    # `definition` — the category's complete rule since RFC 0009 — is part of
+    # the snapshot: a trust edit is a schema change, versioned like one. (This
+    # closes the RFC 0007 open item for the predicate; rule evidence filters
+    # ride `property_definitions` and were always included.)
+    entities = [
+        {"key": category.key, "description": category.description, "property_definitions": _property_definitions(category), **({"definition": dict(category.definition)} if category.definition else {})}
+        for category in graph.entity_categories.order_by("key")
+    ]
 
     relations = [
         {
@@ -79,6 +86,7 @@ def snapshot_definition(graph: core_models.Graph) -> dict[str, Any]:
             "source": category.source_definition,
             "target": category.target_definition,
             "properties": _property_definitions(category),
+            **({"definition": dict(category.definition)} if category.definition else {}),
         }
         for category in graph.relation_categories.order_by("key")
     ]
@@ -90,8 +98,33 @@ def snapshot_definition(graph: core_models.Graph) -> dict[str, Any]:
             "inputs": list(category.source_entity_roles or []),
             "outputs": list(category.target_entity_roles or []),
             "properties": _property_definitions(category),
+            **({"definition": dict(category.definition)} if category.definition else {}),
         }
         for category in graph.natural_event_categories.order_by("key")
+    ]
+
+    structure_relations = [
+        {
+            "key": category.key,
+            "description": category.description,
+            "source": category.source_definition,
+            "target": category.target_definition,
+            "properties": _property_definitions(category),
+            **({"definition": dict(category.definition)} if category.definition else {}),
+        }
+        for category in graph.structure_relation_categories.order_by("key")
+    ]
+
+    measurements = [
+        {
+            "key": category.key,
+            "description": category.description,
+            "source": category.source_definition,
+            "target": category.target_definition,
+            "properties": _property_definitions(category),
+            **({"definition": dict(category.definition)} if category.definition else {}),
+        }
+        for category in graph.measurement_categories.order_by("key")
     ]
 
     return {
@@ -100,6 +133,8 @@ def snapshot_definition(graph: core_models.Graph) -> dict[str, Any]:
             "entities": entities,
             "relations": relations,
             "events": events,
+            "structure_relations": structure_relations,
+            "measurements": measurements,
         },
     }
 

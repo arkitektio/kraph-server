@@ -127,26 +127,9 @@ def validate_graph_access(info: Info, graph: models.Graph) -> models.Graph:
     return graph
 
 
-def validate_graph_actions(
-    info: Info,
-    graph: models.Graph,
-    actions: list[input_models.Action | str] | None = None,
-) -> models.Graph:
-    """Validate that all requested actions are allowed for the current graph context."""
-    if not actions:
-        return graph
-
-    for action in actions:
-        action_value = action.value if hasattr(action, "value") else str(action)
-        graph.validate_action_allowed(info=info, action=action_value)
-
-    return graph
-
-
 def get_accessible_graph(
     info: Info,
     identifier: str,
-    actions: list[input_models.Action | str] | None = None,
 ) -> models.Graph:
     """Resolve a `graph:` argument to the graph it names, then authorize it.
 
@@ -172,4 +155,4 @@ def get_accessible_graph(
         raise ValueError(f"Graph not found for identifier {identifier}")
 
     graph = validate_graph_access(info, graph)
-    return validate_graph_actions(info, graph, actions=actions)
+    return graph

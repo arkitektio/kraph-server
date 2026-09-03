@@ -62,33 +62,69 @@ def links_of_kind(organization: Any, kind: Any) -> Any:
 
 
 def links_for_category(organization: Any, category: Any, kind: Any) -> Any:
-    """Standing claims of one kind stated in a category's word.
+    """Standing claims of one kind, under the category's rule.
 
-    Scoped by **term**, not by the category: a claim names one of the
-    organization's words, and a category is one view's rule for that word. Two
-    graphs declaring the same word therefore list the same claims, which is the
-    whole gain from the log naming a term.
+    A primitive category lists every claim naming its word, standings
+    organization grain — two graphs declaring the same word list the same
+    claims, which is the gain from the log naming a term. A **defined**
+    category lists what its rules admit (RFC 0012): the claims its
+    CLASSIFICATION-covering rules match, standings folded under its EXISTENCE
+    trust — the same two-part fold every other claim kind gets.
 
     The organization is passed in rather than reached through `category.graph`. The
-    claims are the tenant's and the category only supplies the word, so taking the
-    tenant from a graph would say that a view owns the claims it draws — and it made
+    claims are the tenant's and the category only supplies the rule, so taking the
+    tenant from a graph would say that a view owns the claims it lists — and it made
     the one thing the caller has already authorized implicit here.
     """
+    if category.definition:
+        return claims_module.standing(
+            evidence_models.Link.objects.for_organization(organization)
+            .filter(kind=kind, term__kind=str(category.kind))
+            .filter(selector_module.classification_filter(category.definition)),
+            "link",
+            predicate=selector_module.trust_predicate(category.definition, kind="EXISTENCE"),
+        ).select_related("assertion", "term")
     return links_of_kind(organization, kind).filter(term_id=category.term_id)
 
 
 def links_in_graph(graph: Any, kind: Any, *, ref_field: str) -> Any:
-    """Standing claims of one kind touching a node this graph contains.
+    """Standing claims of one kind touching a node this graph contains, folded
+    under each claim's category rule.
 
     ``ref_field`` says which end has to be in the graph — for a participation the
     event does, and `participation_key` stores the event as `target_ref` on both
     the input and the output side.
 
     Membership comes from `selector.instance_refs_for`, the same subquery
-    `informs_links_for` uses, so a graph-scoped edge list agrees with every other
-    graph-scoped read about what the graph contains.
+    `informs_links_for` uses. The **fold** is per category (RFC 0009): each
+    link's term names a category of this graph, and that category's clauses say
+    whether the claim counts and whose standings fold — so this list agrees with
+    what `projector.active_participation_links` would draw. This used to apply
+    only the membership half, listing claims the same view refused to draw.
     """
-    return links_of_kind(graph.organization, kind).filter(**{f"{ref_field}__in": selector_module.instance_refs_for(graph)})
+    from graph_engine import projector as projector_module
+
+    base = (
+        evidence_models.Link.objects.for_organization(graph.organization)
+        .filter(kind=kind)
+        .filter(**{f"{ref_field}__in": selector_module.instance_refs_for(graph)})
+    )
+
+    by_term = projector_module.categories_by_term(graph)
+    surviving: set[Any] = set()
+    for term_id in set(base.values_list("term_id", flat=True)):
+        category = by_term.get(term_id)
+        if category is None:
+            continue
+        if category.definition:
+            claims = base.filter(selector_module.classification_filter(category.definition), term__kind=str(category.kind))
+            predicate = selector_module.trust_predicate(category.definition, kind="EXISTENCE")
+        else:
+            claims = base.filter(term_id=category.term_id)
+            predicate = None
+        surviving.update(claims_module.standing(claims, "link", predicate=predicate).values_list("pk", flat=True))
+
+    return evidence_models.Link.objects.for_organization(graph.organization).filter(pk__in=surviving).select_related("assertion", "term")
 
 
 def narrow(links: Any, filter_model: Any, ordering_models: Iterable[Any], pagination_model: Any) -> list[Any]:

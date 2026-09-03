@@ -31,7 +31,7 @@ from core import models as core_models
 from evidence import claims as claims_module
 from evidence import models as evidence_models
 from graph_engine.controller import GraphController
-from tests import drawing
+from tests import drawing, rules
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {
@@ -296,7 +296,7 @@ async def test_attesting_a_retracted_entity_brings_it_back_unchanged(
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_two_graphs_can_disagree_about_whether_a_node_exists(
+async def test_two_categories_can_disagree_about_whether_a_node_exists(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
@@ -304,18 +304,21 @@ async def test_two_graphs_can_disagree_about_whether_a_node_exists(
 ) -> None:
     """The reason existence is a fold and not a flag.
 
-    A retraction is somebody's claim, so a graph that does not count that
-    somebody is not bound by it. Here `test_graph` counts everyone and drops the
-    node; a rebuild under a selector naming a different subject keeps it — from
-    the very same evidence, with nothing rewritten.
+    A retraction is somebody's claim, so a category whose clauses do not cover
+    that claim is not bound by it (RFC 0009: the fold is per resolved category).
+    Here the primitive Cell counts everyone and drops the node; rebuilt under a
+    definition frozen before the retraction, the very same evidence keeps it —
+    nothing rewritten.
 
     A cached boolean on `Node` could not express this, which is why there isn't
     one. It is also why the old `Node.status` column was the wrong shape rather
     than merely unwritten.
     """
     from asgiref.sync import sync_to_async
+    from django.utils import timezone as django_timezone
 
     entity_id = await _cell(api_schema, simple_api_context, test_graph)
+    cutoff = django_timezone.now()
 
     archived = await api_schema.execute(RETRACT_ENTITY, variable_values={"input": {"id": entity_id}}, context_value=simple_api_context)
     assert archived.errors is None, f"GraphQL errors: {archived.errors}"
@@ -324,19 +327,17 @@ async def test_two_graphs_can_disagree_about_whether_a_node_exists(
     def vertices() -> int:
         return _vertices(table_projector, test_graph, entity_id)
 
-    assert await vertices() == 0, "The graph counts the retraction, so the node goes"
+    assert await vertices() == 0, "the primitive category counts the retraction, so the node goes"
 
     @sync_to_async
-    def rebuild_counting_only_someone_else() -> int:
-        # A selector that listens to a subject who made no claim here. The
-        # retraction is filtered out of the fold, so nothing says the node is
-        # absent — and silence is not dissent.
-        test_graph.selector = {"assertion_filter": {"subjects": ["somebody-who-said-nothing"]}}
-        test_graph.save()
+    def rebuild_frozen_before_the_retraction() -> int:
+        category = core_models.EntityCategory.objects.get(graph=test_graph, key="Cell")
+        category.definition = rules.definition(rules.rule(rules.word("Cell"), rules.before(cutoff)))
+        category.save()
         GraphController(projector=table_projector).rebuild_projection(test_graph)
         return _vertices(table_projector, test_graph, entity_id)
 
-    assert await rebuild_counting_only_someone_else() == 1, "A graph that does not count the retraction still holds the node"
+    assert await rebuild_frozen_before_the_retraction() == 1, "a category that does not count the retraction still holds the node"
 
 
 @pytest.mark.django_db(transaction=True)
@@ -395,7 +396,7 @@ async def test_a_word_two_graphs_declare_is_seen_by_both(
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_a_selector_since_ignores_earlier_retractions(
+async def test_a_clause_since_ignores_earlier_retractions(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
@@ -403,25 +404,31 @@ async def test_a_selector_since_ignores_earlier_retractions(
 ) -> None:
     """`since` is the lower half of belief time, and it scopes existence too.
 
-    A graph whose selector starts counting *after* a retraction was asserted is
+    A category whose clause starts counting *after* a retraction was asserted is
     not bound by it: the fold sees no position at all, and silence means the
     node stands. The mirror of `as_of`, which recovers the belief *before* a
-    retraction.
+    retraction. Note the clause covers the classification too (RFC 0009: one
+    rule), so the admitting claim has to fall inside the window as well — the
+    node here is minted after the cutoff and the retraction back-dated before it.
     """
     from datetime import timedelta
 
     from asgiref.sync import sync_to_async
     from django.utils import timezone as django_timezone
 
-    entity_id = await _cell(api_schema, simple_api_context, test_graph)
-    archived = await api_schema.execute(RETRACT_ENTITY, variable_values={"input": {"id": entity_id}}, context_value=simple_api_context)
-    assert archived.errors is None, f"GraphQL errors: {archived.errors}"
+    from tests import claims
+
+    cutoff = django_timezone.now()
 
     @sync_to_async
-    def rebuild_counting_only_the_future() -> int:
-        test_graph.selector = {"since": (django_timezone.now() + timedelta(days=1)).isoformat()}
-        test_graph.save()
+    def story() -> int:
+        org = test_graph.organization
+        entity_id = claims.mint(org, "Cell", "late-annotator", asserted_at=cutoff + timedelta(hours=1))
+        claims.retract_node(org, entity_id, "early-retractor", asserted_at=cutoff - timedelta(days=1))
+        category = core_models.EntityCategory.objects.get(graph=test_graph, key="Cell")
+        category.definition = rules.definition(rules.rule(rules.word("Cell"), rules.since(cutoff)))
+        category.save()
         GraphController(projector=table_projector).rebuild_projection(test_graph)
         return _vertices(table_projector, test_graph, entity_id)
 
-    assert await rebuild_counting_only_the_future() == 1, "the retraction predates the window this graph counts, so nothing says the node is absent"
+    assert await story() == 1, "the retraction predates the window this category counts, so nothing says the node is absent"

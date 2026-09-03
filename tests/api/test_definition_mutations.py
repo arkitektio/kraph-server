@@ -13,17 +13,17 @@ from kante.context import HttpContext
 
 from core import models as core_models
 from evidence import models as evidence_models
-from tests import claims, drawing, writes
+from tests import claims, drawing, rules, writes
 
 CREATE_CATEGORY = """
     mutation C($input: CreateEntityCategoryInput!) {
-        createEntityCategory(input: $input) { id key definition { anyOf { assertedAs since assertionFilter { subjects } } } }
+        createEntityCategory(input: $input) { id key definition { rules { when { field operator value } } } }
     }
 """
 
 UPDATE_CATEGORY = """
     mutation U($input: UpdateEntityCategoryInput!) {
-        updateEntityCategory(input: $input) { id definition { anyOf { assertedAs assertionFilter { subjects } } } }
+        updateEntityCategory(input: $input) { id definition { rules { when { field operator value } } } }
     }
 """
 
@@ -64,14 +64,14 @@ async def test_create_with_a_definition_backfills_the_admitted_history(api_schem
             "input": {
                 "graph": graph_id,
                 "key": "PetersCells",
-                "definition": {"anyOf": [{"assertedAs": ["Cell"], "assertionFilter": {"subjects": ["peter"]}}]},
+                "definition": rules.definition(rules.rule(rules.word("Cell"), rules.by("peter"))),
                 "backfill": True,
             }
         },
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
-    assert created.data["createEntityCategory"]["definition"]["anyOf"][0]["assertedAs"] == ["Cell"], "the meaning reads back from the same mutation"
+    assert {"field": "WORD", "operator": "IS", "value": "Cell"} in created.data["createEntityCategory"]["definition"]["rules"][0]["when"], "the meaning reads back from the same mutation"
 
     @sync_to_async
     def drawn():
@@ -91,7 +91,7 @@ async def test_updating_a_definition_moves_membership_and_writes_no_evidence(api
     graph_id = made.data["createGraph"]["id"]
     created = await api_schema.execute(
         CREATE_CATEGORY,
-        variable_values={"input": {"graph": graph_id, "key": "TheCells", "definition": {"anyOf": [{"assertedAs": ["Cell"], "assertionFilter": {"subjects": ["peter"]}}]}, "backfill": True}},
+        variable_values={"input": {"graph": graph_id, "key": "TheCells", "definition": rules.definition(rules.rule(rules.word("Cell"), rules.by("peter"))), "backfill": True}},
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
@@ -105,11 +105,11 @@ async def test_updating_a_definition_moves_membership_and_writes_no_evidence(api
 
     updated = await api_schema.execute(
         UPDATE_CATEGORY,
-        variable_values={"input": {"id": category_id, "definition": {"anyOf": [{"assertedAs": ["Cell"], "assertionFilter": {"subjects": ["karl"]}}]}}},
+        variable_values={"input": {"id": category_id, "definition": rules.definition(rules.rule(rules.word("Cell"), rules.by("karl")))}},
         context_value=simple_api_context,
     )
     assert updated.errors is None, f"GraphQL errors: {updated.errors}"
-    assert updated.data["updateEntityCategory"]["definition"]["anyOf"][0]["assertionFilter"]["subjects"] == ["karl"]
+    assert {"field": "SUBJECT", "operator": "IS", "value": "karl"} in updated.data["updateEntityCategory"]["definition"]["rules"][0]["when"]
 
     @sync_to_async
     def drawn():
@@ -133,17 +133,20 @@ async def test_malformed_definitions_are_refused_by_name(api_schema: kante.Schem
             context_value=simple_api_context,
         )
 
-    both = await attempt({"assertedAs": ["Cell"], "anyOf": [{"assertedAs": ["Cell"]}]})
-    assert both.errors is not None and "not both" in str(both.errors[0]), "flat form and anyOf together is refused, not silently merged"
+    empty_union = await attempt({"rules": []})
+    assert empty_union.errors is not None, "an empty rule list matches nothing and is refused at the write"
 
-    empty_union = await attempt({"anyOf": []})
-    assert empty_union.errors is not None, "an empty union matches nothing and is refused at the write"
+    wordless = await attempt(rules.definition(rules.rule(rules.by("peter"))))
+    assert wordless.errors is not None, "a rule must name the word(s) it derives from"
 
-    wordless = await attempt({"anyOf": [{"assertionFilter": {"subjects": ["peter"]}}]})
-    assert wordless.errors is not None, "a clause must name the words it derives from"
+    empty_rule = await attempt({"rules": [{"when": []}]})
+    assert empty_rule.errors is not None, "a rule needs at least one condition"
 
-    unknown = await attempt({"anyOf": [{"assertedAs": ["Cell"], "tags": ["old"]}]})
+    unknown = await attempt({"rules": [{"when": [rules.word("Cell")], "tags": ["old"]}]})
     assert unknown.errors is not None, "an unknown key is an error, not a silent no-op"
+
+    bad_operator = await attempt(rules.definition(rules.rule(rules.condition("SUBJECT", "BEFORE", "peter"))))
+    assert bad_operator.errors is not None, "a time operator on an identity field is refused by name"
 
 
 @pytest.mark.django_db(transaction=True)
@@ -152,7 +155,7 @@ async def test_a_graph_definition_document_carries_meaning(api_schema: kante.Sch
     """The whole view — words *and* what they mean — arrives as one schema.
 
     `createGraph`'s definition document declares a defined category inline, and
-    `backfill` draws the history its clauses admit. No follow-up mutation, no
+    `backfill` draws the history its rules admit. No follow-up mutation, no
     Python: the definition input is part of `GraphDefinitionInput`.
     """
     peters, _ = await _claimed_cells(api_schema, simple_api_context, literal_graph)
@@ -170,7 +173,7 @@ async def test_a_graph_definition_document_carries_meaning(api_schema: kante.Sch
                 "definition": {
                     "extensions": {
                         "entities": [
-                            {"key": "PetersCell", "definition": {"anyOf": [{"assertedAs": ["Cell"], "assertionFilter": {"subjects": ["peter"]}}]}}
+                            {"key": "PetersCell", "definition": rules.definition(rules.rule(rules.word("Cell"), rules.by("peter")))}
                         ]
                     }
                 },

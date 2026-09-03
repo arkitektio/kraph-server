@@ -902,11 +902,11 @@ class CurrentStanding(models.Model):
     not dissent, which is the same rule :func:`evidence.claims.stands_for` applies.
 
     **Nodes are deliberately absent.** Whether a node stands is a per-view
-    question — a graph's selector decides whose claims it counts, so two
-    projections may legitimately disagree — and one organization-wide answer would
-    be wrong for at least one of them. `projector.resolve_categories` folds `Standing`
-    under `claim_filter(graph.selector)` for exactly that reason, and must keep
-    doing so. The three kinds here are organization-grain: a retracted metric is
+    question — a node's category clauses decide whose claims it counts (RFC
+    0009), so two views may legitimately disagree — and one organization-wide
+    answer would be wrong for at least one of them. `projector.resolve_categories`
+    folds `Standing` under the resolved category's `trust_filter` for exactly
+    that reason, and must keep doing so. The three kinds here are organization-grain: a retracted metric is
     retracted everywhere.
     """
 

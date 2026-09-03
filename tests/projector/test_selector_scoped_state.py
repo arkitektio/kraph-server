@@ -137,8 +137,16 @@ async def test_a_scoped_graph_reads_the_same_value_before_and_after_a_rebuild(
 
     @sync_to_async
     def scope_to_window() -> None:
-        test_graph.selector = {"observed_window": WINDOW}
-        test_graph.save()
+        # The window is the property's own rule now (RFC 0009/0010): MEASURED_AT
+        # conditions in `rule.evidence` on `avg_length`, in the stored spelling.
+        category = core_models.EntityCategory.objects.get(graph=test_graph, key="AIS")
+        for prop in category.property_definitions:
+            if prop.get("key") == "avg_length":
+                prop["rule"]["evidence"] = [
+                    {"field": "MEASURED_AT", "operator": "SINCE", "value": WINDOW[0]},
+                    {"field": "MEASURED_AT", "operator": "BEFORE", "value": WINDOW[1]},
+                ]
+        category.save()
 
     await scope_to_window()
 
@@ -178,8 +186,16 @@ async def test_a_retraction_after_a_rebuild_does_not_widen_the_scope(
 
     @sync_to_async
     def scope_to_window() -> None:
-        test_graph.selector = {"observed_window": WINDOW}
-        test_graph.save()
+        # The window is the property's own rule now (RFC 0009/0010): MEASURED_AT
+        # conditions in `rule.evidence` on `avg_length`, in the stored spelling.
+        category = core_models.EntityCategory.objects.get(graph=test_graph, key="AIS")
+        for prop in category.property_definitions:
+            if prop.get("key") == "avg_length":
+                prop["rule"]["evidence"] = [
+                    {"field": "MEASURED_AT", "operator": "SINCE", "value": WINDOW[0]},
+                    {"field": "MEASURED_AT", "operator": "BEFORE", "value": WINDOW[1]},
+                ]
+        category.save()
 
     await scope_to_window()
 

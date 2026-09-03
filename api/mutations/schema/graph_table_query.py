@@ -24,11 +24,7 @@ def create_graph_table_query_through_builder(
     """Create or update a graph table query from builder arguments. Upserts on `(graph, key)`."""
     model = input.to_pydantic()
 
-    graph = context.get_accessible_graph(
-        info,
-        str(model.graph),
-        actions=[input_models.Action.CREATE_BUILDER_ARG],
-    )
+    graph = context.get_accessible_graph(info, str(model.graph))
     plan = plan_from_builder_args(model.builder_args, model.column_input)
 
     graph_table_query, _ = models.GraphTableQuery.objects.update_or_create(

@@ -8,7 +8,7 @@ from core import enums, models
 from datalayer import models as dl_models
 from evidence import writer
 from ._guards import delete_or_explain, refuse_edge_properties
-from .._scoped import accessible_graph, scoped
+from .._scoped import accessible_graph, schema_graph, schema_scoped, scoped
 
 
 def create_relation_category(
@@ -37,7 +37,7 @@ def create_relation_category(
     if model.image:
         media_store = dl_models.MediaStore.objects.get(id=model.image)
 
-    graph = accessible_graph(info, model.graph)
+    graph = schema_graph(info, model.graph)
     # Keyed on `(graph, key)`, which is the pair `Category` is unique on —
     # and `key` is what a claim names. This used to key on `(graph, age_name)`
     # and never set `key` at all, so every category created here landed with
@@ -89,7 +89,7 @@ def update_relation_category(info: Info, input: inputs.UpdateRelationCategoryInp
     """GraphQL mutation wrapper for updating relation categories."""
     model = input.to_pydantic()  # Validate input with Pydantic models
 
-    item = scoped(info, models.RelationCategory, model.id, what="relation category")
+    item = schema_scoped(info, models.RelationCategory, model.id, what="relation category")
 
     if model.color:
         assert len(model.color) == 3 or len(model.color) == 4, "Color must be a list of 3 or 4 values RGBA"
@@ -106,6 +106,14 @@ def update_relation_category(info: Info, input: inputs.UpdateRelationCategoryInp
     item.color = model.color if model.color else item.color
     item.image = media_store if media_store else item.image
 
+    # The category's rule (RFC 0009): replaced whole, cleared to primitive, or
+    # left alone — the input refuses both at once.
+    meaning_before = dict(item.definition or {})
+    if getattr(model, "clear_definition", False):
+        item.definition = {}
+    elif getattr(model, "definition", None) is not None:
+        item.definition = model.definition.to_stored()
+
     if model.pin is not None:
         if model.pin:
             item.pinned_by.add(info.context.request.user)
@@ -114,7 +122,12 @@ def update_relation_category(info: Info, input: inputs.UpdateRelationCategoryInp
 
     item.save()
 
-    # No rematerialization here, and none owed. This resolver writes label,
+    if dict(item.definition or {}) != meaning_before:
+        # A rule change moves which claims draw this category's edges and whose
+        # standings count for them; only a rebuild moves that honestly.
+        context.get_controller().rebuild_projection(item.graph)
+
+    # No rematerialization here, and none owed for the cosmetic fields. This resolver writes label,
     # description, colour, store and pins — none of which a vertex or an
     # edge carries — and `property_definitions` is not among them, so nothing in
     # the projection can have gone stale.
@@ -135,6 +148,6 @@ def delete_relation_category(
     input: inputs.DeleteRelationCategoryInput,
 ) -> strawberry.ID:
     model = input.to_pydantic()  # Validate input with Pydantic models
-    item = scoped(info, models.RelationCategory, model.id, what="relation category")
+    item = schema_scoped(info, models.RelationCategory, model.id, what="relation category")
     delete_or_explain(item, what=f"relation category '{item.key}'", instead="Archive the relations asserted under it first.")
     return model.id
