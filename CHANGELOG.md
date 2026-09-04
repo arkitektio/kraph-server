@@ -1,6 +1,129 @@
 # CHANGELOG
 
 
+## v1.0.0-rc.14 (2026-09-04)
+
+### Features
+
+- A claim can cite the claims it came from (RFC 0017)
+  ([`6a83461`](https://github.com/arkitektio/kraph-server/commit/6a83461adf460e9bdca037f94f66eb66f3b13b38))
+
+`Link.Kind.DERIVED_FROM` runs from a new claim to the claim it derives from, either end any claim
+  row — instance, link, metric or structure. It is written under the same assertion as the citing
+  claim through `derivedFrom` on every claim-making input; `supersedeMetricValue` cites the value it
+  replaces on its own. Organization grain, never drawn, retractable through `retractLinks`, read as
+  `derivedFrom`/`derivations` on `Instance`, `Link`, `Metric` and `Structure`. `Metric` joins
+  `ClaimEndpoint`; `Derivation implements Edge`.
+
+BREAKING CHANGE: every claim-making input gains `derivedFrom: [String!]! = []`, `ClaimEndpoint`
+  gains `Metric`, and `LinkKind` gains `DERIVED_FROM`.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+
+Claude-Session: https://claude.ai/code/session_0168CpHm2MXhVCAra1GFySeJ
+
+- Confidence is a property of any claim (RFC 0016)
+  ([`0d3825c`](https://github.com/arkitektio/kraph-server/commit/0d3825cef865a5d9c05d7bcd232fed492018f03b))
+
+`confidence` — a nullable float in [0, 1] — on `Instance`, `Link` and `Standing` beside `Metric`'s,
+  refused outside the interval by input validation and by a check constraint on all four tables
+  (evidence/0012). Null is silence: not backfilled, not coerced.
+
+`CONFIDENCE` is a rule field with its own operator family, `AT_LEAST` (>=) and `BELOW` (<), legal on
+  every claim kind, in `when`, in `unless` and in `rule.evidence`. It compiles to a bound on the
+  claim's own column with no isnull branch, so a claim nobody scored satisfies neither operator — a
+  bound never admits silence and never subtracts it. `confidence_type` stays metric-only.
+
+Every instance/link/metric/participation input takes `confidence` beside `observedAt`; every
+  retract*/attest* input takes it beside `at`. Read on the `Instance`, `Link` and `Standing` types
+  and on the `Edge` interface (`RetrievedEdge.confidence` is a real field now; the dead
+  properties-dict accessors are gone).
+
+BREAKING CHANGE: new rule field and operators; new input and output fields on every claim shape.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+
+Claude-Session: https://claude.ai/code/session_0168CpHm2MXhVCAra1GFySeJ
+
+- Every claim has a time of observation (RFC 0015)
+  ([`7de3479`](https://github.com/arkitektio/kraph-server/commit/7de3479065dd749d9c5c30f74f5a99878e51c4b9))
+
+`observed_at` on Instance, Link and Metric (renamed from `measured_at`), defaulting to the
+  assertion's `asserted_at` so it is never null; `Standing.at` is the same axis for positions.
+  `OBSERVED_AT` replaces `MEASURED_AT` as a rule field and is legal on every claim kind, in `unless`
+  and in `rule.evidence`; KEY is the one metric-only field left. The selector routes it per queryset
+  (`at` over standings).
+
+Every instance/link/metric input takes `observedAt`, every retract/attest input takes `at`;
+  `MetricInput.timestamp` is gone. Migration core/0020 rewrites stored MEASURED_AT — an unknown
+  field compiles to nothing, so without it bounded properties would silently widen.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+
+Claude-Session: https://claude.ai/code/session_0168CpHm2MXhVCAra1GFySeJ
+
+- Property evidence is a rule list, rules can name the metric key (RFC 0014)
+  ([`2967c45`](https://github.com/arkitektio/kraph-server/commit/2967c459fc521c3ca46eaaaa3146436e555c1ada))
+
+`rule.evidence` on a derived property was a flat list of conditions, all of which had to hold. It is
+  now the definition's rule list shape — `MetricEvidenceInput { rules: [{when, unless}] }` — so a
+  property can union producers and carve out exceptions ("segmenter-v3, or segmenter-v2 measured
+  before June, unless via the old pipeline"). WORD and KIND are refused anywhere in it (a metric
+  names no word and has no kind); KEY and MEASURED_AT are allowed everywhere, `unless` included.
+
+`KEY` is a new condition field over `Metric.key`, legal in `rule.evidence` and in the `when` of a
+  MEASUREMENT-only definition rule, refused where MEASURED_AT is refused. A category can now trust
+  one key from one producer and another key from another without one property per producer.
+
+Breaking: the flat list is no longer accepted as input. Migration core/0019
+
+converts stored lists losslessly (`[c…]` -> `{rules: [{when: [c…]}]}`).
+
+The whole-graph "as of" cursor from EXAMPLE.md's open list was declined — it would be the
+  graph-level scope RFC 0009 removed.
+
+- selector: `_METRIC_ONLY_FIELDS`, `include_measured_at` -> `include_metric_fields`,
+  `rule_metric_filter` ORs rules, `metric_scope` standing half ORs them with metric-only fields
+  skipped - GraphQL: `MetricEvidenceInput` / `MetricEvidence`, `ClaimField.KEY`; test.graphql
+  regenerated - docs: rfcs/0014, RULES.md, EXAMPLE.md, CLAUDE.md - tests: rule compilation,
+  projector folds, schema zoo, migration 0019 (777 passing)
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+
+Claude-Session: https://claude.ai/code/session_0168CpHm2MXhVCAra1GFySeJ
+
+- Trust is the category's rule — rule lists with KIND on every claim family, RBAC for schema changes
+  ([`c9bcb45`](https://github.com/arkitektio/kraph-server/commit/c9bcb457198b3c66865693a663209a87284817ec))
+
+BREAKING CHANGE: `Graph.selector` and `Graph.rules` are gone, and the clause-shaped
+  `Category.definition` is replaced by an operator rule list. Existing definitions are cleared by
+  migration core/0017; the selector and rules columns are dropped by core/0015 and core/0018.
+
+- RFC 0009: no graph-level selector. A category's `definition` is the complete evidence rule for its
+  word: classification, its nodes' existence standings, its edges' claims and standings, INFORMS
+  routing, and the default metric scope. `rule.evidence` on a property replaces that default. - RFC
+  0010: `{rules: [{when: [(field, operator, value)…], unless: […]}]}` with fields
+  WORD/SUBJECT/APP/ACTION/ASSERTED_AT/MEASURED_AT and operators IS/IN/NOT_IN/BEFORE/SINCE. rules =
+  any, when = all, unless subtracts. `evidence/selector.py` is the single compiler. - RFC 0011: KIND
+  (CLASSIFICATION/EXISTENCE/SAMENESS/EVIDENCE/MEASUREMENT) scopes a rule to what a claim says;
+  `rule_covers` is the one coverage implementation; an uncovered kind counts nothing. Sameness is
+  view-scoped, within a category, across words. - RFC 0012: definitions on structure relation,
+  measurement and protocol event categories too; `links_for_category` applies them. - RFC 0013:
+  `Graph.rules` (per-action allow/deny) removed. Schema changes need the graph's owner, an
+  organization admin, or a superuser (`Graph.validate_definition_editable`,
+  `schema_graph`/`schema_scoped`). - docs/RULES.md is the reference, docs/EXAMPLE.md a worked
+  schema.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+
+Claude-Session: https://claude.ai/code/session_0168CpHm2MXhVCAra1GFySeJ
+
+### Breaking Changes
+
+- Every claim-making input gains `derivedFrom: [String!]! = []`, `ClaimEndpoint` gains `Metric`, and
+  `LinkKind` gains `DERIVED_FROM`.
+
+
 ## v1.0.0-rc.13 (2026-09-02)
 
 
