@@ -68,13 +68,20 @@ def rows_for_category(category: Any) -> Any:
     rather than by argument.
     """
     graph = category.graph
-    refs = projector.refs_admitted_by(category)
+    refs = projector.representatives_admitted_by(category)
     return evidence_models.Instance.objects.for_organization(graph.organization).filter(id__in=refs).select_related("term")
 
 
 def rows_in_graph(graph: Any) -> Any:
-    """Every node this graph holds, as `Instance` rows."""
-    refs = projector.refs_in_graph(graph)
+    """Every individual this graph holds, as the `Instance` rows of their representatives.
+
+    One row per individual, not per observation (RFC 0018): the refs are
+    `projector.representatives_in_graph`, the lowest member of each view-scoped
+    sameness component, which is the id the drawn vertex carries. The other
+    members are listed on `Node.members`, and `node(id: <member>)` resolves to
+    the same row.
+    """
+    refs = projector.representatives_in_graph(graph)
     return evidence_models.Instance.objects.for_organization(graph.organization).filter(id__in=refs).select_related("term")
 
 
@@ -121,9 +128,12 @@ def one_in_graph(controller: Any, graph: Any, instance: Any) -> RetrievedNode:
     back as `RetrievedNode.from_row`, the same as in a list. The claim-grain
     reader — the one that answers for a node no view admits — is `instance(id:)`.
     """
-    row = rows_in_graph(graph).filter(pk=str(instance.pk)).first()
-    if row is None:
+    if str(instance.pk) not in projector.refs_in_graph(graph):
         raise ValueError(f"Graph '{graph.name}' (#{graph.pk}) does not hold node '{instance.pk}': no category of this view declares or derives from the node's word, or its selector does not count the claim. Read the claim itself with `instance(id:)`, and `Instance.drawnIn` says which views hold it.")
+    # Any member names its individual (RFC 0018): the answer is the
+    # representative's row, whose id may differ from the one asked for.
+    representative = projector.representative_in_graph(graph, str(instance.pk))
+    row = evidence_models.Instance.objects.for_organization(graph.organization).select_related("term").get(pk=representative)
     return retrieved_in(controller, graph, [row])[0]
 
 

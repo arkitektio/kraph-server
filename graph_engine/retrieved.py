@@ -171,6 +171,16 @@ class RetrievedNode:
     still projected into AGE — entities, events, relation edges — leaves it None
     and keeps the composite `{graph_name}:{id}` form unchanged.
     """
+    members: tuple[str, ...] = ()
+    """The instance uuids this node stands for, in the view it was read through (RFC 0018).
+
+    A drawn vertex is one **individual** — the closure of the sameness claims
+    its category trusts — and `unique_id` is its representative, the lowest
+    member. Every member addresses the same vertex, so `node(id: <member>)`
+    answers with the representative's id and this list says why. A row-backed
+    shape (no view) has itself as its only member: sameness folds per view,
+    and a claim read outside any view has no view to fold under.
+    """
 
     # === Core ID Properties ===
 
@@ -268,6 +278,7 @@ class RetrievedNode:
             vertex_id=0,
             label=str(row.term.key),
             row_id=str(row.pk),
+            members=(str(row.pk),),
             properties={
                 "id": str(row.pk),
                 "category_id": None,
@@ -425,13 +436,18 @@ class RetrievedNode:
 
     @classmethod
     def from_node(cls: Type[T], controller: "GraphController", node: Dict[str, Any], graph_name: str = "default_graph") -> T:
-        """Factory method to create a RetrievedNode from raw AGE node data."""
+        """Build one from a drawn record — `{id, label, properties, members}` as `Projector.drawn_nodes` returns it."""
+        properties = node.get("properties", {})
+        members = tuple(str(member) for member in node.get("members", ()))
         return cls(
             controller=controller,
             graph_name=graph_name,
             vertex_id=node.get("id", 0),
             label=node.get("label", "Unknown"),
-            properties=node.get("properties", {}),
+            properties=properties,
+            # A record without members came from an older projector; the vertex
+            # then stood for exactly the instance its `id` names.
+            members=members or ((str(properties["id"]),) if "id" in properties else ()),
         )
 
 

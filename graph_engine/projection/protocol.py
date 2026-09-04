@@ -1,7 +1,8 @@
 """What a projection kind has to be able to do.
 
 Two halves, one protocol. The **writer** half is what `graph_engine.projector`
-calls to draw the evidence — one vertex per instance, one edge per proposition,
+calls to draw the evidence — one vertex per individual (a component of
+instances the view holds to be one thing, RFC 0018), one edge per proposition,
 derived properties on the vertex — and what `rebuild` calls to drop and recreate
 a view's namespace. The **reader** half is what the API asks for a *drawing*:
 the nodes a view has drawn, whether it drew an edge, and (for saved queries) a
@@ -118,12 +119,16 @@ class Projector(Protocol):
 
     # ------------------------------------------------------------------ writer: nodes
 
-    def draw_node(self, graph: Any, ref: str, label: str, category_id: Any, kind: str) -> None:
-        """Draw (or re-draw) one node under `label`, carrying `{id, category_id, type}`.
+    def draw_node(self, graph: Any, ref: str, label: str, category_id: Any, kind: str, members: Iterable[str]) -> None:
+        """Draw (or re-draw) one node under `label`, carrying `{id, category_id, type}`, standing for `members`.
 
+        `ref` is the individual's representative and `members` every instance
+        the vertex stands for — `ref` among them. Any member addresses the vertex
+        afterwards: as an edge endpoint, in `drawn_nodes`, in `erase_nodes`.
         Converging: drawing a ref that is already drawn under this label leaves
-        one vertex. It does **not** move a node between labels — the caller clears
-        first (`erase_nodes`) when the label may have changed.
+        one vertex, and the member list is **replaced**, not merged. It does
+        **not** move a node between labels or between individuals — the caller
+        clears first (`erase_nodes`) when either may have changed.
         """
         ...
 
@@ -136,7 +141,7 @@ class Projector(Protocol):
         ...
 
     def erase_nodes(self, graph: Any, refs: Iterable[str]) -> int:
-        """Remove these nodes and every edge touching them. Returns how many nodes were there."""
+        """Remove every node holding any of these refs as a member, and every edge touching it. Returns how many nodes were there."""
         ...
 
     # ------------------------------------------------------------------ writer: edges
@@ -144,9 +149,10 @@ class Projector(Protocol):
     def draw_edge(self, graph: Any, source_ref: str, target_ref: str, label: str, properties: Mapping[str, Any]) -> bool:
         """Draw (or re-draw) one edge source → target under `label`, setting `properties`.
 
-        Converging on `(source, target, label)`. Returns False when an endpoint is
-        not drawn, in which case nothing was written — the caller decides whether
-        that is worth a warning.
+        Either endpoint may be any member of its individual; the edge lands on
+        the vertices those members belong to. Converging on `(source, target,
+        label)`. Returns False when an endpoint is not drawn, in which case
+        nothing was written — the caller decides whether that is worth a warning.
         """
         ...
 
@@ -162,8 +168,13 @@ class Projector(Protocol):
 
     # ------------------------------------------------------------------ reader
 
-    def drawn_nodes(self, graph: Any, refs: Iterable[str]) -> list[dict[str, Any]]:
-        """The drawn records for these refs — `{id, label, properties}` each; absent means undrawn."""
+    def drawn_nodes(self, graph: Any, refs: Iterable[str]) -> dict[str, dict[str, Any]]:
+        """The drawn records for these refs, keyed by the ref **asked for** — `{id, label, properties, members}` each; a missing key means undrawn.
+
+        Several asked refs may share one record: members of one individual. The
+        record's `properties["id"]` is the representative, which may differ from
+        the key it sits under.
+        """
         ...
 
     def drawn_edge(self, graph: Any, source_ref: str, target_ref: str, label: str) -> DrawnEdge | None:

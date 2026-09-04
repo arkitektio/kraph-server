@@ -101,8 +101,15 @@ is already gone. `manage.py reproject` can, by dropping the namespace entirely.
 
 It runs inside the request and is **unbounded in the size of the graph**:
 `refs_drawn_as` resolves every node the graph contains, and `project` issues one
-projection write per node. A category drawing a hundred thousand entities is not a
-mutation any client should wait on.
+projection write per drawn vertex — per *individual* since RFC 0018, with the
+derived properties folded over its members. A category drawing a hundred thousand
+entities is not a mutation any client should wait on.
+
+The in-request redraw a *write* triggers is the other shape: `projector.converge`
+over the refs the write touched. It widens that set to whole individuals before
+erasing anything — the members of every vertex holding a touched ref, and the
+view-scoped sameness closure of the touched refs — so a merge or a split redraws
+both individuals concerned and nothing outside them moves.
 
 This service has no job queue to hand it to. `channels-redis` is present, but for
 subscriptions; introducing a worker is a deployment change, not a code change. So

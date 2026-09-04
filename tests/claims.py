@@ -83,6 +83,23 @@ def participate(organization: Any, event_word: str, entity_ref: str, event_ref: 
     return writer.create_link(organization, kind=kind, source_ref=str(entity_ref), target_ref=str(event_ref), assertion=assertion, term=term, role=role, observed_at=observed_at, confidence=confidence)
 
 
+def same(organization: Any, left_ref: str, right_ref: str, subject: str, *, app_id: str = "pytest", asserted_at: datetime | None = None, observed_at: datetime | None = None, confidence: float | None = None) -> Any:
+    """One annotator's claim that two observations are one individual, folded
+    into the organization-grain cache as the controller folds it."""
+    from evidence import identity
+
+    assertion = _assertion(organization, subject, app_id, asserted_at)
+    link = writer.create_link(organization, kind=evidence_models.Link.Kind.SAME_AS, source_ref=str(left_ref), target_ref=str(right_ref), assertion=assertion, observed_at=observed_at, confidence=confidence)
+    identity.merge(organization, str(left_ref), str(right_ref))
+    return link
+
+
+def retract_link(organization: Any, link: Any, subject: str, *, app_id: str = "pytest", asserted_at: datetime | None = None, at: datetime | None = None) -> Any:
+    """One annotator's position that a link claim no longer holds."""
+    assertion = _assertion(organization, subject, app_id, asserted_at)
+    return writer.record_standing_for_ref(organization, target_type="link", target_id=str(link.pk), stands=False, assertion=assertion, at=at)
+
+
 def retract_node(organization: Any, ref: str, subject: str, *, app_id: str = "pytest", asserted_at: datetime | None = None, at: datetime | None = None, confidence: float | None = None) -> Any:
     """One annotator's position that a node no longer exists — `at` is when
     that took effect in the world (`Standing.at`), not when it was said."""

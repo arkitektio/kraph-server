@@ -28,6 +28,7 @@ what lets a replay land where the original write did.
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Mapping
 from typing import Any, Iterable
 
 from django.db import transaction
@@ -169,6 +170,70 @@ def component_refs_for_view(graph: Any, node_refs: Iterable[str]) -> dict[str, l
         frontier = discovered - seen
 
     return {ref: sorted(_reachable(ref, adjacency)) for ref in refs}
+
+
+def view_components(graph: Any, resolved: Mapping[str, Any]) -> dict[str, list[str]]:
+    """The individuals a view draws among these already-resolved nodes (RFC 0018).
+
+    `resolved` maps a ref to the category it resolved to in this view
+    (`projector.resolve_categories`); the answer maps each component's
+    **representative** — its lowest member uuid — to its sorted members, every
+    ref appearing in exactly one. The fold is the one :func:`view_sameness_links`
+    applies — same category at both ends, the category's `KIND SAMENESS` trust
+    for the claim and its standing — but over the whole set at once: one link
+    query, one standing fold per category, and a union-find in memory, so a
+    rebuild does not walk a frontier per node.
+
+    Closed over `resolved` on purpose: a sameness claim to a node the view does
+    not admit (unclassified here, retracted under its category's rule, skipped
+    as ambiguous) is not a bridge. That node is not in this view, so it cannot
+    hold two of its individuals together.
+    """
+    from evidence import selector as selector_module
+
+    refs = sorted(str(ref) for ref in resolved)
+    if not refs:
+        return {}
+
+    links = list(evidence_models.Link.objects.for_organization(graph.organization).filter(kind=SAME_AS, source_ref__in=refs, target_ref__in=refs).only("id", "source_ref", "target_ref"))
+
+    by_category: dict[Any, list[Any]] = defaultdict(list)
+    categories: dict[Any, Any] = {}
+    for link in links:
+        source = resolved.get(str(link.source_ref))
+        target = resolved.get(str(link.target_ref))
+        if source is None or target is None or source.pk != target.pk:
+            continue
+        by_category[source.pk].append(link)
+        categories[source.pk] = source
+
+    parent: dict[str, str] = {ref: ref for ref in refs}
+
+    def find(ref: str) -> str:
+        while parent[ref] != ref:
+            parent[ref] = parent[parent[ref]]
+            ref = parent[ref]
+        return ref
+
+    for category_pk, candidate_links in by_category.items():
+        category = categories[category_pk]
+        admitted = claims_module.standing(
+            evidence_models.Link.objects.for_organization(graph.organization)
+            .filter(pk__in=[link.pk for link in candidate_links])
+            .filter(selector_module.trust_filter(category.definition, kind="SAMENESS")),
+            "link",
+            predicate=selector_module.trust_predicate(category.definition, kind="SAMENESS"),
+        )
+        for link in admitted:
+            left, right = find(str(link.source_ref)), find(str(link.target_ref))
+            if left != right:
+                # Union under the lower root: the root is then the representative.
+                parent[max(left, right)] = min(left, right)
+
+    components: dict[str, list[str]] = defaultdict(list)
+    for ref in refs:
+        components[find(ref)].append(ref)
+    return {representative: sorted(members) for representative, members in components.items()}
 
 
 @transaction.atomic

@@ -2000,9 +2000,14 @@ type Entity implements Node {
   label: String!
 
   """
-  This node's durable identity — a bare uuid, world-unique and stable across reprojects
+  This node's durable identity — a bare uuid, world-unique and stable across reprojects. In a view it is the individual's representative: the lowest of `members`, which may differ from the member id you asked for
   """
   id: ID!
+
+  """
+  Every instance this node stands for in the view it was read through — the closure of the sameness claims its category trusts, `id` included. One member when nobody claimed it the same as anything. Any member addresses this node
+  """
+  members: [ID!]!
 
   """
   Schema version the properties were derived under. Null when this reading came from the log rather than from a projection — a claim no view draws has no derived properties, so there is no version to name
@@ -3909,9 +3914,14 @@ type NaturalEvent implements Node & Event {
   label: String!
 
   """
-  This node's durable identity — a bare uuid, world-unique and stable across reprojects
+  This node's durable identity — a bare uuid, world-unique and stable across reprojects. In a view it is the individual's representative: the lowest of `members`, which may differ from the member id you asked for
   """
   id: ID!
+
+  """
+  Every instance this node stands for in the view it was read through — the closure of the sameness claims its category trusts, `id` included. One member when nobody claimed it the same as anything. Any member addresses this node
+  """
+  members: [ID!]!
 
   """
   Schema version the properties were derived under. Null when this reading came from the log rather than from a projection — a claim no view draws has no derived properties, so there is no version to name
@@ -4126,9 +4136,14 @@ interface Node {
   label: String!
 
   """
-  This node's durable identity — a bare uuid, world-unique and stable across reprojects
+  This node's durable identity — a bare uuid, world-unique and stable across reprojects. In a view it is the individual's representative: the lowest of `members`, which may differ from the member id you asked for
   """
   id: ID!
+
+  """
+  Every instance this node stands for in the view it was read through — the closure of the sameness claims its category trusts, `id` included. One member when nobody claimed it the same as anything. Any member addresses this node
+  """
+  members: [ID!]!
 
   """
   Schema version the properties were derived under. Null when this reading came from the log rather than from a projection — a claim no view draws has no derived properties, so there is no version to name
@@ -4507,9 +4522,14 @@ type ProtocolEvent implements Node & Event {
   label: String!
 
   """
-  This node's durable identity — a bare uuid, world-unique and stable across reprojects
+  This node's durable identity — a bare uuid, world-unique and stable across reprojects. In a view it is the individual's representative: the lowest of `members`, which may differ from the member id you asked for
   """
   id: ID!
+
+  """
+  Every instance this node stands for in the view it was read through — the closure of the sameness claims its category trusts, `id` included. One member when nobody claimed it the same as anything. Any member addresses this node
+  """
+  members: [ID!]!
 
   """
   Schema version the properties were derived under. Null when this reading came from the log rather than from a projection — a claim no view draws has no derived properties, so there is no version to name

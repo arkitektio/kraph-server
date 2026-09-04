@@ -59,7 +59,7 @@ def test_two_undrawn_nodes_are_two_objects(test_graph: core_models.Graph, table_
 
 @pytest.mark.django_db(transaction=True)
 def test_deleting_a_graph_row_drops_its_namespace(test_graph: core_models.Graph, table_projector) -> None:
-    table_projector.draw_node(test_graph, "00000000-0000-0000-0000-000000000001", "Cell", None, "ENTITY")
+    table_projector.draw_node(test_graph, "00000000-0000-0000-0000-000000000001", "Cell", None, "ENTITY", ["00000000-0000-0000-0000-000000000001"])
     assert graph_engine_models.ProjectionVertex.objects.filter(graph=test_graph).exists()
     core_models.Graph.objects.filter(pk=test_graph.pk).delete()
     assert not graph_engine_models.ProjectionVertex.objects.filter(graph_id=test_graph.pk).exists(), "a deleted view takes its drawing with it, on every deletion path"

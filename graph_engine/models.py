@@ -84,9 +84,13 @@ class Projection(models.Model):
 
 
 class ProjectionVertex(models.Model):
-    """One drawn node: how one view draws one instance.
+    """One drawn node: how one view draws one **individual** (RFC 0018).
 
-    `ref` is the claim's identity — the `evidence.Instance` uuid — held as a
+    An individual is a component of instances the view's category holds to be
+    one thing — the closure of the standing `SAME_AS` claims its rules trust —
+    and most often a single instance. `ref` is the component's representative,
+    the lowest member uuid, so it is arrival-independent; every member is a
+    `ProjectionMember` row, the representative included. `ref` is held as a
     plain value, never a foreign key: the drawing may not hold the log in place,
     and a rebuild must be free to happen while evidence is written. `label` is
     the view's own word for the category (`Category.age_name`), `category_pk`
@@ -133,6 +137,29 @@ class ProjectionVertex(models.Model):
 
     def __str__(self) -> str:
         return f"vertex {self.ref} ({self.label}) in graph #{self.graph_id}"
+
+
+class ProjectionMember(models.Model):
+    """One instance a drawn vertex stands for (RFC 0018).
+
+    A vertex holds one row per member of its component, the representative
+    included, so any member ref addresses the vertex: `node(id: <member>)`, an
+    edge endpoint, an INFORMS target. `(graph, ref)` is unique — one vertex per
+    instance per view — which is the constraint that used to sit on the vertex's
+    own `ref` and now holds for every member. `graph` is carried redundantly so
+    the lookup never joins through the vertex. Cascades with the vertex.
+    """
+
+    graph = models.ForeignKey("core.Graph", on_delete=models.CASCADE, related_name="projection_members")
+    vertex = models.ForeignKey(ProjectionVertex, on_delete=models.CASCADE, related_name="members")
+    ref = models.UUIDField(help_text="An `evidence.Instance` uuid this vertex stands for.")
+
+    class Meta:
+        default_related_name = "projection_members"
+        constraints = [models.UniqueConstraint(fields=["graph", "ref"], name="one_vertex_per_member_per_view")]
+
+    def __str__(self) -> str:
+        return f"member {self.ref} of vertex #{self.vertex_id} in graph #{self.graph_id}"
 
 
 class ProjectionEdge(models.Model):

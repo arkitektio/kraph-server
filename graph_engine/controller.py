@@ -510,13 +510,14 @@ class GraphController:
         # its own replay: `rebuild` reads the same claims and would create the
         # vertex there too.
         #
-        # `reproject_node` is what `rebuild` uses per node, so a fresh entity and
-        # a replayed one cannot differ.
+        # `reproject_refs` is what `rebuild` uses per individual, so a fresh
+        # entity and a replayed one cannot differ — and a `sameAs` in the input
+        # redraws the individual it joined, not just the new observation.
         from graph_engine import projector
 
         node = evidence_models.Instance.objects.for_organization(organization).select_related("term").get(pk=claim_ref)
         for target_graph in projector.graphs_for_refs(organization, [claim_ref]):
-            projector.reproject_node(self, target_graph, node)
+            projector.reproject_refs(self, target_graph, [claim_ref])
 
         # Read back *after* every projection, not inside the loop: `drawings` is
         # where the claim stands once the act is complete.
@@ -660,7 +661,7 @@ class GraphController:
         # would delete a vertex with no claim behind it, and the next replay
         # would put it straight back.
         #
-        # Through `reproject_node`, not a blanket `unproject` — the same call
+        # Through `reproject_refs`, not a blanket `unproject` — the same call
         # `attest_node` makes, because the two are the same act with the
         # opposite sign. A retraction is folded under each graph's own selector
         # (`resolve_categories` -> `retracted_ids` -> the category's `trust_filter`), so a view
@@ -668,7 +669,7 @@ class GraphController:
         # blanket erase made the write path disagree with the very next rebuild,
         # exactly the divergence this layer exists to prevent.
         for graph in projector.graphs_for_refs(organization, [node.ref]):
-            projector.reproject_node(self, graph, node)
+            projector.reproject_refs(self, graph, [str(node.ref)])
 
         # Read back rather than assumed empty. A retraction is folded under each
         # graph's own selector, so a view that does not count this subject still
@@ -695,7 +696,7 @@ class GraphController:
             writer.attest(organization, node, assertion, at=at, confidence=confidence)
 
         for graph in projector.graphs_for_refs(organization, [node.ref]):
-            projector.reproject_node(self, graph, node)
+            projector.reproject_refs(self, graph, [str(node.ref)])
 
         self._settle(assertion)
         return results.Asserted.of(assertion, node, self.drawings_for_instance(node))
@@ -1212,12 +1213,12 @@ class GraphController:
         from graph_engine import projector
 
         # Every view that declares this event's word, for the reason
-        # `create_entity` gives at length. `reproject_node` draws the vertex and
+        # `create_entity` gives at length. `reproject_refs` draws the vertex and
         # the participation edges either side of it, from the claims — so the
         # event a fresh write produces and the one a replay produces are the same.
         node = evidence_models.Instance.objects.for_organization(organization).select_related("term").get(pk=event_ref)
         for target_graph in projector.graphs_for_refs(organization, [event_ref]):
-            projector.reproject_node(self, target_graph, node)
+            projector.reproject_refs(self, target_graph, [event_ref])
 
         # Not an unguarded index into a Cypher result. This used to be
         # `engine.execute(graph, …)[0]["e"]`, which raised `IndexError` — not even
@@ -1698,28 +1699,30 @@ class GraphController:
         return labels
 
     def get_instance_by_ref(self, graph: models.Graph, ref: str) -> retrieved.RetrievedNode:
-        """Read a projected node back by its durable ref."""
-        records = self.projector.drawn_nodes(graph, [str(ref)])
-        if not records:
+        """Read the individual this graph draws a durable ref as. Any member addresses it (RFC 0018)."""
+        record = self.projector.drawn_nodes(graph, [str(ref)]).get(str(ref))
+        if record is None:
             raise ValueError(f"No projected node for ref '{ref}'")
-        return RetrievedNode.from_node(self, records[0], graph_name=graph.age_name)
+        return RetrievedNode.from_node(self, record, graph_name=graph.age_name)
 
     def drawn_instances(self, graph: models.Graph, refs: list[str]) -> dict[str, retrieved.RetrievedNode]:
-        """How this graph draws each of these nodes, keyed by ref. Missing means undrawn.
+        """How this graph draws each of these nodes, keyed by the **asked** ref. Missing means undrawn.
 
         One query for the batch, where `get_instance_by_ref` is one per node — the
         difference between a page of claims costing one round-trip and costing a
         hundred. A ref with no vertex simply does not appear: which nodes a view
         holds is decided from the claims (`projector.refs_in_graph`), and whether it
-        has drawn them yet is a separate question this answers.
+        has drawn them yet is a separate question this answers. Two members of one
+        individual map to the same `RetrievedNode`, whose `unique_id` is the
+        representative (RFC 0018) — so the key is the ref asked for, never
+        `node.unique_id`, or one of the two would vanish from the answer.
         """
         if not refs:
             return {}
 
         drawn: dict[str, retrieved.RetrievedNode] = {}
-        for record in self.projector.drawn_nodes(graph, [str(ref) for ref in refs]):
-            node = RetrievedNode.from_node(self, record, graph_name=graph.age_name)
-            drawn[node.unique_id] = node
+        for ref, record in self.projector.drawn_nodes(graph, [str(ref) for ref in refs]).items():
+            drawn[ref] = RetrievedNode.from_node(self, record, graph_name=graph.age_name)
         return drawn
 
     def retract_links(self, link_ids: list[str], info: Info, *, at: datetime.datetime | None = None, confidence: float | None = None) -> results.Asserted:
@@ -1875,10 +1878,15 @@ class GraphController:
         from graph_engine import projector as projector_module
 
         by_term = projector_module.categories_by_term(graph)
+        # Over the whole individuals at both ends (RFC 0018): the edge stands for
+        # every claim between any member of the entity's vertex and any member
+        # of the event's, so a claim by another observation of the same cell
+        # keeps it — and its `__assertion_count` — when this one is retracted.
+        members = self._members_drawn_as(graph, claim_ref, event_ref)
         base = evidence_models.Link.objects.for_organization(organization).filter(
             kind=kind,
-            source_ref=claim_ref,
-            target_ref=event_ref,
+            source_ref__in=members[claim_ref],
+            target_ref__in=members[event_ref],
             role=role,
         )
         survivors = []
@@ -1925,6 +1933,15 @@ class GraphController:
         # recreate it, and a projection that disagrees with a replay is the
         # failure this layer exists to prevent.
         self.projector.erase_edge(graph, left, right, str(label), {"role": role})
+
+    def _members_drawn_as(self, graph: models.Graph, *refs: str) -> dict[str, list[str]]:
+        """Each ref → every member of the individual this view draws it as (RFC 0018).
+
+        A ref the view has not drawn is its own only member, so the edge fold
+        over it asks for exactly the claims it always did.
+        """
+        records = self.projector.drawn_nodes(graph, [str(ref) for ref in refs])
+        return {str(ref): [str(member) for member in records[str(ref)]["members"]] if str(ref) in records else [str(ref)] for ref in refs}
 
     def _assert_same_organization(self, actual: Any, expected: Any, what: str) -> None:
         """Refuse a reference that belongs to a different tenant than the write.
@@ -2152,10 +2169,11 @@ class GraphController:
         """Redraw these nodes in every view that holds them."""
         from graph_engine import projector
 
-        nodes = list(evidence_models.Instance.objects.for_organization(organization).filter(pk__in=refs).select_related("term"))
-        for node in nodes:
-            for graph in projector.graphs_for_refs(organization, [node.ref]):
-                projector.reproject_node(self, graph, node)
+        # Once per graph with the whole set, not once per node: after a sameness
+        # claim the refs are members of one individual, and `reproject_refs`
+        # widens to and redraws it as one (RFC 0018).
+        for graph, graph_refs in projector.graphs_for_refs(organization, [str(ref) for ref in refs]).items():
+            projector.reproject_refs(self, graph, graph_refs)
 
     # `projected_instance` used to sit here: `drawings_for_instance(node)[0].node`,
     # falling back to `RetrievedNode.from_row` when nothing drew the claim. The
@@ -2663,10 +2681,14 @@ class GraphController:
         from graph_engine import projector as projector_module
 
         category_for_term = projector_module.categories_by_term(graph).get(term_id)
+        # Over the whole individuals at both ends (RFC 0018) — see
+        # `_reproject_participation`: a claim between two other observations of
+        # the same two cells still holds the edge up.
+        members = self._members_drawn_as(graph, source_ref, target_ref)
         base = evidence_models.Link.objects.for_organization(organization).filter(
             kind=evidence_models.Link.Kind.RELATION,
-            source_ref=source_ref,
-            target_ref=target_ref,
+            source_ref__in=members[str(source_ref)],
+            target_ref__in=members[str(target_ref)],
             term_id=term_id,
         )
         if category_for_term is None:

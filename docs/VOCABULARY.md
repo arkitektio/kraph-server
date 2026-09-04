@@ -81,7 +81,7 @@ conceptually: each has a `--check`able rebuild.
 
 | Word | Means | Rebuild |
 |---|---|---|
-| `InstanceIdentity` | Components folded from `SAME_AS` claims. Organization grain, lowest uuid as representative; **only merged nodes get a row** | `manage.py rebuild_identity [--check]` |
+| `InstanceIdentity` | Components folded from `SAME_AS` claims. Organization grain, lowest uuid as representative; **only merged nodes get a row**. What the panel reads; a view's drawing folds its own (`identity.view_components`) | `manage.py rebuild_identity [--check]` |
 | `State` | Sufficient statistics for one derived property, kept incrementally. Grain `(claim_ref, source_kind, key, value_kind)`. Holds **statistics, not an answer** — switching MEAN→MAX changes the next read without writing anything | `evidence.state.recompute` |
 | `CurrentStanding` | see above | `evidence.claims.record_current` |
 
@@ -172,11 +172,13 @@ kind — a per-view table — implements `Projector` and is chosen in `api/schem
 ### What actually gets drawn
 
 `projector.create_vertex` writes exactly `{id, category_id, type}` and labels the
-vertex with `category.age_name`. Everything else on it is derived.
+vertex with `category.age_name`. Everything else on it is derived. Since RFC 0018 a
+vertex stands for an **individual** — every instance in one view-scoped sameness
+component — and `ProjectionMember` lists them; `id` is the lowest member.
 
 | Concept | Drawn? | Why |
 |---|---|---|
-| `Instance` (entity, natural event, protocol event) | **yes**, one vertex each | |
+| `Instance` (entity, natural event, protocol event) | **yes**, one vertex per **individual** — several instances the view's sameness claims join share one, listed on `ProjectionMember` | |
 | `Link` of kind `RELATION`, `PARTICIPATES_AS_*` | **yes**, a drawn edge | |
 | `Link` of kind `MEASUREMENT`, `STRUCTURE_RELATION` | **no** | endpoints have no vertex, or nothing projects it |
 | `Link` of kind `INFORMS`, `CLASSIFIES`, `SAME_AS` | **no** | read from evidence directly |
@@ -186,7 +188,7 @@ vertex with `category.age_name`. Everything else on it is derived.
 
 | Property | Written by | Meaning |
 |---|---|---|
-| `id` | `create_vertex` | the `Instance` uuid — **the identity** |
+| `id` | `create_vertex` | the individual's **representative**: the lowest member uuid, an `Instance` id. `Node.id` reports it, and `node(id: <any member>)` finds the vertex |
 | `category_id` | `create_vertex` | the `core.Category` pk this view drew it under |
 | `type` | `create_vertex` | from `Instance.kind`. **The claim's own account**, never inferred from the label |
 | `__schema_version`, `__measured__*` | `project` | derived; the `__` prefix is the projection layer's own encoding (`__last_derived` is no longer written — "when was this view derived" is `Projection.derived_at`) |
@@ -207,7 +209,7 @@ from a vertex **or** from an evidence row.
 
 | Shape | Built from | Note |
 |---|---|---|
-| `RetrievedNode` | a vertex (`from_node`) or a row (`from_row`) | spans both grains; `unique_id` is the identity either way |
+| `RetrievedNode` | a vertex (`from_node`) or a row (`from_row`) | spans both grains; `unique_id` is the identity either way, `members` the instances it stands for (one, itself, when row-backed) |
 | `RetrievedEdge` | **always** a row (`from_link`) | every edge the API builds is row-backed |
 | `RetrievedStructure`, `RetrievedMetric` | rows only | `RetrievedNode` subclasses, but their GraphQL types implement no interface |
 | `RetrievedVariable` | query renders | |

@@ -887,7 +887,10 @@ class RichProperty:
         if value_kinds is None:
             return []
 
-        parsed = projector._structure_ids_informing(graph, self._entity.durable_ref, self._category.definition)
+        # Over every member of the individual, as `project` folded it (RFC 0018).
+        # An edge has no members; its properties are not folded from INFORMS.
+        members = getattr(self._entity, "members", None) or (self._entity.durable_ref,)
+        parsed = projector._structure_ids_informing(graph, members, self._category.definition)
         if not parsed:
             return []
 
@@ -977,9 +980,14 @@ class Node(Generic[V]):
         """Should return the most specific label for this node (e.g. 'Cell' instead of 'Entity') Composed by its propetries"""
         return self._value.label
 
-    @strawberry.field(description="This node's durable identity — a bare uuid, world-unique and stable across reprojects")
+    @strawberry.field(description="This node's durable identity — a bare uuid, world-unique and stable across reprojects. In a view it is the individual's representative: the lowest of `members`, which may differ from the member id you asked for")
     def id(self) -> strawberry.ID:
         return strawberry.ID(self._value.unique_id)
+
+    @strawberry.field(description="Every instance this node stands for in the view it was read through — the closure of the sameness claims its category trusts, `id` included. One member when nobody claimed it the same as anything. Any member addresses this node")
+    def members(self) -> List[strawberry.ID]:
+        """The individual's members (RFC 0018). A row-backed reading lists itself."""
+        return [strawberry.ID(member) for member in self._value.members]
 
     # `externalId` is gone, and it is the sixth vertex-shaped field to go. It read
     # an `external_id` vertex property that **nothing in this repo has ever

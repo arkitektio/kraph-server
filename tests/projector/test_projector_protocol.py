@@ -37,7 +37,7 @@ def test_projector_module_names_no_storage_and_no_query_language() -> None:
     code = _code_only(REPO / "graph_engine" / "projector.py")
     assert ".engine" not in code, "projector.py reaches for an engine; route through controller.projector"
     assert "_validate_property_key" not in code, "key validation belongs to the projector implementation"
-    for keyword in ("MATCH (", "MERGE (", "DETACH DELETE", "CREATE (", "SELECT ", "INSERT ", "ProjectionVertex", "ProjectionEdge"):
+    for keyword in ("MATCH (", "MERGE (", "DETACH DELETE", "CREATE (", "SELECT ", "INSERT ", "ProjectionVertex", "ProjectionMember", "ProjectionEdge"):
         assert keyword not in code, f"storage vocabulary ({keyword!r}) in projector.py; it belongs in graph_engine/projection/table.py"
 
 
@@ -46,7 +46,7 @@ def test_controller_executes_no_queries_itself() -> None:
     code = _code_only(REPO / "graph_engine" / "controller.py")
     assert "self.engine" not in code
     assert not re.search(r"engine\.execute\(", code), "the controller must not execute queries; it draws through self.projector"
-    for keyword in ("ProjectionVertex", "ProjectionEdge"):
+    for keyword in ("ProjectionVertex", "ProjectionMember", "ProjectionEdge"):
         assert keyword not in code, f"{keyword} in controller.py; the drawing's rows belong to graph_engine/projection/table.py"
 
 
@@ -58,7 +58,7 @@ def test_namespace_module_names_no_storage_and_no_ddl() -> None:
     what/how split `projector.py` keeps for the drawing itself.
     """
     code = _code_only(REPO / "graph_engine" / "namespace.py")
-    for keyword in ("SELECT ", "INSERT ", "CREATE ", "DROP ", "GRAPH_TABLE", "ProjectionVertex", "ProjectionEdge"):
+    for keyword in ("SELECT ", "INSERT ", "CREATE ", "DROP ", "GRAPH_TABLE", "ProjectionVertex", "ProjectionMember", "ProjectionEdge"):
         assert keyword not in code, f"storage vocabulary ({keyword!r}) in namespace.py; DDL belongs in graph_engine/projection/table.py"
 
 
@@ -101,6 +101,6 @@ def test_only_the_table_projector_touches_the_drawings_tables() -> None:
             if path in allowed or "migrations" in path.parts or "core-backup-do-not-delete" in path.parts:
                 continue
             code = _code_only(path)
-            if "ProjectionVertex" in code or "ProjectionEdge" in code:
+            if "ProjectionVertex" in code or "ProjectionMember" in code or "ProjectionEdge" in code:
                 offenders.append(str(path.relative_to(REPO)))
     assert not offenders, f"modules addressing the drawing's tables directly: {offenders}"

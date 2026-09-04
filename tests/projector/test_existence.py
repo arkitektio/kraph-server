@@ -253,7 +253,7 @@ async def test_attesting_a_retracted_entity_brings_it_back_unchanged(
     """Attesting is new evidence, and it reconstructs from evidence alone.
 
     Nothing is remembered about what the vertex used to hold — it was destroyed.
-    The node comes back because `reproject_node` runs the same functions
+    The node comes back because `reproject_refs` runs the same functions
     `rebuild` does, which is what makes a re-attested node and a replayed one the
     same node. If either had a path of its own they could differ, and the
     difference would be invisible until somebody reprojected.

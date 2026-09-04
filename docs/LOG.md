@@ -542,13 +542,19 @@ Recorded so nobody has to rediscover them.
   and `recompute` rebuilds it, and `manage.py rebuild_identity --check` is the
   backstop that says whether the two agree.
 
-  Still true, and still the thing not to re-introduce: **do not assume a vertex's
-  `id` property is an identity rather than a projection detail.** A vertex may
-  stand for several nodes.
-- **A merged component is not drawn as one vertex.** The fold answers "what is
-  known about this thing" — `evidence/panel.py` unions labels, sameness and
-  connections over the component — but `projector` still draws one vertex per
-  `Instance`. So two instances claimed the same appear twice in Apache AGE and once in
-  the panel. Collapsing them in the projection is a separate decision: it would
-  make a vertex's identity the component's, and every edge to a member would have
-  to be re-pointed on every merge and un-merge.
+  Still true, and now literally so: **do not assume a vertex's `id` property is
+  the identity of one observation.** A vertex stands for every member of an
+  individual, and its `id` is the representative — the lowest of them.
+- ~~**A merged component is not drawn as one vertex.**~~ **Closed** (RFC 0018).
+  The fold answered "what is known about this thing" — `evidence/panel.py`
+  unions labels, sameness and connections over the component — but `projector`
+  drew one vertex per `Instance`, so two instances claimed the same appeared
+  twice in every view and once in the panel. A view now draws one vertex per
+  **view-scoped** component (`identity.view_components`: the `SAME_AS` claims
+  the members' category trusts), lists the members on `ProjectionMember`, folds
+  derived properties over all of them, and lands every edge to any member on
+  the one vertex. Merge and un-merge are redraws of the touched individuals
+  (`projector.converge` widens the touched set to whole components) rather than
+  edge re-pointing. The organization-grain cache stays what the panel reads; a
+  view's `members` and the panel's `component` may disagree, and that is each
+  answering its own question.

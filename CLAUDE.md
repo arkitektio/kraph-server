@@ -240,10 +240,16 @@ The load-bearing facts:
   Retraction cannot un-union, so it flags and `recompute` rebuilds; `manage.py rebuild_identity
   --check` is the backstop. Everything the panel reports — `evidence/panel.py`, surfaced as
   `Entity.labels/sameAs/connections/component` and `Structure.metrics/informs` — is unioned over the
-  **component**, never over one instance. The projection still draws one vertex per `Instance`; see
-  `docs/LOG.md`. The *cache* is organization grain; a **scoped view's** component is a read-time
-  walk of the sameness claims it counts (`identity.component_refs_for_view`, threaded through the
-  panel and the `(graph_handle, ref)` loader keys — RFC 0008).
+  **component**, never over one instance. **A view draws one vertex per individual (RFC 0018)**:
+  one per *view-scoped* component — `identity.view_components`, the `SAME_AS` claims the members'
+  category trusts — with the members listed on `graph_engine.models.ProjectionMember`, the vertex
+  ref the lowest member uuid, derived properties folded over every member (`state_for_many` →
+  `combine`), and edges to any member landing on the one vertex (`__assertion_count` sums; a
+  relation between members is a self-edge). `Node.id` is that representative, `node(id: <any
+  member>, graph:)` answers with the individual, `Node.members` lists it, `nodes(graph:)` lists one
+  row per individual (`representatives_in_graph`). Every redraw is `projector.converge`, which
+  widens the touched set to whole individuals (`reproject_refs`, not a per-node call). The org-grain
+  *cache* is what the panel reads; a view's `members` and the panel's `component` may disagree.
 - **`State` is organization grain**, and nothing folds under a graph-level scope — `merge`,
   `recompute` and `refold_state` all count every live metric. Which metrics a *property* counts
   is applied on read by `metric_scope(category.definition, rule)` in `projector._scoped_state`:

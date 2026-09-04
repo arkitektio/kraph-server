@@ -53,7 +53,7 @@ async def test_a_projection_failure_leaves_the_row_and_holds_every_cursor(api_sc
     def down(*args, **kwargs):
         raise RuntimeError("projector down")
 
-    monkeypatch.setattr(projector, "reproject_node", down)
+    monkeypatch.setattr(projector, "reproject_refs", down)
 
     failed = await api_schema.execute(
         writes.ASSERT_ENTITY_EXISTS,

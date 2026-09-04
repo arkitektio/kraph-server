@@ -9,7 +9,10 @@ bare uuid rather than a `{age_name}:` composite; `Claim` replacing `LifecycleEve
 evidence rather than a status; the projection holding only what exists, so no vertex carries
 `__lifecycle_state`; `State` becoming organization grain with the selector applied on read; and the
 **write API naming a term rather than a graph's category**, so a claim can be recorded before any
-view exists to hold it and a view can be declared over history it did not witness.
+view exists to hold it and a view can be declared over history it did not witness; and a view
+drawing **one vertex per individual** rather than per observation (RFC 0018), so §3's "one
+projection write per node" is per component, and the sufficient statistics of §3.1 compose across
+the members of one individual the same way they compose across value kinds.
 
 It also predates everything that made the projection *droppable in practice*: §1's "inside a
 single AGE label space" describes evidence as AGE labels, which it has not been since the

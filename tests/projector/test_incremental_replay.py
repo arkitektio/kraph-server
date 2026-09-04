@@ -44,7 +44,7 @@ def _vertices_with_id(table_projector, graph, ref: str) -> int:
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_replay_draws_a_node_the_write_path_could_not(api_schema, simple_api_context, test_graph: core_models.Graph, table_projector, monkeypatch) -> None:
-    monkeypatch.setattr(projector, "reproject_node", _down)
+    monkeypatch.setattr(projector, "reproject_refs", _down)
     failed = await api_schema.execute(
         writes.ASSERT_ENTITY_EXISTS,
         variable_values={"input": {"term": "AIS", "supportingEvidence": [{"identifier": "ROI", "object": "roi-replay", "metrics": [{"key": "vector_length", "value": 30.0, "valueKind": "FLOAT"}]}]}},
@@ -130,7 +130,7 @@ async def test_replay_equals_a_full_rebuild(api_schema, simple_api_context, test
     """The acceptance test: after an incremental replay, a full rebuild changes nothing."""
     a = await writes.create_entity(api_schema, simple_api_context, "AIS", evidence=[{"identifier": "ROI", "object": "roi-a", "metrics": [{"key": "vector_length", "value": 10.0, "valueKind": "FLOAT"}]}])
 
-    monkeypatch.setattr(projector, "reproject_node", _down)
+    monkeypatch.setattr(projector, "reproject_refs", _down)
     monkeypatch.setattr(projector, "project_edges", _down)
     monkeypatch.setattr(projector, "project", _down)
     # A second entity, a relation, and a new metric on the first — none drawn.

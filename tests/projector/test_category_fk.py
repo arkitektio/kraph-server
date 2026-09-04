@@ -47,7 +47,7 @@ def test_updating_a_vertex_onto_a_foreign_category_is_refused(test_graph, bio_gr
     own = _category(test_graph, "AIS")
     foreign = _category(bio_graph, "AIS")
     ref = uuid.uuid4()
-    table_projector.draw_node(test_graph, str(ref), own.age_name, own.pk, "ENTITY")
+    table_projector.draw_node(test_graph, str(ref), own.age_name, own.pk, "ENTITY", [str(ref)])
     with pytest.raises(IntegrityError):
         with transaction.atomic():
             graph_engine_models.ProjectionVertex.objects.filter(graph=test_graph, ref=ref).update(category_pk=foreign.pk)
@@ -58,8 +58,8 @@ def test_deleting_a_category_cascades_its_drawings_and_only_its_drawings(test_gr
     ais = _category(test_graph, "AIS")
     cell = _category(test_graph, "Cell")
     ais_ref, cell_ref = uuid.uuid4(), uuid.uuid4()
-    table_projector.draw_node(test_graph, str(ais_ref), ais.age_name, ais.pk, "ENTITY")
-    table_projector.draw_node(test_graph, str(cell_ref), cell.age_name, cell.pk, "ENTITY")
+    table_projector.draw_node(test_graph, str(ais_ref), ais.age_name, ais.pk, "ENTITY", [str(ais_ref)])
+    table_projector.draw_node(test_graph, str(cell_ref), cell.age_name, cell.pk, "ENTITY", [str(cell_ref)])
     assert table_projector.draw_edge(test_graph, str(ais_ref), str(cell_ref), "TOUCHES", {})
 
     core_models.Category.objects.filter(pk=ais.pk).delete()
@@ -68,10 +68,14 @@ def test_deleting_a_category_cascades_its_drawings_and_only_its_drawings(test_gr
     assert not vertices.filter(ref=ais_ref).exists(), "the deleted category's vertex must go with it"
     assert vertices.filter(ref=cell_ref).exists(), "another category's vertex must stay"
     assert not graph_engine_models.ProjectionEdge.objects.filter(graph=test_graph).exists(), "edges touching the erased vertex go by cascade — the DETACH"
+    members = graph_engine_models.ProjectionMember.objects.filter(graph=test_graph)
+    assert not members.filter(ref=ais_ref).exists(), "the erased vertex's member rows go by the same SQL-level cascade (migration 0007)"
+    assert members.filter(ref=cell_ref).exists()
 
 
 @pytest.mark.django_db(transaction=True)
 def test_a_null_category_still_passes(test_graph, table_projector) -> None:
     # Rows an older projector drew have no category stamp; the constraint is
     # MATCH SIMPLE, so they survive until a reproject re-draws them.
-    table_projector.draw_node(test_graph, str(uuid.uuid4()), "Cell", None, "ENTITY")
+    ref = str(uuid.uuid4())
+    table_projector.draw_node(test_graph, ref, "Cell", None, "ENTITY", [ref])

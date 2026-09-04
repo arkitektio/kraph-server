@@ -254,7 +254,26 @@ def state_for(
     whatever order Postgres returned the rows in, which is not a decision worth
     leaving to chance for a value the API reports.
     """
-    states = list(evidence_models.State.objects.for_organization(organization).filter(claim_ref=claim_ref, source_kind=source_kind, key=key, value_kind__in=list(value_kinds)).order_by("value_kind"))
+    return state_for_many(organization, [claim_ref], source_kind, key, value_kinds)
+
+
+def state_for_many(
+    organization: Any,
+    claim_refs: Iterable[str],
+    source_kind: Any,
+    key: str,
+    value_kinds: Iterable[str],
+) -> evidence_models.State | None:
+    """The state vector for a key over several claims at once — an individual's members (RFC 0018).
+
+    The stored grain is per instance, because the log is; a view that holds
+    several instances to be one thing reads their rows and folds them with
+    :func:`combine`, exactly as the value-kind family is folded. Ordered by
+    `(claim_ref, value_kind)` so LATEST resolves the same way every time.
+    Unsaved result; callers read it and must not save it.
+    """
+    refs = [str(ref) for ref in claim_refs]
+    states = list(evidence_models.State.objects.for_organization(organization).filter(claim_ref__in=refs, source_kind=source_kind, key=key, value_kind__in=list(value_kinds)).order_by("claim_ref", "value_kind"))
 
     for state in states:
         if state.needs_recompute:

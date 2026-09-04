@@ -1,7 +1,7 @@
 """The table projector — the one module that reads or writes the drawing's rows.
 
-The drawing lives in two ordinary Postgres tables
-(`graph_engine.models.ProjectionVertex` / `ProjectionEdge`), which makes the
+The drawing lives in three ordinary Postgres tables
+(`graph_engine.models.ProjectionVertex` / `ProjectionMember` / `ProjectionEdge`), which makes the
 projection *transactional with the evidence*: a write's draw commits in the
 same transaction as its assertion, so in steady state the outbox settles with
 the write and `lag` is structurally zero. Everything else about "the graph is
@@ -104,6 +104,9 @@ class TableProjector:
     def _edge_table(self) -> str:
         return self._models.ProjectionEdge._meta.db_table
 
+    def _member_table(self) -> str:
+        return self._models.ProjectionMember._meta.db_table
+
     # ------------------------------------------------------------------ namespace
 
     def refresh_namespace(self, graph: Any) -> None:
@@ -152,23 +155,37 @@ class TableProjector:
 
     # ------------------------------------------------------------------ writer: nodes
 
-    def draw_node(self, graph: Any, ref: str, label: str, category_id: Any, kind: str) -> None:
+    def _vertex_for_member(self, graph: Any, ref: str) -> Any | None:
+        """The vertex holding `ref` as a member, or None. Any member addresses the vertex (RFC 0018)."""
+        member = self._models.ProjectionMember.objects.filter(graph=graph, ref=str(ref)).select_related("vertex").first()
+        return member.vertex if member is not None else None
+
+    def draw_node(self, graph: Any, ref: str, label: str, category_id: Any, kind: str, members: Iterable[str]) -> None:
         # Upsert on (graph, ref) — the unique constraint is the convergence the
         # protocol promises. Derived properties survive a redraw, exactly as the
         # Cypher `MERGE … SET` left them; a label move without a prior
         # `erase_nodes` converges here too (the row moves), where AGE would have
         # minted a duplicate vertex.
-        self._models.ProjectionVertex.objects.update_or_create(
+        members = sorted({str(member) for member in members} | {str(ref)})
+        vertex, _ = self._models.ProjectionVertex.objects.update_or_create(
             graph=graph,
             ref=str(ref),
             defaults={"label": str(label), "category_pk": int(category_id) if category_id is not None else None, "kind": str(kind)},
         )
+        # The member list is replaced, not merged: a member that left the
+        # individual (its sameness retracted, itself retracted) must stop
+        # addressing this vertex. A member another vertex still holds is the
+        # caller's ordering mistake — `erase_nodes` first — and the unique
+        # constraint refuses it rather than silently re-homing the ref.
+        self._models.ProjectionMember.objects.filter(vertex=vertex).exclude(ref__in=members).delete()
+        held = {str(row) for row in self._models.ProjectionMember.objects.filter(vertex=vertex).values_list("ref", flat=True)}
+        self._models.ProjectionMember.objects.bulk_create([self._models.ProjectionMember(graph=graph, vertex=vertex, ref=member) for member in members if member not in held])
 
     def write_properties(self, graph: Any, ref: str, label: str, values: Mapping[str, Any]) -> bool:
         if not values:
             return True
-        row = self._models.ProjectionVertex.objects.filter(graph=graph, ref=str(ref), label=str(label)).first()
-        if row is None:
+        row = self._vertex_for_member(graph, ref)
+        if row is None or row.label != str(label):
             return False
         for key, value in values.items():
             row.properties[self.validate_key(key)] = value
@@ -180,7 +197,7 @@ class TableProjector:
         refs = [str(ref) for ref in refs]
         if not owned or not refs:
             return
-        rows = list(self._models.ProjectionVertex.objects.filter(graph=graph, label=str(label), ref__in=refs))
+        rows = list(self._models.ProjectionVertex.objects.filter(graph=graph, label=str(label), members__ref__in=refs).distinct())
         for row in rows:
             for key in owned:
                 row.properties.pop(key, None)
@@ -190,19 +207,28 @@ class TableProjector:
         refs = [str(ref) for ref in refs]
         if not refs:
             return 0
-        # Edges go by FK cascade — the `DETACH` the protocol promises. The count
-        # is vertices only, matching what the Cypher loop counted.
-        queryset = self._models.ProjectionVertex.objects.filter(graph=graph, ref__in=refs)
+        # Every vertex holding any of the refs as a member — erasing one
+        # observation of an individual erases the individual's vertex, and the
+        # caller redraws what remains. Edges go by FK cascade — the `DETACH` the
+        # protocol promises. The count is vertices only, matching what the
+        # Cypher loop counted.
+        vertex_ids = list(self._models.ProjectionMember.objects.filter(graph=graph, ref__in=refs).values_list("vertex_id", flat=True).distinct())
+        if not vertex_ids:
+            return 0
+        queryset = self._models.ProjectionVertex.objects.filter(graph=graph, pk__in=vertex_ids)
         removed = queryset.count()
         queryset.delete()
         return removed
 
     # ------------------------------------------------------------------ writer: edges
 
+    def _endpoints(self, graph: Any, source_ref: str, target_ref: str) -> tuple[Any | None, Any | None]:
+        """The vertices holding the two refs as members — either may be None."""
+        held = {str(member.ref): member.vertex for member in self._models.ProjectionMember.objects.filter(graph=graph, ref__in=[str(source_ref), str(target_ref)]).select_related("vertex")}
+        return held.get(str(source_ref)), held.get(str(target_ref))
+
     def draw_edge(self, graph: Any, source_ref: str, target_ref: str, label: str, properties: Mapping[str, Any]) -> bool:
-        vertices = {str(row.ref): row for row in self._models.ProjectionVertex.objects.filter(graph=graph, ref__in=[str(source_ref), str(target_ref)])}
-        source = vertices.get(str(source_ref))
-        target = vertices.get(str(target_ref))
+        source, target = self._endpoints(graph, source_ref, target_ref)
         if source is None or target is None:
             # An undrawn endpoint means nothing was written — the caller decides
             # whether that is worth a warning.
@@ -215,7 +241,10 @@ class TableProjector:
         return True
 
     def erase_edge(self, graph: Any, source_ref: str, target_ref: str, label: str, match: Mapping[str, Any] | None = None) -> None:
-        queryset = self._models.ProjectionEdge.objects.filter(graph=graph, source__ref=str(source_ref), target__ref=str(target_ref), label=str(label))
+        source, target = self._endpoints(graph, source_ref, target_ref)
+        if source is None or target is None:
+            return
+        queryset = self._models.ProjectionEdge.objects.filter(graph=graph, source=source, target=target, label=str(label))
         if match:
             queryset = queryset.filter(properties__contains={self.validate_key(key): value for key, value in match.items()})
         queryset.delete()
@@ -231,22 +260,31 @@ class TableProjector:
 
     # ------------------------------------------------------------------ reader
 
-    def _record(self, row: Any) -> dict[str, Any]:
-        """A drawn record in the shape readers have always seen: `{id, label, properties}`."""
+    def _record(self, row: Any, members: Iterable[str]) -> dict[str, Any]:
+        """A drawn record in the shape readers have always seen — `{id, label, properties}` — plus `members`."""
         properties = dict(row.properties or {})
         properties["id"] = str(row.ref)
         properties["category_id"] = row.category_pk
         properties["type"] = row.kind
-        return {"id": int(row.pk), "label": row.label, "properties": properties}
+        return {"id": int(row.pk), "label": row.label, "properties": properties, "members": tuple(sorted(str(member) for member in members))}
 
-    def drawn_nodes(self, graph: Any, refs: Iterable[str]) -> list[dict[str, Any]]:
+    def drawn_nodes(self, graph: Any, refs: Iterable[str]) -> dict[str, dict[str, Any]]:
         refs = [str(ref) for ref in refs]
         if not refs:
-            return []
-        return [self._record(row) for row in self._models.ProjectionVertex.objects.filter(graph=graph, ref__in=refs)]
+            return {}
+        held = list(self._models.ProjectionMember.objects.filter(graph=graph, ref__in=refs).select_related("vertex"))
+        vertices = {member.vertex_id: member.vertex for member in held}
+        members_by_vertex: dict[int, list[str]] = {}
+        for vertex_id, ref in self._models.ProjectionMember.objects.filter(vertex_id__in=list(vertices)).values_list("vertex_id", "ref"):
+            members_by_vertex.setdefault(vertex_id, []).append(str(ref))
+        records = {vertex_id: self._record(vertex, members_by_vertex.get(vertex_id, ())) for vertex_id, vertex in vertices.items()}
+        return {str(member.ref): records[member.vertex_id] for member in held}
 
     def drawn_edge(self, graph: Any, source_ref: str, target_ref: str, label: str) -> DrawnEdge | None:
-        row = self._models.ProjectionEdge.objects.filter(graph=graph, source__ref=str(source_ref), target__ref=str(target_ref), label=str(label)).first()
+        source, target = self._endpoints(graph, source_ref, target_ref)
+        if source is None or target is None:
+            return None
+        row = self._models.ProjectionEdge.objects.filter(graph=graph, source=source, target=target, label=str(label)).first()
         if row is None:
             return None
         return DrawnEdge(edge_id=int(row.pk), left_id=int(row.source_id), right_id=int(row.target_id))
@@ -269,7 +307,8 @@ class TableProjector:
         params["offset"] = int(spec.offset)
         params["limit"] = int(spec.limit)
         sql = (
-            f"SELECT v.id, v.ref::text AS ref, v.label, v.category_pk, v.kind, v.properties "
+            f"SELECT v.id, v.ref::text AS ref, v.label, v.category_pk, v.kind, v.properties, "
+            f"(SELECT array_agg(m.ref::text ORDER BY m.ref) FROM {self._member_table()} m WHERE m.vertex_id = v.id) AS members "
             f"FROM {self._vertex_table()} v WHERE {' AND '.join(clauses)}"
             + (f" ORDER BY {', '.join(order_parts)}" if order_parts else "")
             + " OFFSET %(offset)s LIMIT %(limit)s"
@@ -279,12 +318,12 @@ class TableProjector:
             rows = cursor.fetchall()
 
         records: list[dict[str, Any]] = []
-        for pk, ref, label, category_pk, kind, properties in rows:
+        for pk, ref, label, category_pk, kind, properties, members in rows:
             properties = self._as_dict(properties)
             properties["id"] = str(ref)
             properties["category_id"] = category_pk
             properties["type"] = kind
-            records.append({"id": int(pk), "label": label, "properties": properties})
+            records.append({"id": int(pk), "label": label, "properties": properties, "members": tuple(members or ())})
         return records
 
     def render_table(self, graph: Any, plan: Any, *, filters: Any = None, order: Any = None, pagination: Any = None) -> list[Any]:

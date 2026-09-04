@@ -30,7 +30,7 @@ only ever agree with that vertex's own presence.
 from __future__ import annotations
 
 import logging
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 from django.db.models import Q
 
@@ -166,8 +166,21 @@ def _derived_properties(category: core_models.Category) -> list[Any]:
     return [prop for prop in (category.defined_properties or []) if is_derived(prop)]
 
 
-def _structure_ids_informing(graph: core_models.Graph, claim_ref: str, definition: dict[str, Any] | None = None) -> list[Any]:
-    """The structure primary keys whose measurements reach this entity.
+def _refs(value: str | Iterable[str]) -> list[str]:
+    """One ref or several, as a list of strings.
+
+    Every fold below takes the **members** of an individual (RFC 0018): the
+    instances a view holds to be one thing, so a measurement informing any of
+    them is a measurement of the individual. A single ref is the common case
+    and is accepted as itself.
+    """
+    if isinstance(value, str):
+        return [value]
+    return [str(ref) for ref in value]
+
+
+def _structure_ids_informing(graph: core_models.Graph, claim_ref: str | Iterable[str], definition: dict[str, Any] | None = None) -> list[Any]:
+    """The structure primary keys whose measurements reach this individual — any of its members.
 
     ``definition`` is the node's category rule (RFC 0009): whose INFORMS claims
     may route evidence under this node is that category's question, so the fold
@@ -182,13 +195,13 @@ def _structure_ids_informing(graph: core_models.Graph, claim_ref: str, definitio
     """
     import uuid as uuid_module
 
-    refs = selector_module.informs_links_for(graph, definition=definition).filter(target_ref=claim_ref).values_list("source_ref", flat=True)
+    refs = selector_module.informs_links_for(graph, definition=definition).filter(target_ref__in=_refs(claim_ref)).values_list("source_ref", flat=True).distinct()
     return [uuid_module.UUID(str(ref)) for ref in refs]
 
 
 def _priority_scoped_value(
     graph: core_models.Graph,
-    claim_ref: str,
+    claim_ref: str | Iterable[str],
     source_kind: Any,
     key: str,
     value_kinds: Iterable[str],
@@ -338,7 +351,7 @@ def derived_property_keys(category: core_models.Category) -> set[str]:
 
 def _property_statistics(
     graph: core_models.Graph,
-    claim_ref: str,
+    claim_ref: str | Iterable[str],
     category: core_models.Category,
 ) -> dict[str, Any]:
     """How much evidence stands behind each derived value, and over what window.
@@ -370,7 +383,7 @@ def _property_statistics(
         if value_kinds is None:
             continue
 
-        state = _scoped_state(graph, claim_ref, source_kind, key, value_kinds, category, prop) if _rule_constrains(category, prop) else state_module.state_for(graph.organization, claim_ref, source_kind, key, value_kinds)
+        state = _scoped_state(graph, claim_ref, source_kind, key, value_kinds, category, prop) if _rule_constrains(category, prop) else state_module.state_for_many(graph.organization, _refs(claim_ref), source_kind, key, value_kinds)
         if state is None:
             continue
 
@@ -387,10 +400,15 @@ def _property_statistics(
 
 def derive_properties(
     graph: core_models.Graph,
-    claim_ref: str,
+    claim_ref: str | Iterable[str],
     category: core_models.Category,
 ) -> dict[str, Any]:
-    """Compute one entity's derived properties from its state vectors.
+    """Compute one individual's derived properties from its members' state vectors.
+
+    `claim_ref` is one instance ref or the whole member list of a drawn
+    individual (RFC 0018); the cached path combines one `State` row per member
+    (`state.combine` is the monoid this was always meant for), the rule-bound
+    path widens its metric filter the same way.
 
     **Runs at materialization, never on read.** Applying a graph's rules to the
     log is what creates its nodes and their properties; a query afterwards is a
@@ -442,7 +460,7 @@ def derive_properties(
         if prop.derivation in (DerivationType.PRIORITY_LATEST, DerivationType.LATEST_ASSERTION_TOOL):
             value = _priority_scoped_value(graph, claim_ref, source_kind, key, value_kinds, prop, category)
         else:
-            state = _scoped_state(graph, claim_ref, source_kind, key, value_kinds, category, prop) if _rule_constrains(category, prop) else state_module.state_for(organization, claim_ref, source_kind, key, value_kinds)
+            state = _scoped_state(graph, claim_ref, source_kind, key, value_kinds, category, prop) if _rule_constrains(category, prop) else state_module.state_for_many(organization, _refs(claim_ref), source_kind, key, value_kinds)
 
             aggregation = rule.aggregation if rule and rule.aggregation else None
             if prop.derivation == DerivationType.LATEST and aggregation is None:
@@ -474,7 +492,7 @@ def _rule_constrains(category: core_models.Category, prop: Any) -> bool:
 
 def _scoped_state(
     graph: core_models.Graph,
-    claim_ref: str,
+    claim_ref: str | Iterable[str],
     source_kind: Any,
     key: str,
     value_kinds: Iterable[str],
@@ -521,7 +539,7 @@ def _scoped_state(
     # aggregation ever needs the kind, give it the whole set rather than one.
     vector = evidence_models.State(
         organization=graph.organization,
-        claim_ref=claim_ref,
+        claim_ref=min(_refs(claim_ref)),
         source_kind=source_kind,
         key=key,
         value_kind=next(iter(sorted(value_kinds)), ""),
@@ -529,7 +547,7 @@ def _scoped_state(
     return state_module.fold(metrics, vector)
 
 
-def _observation_window(graph: core_models.Graph, claim_ref: str, category: core_models.Category) -> dict[str, Any]:
+def _observation_window(graph: core_models.Graph, claim_ref: str | Iterable[str], category: core_models.Category) -> dict[str, Any]:
     """When the evidence behind this node was observed.
 
     `valid_from` and `valid_to` are read by six GraphQL fields that have always
@@ -574,12 +592,19 @@ def project(
     graph: core_models.Graph,
     instance_refs: Iterable[str],
 ) -> int:
-    """Write derived properties onto the named entities. Returns how many were written.
+    """Write derived properties onto the individuals holding the named instances. Returns how many vertices were written.
 
     Batched deliberately: one call handles a whole dirty set, so a bulk ingest of
     a thousand metrics against one structure triggers a single projection pass
     rather than a thousand. The old design re-derived per fact, which is the
     O(N x P) regression `test_bulk_ingest` guards against.
+
+    Folded **per vertex, over its members** (RFC 0018). The refs name instances;
+    the vertex holding each is looked up in the drawing and every property is
+    derived over the whole member list — an ROI informing either observation of
+    one individual informs the individual. Two refs held by one vertex are one
+    fold and one write, and a ref the drawing does not hold is reported as
+    behind, exactly as an undrawn instance always was.
     """
     projected = 0
 
@@ -596,6 +621,13 @@ def project(
     # on the label. Resolved once for the batch rather than per node.
     resolved, _ = resolve_categories(graph, nodes)
 
+    # The grouping is the drawing's: which vertex holds each ref, and what else
+    # it holds. `create_vertex` decided that from the claims a moment before
+    # this runs, and a fold that grouped differently from the vertex it writes
+    # onto would report one individual's values under another's id.
+    records = controller.projector.drawn_nodes(graph, refs)
+    written: set[str] = set()
+
     for claim_ref in refs:
         category = resolved.get(claim_ref)
         if category is None:
@@ -603,23 +635,8 @@ def project(
             # way there is no vertex to write onto.
             continue
 
-        # **Every** derived property, not just the filterable ones. A read is a
-        # graph query: whatever a client can ask for is on the vertex before the
-        # query runs. The old split wrote only `index=True` properties and left
-        # the rest to `api/types._derive_unindexed`, which folded state per node
-        # on every read — and since `index` defaults to False, that was almost
-        # all of them.
-        values = derive_properties(graph, claim_ref, category)
-        values.update(_property_statistics(graph, claim_ref, category))
-        values.update(_observation_window(graph, claim_ref, category))
-        values["__schema_version"] = schema_version
-        # No `__last_derived` any more. It was a wall-clock millisecond on every
-        # vertex — the one projected value `reproject` could not reproduce, so the
-        # rebuild tests excluded it by hand — and it answered a per-graph question
-        # per node. "When was this view last derived" is `Projection.derived_at`,
-        # stamped once per call below.
-
-        if not _write_properties(controller, graph, claim_ref, category, values):
+        record = records.get(claim_ref)
+        if record is None:
             # The node has a `Instance` row and a category this graph admits, but no
             # vertex — the projection is behind the log. `reproject` is the fix;
             # counting it as projected would hide that it is needed.
@@ -631,6 +648,37 @@ def project(
             )
             continue
 
+        representative = str(record["properties"]["id"])
+        if representative in written:
+            continue
+        members = list(record["members"]) or [claim_ref]
+
+        # **Every** derived property, not just the filterable ones. A read is a
+        # graph query: whatever a client can ask for is on the vertex before the
+        # query runs. The old split wrote only `index=True` properties and left
+        # the rest to `api/types._derive_unindexed`, which folded state per node
+        # on every read — and since `index` defaults to False, that was almost
+        # all of them.
+        values = derive_properties(graph, members, category)
+        values.update(_property_statistics(graph, members, category))
+        values.update(_observation_window(graph, members, category))
+        values["__schema_version"] = schema_version
+        # No `__last_derived` any more. It was a wall-clock millisecond on every
+        # vertex — the one projected value `reproject` could not reproduce, so the
+        # rebuild tests excluded it by hand — and it answered a per-graph question
+        # per node. "When was this view last derived" is `Projection.derived_at`,
+        # stamped once per call below.
+
+        if not _write_properties(controller, graph, representative, category, values):
+            logger.warning(
+                "%s: no vertex labelled %s to write onto; the projection is behind the evidence. Run `manage.py reproject --graph %s`.",
+                claim_ref,
+                category.age_name,
+                graph.pk,
+            )
+            continue
+
+        written.add(representative)
         projected += 1
 
     if projected:
@@ -645,13 +693,32 @@ def project(
 #: traversal sees the connection once while the evidence base keeps both claims.
 #: Collapsing them at write time instead would make agreement uncountable, and
 #: keeping them apart in AGE would make every path query return duplicates.
-def proposition_key(link: evidence_models.Link) -> tuple[str, str, Any]:
+def proposition_key(link: evidence_models.Link, canon: Mapping[str, str] | None = None) -> tuple[str, str, Any]:
     """What makes two relation assertions claims about the same edge.
 
     The two endpoints and the *word* — not a graph's category for it. Two views
     that both declare "IS_CONNECTED_TO" are looking at one proposition, and each
-    draws it under its own label."""
-    return (str(link.source_ref), str(link.target_ref), link.term_id)
+    draws it under its own label.
+
+    ``canon`` maps a member ref to its individual's representative in one view
+    (RFC 0018): two claims naming two observations of one cell are one edge
+    there, and its `__assertion_count` is the sum. Without it — the no-view
+    answer — the endpoints are the instances themselves."""
+    canon = canon or {}
+    source, target = str(link.source_ref), str(link.target_ref)
+    return (canon.get(source, source), canon.get(target, target), link.term_id)
+
+
+def representatives_for(controller: Any, graph: core_models.Graph, refs: Iterable[str]) -> dict[str, str]:
+    """Member ref → the representative of the individual this view draws it as.
+
+    Asked of the drawing: the vertex holding each ref, and its `id`. A ref the
+    view has not drawn maps to nothing, and its caller falls back to the ref
+    itself — which then fails to match an endpoint, exactly as an undrawn node
+    always did.
+    """
+    records = controller.projector.drawn_nodes(graph, {str(ref) for ref in refs})
+    return {ref: str(record["properties"]["id"]) for ref, record in records.items()}
 
 
 def categories_by_term(graph: core_models.Graph) -> dict[Any, Any]:
@@ -738,12 +805,19 @@ def project_edges(
     `MERGE` rather than `CREATE`, keyed on the proposition: replaying twice must
     not double an edge, and a second assertion of the same relation must land on
     the one already there.
+
+    Endpoints are canonicalised to the individuals this view draws (RFC 0018)
+    before grouping, so claims naming different observations of one cell fold
+    into one edge with one summed `__assertion_count`. A relation between two
+    members of one individual is a self-edge — it is what the claims say.
     """
     projected = 0
     by_term = categories_by_term(graph)
+    links = list(links)
+    canon = representatives_for(controller, graph, [ref for link in links for ref in (link.source_ref, link.target_ref)])
     grouped: dict[tuple[str, str, Any], list[evidence_models.Link]] = {}
     for link in links:
-        grouped.setdefault(proposition_key(link), []).append(link)
+        grouped.setdefault(proposition_key(link, canon), []).append(link)
 
     for (source_ref, target_ref, term_id), assertions in grouped.items():
         category = by_term.get(term_id)
@@ -965,6 +1039,20 @@ def refs_admitted_by(category: core_models.Category) -> set[str]:
     return {ref for ref, drawn_as in resolved.items() if drawn_as.pk == category.pk}
 
 
+def representatives_admitted_by(category: core_models.Category) -> set[str]:
+    """Every individual this category draws, by representative (RFC 0018).
+
+    :func:`refs_admitted_by` folded once more through `identity.view_components`
+    — the same fold `project_all` draws with — so `entities(category:)` lists one
+    row per individual rather than one per observation. Components never cross
+    a category, so folding this category's refs alone is the whole answer.
+    """
+    from evidence import identity as identity_module
+
+    admitted = refs_admitted_by(category)
+    return set(identity_module.view_components(category.graph, {ref: category for ref in admitted}))
+
+
 def refs_in_graph(graph: core_models.Graph) -> set[str]:
     """Every node this graph holds, by the claims — the whole view's membership.
 
@@ -986,6 +1074,35 @@ def refs_in_graph(graph: core_models.Graph) -> set[str]:
     nodes = list(selector_module.instances_for(graph).select_related("term"))
     resolved, _ = resolve_categories(graph, nodes)
     return set(resolved)
+
+
+def representatives_in_graph(graph: core_models.Graph) -> set[str]:
+    """Every individual this graph holds, by representative (RFC 0018).
+
+    :func:`refs_in_graph` folded through `identity.view_components`, so
+    `nodes(graph:)` lists one row per individual. Same cost caveat as
+    `refs_in_graph`: the whole view is resolved to answer for a page.
+    """
+    from evidence import identity as identity_module
+
+    nodes = list(selector_module.instances_for(graph).select_related("term"))
+    resolved, _ = resolve_categories(graph, nodes)
+    return set(identity_module.view_components(graph, resolved))
+
+
+def representative_in_graph(graph: core_models.Graph, ref: str) -> str:
+    """The representative of the individual this view draws ``ref`` as.
+
+    The lowest member of the ref's view-scoped component
+    (`identity.component_refs_for_view`), the rule `create_vertex` draws by.
+    A ref no sameness claim the view trusts touches is its own representative.
+    Asked of the claims, not the drawing, so `node(id: <member>)` answers the
+    same whether or not the projection has caught up.
+    """
+    from evidence import identity as identity_module
+
+    members = identity_module.component_refs_for_view(graph, [str(ref)]).get(str(ref)) or [str(ref)]
+    return min(str(member) for member in members)
 
 
 #: The two participation kinds, and which way the projected edge points. An input
@@ -1032,14 +1149,17 @@ def edge_pattern_for(category: Any, link: evidence_models.Link) -> tuple[str, bo
     return str(category.age_name), False
 
 
-def participation_key(link: evidence_models.Link) -> tuple[str, str, str, Any]:
+def participation_key(link: evidence_models.Link, canon: Mapping[str, str] | None = None) -> tuple[str, str, str, Any]:
     """What makes two participation claims claims about the same thing.
 
     The entity, the event, which side, and the role. Not the category: an event
     has exactly one, and folding it in would let a schema edit look like a
-    different proposition.
+    different proposition. ``canon`` is the view's member → representative map,
+    as in :func:`proposition_key`.
     """
-    return (str(link.source_ref), str(link.target_ref), str(link.kind), link.role)
+    canon = canon or {}
+    source, target = str(link.source_ref), str(link.target_ref)
+    return (canon.get(source, source), canon.get(target, target), str(link.kind), link.role)
 
 
 def active_participation_links(graph: core_models.Graph) -> list[evidence_models.Link]:
@@ -1083,9 +1203,11 @@ def project_participation(
     """
     projected = 0
     by_term = categories_by_term(graph)
+    links = list(links)
+    canon = representatives_for(controller, graph, [ref for link in links for ref in (link.source_ref, link.target_ref)])
     grouped: dict[tuple[str, str, str, Any], list[evidence_models.Link]] = {}
     for link in links:
-        grouped.setdefault(participation_key(link), []).append(link)
+        grouped.setdefault(participation_key(link, canon), []).append(link)
 
     for (source_ref, target_ref, kind, role), claims in grouped.items():
         category = by_term.get(claims[0].term_id)
@@ -1142,11 +1264,11 @@ def _write_properties(
     category: core_models.Category,
     values: dict[str, Any],
 ) -> bool:
-    """Set properties on the AGE node identified by a durable entity ref.
+    """Set properties on the drawn vertex holding a durable instance ref.
 
-    Matched by the node's stable `id` property rather than by vertex id, because
-    vertex ids do not survive a rebuild — which is the whole reason refs are
-    keyed on the uuid.
+    Matched by membership rather than by vertex id, because vertex ids do not
+    survive a rebuild — which is the whole reason refs are keyed on the uuid.
+    Any member of an individual addresses its vertex (RFC 0018).
 
     Returns whether a vertex was actually matched. A `SET` against nothing is a
     silent no-op in Cypher, so without this the caller cannot tell a written
@@ -1155,12 +1277,18 @@ def _write_properties(
     return controller.projector.write_properties(graph, str(claim_ref), category.age_name, values)
 
 
-def create_vertex(controller: Any, graph: core_models.Graph, node: Any, category: Any) -> None:
-    """Draw one node into the projection.
+def create_vertex(controller: Any, graph: core_models.Graph, nodes: list[Any], category: Any) -> str:
+    """Draw one individual into the projection: one vertex for these member instances.
 
-    Shared by `rebuild` and `reproject_node` so that a replayed vertex and a
+    Shared by `rebuild` and `reproject_refs` so that a replayed vertex and a
     freshly re-attested one cannot differ — the same reason `project_edges` is
     shared between creating a relation and replaying one.
+
+    ``nodes`` are the `Instance` rows of one view-scoped component
+    (`identity.view_components`) — most often exactly one. The vertex's `ref`
+    is the lowest member uuid, arrival-independent, the same rule the
+    organization-grain identity cache uses; every member is written beside it so
+    any of them addresses the vertex. Returns that representative.
 
     The vertex carries its identity, **what kind of thing it is**, and its label.
     Every other value on it is derived, and `project` is what derives them.
@@ -1173,13 +1301,35 @@ def create_vertex(controller: Any, graph: core_models.Graph, node: Any, category
     it could never be one of. A node's kind is a fact about the claim, so the
     claim is where it is taken from — and it is written here so that a vertex is
     self-describing to any reader, which is what removes the fallback entirely.
+    Members share a category, so they share a kind.
     """
-    # Converging: drawing a node that is already drawn — `attest_node` on a
-    # standing node, `project_all` over a populated namespace, an incremental
-    # replay — leaves one vertex. A node whose *label* moved still needs its old
-    # vertex cleared first; `reproject_node` does that, `rebuild` drops the
-    # namespace, and `project_all` relies on one of the two having happened.
-    controller.projector.draw_node(graph, str(node.ref), category.age_name, category.pk, str(node.kind).upper())
+    members = sorted(str(node.ref) for node in nodes)
+    representative = members[0]
+    # Converging: drawing an individual that is already drawn — `attest_node` on
+    # a standing node, `project_all` over a populated namespace, an incremental
+    # replay — leaves one vertex. One whose *label* or *membership* moved still
+    # needs its old vertex cleared first; `reproject_refs` does that, `rebuild`
+    # drops the namespace, and `project_all` relies on one of the two having
+    # happened.
+    controller.projector.draw_node(graph, representative, category.age_name, category.pk, str(nodes[0].kind).upper(), members)
+    return representative
+
+
+def draw_components(controller: Any, graph: core_models.Graph, nodes: Iterable[Any], resolved: Mapping[str, Any]) -> dict[str, list[str]]:
+    """Draw every individual among the resolved nodes; returns representative → members.
+
+    The one place the component fold meets the drawing: `identity.view_components`
+    says which resolved nodes this view holds to be one thing, and each component
+    becomes one `create_vertex`. Nodes `resolve_categories` skipped are not in
+    `resolved`, so they are drawn nowhere and bridge nothing.
+    """
+    from evidence import identity as identity_module
+
+    by_ref = {str(node.ref): node for node in nodes}
+    components = identity_module.view_components(graph, resolved)
+    for representative, members in components.items():
+        create_vertex(controller, graph, [by_ref[member] for member in members], resolved[representative])
+    return components
 
 
 def unproject(controller: Any, graph: core_models.Graph, instance_refs: Iterable[str]) -> int:
@@ -1199,39 +1349,22 @@ def unproject(controller: Any, graph: core_models.Graph, instance_refs: Iterable
     return controller.projector.erase_nodes(graph, [str(ref) for ref in instance_refs])
 
 
-def reproject_node(controller: Any, graph: core_models.Graph, node: Any) -> bool:
-    """Draw a node back into the projection, edges and all.
+def reproject_refs(controller: Any, graph: core_models.Graph, refs: Iterable[str]) -> bool:
+    """Draw these nodes back into the projection, individuals, edges and all.
 
-    Everything `rebuild` would do for this one node, using the same functions —
+    Everything `rebuild` would do for these nodes, using the same functions —
     if any of it were reattestation-specific, a re-attested node and a replayed
     one could differ, which is the class of failure this layer exists to prevent.
+    The body is :func:`converge`, which widens the set to every individual the
+    refs belong to (RFC 0018): re-attesting one observation redraws the whole
+    thing it is an observation of, and a sameness claim redraws both sides'
+    former individuals as one.
 
-    Returns whether the node was actually drawn. It may not be: a node whose
-    claims no longer place it in any of this graph's terms does not come back
-    just because somebody says it exists, and `resolve_categories` is what
-    decides that.
+    Returns whether anything was drawn. It may not be: a node whose claims no
+    longer place it in any of this graph's terms does not come back just because
+    somebody says it exists, and `resolve_categories` is what decides that.
     """
-    # Clear whatever this view drew for the node before, edges and all. The claims
-    # may have moved it under another label, and `create_vertex` merges on
-    # `(label, id)` — so without this a relabelled node would keep its previous
-    # self under the previous label. A node this view no longer admits is thereby
-    # erased rather than left standing, which is what the claims say.
-    unproject(controller, graph, [str(node.ref)])
-
-    resolved, _ = resolve_categories(graph, [node])
-    category = resolved.get(str(node.ref))
-    if category is None:
-        return False
-
-    create_vertex(controller, graph, node, category)
-
-    # Its edges come from the claims, not from anything remembered about what the
-    # vertex used to have. Scoped to this node so re-attesting one entity does
-    # not redraw the whole graph.
-    project_edges(controller, graph, [link for link in active_relation_links(graph) if node.ref in (str(link.source_ref), str(link.target_ref))])
-    project_participation(controller, graph, [link for link in active_participation_links(graph) if node.ref in (str(link.source_ref), str(link.target_ref))])
-    project(controller, graph, [str(node.ref)])
-    return True
+    return converge(controller, graph, refs)["nodes"] > 0
 
 
 def project_all(controller: Any, graph: core_models.Graph) -> dict[str, int]:
@@ -1261,17 +1394,15 @@ def project_all(controller: Any, graph: core_models.Graph) -> dict[str, int]:
     # anything is drawn so a definition that admits nothing fails loudly.
     resolved, skipped = resolve_categories(graph, nodes)
 
-    for node in nodes:
-        category = resolved.get(str(node.ref))
-        if category is None:
-            continue
-        create_vertex(controller, graph, node, category)
+    # One vertex per individual (RFC 0018): the resolved nodes are folded into
+    # components once, over the whole view, and each component is one draw.
+    components = draw_components(controller, graph, nodes, resolved)
 
     # Edges after nodes: `MATCH (s) ... MATCH (t)` needs both endpoints to exist.
     edges = project_edges(controller, graph, active_relation_links(graph))
     participations = project_participation(controller, graph, active_participation_links(graph))
 
-    projected = project(controller, graph, [ref for ref in resolved])
+    projected = project(controller, graph, list(components))
 
     if skipped:
         logger.warning("graph #%s: %d node(s) admitted by no category in this graph and left unprojected.", graph.pk, len(skipped))
@@ -1286,6 +1417,7 @@ def project_all(controller: Any, graph: core_models.Graph) -> dict[str, int]:
     # cannot tell a deliberate selection from a broken one.
     return {
         "nodes": len(resolved),
+        "individuals": len(components),
         "unclassified": len(skipped),
         "edges": edges,
         "participations": participations,
@@ -1589,32 +1721,44 @@ def touched_refs(organization: Any, assertion_ids: Iterable[Any], since_seq: int
 def converge(controller: Any, graph: core_models.Graph, refs: Iterable[str]) -> dict[str, int]:
     """Make this graph's drawing of these nodes equal what a rebuild would draw.
 
-    Per node, exactly what `reproject_node` does; batched so the category
-    resolution and the edge scans happen once for the set. Clear first, then
-    redraw from the claims: a node the view no longer admits is erased, one whose
-    label moved lands under the new one, and every edge touching the set is
-    re-merged from the active links with its `__assertion_count` recomputed.
-    Folds of untouched nodes cannot have moved — derived properties fold per node
-    over Postgres and read nothing from a neighbour — so nothing else is touched.
+    The body of `reproject_refs`; batched so the category resolution and the
+    edge scans happen once for the set. Clear first, then redraw from the
+    claims: a node the view no longer admits is erased, one whose label moved
+    lands under the new one, and every edge touching the set is re-merged from
+    the active links with its `__assertion_count` recomputed.
+
+    **The set is widened to whole individuals first** (RFC 0018). A vertex
+    stands for a component, so touching one member means redrawing the
+    component: the touched refs grow to every member of every vertex currently
+    holding one of them (the drawing's answer — what has to be erased) and to
+    every ref the view's sameness claims now connect them to
+    (`identity.component_refs_for_view` — what has to be drawn). Nothing outside
+    the touched individuals moved: derived properties fold per individual over
+    Postgres and read nothing from a neighbour, and an edge to a neighbour is
+    redrawn from the claims because it touches the set.
     """
+    from evidence import identity as identity_module
+
     touched = {str(ref) for ref in refs}
     if not touched:
-        return {"nodes": 0, "edges": 0, "participations": 0, "projected": 0, "erased": 0}
+        return {"nodes": 0, "individuals": 0, "edges": 0, "participations": 0, "projected": 0, "erased": 0}
+
+    for record in controller.projector.drawn_nodes(graph, touched).values():
+        touched.update(str(member) for member in record["members"])
+    for members in identity_module.component_refs_for_view(graph, list(touched)).values():
+        touched.update(str(member) for member in members)
 
     nodes = list(evidence_models.Instance.objects.for_organization(graph.organization).filter(id__in=touched).select_related("term"))
-    erased = unproject(controller, graph, [str(node.ref) for node in nodes])
+    erased = unproject(controller, graph, touched)
 
     resolved, _ = resolve_categories(graph, nodes)
-    for node in nodes:
-        category = resolved.get(str(node.ref))
-        if category is not None:
-            create_vertex(controller, graph, node, category)
+    components = draw_components(controller, graph, nodes, resolved)
 
     edges = project_edges(controller, graph, [link for link in active_relation_links(graph) if str(link.source_ref) in touched or str(link.target_ref) in touched])
     participations = project_participation(controller, graph, [link for link in active_participation_links(graph) if str(link.source_ref) in touched or str(link.target_ref) in touched])
-    projected = project(controller, graph, list(resolved))
+    projected = project(controller, graph, list(components))
 
-    return {"nodes": len(resolved), "edges": edges, "participations": participations, "projected": projected, "erased": erased}
+    return {"nodes": len(resolved), "individuals": len(components), "edges": edges, "participations": participations, "projected": projected, "erased": erased}
 
 
 def replay(controller: Any, organization: Any) -> dict[str, Any]:
