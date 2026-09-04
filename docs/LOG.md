@@ -166,7 +166,7 @@ three are organization-grain — a retracted metric is retracted everywhere.
 
 ### `Link` — a claim relating two things
 
-One table, seven kinds. `source_ref` and `target_ref` are opaque bare uuids.
+One table, nine kinds. `source_ref` and `target_ref` are opaque bare uuids.
 Every row carries `observed_at` like an `Instance` does: when the relation held,
 when the classification was seen to apply, when the participation took place.
 Same default, same meaning. And an optional `confidence`, like every claim.
@@ -175,16 +175,24 @@ Same default, same meaning. And an optional `confidence`, like every claim.
 |---|---|---|
 | `INFORMS` | this structure is evidence for that node | nothing — it drives derivation |
 | `CLASSIFIES` | this node is of that term | the node's **label**, per view |
-| `RELATION` | these two entities are connected | an AGE edge |
-| `PARTICIPATES_AS_INPUT` | this entity went into that event, in this role | an AGE edge, entity → event |
-| `PARTICIPATES_AS_OUTPUT` | that event produced this entity, in this role | an AGE edge, event → entity |
+| `SAME_AS` | these two instances are one individual | nothing — it folds the **component** (`evidence/identity.py`) |
+| `RELATION` | these two entities are connected | an edge |
+| `PARTICIPATES_AS_INPUT` | this entity went into that event, in this role | an edge, entity → event |
+| `PARTICIPATES_AS_OUTPUT` | that event produced this entity, in this role | an edge, event → entity |
 | `MEASUREMENT` | this structure measures that entity, under this term | nothing — the typed form of INFORMS |
 | `STRUCTURE_RELATION` | these two structures are related | nothing — structures are not vertices |
+| `DERIVED_FROM` | this claim came from that claim (RFC 0017) | nothing — lineage between claims, read as `derivedFrom`/`derivations` |
 
-Three kinds have no projection because at least one endpoint is a Postgres row
-rather than an AGE vertex. That is not a gap: both endpoints of a structure
-relation are organization-scoped, so an edge in one graph's projection would be
-the wrong place to keep it.
+Three of these are drawn. The rest are not, and it is not a gap. A structure
+relation has both endpoints organization-scoped, so an edge in one graph's
+projection would be the wrong place to keep it; `INFORMS`/`MEASUREMENT` move
+derived values instead; `CLASSIFIES` and `SAME_AS` decide what a vertex *is*
+rather than adding one; and `DERIVED_FROM` relates claims, not the things the
+claims are about — its ends may be a metric, a structure or another link, none
+of which is a vertex. It is written under the **same assertion** as the claim
+that cites, because "this, because of that" is one act; every claim-making input
+takes `derivedFrom`, and `supersedeMetricValue` cites the value it replaces on
+its own.
 
 ### `Comment` — a remark about a structure
 
@@ -330,7 +338,7 @@ there is one global answer.
 | `assertEntityExists` | `Assertion`, `Instance(ENTITY)`, `Link(CLASSIFIES)`, plus `Structure`/`Metric`/`Link(INFORMS)` per supporting evidence |
 | `assertStructureExists` / `ensureStructure` | `Assertion`, `Structure`, `Metric` |
 | `assertMetricValue` / `assertMetricValueForStructure` | `Assertion`, `Metric`. The first mints the structure if it is new, as one act |
-| `supersedeMetricValue` | `Standing(stands=False)` on the old metric, then a new `Metric`, under **one** assertion — both stay on the record. Named for what it does: there is no in-place update |
+| `supersedeMetricValue` | `Standing(stands=False)` on the old metric, then a new `Metric` and a `Link(DERIVED_FROM)` from the new to the old, under **one** assertion — both stay on the record. Named for what it does: there is no in-place update |
 | `linkStructureToEntity` | `Assertion`, `Link(INFORMS)` — how evidence is attached to a *live* entity |
 | `assertNaturalEventExists` / `assertProtocolEventExists` | `Assertion`, `Instance`, `Link(CLASSIFIES)`, `Link(PARTICIPATES_AS_*)` per role |
 | `assertParticipation` | `Assertion`, `Link(PARTICIPATES_AS_*)` |

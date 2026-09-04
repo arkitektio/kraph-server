@@ -52,6 +52,11 @@ input AssertEntityExistsInput {
   confidence: Float = null
 
   """
+  The claims this one came from — ids of instances, links, metrics or structures in your organization. Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.
+  """
+  derivedFrom: [String!]! = []
+
+  """
   Instances this new one is the same as. Saying "this is AIS 6" mints a fresh instance and claims it is the same as the one already known as AIS 6 — all under **one assertion**, because it is one act. Sameness is an equivalence with no primary, so which id you send is immaterial; entities only, never structures.
   """
   sameAs: [String!]! = []
@@ -77,6 +82,11 @@ input AssertMeasurementExistsInput {
   How sure you are, 0 to 1. Left unset, the claim carries no number — which is neither 1.0 nor 0.0: a category rule with a CONFIDENCE condition admits only claims that carry one.
   """
   confidence: Float = null
+
+  """
+  The claims this one came from — ids of instances, links, metrics or structures in your organization. Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.
+  """
+  derivedFrom: [String!]! = []
 
   """
   The organization's word for what is being claimed — a term's `key`, e.g. 'AIS'. Not a category id and not a graph: a claim names a word, and every view that declares that word will hold what you write. The word is created if the organization has not used it before; a view that declares no category for it simply will not draw it.
@@ -108,6 +118,11 @@ input AssertMetricValueForStructureInput {
   """When the world was observed. Defaults to when it was claimed."""
   observedAt: DateTime = null
 
+  """
+  The claims this one came from — ids of instances, links, metrics or structures in your organization. Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.
+  """
+  derivedFrom: [String!]! = []
+
   """The unique ID of the structure this metric is associated with"""
   structure: ID!
 }
@@ -135,6 +150,11 @@ input AssertMetricValueInput {
 
   """When the world was observed. Defaults to when it was claimed."""
   observedAt: DateTime = null
+
+  """
+  The claims this one came from — ids of instances, links, metrics or structures in your organization. Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.
+  """
+  derivedFrom: [String!]! = []
 
   """The schema identifier for this metric (e.g. '@mikro/roi_volume')"""
   identifier: String!
@@ -168,6 +188,11 @@ input AssertNaturalEventExistsInput {
   How sure you are, 0 to 1. Left unset, the claim carries no number — which is neither 1.0 nor 0.0: a category rule with a CONFIDENCE condition admits only claims that carry one.
   """
   confidence: Float = null
+
+  """
+  The claims this one came from — ids of instances, links, metrics or structures in your organization. Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.
+  """
+  derivedFrom: [String!]! = []
 }
 
 """Input for claiming that an entity took part in an event"""
@@ -195,6 +220,11 @@ input AssertParticipationInput {
   How sure you are, 0 to 1. Left unset, the claim carries no number — which is neither 1.0 nor 0.0: a category rule with a CONFIDENCE condition admits only claims that carry one.
   """
   confidence: Float = null
+
+  """
+  The claims this one came from — ids of instances, links, metrics or structures in your organization. Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.
+  """
+  derivedFrom: [String!]! = []
 }
 
 """
@@ -233,6 +263,11 @@ input AssertProtocolEventExistsInput {
   How sure you are, 0 to 1. Left unset, the claim carries no number — which is neither 1.0 nor 0.0: a category rule with a CONFIDENCE condition admits only claims that carry one.
   """
   confidence: Float = null
+
+  """
+  The claims this one came from — ids of instances, links, metrics or structures in your organization. Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.
+  """
+  derivedFrom: [String!]! = []
 }
 
 """
@@ -259,6 +294,11 @@ input AssertRelationExistsInput {
   confidence: Float = null
 
   """
+  The claims this one came from — ids of instances, links, metrics or structures in your organization. Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.
+  """
+  derivedFrom: [String!]! = []
+
+  """
   The organization's word for what is being claimed — a term's `key`, e.g. 'AIS'. Not a category id and not a graph: a claim names a word, and every view that declares that word will hold what you write. The word is created if the organization has not used it before; a view that declares no category for it simply will not draw it.
   """
   term: String!
@@ -280,6 +320,11 @@ input AssertSameInstanceInput {
   How sure you are, 0 to 1. Left unset, the claim carries no number — which is neither 1.0 nor 0.0: a category rule with a CONFIDENCE condition admits only claims that carry one.
   """
   confidence: Float = null
+
+  """
+  The claims this one came from — ids of instances, links, metrics or structures in your organization. Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.
+  """
+  derivedFrom: [String!]! = []
 }
 
 """Input for claiming that an external datum exists"""
@@ -289,6 +334,11 @@ input AssertStructureExistsInput {
 
   """List of measurements associated with this structure"""
   metrics: [MetricInput!]! = []
+
+  """
+  The claims this one came from — ids of instances, links, metrics or structures in your organization. Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.
+  """
+  derivedFrom: [String!]! = []
 
   """The structure identifier, e.g. '@mikro/roi'"""
   identifier: String!
@@ -314,6 +364,11 @@ input AssertStructureRelationExistsInput {
   How sure you are, 0 to 1. Left unset, the claim carries no number — which is neither 1.0 nor 0.0: a category rule with a CONFIDENCE condition admits only claims that carry one.
   """
   confidence: Float = null
+
+  """
+  The claims this one came from — ids of instances, links, metrics or structures in your organization. Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.
+  """
+  derivedFrom: [String!]! = []
 
   """
   The organization's word for what is being claimed — a term's `key`, e.g. 'AIS'. Not a category id and not a graph: a claim names a word, and every view that declares that word will hold what you write. The word is created if the organization has not used it before; a view that declares no category for it simply will not draw it.
@@ -887,9 +942,9 @@ input ClaimConditionInput {
 }
 
 """
-Either end of a claim: another claim, an external datum, or one of the organization's words
+Either end of a claim: another claim, a measurement, an external datum, or one of the organization's words
 """
-union ClaimEndpoint = Instance | Structure | Link | Term
+union ClaimEndpoint = Instance | Structure | Link | Metric | Term
 
 enum ClaimField {
   WORD
@@ -988,6 +1043,11 @@ input ClassificationInput {
   How sure you are, 0 to 1. Left unset, the claim carries no number — which is neither 1.0 nor 0.0: a category rule with a CONFIDENCE condition admits only claims that carry one.
   """
   confidence: Float = null
+
+  """
+  The claims this one came from — ids of instances, links, metrics or structures in your organization. Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.
+  """
+  derivedFrom: [String!]! = []
 }
 
 """Input for claiming that several nodes are of a word, as one act"""
@@ -1662,6 +1722,40 @@ input DeleteTermInput {
   id: String!
 }
 
+"""A DERIVED_FROM claim: this claim came from that one (RFC 0017)"""
+type Derivation implements Edge {
+  """This claim's durable identity — the `Link` primary key, a bare uuid"""
+  id: ID!
+
+  """The edge label/type"""
+  label: String!
+
+  """The source endpoint, as evidence names it — a bare uuid"""
+  sourceId: ID!
+
+  """The target endpoint, as evidence names it — a bare uuid"""
+  targetId: ID!
+
+  """
+  When the world was in the state this claim describes — world time, distinct from `assertion.assertedAt` (RFC 0015)
+  """
+  observedAt: DateTime!
+
+  """
+  How sure the claimant was, 0 to 1. Null when they gave no number (RFC 0016)
+  """
+  confidence: Float
+
+  """Who claimed this, and when"""
+  assertion: Assertion!
+
+  """The claim that was made from the other"""
+  source: ClaimEndpoint
+
+  """The claim it came from"""
+  target: ClaimEndpoint
+}
+
 """A derivation rule in the graph schema"""
 type DerivationRule {
   """The label of the describing structure to read from"""
@@ -1888,6 +1982,11 @@ input EnsureStructureInput {
 
   """List of measurements associated with this structure"""
   metrics: [MetricInput!]! = []
+
+  """
+  The claims this one came from — ids of instances, links, metrics or structures in your organization. Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.
+  """
+  derivedFrom: [String!]! = []
 
   """The structure identifier, e.g. '@mikro/roi'"""
   identifier: String!
@@ -2804,6 +2903,16 @@ type Instance @key(fields: "id", resolvable: true) {
   Every view that actually draws this claim, and the category it draws it under. Empty means no view does, which is an ordinary answer
   """
   drawnIn: [NodeDrawing!]!
+
+  """
+  The standing DERIVED_FROM citations this claim made: the claims it came from, one link each, oldest first. Retract one with `retractLinks` (RFC 0017)
+  """
+  derivedFrom: [Link!]!
+
+  """
+  The standing DERIVED_FROM citations that name this claim: what was concluded from it, one link each, oldest first (RFC 0017)
+  """
+  derivations: [Link!]!
 }
 
 enum InstanceKind {
@@ -2931,9 +3040,19 @@ type Link @key(fields: "id", resolvable: true) {
   target: ClaimEndpoint
 
   """
-  Every view that draws this claim as an edge. Empty for the three kinds that are never drawn, and for a claim whose endpoints no view holds
+  Every view that draws this claim as an edge. Empty for the four kinds that are never drawn, and for a claim whose endpoints no view holds
   """
   drawnIn: [EdgeDrawing!]!
+
+  """
+  The standing DERIVED_FROM citations this claim made: the claims it came from, one link each, oldest first. Retract one with `retractLinks` (RFC 0017)
+  """
+  derivedFrom: [Link!]!
+
+  """
+  The standing DERIVED_FROM citations that name this claim: what was concluded from it, one link each, oldest first (RFC 0017)
+  """
+  derivations: [Link!]!
 }
 
 enum LinkKind {
@@ -2945,6 +3064,7 @@ enum LinkKind {
   PARTICIPATES_AS_OUTPUT
   CLASSIFIES
   SAME_AS
+  DERIVED_FROM
 }
 
 """Input for linking a structure to an entity"""
@@ -3334,6 +3454,16 @@ type Metric {
 
   """Who measured this, and when they claimed it"""
   assertion: Assertion
+
+  """
+  The standing DERIVED_FROM citations this claim made: the claims it came from, one link each, oldest first. Retract one with `retractLinks` (RFC 0017)
+  """
+  derivedFrom: [Link!]!
+
+  """
+  The standing DERIVED_FROM citations that name this claim: what was concluded from it, one link each, oldest first (RFC 0017)
+  """
+  derivations: [Link!]!
 }
 
 """A property's own metric rule: a rule list over metric rows (RFC 0014)"""
@@ -3373,6 +3503,11 @@ input MetricInput {
 
   """When the world was observed. Defaults to when it was claimed."""
   observedAt: DateTime = null
+
+  """
+  The claims this one came from — ids of instances, links, metrics or structures in your organization. Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.
+  """
+  derivedFrom: [String!]! = []
 }
 
 """A kind of measurement that can be made about a structure kind"""
@@ -4220,6 +4355,11 @@ input ParticipantInput {
   How sure you are, 0 to 1. Left unset, the claim carries no number — which is neither 1.0 nor 0.0: a category rule with a CONFIDENCE condition admits only claims that carry one.
   """
   confidence: Float = null
+
+  """
+  The claims this one came from — ids of instances, links, metrics or structures in your organization. Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.
+  """
+  derivedFrom: [String!]! = []
 }
 
 """Filter options for querying participation claims"""
@@ -5534,6 +5674,16 @@ type Structure {
   The nodes this structure is evidence for. Where its labels, merges and connections live — a structure is a pointer to an external datum and is never itself claimed to be an AIS
   """
   informs: [Node!]!
+
+  """
+  The standing DERIVED_FROM citations this claim made: the claims it came from, one link each, oldest first. Retract one with `retractLinks` (RFC 0017)
+  """
+  derivedFrom: [Link!]!
+
+  """
+  The standing DERIVED_FROM citations that name this claim: what was concluded from it, one link each, oldest first (RFC 0017)
+  """
+  derivations: [Link!]!
 }
 
 """Input type for creating a new graph query"""
@@ -5945,6 +6095,11 @@ input SupersedeMetricValueInput {
 
   """When the world was observed. Defaults to when it was claimed."""
   observedAt: DateTime = null
+
+  """
+  The claims this one came from — ids of instances, links, metrics or structures in your organization. Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.
+  """
+  derivedFrom: [String!]! = []
 
   """The ID of the metric to update"""
   id: String!
@@ -6370,6 +6525,11 @@ input UpdateRelationInput {
   """
   confidence: Float = null
 
+  """
+  The claims this one came from — ids of instances, links, metrics or structures in your organization. Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.
+  """
+  derivedFrom: [String!]! = []
+
   """The ID of the relation to update"""
   id: String!
 }
@@ -6420,6 +6580,11 @@ input UpdateStructureInput {
 
   """List of measurements associated with this structure"""
   metrics: [MetricInput!]! = []
+
+  """
+  The claims this one came from — ids of instances, links, metrics or structures in your organization. Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.
+  """
+  derivedFrom: [String!]! = []
 
   """The ID of the structure to update"""
   id: String!
@@ -6522,6 +6687,11 @@ input UpdateStructureRelationInput {
   How sure you are, 0 to 1. Left unset, the claim carries no number — which is neither 1.0 nor 0.0: a category rule with a CONFIDENCE condition admits only claims that carry one.
   """
   confidence: Float = null
+
+  """
+  The claims this one came from — ids of instances, links, metrics or structures in your organization. Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.
+  """
+  derivedFrom: [String!]! = []
 
   """The ID of the structure relation to update"""
   id: String!

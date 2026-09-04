@@ -116,6 +116,7 @@ _LOADER_SPECS: dict[str, tuple[type, str]] = {
     # these tables its `kind` says it names.
     "instance_by_id": (evidence_models.Instance, "id"),
     "link_by_id": (evidence_models.Link, "id"),
+    "metric_by_id": (evidence_models.Metric, "id"),
     "structure_by_id": (evidence_models.Structure, "id"),
     "comment_by_id": (evidence_models.Comment, "id"),
 }
@@ -130,6 +131,18 @@ def _newest_standings(queryset: Any) -> Any:
     standing is shown with who recorded it.
     """
     return queryset.select_related("assertion").order_by("-at", "-assertion__seq")
+
+
+def _standing_lineage(queryset: Any) -> Any:
+    """Narrow a link queryset to the DERIVED_FROM citations that still stand (RFC 0017).
+
+    Lineage is organization grain — no view folds it, so `CurrentStanding` is the
+    whole answer — and a retracted citation is not shown, the same as a retracted
+    measurement in `metrics_by_structure`.
+    """
+    from evidence import claims as claims_module
+
+    return claims_module.standing(queryset.filter(kind=evidence_models.Link.Kind.DERIVED_FROM), "link").select_related("assertion").order_by("assertion__seq")
 
 
 #: Loaders that return a **list** per key rather than a row. Kept in their own
@@ -147,6 +160,12 @@ _GROUPED_LOADER_SPECS: dict[str, tuple[type, str, Any]] = {
     # `Comment.resolved` unreachable exactly where it answers.
     "comments_by_structure": (evidence_models.Comment, "structure_id", lambda queryset: queryset.select_related("assertion").order_by("-created_at")),
     "replies_by_comment": (evidence_models.Comment, "parent_id", lambda queryset: queryset.select_related("assertion").order_by("created_at")),
+    # A claim's citations run from the claim (`source_ref`) to what it came from
+    # (`target_ref`), so `derivedFrom` is keyed on the source and `derivations` —
+    # what was concluded from this claim — on the target. Either end may be any
+    # claim row; the id namespaces are disjoint, as `standings_by_target` relies on.
+    "lineage_by_source": (evidence_models.Link, "source_ref", _standing_lineage),
+    "lineage_by_target": (evidence_models.Link, "target_ref", _standing_lineage),
 }
 
 
@@ -305,11 +324,14 @@ term_by_id_loader = _LoaderProxy("term_by_id")
 assertion_by_id_loader = _LoaderProxy("assertion_by_id")
 instance_by_id_loader = _LoaderProxy("instance_by_id")
 link_by_id_loader = _LoaderProxy("link_by_id")
+metric_by_id_loader = _LoaderProxy("metric_by_id")
 structure_by_id_loader = _LoaderProxy("structure_by_id")
 comment_by_id_loader = _LoaderProxy("comment_by_id")
 metrics_by_structure_loader = _LoaderProxy("metrics_by_structure")
 standings_by_target_loader = _LoaderProxy("standings_by_target")
 comments_by_structure_loader = _LoaderProxy("comments_by_structure")
 replies_by_comment_loader = _LoaderProxy("replies_by_comment")
+lineage_by_source_loader = _LoaderProxy("lineage_by_source")
+lineage_by_target_loader = _LoaderProxy("lineage_by_target")
 known_about_node_loader = _LoaderProxy("known_about_node")
 informed_nodes_by_structure_loader = _LoaderProxy("informed_nodes_by_structure")

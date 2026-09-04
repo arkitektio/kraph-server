@@ -82,6 +82,17 @@ CONFIDENCE_FIELD_DESCRIPTION = (
     "a category rule with a CONFIDENCE condition admits only claims that carry one."
 )
 
+DERIVED_FROM_FIELD_DESCRIPTION = (
+    "The claims this one came from — ids of instances, links, metrics or structures in your organization. "
+    "Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "
+    "\"this, because of that\" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`."
+)
+
+
+def _derived_from_field() -> Any:
+    """The lineage field every claim-making input carries."""
+    return Field(default_factory=list, description=DERIVED_FROM_FIELD_DESCRIPTION)
+
 #: Why a schema mutation offers to project history. Declaring a word widens a view,
 #: and the claims already made under that word are sitting in the evidence base
 #: unread. Offered on the kinds that have a projection to fill — nodes and
@@ -494,6 +505,7 @@ class MetricInput(StrictModel):
     confidence_type: Optional[str] = Field(default=None, description="What kind of number `confidence` is — a method's own score, a p-value. Measurement-only")
     unit: Optional[str] = None
     observed_at: Optional[datetime] = Field(None, description="When the world was observed. Defaults to when it was claimed.")
+    derived_from: List[str] = _derived_from_field()
 
     @field_validator("observed_at", mode="before")
     @classmethod
@@ -1711,6 +1723,7 @@ class EventInput(StrictModel):
     supporting_evidence: List[StructureReferenceInput] = Field(default_factory=list, description="List of evidence structures with measurements")
     observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
     confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    derived_from: List[str] = _derived_from_field()
 
 
 class NaturalEventInput(EventInput):
@@ -1739,6 +1752,7 @@ class AssertParticipationInput(StrictModel):
     is_input: bool = Field(default=True, description="True if the entity went into the event, False if it came out of it")
     observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
     confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    derived_from: List[str] = _derived_from_field()
 
 
 class RetractParticipationInput(StrictModel):
@@ -1757,6 +1771,7 @@ class ParticipantInput(StrictModel):
     is_input: bool = Field(default=True, description="True if the entity went into the event, False if it came out of it")
     observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
     confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    derived_from: List[str] = _derived_from_field()
 
 
 class AssertParticipationsInput(StrictModel):
@@ -1778,6 +1793,7 @@ class ClassificationInput(StrictModel):
     term: str = Field(..., description=TERM_FIELD_DESCRIPTION)
     observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
     confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    derived_from: List[str] = _derived_from_field()
 
 
 class ClassifyNodesInput(StrictModel):
@@ -1867,6 +1883,7 @@ class EntityInput(StrictModel):
     supporting_evidence: List[StructureReferenceInput] = Field(default_factory=list, description="List of evidence structures with measurements")
     observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
     confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    derived_from: List[str] = _derived_from_field()
 
 
 class AssertEntityExistsInput(EntityInput):
@@ -1893,6 +1910,7 @@ class AssertSameInstanceInput(StrictModel):
     )
     observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
     confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    derived_from: List[str] = _derived_from_field()
 
 
 class RetractSameInstanceInput(StrictModel):
@@ -2002,6 +2020,7 @@ class StructureInput(StrictModel):
 
     object: str = Field(..., description="The unique ID of the object this structure references")
     metrics: List["MetricInput"] = Field(default_factory=list, description="List of measurements associated with this structure")
+    derived_from: List[str] = _derived_from_field()
 
 
 class AssertStructureExistsInput(StructureInput):
@@ -2069,6 +2088,7 @@ class RelationInput(StrictModel):
     supporting_evidence: List[StructureReferenceInput] = Field(default_factory=list, description="List of evidence structures with measurements")
     observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
     confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    derived_from: List[str] = _derived_from_field()
 
 
 class AssertRelationExistsInput(RelationInput):

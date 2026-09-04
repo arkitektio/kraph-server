@@ -163,6 +163,7 @@ class LinkKind(str, Enum):
     PARTICIPATES_AS_OUTPUT = "PARTICIPATES_AS_OUTPUT"
     CLASSIFIES = "CLASSIFIES"
     SAME_AS = "SAME_AS"
+    DERIVED_FROM = "DERIVED_FROM"
 
 
 @strawberry.enum

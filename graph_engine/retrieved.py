@@ -104,10 +104,10 @@ NodeType = Literal[
 # adapters write it from the row they adapt.
 
 
-# Type literals for edge discrimination. Exactly the eight `Link.Kind` values,
+# Type literals for edge discrimination. Exactly the nine `Link.Kind` values,
 # uppercased — `from_link` writes `type` as `str(link.kind).upper()` and every
 # edge the API builds goes through it, so these are the values `edge_type` can
-# actually hold and the eight cases `cast_edge_to_graphql_type` dispatches on.
+# actually hold and the nine cases `cast_edge_to_graphql_type` dispatches on.
 #
 # `PARTICIPANT`, `DESCRIPTION`, `ASSERTION` and `EDITED` used to be here and
 # five of the producible kinds were not — the same defect `NodeType` above was
@@ -121,6 +121,7 @@ EdgeType = Literal[
     "PARTICIPATES_AS_OUTPUT",
     "CLASSIFIES",
     "SAME_AS",
+    "DERIVED_FROM",
 ]
 
 

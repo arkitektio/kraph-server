@@ -585,6 +585,7 @@ def create_schema(
             # produces it.
             types.Classification,
             types.Sameness,
+            types.Derivation,
             types.InputParticipation,
             types.OutputParticipation,
             # The claims. `Instance` and `Link` are named by the write payloads and

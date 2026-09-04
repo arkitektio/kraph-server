@@ -693,6 +693,14 @@ class Link(models.Model):
         # `(identifier, object)`, so sameness there is either a duplicate row
         # (which cannot happen) or a claim about the entities they inform.
         SAME_AS = "same_as", "Same as"
+        # "This claim came from that one." Lineage between claims of any shape:
+        # `source_ref` is the new claim, `target_ref` the one it derives from, and
+        # either end may be an instance, a link, a metric or a structure. Written
+        # under the **same** assertion as the citing claim, because "this,
+        # because of that" is one act. Nothing folds under a view — a citation is
+        # organization grain, standing per `CurrentStanding` — and no view draws
+        # it (RFC 0017).
+        DERIVED_FROM = "derived_from", "Derived from"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     organization = models.ForeignKey(

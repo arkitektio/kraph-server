@@ -28,6 +28,7 @@ def assert_participation(info: Info, input: inputs.AssertParticipationInput) -> 
             info=info,
             observed_at=model.observed_at,
             confidence=model.confidence,
+            derived_from=model.derived_from,
         )
     )
 

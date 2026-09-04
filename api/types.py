@@ -1292,6 +1292,14 @@ class Structure:
         rows = await loaders.informed_nodes_by_structure_loader.load(self._value.unique_id)
         return [cast(Node, cast_node_to_graphql_type(retrieved.RetrievedNode.from_row(controller, node))) for node in rows]
 
+    @strawberry.field(description="The standing DERIVED_FROM citations this claim made: the claims it came from, one link each, oldest first. Retract one with `retractLinks` (RFC 0017)")
+    async def derived_from(self) -> List["Link"]:
+        return cast(List["Link"], await loaders.lineage_by_source_loader.load(self._value.unique_id))
+
+    @strawberry.field(description="The standing DERIVED_FROM citations that name this claim: what was concluded from it, one link each, oldest first (RFC 0017)")
+    async def derivations(self) -> List["Link"]:
+        return cast(List["Link"], await loaders.lineage_by_target_loader.load(self._value.unique_id))
+
 
 # ===========================================
 # NATURAL EVENT TYPE
@@ -1435,6 +1443,14 @@ class Metric:
             return None
         return cast(Optional["Assertion"], await loaders.assertion_by_id_loader.load(assertion_id))
 
+    @strawberry.field(description="The standing DERIVED_FROM citations this claim made: the claims it came from, one link each, oldest first. Retract one with `retractLinks` (RFC 0017)")
+    async def derived_from(self) -> List["Link"]:
+        return cast(List["Link"], await loaders.lineage_by_source_loader.load(self._value.unique_id))
+
+    @strawberry.field(description="The standing DERIVED_FROM citations that name this claim: what was concluded from it, one link each, oldest first (RFC 0017)")
+    async def derivations(self) -> List["Link"]:
+        return cast(List["Link"], await loaders.lineage_by_target_loader.load(self._value.unique_id))
+
 
 # ===========================================
 # REAGENT TYPE
@@ -1517,7 +1533,7 @@ class Edge(Generic[V]):
 
     **They implement it because `Edge` means `Link`, not "drawn".** The two node
     and edge interfaces are the same shape: `Node`'s subtypes are exactly
-    `Instance.Kind`'s three values, and `Edge`'s are exactly `Link.Kind`'s eight.
+    `Instance.Kind`'s three values, and `Edge`'s are exactly `Link.Kind`'s nine.
     Each is "one row of my table, discriminated by kind". `Structure` and `Metric`
     are outside `Node` because they are rows of `evidence_structure` and
     `evidence_metric` — different tables, not instances — and not because nothing
@@ -1904,15 +1920,24 @@ class Instance:
         drawings = await _drawings_for_ref(str(cast(evidence_models.Instance, self).pk), info)
         return [NodeDrawing(_value=drawing) for drawing in drawings]
 
+    @strawberry.field(description="The standing DERIVED_FROM citations this claim made: the claims it came from, one link each, oldest first. Retract one with `retractLinks` (RFC 0017)")
+    async def derived_from(self) -> List["Link"]:
+        return cast(List["Link"], await loaders.lineage_by_source_loader.load(str(cast(evidence_models.Instance, self).pk)))
+
+    @strawberry.field(description="The standing DERIVED_FROM citations that name this claim: what was concluded from it, one link each, oldest first (RFC 0017)")
+    async def derivations(self) -> List["Link"]:
+        return cast(List["Link"], await loaders.lineage_by_target_loader.load(str(cast(evidence_models.Instance, self).pk)))
+
 
 @kante.django_type(evidence_models.Link, description="A claim relating two things — as the log has it, whether or not any view draws it")
 class Link:
-    """One row of `evidence.Link`: eight kinds of claim, one shape.
+    """One row of `evidence.Link`: nine kinds of claim, one shape.
 
-    A `Relation` or a `Measurement` is how a graph *draws* one of these, and three
-    of the eight kinds are never drawn at all (measurements and structure relations
-    have no AGE edge; `INFORMS` drives derivation instead). So the claim is what a
-    write returns, and the drawings say where it went.
+    A `Relation` or a `Measurement` is how a graph *draws* one of these, and four
+    of the nine kinds are never drawn at all (measurements and structure relations
+    have no edge to draw; `INFORMS` drives derivation instead; `DERIVED_FROM` is
+    lineage between claims, read through `derivedFrom`/`derivations`). So the claim
+    is what a write returns, and the drawings say where it went.
 
     `sourceRef` and `targetRef` are the refs as the log holds them: opaque uuids
     addressing four different tables, which is why `evidence/models.py` says not to
@@ -1954,18 +1979,28 @@ class Link:
         link = cast(evidence_models.Link, self)
         return await _resolve_claim_endpoint(_endpoint_tables(link)[1], str(link.target_ref))
 
-    @kante.django_field(description="Every view that draws this claim as an edge. Empty for the three kinds that are never drawn, and for a claim whose endpoints no view holds")
+    @kante.django_field(description="Every view that draws this claim as an edge. Empty for the four kinds that are never drawn, and for a claim whose endpoints no view holds")
     async def drawn_in(self, info: kante.Info) -> List["EdgeDrawing"]:
         drawings = await _drawings_for_link(cast(evidence_models.Link, self), info)
         return [EdgeDrawing(_value=drawing) for drawing in drawings]
 
+    @strawberry.field(description="The standing DERIVED_FROM citations this claim made: the claims it came from, one link each, oldest first. Retract one with `retractLinks` (RFC 0017)")
+    async def derived_from(self) -> List["Link"]:
+        return cast(List["Link"], await loaders.lineage_by_source_loader.load(str(cast(evidence_models.Link, self).pk)))
 
-#: What a `Link`'s refs can point at. Four members because the two ref columns
-#: address four tables — `evidence.Link`'s own docstring says so — and one of them
-#: is `Link` itself, since evidence can inform an edge.
+    @strawberry.field(description="The standing DERIVED_FROM citations that name this claim: what was concluded from it, one link each, oldest first (RFC 0017)")
+    async def derivations(self) -> List["Link"]:
+        return cast(List["Link"], await loaders.lineage_by_target_loader.load(str(cast(evidence_models.Link, self).pk)))
+
+
+#: What a `Link`'s refs can point at. Five members because the two ref columns
+#: address five tables — `evidence.Link`'s own docstring says so — and one of them
+#: is `Link` itself, since evidence can inform an edge and a citation can name
+#: one. `Metric` joined for `DERIVED_FROM` (RFC 0017): a claim may come from a
+#: measurement.
 ClaimEndpoint = Annotated[
-    Union[Instance, "Structure", Link, "Term"],
-    strawberry.union("ClaimEndpoint", description="Either end of a claim: another claim, an external datum, or one of the organization's words"),
+    Union[Instance, "Structure", Link, "Metric", "Term"],
+    strawberry.union("ClaimEndpoint", description="Either end of a claim: another claim, a measurement, an external datum, or one of the organization's words"),
 ]
 
 #: What an `INFORMS` claim's target can be — a node, or another claim.
@@ -1989,7 +2024,9 @@ InformsTarget = Annotated[
 #:
 #: `INFORMS` is the one with two possible targets — `_attach_supporting_evidence`
 #: writes it against a `Link` pk when the evidence informs an edge rather than a
-#: node — so its target is tried as an instance and then as a link.
+#: node — so its target is tried as an instance and then as a link. `DERIVED_FROM`
+#: is open at both ends: a claim of any shape may come from a claim of any shape
+#: (RFC 0017), so both are tried across the four claim tables.
 _ENDPOINT_TABLES: dict[str, tuple[str, str]] = {
     evidence_models.Link.Kind.RELATION: ("instance", "instance"),
     evidence_models.Link.Kind.SAME_AS: ("instance", "instance"),
@@ -1999,6 +2036,7 @@ _ENDPOINT_TABLES: dict[str, tuple[str, str]] = {
     evidence_models.Link.Kind.STRUCTURE_RELATION: ("structure", "structure"),
     evidence_models.Link.Kind.CLASSIFIES: ("instance", "term"),
     evidence_models.Link.Kind.INFORMS: ("structure", "instance_or_link"),
+    evidence_models.Link.Kind.DERIVED_FROM: ("claim", "claim"),
 }
 
 
@@ -2022,7 +2060,31 @@ async def _resolve_claim_endpoint(table: str, ref: str) -> Optional[Any]:
         return Structure(_value=RetrievedStructure.from_row(get_controller(), row)) if row is not None else None
     if table == "instance_or_link":
         return await loaders.instance_by_id_loader.load(ref) or await loaders.link_by_id_loader.load(ref)
+    if table == "claim":
+        return await _resolve_any_claim(ref)
     return await loaders.instance_by_id_loader.load(ref)
+
+
+async def _resolve_any_claim(ref: str) -> Optional[Any]:
+    """A ref that may name any claim row: instance, link, metric or structure.
+
+    The four id namespaces are disjoint uuid4 keys, so at most one probe answers;
+    they are tried in the order a citation is most likely to name. Each probe is a
+    batched loader, so a page of citations costs at most four queries.
+    """
+    row = await loaders.instance_by_id_loader.load(ref)
+    if row is not None:
+        return row
+    row = await loaders.link_by_id_loader.load(ref)
+    if row is not None:
+        return row
+    row = await loaders.metric_by_id_loader.load(ref)
+    if row is not None:
+        return Metric(_value=RetrievedMetric.from_row(get_controller(), row))
+    row = await loaders.structure_by_id_loader.load(ref)
+    if row is not None:
+        return Structure(_value=RetrievedStructure.from_row(get_controller(), row))
+    return None
 
 
 async def _resolve_informs_target(ref: str, info: kante.Info) -> Any:
@@ -2225,6 +2287,27 @@ class Sameness(Edge):
         return cast(Node, cast_node_to_graphql_type(await _endpoint_node(self._value.target_ref, info)))
 
 
+@kante.type(description="A DERIVED_FROM claim: this claim came from that one (RFC 0017)")
+class Derivation(Edge):
+    """Lineage between two claims of any shape.
+
+    Never drawn — it relates claims, not the things the claims are about — so
+    this type is reached only through `retractLinks`, which returns whatever kind
+    of link it retracted. Its ends are `ClaimEndpoint`s rather than nodes because
+    either may be a metric, a structure or another link.
+    """
+
+    pass
+
+    @kante.django_field(description="The claim that was made from the other")
+    async def source(self) -> Optional["ClaimEndpoint"]:
+        return await _resolve_any_claim(self._value.source_ref)
+
+    @kante.django_field(description="The claim it came from")
+    async def target(self) -> Optional["ClaimEndpoint"]:
+        return await _resolve_any_claim(self._value.target_ref)
+
+
 @kante.type(description="A CLASSIFIES claim: somebody's word for what a node is")
 class Classification(Edge):
     """ "This node is an AIS", as a claim rather than a column.
@@ -2353,9 +2436,9 @@ NodeSubtype = Union[Entity, NaturalEvent, ProtocolEvent]
 # Union type for all edge subtypes
 # `Assertion` is deliberately absent: it is the evidence row now, not an AGE edge.
 # `ReifiesAsSource`/`ReifiesAsTarget` used to be here. `RetrievedEdge.from_link`
-# sets `type` from `Link.Kind`, whose seven values map onto the seven cases in
+# sets `type` from `Link.Kind`, whose nine values map onto the nine cases in
 # `cast_edge_to_graphql_type` — neither reifies branch was reachable.
-EdgeSubtype = Union[Relation, StructureRelation, Description, Measurement, InputParticipation, OutputParticipation, Sameness, Classification]
+EdgeSubtype = Union[Relation, StructureRelation, Description, Measurement, InputParticipation, OutputParticipation, Sameness, Classification, Derivation]
 
 
 def cast_node_to_graphql_type(node: RetrievedNode) -> NodeSubtype:
@@ -2424,6 +2507,8 @@ def cast_edge_to_graphql_type(edge: RetrievedEdge) -> EdgeSubtype:
             return Description(_value=edge)
         case "CLASSIFIES":
             return Classification(_value=edge)
+        case "DERIVED_FROM":
+            return Derivation(_value=edge)
         # No `case None` guessing from the label. It read
         # `if "MEASURE" in edge.label.upper()` and otherwise returned `Relation`,
         # which is the defect deleted from `cast_node_to_graphql_type` — "what a

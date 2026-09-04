@@ -100,7 +100,7 @@ renames that fixed that are in `evidence/migrations/0008_instance_and_standing.p
 | `Assertion` | evidence | the **act** — who claimed it, with what tool, when. Carries `seq`, the log's total order | `evidence.Assertion` |
 | *claim* | evidence | any **recorded statement**: an `Instance`, a `Link`, a `Metric`, a `Structure`, a `Comment`. A prose word, not a table | — |
 | `Instance` | evidence | a claimed **individual** — `entity`, `natural_event` or `protocol_event`. Every observation mints its own | `evidence.Instance` |
-| `Link` | evidence | a claim **relating two things**. Eight kinds — see `Link.Kind` | `evidence.Link` |
+| `Link` | evidence | a claim **relating two things**. Nine kinds — see `Link.Kind`. `DERIVED_FROM` is lineage between claims of any shape, written under the citing claim's own assertion, never drawn (RFC 0017) | `evidence.Link` |
 | `Standing` | evidence | somebody's **position** on whether a claim still holds (`stands=True/False`) | `evidence.Standing` |
 | `CurrentStanding` | evidence (cache) | the folded answer. No row for instances — their standing is per view | `evidence.CurrentStanding` |
 | `Term` | evidence | a **word** the organization uses. What a claim names | `evidence.Term` |

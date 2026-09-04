@@ -42,8 +42,9 @@ from evidence import identity as identity_module
 from evidence import models as evidence_models
 
 #: What "connected to" means. Enumerated positively rather than as an exclusion
-#: of `CLASSIFIES` and `SAME_AS` — those two are claims *about* a node, not
-#: connections from it, and both are answered elsewhere — because the index is
+#: of `CLASSIFIES`, `SAME_AS` and `DERIVED_FROM` — those are claims *about* a
+#: node (or about the claim itself, for lineage), not connections from it, and
+#: each is answered elsewhere (`labels`, `sameAs`, `derivedFrom`) — because the index is
 #: `(organization, kind, source_ref)` and a query naming no kind cannot seek on
 #: the ref. An `exclude` reads more naturally and scans.
 #:

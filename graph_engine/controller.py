@@ -177,6 +177,56 @@ class GraphController:
         watermark.expect(assertion)
         return assertion
 
+    # ===================================================================
+    # Lineage (RFC 0017)
+    #
+    # A claim may cite the claims it came from. The citation is a
+    # `DERIVED_FROM` link from the new claim to each cited one, written under
+    # the citing claim's own assertion. Two steps, like every reference a write
+    # takes: resolve *before* the transaction so a bad id fails before anything
+    # is written, then record inside it.
+    # ===================================================================
+
+    def _resolve_citations(self, organization: Any, refs: Iterable[str]) -> list[str]:
+        """Check that every cited ref names a claim in this organization.
+
+        A ref is a bare uuid that could name a row of any of four tables, so each is
+        looked up in all four — scoped to the organization, which is what keeps a
+        citation from quietly crossing a tenant boundary. Raises naming the input
+        field, so the caller sees which argument was wrong. Duplicates collapse,
+        order is kept.
+        """
+        wanted = list(dict.fromkeys(str(ref) for ref in refs))
+        if not wanted:
+            return []
+
+        found: set[str] = set()
+        for model in (evidence_models.Instance, evidence_models.Link, evidence_models.Metric, evidence_models.Structure):
+            found.update(str(pk) for pk in model.objects.for_organization(organization).filter(pk__in=wanted).values_list("pk", flat=True))
+
+        missing = [ref for ref in wanted if ref not in found]
+        if missing:
+            raise ValueError(f"derivedFrom names no claim in this organization: {', '.join(missing)}")
+        return wanted
+
+    def _cite(self, organization: Any, assertion: evidence_models.Assertion, claim_ref: str, cited: Iterable[str]) -> list[evidence_models.Link]:
+        """Record that ``claim_ref`` derives from each of ``cited``, under ``assertion``.
+
+        Inside the caller's transaction, after ``_resolve_citations``. Plain links:
+        no term (a citation is stated in no word), no role, no time of its own
+        beyond the assertion's.
+        """
+        return [
+            writer.create_link(
+                organization,
+                kind=evidence_models.Link.Kind.DERIVED_FROM,
+                source_ref=str(claim_ref),
+                target_ref=str(target_ref),
+                assertion=assertion,
+            )
+            for target_ref in cited
+        ]
+
     def _settle(self, assertion: evidence_models.Assertion) -> None:
         """This assertion's synchronous projection finished everywhere it was owed.
 
@@ -323,6 +373,7 @@ class GraphController:
                     confidence_type=measurement.confidence_type,
                     observed_at=measurement.observed_at,
                 )
+                self._cite(organization, assertion, str(metric.pk), self._resolve_citations(organization, measurement.derived_from))
                 recorded_metrics.append(metric)
 
             materialized_evidence.append((evidence, structure_kind, structure))
@@ -360,6 +411,7 @@ class GraphController:
             info: Strawberry info, for provenance
         """
         supporting_evidence = payload.supporting_evidence or []
+        cited = self._resolve_citations(organization, payload.derived_from)
 
         # Evidence first, in one transaction. AGE cannot join a Django
         # transaction — the engine runs on independent cursors — so the two
@@ -448,6 +500,9 @@ class GraphController:
             # two calls back together, is never populated.
             for other_ref in getattr(payload, "same_as", ()) or ():
                 self._claim_same_instance(organization, claim_ref, str(other_ref), assertion, info, observed_at=payload.observed_at, confidence=payload.confidence)
+
+            # What this claim came from, under the same act (RFC 0017).
+            self._cite(organization, assertion, claim_ref, cited)
 
         # And only now the projection — into **every** view that declares the word
         # this entity was claimed under. Two graphs that both declare "AIS" both
@@ -749,6 +804,7 @@ class GraphController:
         Returns:
             RetrievedStructure with the created structure info
         """
+        cited = self._resolve_citations(organization, payload.derived_from)
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             structure_kind = self.ensure_structure_kind(organization, identifier)
@@ -760,6 +816,7 @@ class GraphController:
             )
             for metric in payload.metrics or []:
                 self._record_metric(organization, structure, metric, info=info, assertion=assertion)
+            self._cite(organization, assertion, str(structure.pk), cited)
 
         self.project_from_structures(organization, [structure.pk])
         # No drawings, ever: a structure lives only in the relational evidence
@@ -858,8 +915,12 @@ class GraphController:
         *,
         info: Info,
         assertion: evidence_models.Assertion,
+        also_derived_from: Iterable[str] = (),
     ) -> evidence_models.Metric:
         """Append one measurement, resolving its term from the organization.
+
+        ``also_derived_from`` is lineage the *operation* adds to what the caller
+        cited — `update_metric` cites the value it supersedes (RFC 0017).
 
         No graph. The question this used to have to answer — "whose schema does a
         metric recorded through graph B resolve against, when graph A introduced
@@ -890,6 +951,7 @@ class GraphController:
             confidence_type=metric_input.confidence_type,
             observed_at=metric_input.observed_at,
         )
+        self._cite(organization, assertion, str(metric.pk), self._resolve_citations(organization, [*metric_input.derived_from, *also_derived_from]))
 
         # Fold into the statistics immediately. O(1), reads no prior metrics, and
         # spans every graph in the organization that has an entity this structure
@@ -1084,6 +1146,7 @@ class GraphController:
         participations = [(evidence_models.Link.Kind.PARTICIPATES_AS_INPUT, mapping) for mapping in payload.inputs]
         participations += [(evidence_models.Link.Kind.PARTICIPATES_AS_OUTPUT, mapping) for mapping in payload.outputs]
         resolved = [(kind, mapping.role, self._node_ref(mapping.entity_id, info, organization=organization)) for kind, mapping in participations]
+        cited = self._resolve_citations(organization, payload.derived_from)
 
         with transaction.atomic():
             # `observed_at` is when the event happened. The classification and the
@@ -1143,6 +1206,8 @@ class GraphController:
 
             for metric in recorded_metrics:
                 state_module.merge(metric, [event_ref])
+
+            self._cite(organization, assertion, event_ref, cited)
 
         from graph_engine import projector
 
@@ -1297,6 +1362,7 @@ class GraphController:
             confidence_type=payload.confidence_type,
             unit=payload.unit,
             observed_at=payload.observed_at,
+            derived_from=payload.derived_from,
         )
 
         from graph_engine import projector
@@ -1309,7 +1375,9 @@ class GraphController:
             # The old value stops counting, so its contribution has to come out of
             # the statistics before the replacement goes in.
             state_module.retract(metric, instance_refs)
-            replacement = self._record_metric(organization, structure, metric_input, info=info, assertion=assertion)
+            # The replacement cites the value it supersedes: the two used to be
+            # tied only by sharing this assertion's id (RFC 0017).
+            replacement = self._record_metric(organization, structure, metric_input, info=info, assertion=assertion, also_derived_from=[str(metric.pk)])
 
         self.project_from_structures(organization, [structure.pk])
         # One assertion covers both halves — the retraction and the replacement
@@ -1403,6 +1471,7 @@ class GraphController:
         *,
         observed_at: datetime.datetime | None = None,
         confidence: float | None = None,
+        derived_from: Iterable[str] = (),
     ) -> results.Asserted:
         """Claim that an entity took part in an event, in a role.
 
@@ -1424,6 +1493,7 @@ class GraphController:
             raise ValueError("Participation is a claim about an event; the target of this one is an entity.")
 
         kind = evidence_models.Link.Kind.PARTICIPATES_AS_INPUT if is_input else evidence_models.Link.Kind.PARTICIPATES_AS_OUTPUT
+        cited = self._resolve_citations(organization, derived_from)
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
@@ -1438,6 +1508,7 @@ class GraphController:
                 observed_at=observed_at,
                 confidence=confidence,
             )
+            self._cite(organization, assertion, str(link.pk), cited)
 
         # Every view that draws the event, not one of them. `_graph_for_ref` used
         # to pick "an arbitrary one of the declarers" here, so a second view of the
@@ -1489,14 +1560,16 @@ class GraphController:
                 self._node_ref(participant.entity, info, organization=organization),
                 participant.observed_at,
                 participant.confidence,
+                self._resolve_citations(organization, participant.derived_from),
             )
             for participant in participants
         ]
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            links = [
-                writer.create_link(
+            links = []
+            for kind, role, claim_ref, observed_at, confidence, cited in resolved:
+                link = writer.create_link(
                     organization,
                     kind=kind,
                     source_ref=claim_ref,
@@ -1507,10 +1580,10 @@ class GraphController:
                     observed_at=observed_at,
                     confidence=confidence,
                 )
-                for kind, role, claim_ref, observed_at, confidence in resolved
-            ]
+                self._cite(organization, assertion, str(link.pk), cited)
+                links.append(link)
 
-        for kind, role, claim_ref, _, _ in resolved:
+        for kind, role, claim_ref, _, _, _ in resolved:
             self._reproject_participation_everywhere(organization, claim_ref, event_ref, kind, role)
 
         # **One** result, not one per participant. The batch is a single act by a
@@ -1551,11 +1624,11 @@ class GraphController:
         # classifications must stay within one organization." — and that check went
         # with the categories; this is the same guarantee stated against the rows
         # the claims are actually about.
-        resolved: list[tuple[evidence_models.Term, str, evidence_models.Instance, datetime.datetime | None, float | None]] = []
+        resolved: list[tuple[evidence_models.Term, str, evidence_models.Instance, datetime.datetime | None, float | None, list[str]]] = []
         for classification in classifications:
             node = self._resolve_instance(classification.node, info, organization=organization)
             term = self.ensure_term(organization, enums.TERM_KIND_FOR_NODE_KIND[str(node.kind)], classification.term)
-            resolved.append((term, node.ref, node, classification.observed_at, classification.confidence))
+            resolved.append((term, node.ref, node, classification.observed_at, classification.confidence, self._resolve_citations(organization, classification.derived_from)))
 
         # Every view that draws any of these nodes, before the claims land and
         # after. Both, because a word this batch introduces may be declared by a
@@ -1564,14 +1637,14 @@ class GraphController:
         # old ones need correcting.
         from graph_engine import projector
 
-        refs = [ref for _, ref, _, _, _ in resolved]
+        refs = [ref for _, ref, _, _, _, _ in resolved]
         graphs = {graph.pk: graph for graph in projector.graphs_for_refs(organization, refs)}
         before = self._resolved_labels(list(graphs.values()), refs)
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            for term, node_ref, _, observed_at, confidence in resolved:
-                writer.create_link(
+            for term, node_ref, _, observed_at, confidence, cited in resolved:
+                link = writer.create_link(
                     organization,
                     kind=evidence_models.Link.Kind.CLASSIFIES,
                     source_ref=node_ref,
@@ -1581,6 +1654,7 @@ class GraphController:
                     observed_at=observed_at,
                     confidence=confidence,
                 )
+                self._cite(organization, assertion, str(link.pk), cited)
 
         graphs.update({graph.pk: graph for graph in projector.graphs_for_refs(organization, refs)})
 
@@ -1599,7 +1673,7 @@ class GraphController:
         # classification can move a label, and moving one means dropping and
         # replaying the whole graph — so reading drawings any earlier would
         # report vertices that no longer exist.
-        nodes = [node for _, _, node, _, _ in resolved]
+        nodes = [node for _, _, node, _, _, _ in resolved]
         self._settle(assertion)
         return results.Asserted(
             assertion=assertion,
@@ -1746,6 +1820,10 @@ class GraphController:
             # Nothing to un-draw — an INFORMS link has no edge — but the derived
             # values it fed have to stop counting it.
             self.project_refs(organization, [str(link.target_ref)])
+        # `DERIVED_FROM` falls through: lineage is never drawn and feeds no
+        # derivation, so retracting a citation changes nothing any view shows
+        # (RFC 0017). `MEASUREMENT` and `STRUCTURE_RELATION` fall through for the
+        # same reason they always have.
 
     def retract_participation(
         self,
@@ -2007,6 +2085,7 @@ class GraphController:
         *,
         observed_at: datetime.datetime | None = None,
         confidence: float | None = None,
+        derived_from: Iterable[str] = (),
     ) -> results.Asserted:
         """Claim that several already-recorded instances are one thing.
 
@@ -2023,10 +2102,15 @@ class GraphController:
         refs = [str(ref) for ref in instance_refs]
         if len(set(refs)) < 2:
             raise ValueError("Claiming sameness needs at least two distinct entities.")
+        cited = self._resolve_citations(organization, derived_from)
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             links = [self._claim_same_instance(organization, refs[0], other, assertion, info, observed_at=observed_at, confidence=confidence) for other in refs[1:]]
+            # One statement, several pair links: each pair is what the caller
+            # concluded from the cited claims.
+            for link in links:
+                self._cite(organization, assertion, str(link.pk), cited)
 
         # Every view drawing any member may now draw the component differently, so
         # each member is reprojected — the same fan-out a classification does.
@@ -2235,6 +2319,7 @@ class GraphController:
         """
         source_ref = self._node_ref(payload.source_id, info, organization=organization)
         target_ref = self._node_ref(payload.target_id, info, organization=organization)
+        cited = self._resolve_citations(organization, payload.derived_from)
 
         # Evidence first, in one transaction — the same asymmetry `create_entity`
         # documents at length. AGE cannot join a Django transaction, so a failure
@@ -2259,6 +2344,7 @@ class GraphController:
                 confidence=payload.confidence,
             )
             self._attach_supporting_evidence(organization, link, recorded_metrics, assertion)
+            self._cite(organization, assertion, str(link.pk), cited)
 
         # Only this proposition, not the whole graph. This used to pass
         # `active_relation_links(graph)` — every live relation there is — so one
@@ -2329,6 +2415,7 @@ class GraphController:
         """
         source = self._resolve_structure(str(payload.source_id), info, organization=organization)
         target = self._resolve_structure(str(payload.target_id), info, organization=organization)
+        cited = self._resolve_citations(organization, payload.derived_from)
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
@@ -2349,6 +2436,7 @@ class GraphController:
                 confidence=payload.confidence,
             )
             self._attach_supporting_evidence(organization, link, recorded_metrics, assertion)
+            self._cite(organization, assertion, str(link.pk), cited)
 
         # No drawings, and none possible: both endpoints are structures, which are
         # Postgres rows with no vertex, so `graphs_for_refs` returns nothing and
@@ -2373,6 +2461,7 @@ class GraphController:
         """
         source = self._resolve_structure(str(payload.source_id), info, organization=organization)
         target_ref = self._node_ref(payload.target_id, info, organization=organization)
+        cited = self._resolve_citations(organization, payload.derived_from)
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
@@ -2386,6 +2475,7 @@ class GraphController:
                 observed_at=payload.observed_at,
                 confidence=payload.confidence,
             )
+            self._cite(organization, assertion, str(link.pk), cited)
             writer.create_link(
                 organization,
                 kind=evidence_models.Link.Kind.INFORMS,

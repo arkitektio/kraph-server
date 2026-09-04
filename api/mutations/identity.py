@@ -25,7 +25,7 @@ def assert_same_instance(info: Info, input: inputs.AssertSameInstanceInput) -> t
     organization = context.get_active_organization(info)
     context.assert_can_access_organization(info, organization)
 
-    return types.AssertedSameness(_value=controller.assert_same_instance(organization=organization, instance_refs=model.instances, info=info, observed_at=model.observed_at, confidence=model.confidence))
+    return types.AssertedSameness(_value=controller.assert_same_instance(organization=organization, instance_refs=model.instances, info=info, observed_at=model.observed_at, confidence=model.confidence, derived_from=model.derived_from))
 
 
 def retract_same_instance(info: Info, input: inputs.RetractSameInstanceInput) -> types.AssertedSameness:

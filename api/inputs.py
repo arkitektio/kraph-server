@@ -44,6 +44,7 @@ class MetricInput:
     confidence: Optional[float] = strawberry.field(default=None, description=input_models.CONFIDENCE_FIELD_DESCRIPTION)
     confidence_type: Optional[str] = strawberry.field(default=None, description="What kind of number `confidence` is — a method's own score, a p-value. Measurement-only")
     observed_at: Optional[datetime] = strawberry.field(default=None, description=input_models.OBSERVED_AT_FIELD_DESCRIPTION)
+    derived_from: List[str] = strawberry.field(default_factory=list, description=input_models.DERIVED_FROM_FIELD_DESCRIPTION)
 
 
 @pydantic.input(model=input_models.ClaimConditionInput, all_fields=True, description="One condition: (field, operator, value) — IS/IN/NOT_IN on WORD/SUBJECT/APP/ACTION/KIND/KEY, BEFORE/SINCE on ASSERTED_AT/OBSERVED_AT, AT_LEAST/BELOW on CONFIDENCE (RFC 0010, 0015, 0016)")
