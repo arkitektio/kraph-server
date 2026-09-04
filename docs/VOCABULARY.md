@@ -34,17 +34,17 @@ Append-only: corrections are new rows, never edits, and there is no hard delete.
 |---|---|---|
 | `Assertion` | The **act** — who claimed it, with what tool, when. Carries `seq`, the log's total order. Every write records exactly one | `evidence.Assertion` |
 | *claim* | Any **recorded statement**. A prose word covering `Instance`, `Link`, `Metric`, `Structure` and `Comment` — not a table | — |
-| `Instance` | A claimed **individual**: `entity`, `natural_event` or `protocol_event`. Every observation mints its own | `evidence.Instance` |
-| `Link` | A claim **relating two things**. Eight kinds: `RELATION`, `SAME_AS`, `CLASSIFIES`, `INFORMS`, `MEASUREMENT`, `STRUCTURE_RELATION`, `PARTICIPATES_AS_INPUT`, `PARTICIPATES_AS_OUTPUT` | `evidence.Link` |
+| `Instance` | A claimed **individual**: `entity`, `natural_event` or `protocol_event`. Every observation mints its own. Carries `observed_at` — when it was seen, or for an event when it happened | `evidence.Instance` |
+| `Link` | A claim **relating two things**. Eight kinds: `RELATION`, `SAME_AS`, `CLASSIFIES`, `INFORMS`, `MEASUREMENT`, `STRUCTURE_RELATION`, `PARTICIPATES_AS_INPUT`, `PARTICIPATES_AS_OUTPUT`. Carries `observed_at` — when the relation held | `evidence.Link` |
 | `Structure` | A pointer to an **external datum**, identified by `(identifier, object)` — an ROI, an image, a file. Never itself claimed to be an AIS | `evidence.Structure` |
-| `Metric` | A **measured value** about a structure | `evidence.Metric` |
+| `Metric` | A **measured value** about a structure. Carries `observed_at` (was `measured_at`) | `evidence.Metric` |
 | `Comment` | A **remark** about a structure, with a threaded reply tree | `evidence.Comment` |
 
 ### Position on a claim
 
 | Word | Means | Where |
 |---|---|---|
-| `Standing` | Somebody's **position** on whether a claim still holds (`stands=True/False`). Retraction and attestation both write one | `evidence.Standing` |
+| `Standing` | Somebody's **position** on whether a claim still holds (`stands=True/False`). Retraction and attestation both write one. `at` is when the position took effect — the world-time column an `OBSERVED_AT` rule reads over standings | `evidence.Standing` |
 | `CurrentStanding` | The folded answer, a **cache** over `Standing`. Holds **no row for an instance** — whether an instance exists has no organization-wide answer, because the node's category clauses decide whose claims count (RFC 0009) | `evidence.CurrentStanding` |
 
 ### The organization's vocabulary
@@ -65,6 +65,14 @@ All three are minted **lazily**, by `evidence.writer.ensure_*`: refusing to reco
 a fact because nobody had declared the word would be refusing it on a bookkeeping
 technicality. All three are `PROTECT`ed from the rows that name them — a word
 that has been used can be retired, never deleted.
+
+### Two clocks
+
+| Word | Means | Where |
+|---|---|---|
+| `asserted_at` | **Belief time** — when the claim was made. On `Assertion`, denormalized onto `Metric`. The `ASSERTED_AT` rule field | `evidence.Assertion` |
+| `observed_at` | **World time** — when the world was as the claim says: an entity seen, an event happened, a relation held, a value measured. On every claim (`Instance`, `Link`, `Metric`), defaulting to the assertion's `asserted_at`, so never null. The `OBSERVED_AT` rule field (RFC 0015) | `evidence.Instance`, `evidence.Link`, `evidence.Metric` |
+| `Standing.at` | The same axis for a **position**: when it took effect. `OBSERVED_AT` reads this column over standings (`selector` passes `observed_at_column="at"`) | `evidence.Standing` |
 
 ### Folded from evidence (caches, rebuildable)
 

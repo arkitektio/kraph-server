@@ -26,6 +26,7 @@ def assert_participation(info: Info, input: inputs.AssertParticipationInput) -> 
             role=model.role,
             is_input=model.is_input,
             info=info,
+            observed_at=model.observed_at,
         )
     )
 
@@ -39,7 +40,7 @@ def retract_participation(info: Info, input: inputs.RetractParticipationInput) -
     model = input.to_pydantic()
     controller = context.get_controller()
 
-    return types.AssertedParticipation(_value=controller.retract_participation(participation_id=str(model.id), info=info))
+    return types.AssertedParticipation(_value=controller.retract_participation(participation_id=str(model.id), info=info, at=model.at))
 
 
 def assert_participations(info: Info, input: inputs.AssertParticipationsInput) -> types.AssertedLinks:

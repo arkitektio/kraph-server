@@ -139,7 +139,7 @@ def test_bulk_ingest_folds_per_metric_but_projects_once(
             key="vector_length",
             value=float(index),
             assertion=assertion,
-            measured_at=BASE_TIME + timedelta(minutes=index),
+            observed_at=BASE_TIME + timedelta(minutes=index),
         )
         state_module.merge(metric, [claim_ref])
 

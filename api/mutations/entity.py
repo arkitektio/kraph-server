@@ -74,7 +74,7 @@ def retract_entity(
     # `get_accessible_graph` call to make here. Authorization comes from the row:
     # `retract_node` resolves the node and checks the caller belongs to its
     # organization.
-    return types.AssertedEntity(_value=controller.retract_node(model.id, info=info))
+    return types.AssertedEntity(_value=controller.retract_node(model.id, info=info, at=model.at))
 
 
 def attest_entity(
@@ -96,4 +96,4 @@ def attest_entity(
     controller = context.get_controller()
 
     model = input.to_pydantic()
-    return types.AssertedEntity(_value=controller.attest_node(model.id, info=info))
+    return types.AssertedEntity(_value=controller.attest_node(model.id, info=info, at=model.at))

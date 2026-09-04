@@ -65,7 +65,7 @@ def revised_measurement(
             key="vector_length",
             value=value,
             assertion=assertion,
-            measured_at=OBSERVED,
+            observed_at=OBSERVED,
         )
 
     return graph_a
@@ -81,14 +81,14 @@ def test_as_of_recovers_the_earlier_belief(organization: Organization, revised_m
 
 
 def test_as_of_is_belief_time_not_observation_time(organization: Organization, revised_measurement: core_models.Graph) -> None:
-    """Both claims describe the same observation, so `measured_at` cannot separate them.
+    """Both claims describe the same observation, so `observed_at` cannot separate them.
 
     If `as_of` filtered on observation time it would return both rows or neither,
     and the question would be unanswerable — which is exactly the state a single
     `timestamp` column left the system in.
     """
-    measured_ats = {m.measured_at for m in evidence_models.Metric.objects.for_organization(organization)}
-    assert measured_ats == {OBSERVED}, "The two claims are about the same moment in the world"
+    observed_ats = {m.observed_at for m in evidence_models.Metric.objects.for_organization(organization)}
+    assert observed_ats == {OBSERVED}, "The two claims are about the same moment in the world"
 
     assert _metrics(organization, _rule(rules.before(MARCH_3))).count() == 1
 
@@ -105,7 +105,7 @@ def test_a_categorys_clauses_are_the_default_metric_scope(organization: Organiza
     assert [m.value for m in _metrics(organization, None, definition)] == [45.2]
 
 
-def test_an_observation_window_selects_by_measured_at(
+def test_an_observation_window_selects_by_observed_at(
     organization: Organization,
     revised_measurement: core_models.Graph,
     roi_category_a: evidence_models.StructureKind,
@@ -126,10 +126,10 @@ def test_an_observation_window_selects_by_measured_at(
         key="vector_length",
         value=99.0,
         assertion=recent,
-        measured_at=OBSERVED + timedelta(days=365),
+        observed_at=OBSERVED + timedelta(days=365),
     )
 
-    rule = _rule(rules.measured_since(OBSERVED), rules.measured_before(OBSERVED + timedelta(days=1)))
+    rule = _rule(rules.observed_since(OBSERVED), rules.observed_before(OBSERVED + timedelta(days=1)))
     assert 99.0 not in [m.value for m in _metrics(organization, rule)]
 
 

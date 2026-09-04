@@ -70,8 +70,8 @@ That is all of it. There is no other nesting.
 | `ACTION` | which action produced it | action ids; many claims have none |
 | `KIND` | what the claim says (see below) | `CLASSIFICATION`, `EXISTENCE`, `SAMENESS`, `EVIDENCE`, `MEASUREMENT` |
 | `ASSERTED_AT` | when the claim was made | datetime |
+| `OBSERVED_AT` | when the world was as the claim says | datetime; every claim (RFC 0015) |
 | `KEY` | the metric key | strings, e.g. `"vector_length"`; measurements only |
-| `MEASURED_AT` | when the observation happened | datetime; measurements only |
 
 ## Operators
 
@@ -126,9 +126,11 @@ accident.
 Two constraints follow from what the kinds mean. A rule that covers
 CLASSIFICATION must have a `WORD` condition, because classification is about
 words; a rule that does not cover it must not have one, because retractions and
-merges do not name words. `KEY` and `MEASURED_AT` are only allowed in the
-`when` of a rule that covers MEASUREMENT alone; other claims have no key and no
-observation time, so they cannot appear in an `unless` either.
+merges do not name words. `KEY` is only allowed in the `when` of a rule that
+covers MEASUREMENT alone; other claims have no key, so it cannot appear in an
+`unless` either. `OBSERVED_AT` used to be under the same restriction, as
+`MEASURED_AT`; every claim carries an observation time now, so it goes anywhere
+`ASSERTED_AT` goes.
 
 With `KEY`, a category can trust one key from one producer and another key
 from another, without one property per producer:
@@ -169,7 +171,7 @@ A derived property can carry its own rules for its measurements:
       "rules": [
         { "when": [ { "field": "APP", "operator": "IS", "value": "segmenter-v3" } ] },
         { "when": [ { "field": "APP",         "operator": "IS",     "value": "segmenter-v2" },
-                    { "field": "MEASURED_AT", "operator": "BEFORE", "value": "2026-06-01T00:00:00Z" } ],
+                    { "field": "OBSERVED_AT", "operator": "BEFORE", "value": "2026-06-01T00:00:00Z" } ],
           "unless": [ { "when": [ { "field": "ACTION", "operator": "IS", "value": "old-pipeline" } ] } ] }
       ]
     }
@@ -185,8 +187,7 @@ old pipeline".
 
 Two differences from a definition, both from what a measurement is. `WORD`
 and `KIND` are not allowed: a measurement names no word (the key is `KEY`)
-and has no kind. `KEY` and `MEASURED_AT` are allowed everywhere, `unless`
-included. `rule.key` still says which key the property reads; a `KEY`
+and has no kind. `KEY` is allowed everywhere, `unless` included. `rule.key` still says which key the property reads; a `KEY`
 condition says which rows the rule admits, and the two combine.
 
 When `evidence` is present, it replaces the category's rules for this
@@ -198,12 +199,23 @@ nothing.
 
 ## Time
 
-`ASSERTED_AT` is when someone said it. `MEASURED_AT` is when the world was
-observed. A correction made in March about a measurement taken in June differs
-from the original only in `ASSERTED_AT`. "The category as we believed it on
-March 3rd" is `ASSERTED_AT BEFORE 2026-03-03`, per rule. There is no graph-wide
-time cursor; if you want the whole view frozen, put the bound in every
-category's rules.
+`ASSERTED_AT` is when someone said it. `OBSERVED_AT` is when the world was
+as they say — every claim carries one, and it is the assertion's time unless
+the claimant gave another (RFC 0015). A correction made in March about a
+measurement taken in June differs from the original only in `ASSERTED_AT`.
+"The category as we believed it on March 3rd" is `ASSERTED_AT BEFORE
+2026-03-03`, per rule. "Cells as they were before the treatment" is
+`OBSERVED_AT BEFORE <treatment>` on the category — and with no `KIND` that
+one bound governs every claim about a cell: a classification by when the cell
+was seen, a death by when it took effect (a standing's own `at`), a relation
+by when it held, an event by when it happened. There is no graph-wide time
+cursor; if you want the whole view frozen, put the bound in every category's
+rules.
+
+Which column answers `OBSERVED_AT` depends on what the rule is being asked
+about: `observed_at` on an instance, a link or a metric; `at` on a standing.
+The selector does that routing (`trust_predicate` and the standing halves pass
+`observed_at_column="at"`); a rule never names a column.
 
 ## Versioning and rebuilds
 

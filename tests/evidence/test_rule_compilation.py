@@ -58,7 +58,7 @@ def test_a_category_rule_needs_a_word() -> None:
         ("SUBJECT", "IS", ["a-list"]),  # IS takes a scalar
         ("SUBJECT", "IN", "not-a-list"),  # IN takes a list
         ("SUBJECT", "IN", []),  # and a non-empty one
-        ("MEASURED_AT", "SINCE", DEC5),  # a claim has no observation time
+        ("KEY", "IS", "area"),  # only a metric row has a key
     ],
 )
 def test_invalid_conditions_are_refused_in_a_definition(field: str, operator: str, value) -> None:
@@ -97,13 +97,13 @@ def test_rule_evidence_refuses_words_and_requires_a_source() -> None:
         models.DerivationRuleInput(evidence=R.evidence(R.rule(R.via("x"))))
 
 
-def test_rule_evidence_accepts_measured_at() -> None:
+def test_rule_evidence_accepts_observed_at() -> None:
     from tests import rules as R
 
-    rule = models.DerivationRuleInput(source_node="ROI", key="k", evidence=R.evidence(R.rule(R.measured_since(DEC5))))
+    rule = models.DerivationRuleInput(source_node="ROI", key="k", evidence=R.evidence(R.rule(R.observed_since(DEC5))))
     stored = rule.model_dump(mode="json")["evidence"]
     condition = stored["rules"][0]["when"][0]
-    assert condition["field"] == "MEASURED_AT" and condition["operator"] == "SINCE" and condition["value"].startswith("2026-12-05")
+    assert condition["field"] == "OBSERVED_AT" and condition["operator"] == "SINCE" and condition["value"].startswith("2026-12-05")
 
 
 def test_the_stored_shape_is_the_one_the_compiler_reads() -> None:
@@ -226,18 +226,25 @@ def test_kind_refusals() -> None:
         models.CategoryDefinitionInput.model_validate(R.definition(R.rule(R.by("peter"))))
     with pytest.raises(ValidationError, match="WORD"):  # non-classification rule may not carry WORD
         models.CategoryDefinitionInput.model_validate(R.definition(R.rule(R.word("X")), R.rule(R.word("Y"), R.of_kind("SAMENESS"), R.by("c"))))
-    with pytest.raises(ValidationError, match="MEASURED_AT"):  # MEASURED_AT outside MEASUREMENT-only
-        models.CategoryDefinitionInput.model_validate(R.definition(R.rule(R.word("X"), R.measured_since(DEC5))))
+    with pytest.raises(ValidationError, match="KEY"):  # KEY outside MEASUREMENT-only
+        models.CategoryDefinitionInput.model_validate(R.definition(R.rule(R.word("X"), R.key("area"))))
 
 
-def test_a_measurement_only_rule_may_bound_observation_time() -> None:
+def test_any_rule_may_bound_observation_time() -> None:
+    """OBSERVED_AT is world time on every claim (RFC 0015): a classification
+    rule, an existence rule and a measurement rule may all bound it — it was
+    MEASURED_AT and metric-only, so a category could not say "cells seen
+    before the treatment"."""
     definition = models.CategoryDefinitionInput.model_validate(
         R.definition(
-            R.rule(R.word("X")),
-            R.rule(R.of_kind("MEASUREMENT"), R.via("scope"), R.measured_since(DEC5)),
+            R.rule(R.word("X"), R.observed_before(DEC5)),
+            R.rule(R.of_kind("EXISTENCE"), R.by("peter"), R.observed_since(DEC5)),
+            R.rule(R.of_kind("MEASUREMENT"), R.via("scope"), R.observed_since(DEC5)),
         )
     )
-    assert definition.rules[1].when[2].field == models.ClaimField.MEASURED_AT
+    assert definition.rules[0].when[1].field == models.ClaimField.OBSERVED_AT
+    assert definition.rules[1].when[2].field == models.ClaimField.OBSERVED_AT
+    assert definition.rules[2].when[2].field == models.ClaimField.OBSERVED_AT
 
 
 def test_trust_filter_selects_only_applicable_rules() -> None:
@@ -274,20 +281,20 @@ def test_rule_evidence_is_a_rule_list() -> None:
     """The flat condition list is gone: `evidence` has the definition's shape."""
     with pytest.raises(ValidationError):
         models.DerivationRuleInput(source_node="ROI", key="k", evidence=[R.via("x")])
-    rule = models.DerivationRuleInput(source_node="ROI", key="k", evidence=R.evidence(R.rule(R.via("v3")), R.rule(R.via("v2"), R.measured_before(DEC5))))
+    rule = models.DerivationRuleInput(source_node="ROI", key="k", evidence=R.evidence(R.rule(R.via("v3")), R.rule(R.via("v2"), R.observed_before(DEC5))))
     assert rule.evidence is not None and len(rule.evidence.rules) == 2
-    assert rule.evidence.to_stored() == R.evidence(R.rule(R.via("v3")), R.rule(R.via("v2"), R.measured_before(DEC5)))
+    assert rule.evidence.to_stored() == R.evidence(R.rule(R.via("v3")), R.rule(R.via("v2"), R.observed_before(DEC5)))
 
 
 def test_rule_evidence_takes_unless_and_metric_fields_everywhere() -> None:
     rule = models.DerivationRuleInput(
         source_node="ROI",
         key="k",
-        evidence=R.evidence(R.rule(R.not_by("bot"), R.key("vector_length"), unless=[[R.via("old-pipeline"), R.measured_before(DEC5)]])),
+        evidence=R.evidence(R.rule(R.not_by("bot"), R.key("vector_length"), unless=[[R.via("old-pipeline"), R.observed_before(DEC5)]])),
     )
     assert rule.evidence is not None
     stored = rule.evidence.to_stored()
-    assert stored["rules"][0]["unless"][0]["when"][1]["field"] == "MEASURED_AT"
+    assert stored["rules"][0]["unless"][0]["when"][1]["field"] == "OBSERVED_AT"
 
 
 def test_rule_evidence_refuses_words_and_kinds_in_unless_too() -> None:
@@ -322,21 +329,23 @@ def test_rule_metric_filter_unions_rules_and_honours_unless() -> None:
         key="k",
         evidence=R.evidence(
             R.rule(R.via("v3")),
-            R.rule(R.via("v2"), R.measured_before(DEC5), unless=[[R.by("intern")]]),
+            R.rule(R.via("v2"), R.observed_before(DEC5), unless=[[R.by("intern")]]),
         ),
     )
     compiled = _sql(selector.rule_metric_filter(rule))
     assert "OR" in compiled and "v3" in compiled and "v2" in compiled
-    assert "measured_at__lte" in compiled and "NOT" in compiled and "intern" in compiled
+    assert "observed_at__lte" in compiled and "NOT" in compiled and "intern" in compiled
 
 
-def test_metric_scope_standing_half_skips_metric_only_fields() -> None:
-    """A standing has no key and no observation time: the standing predicate
-    keeps who-and-when and drops KEY / MEASURED_AT."""
-    rule = models.DerivationRuleInput(source_node="ROI", key="k", evidence=R.evidence(R.rule(R.via("v3"), R.key("vector_length"), R.measured_before(DEC5))))
+def test_metric_scope_standing_half_skips_the_key_and_reads_time_from_at() -> None:
+    """A standing has no key, so the standing predicate drops KEY; it does
+    have world time — its own `at` (RFC 0015) — so OBSERVED_AT compiles against
+    that column rather than the claim's `observed_at`."""
+    rule = models.DerivationRuleInput(source_node="ROI", key="k", evidence=R.evidence(R.rule(R.via("v3"), R.key("vector_length"), R.observed_before(DEC5))))
     claim, standing = selector.metric_scope(None, rule)
-    assert "key__in" in _sql(claim) and "measured_at" in _sql(claim)
-    assert standing is not None and "key" not in _sql(standing) and "measured_at" not in _sql(standing) and "v3" in _sql(standing)
+    assert "key__in" in _sql(claim) and "observed_at__lte" in _sql(claim)
+    assert standing is not None and "key" not in _sql(standing) and "observed_at" not in _sql(standing) and "v3" in _sql(standing)
+    assert "'at__lte'" in _sql(standing)
 
     unconstrained = models.DerivationRuleInput(source_node="ROI", key="k", evidence=R.evidence(R.rule(R.key("vector_length"))))
     _, standing = selector.metric_scope(None, unconstrained)

@@ -66,7 +66,7 @@ def _record(
         key=key,
         value=value,
         assertion=assertion,
-        measured_at=BASE_TIME + timedelta(minutes=offset_minutes),
+        observed_at=BASE_TIME + timedelta(minutes=offset_minutes),
     )
 
 
@@ -104,7 +104,7 @@ def test_incremental_merge_equals_full_recompute(
     """Folding one at a time must land where rebuilding from scratch lands.
 
     Values and observation times are both shuffled, so a `last_value` that
-    followed insertion order instead of `measured_at` would be caught. String
+    followed insertion order instead of `observed_at` would be caught. String
     measurements are interleaved under the same key — see the module docstring
     for why equality alone would not notice them.
     """
@@ -237,7 +237,7 @@ def test_euclidean_range_is_dimension_agnostic(
             key="centroid",
             value=point,
             assertion=assertion,
-            measured_at=BASE_TIME + timedelta(minutes=offset),
+            observed_at=BASE_TIME + timedelta(minutes=offset),
         )
         state_module.merge(metric, [ENTITY_REF])
 

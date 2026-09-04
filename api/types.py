@@ -905,7 +905,7 @@ class RichProperty:
                 predicate=standing_predicate,
             )
             .select_related("assertion", "structure")
-            .order_by("measured_at")
+            .order_by("observed_at")
         )
 
 
@@ -1404,8 +1404,8 @@ class Metric:
         return self._value.properties.get("confidence_type")
 
     @strawberry.field(description="When the world was observed")
-    def measured_at(self) -> Optional[datetime]:
-        return self._value.properties.get("__measured_at")
+    def observed_at(self) -> Optional[datetime]:
+        return self._value.properties.get("__observed_at")
 
     @strawberry.field(description="When this measurement was claimed")
     def asserted_at(self) -> Optional[datetime]:
@@ -1556,6 +1556,11 @@ class Edge(Generic[V]):
     @strawberry.field(description="The target endpoint, as evidence names it — a bare uuid")
     def target_id(self) -> strawberry.ID:
         return strawberry.ID(self._value.unique_right_id)
+
+    @strawberry.field(description="When the world was in the state this claim describes — world time, distinct from `assertion.assertedAt` (RFC 0015)")
+    def observed_at(self) -> datetime:
+        assert self._value.observed_at is not None, "every edge is built from a Link row, which carries its observed_at"
+        return self._value.observed_at
 
     @kante.django_field(description="Who claimed this, and when")
     async def assertion(self) -> "Assertion":
@@ -1849,6 +1854,7 @@ class Instance:
     id: strawberry.ID = strawberry.field(description="The claim's durable identity — a bare uuid, world-unique and stable across reprojects")
     term: "Term" = kante.django_field(description="The organization's word this was first claimed under. Which view draws it, and as what, is decided from the claims")
     created_at: datetime = kante.django_field(description="When the claim was recorded")
+    observed_at: datetime = kante.django_field(description="When the world contained this individual — for an event, when it happened; for an entity, when it was seen. World time, distinct from `assertion.assertedAt`; equal to it when the claimant gave no other (RFC 0015)")
     assertion: Assertion = kante.django_field(description="The act that first claimed this exists. Not the latest — for that, read `standings`")
 
     @strawberry.field(description="What sort of individual this is. Entities and events are told apart here, not by a vertex label — a label is one view's rename of a word")
@@ -1912,6 +1918,7 @@ class Link:
     term: Optional["Term"] = kante.django_field(description="The organization's word this claim is stated in. Null for a plain INFORMS link, which names no word")
     role: Optional[str] = kante.django_field(description="Which role the source plays, for participation claims — the asserter's own word; the claim names no graph, so no schema names this")
     created_at: datetime = kante.django_field(description="When the claim was recorded")
+    observed_at: datetime = kante.django_field(description="When the world was in the state this claim describes — a relation held, a participation happened, a classification applied. World time, distinct from `assertion.assertedAt`; equal to it when the claimant gave no other (RFC 0015)")
     assertion: Assertion = kante.django_field(description="The act that made this claim")
 
     @strawberry.field(description="What this claim says — and therefore what each of its two refs points at")

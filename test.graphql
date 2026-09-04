@@ -42,6 +42,11 @@ input AssertEntityExistsInput {
   supportingEvidence: [StructureReferenceInput!]! = []
 
   """
+  When the world was in this state — world time, the axis a scientist means by 'when'. Distinct from when it is claimed, which the assertion records; left unset, the two are equal. A point, not an interval: a duration is a metric.
+  """
+  observedAt: DateTime = null
+
+  """
   Instances this new one is the same as. Saying "this is AIS 6" mints a fresh instance and claims it is the same as the one already known as AIS 6 — all under **one assertion**, because it is one act. Sameness is an equivalence with no primary, so which id you send is immaterial; entities only, never structures.
   """
   sameAs: [String!]! = []
@@ -57,6 +62,11 @@ input AssertMeasurementExistsInput {
 
   """List of evidence structures with measurements"""
   supportingEvidence: [StructureReferenceInput!]! = []
+
+  """
+  When the world was in this state — world time, the axis a scientist means by 'when'. Distinct from when it is claimed, which the assertion records; left unset, the two are equal. A point, not an interval: a duration is a metric.
+  """
+  observedAt: DateTime = null
 
   """
   The organization's word for what is being claimed — a term's `key`, e.g. 'AIS'. Not a category id and not a graph: a claim names a word, and every view that declares that word will hold what you write. The word is created if the organization has not used it before; a view that declares no category for it simply will not draw it.
@@ -77,8 +87,8 @@ input AssertMetricValueForStructureInput {
   confidenceType: String = null
   unit: String = null
 
-  """Unix epoch time in milliseconds"""
-  timestamp: Int = null
+  """When the world was observed. Defaults to when it was claimed."""
+  observedAt: DateTime = null
 
   """The unique ID of the structure this metric is associated with"""
   structure: ID!
@@ -97,8 +107,8 @@ input AssertMetricValueInput {
   confidenceType: String = null
   unit: String = null
 
-  """Unix epoch time in milliseconds"""
-  timestamp: Int = null
+  """When the world was observed. Defaults to when it was claimed."""
+  observedAt: DateTime = null
 
   """The schema identifier for this metric (e.g. '@mikro/roi_volume')"""
   identifier: String!
@@ -122,6 +132,11 @@ input AssertNaturalEventExistsInput {
 
   """List of evidence structures with measurements"""
   supportingEvidence: [StructureReferenceInput!]! = []
+
+  """
+  When the world was in this state — world time, the axis a scientist means by 'when'. Distinct from when it is claimed, which the assertion records; left unset, the two are equal. A point, not an interval: a duration is a metric.
+  """
+  observedAt: DateTime = null
 }
 
 """Input for claiming that an entity took part in an event"""
@@ -139,6 +154,11 @@ input AssertParticipationInput {
 
   """True if the entity went into the event, False if it came out of it"""
   isInput: Boolean! = true
+
+  """
+  When the world was in this state — world time, the axis a scientist means by 'when'. Distinct from when it is claimed, which the assertion records; left unset, the two are equal. A point, not an interval: a duration is a metric.
+  """
+  observedAt: DateTime = null
 }
 
 """
@@ -167,6 +187,11 @@ input AssertProtocolEventExistsInput {
 
   """List of evidence structures with measurements"""
   supportingEvidence: [StructureReferenceInput!]! = []
+
+  """
+  When the world was in this state — world time, the axis a scientist means by 'when'. Distinct from when it is claimed, which the assertion records; left unset, the two are equal. A point, not an interval: a duration is a metric.
+  """
+  observedAt: DateTime = null
 }
 
 """
@@ -183,6 +208,11 @@ input AssertRelationExistsInput {
   supportingEvidence: [StructureReferenceInput!]! = []
 
   """
+  When the world was in this state — world time, the axis a scientist means by 'when'. Distinct from when it is claimed, which the assertion records; left unset, the two are equal. A point, not an interval: a duration is a metric.
+  """
+  observedAt: DateTime = null
+
+  """
   The organization's word for what is being claimed — a term's `key`, e.g. 'AIS'. Not a category id and not a graph: a claim names a word, and every view that declares that word will hold what you write. The word is created if the organization has not used it before; a view that declares no category for it simply will not draw it.
   """
   term: String!
@@ -194,6 +224,11 @@ input AssertSameInstanceInput {
   Two or more instance ids that name the same thing — entities or events alike. Every pair among them is claimed, under one assertion.
   """
   instances: [String!]!
+
+  """
+  When the world was in this state — world time, the axis a scientist means by 'when'. Distinct from when it is claimed, which the assertion records; left unset, the two are equal. A point, not an interval: a duration is a metric.
+  """
+  observedAt: DateTime = null
 }
 
 """Input for claiming that an external datum exists"""
@@ -218,6 +253,11 @@ input AssertStructureRelationExistsInput {
 
   """List of evidence structures with measurements"""
   supportingEvidence: [StructureReferenceInput!]! = []
+
+  """
+  When the world was in this state — world time, the axis a scientist means by 'when'. Distinct from when it is claimed, which the assertion records; left unset, the two are equal. A point, not an interval: a duration is a metric.
+  """
+  observedAt: DateTime = null
 
   """
   The organization's word for what is being claimed — a term's `key`, e.g. 'AIS'. Not a category id and not a graph: a claim names a word, and every view that declares that word will hold what you write. The word is created if the organization has not used it before; a view that declares no category for it simply will not draw it.
@@ -481,6 +521,11 @@ type Assertion @key(fields: "id", resolvable: true) {
 input AttestCommentInput {
   """The ID of the comment to attest"""
   id: String!
+
+  """
+  When this position took effect — world time. Left unset, the moment of the claim. A rule bounding OBSERVED_AT on EXISTENCE reads this.
+  """
+  at: DateTime = null
 }
 
 """Input for claiming that an entity exists"""
@@ -489,18 +534,33 @@ input AttestEntityInput {
   The uuid of the node being attested. The same id `retract*` returns, so the two round-trip.
   """
   id: String!
+
+  """
+  When this position took effect — world time. Left unset, the moment of the claim. A rule bounding OBSERVED_AT on EXISTENCE reads this.
+  """
+  at: DateTime = null
 }
 
 """Input for claiming that a link claim still stands"""
 input AttestLinkInput {
   """The ID of the claim to attest — its `Link` primary key"""
   id: String!
+
+  """
+  When this position took effect — world time. Left unset, the moment of the claim. A rule bounding OBSERVED_AT on EXISTENCE reads this.
+  """
+  at: DateTime = null
 }
 
 """Input for claiming that a measurement still stands"""
 input AttestMetricInput {
   """The ID of the metric to attest — a bare uuid, its evidence primary key"""
   id: String!
+
+  """
+  When this position took effect — world time. Left unset, the moment of the claim. A rule bounding OBSERVED_AT on EXISTENCE reads this.
+  """
+  at: DateTime = null
 }
 
 """Input for claiming that a natural event exists"""
@@ -509,6 +569,11 @@ input AttestNaturalEventInput {
   The uuid of the node being attested. The same id `retract*` returns, so the two round-trip.
   """
   id: String!
+
+  """
+  When this position took effect — world time. Left unset, the moment of the claim. A rule bounding OBSERVED_AT on EXISTENCE reads this.
+  """
+  at: DateTime = null
 }
 
 """Input for claiming that a protocol event exists"""
@@ -517,6 +582,11 @@ input AttestProtocolEventInput {
   The uuid of the node being attested. The same id `retract*` returns, so the two round-trip.
   """
   id: String!
+
+  """
+  When this position took effect — world time. Left unset, the moment of the claim. A rule bounding OBSERVED_AT on EXISTENCE reads this.
+  """
+  at: DateTime = null
 }
 
 """Input for claiming that a structure still stands"""
@@ -525,6 +595,11 @@ input AttestStructureInput {
   The ID of the structure to attest — a bare uuid, its evidence primary key
   """
   id: String!
+
+  """
+  When this position took effect — world time. Left unset, the moment of the claim. A rule bounding OBSERVED_AT on EXISTENCE reads this.
+  """
+  at: DateTime = null
 }
 
 """Temporary S3 credentials for reading a big file."""
@@ -705,7 +780,7 @@ input ClaimConditionGroupInput {
 }
 
 """
-One condition: (field, operator, value) — IS/IN/NOT_IN on WORD/SUBJECT/APP/ACTION, BEFORE/SINCE on ASSERTED_AT/MEASURED_AT (RFC 0010)
+One condition: (field, operator, value) — IS/IN/NOT_IN on WORD/SUBJECT/APP/ACTION, BEFORE/SINCE on ASSERTED_AT/OBSERVED_AT (RFC 0010, 0015)
 """
 input ClaimConditionInput {
   """What this condition looks at"""
@@ -733,7 +808,7 @@ enum ClaimField {
   KIND
   KEY
   ASSERTED_AT
-  MEASURED_AT
+  OBSERVED_AT
 }
 
 enum ClaimOperator {
@@ -780,6 +855,11 @@ type Classification implements Edge {
   """The target endpoint, as evidence names it — a bare uuid"""
   targetId: ID!
 
+  """
+  When the world was in the state this claim describes — world time, distinct from `assertion.assertedAt` (RFC 0015)
+  """
+  observedAt: DateTime!
+
   """Who claimed this, and when"""
   assertion: Assertion!
 
@@ -799,6 +879,11 @@ input ClassificationInput {
   The organization's word for what is being claimed — a term's `key`, e.g. 'AIS'. Not a category id and not a graph: a claim names a word, and every view that declares that word will hold what you write. The word is created if the organization has not used it before; a view that declares no category for it simply will not draw it.
   """
   term: String!
+
+  """
+  When the world was in this state — world time, the axis a scientist means by 'when'. Distinct from when it is claimed, which the assertion records; left unset, the two are equal. A point, not an interval: a duration is a metric.
+  """
+  observedAt: DateTime = null
 }
 
 """Input for claiming that several nodes are of a word, as one act"""
@@ -1490,7 +1575,7 @@ type DerivationRule {
   aggregation: AggregationFunction
 
   """
-  This property's own metric rule: a rule list over SUBJECT/APP/ACTION/KEY/ASSERTED_AT/MEASURED_AT — any rule admits, all its `when` conditions must hold, `unless` groups subtract. When present it replaces the owning category's rules as the metric scope (classification annotators and measurement producers are usually different populations, so intersecting them would routinely produce nothing); when absent, the category's MEASUREMENT rules apply, and a primitive category folds everything.
+  This property's own metric rule: a rule list over SUBJECT/APP/ACTION/KEY/ASSERTED_AT/OBSERVED_AT — any rule admits, all its `when` conditions must hold, `unless` groups subtract. When present it replaces the owning category's rules as the metric scope (classification annotators and measurement producers are usually different populations, so intersecting them would routinely produce nothing); when absent, the category's MEASUREMENT rules apply, and a primitive category folds everything.
   """
   evidence: MetricEvidence
 
@@ -1520,7 +1605,7 @@ input DerivationRuleInput {
   aggregation: AggregationFunction = null
 
   """
-  This property's own metric rule: a rule list over SUBJECT/APP/ACTION/KEY/ASSERTED_AT/MEASURED_AT — any rule admits, all its `when` conditions must hold, `unless` groups subtract. When present it replaces the owning category's rules as the metric scope (classification annotators and measurement producers are usually different populations, so intersecting them would routinely produce nothing); when absent, the category's MEASUREMENT rules apply, and a primitive category folds everything.
+  This property's own metric rule: a rule list over SUBJECT/APP/ACTION/KEY/ASSERTED_AT/OBSERVED_AT — any rule admits, all its `when` conditions must hold, `unless` groups subtract. When present it replaces the owning category's rules as the metric scope (classification annotators and measurement producers are usually different populations, so intersecting them would routinely produce nothing); when absent, the category's MEASUREMENT rules apply, and a primitive category folds everything.
   """
   evidence: MetricEvidenceInput = null
 
@@ -1605,6 +1690,11 @@ type Description implements Edge {
   """The target endpoint, as evidence names it — a bare uuid"""
   targetId: ID!
 
+  """
+  When the world was in the state this claim describes — world time, distinct from `assertion.assertedAt` (RFC 0015)
+  """
+  observedAt: DateTime!
+
   """Who claimed this, and when"""
   assertion: Assertion!
 
@@ -1630,6 +1720,11 @@ interface Edge {
 
   """The target endpoint, as evidence names it — a bare uuid"""
   targetId: ID!
+
+  """
+  When the world was in the state this claim describes — world time, distinct from `assertion.assertedAt` (RFC 0015)
+  """
+  observedAt: DateTime!
 
   """Who claimed this, and when"""
   assertion: Assertion!
@@ -2508,6 +2603,11 @@ type InputParticipation implements Edge {
   """The target endpoint, as evidence names it — a bare uuid"""
   targetId: ID!
 
+  """
+  When the world was in the state this claim describes — world time, distinct from `assertion.assertedAt` (RFC 0015)
+  """
+  observedAt: DateTime!
+
   """Who claimed this, and when"""
   assertion: Assertion!
 
@@ -2535,6 +2635,11 @@ type Instance @key(fields: "id", resolvable: true) {
 
   """When the claim was recorded"""
   createdAt: DateTime!
+
+  """
+  When the world contained this individual — for an event, when it happened; for an entity, when it was seen. World time, distinct from `assertion.assertedAt`; equal to it when the claimant gave no other (RFC 0015)
+  """
+  observedAt: DateTime!
 
   """
   The act that first claimed this exists. Not the latest — for that, read `standings`
@@ -2657,6 +2762,11 @@ type Link @key(fields: "id", resolvable: true) {
 
   """When the claim was recorded"""
   createdAt: DateTime!
+
+  """
+  When the world was in the state this claim describes — a relation held, a participation happened, a classification applied. World time, distinct from `assertion.assertedAt`; equal to it when the claimant gave no other (RFC 0015)
+  """
+  observedAt: DateTime!
 
   """The act that made this claim"""
   assertion: Assertion!
@@ -2789,6 +2899,11 @@ type Measurement implements Edge {
 
   """The target endpoint, as evidence names it — a bare uuid"""
   targetId: ID!
+
+  """
+  When the world was in the state this claim describes — world time, distinct from `assertion.assertedAt` (RFC 0015)
+  """
+  observedAt: DateTime!
 
   """Who claimed this, and when"""
   assertion: Assertion!
@@ -3073,7 +3188,7 @@ type Metric {
   confidenceType: String
 
   """When the world was observed"""
-  measuredAt: DateTime
+  observedAt: DateTime
 
   """When this measurement was claimed"""
   assertedAt: DateTime
@@ -3092,7 +3207,7 @@ type MetricEvidence {
 }
 
 """
-A property's own metric rule: the definition's rule list over metric rows — no WORD or KIND, KEY and MEASURED_AT allowed anywhere
+A property's own metric rule: the definition's rule list over metric rows — no WORD or KIND, KEY allowed anywhere
 """
 input MetricEvidenceInput {
   """A metric counts when any rule matches"""
@@ -3112,8 +3227,8 @@ input MetricInput {
   confidenceType: String = null
   unit: String = null
 
-  """Unix epoch time in milliseconds"""
-  timestamp: Int = null
+  """When the world was observed. Defaults to when it was claimed."""
+  observedAt: DateTime = null
 }
 
 """A kind of measurement that can be made about a structure kind"""
@@ -3899,6 +4014,11 @@ type OutputParticipation implements Edge {
   """The target endpoint, as evidence names it — a bare uuid"""
   targetId: ID!
 
+  """
+  When the world was in the state this claim describes — world time, distinct from `assertion.assertedAt` (RFC 0015)
+  """
+  observedAt: DateTime!
+
   """Who claimed this, and when"""
   assertion: Assertion!
 
@@ -3941,6 +4061,11 @@ input ParticipantInput {
 
   """True if the entity went into the event, False if it came out of it"""
   isInput: Boolean! = true
+
+  """
+  When the world was in this state — world time, the axis a scientist means by 'when'. Distinct from when it is claimed, which the assertion records; left unset, the two are equal. A point, not an interval: a duration is a metric.
+  """
+  observedAt: DateTime = null
 }
 
 """Filter options for querying participation claims"""
@@ -4537,6 +4662,11 @@ type Relation implements Edge {
   """The target endpoint, as evidence names it — a bare uuid"""
   targetId: ID!
 
+  """
+  When the world was in the state this claim describes — world time, distinct from `assertion.assertedAt` (RFC 0015)
+  """
+  observedAt: DateTime!
+
   """Who claimed this, and when"""
   assertion: Assertion!
 
@@ -4786,18 +4916,33 @@ Input for claiming a remark no longer stands — withdrawn or resolved; the asse
 input RetractCommentInput {
   """The ID of the comment to retract"""
   id: String!
+
+  """
+  When this position took effect — world time. Left unset, the moment of the claim. A rule bounding OBSERVED_AT on EXISTENCE reads this.
+  """
+  at: DateTime = null
 }
 
 """Input for retracting an entity claim"""
 input RetractEntityInput {
   """The ID of the entity to retract"""
   id: ID!
+
+  """
+  When this position took effect — world time. Left unset, the moment of the claim. A rule bounding OBSERVED_AT on EXISTENCE reads this.
+  """
+  at: DateTime = null
 }
 
 """Input for retracting several link claims as one act"""
 input RetractLinksInput {
   """The `Link` primary keys of the claims to retract"""
   ids: [String!]!
+
+  """
+  When this position took effect — world time. Left unset, the moment of the claim. A rule bounding OBSERVED_AT on EXISTENCE reads this.
+  """
+  at: DateTime = null
 }
 
 """
@@ -4806,6 +4951,11 @@ Input for retracting a measurement claim — a Standing(stands=false), not a del
 input RetractMeasurementInput {
   """The ID of the measurement claim to retract — its `Link` primary key"""
   id: String!
+
+  """
+  When this position took effect — world time. Left unset, the moment of the claim. A rule bounding OBSERVED_AT on EXISTENCE reads this.
+  """
+  at: DateTime = null
 }
 
 """
@@ -4816,6 +4966,11 @@ input RetractMetricInput {
   The ID of the metric to retract — a bare uuid, its evidence primary key
   """
   id: String!
+
+  """
+  When this position took effect — world time. Left unset, the moment of the claim. A rule bounding OBSERVED_AT on EXISTENCE reads this.
+  """
+  at: DateTime = null
 }
 
 """
@@ -4824,12 +4979,22 @@ Input for retracting a natural event claim — a Standing(stands=false), not a d
 input RetractNaturalEventInput {
   """The ID of the natural event to retract"""
   id: String!
+
+  """
+  When this position took effect — world time. Left unset, the moment of the claim. A rule bounding OBSERVED_AT on EXISTENCE reads this.
+  """
+  at: DateTime = null
 }
 
 """Input for retracting one participation claim"""
 input RetractParticipationInput {
   """The evidence ID of the participation claim to retract"""
   id: String!
+
+  """
+  When this position took effect — world time. Left unset, the moment of the claim. A rule bounding OBSERVED_AT on EXISTENCE reads this.
+  """
+  at: DateTime = null
 }
 
 """
@@ -4838,6 +5003,11 @@ Input for retracting a protocol event claim — a Standing(stands=false), not a 
 input RetractProtocolEventInput {
   """The ID of the protocol event to retract"""
   id: String!
+
+  """
+  When this position took effect — world time. Left unset, the moment of the claim. A rule bounding OBSERVED_AT on EXISTENCE reads this.
+  """
+  at: DateTime = null
 }
 
 """
@@ -4846,12 +5016,22 @@ Input for retracting a relation claim — a Standing(stands=false), not a deleti
 input RetractRelationInput {
   """The ID of the relation claim to retract — its `Link` primary key"""
   id: ID!
+
+  """
+  When this position took effect — world time. Left unset, the moment of the claim. A rule bounding OBSERVED_AT on EXISTENCE reads this.
+  """
+  at: DateTime = null
 }
 
 """Input for withdrawing one sameness claim"""
 input RetractSameInstanceInput {
   """The id of the sameness claim to retract"""
   id: String!
+
+  """
+  When this position took effect — world time. Left unset, the moment of the claim. A rule bounding OBSERVED_AT on EXISTENCE reads this.
+  """
+  at: DateTime = null
 }
 
 """
@@ -4862,6 +5042,11 @@ input RetractStructureInput {
   The ID of the structure to retract — a bare uuid, its evidence primary key
   """
   id: ID!
+
+  """
+  When this position took effect — world time. Left unset, the moment of the claim. A rule bounding OBSERVED_AT on EXISTENCE reads this.
+  """
+  at: DateTime = null
 }
 
 """
@@ -4872,6 +5057,11 @@ input RetractStructureRelationInput {
   The ID of the structure relation claim to retract — its `Link` primary key
   """
   id: String!
+
+  """
+  When this position took effect — world time. Left unset, the moment of the claim. A rule bounding OBSERVED_AT on EXISTENCE reads this.
+  """
+  at: DateTime = null
 }
 
 """Input type for creating a new graph"""
@@ -4962,6 +5152,11 @@ type Sameness implements Edge {
 
   """The target endpoint, as evidence names it — a bare uuid"""
   targetId: ID!
+
+  """
+  When the world was in the state this claim describes — world time, distinct from `assertion.assertedAt` (RFC 0015)
+  """
+  observedAt: DateTime!
 
   """Who claimed this, and when"""
   assertion: Assertion!
@@ -5292,6 +5487,11 @@ type StructureRelation implements Edge {
   """The target endpoint, as evidence names it — a bare uuid"""
   targetId: ID!
 
+  """
+  When the world was in the state this claim describes — world time, distinct from `assertion.assertedAt` (RFC 0015)
+  """
+  observedAt: DateTime!
+
   """Who claimed this, and when"""
   assertion: Assertion!
 
@@ -5501,8 +5701,8 @@ input SupersedeMetricValueInput {
   confidenceType: String = null
   unit: String = null
 
-  """Unix epoch time in milliseconds"""
-  timestamp: Int = null
+  """When the world was observed. Defaults to when it was claimed."""
+  observedAt: DateTime = null
 
   """The ID of the metric to update"""
   id: String!
@@ -5918,6 +6118,11 @@ input UpdateRelationInput {
   """List of evidence structures with measurements"""
   supportingEvidence: [StructureReferenceInput!]! = []
 
+  """
+  When the world was in this state — world time, the axis a scientist means by 'when'. Distinct from when it is claimed, which the assertion records; left unset, the two are equal. A point, not an interval: a duration is a metric.
+  """
+  observedAt: DateTime = null
+
   """The ID of the relation to update"""
   id: String!
 }
@@ -6060,6 +6265,11 @@ input UpdateStructureRelationInput {
 
   """List of evidence structures with measurements"""
   supportingEvidence: [StructureReferenceInput!]! = []
+
+  """
+  When the world was in this state — world time, the axis a scientist means by 'when'. Distinct from when it is claimed, which the assertion records; left unset, the two are equal. A point, not an interval: a duration is a metric.
+  """
+  observedAt: DateTime = null
 
   """The ID of the structure relation to update"""
   id: String!

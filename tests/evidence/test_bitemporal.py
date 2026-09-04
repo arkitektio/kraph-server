@@ -46,7 +46,7 @@ def _metric(
     assertion: evidence_models.Assertion,
     *,
     value: float,
-    measured_at: datetime,
+    observed_at: datetime,
     asserted_at: datetime,
 ) -> evidence_models.Metric:
     """One measurement, with both time axes set explicitly."""
@@ -57,7 +57,7 @@ def _metric(
         key="vector_length",
         value_kind=ValueKind.FLOAT.value,
         value_num=value,
-        measured_at=measured_at,
+        observed_at=observed_at,
         asserted_at=asserted_at,
         assertion=assertion,
     )
@@ -72,12 +72,12 @@ def test_the_two_axes_are_independently_settable(organization: Organization, roi
         length_category,
         assertion,
         value=45.2,
-        measured_at=LAST_YEAR,
+        observed_at=LAST_YEAR,
         asserted_at=TODAY,
     )
 
     metric.refresh_from_db()
-    assert metric.measured_at == LAST_YEAR
+    assert metric.observed_at == LAST_YEAR
     assert metric.asserted_at == TODAY
 
 
@@ -96,7 +96,7 @@ def test_as_of_selects_by_belief_time_not_observation_time(organization: Organiz
         length_category,
         assertion,
         value=45.2,
-        measured_at=LAST_YEAR,
+        observed_at=LAST_YEAR,
         asserted_at=YESTERDAY,
     )
     _metric(
@@ -105,7 +105,7 @@ def test_as_of_selects_by_belief_time_not_observation_time(organization: Organiz
         length_category,
         assertion,
         value=47.9,
-        measured_at=LAST_YEAR,
+        observed_at=LAST_YEAR,
         asserted_at=TODAY,
     )
 
@@ -117,10 +117,10 @@ def test_as_of_selects_by_belief_time_not_observation_time(organization: Organiz
     assert believed_now.first().value == 47.9
 
 
-def test_observation_window_selects_by_measured_at(organization: Organization, roi_category_a: evidence_models.StructureKind, length_category: evidence_models.MetricKind, assertion: evidence_models.Assertion) -> None:
+def test_observation_window_selects_by_observed_at(organization: Organization, roi_category_a: evidence_models.StructureKind, length_category: evidence_models.MetricKind, assertion: evidence_models.Assertion) -> None:
     """The other axis: 'measurements taken during last year's run'.
 
-    Both rows below were asserted at the same instant, so only `measured_at`
+    Both rows below were asserted at the same instant, so only `observed_at`
     can separate them.
     """
     structure = _structure(organization, roi_category_a, assertion)
@@ -131,7 +131,7 @@ def test_observation_window_selects_by_measured_at(organization: Organization, r
         length_category,
         assertion,
         value=1.0,
-        measured_at=LAST_YEAR,
+        observed_at=LAST_YEAR,
         asserted_at=TODAY,
     )
     _metric(
@@ -140,11 +140,11 @@ def test_observation_window_selects_by_measured_at(organization: Organization, r
         length_category,
         assertion,
         value=2.0,
-        measured_at=TODAY,
+        observed_at=TODAY,
         asserted_at=TODAY,
     )
 
-    observed_last_year = evidence_models.Metric.objects.for_organization(organization).filter(measured_at__lt=datetime(2026, 1, 1, tzinfo=timezone.utc))
+    observed_last_year = evidence_models.Metric.objects.for_organization(organization).filter(observed_at__lt=datetime(2026, 1, 1, tzinfo=timezone.utc))
 
     assert [m.value for m in observed_last_year] == [1.0]
 
@@ -164,7 +164,7 @@ def test_recorded_at_is_not_asserted_at(organization: Organization, roi_category
         length_category,
         assertion,
         value=1.0,
-        measured_at=LAST_YEAR,
+        observed_at=LAST_YEAR,
         asserted_at=LAST_YEAR,
     )
 
@@ -198,7 +198,7 @@ def test_value_kind_selects_the_value_column(organization: Organization, roi_cat
             kind=length_category,
             key=f"probe_{kind.value}",
             value_kind=kind.value,
-            measured_at=LAST_YEAR,
+            observed_at=LAST_YEAR,
             asserted_at=TODAY,
             assertion=assertion,
             **columns,

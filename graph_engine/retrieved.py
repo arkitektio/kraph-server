@@ -472,6 +472,10 @@ class RetrievedEdge:
     source_ref: Optional[str] = None
     target_ref: Optional[str] = None
     created_at: Optional[datetime] = None
+    #: When the world was in the state this link claims (RFC 0015). World time,
+    #: distinct from the assertion's `asserted_at`; None only for an edge no row
+    #: backs, which nothing builds any more.
+    observed_at: Optional[datetime] = None
     #: Which role the source plays, for participation edges. `InputParticipation`
     #: and `OutputParticipation` both read it and neither could have worked —
     #: `RetrievedEdge` had no such attribute, which went unnoticed because
@@ -536,6 +540,7 @@ class RetrievedEdge:
             source_ref=str(link.source_ref),
             target_ref=str(link.target_ref),
             created_at=link.created_at,
+            observed_at=link.observed_at,
             role=link.role,
             assertion_id=str(link.assertion_id),
             properties={
@@ -639,10 +644,8 @@ class RetrievedEdge:
         """The type of confidence measure (if any)."""
         return self.properties.get("confidence_type")
 
-    @property
-    def timestamp(self) -> Optional[int]:
-        """The timestamp of the measurement (unix ms, if any)."""
-        return self.properties.get("timestamp")
+    # A `timestamp` accessor (unix ms) sat here too, reading a property nothing
+    # wrote. World time on an edge is the link's `observed_at` (RFC 0015).
 
     # The "Assertion Properties" accessor block (`subject`, `app_id`,
     # `action_name`) used to sit here, guarded by a comment saying "when
@@ -842,9 +845,9 @@ class RetrievedMetric(RetrievedNode):
         return self.properties.get("value")
 
     @property
-    def measured_at(self) -> Optional[datetime]:
+    def observed_at(self) -> Optional[datetime]:
         """When the world was observed."""
-        return self.properties.get("__measured_at")
+        return self.properties.get("__observed_at")
 
     @property
     def asserted_at(self) -> Optional[datetime]:
@@ -864,7 +867,7 @@ class RetrievedMetric(RetrievedNode):
             "category_id": str(row.kind_id),
             # Stated, not inferred from the label — see `node_type`.
             "type": "METRIC",
-            "__measured_at": row.measured_at,
+            "__observed_at": row.observed_at,
             "__asserted_at": row.asserted_at,
             # Who measured this. The row was dropped here entirely, so a metric
             # could report *when* it was claimed and never *by whom* — and the

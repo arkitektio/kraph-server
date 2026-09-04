@@ -112,7 +112,10 @@ provenance behind every value. The following gaps are load-bearing, not cosmetic
   word is no longer overloaded.
 - **Two half-built temporal mechanisms.** `valid_from` / `valid_to` are reserved property keys and
   `node_valid` (`insights/graph/parser.py:94`) filters on them in insights templates. Nothing
-  populates either. `MaterializedView` had a third pair and is deleted.
+  populates either. `MaterializedView` had a third pair and is deleted. (Since: `valid_from` /
+  `valid_to` are the drawn observation window, `projector._observation_window`, folded from the
+  informing metrics' `observed_at`; the dead `EventBaseInput.valid_from/valid_to` inputs went with
+  RFC 0015.)
 
 ### 1.2 The framing question
 
@@ -378,7 +381,7 @@ evidence_assertion (id, graph_id, subject, app_id, action_name, action_args, ass
 evidence_structure (id, graph_id, category_id, identifier, object, assertion_id)
 evidence_metric    (id, graph_id, structure_id, category_id, key,
                     value_num, value_txt, value_json, unit,
-                    confidence, confidence_type, measured_at, asserted_at, assertion_id)
+                    confidence, confidence_type, observed_at, asserted_at, assertion_id)
 evidence_link      (id, graph_id, category_id, source_ref, target_ref, assertion_id)
 evidence_lifecycle (id, target_ref, status, at, assertion_id)
 ```
@@ -430,10 +433,11 @@ with nothing behind it.
 - **Add `ConflictPolicy` alongside `AggregationFunction`.** When two subjects disagree past a
   threshold: pick by subject priority, flag, or go multi-valued. `PRIORITY_LATEST` already exists
   in the enum with a `# Same as LATEST for now` stub (`rollup.py:275`) — that is the seed.
-- **Split `asserted_at` from `measured_at`.** A single `timestamp` field currently does both jobs.
-  Separating them is what makes "what did we believe on March 3rd" answerable — the actual
-  scientific-integrity feature. The three dormant temporal mechanisms (§1.1) should be driven by
-  this one clock.
+- ~~**Split `asserted_at` from `measured_at`.** A single `timestamp` field currently does both jobs.~~
+  **Done, and then widened.** Metrics got the two columns with the evidence base; RFC 0015 gave
+  every claim the world-time column under one name, `observed_at` (`Standing.at` for positions),
+  and made `OBSERVED_AT` a rule field on every claim kind. "What did we believe on March 3rd" is
+  `ASSERTED_AT BEFORE`; "how was the world on March 3rd" is `OBSERVED_AT BEFORE`.
 
 ---
 

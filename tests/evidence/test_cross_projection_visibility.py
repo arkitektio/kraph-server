@@ -16,7 +16,7 @@ from evidence import models as evidence_models
 from authentikate.models import Organization
 from core import models as core_models
 
-MEASURED_AT = datetime(2026, 3, 3, 10, 0, tzinfo=timezone.utc)
+OBSERVED_AT = datetime(2026, 3, 3, 10, 0, tzinfo=timezone.utc)
 
 
 def test_a_metric_recorded_under_one_graph_is_readable_under_another(organization: Organization, roi_category_a: evidence_models.StructureKind, roi_category_b: evidence_models.StructureKind, length_category: evidence_models.MetricKind, assertion: evidence_models.Assertion) -> None:
@@ -40,8 +40,8 @@ def test_a_metric_recorded_under_one_graph_is_readable_under_another(organizatio
         key="vector_length",
         value_kind=ValueKind.FLOAT.value,
         value_num=45.2,
-        measured_at=MEASURED_AT,
-        asserted_at=MEASURED_AT,
+        observed_at=OBSERVED_AT,
+        asserted_at=OBSERVED_AT,
         assertion=assertion,
     )
 
@@ -85,14 +85,14 @@ def test_provenance_scoping_is_a_filter_not_a_fork(organization: Organization, r
             key="vector_length",
             value_kind=ValueKind.FLOAT.value,
             value_num=value,
-            measured_at=MEASURED_AT,
+            observed_at=OBSERVED_AT,
             asserted_at=source.asserted_at,
             assertion=source,
         )
 
     selected = evidence_models.Metric.objects.for_organization(organization).filter(
         assertion__subject="AI_Model_X",
-        asserted_at__lt=MEASURED_AT,
+        asserted_at__lt=OBSERVED_AT,
     )
 
     assert [m.value for m in selected] == [1.0]

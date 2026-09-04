@@ -134,7 +134,7 @@ def good_schemas() -> dict[str, models.GraphDefinitionInput]:
                                 source_node="ROI",
                                 key="area",
                                 aggregation=models.AggregationFunction.MEAN,
-                                evidence=rules.evidence(rules.rule(rules.via("app-b")), rules.rule(rules.via("app-c"), rules.measured_before(DEC5), unless=[[rules.by("intern")]])),
+                                evidence=rules.evidence(rules.rule(rules.via("app-b")), rules.rule(rules.via("app-c"), rules.observed_before(DEC5), unless=[[rules.by("intern")]])),
                             ),
                         )
                     ],
@@ -159,8 +159,9 @@ def test_schema_builds(name: str) -> None:
 def test_bad_schemas_are_refused() -> None:
     with pytest.raises(ValidationError, match="WORD"):  # wordless rule on a structure relation
         _structure_relation("ADJACENT_TO", _definition_input(rules.rule(rules.by("curator"))))
-    with pytest.raises(ValidationError, match="MEASURED_AT"):  # observation time on a plain measurement rule
-        _measurement("SHOWS", _definition_input(rules.rule(rules.word("SHOWS"), rules.measured_since(DEC5))))
+    # Observation time on a plain measurement rule is fine now (RFC 0015):
+    # every claim carries `observed_at`, so the bound is total.
+    assert _measurement("SHOWS", _definition_input(rules.rule(rules.word("SHOWS"), rules.observed_since(DEC5)))) is not None
     with pytest.raises(ValidationError, match="KIND"):  # KIND in an unless group, on an event
         _event("Mitosis", models.CategoryDefinitionInput.model_validate(rules.definition(rules.rule(rules.word("Mitosis"), unless=[[rules.of_kind("SAMENESS")]]))))
     with pytest.raises(ValidationError, match="KEY"):  # a metric key on a classification rule

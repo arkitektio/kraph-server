@@ -63,6 +63,19 @@ TERM_FIELD_DESCRIPTION = (
     "simply will not draw it."
 )
 
+#: The world-time field every claim-making input carries (RFC 0015).
+OBSERVED_AT_FIELD_DESCRIPTION = (
+    "When the world was in this state — world time, the axis a scientist means by 'when'. "
+    "Distinct from when it is claimed, which the assertion records; left unset, the two are equal. "
+    "A point, not an interval: a duration is a metric."
+)
+
+#: The world-time field every retract/attest input carries.
+STANDING_AT_FIELD_DESCRIPTION = (
+    "When this position took effect — world time. Left unset, the moment of the claim. "
+    "A rule bounding OBSERVED_AT on EXISTENCE reads this."
+)
+
 #: Why a schema mutation offers to project history. Declaring a word widens a view,
 #: and the claims already made under that word are sitting in the evidence base
 #: unread. Offered on the kinds that have a projection to fill — nodes and
@@ -423,15 +436,44 @@ class RelationOrder(StrictModel):
     id: Optional[Ordering] = Field(default=None, description="Order by relation ID")
 
 
+def parse_observed_at(value: Any) -> Optional[datetime]:
+    """Accept an ISO string, a datetime, or a unix-ms int as a world time.
+
+    Tolerant on the way in because clients used to send unix milliseconds
+    (`MetricInput.timestamp`) and a rule's value arrives as an ISO string; the
+    stored shape is one aware datetime either way. A naive datetime is taken as
+    UTC rather than refused — the alternative was a silent shift by the
+    server's zone.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, bool):
+        raise ValueError(f"Unsupported observed_at type: {type(value)}")
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(value / 1000, tz=timezone.utc)
+    if isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            raise ValueError(f"Invalid observed_at format: {value}")
+        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+    raise ValueError(f"Unsupported observed_at type: {type(value)}")
+
+
 # ==========================================
 # INPUT MODELS
 # ==========================================
 
 
 class MetricInput(StrictModel):
-    """
-    A single measurement entry.
-    Timestamps are converted to Unix Epoch Milliseconds (int) for Apache AGE.
+    """A single measurement entry.
+
+    ``observed_at`` is when the world was observed — world time, the axis a
+    scientist means by "when". It used to be ``timestamp``, a unix-ms int kept
+    for Apache AGE; every claim carries the same datetime under the same name
+    now (RFC 0015). Left unset, the row takes the assertion's time.
     """
 
     key: str
@@ -445,45 +487,17 @@ class MetricInput(StrictModel):
     confidence: Optional[float] = None
     confidence_type: Optional[str] = None
     unit: Optional[str] = None
+    observed_at: Optional[datetime] = Field(None, description="When the world was observed. Defaults to when it was claimed.")
 
-    # Internal storage is int (ms), but accepts str/datetime inputs
-    timestamp: Optional[int] = Field(None, description="Unix epoch time in milliseconds")
-
-    @field_validator("timestamp", mode="before")
-    def parse_timestamp(cls, v: Any) -> Optional[int]:
-        """
-        Converts ISO strings, datetime objects, or float seconds to Millisecond Epoch Int.
-        """
-        if v is None:
-            return None
-
-        # Case 1: Already an int (assume ms)
-        if isinstance(v, int):
-            return v
-
-        # Case 2: Datetime object
-        if isinstance(v, datetime):
-            # Ensure timezone awareness (default to UTC if missing)
-            if v.tzinfo is None:
-                v = v.replace(tzinfo=timezone.utc)
-            return int(v.timestamp() * 1000)
-
-        # Case 3: ISO String
-        if isinstance(v, str):
-            try:
-                # Handle 'Z' manually if python version < 3.11 for isoformat compatibility
-                v = v.replace("Z", "+00:00")
-                dt = datetime.fromisoformat(v)
-                return int(dt.timestamp() * 1000)
-            except ValueError:
-                raise ValueError(f"Invalid timestamp format: {v}")
-
-        raise ValueError(f"Unsupported timestamp type: {type(v)}")
+    @field_validator("observed_at", mode="before")
+    @classmethod
+    def _parse_observed_at(cls, value: Any) -> Optional[datetime]:
+        return parse_observed_at(value)
 
 
-def create_max_confidence_metric(key: str, value: Any, unit: Optional[str] = None, timestamp: Any = None) -> MetricInput:
+def create_max_confidence_metric(key: str, value: Any, unit: Optional[str] = None, observed_at: Any = None) -> MetricInput:
     """Helper to create a measurement with max confidence"""
-    return MetricInput(key=key, value=value, confidence=1.0, confidence_type="max", unit=unit, timestamp=timestamp)
+    return MetricInput(key=key, value=value, confidence=1.0, confidence_type="max", unit=unit, observed_at=observed_at)
 
 
 class StructureReferenceInput(StrictModel):
@@ -581,7 +595,7 @@ class ClaimField(str, Enum):
     KIND = "KIND"  #: what the claim *says* — which folds this rule covers (RFC 0011)
     KEY = "KEY"  #: the metric key — measurement rules only (RFC 0014)
     ASSERTED_AT = "ASSERTED_AT"  #: belief time
-    MEASURED_AT = "MEASURED_AT"  #: observation time — measurement rules only
+    OBSERVED_AT = "OBSERVED_AT"  #: world time — every claim carries one (RFC 0015)
 
 
 class ClaimKind(str, Enum):
@@ -633,10 +647,11 @@ class ClaimOperator(str, Enum):
 
 
 _IDENTITY_FIELDS = frozenset({ClaimField.WORD, ClaimField.SUBJECT, ClaimField.APP, ClaimField.ACTION, ClaimField.KEY})
-_TIME_FIELDS = frozenset({ClaimField.ASSERTED_AT, ClaimField.MEASURED_AT})
+_TIME_FIELDS = frozenset({ClaimField.ASSERTED_AT, ClaimField.OBSERVED_AT})
 #: Only a metric row has these: legal in a property's `rule.evidence` and in
 #: the `when` of a MEASUREMENT-only definition rule, nowhere else (RFC 0014).
-_METRIC_ONLY_FIELDS = frozenset({ClaimField.MEASURED_AT, ClaimField.KEY})
+#: OBSERVED_AT was here until every claim gained one (RFC 0015).
+_METRIC_ONLY_FIELDS = frozenset({ClaimField.KEY})
 _IDENTITY_OPERATORS = frozenset({ClaimOperator.IS, ClaimOperator.IN, ClaimOperator.NOT_IN})
 _TIME_OPERATORS = frozenset({ClaimOperator.BEFORE, ClaimOperator.SINCE})
 
@@ -727,7 +742,7 @@ class MetricEvidenceInput(StrictModel):
     """A property's own metric rule (RFC 0014): the definition's rule list, over
     metric rows. Same logic — any rule admits, all `when` hold, `unless`
     subtracts — minus WORD (a metric names no word) and KIND (a metric row has
-    no kind), plus KEY and MEASURED_AT anywhere, `unless` included."""
+    no kind), plus KEY and OBSERVED_AT anywhere, `unless` included."""
 
     rules: List[ClaimRuleInput] = Field(..., min_length=1, description="A metric counts when any rule matches")
 
@@ -738,9 +753,9 @@ class MetricEvidenceInput(StrictModel):
             for conditions in groups:
                 for condition in conditions:
                     if condition.field == ClaimField.WORD:
-                        raise ValueError(f"rules[{index}]: a metric names no WORD — evidence conditions take SUBJECT, APP, ACTION, KEY, ASSERTED_AT or MEASURED_AT.")
+                        raise ValueError(f"rules[{index}]: a metric names no WORD — evidence conditions take SUBJECT, APP, ACTION, KEY, ASSERTED_AT or OBSERVED_AT.")
                     if condition.field == ClaimField.KIND:
-                        raise ValueError(f"rules[{index}]: a metric row has no KIND to test — evidence conditions take SUBJECT, APP, ACTION, KEY, ASSERTED_AT or MEASURED_AT.")
+                        raise ValueError(f"rules[{index}]: a metric row has no KIND to test — evidence conditions take SUBJECT, APP, ACTION, KEY, ASSERTED_AT or OBSERVED_AT.")
         return self
 
     def to_stored(self) -> Dict[str, Any]:
@@ -764,7 +779,7 @@ class DerivationRuleInput(StrictModel):
         default=None,
         description=(
             "This property's own metric rule: a rule list over SUBJECT/APP/ACTION/KEY/"
-            "ASSERTED_AT/MEASURED_AT — any rule admits, all its `when` conditions must hold, "
+            "ASSERTED_AT/OBSERVED_AT — any rule admits, all its `when` conditions must hold, "
             "`unless` groups subtract. When present it replaces the owning category's rules as the "
             "metric scope (classification annotators and measurement producers are usually "
             "different populations, so intersecting them would routinely produce nothing); when "
@@ -1028,13 +1043,13 @@ class CategoryDefinitionInput(StrictModel):
 
             for condition in rule.when:
                 if condition.field in _METRIC_ONLY_FIELDS and not measurement_only:
-                    raise ValueError(f"rules[{index}]: {condition.field.value} is meaningful only on a rule covering MEASUREMENT alone — other claims have no metric key or observation time.")
+                    raise ValueError(f"rules[{index}]: {condition.field.value} is meaningful only on a rule covering MEASUREMENT alone — other claims have no metric key.")
             for group in rule.unless or []:
                 for condition in group.when:
                     if condition.field == ClaimField.WORD:
                         raise ValueError(f"rules[{index}]: an `unless` group may not name a WORD — exceptions are about who and when, not vocabulary.")
                     if condition.field in _METRIC_ONLY_FIELDS:
-                        raise ValueError(f"rules[{index}]: a claim has no metric key or observation time — {condition.field.value} belongs in `when` of a MEASUREMENT-only rule, or in a property's `rule.evidence`.")
+                        raise ValueError(f"rules[{index}]: a claim has no metric key — {condition.field.value} belongs in `when` of a MEASUREMENT-only rule, or in a property's `rule.evidence`.")
         return self
 
     def to_stored(self) -> Dict[str, Any]:
@@ -1667,6 +1682,7 @@ class EventInput(StrictModel):
     inputs: List[RoleMappingInput] = Field(default_factory=list, description="List of entity IDs that are inputs to this event")
     outputs: List[RoleMappingInput] = Field(default_factory=list, description="List of entity IDs that are outputs of this event")
     supporting_evidence: List[StructureReferenceInput] = Field(default_factory=list, description="List of evidence structures with measurements")
+    observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
 
 
 class NaturalEventInput(EventInput):
@@ -1693,12 +1709,14 @@ class AssertParticipationInput(StrictModel):
     entity: str = Field(..., description="The ID of the entity that took part")
     role: str = Field(..., description="Which role the entity played — the caller's own word; the write names no graph and no category")
     is_input: bool = Field(default=True, description="True if the entity went into the event, False if it came out of it")
+    observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
 
 
 class RetractParticipationInput(StrictModel):
     """Input for retracting one claim that an entity took part in an event."""
 
     id: str = Field(..., description="The evidence ID of the participation claim to retract")
+    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
 
 
 class ParticipantInput(StrictModel):
@@ -1707,6 +1725,7 @@ class ParticipantInput(StrictModel):
     entity: str = Field(..., description="The ID of the entity that took part")
     role: str = Field(..., description="Which role the entity played — the caller's own word; the write names no graph and no category")
     is_input: bool = Field(default=True, description="True if the entity went into the event, False if it came out of it")
+    observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
 
 
 class AssertParticipationsInput(StrictModel):
@@ -1726,6 +1745,7 @@ class ClassificationInput(StrictModel):
 
     node: str = Field(..., description="The node being classified")
     term: str = Field(..., description=TERM_FIELD_DESCRIPTION)
+    observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
 
 
 class ClassifyNodesInput(StrictModel):
@@ -1743,6 +1763,7 @@ class RetractLinksInput(StrictModel):
     """Input for retracting several link claims as one act."""
 
     ids: List[str] = Field(..., description="The `Link` primary keys of the claims to retract")
+    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
 
 
 class CommentOnStructureInput(StrictModel):
@@ -1766,18 +1787,21 @@ class RetractCommentInput(StrictModel):
     """Input for claiming a remark no longer stands — withdrawn or resolved; the assertion records whose position it is."""
 
     id: str = Field(..., description="The ID of the comment to retract")
+    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
 
 
 class AttestCommentInput(StrictModel):
     """Input for claiming a remark stands again — reopening, as new evidence."""
 
     id: str = Field(..., description="The ID of the comment to attest")
+    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
 
 
 class RetractNaturalEventInput(StrictModel):
     """Input for retracting a natural event claim — a Standing(stands=False), not a deletion."""
 
     id: str = Field(..., description="The ID of the natural event to retract")
+    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
 
 
 class ProtocolEventInput(EventInput):
@@ -1796,6 +1820,7 @@ class RetractProtocolEventInput(StrictModel):
     """Input for retracting a protocol event claim — a Standing(stands=False), not a deletion."""
 
     id: str = Field(..., description="The ID of the protocol event to retract")
+    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
 
 
 class EntityInput(StrictModel):
@@ -1803,6 +1828,7 @@ class EntityInput(StrictModel):
 
     term: str = Field(..., description=TERM_FIELD_DESCRIPTION)
     supporting_evidence: List[StructureReferenceInput] = Field(default_factory=list, description="List of evidence structures with measurements")
+    observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
 
 
 class AssertEntityExistsInput(EntityInput):
@@ -1827,12 +1853,14 @@ class AssertSameInstanceInput(StrictModel):
         min_length=2,
         description="Two or more instance ids that name the same thing — entities or events alike. Every pair among them is claimed, under one assertion.",
     )
+    observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
 
 
 class RetractSameInstanceInput(StrictModel):
     """Input for withdrawing one sameness claim."""
 
     id: str = Field(..., description="The id of the sameness claim to retract")
+    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
 
 
 class CategoryNodePositionInput(StrictModel):
@@ -1856,6 +1884,7 @@ class RetractEntityInput(StrictModel):
     """Input for retracting an entity claim — a Standing(stands=False), not a deletion."""
 
     id: str = Field(..., description="The ID of the entity to retract")
+    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
 
 
 class AttestNodeInput(StrictModel):
@@ -1868,6 +1897,7 @@ class AttestNodeInput(StrictModel):
     """
 
     id: str = Field(..., description="The uuid of the node being attested. The same id `retract*` returns, so the two round-trip.")
+    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
 
 
 class AttestStructureInput(StrictModel):
@@ -1879,12 +1909,14 @@ class AttestStructureInput(StrictModel):
     """
 
     id: str = Field(..., description="The ID of the structure to attest — a bare uuid, its evidence primary key")
+    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
 
 
 class AttestMetricInput(StrictModel):
     """Input for claiming that a measurement still stands. See `AttestStructureInput`."""
 
     id: str = Field(..., description="The ID of the metric to attest — a bare uuid, its evidence primary key")
+    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
 
 
 class AttestLinkInput(StrictModel):
@@ -1895,6 +1927,7 @@ class AttestLinkInput(StrictModel):
     """
 
     id: str = Field(..., description="The ID of the claim to attest — its `Link` primary key")
+    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
 
 
 class AttestEntityInput(AttestNodeInput):
@@ -1953,6 +1986,7 @@ class RetractStructureInput(StrictModel):
     """Input for retracting a structure claim. Not a soft delete: the row and its metrics survive, and the retraction is its own assertion on the record."""
 
     id: str = Field(..., description="The ID of the structure to retract — a bare uuid, its evidence primary key")
+    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
 
 
 class AssertMetricValueInput(MetricInput):
@@ -1977,6 +2011,7 @@ class RetractMetricInput(StrictModel):
     """Input for retracting a measurement. Not a soft delete: it stays readable, because a derived value that dropped it still has to be explainable."""
 
     id: str = Field(..., description="The ID of the metric to retract — a bare uuid, its evidence primary key")
+    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
 
 
 class RelationInput(StrictModel):
@@ -1985,11 +2020,7 @@ class RelationInput(StrictModel):
     source_id: str = Field(..., description="The ID of the source entity/structure")
     target_id: str = Field(..., description="The ID of the target entity/structure")
     supporting_evidence: List[StructureReferenceInput] = Field(default_factory=list, description="List of evidence structures with measurements")
-
-
-class EventBaseInput(StrictModel):
-    valid_from: Optional[datetime] = Field(default=None, description="Optional start time for the validity of this event (for temporal reasoning)")
-    valid_to: Optional[datetime] = Field(default=None, description="Optional end time for the validity of this event (for temporal reasoning)")
+    observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
 
 
 class AssertRelationExistsInput(RelationInput):
@@ -2008,6 +2039,7 @@ class RetractRelationInput(StrictModel):
     """Input for retracting a relation claim. Not a soft delete: the edge survives wherever another live assertion still states the same proposition."""
 
     id: str = Field(..., description="The ID of the relation claim to retract — its `Link` primary key")
+    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
 
 
 class AssertStructureRelationExistsInput(RelationInput):
@@ -2026,6 +2058,7 @@ class RetractStructureRelationInput(StrictModel):
     """Input for retracting a structure relation claim. Not a soft delete — see `RetractRelationInput`."""
 
     id: str = Field(..., description="The ID of the structure relation claim to retract — its `Link` primary key")
+    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
 
 
 class AssertMeasurementExistsInput(RelationInput):
@@ -2038,6 +2071,7 @@ class RetractMeasurementInput(StrictModel):
     """Input for retracting a measurement claim. Not a soft delete — see `RetractRelationInput`."""
 
     id: str = Field(..., description="The ID of the measurement claim to retract — its `Link` primary key")
+    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
 
 
 class ScatterPlotMutationInput(StrictModel):

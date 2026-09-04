@@ -48,12 +48,13 @@ def since(moment: Any) -> dict:
     return condition("ASSERTED_AT", "SINCE", moment)
 
 
-def measured_before(moment: Any) -> dict:
-    return condition("MEASURED_AT", "BEFORE", moment)
+def observed_before(moment: Any) -> dict:
+    """World time — the claim's `observed_at` (RFC 0015), any kind."""
+    return condition("OBSERVED_AT", "BEFORE", moment)
 
 
-def measured_since(moment: Any) -> dict:
-    return condition("MEASURED_AT", "SINCE", moment)
+def observed_since(moment: Any) -> dict:
+    return condition("OBSERVED_AT", "SINCE", moment)
 
 
 def key(*keys: str) -> dict:

@@ -9,6 +9,7 @@ from graph_engine.input_models import (
     GraphDefinitionInput,
 )
 import uuid
+import datetime
 
 from graph_engine.input_models import (
     MetricInput,
@@ -320,7 +321,7 @@ class GraphController:
                     unit=measurement.unit,
                     confidence=measurement.confidence,
                     confidence_type=measurement.confidence_type,
-                    measured_at=measurement.timestamp,
+                    observed_at=measurement.observed_at,
                 )
                 recorded_metrics.append(metric)
 
@@ -397,19 +398,22 @@ class GraphController:
             # round left a vertex the log had never heard of — still queryable,
             # still resolvable to a ref, so relations could be written naming a
             # node that did not exist, and those links then dangled forever.
-            evidence_models.Instance.objects.create_for_organization(
-                organization=organization,
+            writer.create_instance(
+                organization,
                 id=claim_ref,
                 kind=evidence_models.Instance.Kind.ENTITY,
                 term=term,
                 assertion=assertion,
+                observed_at=payload.observed_at,
             )
 
             # What kind of thing this is, as a claim. The term on the row above
             # stays as the originating one — `rebuild` still needs a word to fall
             # back on for a node nothing has classified — but it is no longer the
             # only answer, which is what lets a second annotator disagree without
-            # having to create a second entity.
+            # having to create a second entity. It was seen *as* this word at the
+            # time it was seen, so the classification carries the same
+            # `observed_at` as the instance.
             writer.create_link(
                 organization,
                 kind=evidence_models.Link.Kind.CLASSIFIES,
@@ -417,6 +421,7 @@ class GraphController:
                 target_ref=str(term.pk),
                 assertion=assertion,
                 term=term,
+                observed_at=payload.observed_at,
             )
 
             # Which structures justify this entity is a claim about the world and
@@ -440,7 +445,7 @@ class GraphController:
             # one assertion — and `Assertion.action_id`, the field that would tie
             # two calls back together, is never populated.
             for other_ref in getattr(payload, "same_as", ()) or ():
-                self._claim_same_instance(organization, claim_ref, str(other_ref), assertion, info)
+                self._claim_same_instance(organization, claim_ref, str(other_ref), assertion, info, observed_at=payload.observed_at)
 
         # And only now the projection — into **every** view that declares the word
         # this entity was claimed under. Two graphs that both declare "AIS" both
@@ -568,7 +573,7 @@ class GraphController:
 
         return projector.rematerialize_category(self, category.graph, category, retired_keys=retired_keys)
 
-    def retract_node(self, node_id: Any, info: Info) -> results.Asserted:
+    def retract_node(self, node_id: Any, info: Info, *, at: datetime.datetime | None = None) -> results.Asserted:
         """Retract a node — an entity or an event — by its uuid.
 
         One path for all three node kinds. The event archivers each had their own
@@ -590,7 +595,7 @@ class GraphController:
         # claiming nothing and an entity that was never retracted.
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            writer.retract(organization, node, assertion)
+            writer.retract(organization, node, assertion, at=at)
 
         # The vertex goes **after** the claim commits, and the ordering is the
         # point: a crash in between leaves the log saying "retracted" and a
@@ -615,7 +620,7 @@ class GraphController:
         self._settle(assertion)
         return results.Asserted.of(assertion, node, self.drawings_for_instance(node))
 
-    def attest_node(self, node_id: Any, info: Info) -> results.Asserted:
+    def attest_node(self, node_id: Any, info: Info, *, at: datetime.datetime | None = None) -> results.Asserted:
         """Claim that a node exists.
 
         Not "un-archive": there is no state to reverse. Somebody is saying the
@@ -630,7 +635,7 @@ class GraphController:
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            writer.attest(organization, node, assertion)
+            writer.attest(organization, node, assertion, at=at)
 
         for graph in projector.graphs_for_refs(organization, [node.ref]):
             projector.reproject_node(self, graph, node)
@@ -881,7 +886,7 @@ class GraphController:
             unit=metric_input.unit,
             confidence=metric_input.confidence,
             confidence_type=metric_input.confidence_type,
-            measured_at=metric_input.timestamp,
+            observed_at=metric_input.observed_at,
         )
 
         # Fold into the statistics immediately. O(1), reads no prior metrics, and
@@ -897,6 +902,8 @@ class GraphController:
         self,
         structure_id: str,
         info: Info,
+        *,
+        at: datetime.datetime | None = None,
     ) -> results.Asserted:
         """Retract a structure by writing a `Standing(stands=False)` against it."""
         structure = self._resolve_structure(structure_id, info)
@@ -904,7 +911,7 @@ class GraphController:
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            writer.retract(organization, structure, assertion)
+            writer.retract(organization, structure, assertion, at=at)
 
         self._settle(assertion)
         return results.Asserted.of(assertion, structure)
@@ -978,7 +985,7 @@ class GraphController:
         self._settle(assertion)
         return results.Asserted.of(assertion, comment)
 
-    def retract_comment(self, comment_id: str, info: Info) -> results.Asserted:
+    def retract_comment(self, comment_id: str, info: Info, *, at: datetime.datetime | None = None) -> results.Asserted:
         """Claim a remark no longer stands — withdrawn by its author or resolved by a reviewer.
 
         One operation for both readings, deliberately: each is somebody's position
@@ -990,19 +997,19 @@ class GraphController:
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            writer.retract(organization, comment, assertion)
+            writer.retract(organization, comment, assertion, at=at)
 
         self._settle(assertion)
         return results.Asserted.of(assertion, comment)
 
-    def attest_comment(self, comment_id: str, info: Info) -> results.Asserted:
+    def attest_comment(self, comment_id: str, info: Info, *, at: datetime.datetime | None = None) -> results.Asserted:
         """Claim a remark stands again — reopening, as new evidence rather than an undo."""
         comment = self._resolve_comment(comment_id, info)
         organization = comment.organization
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            writer.attest(organization, comment, assertion)
+            writer.attest(organization, comment, assertion, at=at)
 
         self._settle(assertion)
         return results.Asserted.of(assertion, comment)
@@ -1076,12 +1083,17 @@ class GraphController:
         resolved = [(kind, mapping.role, self._node_ref(mapping.entity_id, info, organization=organization)) for kind, mapping in participations]
 
         with transaction.atomic():
-            evidence_models.Instance.objects.create_for_organization(
-                organization=organization,
+            # `observed_at` is when the event happened. The classification and the
+            # participations below are claims about the same moment, so they carry
+            # it too — a rule bounding OBSERVED_AT on an event category then
+            # governs the event and its drawn participations alike.
+            writer.create_instance(
+                organization,
                 id=event_ref,
                 kind=node_kind,
                 term=term,
                 assertion=assertion,
+                observed_at=payload.observed_at,
             )
 
             writer.create_link(
@@ -1091,6 +1103,7 @@ class GraphController:
                 target_ref=str(term.pk),
                 assertion=assertion,
                 term=term,
+                observed_at=payload.observed_at,
             )
 
             for _, _, structure in materialized_evidence:
@@ -1117,6 +1130,7 @@ class GraphController:
                     assertion=assertion,
                     term=term,
                     role=role,
+                    observed_at=payload.observed_at,
                 )
                 for link_kind, role, claim_ref in resolved
             ]
@@ -1214,6 +1228,8 @@ class GraphController:
         self,
         metric_id: str,
         info: Info,
+        *,
+        at: datetime.datetime | None = None,
     ) -> results.Asserted:
         """Retract a measurement without destroying it.
 
@@ -1229,7 +1245,7 @@ class GraphController:
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            result = writer.retract(organization, metric, assertion)
+            result = writer.retract(organization, metric, assertion, at=at)
             if result.moved:
                 # Remove the contribution from the statistics too, or the derived
                 # value would keep counting evidence that has been retracted.
@@ -1273,7 +1289,7 @@ class GraphController:
             confidence=payload.confidence,
             confidence_type=payload.confidence_type,
             unit=payload.unit,
-            timestamp=payload.timestamp,
+            observed_at=payload.observed_at,
         )
 
         from graph_engine import projector
@@ -1377,6 +1393,8 @@ class GraphController:
         role: str,
         is_input: bool,
         info: Info,
+        *,
+        observed_at: datetime.datetime | None = None,
     ) -> results.Asserted:
         """Claim that an entity took part in an event, in a role.
 
@@ -1409,6 +1427,7 @@ class GraphController:
                 assertion=assertion,
                 term=node.term,
                 role=role,
+                observed_at=observed_at,
             )
 
         # Every view that draws the event, not one of them. `_graph_for_ref` used
@@ -1459,6 +1478,7 @@ class GraphController:
                 evidence_models.Link.Kind.PARTICIPATES_AS_INPUT if participant.is_input else evidence_models.Link.Kind.PARTICIPATES_AS_OUTPUT,
                 participant.role,
                 self._node_ref(participant.entity, info, organization=organization),
+                participant.observed_at,
             )
             for participant in participants
         ]
@@ -1474,11 +1494,12 @@ class GraphController:
                     assertion=assertion,
                     term=node.term,
                     role=role,
+                    observed_at=observed_at,
                 )
-                for kind, role, claim_ref in resolved
+                for kind, role, claim_ref, observed_at in resolved
             ]
 
-        for kind, role, claim_ref in resolved:
+        for kind, role, claim_ref, _ in resolved:
             self._reproject_participation_everywhere(organization, claim_ref, event_ref, kind, role)
 
         # **One** result, not one per participant. The batch is a single act by a
@@ -1519,11 +1540,11 @@ class GraphController:
         # classifications must stay within one organization." — and that check went
         # with the categories; this is the same guarantee stated against the rows
         # the claims are actually about.
-        resolved: list[tuple[evidence_models.Term, str, evidence_models.Instance]] = []
+        resolved: list[tuple[evidence_models.Term, str, evidence_models.Instance, datetime.datetime | None]] = []
         for classification in classifications:
             node = self._resolve_instance(classification.node, info, organization=organization)
             term = self.ensure_term(organization, enums.TERM_KIND_FOR_NODE_KIND[str(node.kind)], classification.term)
-            resolved.append((term, node.ref, node))
+            resolved.append((term, node.ref, node, classification.observed_at))
 
         # Every view that draws any of these nodes, before the claims land and
         # after. Both, because a word this batch introduces may be declared by a
@@ -1532,13 +1553,13 @@ class GraphController:
         # old ones need correcting.
         from graph_engine import projector
 
-        refs = [ref for _, ref, _ in resolved]
+        refs = [ref for _, ref, _, _ in resolved]
         graphs = {graph.pk: graph for graph in projector.graphs_for_refs(organization, refs)}
         before = self._resolved_labels(list(graphs.values()), refs)
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            for term, node_ref, _ in resolved:
+            for term, node_ref, _, observed_at in resolved:
                 writer.create_link(
                     organization,
                     kind=evidence_models.Link.Kind.CLASSIFIES,
@@ -1546,6 +1567,7 @@ class GraphController:
                     target_ref=str(term.pk),
                     assertion=assertion,
                     term=term,
+                    observed_at=observed_at,
                 )
 
         graphs.update({graph.pk: graph for graph in projector.graphs_for_refs(organization, refs)})
@@ -1565,7 +1587,7 @@ class GraphController:
         # classification can move a label, and moving one means dropping and
         # replaying the whole graph — so reading drawings any earlier would
         # report vertices that no longer exist.
-        nodes = [node for _, _, node in resolved]
+        nodes = [node for _, _, node, _ in resolved]
         self._settle(assertion)
         return results.Asserted(
             assertion=assertion,
@@ -1614,7 +1636,7 @@ class GraphController:
             drawn[node.unique_id] = node
         return drawn
 
-    def retract_links(self, link_ids: list[str], info: Info) -> results.Asserted:
+    def retract_links(self, link_ids: list[str], info: Info, *, at: datetime.datetime | None = None) -> results.Asserted:
         """Retract several link claims as one act.
 
         Retraction is a claim too, so withdrawing a set of them is one assertion
@@ -1642,7 +1664,7 @@ class GraphController:
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             for link in links:
-                writer.retract(organization, link, assertion)
+                writer.retract(organization, link, assertion, at=at)
 
         # Rebuilds are collected across the whole batch and run once each at the
         # end. A retracted classification can move a label, and only `rebuild` moves
@@ -1717,6 +1739,8 @@ class GraphController:
         self,
         participation_id: str,
         info: Info,
+        *,
+        at: datetime.datetime | None = None,
     ) -> results.Asserted:
         """Retract one claim that an entity took part in an event.
 
@@ -1732,7 +1756,7 @@ class GraphController:
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            writer.retract(organization, link, assertion)
+            writer.retract(organization, link, assertion, at=at)
 
         self._reproject_participation_everywhere(organization, str(link.source_ref), str(link.target_ref), link.kind, link.role)
         # Drawings read back, not assumed empty: the edge survives wherever
@@ -1919,6 +1943,8 @@ class GraphController:
         right_ref: str,
         assertion: evidence_models.Assertion,
         info: Info | None = None,
+        *,
+        observed_at: datetime.datetime | None = None,
     ) -> evidence_models.Link:
         """Record that two entities are one thing, and fold it.
 
@@ -1949,6 +1975,7 @@ class GraphController:
             source_ref=str(left.pk),
             target_ref=str(right.pk),
             assertion=assertion,
+            observed_at=observed_at,
         )
 
         # Fold immediately, in the same transaction as the claim. The alternative
@@ -1957,7 +1984,14 @@ class GraphController:
         identity_module.merge(organization, str(left.pk), str(right.pk))
         return link
 
-    def assert_same_instance(self, organization: Any, instance_refs: list[Any], info: Info) -> results.Asserted:
+    def assert_same_instance(
+        self,
+        organization: Any,
+        instance_refs: list[Any],
+        info: Info,
+        *,
+        observed_at: datetime.datetime | None = None,
+    ) -> results.Asserted:
         """Claim that several already-recorded instances are one thing.
 
         Every pair among them, under **one** assertion: the caller is making one
@@ -1976,7 +2010,7 @@ class GraphController:
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            links = [self._claim_same_instance(organization, refs[0], other, assertion, info) for other in refs[1:]]
+            links = [self._claim_same_instance(organization, refs[0], other, assertion, info, observed_at=observed_at) for other in refs[1:]]
 
         # Every view drawing any member may now draw the component differently, so
         # each member is reprojected — the same fan-out a classification does.
@@ -1989,7 +2023,7 @@ class GraphController:
             drawings=(),
         )
 
-    def retract_same_instance(self, claim_id: str, info: Info) -> results.Asserted:
+    def retract_same_instance(self, claim_id: str, info: Info, *, at: datetime.datetime | None = None) -> results.Asserted:
         """Withdraw one sameness claim, and rebuild whatever it may have held together.
 
         A retraction can split a component in two, and union-find cannot un-union
@@ -2004,7 +2038,7 @@ class GraphController:
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            writer.retract(organization, link, assertion)
+            writer.retract(organization, link, assertion, at=at)
 
         # The rebuild and the reprojection are `_reproject_claim`'s SAME_AS
         # branch, shared with `retractLinks` so a sameness claim withdrawn in a
@@ -2205,6 +2239,7 @@ class GraphController:
                 target_ref=target_ref,
                 assertion=assertion,
                 term=term,
+                observed_at=payload.observed_at,
             )
             self._attach_supporting_evidence(organization, link, recorded_metrics, assertion)
 
@@ -2293,6 +2328,7 @@ class GraphController:
                 target_ref=str(target.pk),
                 assertion=assertion,
                 term=term,
+                observed_at=payload.observed_at,
             )
             self._attach_supporting_evidence(organization, link, recorded_metrics, assertion)
 
@@ -2329,6 +2365,7 @@ class GraphController:
                 target_ref=target_ref,
                 assertion=assertion,
                 term=term,
+                observed_at=payload.observed_at,
             )
             writer.create_link(
                 organization,
@@ -2372,6 +2409,8 @@ class GraphController:
         self,
         relation_id: str,
         info: Info,
+        *,
+        at: datetime.datetime | None = None,
     ) -> results.Asserted:
         """Retract one edge assertion without destroying it.
 
@@ -2392,7 +2431,7 @@ class GraphController:
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            writer.retract(organization, link, assertion)
+            writer.retract(organization, link, assertion, at=at)
 
         source_ref, target_ref, term_id = projector.proposition_key(link)
         self._reproject_proposition_everywhere(organization, source_ref, target_ref, term_id)
@@ -2405,6 +2444,8 @@ class GraphController:
         self,
         link_id: str,
         info: Info,
+        *,
+        at: datetime.datetime | None = None,
     ) -> results.Asserted:
         """Claim that a link still stands — the counterpart of `retract_relation`.
 
@@ -2430,7 +2471,7 @@ class GraphController:
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            writer.attest(organization, link, assertion)
+            writer.attest(organization, link, assertion, at=at)
 
         source_ref, target_ref, term_id = projector.proposition_key(link)
         self._reproject_proposition_everywhere(organization, source_ref, target_ref, term_id)
@@ -2441,6 +2482,8 @@ class GraphController:
         self,
         structure_id: str,
         info: Info,
+        *,
+        at: datetime.datetime | None = None,
     ) -> results.Asserted:
         """Claim that a structure still stands — the counterpart of `retract_structure`."""
         structure = self._resolve_structure(structure_id, info)
@@ -2448,7 +2491,7 @@ class GraphController:
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            writer.attest(organization, structure, assertion)
+            writer.attest(organization, structure, assertion, at=at)
 
         self._settle(assertion)
         return results.Asserted.of(assertion, structure)
@@ -2457,6 +2500,8 @@ class GraphController:
         self,
         metric_id: str,
         info: Info,
+        *,
+        at: datetime.datetime | None = None,
     ) -> results.Asserted:
         """Claim that a measurement still stands — the counterpart of `retract_metric`.
 
@@ -2471,7 +2516,7 @@ class GraphController:
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            result = writer.attest(organization, metric, assertion)
+            result = writer.attest(organization, metric, assertion, at=at)
             if result.moved:
                 # Guarded on the *transition*, exactly as `retract_metric` is and
                 # for the same reason: `state.merge` is a delta, so attesting

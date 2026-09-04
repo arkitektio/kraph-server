@@ -7,6 +7,7 @@ validate against the Pydantic input models from graph_engine.
 
 import strawberry
 from strawberry.scalars import JSON
+from datetime import datetime
 from typing import Optional, List
 from enum import Enum
 
@@ -42,10 +43,10 @@ class MetricInput:
     unit: Optional[str] = strawberry.field(default=None, description="Unit of measurement, e.g. 'um'")
     confidence: Optional[float] = strawberry.field(default=None, description="How confident the source is in this measurement, 0-1")
     confidence_type: Optional[str] = strawberry.field(default=None, description="What kind of confidence this is (e.g. a model score)")
-    timestamp: Optional[int] = strawberry.field(default=None, description="When the measurement was observed, unix epoch milliseconds")
+    observed_at: Optional[datetime] = strawberry.field(default=None, description=input_models.OBSERVED_AT_FIELD_DESCRIPTION)
 
 
-@pydantic.input(model=input_models.ClaimConditionInput, all_fields=True, description="One condition: (field, operator, value) — IS/IN/NOT_IN on WORD/SUBJECT/APP/ACTION, BEFORE/SINCE on ASSERTED_AT/MEASURED_AT (RFC 0010)")
+@pydantic.input(model=input_models.ClaimConditionInput, all_fields=True, description="One condition: (field, operator, value) — IS/IN/NOT_IN on WORD/SUBJECT/APP/ACTION, BEFORE/SINCE on ASSERTED_AT/OBSERVED_AT (RFC 0010, 0015)")
 class ClaimConditionInput:
     """One (field, operator, value) condition."""
 
@@ -77,7 +78,7 @@ class CategoryDefinitionInput:
 # definitions and in `rule.evidence`, so a graph has no claim scope of its own.
 
 
-@pydantic.input(model=input_models.MetricEvidenceInput, all_fields=True, description="A property's own metric rule: the definition's rule list over metric rows — no WORD or KIND, KEY and MEASURED_AT allowed anywhere")
+@pydantic.input(model=input_models.MetricEvidenceInput, all_fields=True, description="A property's own metric rule: the definition's rule list over metric rows — no WORD or KIND, KEY allowed anywhere")
 class MetricEvidenceInput:
     """A property's own metric rule (RFC 0014)."""
 
@@ -518,8 +519,7 @@ class RetractStructureInput:
     """Input for retracting a structure claim."""
 
     id: strawberry.ID = strawberry.field(description="The ID of the structure to retract — a bare uuid, its evidence primary key")
-
-    pass
+    at: Optional[datetime] = strawberry.field(default=None, description=input_models.STANDING_AT_FIELD_DESCRIPTION)
 
 
 @pydantic.input(model=input_models.AssertRelationExistsInput, all_fields=True, description="Input for creating a new relation between two entities with supporting evidence")
@@ -534,8 +534,7 @@ class RetractRelationInput:
     """Input for retracting a relation claim."""
 
     id: strawberry.ID = strawberry.field(description="The ID of the relation claim to retract — its `Link` primary key")
-
-    pass
+    at: Optional[datetime] = strawberry.field(default=None, description=input_models.STANDING_AT_FIELD_DESCRIPTION)
 
 
 @pydantic.input(model=input_models.UpdateRelationInput, all_fields=True, description="Input for updating an existing relation")
@@ -604,6 +603,7 @@ class RetractEntityInput:
     """Input for retracting an entity claim."""
 
     id: strawberry.ID = strawberry.field(description="The ID of the entity to retract")
+    at: Optional[datetime] = strawberry.field(default=None, description=input_models.STANDING_AT_FIELD_DESCRIPTION)
 
 
 @pydantic.input(model=input_models.AttestStructureInput, all_fields=True, description="Input for claiming that a structure still stands")

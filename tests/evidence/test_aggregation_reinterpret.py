@@ -54,7 +54,7 @@ def measured_entity(
             key="vector_length",
             value=value,
             assertion=assertion,
-            measured_at=BASE_TIME + timedelta(minutes=index),
+            observed_at=BASE_TIME + timedelta(minutes=index),
         )
         state_module.merge(metric, [ENTITY_REF])
 

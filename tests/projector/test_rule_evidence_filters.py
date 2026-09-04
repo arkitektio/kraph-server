@@ -102,12 +102,12 @@ def test_rule_evidence_replaces_the_default(transactional_db, table_projector, a
 
 
 @pytest.mark.django_db(transaction=True)
-def test_observed_window_narrows_measured_at(transactional_db, table_projector, authenticated_context) -> None:
-    graph = _graph(_definition(rule_evidence=R.evidence(R.rule(R.measured_since(SUMMER_START), R.measured_before(SUMMER_END)))), table_projector, authenticated_context, "rule-window")
+def test_observed_window_narrows_observed_at(transactional_db, table_projector, authenticated_context) -> None:
+    graph = _graph(_definition(rule_evidence=R.evidence(R.rule(R.observed_since(SUMMER_START), R.observed_before(SUMMER_END)))), table_projector, authenticated_context, "rule-window")
     org = graph.organization
     ref = claims.mint(org, "Probe", "anyone")
-    claims.measure(org, ref, obj="r1", key="vector_length", value=10.0, subject="pipeline", measured_at=datetime(2026, 7, 1, tzinfo=timezone.utc))
-    claims.measure(org, ref, obj="r2", key="vector_length", value=999.0, subject="pipeline", measured_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
+    claims.measure(org, ref, obj="r1", key="vector_length", value=10.0, subject="pipeline", observed_at=datetime(2026, 7, 1, tzinfo=timezone.utc))
+    claims.measure(org, ref, obj="r2", key="vector_length", value=999.0, subject="pipeline", observed_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
     properties = _fold(graph, table_projector, ref)
     assert properties.get("avg_length") == pytest.approx(10.0), f"only observations inside the window fold: {properties}"
 
@@ -176,15 +176,15 @@ def test_a_measurement_only_rule_is_the_category_default_metric_scope(transactio
     category_definition = models.CategoryDefinitionInput.model_validate(
         R.definition(
             R.rule(R.word("Probe"), R.not_kind("MEASUREMENT")),
-            R.rule(R.of_kind("MEASUREMENT"), R.via("good-tool"), R.measured_since(SUMMER_START)),
+            R.rule(R.of_kind("MEASUREMENT"), R.via("good-tool"), R.observed_since(SUMMER_START)),
         )
     )
     graph = _graph(_definition(category_definition=category_definition), table_projector, authenticated_context, "measurement-kind")
     org = graph.organization
     ref = claims.mint(org, "Probe", "anyone")
-    claims.measure(org, ref, obj="m1", key="vector_length", value=10.0, subject="pipeline", app_id="good-tool", measured_at=datetime(2026, 7, 1, tzinfo=timezone.utc))
-    claims.measure(org, ref, obj="m2", key="vector_length", value=500.0, subject="pipeline", app_id="bad-tool", measured_at=datetime(2026, 7, 1, tzinfo=timezone.utc))
-    claims.measure(org, ref, obj="m3", key="vector_length", value=900.0, subject="pipeline", app_id="good-tool", measured_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
+    claims.measure(org, ref, obj="m1", key="vector_length", value=10.0, subject="pipeline", app_id="good-tool", observed_at=datetime(2026, 7, 1, tzinfo=timezone.utc))
+    claims.measure(org, ref, obj="m2", key="vector_length", value=500.0, subject="pipeline", app_id="bad-tool", observed_at=datetime(2026, 7, 1, tzinfo=timezone.utc))
+    claims.measure(org, ref, obj="m3", key="vector_length", value=900.0, subject="pipeline", app_id="good-tool", observed_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
     properties = _fold(graph, table_projector, ref)
     assert properties.get("avg_length") == pytest.approx(10.0), f"only the trusted app inside the window folds: {properties}"
 
@@ -195,13 +195,13 @@ def test_a_measurement_only_rule_is_the_category_default_metric_scope(transactio
 @pytest.mark.django_db(transaction=True)
 def test_rule_evidence_rules_union(transactional_db, table_projector, authenticated_context) -> None:
     """"segmenter-v3, or segmenter-v2 measured before June" — two rules, any admits."""
-    evidence = R.evidence(R.rule(R.via("segmenter-v3")), R.rule(R.via("segmenter-v2"), R.measured_before(SUMMER_START)))
+    evidence = R.evidence(R.rule(R.via("segmenter-v3")), R.rule(R.via("segmenter-v2"), R.observed_before(SUMMER_START)))
     graph = _graph(_definition(rule_evidence=evidence), table_projector, authenticated_context, "rule-union")
     org = graph.organization
     ref = claims.mint(org, "Probe", "anyone")
-    claims.measure(org, ref, obj="r1", key="vector_length", value=10.0, subject="pipeline", app_id="segmenter-v3", measured_at=datetime(2026, 7, 1, tzinfo=timezone.utc))
-    claims.measure(org, ref, obj="r2", key="vector_length", value=30.0, subject="pipeline", app_id="segmenter-v2", measured_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
-    claims.measure(org, ref, obj="r3", key="vector_length", value=900.0, subject="pipeline", app_id="segmenter-v2", measured_at=datetime(2026, 7, 1, tzinfo=timezone.utc))
+    claims.measure(org, ref, obj="r1", key="vector_length", value=10.0, subject="pipeline", app_id="segmenter-v3", observed_at=datetime(2026, 7, 1, tzinfo=timezone.utc))
+    claims.measure(org, ref, obj="r2", key="vector_length", value=30.0, subject="pipeline", app_id="segmenter-v2", observed_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
+    claims.measure(org, ref, obj="r3", key="vector_length", value=900.0, subject="pipeline", app_id="segmenter-v2", observed_at=datetime(2026, 7, 1, tzinfo=timezone.utc))
     properties = _fold(graph, table_projector, ref)
     assert properties.get("avg_length") == pytest.approx(20.0), f"v3 always, v2 only before June: {properties}"
 

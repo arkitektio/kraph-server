@@ -95,7 +95,7 @@ def _standing_metrics(queryset: Any) -> Any:
     """Narrow a metric queryset to the measurements that still stand."""
     from evidence import claims as claims_module
 
-    return claims_module.standing(queryset, "metric").order_by("measured_at")
+    return claims_module.standing(queryset, "metric").order_by("observed_at")
 
 
 _LOADER_SPECS: dict[str, tuple[type, str]] = {

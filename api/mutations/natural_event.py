@@ -59,7 +59,7 @@ def retract_natural_event(
     # One controller path for every node kind. This used to be an inline copy of
     # the retraction flow with `target_type` hardcoded — which is how the entity
     # and event spellings drifted apart in the first place.
-    return types.AssertedNaturalEvent(_value=controller.retract_node(model.id, info=info))
+    return types.AssertedNaturalEvent(_value=controller.retract_node(model.id, info=info, at=model.at))
 
 
 def attest_natural_event(
@@ -70,4 +70,4 @@ def attest_natural_event(
     controller = context.get_controller()
 
     model = input.to_pydantic()
-    return types.AssertedNaturalEvent(_value=controller.attest_node(model.id, info=info))
+    return types.AssertedNaturalEvent(_value=controller.attest_node(model.id, info=info, at=model.at))

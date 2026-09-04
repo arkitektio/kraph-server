@@ -91,8 +91,9 @@ so two experiments referencing the same ROI converge on one row.
 
 ### `Metric` — a measured value about a structure
 
-"This ROI has a `vector_length` of 45.2." Carries `measured_at` (world time) as
-well as `asserted_at` (belief time), plus optional `unit`, `confidence` and
+"This ROI has a `vector_length` of 45.2." Carries `observed_at` (world time — it
+was `measured_at` until RFC 0015 gave every claim the column) as well as
+`asserted_at` (belief time), plus optional `unit`, `confidence` and
 `confidence_type`. Typed value columns rather than a JSON blob, so numeric
 aggregation stays a database operation.
 
@@ -137,6 +138,12 @@ organization-scoped evidence is unreachable rather than merely guarded.
 Exists because an entity carrying no measurements yet would otherwise vanish on
 rebuild — existence is a claim like any other.
 
+Carries `observed_at`: when the world was as the claim says — for an event, when
+it happened; for an entity, when it was seen. Defaults to the assertion's
+`asserted_at` when the writer says nothing, so the column is never null and a
+time rule is total (RFC 0015). A duration is a metric; an event is a point in
+time.
+
 **Its `id` is the identity, and it is a bare uuid.** There is no `ref` column and
 no `{age_name}:` prefix. The prefix made identity a property of a projection, so
 one node could never be seen by two views, and it asserted a one-to-one
@@ -154,6 +161,9 @@ three are organization-grain — a retracted metric is retracted everywhere.
 ### `Link` — a claim relating two things
 
 One table, seven kinds. `source_ref` and `target_ref` are opaque bare uuids.
+Every row carries `observed_at` like an `Instance` does: when the relation held,
+when the classification was seen to apply, when the participation took place.
+Same default, same meaning.
 
 | Kind | Says | Projected as |
 |---|---|---|
@@ -193,7 +203,11 @@ no AGE presence, so neither does its discussion.
 ### `Standing` — whether a claim still holds
 
 "That still stands", or "that no longer does". `stands=True` attests,
-`stands=False` retracts, and both are evidence of the same kind.
+`stands=False` retracts, and both are evidence of the same kind. `at` is the
+position's world time — when it took effect, settable by the caller through
+`retract*`/`attest*` inputs — and it is the column an `OBSERVED_AT` rule reads
+over standings, so the name stays even though every other claim says
+`observed_at`.
 
 This replaced a `LifecycleEvent` whose `status` was an enum, and the change is not
 cosmetic. A lifecycle event modelled retraction as a *state transition on a row*,
@@ -464,7 +478,7 @@ Recorded so nobody has to rediscover them.
 
   The existence fold ties on `(at, assertion.seq)` where it used to tie on
   `(at, recorded_at)`, and `refold_state` replays in `seq` order where it used to
-  replay in `measured_at` order — world time, which is backfillable, freely settable
+  replay in `observed_at` order — world time, which is backfillable, freely settable
   by the caller and has no tiebreak. Most of `state.merge` is a monoid and did not
   care; `last_ts` (which compares with `>=`) and `high_water_assertion` (assigned
   unconditionally) did, and were nondeterministic across a rebuild.

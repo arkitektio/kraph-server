@@ -54,7 +54,7 @@ ENTITY_PROPERTIES = """
 
 #: The window the graphs below are scoped to. It contains "now", so measurements
 #: recorded through the API fall inside it and only the ones written with an
-#: explicit past `measured_at` fall outside.
+#: explicit past `observed_at` fall outside.
 #:
 #: Deliberately `observed_window` rather than `category_keys`: the derivation
 #: rule already names `source_node="ROI"`, so narrowing by structure kind would
@@ -84,13 +84,12 @@ async def _ais_with_roi(api_schema: kante.Schema, ctx: HttpContext, graph: core_
     return created.data["assertEntityExists"]["instance"]["id"], object_id
 
 
-def _record_observed_at(graph: core_models.Graph, object_id: str, value: float, measured_at: datetime) -> None:
+def _record_observed_at(graph: core_models.Graph, object_id: str, value: float, observed_at: datetime) -> None:
     """Append a measurement observed at a given time, through the incremental path.
 
     Exactly what `controller._record_metric` does — write the metric, then fold it
-    into the statistics of everything the structure informs. Written here rather
-    than through the API only because GraphQL's `Int` is 32-bit and a millisecond
-    epoch does not fit in one, so `timestamp` cannot carry a date this far back.
+    into the statistics of everything the structure informs. Written at the
+    writer level so the test says nothing about the API's shape of `observedAt`.
     """
     from evidence import writer
     from evidence import state as state_module
@@ -107,7 +106,7 @@ def _record_observed_at(graph: core_models.Graph, object_id: str, value: float, 
         key="vector_length",
         value=value,
         assertion=structure.assertion,
-        measured_at=measured_at,
+        observed_at=observed_at,
     )
     state_module.merge(metric, projector.refs_informed_by(organization, [structure.pk]))
 
@@ -137,7 +136,7 @@ async def test_a_scoped_graph_reads_the_same_value_before_and_after_a_rebuild(
 
     @sync_to_async
     def scope_to_window() -> None:
-        # The window is the property's own rule now (RFC 0009/0010): MEASURED_AT
+        # The window is the property's own rule now (RFC 0009/0010): OBSERVED_AT
         # conditions in `rule.evidence` on `avg_length`, in the stored spelling.
         category = core_models.EntityCategory.objects.get(graph=test_graph, key="AIS")
         for prop in category.property_definitions:
@@ -146,8 +145,8 @@ async def test_a_scoped_graph_reads_the_same_value_before_and_after_a_rebuild(
                     "rules": [
                         {
                             "when": [
-                                {"field": "MEASURED_AT", "operator": "SINCE", "value": WINDOW[0]},
-                                {"field": "MEASURED_AT", "operator": "BEFORE", "value": WINDOW[1]},
+                                {"field": "OBSERVED_AT", "operator": "SINCE", "value": WINDOW[0]},
+                                {"field": "OBSERVED_AT", "operator": "BEFORE", "value": WINDOW[1]},
                             ]
                         }
                     ]
@@ -192,7 +191,7 @@ async def test_a_retraction_after_a_rebuild_does_not_widen_the_scope(
 
     @sync_to_async
     def scope_to_window() -> None:
-        # The window is the property's own rule now (RFC 0009/0010): MEASURED_AT
+        # The window is the property's own rule now (RFC 0009/0010): OBSERVED_AT
         # conditions in `rule.evidence` on `avg_length`, in the stored spelling.
         category = core_models.EntityCategory.objects.get(graph=test_graph, key="AIS")
         for prop in category.property_definitions:
@@ -201,8 +200,8 @@ async def test_a_retraction_after_a_rebuild_does_not_widen_the_scope(
                     "rules": [
                         {
                             "when": [
-                                {"field": "MEASURED_AT", "operator": "SINCE", "value": WINDOW[0]},
-                                {"field": "MEASURED_AT", "operator": "BEFORE", "value": WINDOW[1]},
+                                {"field": "OBSERVED_AT", "operator": "SINCE", "value": WINDOW[0]},
+                                {"field": "OBSERVED_AT", "operator": "BEFORE", "value": WINDOW[1]},
                             ]
                         }
                     ]

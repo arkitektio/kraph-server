@@ -68,7 +68,7 @@ def _record(
         key=key,
         value=value,
         assertion=assertion,
-        measured_at=BASE_TIME + timedelta(minutes=offset_minutes),
+        observed_at=BASE_TIME + timedelta(minutes=offset_minutes),
     )
     state_module.merge(metric, [ENTITY_REF])
     return metric

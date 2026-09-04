@@ -259,10 +259,18 @@ The load-bearing facts:
   `trust_filter`/`trust_predicate` (who-and-when, WORD skipped), `rule_metric_filter`,
   `metric_scope`; `_rules` is the only walker of the stored shape. **The shape is a rule
   system (RFC 0010)**: `{rules: [{when: [(field, operator, value), …], unless: [{when: […]}]}]}`
-  — rules = any, when = all, unless subtracts; fields WORD/SUBJECT/APP/ACTION/KIND/ASSERTED_AT
-  (+ KEY and MEASURED_AT in `rule.evidence` and in MEASUREMENT-only rules — RFC 0014; `rule.evidence`
+  — rules = any, when = all, unless subtracts; fields WORD/SUBJECT/APP/ACTION/KIND/ASSERTED_AT/
+  OBSERVED_AT (+ KEY in `rule.evidence` and in MEASUREMENT-only rules — RFC 0014; `rule.evidence`
   is the same rule list minus WORD/KIND, `MetricEvidenceInput`), operators
-  IS/IN/NOT_IN/BEFORE/SINCE; a rule covering CLASSIFICATION names its WORD(s). **KIND (RFC
+  IS/IN/NOT_IN/BEFORE/SINCE; a rule covering CLASSIFICATION names its WORD(s). **Every claim has
+  a time of observation (RFC 0015)**: `observed_at` on `Instance`/`Link`/`Metric` (was
+  `measured_at`, metric-only), defaulting to the assertion's `asserted_at` so it is never null;
+  `Standing.at` is the same axis for positions. `OBSERVED_AT` is legal on every kind; the
+  selector routes it through `observed_at_column` (`"at"` over `Standing` querysets —
+  `trust_predicate`, the standing halves of `metric_scope`, the projector's EXISTENCE fold). Every
+  instance/link/metric input takes `observedAt`, every `retract*`/`attest*` input takes `at`;
+  `MetricInput.timestamp` is gone. `core` migration 0020 rewrote stored `MEASURED_AT`; an unknown
+  field compiles to *nothing*, so a rename without it would silently widen every bounded property. **KIND (RFC
   0011)** scopes a rule to what a claim *says* — CLASSIFICATION/EXISTENCE/SAMENESS/EVIDENCE/
   MEASUREMENT; a rule covers every kind its KIND conditions do not exclude (`rule_covers`, the
   one coverage implementation), `trust_filter(kind=…)` is a required keyword at every call site,

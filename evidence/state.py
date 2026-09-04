@@ -72,10 +72,10 @@ def merge(
         # First and last are ordered by observation time, not by arrival: a
         # backfilled measurement from last year must not become "latest" just
         # because it was ingested today.
-        if state.first_ts is None or metric.measured_at < state.first_ts:
-            state.first_ts, state.first_value = metric.measured_at, metric.value
-        if state.last_ts is None or metric.measured_at >= state.last_ts:
-            state.last_ts, state.last_value = metric.measured_at, metric.value
+        if state.first_ts is None or metric.observed_at < state.first_ts:
+            state.first_ts, state.first_value = metric.observed_at, metric.value
+        if state.last_ts is None or metric.observed_at >= state.last_ts:
+            state.last_ts, state.last_value = metric.observed_at, metric.value
 
         state.high_water_assertion = metric.assertion
         state.save()
@@ -121,7 +121,7 @@ def retract(
             state.sum -= numeric
 
         extremum_touched = numeric is not None and numeric in (state.min, state.max)
-        order_touched = metric.measured_at in (state.first_ts, state.last_ts)
+        order_touched = metric.observed_at in (state.first_ts, state.last_ts)
         if extremum_touched or order_touched:
             state.needs_recompute = True
 
@@ -140,15 +140,15 @@ def fold(metrics: Any, into: evidence_models.State) -> evidence_models.State:
     a selector-scoped read without keeping a second row per view.
     """
     aggregates = metrics.aggregate(total=Sum("value_num"), lowest=Min("value_num"), highest=Max("value_num"))
-    ordered = list(metrics.order_by("measured_at"))
+    ordered = list(metrics.order_by("observed_at"))
 
     into.n = len(ordered)
     into.sum = aggregates["total"]
     into.min = aggregates["lowest"]
     into.max = aggregates["highest"]
-    into.first_ts = ordered[0].measured_at if ordered else None
+    into.first_ts = ordered[0].observed_at if ordered else None
     into.first_value = ordered[0].value if ordered else None
-    into.last_ts = ordered[-1].measured_at if ordered else None
+    into.last_ts = ordered[-1].observed_at if ordered else None
     into.last_value = ordered[-1].value if ordered else None
     return into
 
@@ -249,7 +249,7 @@ def state_for(
     Note the return may be an **unsaved** row — see :func:`combine`. Callers read
     it; they must not save it.
 
-    Ordered so that two measurements sharing a `measured_at` across two terms
+    Ordered so that two measurements sharing an `observed_at` across two terms
     resolve LATEST the same way every time. Unordered, the winner would depend on
     whatever order Postgres returned the rows in, which is not a decision worth
     leaving to chance for a value the API reports.

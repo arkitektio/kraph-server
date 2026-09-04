@@ -53,7 +53,7 @@ def measured(
             key="vector_length",
             value=value,
             assertion=assertion,
-            measured_at=BASE_TIME + timedelta(minutes=index),
+            observed_at=BASE_TIME + timedelta(minutes=index),
         )
         state_module.merge(metric, [ENTITY_REF])
         metrics.append(metric)
@@ -108,7 +108,7 @@ def test_retracting_a_middling_value_does_not_flag_the_row(
         key="vector_length",
         value=15.0,
         assertion=metrics[0].assertion,
-        measured_at=BASE_TIME + timedelta(minutes=90),
+        observed_at=BASE_TIME + timedelta(minutes=90),
     )
     state_module.merge(extra, [ENTITY_REF])
 

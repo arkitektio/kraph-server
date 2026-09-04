@@ -240,14 +240,14 @@ def _priority_scoped_value(
     )
 
     for source in ordering:
-        latest = base.filter(**{field: source}).order_by("-measured_at").first()
+        latest = base.filter(**{field: source}).order_by("-observed_at").first()
         if latest is not None:
             return latest.value
 
     if ordering:
         return None
 
-    latest = base.order_by("-measured_at").first()
+    latest = base.order_by("-observed_at").first()
     return latest.value if latest else None
 
 
@@ -534,7 +534,7 @@ def _observation_window(graph: core_models.Graph, claim_ref: str, category: core
 
     `valid_from` and `valid_to` are read by six GraphQL fields that have always
     returned null, because nothing ever wrote them. They are the observation
-    window of the contributing measurements — `measured_at`, not `asserted_at`:
+    window of the contributing measurements — `observed_at`, not `asserted_at`:
     a node is valid over the period the world was actually looked at, regardless
     of when somebody got round to saying so.
     """
@@ -561,7 +561,7 @@ def _observation_window(graph: core_models.Graph, claim_ref: str, category: core
         ),
         "metric",
         predicate=selector_module.trust_predicate(category.definition, kind="MEASUREMENT"),
-    ).aggregate(earliest=Min("measured_at"), latest=Max("measured_at"))
+    ).aggregate(earliest=Min("observed_at"), latest=Max("observed_at"))
 
     return {
         "valid_from": window["earliest"].isoformat() if window["earliest"] else None,
@@ -917,7 +917,8 @@ def resolve_categories(graph: core_models.Graph, nodes: list[Any]) -> tuple[dict
             graph.organization,
             "node",
             refs,
-            selector_module.trust_filter(category.definition, kind="EXISTENCE"),
+            # Over `Standing` rows: world time is the standing's own `at`.
+            selector_module.trust_filter(category.definition, kind="EXISTENCE", observed_at_column="at"),
         )
         for ref in retracted:
             resolved.pop(ref, None)
@@ -1479,8 +1480,8 @@ def refold_state(organization: Any) -> int:
         folded = 0
         # Ordered by the log's own order, not by world time. Most of `state.merge`
         # is a genuine monoid and does not care — min, max, sum and n commute, and
-        # first/last compare `measured_at` rather than trusting arrival. Two things
-        # do care, and both were nondeterministic under `order_by("measured_at")`,
+        # first/last compare `observed_at` rather than trusting arrival. Two things
+        # do care, and both were nondeterministic under `order_by("observed_at")`,
         # which has no tiebreak: `last_ts` uses `>=`, so metrics sharing an exact
         # observation time resolve to whichever was folded last; and
         # `high_water_assertion` is assigned unconditionally, so it ended up naming

@@ -177,7 +177,7 @@ async def test_validity_is_the_observation_window(
     """`validFrom`/`validTo` are populated at last.
 
     Six GraphQL fields read these and every one of them returned null, because
-    nothing ever wrote them. They are `measured_at` bounds — when the world was
+    nothing ever wrote them. They are `observed_at` bounds — when the world was
     looked at — not when somebody got round to saying so.
     """
     entity_id = await _entity_with_measurements(api_schema, simple_api_context, test_graph, [40.0, 50.0])

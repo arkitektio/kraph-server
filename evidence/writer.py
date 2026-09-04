@@ -22,6 +22,7 @@ be held to it by the database rather than by this comment.
 from __future__ import annotations
 
 import datetime
+import uuid
 from typing import TYPE_CHECKING, Any, Iterable, NamedTuple
 
 from authentikate.models import Organization
@@ -258,7 +259,7 @@ def record_metric(
     unit: str | None = None,
     confidence: float | None = None,
     confidence_type: str | None = None,
-    measured_at: Any = None,
+    observed_at: Any = None,
 ) -> evidence_models.Metric:
     """Append a measurement.
 
@@ -269,9 +270,10 @@ def record_metric(
     into the state vector of a grain it does not belong to. Callers who want a
     different kind resolve a different term.
 
-    ``measured_at`` defaults to the assertion time when the caller does not know
+    ``observed_at`` defaults to the assertion time when the caller does not know
     when the observation happened, which is honest about the two axes being
-    equal in that case rather than leaving the column null and unqueryable.
+    equal in that case rather than leaving the column null and unqueryable. It
+    is the same default `Instance` and `Link` apply on save (RFC 0015).
     """
     resolved = kind.value_kind
 
@@ -285,7 +287,7 @@ def record_metric(
         unit=unit,
         confidence=confidence,
         confidence_type=confidence_type,
-        measured_at=_as_datetime(measured_at, assertion.asserted_at),
+        observed_at=_as_datetime(observed_at, assertion.asserted_at),
         asserted_at=assertion.asserted_at,
         **value_columns(value, resolved, key),
     )
@@ -335,12 +337,16 @@ def create_link(
     assertion: evidence_models.Assertion,
     term: evidence_models.Term | None = None,
     role: str | None = None,
+    observed_at: datetime.datetime | None = None,
 ) -> evidence_models.Link:
     """Attach evidence to something. Refs stay opaque — see `Link`.
 
     ``term`` is the organization's word for the claim, not a graph's category. A
     link that named a category could only be understood by the graph that owned
     it, which is not what a claim is.
+
+    ``observed_at`` is when the world was in the state the link describes; left
+    ``None``, the row takes the assertion's time on save.
     """
     return evidence_models.Link.objects.create_for_organization(
         organization=organization,
@@ -350,7 +356,28 @@ def create_link(
         assertion=assertion,
         term=term,
         role=role,
+        observed_at=observed_at,
     )
+
+
+def create_instance(
+    organization: Organization,
+    *,
+    kind: str,
+    term: evidence_models.Term,
+    assertion: evidence_models.Assertion,
+    id: uuid.UUID | str | None = None,
+    observed_at: datetime.datetime | None = None,
+) -> evidence_models.Instance:
+    """Mint an individual. Every observation mints its own — sameness is a separate claim.
+
+    ``observed_at`` is when the world contained it: for an event, when it
+    happened. Left ``None``, the row takes the assertion's time on save.
+    """
+    fields: dict[str, Any] = {"kind": kind, "term": term, "assertion": assertion, "observed_at": observed_at}
+    if id is not None:
+        fields["id"] = id
+    return evidence_models.Instance.objects.create_for_organization(organization=organization, **fields)
 
 
 #: Which claim target type each evidence row is. There is no longer a companion
@@ -400,7 +427,8 @@ def record_standing_for_ref(
         target_type=target_type,
         target_id=str(target_id),
         stands=stands,
-        at=at or timezone.now(),
+        # World time defaults to claim time, as it does on every claim table.
+        at=at or assertion.asserted_at,
         assertion=assertion,
     )
 
@@ -492,7 +520,7 @@ def standing_metrics_for_kind(kind: evidence_models.MetricKind) -> Any:
         evidence_models.Metric.objects.for_organization(kind.organization).filter(kind=kind),
         "metric",
     )
-    return standing.order_by("measured_at")
+    return standing.order_by("observed_at")
 
 
 def active_metrics_for_structures(
@@ -509,4 +537,4 @@ def active_metrics_for_structures(
         evidence_models.Metric.objects.for_organization(organization).filter(structure_id__in=list(structure_ids)),
         "metric",
     )
-    return standing.order_by("measured_at")
+    return standing.order_by("observed_at")

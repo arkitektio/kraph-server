@@ -35,8 +35,10 @@ Two readings of the same rules, and the split is the design:
   existence standings, the standings of link claims, INFORMS routing, and (by
   default) the metrics a property folds.
 - :func:`rule_metric_filter` — a property's own ``rule.evidence``, the same
-  rule list minus WORD and KIND, plus the two fields only a metric row has,
-  KEY and MEASURED_AT (RFC 0014).
+  rule list minus WORD and KIND, plus the one field only a metric row has,
+  KEY (RFC 0014). OBSERVED_AT — world time — is on every claim (RFC 0015),
+  so it compiles everywhere; which column carries it is the queryset's
+  business (``observed_at`` on a claim row, ``at`` on a `Standing`).
 
 ``as_of`` is the one that matters scientifically: "the category as we believed
 it on March 3rd" stops being a fork of the data and becomes a filter.
@@ -73,8 +75,8 @@ _IDENTITY_COLUMNS = {
     "KEY": "key",  # the metric key — only a metric row has one (RFC 0014)
 }
 #: Fields only a `Metric` row can answer. Skipped unless the caller says the
-#: predicate targets metrics — a `Standing` or an `Instance` has neither.
-_METRIC_ONLY_FIELDS = frozenset({"MEASURED_AT", "KEY"})
+#: predicate targets metrics — a `Standing` or an `Instance` has no key.
+_METRIC_ONLY_FIELDS = frozenset({"KEY"})
 
 #: `ACTION` is the one nullable column: a human's claim carries no action, and
 #: SQL's NOT IN over NULL would silently drop it — compiled around, below.
@@ -103,13 +105,18 @@ def _conditions(container: dict[str, Any]) -> list[dict[str, Any]]:
     return [condition for condition in (container.get("when") or []) if isinstance(condition, dict)]
 
 
-def _condition_q(condition: dict[str, Any], *, asserted_at_column: str) -> Q | None:
+def _condition_q(condition: dict[str, Any], *, asserted_at_column: str, observed_at_column: str = "observed_at") -> Q | None:
     """One (field, operator, value) condition as a predicate, or None to skip it.
 
     WORD is handled by the callers (`classification_filter` includes it,
     `trust_filter` skips it), so it returns None here. An unknown field or
     operator also returns None — read-side tolerance; the write path refuses
     both.
+
+    The two time axes reach the database through the two ``*_column`` names:
+    belief time is denormalized onto `Metric` but reached through the
+    assertion elsewhere, and world time is ``observed_at`` on every claim row
+    but ``at`` on a `Standing` (RFC 0015).
     """
     field = str(condition.get("field", ""))
     operator = str(condition.get("operator", ""))
@@ -140,8 +147,8 @@ def _condition_q(condition: dict[str, Any], *, asserted_at_column: str) -> Q | N
 
     if field == "ASSERTED_AT":
         column = asserted_at_column
-    elif field == "MEASURED_AT":
-        column = "measured_at"
+    elif field == "OBSERVED_AT":
+        column = observed_at_column
     else:
         return None
 
@@ -152,7 +159,7 @@ def _condition_q(condition: dict[str, Any], *, asserted_at_column: str) -> Q | N
     return None
 
 
-def _rule_trust_q(rule: dict[str, Any], *, asserted_at_column: str, include_metric_fields: bool = False) -> Q:
+def _rule_trust_q(rule: dict[str, Any], *, asserted_at_column: str, observed_at_column: str = "observed_at", include_metric_fields: bool = False) -> Q:
     """One rule's who-and-when predicate: AND of `when` (WORD skipped, the
     metric-only fields skipped unless the predicate targets metric rows),
     minus any `unless` group (each group an AND of its conditions)."""
@@ -160,7 +167,7 @@ def _rule_trust_q(rule: dict[str, Any], *, asserted_at_column: str, include_metr
     for condition in _conditions(rule):
         if not include_metric_fields and str(condition.get("field")) in _METRIC_ONLY_FIELDS:
             continue
-        compiled = _condition_q(condition, asserted_at_column=asserted_at_column)
+        compiled = _condition_q(condition, asserted_at_column=asserted_at_column, observed_at_column=observed_at_column)
         if compiled is not None:
             predicate &= compiled
 
@@ -171,7 +178,7 @@ def _rule_trust_q(rule: dict[str, Any], *, asserted_at_column: str, include_metr
         for condition in _conditions(group):
             if not include_metric_fields and str(condition.get("field")) in _METRIC_ONLY_FIELDS:
                 continue
-            compiled = _condition_q(condition, asserted_at_column=asserted_at_column)
+            compiled = _condition_q(condition, asserted_at_column=asserted_at_column, observed_at_column=observed_at_column)
             if compiled is not None:
                 blocked &= compiled
         if blocked.children:
@@ -194,7 +201,7 @@ def _rule_words(rule: dict[str, Any]) -> list[str]:
     return words
 
 
-def trust_filter(definition: dict[str, Any] | None, *, kind: str, asserted_at_column: str = "assertion__asserted_at", include_metric_fields: bool = False) -> Q:
+def trust_filter(definition: dict[str, Any] | None, *, kind: str, asserted_at_column: str = "assertion__asserted_at", observed_at_column: str = "observed_at", include_metric_fields: bool = False) -> Q:
     """Whose claims of one **kind** count for things of this category.
 
     ``kind`` is required (a `ClaimKind` value — RFC 0011): only the rules whose
@@ -210,6 +217,10 @@ def trust_filter(definition: dict[str, Any] | None, *, kind: str, asserted_at_co
     an applicable rule with no who/when constraints matches everything. An
     empty definition — a *primitive* category — trusts everybody for every
     kind: the old unscoped behaviour, still the default.
+
+    ``observed_at_column`` names where the queryset keeps world time: the
+    default suits every claim table; a predicate over `Standing` rows passes
+    ``"at"`` (`trust_predicate` does).
     """
     from graph_engine.input_models import rule_covers
 
@@ -220,7 +231,7 @@ def trust_filter(definition: dict[str, Any] | None, *, kind: str, asserted_at_co
     if not applicable:
         return Q(pk__in=[])
 
-    predicates = [_rule_trust_q(rule, asserted_at_column=asserted_at_column, include_metric_fields=include_metric_fields) for rule in applicable]
+    predicates = [_rule_trust_q(rule, asserted_at_column=asserted_at_column, observed_at_column=observed_at_column, include_metric_fields=include_metric_fields) for rule in applicable]
     if any(not predicate.children for predicate in predicates):
         return Q()
 
@@ -234,7 +245,7 @@ def trust_predicate(definition: dict[str, Any] | None, *, kind: str) -> Q | None
     """`trust_filter`, spelled for `claims.standing`: ``None`` when the
     definition constrains nobody for this kind, so an unscoped category takes
     the `CurrentStanding` fast path instead of folding the log per row."""
-    predicate = trust_filter(definition, kind=kind)
+    predicate = trust_filter(definition, kind=kind, observed_at_column="at")
     return predicate if predicate.children else None
 
 
@@ -265,8 +276,9 @@ def rule_metric_filter(rule: Any) -> Q:
 
     Compiles the rule's ``evidence`` — a **rule list** with the definition's
     logic (RFC 0014): any rule admits, all of a rule's `when` conditions must
-    hold, `unless` groups subtract; KEY and MEASURED_AT included — with belief
-    time on the `asserted_at` column denormalized onto `Metric`. A rule with no
+    hold, `unless` groups subtract; KEY included — with belief time on the
+    `asserted_at` column denormalized onto `Metric` and world time on
+    `observed_at`. A rule with no
     evidence constrains nothing here; the category's rules are the default,
     see :func:`metric_scope`.
     """
@@ -290,14 +302,14 @@ def metric_scope(definition: dict[str, Any] | None, rule: Any) -> tuple[Q, Q | N
     The standing predicate follows the same source — whose retraction of a
     metric counts is decided by whichever rule admitted the metric — but is
     phrased over ``assertion__*`` paths (a `Standing` has no denormalized
-    `asserted_at`) and skips ``KEY`` and ``MEASURED_AT``: a position on a claim
-    is not a measurement. ``None`` when any admitting rule then constrains
+    `asserted_at`), reads world time from the standing's own ``at``, and skips
+    ``KEY``: a position on a claim is not a measurement. ``None`` when any admitting rule then constrains
     nobody, the same edge `trust_predicate` takes.
     """
     rules = _evidence_rules(rule)
     if rules is not None:
         claim = rule_metric_filter(rule)
-        halves = [_rule_trust_q(entry, asserted_at_column="assertion__asserted_at") for entry in rules]
+        halves = [_rule_trust_q(entry, asserted_at_column="assertion__asserted_at", observed_at_column="at") for entry in rules]
         if any(not half.children for half in halves):
             return claim, None
         return claim, _union(halves)
@@ -620,7 +632,7 @@ def metrics_for(graph: Any) -> QuerySet[Any]:
         evidence_models.Metric.objects.for_organization(graph.organization),
         "metric",
     )
-    return standing.select_related("structure", "structure__kind", "assertion").order_by("measured_at")
+    return standing.select_related("structure", "structure__kind", "assertion").order_by("observed_at")
 
 
 def informs_links_for(graph: Any, *, definition: dict[str, Any] | None = None) -> QuerySet[Any]:

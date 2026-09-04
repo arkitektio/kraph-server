@@ -98,7 +98,7 @@ This is the `createGraph` input, with comments.
                   { "field": "KIND",        "operator": "IS",    "value": "MEASUREMENT" },
                   { "field": "APP",         "operator": "IS",    "value": "segmenter-v3" },
                   { "field": "KEY",         "operator": "IS",    "value": "vector_length" },
-                  { "field": "MEASURED_AT", "operator": "SINCE", "value": "2026-06-01T00:00:00Z" }
+                  { "field": "OBSERVED_AT", "operator": "SINCE", "value": "2026-06-01T00:00:00Z" }
                 ] },
 
               // Rule E: areas come from a different tool, any time.
@@ -129,7 +129,7 @@ This is the `createGraph` input, with comments.
                         "evidence": { "rules": [
                           { "when": [ { "field": "APP", "operator": "IS", "value": "segmenter-v3" } ] },
                           { "when": [ { "field": "APP",         "operator": "IS",     "value": "segmenter-v2" },
-                                      { "field": "MEASURED_AT", "operator": "BEFORE", "value": "2026-06-01T00:00:00Z" } ],
+                                      { "field": "OBSERVED_AT", "operator": "BEFORE", "value": "2026-06-01T00:00:00Z" } ],
                             "unless": [ { "when": [ { "field": "ACTION", "operator": "IS", "value": "old-pipeline" } ] } ] }
                         ] } } }
           ]
@@ -149,11 +149,16 @@ This is the `createGraph` input, with comments.
       // ── events ───────────────────────────────────────────────────────────
       "events": [
         // 4. Two words, one category, one app. The event annotator's "Mitosis"
-        //    and "CellDivision" events both draw as Mitosis.
+        //    and "CellDivision" events both draw as Mitosis — those that
+        //    happened after the recalibration. OBSERVED_AT is when the event
+        //    took place, not when it was annotated (RFC 0015); no KIND, so the
+        //    same bound governs the event's participations, which carry its
+        //    time.
         { "key": "Mitosis", "kind": "INTRINSIC", "inputs": [], "outputs": [],
           "definition": { "rules": [
-            { "when": [ { "field": "WORD", "operator": "IN", "value": ["Mitosis", "CellDivision"] },
-                        { "field": "APP",  "operator": "IS", "value": "event-annotator" } ] } ] } }
+            { "when": [ { "field": "WORD",        "operator": "IN",    "value": ["Mitosis", "CellDivision"] },
+                        { "field": "APP",         "operator": "IS",    "value": "event-annotator" },
+                        { "field": "OBSERVED_AT", "operator": "SINCE", "value": "2026-06-01T00:00:00Z" } ] } ] } }
       ],
 
       // ── structure relations (ROI to ROI) ─────────────────────────────────
@@ -222,8 +227,10 @@ route measurements in and a bot's INFORMS link does not.
 **Edges.** `PART_OF` from Karl: drawn. From Peter: not. Karl retracts his edge:
 gone (his rule covers EXISTENCE). Peter retracts Karl's edge: still drawn.
 
-**Events.** `CellDivision` from the event annotator app: drawn as a Mitosis
-event with its participations. `Mitosis` typed in by hand by Peter: not drawn.
+**Events.** `CellDivision` from the event annotator app, observed in July:
+drawn as a Mitosis event with its participations. The same app's division
+observed in May, annotated in July: not drawn — the bound is on when it
+happened. `Mitosis` typed in by hand by Peter: not drawn.
 
 **Structure relations and measurements.** Nothing is drawn for these.
 `structureRelations(structureRelationCategoryId:)` lists the curator's
@@ -239,8 +246,9 @@ Everyone in the organization can read the graph and record claims.
 ## What this does not express
 
 There is no whole-graph "as of" cursor. Freezing the view at a date means an
-`ASSERTED_AT BEFORE` condition in every category's rules. That is by decision
-(RFC 0014): a graph-wide cursor would be the graph-level scope RFC 0009
-removed, under a different name.
+`ASSERTED_AT BEFORE` condition in every category's rules — or, for "the world
+as it was on that date" rather than "what we believed then", an `OBSERVED_AT
+BEFORE`. That is by decision (RFC 0014): a graph-wide cursor would be the
+graph-level scope RFC 0009 removed, under a different name.
 
 `RULES.md`, "What is settled and what is not", is the canonical list.

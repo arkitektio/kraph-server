@@ -12,11 +12,14 @@ organization's evidence, so the same ROI measured in two experiments is one
 a ``graph`` foreign key; if you find yourself wanting one, you want a selector on
 ``Graph`` instead.
 
-**Time has two axes.** ``measured_at`` is when the world was observed;
+**Time has two axes.** ``observed_at`` is when the world was observed;
 ``asserted_at`` is when somebody claimed it. They move independently — a
 re-analysis run today can assert a fact about an image taken last year — and
 collapsing them (as the old single ms-epoch ``timestamp`` property did) makes
-"what did we believe on March 3rd" unanswerable.
+"what did we believe on March 3rd" unanswerable. Every claim carries both (RFC
+0015): an :class:`Instance` and a :class:`Link` have an ``observed_at`` exactly
+as a :class:`Metric` does, defaulting to the assertion's ``asserted_at`` when
+the claimant gave no other time, so a rule on ``OBSERVED_AT`` is total.
 
 **Evidence is append-only.** Nothing here is edited in place. Retraction is a
 :class:`Standing` saying the thing no longer stands, not a ``DELETE``, because a
@@ -164,6 +167,20 @@ class Assertion(models.Model):
 
     def __str__(self) -> str:
         return f"Assertion by {self.subject} via {self.app_id} at {self.asserted_at}"
+
+
+def _default_observed_at(claim: Any) -> None:
+    """Fill a claim's ``observed_at`` from its assertion when the claimant gave none.
+
+    Called from :meth:`Instance.save` and :meth:`Link.save` — the column is NOT
+    NULL, and "when it was claimed" is the honest answer when nobody said when
+    the world was in that state. ``Metric`` does the same through
+    :func:`evidence.writer.record_metric`. A ``bulk_create`` bypasses ``save`` and
+    so must supply the column itself; none of the three claim tables is bulk
+    written today.
+    """
+    if claim.observed_at is None:
+        claim.observed_at = claim.assertion.asserted_at
 
 
 class Term(models.Model):
@@ -523,9 +540,12 @@ class Metric(models.Model):
     confidence = models.FloatField(null=True, blank=True)
     confidence_type = models.CharField(max_length=1000, null=True, blank=True)
 
-    measured_at = models.DateTimeField(
+    observed_at = models.DateTimeField(
         db_index=True,
-        help_text="When the world was observed. The axis a scientist means by 'when'.",
+        help_text=(
+            "When the world was observed. The axis a scientist means by 'when'. "
+            "Was `measured_at` until RFC 0015 gave every claim the same column under one name."
+        ),
     )
     asserted_at = models.DateTimeField(
         db_index=True,
@@ -682,6 +702,14 @@ class Link(models.Model):
         on_delete=models.PROTECT,
         related_name="links",
     )
+    observed_at = models.DateTimeField(
+        db_index=True,
+        help_text=(
+            "When the world was in this state: a relation held, a participation happened, a classification "
+            "applied. Defaults to the assertion's `asserted_at` on save when the claimant gave no other time "
+            "(RFC 0015), so `OBSERVED_AT` rules are total."
+        ),
+    )
     #: No cached `stands`, and deliberately. It used to live here: `writer.record_standing`
     #: wrote the claim and flipped this boolean in one transaction, which made a
     #: log table mutable and blocked `REVOKE UPDATE`. The answer now lives in
@@ -699,6 +727,10 @@ class Link(models.Model):
             models.Index(fields=["organization", "kind", "source_ref"]),
             models.Index(fields=["organization", "kind", "target_ref"]),
         ]
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        _default_observed_at(self)
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return f"{self.source_ref} -{self.kind}-> {self.target_ref}"
@@ -1046,8 +1078,8 @@ class State(models.Model):
     min = models.FloatField(null=True, blank=True)
     max = models.FloatField(null=True, blank=True)
 
-    first_ts = models.DateTimeField(null=True, blank=True, help_text="measured_at of the earliest contributing metric.")
-    last_ts = models.DateTimeField(null=True, blank=True, help_text="measured_at of the latest contributing metric.")
+    first_ts = models.DateTimeField(null=True, blank=True, help_text="observed_at of the earliest contributing metric.")
+    last_ts = models.DateTimeField(null=True, blank=True, help_text="observed_at of the latest contributing metric.")
     first_value = models.JSONField(
         null=True,
         blank=True,
@@ -1144,6 +1176,14 @@ class Instance(models.Model):
         related_name="instances",
         help_text="The assertion that first claimed this instance exists.",
     )
+    observed_at = models.DateTimeField(
+        db_index=True,
+        help_text=(
+            "When the world contained this individual — for an event, when it happened; for an entity, "
+            "when it was seen. A point, not an interval: a duration is a metric. Defaults to the assertion's "
+            "`asserted_at` on save (RFC 0015)."
+        ),
+    )
     # Deliberately **no cached `stands` column**, unlike Structure/Metric/Link.
     #
     # Those three are organization-grain: a retracted metric is retracted
@@ -1169,6 +1209,10 @@ class Instance(models.Model):
             models.Index(fields=["organization", "kind"]),
             models.Index(fields=["organization", "term"]),
         ]
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        _default_observed_at(self)
+        super().save(*args, **kwargs)
 
     @property
     def ref(self) -> str:
