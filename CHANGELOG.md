@@ -1,6 +1,41 @@
 # CHANGELOG
 
 
+## v1.0.0-rc.15 (2026-09-04)
+
+### Features
+
+- A view draws one vertex per individual (RFC 0018)
+  ([`588314a`](https://github.com/arkitektio/kraph-server/commit/588314a21301661aaaeaca14a2c98096bdbc92b9))
+
+A view draws one vertex per view-scoped sameness component — the closure of the standing SAME_AS
+  claims the members' category trusts — and lists the members on the new ProjectionMember table. The
+  vertex ref is the lowest member uuid; Node.id is that representative, node(id: <any member>,
+  graph:) answers with the individual, Node.members lists what it stands for, and nodes(graph:)
+  lists one row per individual.
+
+Derived properties fold over every member (state_for_many + combine), edges to any member land on
+  the one vertex with __assertion_count summed, and a relation between two members of one individual
+  is drawn as a self-edge. Every redraw is projector.converge, which widens the touched set to whole
+  individuals; reproject_node is reproject_refs.
+
+BREAKING CHANGE: Projector.draw_node takes members; drawn_nodes returns a dict keyed by the asked
+  ref; projector.reproject_node is gone. Node.id may differ from the member id a caller asked for.
+  Migration graph_engine/0007 backfills one member per existing vertex; 0008 makes the member FK
+  cascade in the database, as 0005 did for edges.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+
+Claude-Session: https://claude.ai/code/session_0168CpHm2MXhVCAra1GFySeJ
+
+### Breaking Changes
+
+- Projector.draw_node takes members; drawn_nodes returns a dict keyed by the asked ref;
+  projector.reproject_node is gone. Node.id may differ from the member id a caller asked for.
+  Migration graph_engine/0007 backfills one member per existing vertex; 0008 makes the member FK
+  cascade in the database, as 0005 did for edges.
+
+
 ## v1.0.0-rc.14 (2026-09-04)
 
 ### Features
