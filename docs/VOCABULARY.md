@@ -33,7 +33,7 @@ Append-only: corrections are new rows, never edits, and there is no hard delete.
 | Word | Means | Where |
 |---|---|---|
 | `Assertion` | The **act** — who claimed it, with what tool, when. Carries `seq`, the log's total order. Every write records exactly one | `evidence.Assertion` |
-| *claim* | Any **recorded statement**. A prose word covering `Instance`, `Link`, `Metric`, `Structure` and `Comment` — not a table | — |
+| *claim* | Any **recorded statement**. A prose word covering `Instance`, `Link`, `Metric`, `Structure` and `Comment` — not a table. An instance, link, metric or standing may carry a `confidence` in [0, 1]; null is silence, and a `CONFIDENCE` rule never admits silence (RFC 0016) | — |
 | `Instance` | A claimed **individual**: `entity`, `natural_event` or `protocol_event`. Every observation mints its own. Carries `observed_at` — when it was seen, or for an event when it happened | `evidence.Instance` |
 | `Link` | A claim **relating two things**. Eight kinds: `RELATION`, `SAME_AS`, `CLASSIFIES`, `INFORMS`, `MEASUREMENT`, `STRUCTURE_RELATION`, `PARTICIPATES_AS_INPUT`, `PARTICIPATES_AS_OUTPUT`. Carries `observed_at` — when the relation held | `evidence.Link` |
 | `Structure` | A pointer to an **external datum**, identified by `(identifier, object)` — an ROI, an image, a file. Never itself claimed to be an AIS | `evidence.Structure` |

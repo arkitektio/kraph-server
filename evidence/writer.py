@@ -338,6 +338,7 @@ def create_link(
     term: evidence_models.Term | None = None,
     role: str | None = None,
     observed_at: datetime.datetime | None = None,
+    confidence: float | None = None,
 ) -> evidence_models.Link:
     """Attach evidence to something. Refs stay opaque — see `Link`.
 
@@ -346,7 +347,9 @@ def create_link(
     it, which is not what a claim is.
 
     ``observed_at`` is when the world was in the state the link describes; left
-    ``None``, the row takes the assertion's time on save.
+    ``None``, the row takes the assertion's time on save. ``confidence`` is how
+    sure the claimant was, and has no default: silence is stored as null
+    (RFC 0016).
     """
     return evidence_models.Link.objects.create_for_organization(
         organization=organization,
@@ -357,6 +360,7 @@ def create_link(
         term=term,
         role=role,
         observed_at=observed_at,
+        confidence=confidence,
     )
 
 
@@ -368,13 +372,15 @@ def create_instance(
     assertion: evidence_models.Assertion,
     id: uuid.UUID | str | None = None,
     observed_at: datetime.datetime | None = None,
+    confidence: float | None = None,
 ) -> evidence_models.Instance:
     """Mint an individual. Every observation mints its own — sameness is a separate claim.
 
     ``observed_at`` is when the world contained it: for an event, when it
     happened. Left ``None``, the row takes the assertion's time on save.
+    ``confidence`` is stored as given, null when not (RFC 0016).
     """
-    fields: dict[str, Any] = {"kind": kind, "term": term, "assertion": assertion, "observed_at": observed_at}
+    fields: dict[str, Any] = {"kind": kind, "term": term, "assertion": assertion, "observed_at": observed_at, "confidence": confidence}
     if id is not None:
         fields["id"] = id
     return evidence_models.Instance.objects.create_for_organization(organization=organization, **fields)
@@ -415,6 +421,7 @@ def record_standing_for_ref(
     stands: bool,
     assertion: evidence_models.Assertion,
     at: datetime.datetime | None = None,
+    confidence: float | None = None,
 ) -> evidence_models.Standing:
     """Record somebody's position on whether a target stands.
 
@@ -429,6 +436,8 @@ def record_standing_for_ref(
         stands=stands,
         # World time defaults to claim time, as it does on every claim table.
         at=at or assertion.asserted_at,
+        # Confidence does not default: a position nobody scored is null.
+        confidence=confidence,
         assertion=assertion,
     )
 
@@ -441,6 +450,7 @@ def record_standing(
     stands: bool,
     assertion: evidence_models.Assertion,
     at: datetime.datetime | None = None,
+    confidence: float | None = None,
 ) -> StandingResult:
     """Claim that a piece of evidence does or does not stand.
 
@@ -479,6 +489,7 @@ def record_standing(
         stands=stands,
         assertion=assertion,
         at=at,
+        confidence=confidence,
     )
 
     # The projection, not the log row. `CurrentStanding` is what the hot read paths
@@ -493,9 +504,10 @@ def retract(
     target: Any,
     assertion: evidence_models.Assertion,
     at: datetime.datetime | None = None,
+    confidence: float | None = None,
 ) -> StandingResult:
     """Claim that a target no longer stands. Named for what it does to the record."""
-    return record_standing(organization, target, stands=False, assertion=assertion, at=at)
+    return record_standing(organization, target, stands=False, assertion=assertion, at=at, confidence=confidence)
 
 
 def attest(
@@ -503,9 +515,10 @@ def attest(
     target: Any,
     assertion: evidence_models.Assertion,
     at: datetime.datetime | None = None,
+    confidence: float | None = None,
 ) -> StandingResult:
     """Claim that a target stands — new evidence, not the undoing of a retraction."""
-    return record_standing(organization, target, stands=True, assertion=assertion, at=at)
+    return record_standing(organization, target, stands=True, assertion=assertion, at=at, confidence=confidence)
 
 
 def standing_metrics_for_kind(kind: evidence_models.MetricKind) -> Any:

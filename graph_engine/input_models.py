@@ -76,6 +76,12 @@ STANDING_AT_FIELD_DESCRIPTION = (
     "A rule bounding OBSERVED_AT on EXISTENCE reads this."
 )
 
+#: The confidence field every claim-making and retract/attest input carries (RFC 0016).
+CONFIDENCE_FIELD_DESCRIPTION = (
+    "How sure you are, 0 to 1. Left unset, the claim carries no number — which is neither 1.0 nor 0.0: "
+    "a category rule with a CONFIDENCE condition admits only claims that carry one."
+)
+
 #: Why a schema mutation offers to project history. Declaring a word widens a view,
 #: and the claims already made under that word are sitting in the evidence base
 #: unread. Offered on the kinds that have a projection to fill — nodes and
@@ -484,8 +490,8 @@ class MetricInput(StrictModel):
             "What type of value this is. Required: it decides which column the value is stored in and which measurement term it is recorded under, and nothing infers it. Two callers may declare the same key differently — a float `confidence` and a category-label `confidence` are two terms, and both are recorded."
         ),
     )
-    confidence: Optional[float] = None
-    confidence_type: Optional[str] = None
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    confidence_type: Optional[str] = Field(default=None, description="What kind of number `confidence` is — a method's own score, a p-value. Measurement-only")
     unit: Optional[str] = None
     observed_at: Optional[datetime] = Field(None, description="When the world was observed. Defaults to when it was claimed.")
 
@@ -596,6 +602,7 @@ class ClaimField(str, Enum):
     KEY = "KEY"  #: the metric key — measurement rules only (RFC 0014)
     ASSERTED_AT = "ASSERTED_AT"  #: belief time
     OBSERVED_AT = "OBSERVED_AT"  #: world time — every claim carries one (RFC 0015)
+    CONFIDENCE = "CONFIDENCE"  #: the claimant's own number, 0 to 1 — nullable on every claim (RFC 0016)
 
 
 class ClaimKind(str, Enum):
@@ -637,23 +644,29 @@ def rule_covers(stored_rule: Any, kind: str) -> bool:
 
 
 class ClaimOperator(str, Enum):
-    """How a condition compares (RFC 0010). BEFORE and SINCE are inclusive."""
+    """How a condition compares (RFC 0010). BEFORE, SINCE and AT_LEAST are
+    inclusive; BELOW is not, so `AT_LEAST x` and `BELOW x` partition the
+    claims that carry a number — and neither admits one that does not."""
 
     IS = "IS"  #: equals one value
     IN = "IN"  #: any of these values
     NOT_IN = "NOT_IN"  #: none of these values
     BEFORE = "BEFORE"  #: time <= value
     SINCE = "SINCE"  #: time >= value
+    AT_LEAST = "AT_LEAST"  #: number >= value (RFC 0016)
+    BELOW = "BELOW"  #: number < value (RFC 0016)
 
 
 _IDENTITY_FIELDS = frozenset({ClaimField.WORD, ClaimField.SUBJECT, ClaimField.APP, ClaimField.ACTION, ClaimField.KEY})
 _TIME_FIELDS = frozenset({ClaimField.ASSERTED_AT, ClaimField.OBSERVED_AT})
+_NUMERIC_FIELDS = frozenset({ClaimField.CONFIDENCE})
 #: Only a metric row has these: legal in a property's `rule.evidence` and in
 #: the `when` of a MEASUREMENT-only definition rule, nowhere else (RFC 0014).
 #: OBSERVED_AT was here until every claim gained one (RFC 0015).
 _METRIC_ONLY_FIELDS = frozenset({ClaimField.KEY})
 _IDENTITY_OPERATORS = frozenset({ClaimOperator.IS, ClaimOperator.IN, ClaimOperator.NOT_IN})
 _TIME_OPERATORS = frozenset({ClaimOperator.BEFORE, ClaimOperator.SINCE})
+_NUMERIC_OPERATORS = frozenset({ClaimOperator.AT_LEAST, ClaimOperator.BELOW})
 
 
 class ClaimConditionInput(StrictModel):
@@ -665,10 +678,24 @@ class ClaimConditionInput(StrictModel):
 
     field: ClaimField = Field(..., description="What this condition looks at")
     operator: ClaimOperator = Field(..., description="How it compares. BEFORE/SINCE are inclusive")
-    value: Any = Field(..., description="One string for IS, a non-empty string list for IN/NOT_IN, a datetime for BEFORE/SINCE. For field KIND: kinds from CLASSIFICATION, EXISTENCE, SAMENESS, EVIDENCE, MEASUREMENT. For field KEY: metric keys")
+    value: Any = Field(..., description="One string for IS, a non-empty string list for IN/NOT_IN, a datetime for BEFORE/SINCE, a number in [0, 1] for AT_LEAST/BELOW. For field KIND: kinds from CLASSIFICATION, EXISTENCE, SAMENESS, EVIDENCE, MEASUREMENT. For field KEY: metric keys")
 
     @model_validator(mode="after")
     def value_fits_field_and_operator(self) -> "ClaimConditionInput":
+        if self.field in _NUMERIC_FIELDS:
+            if self.operator not in _NUMERIC_OPERATORS:
+                raise ValueError(f"{self.field.value} takes AT_LEAST or BELOW, not {self.operator.value}.")
+            # bool is an int in Python; "CONFIDENCE AT_LEAST true" is nonsense, not 1.0.
+            if isinstance(self.value, bool) or not isinstance(self.value, (int, float)):
+                raise ValueError(f"{self.field.value} {self.operator.value} needs a number in [0, 1], got {self.value!r}.")
+            if not 0 <= self.value <= 1:
+                raise ValueError(f"{self.field.value} {self.operator.value} needs a number in [0, 1], got {self.value!r}.")
+            self.value = float(self.value)
+            return self
+
+        if self.operator in _NUMERIC_OPERATORS:
+            raise ValueError(f"{self.field.value} takes no numeric operator; {self.operator.value} is for CONFIDENCE.")
+
         if self.field in _TIME_FIELDS:
             if self.operator not in _TIME_OPERATORS:
                 raise ValueError(f"{self.field.value} takes BEFORE or SINCE, not {self.operator.value}.")
@@ -742,7 +769,7 @@ class MetricEvidenceInput(StrictModel):
     """A property's own metric rule (RFC 0014): the definition's rule list, over
     metric rows. Same logic — any rule admits, all `when` hold, `unless`
     subtracts — minus WORD (a metric names no word) and KIND (a metric row has
-    no kind), plus KEY and OBSERVED_AT anywhere, `unless` included."""
+    no kind), plus KEY, OBSERVED_AT and CONFIDENCE anywhere, `unless` included."""
 
     rules: List[ClaimRuleInput] = Field(..., min_length=1, description="A metric counts when any rule matches")
 
@@ -753,9 +780,9 @@ class MetricEvidenceInput(StrictModel):
             for conditions in groups:
                 for condition in conditions:
                     if condition.field == ClaimField.WORD:
-                        raise ValueError(f"rules[{index}]: a metric names no WORD — evidence conditions take SUBJECT, APP, ACTION, KEY, ASSERTED_AT or OBSERVED_AT.")
+                        raise ValueError(f"rules[{index}]: a metric names no WORD — evidence conditions take SUBJECT, APP, ACTION, KEY, ASSERTED_AT, OBSERVED_AT or CONFIDENCE.")
                     if condition.field == ClaimField.KIND:
-                        raise ValueError(f"rules[{index}]: a metric row has no KIND to test — evidence conditions take SUBJECT, APP, ACTION, KEY, ASSERTED_AT or OBSERVED_AT.")
+                        raise ValueError(f"rules[{index}]: a metric row has no KIND to test — evidence conditions take SUBJECT, APP, ACTION, KEY, ASSERTED_AT, OBSERVED_AT or CONFIDENCE.")
         return self
 
     def to_stored(self) -> Dict[str, Any]:
@@ -779,7 +806,7 @@ class DerivationRuleInput(StrictModel):
         default=None,
         description=(
             "This property's own metric rule: a rule list over SUBJECT/APP/ACTION/KEY/"
-            "ASSERTED_AT/OBSERVED_AT — any rule admits, all its `when` conditions must hold, "
+            "ASSERTED_AT/OBSERVED_AT/CONFIDENCE — any rule admits, all its `when` conditions must hold, "
             "`unless` groups subtract. When present it replaces the owning category's rules as the "
             "metric scope (classification annotators and measurement producers are usually "
             "different populations, so intersecting them would routinely produce nothing); when "
@@ -1683,6 +1710,7 @@ class EventInput(StrictModel):
     outputs: List[RoleMappingInput] = Field(default_factory=list, description="List of entity IDs that are outputs of this event")
     supporting_evidence: List[StructureReferenceInput] = Field(default_factory=list, description="List of evidence structures with measurements")
     observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
 
 
 class NaturalEventInput(EventInput):
@@ -1710,6 +1738,7 @@ class AssertParticipationInput(StrictModel):
     role: str = Field(..., description="Which role the entity played — the caller's own word; the write names no graph and no category")
     is_input: bool = Field(default=True, description="True if the entity went into the event, False if it came out of it")
     observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
 
 
 class RetractParticipationInput(StrictModel):
@@ -1717,6 +1746,7 @@ class RetractParticipationInput(StrictModel):
 
     id: str = Field(..., description="The evidence ID of the participation claim to retract")
     at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
 
 
 class ParticipantInput(StrictModel):
@@ -1726,6 +1756,7 @@ class ParticipantInput(StrictModel):
     role: str = Field(..., description="Which role the entity played — the caller's own word; the write names no graph and no category")
     is_input: bool = Field(default=True, description="True if the entity went into the event, False if it came out of it")
     observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
 
 
 class AssertParticipationsInput(StrictModel):
@@ -1746,6 +1777,7 @@ class ClassificationInput(StrictModel):
     node: str = Field(..., description="The node being classified")
     term: str = Field(..., description=TERM_FIELD_DESCRIPTION)
     observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
 
 
 class ClassifyNodesInput(StrictModel):
@@ -1764,6 +1796,7 @@ class RetractLinksInput(StrictModel):
 
     ids: List[str] = Field(..., description="The `Link` primary keys of the claims to retract")
     at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
 
 
 class CommentOnStructureInput(StrictModel):
@@ -1788,6 +1821,7 @@ class RetractCommentInput(StrictModel):
 
     id: str = Field(..., description="The ID of the comment to retract")
     at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
 
 
 class AttestCommentInput(StrictModel):
@@ -1795,6 +1829,7 @@ class AttestCommentInput(StrictModel):
 
     id: str = Field(..., description="The ID of the comment to attest")
     at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
 
 
 class RetractNaturalEventInput(StrictModel):
@@ -1802,6 +1837,7 @@ class RetractNaturalEventInput(StrictModel):
 
     id: str = Field(..., description="The ID of the natural event to retract")
     at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
 
 
 class ProtocolEventInput(EventInput):
@@ -1821,6 +1857,7 @@ class RetractProtocolEventInput(StrictModel):
 
     id: str = Field(..., description="The ID of the protocol event to retract")
     at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
 
 
 class EntityInput(StrictModel):
@@ -1829,6 +1866,7 @@ class EntityInput(StrictModel):
     term: str = Field(..., description=TERM_FIELD_DESCRIPTION)
     supporting_evidence: List[StructureReferenceInput] = Field(default_factory=list, description="List of evidence structures with measurements")
     observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
 
 
 class AssertEntityExistsInput(EntityInput):
@@ -1854,6 +1892,7 @@ class AssertSameInstanceInput(StrictModel):
         description="Two or more instance ids that name the same thing — entities or events alike. Every pair among them is claimed, under one assertion.",
     )
     observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
 
 
 class RetractSameInstanceInput(StrictModel):
@@ -1861,6 +1900,7 @@ class RetractSameInstanceInput(StrictModel):
 
     id: str = Field(..., description="The id of the sameness claim to retract")
     at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
 
 
 class CategoryNodePositionInput(StrictModel):
@@ -1885,6 +1925,7 @@ class RetractEntityInput(StrictModel):
 
     id: str = Field(..., description="The ID of the entity to retract")
     at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
 
 
 class AttestNodeInput(StrictModel):
@@ -1898,6 +1939,7 @@ class AttestNodeInput(StrictModel):
 
     id: str = Field(..., description="The uuid of the node being attested. The same id `retract*` returns, so the two round-trip.")
     at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
 
 
 class AttestStructureInput(StrictModel):
@@ -1910,6 +1952,7 @@ class AttestStructureInput(StrictModel):
 
     id: str = Field(..., description="The ID of the structure to attest — a bare uuid, its evidence primary key")
     at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
 
 
 class AttestMetricInput(StrictModel):
@@ -1917,6 +1960,7 @@ class AttestMetricInput(StrictModel):
 
     id: str = Field(..., description="The ID of the metric to attest — a bare uuid, its evidence primary key")
     at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
 
 
 class AttestLinkInput(StrictModel):
@@ -1928,6 +1972,7 @@ class AttestLinkInput(StrictModel):
 
     id: str = Field(..., description="The ID of the claim to attest — its `Link` primary key")
     at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
 
 
 class AttestEntityInput(AttestNodeInput):
@@ -1987,6 +2032,7 @@ class RetractStructureInput(StrictModel):
 
     id: str = Field(..., description="The ID of the structure to retract — a bare uuid, its evidence primary key")
     at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
 
 
 class AssertMetricValueInput(MetricInput):
@@ -2012,6 +2058,7 @@ class RetractMetricInput(StrictModel):
 
     id: str = Field(..., description="The ID of the metric to retract — a bare uuid, its evidence primary key")
     at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
 
 
 class RelationInput(StrictModel):
@@ -2021,6 +2068,7 @@ class RelationInput(StrictModel):
     target_id: str = Field(..., description="The ID of the target entity/structure")
     supporting_evidence: List[StructureReferenceInput] = Field(default_factory=list, description="List of evidence structures with measurements")
     observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
 
 
 class AssertRelationExistsInput(RelationInput):
@@ -2040,6 +2088,7 @@ class RetractRelationInput(StrictModel):
 
     id: str = Field(..., description="The ID of the relation claim to retract — its `Link` primary key")
     at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
 
 
 class AssertStructureRelationExistsInput(RelationInput):
@@ -2059,6 +2108,7 @@ class RetractStructureRelationInput(StrictModel):
 
     id: str = Field(..., description="The ID of the structure relation claim to retract — its `Link` primary key")
     at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
 
 
 class AssertMeasurementExistsInput(RelationInput):
@@ -2072,6 +2122,7 @@ class RetractMeasurementInput(StrictModel):
 
     id: str = Field(..., description="The ID of the measurement claim to retract — its `Link` primary key")
     at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
 
 
 class ScatterPlotMutationInput(StrictModel):

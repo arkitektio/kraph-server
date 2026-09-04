@@ -74,6 +74,8 @@ When you ask the graph for a value, you don't just get 45.2. You get:
 
     "45.2µm (Confidence: 98%), derived from ROI #555, asserted by AI_Model_X on Jan 15th."
 
+The confidence is not special to measurements. Any claim — "this is a Cell", "these two are the same cell", "this cell is gone" — can carry how sure the claimant was, and a graph's rules can say "count the model's classifications only when it was at least 90% sure" while counting a human's whether or not they gave a number.
+
 4. Key Terminology (Cheat Sheet)
 Term	Biological Analogy	Technical Role
 Entity	The Specimen. (e.g., "The Cell")	A container for identity. It aggregates data.

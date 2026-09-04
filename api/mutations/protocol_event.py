@@ -52,7 +52,7 @@ def retract_protocol_event(
     model = input.to_pydantic()
 
     # See `retract_natural_event`: one controller path for every node kind.
-    return types.AssertedProtocolEvent(_value=controller.retract_node(model.id, info=info, at=model.at))
+    return types.AssertedProtocolEvent(_value=controller.retract_node(model.id, info=info, at=model.at, confidence=model.confidence))
 
 
 def attest_protocol_event(
@@ -63,4 +63,4 @@ def attest_protocol_event(
     controller = context.get_controller()
 
     model = input.to_pydantic()
-    return types.AssertedProtocolEvent(_value=controller.attest_node(model.id, info=info, at=model.at))
+    return types.AssertedProtocolEvent(_value=controller.attest_node(model.id, info=info, at=model.at, confidence=model.confidence))

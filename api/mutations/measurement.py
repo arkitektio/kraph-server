@@ -49,4 +49,4 @@ def retract_measurement(info: Info, input: inputs.RetractMeasurementInput) -> ty
     link = controller.resolve_edge_link(str(model.id), info)
     context.assert_can_access_organization(info, link.organization)
 
-    return types.AssertedMeasurement(_value=controller.retract_relation(relation_id=str(model.id), info=info, at=model.at))
+    return types.AssertedMeasurement(_value=controller.retract_relation(relation_id=str(model.id), info=info, at=model.at, confidence=model.confidence))

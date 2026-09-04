@@ -41,12 +41,12 @@ class MetricInput:
     # column the value lands in and the term the measurement is recorded under.
     value_kind: input_models.PropertyType = strawberry.field(description="What type of value this is. Required — it decides the storage column and the measurement term")
     unit: Optional[str] = strawberry.field(default=None, description="Unit of measurement, e.g. 'um'")
-    confidence: Optional[float] = strawberry.field(default=None, description="How confident the source is in this measurement, 0-1")
-    confidence_type: Optional[str] = strawberry.field(default=None, description="What kind of confidence this is (e.g. a model score)")
+    confidence: Optional[float] = strawberry.field(default=None, description=input_models.CONFIDENCE_FIELD_DESCRIPTION)
+    confidence_type: Optional[str] = strawberry.field(default=None, description="What kind of number `confidence` is — a method's own score, a p-value. Measurement-only")
     observed_at: Optional[datetime] = strawberry.field(default=None, description=input_models.OBSERVED_AT_FIELD_DESCRIPTION)
 
 
-@pydantic.input(model=input_models.ClaimConditionInput, all_fields=True, description="One condition: (field, operator, value) — IS/IN/NOT_IN on WORD/SUBJECT/APP/ACTION, BEFORE/SINCE on ASSERTED_AT/OBSERVED_AT (RFC 0010, 0015)")
+@pydantic.input(model=input_models.ClaimConditionInput, all_fields=True, description="One condition: (field, operator, value) — IS/IN/NOT_IN on WORD/SUBJECT/APP/ACTION/KIND/KEY, BEFORE/SINCE on ASSERTED_AT/OBSERVED_AT, AT_LEAST/BELOW on CONFIDENCE (RFC 0010, 0015, 0016)")
 class ClaimConditionInput:
     """One (field, operator, value) condition."""
 
@@ -520,6 +520,7 @@ class RetractStructureInput:
 
     id: strawberry.ID = strawberry.field(description="The ID of the structure to retract — a bare uuid, its evidence primary key")
     at: Optional[datetime] = strawberry.field(default=None, description=input_models.STANDING_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = strawberry.field(default=None, description=input_models.CONFIDENCE_FIELD_DESCRIPTION)
 
 
 @pydantic.input(model=input_models.AssertRelationExistsInput, all_fields=True, description="Input for creating a new relation between two entities with supporting evidence")
@@ -535,6 +536,7 @@ class RetractRelationInput:
 
     id: strawberry.ID = strawberry.field(description="The ID of the relation claim to retract — its `Link` primary key")
     at: Optional[datetime] = strawberry.field(default=None, description=input_models.STANDING_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = strawberry.field(default=None, description=input_models.CONFIDENCE_FIELD_DESCRIPTION)
 
 
 @pydantic.input(model=input_models.UpdateRelationInput, all_fields=True, description="Input for updating an existing relation")
@@ -604,6 +606,7 @@ class RetractEntityInput:
 
     id: strawberry.ID = strawberry.field(description="The ID of the entity to retract")
     at: Optional[datetime] = strawberry.field(default=None, description=input_models.STANDING_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = strawberry.field(default=None, description=input_models.CONFIDENCE_FIELD_DESCRIPTION)
 
 
 @pydantic.input(model=input_models.AttestStructureInput, all_fields=True, description="Input for claiming that a structure still stands")

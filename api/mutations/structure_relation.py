@@ -75,4 +75,4 @@ def retract_structure_relation(info: Info, input: inputs.RetractStructureRelatio
     link = controller.resolve_edge_link(str(model.id), info)
     context.assert_can_access_organization(info, link.organization)
 
-    return types.AssertedStructureRelation(_value=controller.retract_relation(relation_id=str(model.id), info=info, at=model.at))
+    return types.AssertedStructureRelation(_value=controller.retract_relation(relation_id=str(model.id), info=info, at=model.at, confidence=model.confidence))

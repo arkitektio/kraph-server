@@ -116,7 +116,8 @@ def _condition_q(condition: dict[str, Any], *, asserted_at_column: str, observed
     The two time axes reach the database through the two ``*_column`` names:
     belief time is denormalized onto `Metric` but reached through the
     assertion elsewhere, and world time is ``observed_at`` on every claim row
-    but ``at`` on a `Standing` (RFC 0015).
+    but ``at`` on a `Standing` (RFC 0015). CONFIDENCE is ``confidence`` on
+    every claim table, `Standing` included (RFC 0016), so it needs no routing.
     """
     field = str(condition.get("field", ""))
     operator = str(condition.get("operator", ""))
@@ -143,6 +144,20 @@ def _condition_q(condition: dict[str, Any], *, asserted_at_column: str, observed
                 # loud instead of inheriting it.
                 negated |= Q(**{f"{column}__isnull": True})
             return negated
+        return None
+
+    if field == "CONFIDENCE":
+        # A bound on the claim's own number. SQL compares NULL to nothing, so a
+        # claim nobody scored satisfies neither operator — a rule that asks for
+        # "at least 0.9" does not admit silence, and an `unless ... BELOW 0.3`
+        # does not subtract it either. That is deliberate: there is no
+        # `isnull` branch here, unlike NOT_IN over the nullable ACTION.
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            return None
+        if operator == "AT_LEAST":
+            return Q(confidence__gte=value)
+        if operator == "BELOW":
+            return Q(confidence__lt=value)
         return None
 
     if field == "ASSERTED_AT":

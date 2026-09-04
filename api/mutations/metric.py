@@ -106,7 +106,7 @@ def attest_metric(
     controller = context.get_controller()
 
     model = input.to_pydantic()
-    return types.AssertedMetric(_value=controller.attest_metric(str(model.id), info=info, at=model.at))
+    return types.AssertedMetric(_value=controller.attest_metric(str(model.id), info=info, at=model.at, confidence=model.confidence))
 
 
 def retract_metric(
@@ -121,4 +121,4 @@ def retract_metric(
     controller = context.get_controller()
 
     model = input.to_pydantic()
-    return types.AssertedMetric(_value=controller.retract_metric(metric_id=str(model.id), info=info, at=model.at))
+    return types.AssertedMetric(_value=controller.retract_metric(metric_id=str(model.id), info=info, at=model.at, confidence=model.confidence))

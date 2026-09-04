@@ -57,7 +57,7 @@ def attest_link(
     controller = context.get_controller()
 
     model = input.to_pydantic()
-    return types.AssertedLinks(_value=controller.attest_link(str(model.id), info=info, at=model.at))
+    return types.AssertedLinks(_value=controller.attest_link(str(model.id), info=info, at=model.at, confidence=model.confidence))
 
 
 def retract_links(info: Info, input: inputs.RetractLinksInput) -> types.AssertedLinks:
@@ -78,4 +78,4 @@ def retract_links(info: Info, input: inputs.RetractLinksInput) -> types.Asserted
     model = input.to_pydantic()
     controller = context.get_controller()
 
-    return types.AssertedLinks(_value=controller.retract_links(link_ids=[str(link_id) for link_id in model.ids], info=info, at=model.at))
+    return types.AssertedLinks(_value=controller.retract_links(link_ids=[str(link_id) for link_id in model.ids], info=info, at=model.at, confidence=model.confidence))

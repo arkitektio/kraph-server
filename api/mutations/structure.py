@@ -81,6 +81,7 @@ def retract_structure(
             structure_id=str(model.id),
             info=info,
             at=model.at,
+            confidence=model.confidence,
         )
     )
 
@@ -125,7 +126,7 @@ def attest_structure(
     controller = context.get_controller()
 
     model = input.to_pydantic()
-    return types.AssertedStructure(_value=controller.attest_structure(str(model.id), info=info, at=model.at))
+    return types.AssertedStructure(_value=controller.attest_structure(str(model.id), info=info, at=model.at, confidence=model.confidence))
 
 
 def link_structure_to_entity(

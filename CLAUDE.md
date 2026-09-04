@@ -260,9 +260,14 @@ The load-bearing facts:
   `metric_scope`; `_rules` is the only walker of the stored shape. **The shape is a rule
   system (RFC 0010)**: `{rules: [{when: [(field, operator, value), …], unless: [{when: […]}]}]}`
   — rules = any, when = all, unless subtracts; fields WORD/SUBJECT/APP/ACTION/KIND/ASSERTED_AT/
-  OBSERVED_AT (+ KEY in `rule.evidence` and in MEASUREMENT-only rules — RFC 0014; `rule.evidence`
-  is the same rule list minus WORD/KIND, `MetricEvidenceInput`), operators
-  IS/IN/NOT_IN/BEFORE/SINCE; a rule covering CLASSIFICATION names its WORD(s). **Every claim has
+  OBSERVED_AT/CONFIDENCE (+ KEY in `rule.evidence` and in MEASUREMENT-only rules — RFC 0014;
+  `rule.evidence` is the same rule list minus WORD/KIND, `MetricEvidenceInput`), operators
+  IS/IN/NOT_IN/BEFORE/SINCE/AT_LEAST/BELOW; a rule covering CLASSIFICATION names its WORD(s).
+  **Confidence is a property of any claim (RFC 0016)**: `confidence` (float in [0, 1], nullable,
+  check-constrained) on `Instance`/`Link`/`Standing` beside `Metric`'s; `CONFIDENCE AT_LEAST`/
+  `BELOW` compile to a bound on the claim's own column with **no isnull branch** — a claim nobody
+  scored satisfies neither, in `when` or `unless`, so silence is never admitted by a bound and never
+  subtracted by one. `confidence_type` stays metric-only. **Every claim has
   a time of observation (RFC 0015)**: `observed_at` on `Instance`/`Link`/`Metric` (was
   `measured_at`, metric-only), defaulting to the assertion's `asserted_at` so it is never null;
   `Standing.at` is the same axis for positions. `OBSERVED_AT` is legal on every kind; the

@@ -183,6 +183,26 @@ def _default_observed_at(claim: Any) -> None:
         claim.observed_at = claim.assertion.asserted_at
 
 
+CONFIDENCE_HELP_TEXT = (
+    "How sure the claimant was, 0 to 1. Null means they gave no number — which is not 1.0 and not 0.0: "
+    "a `CONFIDENCE` rule admits only claims that carry one (RFC 0016)."
+)
+
+
+def _confidence_field() -> Any:
+    """The same nullable unit-interval float on every claim table (RFC 0016)."""
+    return models.FloatField(null=True, blank=True, help_text=CONFIDENCE_HELP_TEXT)
+
+
+def _confidence_constraint(table: str) -> Any:
+    """The database refuses a confidence outside [0, 1]. The input layer refuses
+    it first; this is for every writer that is not the API."""
+    return models.CheckConstraint(
+        condition=models.Q(confidence__isnull=True) | models.Q(confidence__gte=0.0, confidence__lte=1.0),
+        name=f"{table}_confidence_in_unit_interval",
+    )
+
+
 class Term(models.Model):
     """A word this organization uses for a kind of thing — "AIS", "Mitosis", "IS_CONNECTED_TO".
 
@@ -537,8 +557,13 @@ class Metric(models.Model):
     )
 
     unit = models.CharField(max_length=1000, null=True, blank=True)
-    confidence = models.FloatField(null=True, blank=True)
-    confidence_type = models.CharField(max_length=1000, null=True, blank=True)
+    confidence = _confidence_field()
+    confidence_type = models.CharField(
+        max_length=1000,
+        null=True,
+        blank=True,
+        help_text="What kind of number `confidence` is — a method's own score, a p-value. Metric-only: it annotates a measurement method.",
+    )
 
     observed_at = models.DateTimeField(
         db_index=True,
@@ -575,6 +600,7 @@ class Metric(models.Model):
             models.Index(fields=["organization", "kind"]),
             models.Index(fields=["organization", "asserted_at"]),
         ]
+        constraints = [_confidence_constraint("metric")]
 
     # NOTE: deliberately not partitioned. `PARTITION BY organization` was specced
     # for this table, but Postgres requires every unique/primary key on a
@@ -710,6 +736,7 @@ class Link(models.Model):
             "(RFC 0015), so `OBSERVED_AT` rules are total."
         ),
     )
+    confidence = _confidence_field()
     #: No cached `stands`, and deliberately. It used to live here: `writer.record_standing`
     #: wrote the claim and flipped this boolean in one transaction, which made a
     #: log table mutable and blocked `REVOKE UPDATE`. The answer now lives in
@@ -727,6 +754,7 @@ class Link(models.Model):
             models.Index(fields=["organization", "kind", "source_ref"]),
             models.Index(fields=["organization", "kind", "target_ref"]),
         ]
+        constraints = [_confidence_constraint("link")]
 
     def save(self, *args: Any, **kwargs: Any) -> None:
         _default_observed_at(self)
@@ -876,6 +904,7 @@ class Standing(models.Model):
         help_text="Whether the claimant says this stands. True attests, False retracts. Deliberately not nullable: a claim with no position is not a claim.",
     )
     at = models.DateTimeField(help_text="When the claim took effect. World time, the axis a scientist means.")
+    confidence = _confidence_field()
     recorded_at = models.DateTimeField(
         auto_now_add=True,
         help_text=(
@@ -903,6 +932,7 @@ class Standing(models.Model):
             # `evidence.claims._LATEST`.
             models.Index(fields=["organization", "target_type", "target_id", "-at", "-assertion"]),
         ]
+        constraints = [_confidence_constraint("standing")]
 
     def __str__(self) -> str:
         return f"{self.target_type}:{self.target_id} {'stands' if self.stands else 'retracted'}"
@@ -1184,6 +1214,7 @@ class Instance(models.Model):
             "`asserted_at` on save (RFC 0015)."
         ),
     )
+    confidence = _confidence_field()
     # Deliberately **no cached `stands` column**, unlike Structure/Metric/Link.
     #
     # Those three are organization-grain: a retracted metric is retracted
@@ -1209,6 +1240,7 @@ class Instance(models.Model):
             models.Index(fields=["organization", "kind"]),
             models.Index(fields=["organization", "term"]),
         ]
+        constraints = [_confidence_constraint("instance")]
 
     def save(self, *args: Any, **kwargs: Any) -> None:
         _default_observed_at(self)

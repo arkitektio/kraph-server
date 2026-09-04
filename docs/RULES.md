@@ -71,6 +71,7 @@ That is all of it. There is no other nesting.
 | `KIND` | what the claim says (see below) | `CLASSIFICATION`, `EXISTENCE`, `SAMENESS`, `EVIDENCE`, `MEASUREMENT` |
 | `ASSERTED_AT` | when the claim was made | datetime |
 | `OBSERVED_AT` | when the world was as the claim says | datetime; every claim (RFC 0015) |
+| `CONFIDENCE` | how sure the claimant was | number in [0, 1]; every claim, when the claimant gave one (RFC 0016) |
 | `KEY` | the metric key | strings, e.g. `"vector_length"`; measurements only |
 
 ## Operators
@@ -82,10 +83,13 @@ That is all of it. There is no other nesting.
 | `NOT_IN` | none of | list of strings |
 | `BEFORE` | at or before | datetime |
 | `SINCE` | at or after | datetime |
+| `AT_LEAST` | greater than or equal | number in [0, 1] |
+| `BELOW` | less than | number in [0, 1] |
 
-`BEFORE` and `SINCE` work on the time fields, the rest on everything else.
-`NOT_IN` on `ACTION` keeps claims that have no action at all; excluding an
-action does not exclude the people who never used one.
+`BEFORE` and `SINCE` work on the time fields, `AT_LEAST` and `BELOW` on
+`CONFIDENCE`, the rest on everything else. `NOT_IN` on `ACTION` keeps claims
+that have no action at all; excluding an action does not exclude the people
+who never used one.
 
 Invalid combinations are rejected when the definition is written, with an error
 that names the problem. Nothing is silently ignored.
@@ -217,6 +221,39 @@ about: `observed_at` on an instance, a link or a metric; `at` on a standing.
 The selector does that routing (`trust_predicate` and the standing halves pass
 `observed_at_column="at"`); a rule never names a column.
 
+## Confidence
+
+Any claim may carry a number from 0 to 1 saying how sure the claimant was — an
+instance, a link, a metric, a standing (RFC 0016). It is optional, and an
+absent number is **not** 1.0 and **not** 0.0: it is silence. A `CONFIDENCE`
+condition compares the claim's own number, so a claim without one satisfies
+no `CONFIDENCE` condition at all, in either direction:
+
+- `CONFIDENCE AT_LEAST 0.9` in `when` admits only claims scored 0.9 or higher.
+  A claim nobody scored is not admitted.
+- `CONFIDENCE BELOW 0.3` in `unless` subtracts the claims scored under 0.3. A
+  claim nobody scored is not subtracted — it stays.
+
+So "only the confident model calls" is the first idiom, and "everything except
+what the model itself doubted" is the second. Pick the one that says what you
+mean about silence; the rule will not guess.
+
+```jsonc
+{ "rules": [
+  { "when": [ { "field": "WORD",       "operator": "IS",       "value": "Cell" },
+              { "field": "APP",        "operator": "IS",       "value": "classifier-v2" },
+              { "field": "CONFIDENCE", "operator": "AT_LEAST", "value": 0.9 } ] },
+  { "when": [ { "field": "WORD",       "operator": "IS",       "value": "Cell" },
+              { "field": "SUBJECT",    "operator": "IS",       "value": "peter" } ] } ] }
+```
+
+The classifier's calls count when it was at least 90% sure; Peter's count
+whether or not he gave a number. With no `KIND`, the first rule's bound also
+governs the classifier's retractions and its measurements under this category;
+the field works on every kind and in `rule.evidence`. `Metric.confidenceType`
+— what sort of number a measurement's confidence is — stays on metrics only;
+it annotates a measurement method.
+
 ## Versioning and rebuilds
 
 Definitions are part of the schema. Editing one creates a schema version and
@@ -237,6 +274,7 @@ Settled and implemented:
 - per-view, within-category sameness
 - `rule.evidence` on properties, as a rule list with `unless`
 - `KEY` in measurement rules
+- `CONFIDENCE` on every claim, with `AT_LEAST`/`BELOW`
 
 Decided against:
 

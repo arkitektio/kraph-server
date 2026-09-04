@@ -1395,7 +1395,7 @@ class Metric:
     def unit(self) -> Optional[str]:
         return self._value.properties.get("unit")
 
-    @strawberry.field(description="How confident the source is in this measurement")
+    @strawberry.field(description="How sure the claimant was of this measurement, 0 to 1. Null when they gave no number (RFC 0016)")
     def confidence(self) -> Optional[float]:
         return self._value.properties.get("confidence")
 
@@ -1561,6 +1561,10 @@ class Edge(Generic[V]):
     def observed_at(self) -> datetime:
         assert self._value.observed_at is not None, "every edge is built from a Link row, which carries its observed_at"
         return self._value.observed_at
+
+    @strawberry.field(description="How sure the claimant was, 0 to 1. Null when they gave no number (RFC 0016)")
+    def confidence(self) -> Optional[float]:
+        return self._value.confidence
 
     @kante.django_field(description="Who claimed this, and when")
     async def assertion(self) -> "Assertion":
@@ -1824,6 +1828,7 @@ class Standing:
     id: strawberry.ID = strawberry.field(description="This position's own identity")
     stands: bool = kante.django_field(description="Whether the claimant says the claim holds. True attests, False retracts")
     at: datetime = kante.django_field(description="When the position took effect — world time, the axis that decides which claim is newest")
+    confidence: Optional[float] = kante.django_field(description="How sure the claimant was of this position, 0 to 1. Null when they gave no number (RFC 0016)")
     assertion: Assertion = kante.django_field(description="Who took this position, with what tool, and when they recorded it")
 
 
@@ -1855,6 +1860,7 @@ class Instance:
     term: "Term" = kante.django_field(description="The organization's word this was first claimed under. Which view draws it, and as what, is decided from the claims")
     created_at: datetime = kante.django_field(description="When the claim was recorded")
     observed_at: datetime = kante.django_field(description="When the world contained this individual — for an event, when it happened; for an entity, when it was seen. World time, distinct from `assertion.assertedAt`; equal to it when the claimant gave no other (RFC 0015)")
+    confidence: Optional[float] = kante.django_field(description="How sure the claimant was that this individual exists, 0 to 1. Null when they gave no number — a `CONFIDENCE` rule then does not admit it (RFC 0016)")
     assertion: Assertion = kante.django_field(description="The act that first claimed this exists. Not the latest — for that, read `standings`")
 
     @strawberry.field(description="What sort of individual this is. Entities and events are told apart here, not by a vertex label — a label is one view's rename of a word")
@@ -1919,6 +1925,7 @@ class Link:
     role: Optional[str] = kante.django_field(description="Which role the source plays, for participation claims — the asserter's own word; the claim names no graph, so no schema names this")
     created_at: datetime = kante.django_field(description="When the claim was recorded")
     observed_at: datetime = kante.django_field(description="When the world was in the state this claim describes — a relation held, a participation happened, a classification applied. World time, distinct from `assertion.assertedAt`; equal to it when the claimant gave no other (RFC 0015)")
+    confidence: Optional[float] = kante.django_field(description="How sure the claimant was, 0 to 1. Null when they gave no number — a `CONFIDENCE` rule then does not admit it (RFC 0016)")
     assertion: Assertion = kante.django_field(description="The act that made this claim")
 
     @strawberry.field(description="What this claim says — and therefore what each of its two refs points at")

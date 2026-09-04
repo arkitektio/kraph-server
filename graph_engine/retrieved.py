@@ -476,6 +476,9 @@ class RetrievedEdge:
     #: distinct from the assertion's `asserted_at`; None only for an edge no row
     #: backs, which nothing builds any more.
     observed_at: Optional[datetime] = None
+    #: How sure the claimant was, 0 to 1 (RFC 0016). None when they gave no
+    #: number — which is what the log stores, not a default.
+    confidence: Optional[float] = None
     #: Which role the source plays, for participation edges. `InputParticipation`
     #: and `OutputParticipation` both read it and neither could have worked —
     #: `RetrievedEdge` had no such attribute, which went unnoticed because
@@ -541,6 +544,7 @@ class RetrievedEdge:
             target_ref=str(link.target_ref),
             created_at=link.created_at,
             observed_at=link.observed_at,
+            confidence=link.confidence,
             role=link.role,
             assertion_id=str(link.assertion_id),
             properties={
@@ -634,15 +638,10 @@ class RetrievedEdge:
         """The measurement unit (if any)."""
         return self.properties.get("unit")
 
-    @property
-    def confidence(self) -> Optional[float]:
-        """The measurement confidence (if any)."""
-        return self.properties.get("confidence")
-
-    @property
-    def confidence_type(self) -> Optional[str]:
-        """The type of confidence measure (if any)."""
-        return self.properties.get("confidence_type")
+    # `confidence` is a field, not a property read from `properties`: it is the
+    # link's own number (RFC 0016), set by `from_link`. The measurement-flavoured
+    # accessor that sat here read a property nothing wrote; `confidence_type`
+    # stays metric-only and has no edge accessor.
 
     # A `timestamp` accessor (unix ms) sat here too, reading a property nothing
     # wrote. World time on an edge is the link's `observed_at` (RFC 0015).

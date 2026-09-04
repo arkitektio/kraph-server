@@ -59,6 +59,13 @@ def test_a_category_rule_needs_a_word() -> None:
         ("SUBJECT", "IN", "not-a-list"),  # IN takes a list
         ("SUBJECT", "IN", []),  # and a non-empty one
         ("KEY", "IS", "area"),  # only a metric row has a key
+        ("CONFIDENCE", "IS", 0.9),  # a number takes AT_LEAST/BELOW only (RFC 0016)
+        ("CONFIDENCE", "SINCE", DEC5),
+        ("CONFIDENCE", "AT_LEAST", 1.5),  # and one in the unit interval
+        ("CONFIDENCE", "AT_LEAST", "0.9"),  # a number, not a string
+        ("CONFIDENCE", "AT_LEAST", True),  # nor a bool
+        ("SUBJECT", "AT_LEAST", 0.9),  # numeric operator on an identity field
+        ("OBSERVED_AT", "BELOW", 0.9),  # numeric operator on a time field
     ],
 )
 def test_invalid_conditions_are_refused_in_a_definition(field: str, operator: str, value) -> None:
@@ -245,6 +252,30 @@ def test_any_rule_may_bound_observation_time() -> None:
     assert definition.rules[0].when[1].field == models.ClaimField.OBSERVED_AT
     assert definition.rules[1].when[2].field == models.ClaimField.OBSERVED_AT
     assert definition.rules[2].when[2].field == models.ClaimField.OBSERVED_AT
+
+
+def test_any_rule_may_bound_confidence() -> None:
+    """CONFIDENCE is a number on every claim (RFC 0016): legal on any kind, in
+    `unless`, and in a property's evidence; it compiles to a bound on the
+    claim's own column, which a claim without a number never satisfies."""
+    definition = models.CategoryDefinitionInput.model_validate(
+        R.definition(
+            R.rule(R.word("X"), R.at_least(0.9)),
+            R.rule(R.of_kind("EXISTENCE"), R.by("peter"), unless=[[R.below(0.3)]]),
+            R.rule(R.of_kind("MEASUREMENT"), R.at_least(0.5)),
+        )
+    )
+    assert definition.rules[0].when[1].operator == models.ClaimOperator.AT_LEAST
+    assert definition.rules[1].unless[0].when[0].operator == models.ClaimOperator.BELOW
+    evidence = models.DerivationRuleInput(source_node="ROI", key="k", evidence=R.evidence(R.rule(R.at_least(0.8))))
+    assert evidence.evidence is not None
+
+    classification = selector.trust_filter(definition.to_stored(), kind="CLASSIFICATION")
+    assert "confidence__gte" in str(classification) and "0.9" in str(classification)
+    existence = selector.trust_filter(definition.to_stored(), kind="EXISTENCE")
+    assert "confidence__lt" in str(existence) and "0.3" in str(existence)
+    assert "confidence__isnull" not in str(existence), "silence is not below anything, and not above anything either"
+    assert "confidence__gte" in str(selector.rule_metric_filter(evidence))
 
 
 def test_trust_filter_selects_only_applicable_rules() -> None:

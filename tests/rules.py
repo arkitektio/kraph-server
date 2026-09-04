@@ -91,3 +91,14 @@ def of_kind(*kinds: str) -> dict:
 def not_kind(*kinds: str) -> dict:
     """This rule covers everything but these claim kinds."""
     return condition("KIND", "NOT_IN", list(kinds))
+
+
+def at_least(confidence: float) -> dict:
+    """The claim's own confidence is at least this (RFC 0016). A claim that
+    carries no number never satisfies it."""
+    return condition("CONFIDENCE", "AT_LEAST", confidence)
+
+
+def below(confidence: float) -> dict:
+    """The claim's own confidence is under this — the `unless` idiom (RFC 0016)."""
+    return condition("CONFIDENCE", "BELOW", confidence)

@@ -93,9 +93,10 @@ so two experiments referencing the same ROI converge on one row.
 
 "This ROI has a `vector_length` of 45.2." Carries `observed_at` (world time — it
 was `measured_at` until RFC 0015 gave every claim the column) as well as
-`asserted_at` (belief time), plus optional `unit`, `confidence` and
-`confidence_type`. Typed value columns rather than a JSON blob, so numeric
-aggregation stays a database operation.
+`asserted_at` (belief time), plus optional `unit`, `confidence` (every claim
+has that one since RFC 0016) and `confidence_type` (metric-only: what sort of
+number the method's confidence is). Typed value columns rather than a JSON blob,
+so numeric aggregation stays a database operation.
 
 ### `Term` — a word the organization uses
 
@@ -144,6 +145,11 @@ it happened; for an entity, when it was seen. Defaults to the assertion's
 time rule is total (RFC 0015). A duration is a metric; an event is a point in
 time.
 
+Carries `confidence`, optionally: how sure the claimant was, 0 to 1. Every claim
+row has this column (RFC 0016); a null is silence, not a score, and a
+`CONFIDENCE` rule admits only claims that carry a number. The database refuses
+one outside the unit interval.
+
 **Its `id` is the identity, and it is a bare uuid.** There is no `ref` column and
 no `{age_name}:` prefix. The prefix made identity a property of a projection, so
 one node could never be seen by two views, and it asserted a one-to-one
@@ -163,7 +169,7 @@ three are organization-grain — a retracted metric is retracted everywhere.
 One table, seven kinds. `source_ref` and `target_ref` are opaque bare uuids.
 Every row carries `observed_at` like an `Instance` does: when the relation held,
 when the classification was seen to apply, when the participation took place.
-Same default, same meaning.
+Same default, same meaning. And an optional `confidence`, like every claim.
 
 | Kind | Says | Projected as |
 |---|---|---|
@@ -207,7 +213,9 @@ no AGE presence, so neither does its discussion.
 position's world time — when it took effect, settable by the caller through
 `retract*`/`attest*` inputs — and it is the column an `OBSERVED_AT` rule reads
 over standings, so the name stays even though every other claim says
-`observed_at`.
+`observed_at`. A position may carry a `confidence` too — "I am fairly sure this
+is gone" is a weaker retraction than a flat one, and an `EXISTENCE` rule may
+say how sure a retraction has to be before it counts.
 
 This replaced a `LifecycleEvent` whose `status` was an enum, and the change is not
 cosmetic. A lifecycle event modelled retraction as a *state transition on a row*,
