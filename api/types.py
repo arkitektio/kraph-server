@@ -1843,9 +1843,64 @@ class Assertion:
     asserted_at: datetime = strawberry.field(description="When the claim was made — belief time, the axis `as_of` filters on")
     recorded_at: datetime = strawberry.field(description="When the claim was durably stored — arrival time. Never equal to assertedAt, and for debugging ingest rather than for answering questions")
 
-    @strawberry.field(description="Position in the organization-spanning log. Monotonic, assigned by the database, and the order a replay runs in")
+    @strawberry.field(description="Position in the organization-spanning log. Monotonic, assigned by the database, and the order a replay runs in. Assigned at insert, not at commit — `changes(afterSeq:)` is the reader that knows the difference")
     def seq(self) -> int:
         return int(cast(evidence_models.Assertion, self).seq)
+
+    @strawberry.field(description="The arguments the action ran with, as the app reported them. Empty when it reported none (RFC 0020)")
+    def action_args(self) -> JSON:
+        return cast(JSON, dict(cast(evidence_models.Assertion, self).action_args or {}))
+
+    # What the act recorded, one list per table (RFC 0020). Typed lists rather than
+    # one `Claim` union: `Instance`, `Link`, `Standing` and `Comment` are served as
+    # their rows while `Metric` and `Structure` are readings of a row, and a union
+    # over both kinds of backing would have to hide that seam in a resolver. Not
+    # narrowed by standing — a retracted claim was still written by this act.
+
+    @strawberry.field(description="Every instance this act minted. An observation mints its own, so a plain `assertEntityExists` lists one")
+    async def instances(self) -> List["Instance"]:
+        return cast(List["Instance"], await loaders.instances_by_assertion_loader.load(str(cast(evidence_models.Assertion, self).pk)))
+
+    @strawberry.field(description="Every link this act recorded — the sameness, classification, evidence and lineage claims written beside the instance, as well as relations")
+    async def links(self) -> List["Link"]:
+        return cast(List["Link"], await loaders.links_by_assertion_loader.load(str(cast(evidence_models.Assertion, self).pk)))
+
+    @strawberry.field(description="Every measurement this act recorded")
+    async def metrics(self) -> List["Metric"]:
+        rows = await loaders.metrics_by_assertion_loader.load(str(cast(evidence_models.Assertion, self).pk))
+        controller = get_controller()
+        return [Metric(_value=RetrievedMetric.from_row(controller, row)) for row in rows]
+
+    @strawberry.field(description="Every external datum this act first introduced. A structure named again by a later act belongs to the act that introduced it")
+    async def structures(self) -> List["Structure"]:
+        rows = await loaders.structures_by_assertion_loader.load(str(cast(evidence_models.Assertion, self).pk))
+        controller = get_controller()
+        return [Structure(_value=RetrievedStructure.from_row(controller, row)) for row in rows]
+
+    @strawberry.field(description="Every position this act took on an existing claim — a retraction or an attestation. Empty for an act that only made claims")
+    async def standings(self) -> List["Standing"]:
+        return cast(List["Standing"], await loaders.standings_by_assertion_loader.load(str(cast(evidence_models.Assertion, self).pk)))
+
+    @strawberry.field(description="Every remark this act made")
+    async def comments(self) -> List["Comment"]:
+        return cast(List["Comment"], await loaders.comments_by_assertion_loader.load(str(cast(evidence_models.Assertion, self).pk)))
+
+
+@strawberry.type(description="One page of the log read forward from a cursor (RFC 0020)")
+class Changes:
+    """What `changes(afterSeq:)` answers.
+
+    `assertions` is ascending by `seq` and strictly after the cursor, and is cut
+    at the committed horizon: a row whose transaction was still open when the page
+    was read is not in it, however low its seq. `nextSeq` is where the next page
+    starts. `horizon` is the highest seq the gate admitted for this organization —
+    when it sits below a seq the client has seen elsewhere, rows are being
+    withheld rather than missing. `evidence/log.py` says why.
+    """
+
+    assertions: List[Assertion] = strawberry.field(description="The acts strictly after `afterSeq`, ascending, up to `limit` of them and never past the horizon")
+    next_seq: int = strawberry.field(description="The cursor for the next page: the last seq returned, or `afterSeq` again when nothing was")
+    horizon: int = strawberry.field(description="The highest seq no open transaction can still precede. Everything at or below it that will ever be visible already is")
 
 
 # ===========================================
@@ -1869,6 +1924,21 @@ class Assertion:
 # ===========================================
 
 
+#: What a standing can be a position on: any of the five claim tables. Its own
+#: union rather than `ClaimEndpoint` because that one is what a *link* can point
+#: at — it includes `Term`, which nobody takes a position on, and excludes
+#: `Comment`, which they do.
+StandingTarget = Annotated[
+    Union["Instance", "Structure", "Link", "Metric", "Comment"],
+    strawberry.union("StandingTarget", description="The claim a position is about: an instance, a link, a measurement, an external datum or a remark"),
+]
+
+#: Which loader answers for each stored `Standing.target_type`. `'node'` is the
+#: stored spelling for an instance — `writer.record_standing_for_ref` takes it as
+#: is — and the API's `INSTANCE` (`filters.StandingTargetType`) maps onto it.
+_STANDING_TARGET_TABLES: dict[str, str] = {"node": "instance", "structure": "structure", "link": "link", "metric": "metric", "comment": "comment"}
+
+
 @kante.django_type(evidence_models.Standing, description="Somebody's position on whether a claim still holds")
 class Standing:
     """One vote on a claim: attesting it, or retracting it.
@@ -1878,11 +1948,13 @@ class Standing:
     same kind: there is no "reinstate" operation, only somebody newly claiming the
     thing is there.
 
-    Neither `targetType` nor `targetId` is exposed. Whatever you reached this
-    through *is* the target, and a pair of columns addressing four tables is an
-    implementation detail of the log rather than something a client should join on.
-    `recordedAt` is absent for the reason its own `help_text` gives: it is arrival
-    time, kept for debugging ingest and not for answering questions.
+    Neither `targetType` nor `targetId` is exposed as columns; `target` resolves
+    them (RFC 0020). Reached through a claim, the target is what you came from; reached
+    through `standings(filters:)` or `Assertion.standings`, it is the one thing
+    the row is about, and a client should hold the claim rather than a pair of
+    columns addressing five tables. `recordedAt` is absent for the reason its own
+    `help_text` gives: it is arrival time, kept for debugging ingest and not for
+    answering questions.
     """
 
     id: strawberry.ID = strawberry.field(description="This position's own identity")
@@ -1890,6 +1962,21 @@ class Standing:
     at: datetime = kante.django_field(description="When the position took effect — world time, the axis that decides which claim is newest")
     confidence: Optional[float] = kante.django_field(description="How sure the claimant was of this position, 0 to 1. Null when they gave no number (RFC 0016)")
     assertion: Assertion = kante.django_field(description="Who took this position, with what tool, and when they recorded it")
+
+    @strawberry.field(description="The claim this is a position on. Null only if the claim's row is gone, which the log does not do")
+    async def target(self) -> Optional[StandingTarget]:
+        row = cast(evidence_models.Standing, self)
+        table = _STANDING_TARGET_TABLES.get(str(row.target_type))
+        if table is None:
+            raise ValueError(f"Standing {row.pk} targets unknown table '{row.target_type}'")
+        if table == "comment":
+            return cast(Optional[StandingTarget], await loaders.comment_by_id_loader.load(str(row.target_id)))
+        if table == "metric":
+            metric = await loaders.metric_by_id_loader.load(str(row.target_id))
+            return Metric(_value=RetrievedMetric.from_row(get_controller(), metric)) if metric is not None else None
+        if table == "link":
+            return cast(Optional[StandingTarget], await loaders.link_by_id_loader.load(str(row.target_id)))
+        return cast(Optional[StandingTarget], await _resolve_claim_endpoint(table, str(row.target_id)))
 
 
 @kante.django_type(evidence_models.Instance, description="A claimed individual — an entity or an event, as the log has it")

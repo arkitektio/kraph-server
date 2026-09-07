@@ -1,3 +1,5 @@
+from datetime import datetime
+from enum import Enum
 from typing import List, Optional
 import strawberry
 from core import models, enums
@@ -250,6 +252,99 @@ class TermFilter:
         before wiring a graph to it, or one whose last view was deleted.
         """
         return Q(**{f"{prefix}categories__isnull": not value})
+
+
+# ---------------------------------------------------------------------------
+# The log (RFC 0020)
+#
+# Every field below is an explicit `filter_field` *method* returning a `Q`. A plain
+# annotated field on a `filter_type` compiles to `Q(<name>=value)` — `ids` would
+# become `Q(ids=[...])` against a model with no such column — so nothing here
+# relies on the name-to-lookup default.
+# ---------------------------------------------------------------------------
+
+
+@kante.filter_type(evidence_models.Assertion)
+class AssertionFilter:
+    """Who claimed, with what, and when — the columns of the provenance row.
+
+    Standalone like `TermFilter`: the log is organization grain, and the tenant
+    fence is the resolver's. There is no filter on *what* was claimed; that is
+    what the six lists on `Assertion` answer, per act.
+    """
+
+    @kante.filter_field(description="Filter by assertion ids")
+    def ids(self, info: kante.Info, value: List[strawberry.ID], prefix: str) -> Q:
+        return Q(**{f"{prefix}id__in": [str(id) for id in value]})
+
+    @kante.filter_field(description="Who made the claims — user ids, or the identities of automated agents")
+    def subjects(self, info: kante.Info, value: List[str], prefix: str) -> Q:
+        return Q(**{f"{prefix}subject__in": value})
+
+    @kante.filter_field(description="Which applications made them")
+    def app_ids(self, info: kante.Info, value: List[str], prefix: str) -> Q:
+        return Q(**{f"{prefix}app_id__in": value})
+
+    @kante.filter_field(description="Which actions within those applications")
+    def action_ids(self, info: kante.Info, value: List[str], prefix: str) -> Q:
+        return Q(**{f"{prefix}action_id__in": value})
+
+    @kante.filter_field(description="Claims made at or after this moment — belief time, the axis `as_of` reads")
+    def asserted_since(self, info: kante.Info, value: datetime, prefix: str) -> Q:
+        return Q(**{f"{prefix}asserted_at__gte": value})
+
+    @kante.filter_field(description="Claims made strictly before this moment")
+    def asserted_before(self, info: kante.Info, value: datetime, prefix: str) -> Q:
+        return Q(**{f"{prefix}asserted_at__lt": value})
+
+    @kante.filter_field(description="Only positions in the log strictly after this seq. For reading forward, prefer `changes(afterSeq:)`, which also withholds what may still be committing")
+    def seq_after(self, info: kante.Info, value: int, prefix: str) -> Q:
+        return Q(**{f"{prefix}seq__gt": int(value)})
+
+
+@strawberry.enum(description="Which table a standing's target lives in")
+class StandingTargetType(str, Enum):
+    """The API spelling of `Standing.target_type`. `INSTANCE` is stored as `'node'`."""
+
+    INSTANCE = "INSTANCE"
+    LINK = "LINK"
+    STRUCTURE = "STRUCTURE"
+    METRIC = "METRIC"
+    COMMENT = "COMMENT"
+
+
+#: API name → stored `Standing.target_type`. The one asymmetry is `INSTANCE`,
+#: which the writer spells `'node'`.
+STANDING_TARGET_TYPES: dict[str, str] = {"INSTANCE": "node", "LINK": "link", "STRUCTURE": "structure", "METRIC": "metric", "COMMENT": "comment"}
+
+
+@kante.filter_type(evidence_models.Standing)
+class StandingFilter:
+    """Positions by who took them, on what kind of claim, and when."""
+
+    @kante.filter_field(description="Who took the position")
+    def subjects(self, info: kante.Info, value: List[str], prefix: str) -> Q:
+        return Q(**{f"{prefix}assertion__subject__in": value})
+
+    @kante.filter_field(description="With which application")
+    def app_ids(self, info: kante.Info, value: List[str], prefix: str) -> Q:
+        return Q(**{f"{prefix}assertion__app_id__in": value})
+
+    @kante.filter_field(description="What kind of claim the position is about")
+    def target_type(self, info: kante.Info, value: StandingTargetType, prefix: str) -> Q:
+        return Q(**{f"{prefix}target_type": STANDING_TARGET_TYPES[str(value.value)]})
+
+    @kante.filter_field(description="Positions that took effect at or after this moment — `Standing.at`, world time")
+    def since(self, info: kante.Info, value: datetime, prefix: str) -> Q:
+        return Q(**{f"{prefix}at__gte": value})
+
+    @kante.filter_field(description="Positions that took effect strictly before this moment")
+    def until(self, info: kante.Info, value: datetime, prefix: str) -> Q:
+        return Q(**{f"{prefix}at__lt": value})
+
+    @kante.filter_field(description="Only attestations (true) or only retractions (false)")
+    def stands(self, info: kante.Info, value: bool, prefix: str) -> Q:
+        return Q(**{f"{prefix}stands": bool(value)})
 
 
 @kante.filter_type(evidence_models.StructureKind)

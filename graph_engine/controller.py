@@ -37,6 +37,7 @@ from evidence import identity as identity_module
 from evidence import selector as selector_module
 from evidence import state as state_module
 from evidence import writer
+from evidence import channel
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +176,9 @@ class GraphController:
         # Here and not in `writer.create_assertion`: `redact` and the evidence tests
         # mint assertions through the writer and project for themselves.
         watermark.expect(assertion)
+        # And the announcement (RFC 0020) — queued here, sent on commit, so a
+        # subscriber never hears of an act whose transaction rolled back.
+        channel.announce(assertion)
         return assertion
 
     # ===================================================================

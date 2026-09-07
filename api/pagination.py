@@ -75,6 +75,14 @@ class VocabularyPaginationInput:
     offset: Optional[int] = kante.field(default=0, description="Number of items to skip before starting to collect the result set")
 
 
+@kante.pydantic_input(input_models.StructurePagination, all_fields=True, description="Pagination options for reading the log")
+class LogPaginationInput:
+    """Pagination for `assertions` and `standings` (RFC 0020). The same `limit`/`offset` shape as the vocabulary lists."""
+
+    limit: Optional[int] = kante.field(default=100, description="Maximum number of items to return")
+    offset: Optional[int] = kante.field(default=0, description="Number of items to skip before starting to collect the result set")
+
+
 @kante.input(description="Pagination options for graph queries")
 class GraphPaginationInput:
     """Pagination options for graph queries."""

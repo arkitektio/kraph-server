@@ -443,6 +443,12 @@ with nothing behind it.
   every claim the world-time column under one name, `observed_at` (`Standing.at` for positions),
   and made `OBSERVED_AT` a rule field on every claim kind. "What did we believe on March 3rd" is
   `ASSERTED_AT BEFORE`; "how was the world on March 3rd" is `OBSERVED_AT BEFORE`.
+- **The log is readable as a log** (RFC 0020): `assertions` by who and when,
+  `assertion(id:)` with everything one act recorded, `changes(afterSeq:)` forward
+  from a cursor and cut at the committed horizon (`evidence/log.py`), and
+  `Subscription.assertionRecorded` on commit. Provenance was written from the
+  start; this is the half where a client can read it without going through a
+  drawing.
 
 ---
 

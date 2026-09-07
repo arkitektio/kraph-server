@@ -23,6 +23,7 @@ from kante.types import Info
 from api.types import Entity, Structure, Metric, Assertion
 
 from api import queries, types, mutations
+from api.subscriptions import Subscription
 from datalayer import mutations as datalayer_mutations
 from graph_engine import scalars
 
@@ -65,10 +66,12 @@ class Query:
     input_participations = kante.django_field(queries.input_participations, description="List input participation edges in a graph")
     output_participation = kante.django_field(queries.output_participation, description="Get an output participation claim by ID — a bare uuid, its `Link` primary key")
     output_participations = kante.django_field(queries.output_participations, description="List output participation edges in a graph")
-    # `assertion` / `assertions` are gone. They ran Cypher for an AGE `Assertion`
-    # edge that nothing has ever written, so they could only return empty. An
-    # assertion is an evidence row; it is reachable through the write results and
-    # through `richProperties { contributingAssertions }`.
+    # The log itself (RFC 0020). `assertion` / `assertions` existed once before,
+    # running Cypher for an AGE `Assertion` edge nothing had ever written, and
+    # were removed for it. These read `evidence.Assertion`.
+    assertions = kante.django_field(queries.assertions, description="The acts of claiming, newest first, by who made them, with what tool and when")
+    assertion = kante.django_field(queries.assertion, description="One act of claiming, with every claim it recorded")
+    changes = kante.django_field(queries.changes, description="The log forward from a seq, ascending, cut at the committed horizon — the read a consumer polls without ever skipping a late-committing act")
     relation = kante.django_field(queries.relation, description="Get a relation claim by ID — a bare uuid, its `Link` primary key")
     relations = kante.django_field(queries.relations, description="List relations for a relation category")
     structure_relation = kante.django_field(queries.structure_relation, description="Get a structure relation claim by ID — a bare uuid, its `Link` primary key")
@@ -527,10 +530,11 @@ class Mutation:
     # Add more mutations as needed
 
 
-# There was a `Subscription` type here with one field, `graphUpdated`, whose body
-# was `yield None` — on a generator declared to yield a non-null `Graph`. It
-# notified nobody: nothing anywhere publishes to it. A subscription that cannot
-# emit is worse than an absent one, because a client can open it and wait.
+# The subscription root is `api/subscriptions/`. There was one here once, with a
+# single field `graphUpdated` whose body was `yield None` — on a generator declared
+# to yield a non-null `Graph` — and which nothing ever published to. It was
+# removed for that; `assertionRecorded` (RFC 0020) is published to by every
+# write, on commit.
 
 
 def create_schema(
@@ -569,6 +573,7 @@ def create_schema(
     return kante.Schema(
         query=Query,
         mutation=Mutation,
+        subscription=Subscription,
         extensions=extensions,
         types=[
             # Explicitly include all types that are not directly referenced in the Query/Mutation root types
@@ -611,6 +616,9 @@ def create_schema(
             types.ParagraphDescendant,
             types.Standing,
             types.Term,
+            # A member of `StandingTarget` (RFC 0020) reachable through that union
+            # and `Assertion.comments` alone.
+            types.Comment,
         ],
         config=StrawberryConfig(
             scalar_map={

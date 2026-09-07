@@ -11,10 +11,15 @@ later. Both authorize the way every other evidence read does — the client name
 primary key and never a tenant, so the check comes from the row.
 """
 
+from typing import Optional
+
 from kante.types import Info
 import strawberry
+import strawberry_django
 
 from api import context, types
+from api import filters as api_filters
+from api import pagination as api_pagination
 
 
 def instance(info: Info, id: strawberry.ID) -> types.Instance:
@@ -41,18 +46,31 @@ def link(info: Info, id: strawberry.ID) -> types.Link:
     return controller.resolve_edge_link(str(id), info)  # type: ignore[return-value]
 
 
-def standings(info: Info, id: strawberry.ID) -> list[types.Standing]:
-    """Every position anyone has taken on one claim, newest first.
+def standings(
+    info: Info,
+    id: Optional[strawberry.ID] = None,
+    filters: Optional[api_filters.StandingFilter] = None,
+    pagination: Optional[api_pagination.LogPaginationInput] = None,
+) -> list[types.Standing]:
+    """Positions on claims, newest first — on one claim, or across the log.
 
-    The same list `Instance.standings` and `Link.standings` return, reachable by id
-    for a claim the caller is holding without having to know which of the two it is.
-    Scoped to the organization, and by `target_id` alone: the ids are uuid4 primary
-    keys of four different tables, so one cannot collide with another.
+    With `id`, the same list `Instance.standings` and `Link.standings` return,
+    reachable for a claim the caller is holding without having to know which
+    table it is in: `target_id` alone, since the ids are uuid4 primary keys of
+    five different tables and cannot collide. Without it (RFC 0020), the
+    organization's positions by who took them, on what kind of claim and when —
+    "what did this reviewer retract last week" — each with its `target`.
     """
     from evidence import models as evidence_models
 
     organization = context.get_active_organization(info)
     context.assert_can_access_organization(info, organization)
 
-    rows = evidence_models.Standing.objects.for_organization(organization).filter(target_id=str(id)).select_related("assertion").order_by("-at", "-assertion__seq")
-    return list(rows)  # type: ignore[arg-type]
+    rows = evidence_models.Standing.objects.for_organization(organization).select_related("assertion").order_by("-at", "-assertion__seq")
+    if id is not None:
+        rows = rows.filter(target_id=str(id))
+    rows = strawberry_django.filters.apply(filters, rows, info)
+    model = pagination.to_pydantic() if pagination else None
+    offset = int(getattr(model, "offset", 0) or 0)
+    limit = int(getattr(model, "limit", 100) or 100)
+    return list(rows[offset : offset + limit])  # type: ignore[arg-type]

@@ -413,6 +413,22 @@ selector decides whose claims it counts, so the only unscoped answer would be on
 view is obliged to agree with. The per-view answer is `drawings` — a view draws the
 claim exactly when its own fold says it stands and its rules admit it.
 
+**The log itself is readable as a log** (RFC 0020). `assertions(filters:)` lists
+the acts by who made them, with what tool and when, newest first;
+`assertion(id:)` is one act with `actionArgs` and every claim it recorded, in six
+typed lists (`instances`, `links`, `metrics`, `structures`, `standings`,
+`comments` — none narrowed by standing: a retracted claim was still written);
+`standings(filters:)` is the organization's positions by who took them, on what
+kind of claim and when, each with its `target`. `changes(afterSeq:, limit:)` is
+the feed: ascending from a cursor and **cut at the committed horizon** —
+`evidence/log.py` admits a row only when the transaction that wrote it precedes
+every transaction still open, so a `seq` handed to a transaction that commits
+late is withheld rather than skipped. `nextSeq` is the cursor for the next page
+and `horizon` the highest seq the gate admits at all, which is how a client tells
+"caught up" from "withheld" while a long-open writer stalls the feed. And
+`Subscription.assertionRecorded` announces each act as its transaction commits,
+in the organization's room, never one that rolled back.
+
 **A graph is rules plus the log, materialized by an event. A read is a graph query
 and nothing else.**
 
@@ -514,7 +530,11 @@ Recorded so nobody has to rediscover them.
   a claim above the cursor that the drawing has not seen, without any snapshot
   gating and without serializing appends. `graph_engine/watermark.py` states the
   invariant; `graph_engine/models.py` explains why nothing stores a per-graph
-  "applied through" (the first design did, and it stored a lie).
+  "applied through" (the first design did, and it stored a lie). The *client*
+  feed, `changes(afterSeq:)`, has no outbox to read and uses the snapshot gate
+  the help text proposed after all — `evidence/log.py`, RFC 0020, which also
+  records the one residual window (inside a single `INSERT`) and the stall a
+  long-open writer causes.
 - **`Assertion.action_name` has no source.** `action_id` and `action_args` are
   populated from the Rekuest provenance token that `AuthentikateExtension` puts on
   the kante context, and `manage.py redact` writes all three. But no provenance

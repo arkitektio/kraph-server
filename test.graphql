@@ -3,6 +3,7 @@ directive @oneOf on INPUT_OBJECT
 schema @link(url: "https://specs.apollo.dev/federation/v2.11", import: ["@key"]) {
   query: Query
   mutation: Mutation
+  subscription: Subscription
 }
 
 enum AggregationFunction {
@@ -661,9 +662,72 @@ type Assertion @key(fields: "id", resolvable: true) {
   recordedAt: DateTime!
 
   """
-  Position in the organization-spanning log. Monotonic, assigned by the database, and the order a replay runs in
+  Position in the organization-spanning log. Monotonic, assigned by the database, and the order a replay runs in. Assigned at insert, not at commit — `changes(afterSeq:)` is the reader that knows the difference
   """
   seq: Int!
+
+  """
+  The arguments the action ran with, as the app reported them. Empty when it reported none (RFC 0020)
+  """
+  actionArgs: JSON!
+
+  """
+  Every instance this act minted. An observation mints its own, so a plain `assertEntityExists` lists one
+  """
+  instances: [Instance!]!
+
+  """
+  Every link this act recorded — the sameness, classification, evidence and lineage claims written beside the instance, as well as relations
+  """
+  links: [Link!]!
+
+  """Every measurement this act recorded"""
+  metrics: [Metric!]!
+
+  """
+  Every external datum this act first introduced. A structure named again by a later act belongs to the act that introduced it
+  """
+  structures: [Structure!]!
+
+  """
+  Every position this act took on an existing claim — a retraction or an attestation. Empty for an act that only made claims
+  """
+  standings: [Standing!]!
+
+  """Every remark this act made"""
+  comments: [Comment!]!
+}
+
+input AssertionFilter {
+  AND: AssertionFilter
+  OR: AssertionFilter
+  NOT: AssertionFilter
+  DISTINCT: Boolean
+
+  """Filter by assertion ids"""
+  ids: [ID!]
+
+  """Who made the claims — user ids, or the identities of automated agents"""
+  subjects: [String!]
+
+  """Which applications made them"""
+  appIds: [String!]
+
+  """Which actions within those applications"""
+  actionIds: [String!]
+
+  """
+  Claims made at or after this moment — belief time, the axis `as_of` reads
+  """
+  assertedSince: DateTime
+
+  """Claims made strictly before this moment"""
+  assertedBefore: DateTime
+
+  """
+  Only positions in the log strictly after this seq. For reading forward, prefer `changes(afterSeq:)`, which also withholds what may still be committing
+  """
+  seqAfter: Int
 }
 
 """Input for claiming a remark stands again — reopening, as new evidence"""
@@ -933,6 +997,24 @@ input CategoryNodePositionInput {
 
   """Optional height for the node (for visualization purposes)"""
   height: Float = null
+}
+
+"""One page of the log read forward from a cursor (RFC 0020)"""
+type Changes {
+  """
+  The acts strictly after `afterSeq`, ascending, up to `limit` of them and never past the horizon
+  """
+  assertions: [Assertion!]!
+
+  """
+  The cursor for the next page: the last seq returned, or `afterSeq` again when nothing was
+  """
+  nextSeq: Int!
+
+  """
+  The highest seq no open transaction can still precede. Everything at or below it that will ever be visible already is
+  """
+  horizon: Int!
 }
 
 """
@@ -3186,6 +3268,15 @@ input LinkStructureInput {
   entityId: String!
 }
 
+"""Pagination options for reading the log"""
+input LogPaginationInput {
+  """Number of items to skip"""
+  offset: Int = 0
+
+  """Maximum number of items to return"""
+  limit: Int = 100
+}
+
 """Input type for creating a new graph"""
 type MatchPath {
   """List of node IDs to match"""
@@ -4999,7 +5090,7 @@ type Query {
   link(id: ID!): Link!
 
   """Every position anyone has taken on one claim, newest first"""
-  standings(id: ID!): [Standing!]!
+  standings(id: ID = null, filters: StandingFilter = null, pagination: LogPaginationInput = null): [Standing!]!
 
   """Get one remark by ID, as the log has it"""
   comment(id: ID!): Comment!
@@ -5076,6 +5167,19 @@ type Query {
 
   """List output participation edges in a graph"""
   outputParticipations(graph: ID!, filters: ParticipationFilter = null, ordering: [ParticipationOrder!] = null, pagination: ParticipationPaginationInput = null): [OutputParticipation!]!
+
+  """
+  The acts of claiming, newest first, by who made them, with what tool and when
+  """
+  assertions(filters: AssertionFilter = null, pagination: LogPaginationInput = null): [Assertion!]!
+
+  """One act of claiming, with every claim it recorded"""
+  assertion(id: ID!): Assertion!
+
+  """
+  The log forward from a seq, ascending, cut at the committed horizon — the read a consumer polls without ever skipping a late-committing act
+  """
+  changes(afterSeq: Int!, limit: Int! = 100): Changes!
 
   """Get a relation claim by ID — a bare uuid, its `Link` primary key"""
   relation(id: ID!): Relation!
@@ -5842,6 +5946,52 @@ type Standing @key(fields: "id", resolvable: true) {
 
   """Who took this position, with what tool, and when they recorded it"""
   assertion: Assertion!
+
+  """
+  The claim this is a position on. Null only if the claim's row is gone, which the log does not do
+  """
+  target: StandingTarget
+}
+
+input StandingFilter {
+  AND: StandingFilter
+  OR: StandingFilter
+  NOT: StandingFilter
+  DISTINCT: Boolean
+
+  """Who took the position"""
+  subjects: [String!]
+
+  """With which application"""
+  appIds: [String!]
+
+  """What kind of claim the position is about"""
+  targetType: StandingTargetType
+
+  """
+  Positions that took effect at or after this moment — `Standing.at`, world time
+  """
+  since: DateTime
+
+  """Positions that took effect strictly before this moment"""
+  until: DateTime
+
+  """Only attestations (true) or only retractions (false)"""
+  stands: Boolean
+}
+
+"""
+The claim a position is about: an instance, a link, a measurement, an external datum or a remark
+"""
+union StandingTarget = Instance | Structure | Link | Metric | Comment
+
+"""Which table a standing's target lives in"""
+enum StandingTargetType {
+  INSTANCE
+  LINK
+  STRUCTURE
+  METRIC
+  COMMENT
 }
 
 """A pointer to an external datum — a claim, not a graph node"""
@@ -6271,6 +6421,14 @@ input StructureRelationPaginationInput {
 
   """Maximum number of items to return"""
   limit: Int = 100
+}
+
+"""The log, as it is written"""
+type Subscription {
+  """
+  Each act of claiming in the caller's organization, as its transaction commits. Never an act that rolled back, never another tenant's
+  """
+  assertionRecorded: Assertion!
 }
 
 """Input for superseding a metric value"""

@@ -19,6 +19,7 @@ from .protocol_event import protocol_event, protocol_events
 from .insights.graph_table import render_graph_table
 from .node import node, nodes
 from .claim import instance, link, standings
+from .log import assertions, assertion, changes
 from .comment import comment, comments_for, my_mentions
 
 __all__ = [
@@ -26,6 +27,10 @@ __all__ = [
     "instance",
     "link",
     "standings",
+    # The log itself (RFC 0020)
+    "assertions",
+    "assertion",
+    "changes",
     "comment",
     "comments_for",
     "my_mentions",

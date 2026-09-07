@@ -145,6 +145,11 @@ def _standing_lineage(queryset: Any) -> Any:
     return claims_module.standing(queryset.filter(kind=evidence_models.Link.Kind.DERIVED_FROM), "link").select_related("assertion").order_by("assertion__seq")
 
 
+def _by_pk(queryset: Any) -> Any:
+    """A stable order for rows that have none of their own."""
+    return queryset.order_by("pk")
+
+
 #: Loaders that return a **list** per key rather than a row. Kept in their own
 #: table because they need `_batch_grouped_by`, not `_batch_by_pk` — see that
 #: function for why asking the wrong one is a silent data-loss bug rather than an
@@ -166,6 +171,16 @@ _GROUPED_LOADER_SPECS: dict[str, tuple[type, str, Any]] = {
     # claim row; the id namespaces are disjoint, as `standings_by_target` relies on.
     "lineage_by_source": (evidence_models.Link, "source_ref", _standing_lineage),
     "lineage_by_target": (evidence_models.Link, "target_ref", _standing_lineage),
+    # What one act recorded, by table (RFC 0020). Not narrowed by standing: the
+    # question `Assertion.instances` answers is "what did this act write", and a
+    # claim somebody later retracted was still written. Ordered by pk only for a
+    # stable answer — within one assertion the rows have no order of their own.
+    "instances_by_assertion": (evidence_models.Instance, "assertion_id", _by_pk),
+    "links_by_assertion": (evidence_models.Link, "assertion_id", _by_pk),
+    "metrics_by_assertion": (evidence_models.Metric, "assertion_id", _by_pk),
+    "structures_by_assertion": (evidence_models.Structure, "assertion_id", _by_pk),
+    "standings_by_assertion": (evidence_models.Standing, "assertion_id", _by_pk),
+    "comments_by_assertion": (evidence_models.Comment, "assertion_id", lambda queryset: queryset.order_by("created_at", "pk")),
 }
 
 
@@ -333,5 +348,11 @@ comments_by_structure_loader = _LoaderProxy("comments_by_structure")
 replies_by_comment_loader = _LoaderProxy("replies_by_comment")
 lineage_by_source_loader = _LoaderProxy("lineage_by_source")
 lineage_by_target_loader = _LoaderProxy("lineage_by_target")
+instances_by_assertion_loader = _LoaderProxy("instances_by_assertion")
+links_by_assertion_loader = _LoaderProxy("links_by_assertion")
+metrics_by_assertion_loader = _LoaderProxy("metrics_by_assertion")
+structures_by_assertion_loader = _LoaderProxy("structures_by_assertion")
+standings_by_assertion_loader = _LoaderProxy("standings_by_assertion")
+comments_by_assertion_loader = _LoaderProxy("comments_by_assertion")
 known_about_node_loader = _LoaderProxy("known_about_node")
 informed_nodes_by_structure_loader = _LoaderProxy("informed_nodes_by_structure")

@@ -10,3 +10,6 @@ AUTHENTIKATE = {**AUTHENTIKATE, "allow_static_tokens_in_production": True, "stat
 # key. Tests that exercise a grant care about its *shape*, not its credentials.
 DATALAYER = {"media": {"path": "/tmp/datalayer_test", "jwt_key": "testkey"}, "allow_unscoped_fallback": True}
 DATALAYER_URL = "http://testserver/datalayer"
+# The subscription tests listen through a stub consumer on the process-local layer;
+# production uses channels_redis (settings.py), which the test stack does not need.
+CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}

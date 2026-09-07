@@ -110,7 +110,8 @@ class Assertion(models.Model):
             "is what they are. "
             "Assigned at insert, not at commit, so a reader polling `seq > cursor` can skip a row "
             "that committed late; gate the cursor on `pg_snapshot_xmin(pg_current_snapshot())` "
-            "rather than serializing the write path, which would throttle bulk ingest."
+            "rather than serializing the write path, which would throttle bulk ingest. "
+            "`evidence/log.py` is that gate, and `changes(afterSeq:)` the read built on it (RFC 0020)."
         ),
     )
     organization = models.ForeignKey(
@@ -163,6 +164,12 @@ class Assertion(models.Model):
         indexes = [
             models.Index(fields=["organization", "asserted_at"]),
             models.Index(fields=["organization", "subject"]),
+            # The log's two read paths (RFC 0020): `changes` walks one tenant's
+            # rows in `seq` order from a cursor, and `assertions(appIds:)` lists
+            # what one tool wrote. `seq` alone is unique, but the feed is always
+            # tenant-scoped, so the unique index would still have to filter.
+            models.Index(fields=["organization", "seq"]),
+            models.Index(fields=["organization", "app_id"]),
         ]
 
     def __str__(self) -> str:

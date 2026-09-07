@@ -207,6 +207,19 @@ The load-bearing facts:
   readable by id (`instance(id:)`, `link(id:)`), and `Link.source`/`target` resolve through the
   `ClaimEndpoint` union by dispatching on `kind` — never by inspecting a ref, since every ref is a
   bare uuid addressing one of four tables (`api/types.py::_ENDPOINT_TABLES`).
+  **The log is readable as a log (RFC 0020)**: `assertions(filters:, pagination:)` newest first,
+  `assertion(id:)` with `actionArgs` and six typed lists of what the act recorded (grouped loaders
+  keyed `assertion_id`, not narrowed by standing), `standings(id: optional, filters:)` with
+  `Standing.target: StandingTarget` (its own union — `Comment` in, `Term` out), and
+  `changes(afterSeq:, limit:) { assertions nextSeq horizon }`, the feed: ascending and **cut at the
+  committed horizon** — `evidence/log.py::before_every_open_transaction`, a raw predicate over the
+  row's `xmin` against `pg_snapshot_xmin(pg_current_snapshot())`, because `seq` is assigned at
+  insert and a bare `seq > cursor` skips a late-committing act. Only `changes` is gated; a
+  long-open writer stalls the feed for everyone and `horizon` shows it; the residual window is
+  inside one `INSERT` and is documented, not closed — don't add `pg_current_xact_id()` or an
+  advisory lock. `Subscription.assertionRecorded` (`api/subscriptions/`, `evidence/channel.py`)
+  is `broadcast_on_commit` from `_create_assertion`; the room is `channel.room(org)` on both
+  sides, **not** kante's `org_group`, which spells a colon the channel layer refuses.
 - **All graph writes go through `GraphController`** (`graph_engine/controller.py`), which records
   an `Assertion` — a Postgres row, never a drawn vertex — and draws through the projector.
   Corrections are additive: there is no `updateEntity` and no hard delete for instance data.
