@@ -1,6 +1,35 @@
 # CHANGELOG
 
 
+## v1.0.0-rc.17 (2026-09-07)
+
+### Features
+
+- The log is readable (RFC 0020)
+  ([`caf279d`](https://github.com/arkitektio/kraph-server/commit/caf279dee9e4f8463be0bf1081119e655eaa0be4))
+
+Three root fields over `evidence.Assertion`: `assertions(filters:, pagination:)` newest first,
+  `assertion(id:)` with `actionArgs` and six typed lists of what the act recorded (grouped loaders
+  keyed `assertion_id`, not narrowed by standing), and `changes(afterSeq:, limit:)`, the feed —
+  ascending and cut at the committed horizon. `evidence/log.py::before_every_open_transaction` is
+  one predicate over the row's `xmin` against `pg_snapshot_xmin(pg_current_snapshot())`, because
+  `seq` is assigned at insert and a bare `seq > cursor` skips a late-committing act; `horizon` lets
+  a client tell "caught up" from "withheld" while a long-open writer stalls the feed. The residual
+  window is inside one INSERT and is documented, not closed.
+
+`standings(id: optional, filters:)` reads the organization's positions by who took them, on what
+  kind of claim and when; `Standing.target: StandingTarget` is its own union (Comment in, Term out).
+  `Subscription.assertionRecorded` is `broadcast_on_commit` from `_create_assertion`, in a room
+  spelled by `evidence.channel.room` on both sides — kante's `org_group` spells a colon the channel
+  layer refuses.
+
+Indexes `(organization, seq)` and `(organization, app_id)` (evidence/0015).
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+
+Claude-Session: https://claude.ai/code/session_0168CpHm2MXhVCAra1GFySeJ
+
+
 ## v1.0.0-rc.16 (2026-09-07)
 
 ### Features
