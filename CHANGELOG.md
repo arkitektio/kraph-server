@@ -1,6 +1,59 @@
 # CHANGELOG
 
 
+## v1.0.0-rc.16 (2026-09-07)
+
+### Features
+
+- Negative sameness, and a node under every category that admits it (RFC 0019)
+  ([`d9ab34d`](https://github.com/arkitektio/kraph-server/commit/d9ab34db40f38d94c712a004b292c8f29e8505ec))
+
+Two limits on what a view could say about an individual, removed.
+
+DIFFERENT_FROM. `Link.Kind.DIFFERENT_FROM`, the mirror of SAME_AS, read under the same SAMENESS
+  rule. `assertDifferentInstance(instances:)` writes one claim per pair under one assertion;
+  `retractDifferentInstance` withdraws one. One fold rule everywhere, through
+  `identity.admitted_sameness`: a standing, trusted difference removes the *direct* SAME_AS between
+  its two ends and nothing else. A pair still joined through a third instance stays merged and is
+  reported as `conflicts` — the fold never guesses whose other claim to drop. `merge` refuses a
+  directly vetoed union at write time; `separate` flags and rebuilds the component;
+  `rebuild_identity --check` compares under the veto. New `Difference` edge subtype,
+  `Node.differentFrom`/`conflicts`, `Instance.differentFrom`/`conflicts`.
+
+Several categories per node. Labels leave the vertex for `ProjectionLabel`, one row per (vertex,
+  category), with the composite FK to `core_category (graph_id, id)` relocated there and a
+  `projectionlabel_last_label_deletes_vertex` trigger so a category delete takes only its label rows
+  and the vertex only when none is left (graph_engine 0009/0010; namespaces rebuilt, vertex views
+  join the label table). `resolve_categories` answers `dict[ref, list[Category]]`: the union of
+  every defined category whose rule admits the node and every primitive category of a word its
+  standing classifications name (its own term only when nothing classifies it). Existence folds per
+  category; properties are the union; the one refusal left is `projector.property_conflicts` — a key
+  two of the node's categories define differently. `draw_node` takes `[(label, category_id), …]`,
+  `write_properties` takes no label, records carry `labels`, the identity trio is `{id,
+  category_ids, type}`. A write's `drawings` lists a node once per category; `Node.drawnLabels`,
+  `categoryIds`/`categories` replace `categoryId`/`category` on Entity/NaturalEvent/ProtocolEvent.
+  Two nodes may union (RFC 0018) when a category they share trusts the sameness.
+
+Also: `rebuild` refolded `State` after the replay, so a rebuild derived every unconstrained property
+  from the cache it was about to rebuild; it refolds before the drop now, with the other caches.
+
+BREAKING CHANGE: `Entity/NaturalEvent/ProtocolEvent.categoryId` and `.category` are gone
+  (`categoryIds`, `categories`); the vertex property `category_id` is `category_ids`;
+  `Projector.draw_node`/`write_properties` change signature; `ProjectionVertex.label`/`category_pk`
+  move to `ProjectionLabel`.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+
+Claude-Session: https://claude.ai/code/session_0168CpHm2MXhVCAra1GFySeJ
+
+### Breaking Changes
+
+- `entity/naturalevent/protocolevent.categoryid` and `.category` are gone (`categoryIds`,
+  `categories`); the vertex property `category_id` is `category_ids`;
+  `Projector.draw_node`/`write_properties` change signature; `ProjectionVertex.label`/`category_pk`
+  move to `ProjectionLabel`.
+
+
 ## v1.0.0-rc.15 (2026-09-04)
 
 ### Features
