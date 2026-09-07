@@ -312,6 +312,14 @@ class Mutation:
         description="Withdraw one sameness claim. The component it held together is rebuilt from the claims that survive, which may split it",
         resolver=mutations.retract_same_instance,
     )
+    assert_different_instance = kante.django_mutation(
+        description="Claim that several already-recorded instances are distinct things (RFC 0019). A standing, trusted difference vetoes every direct sameness between its two ends; a disagreement through a third instance is reported as a conflict, not resolved",
+        resolver=mutations.assert_different_instance,
+    )
+    retract_different_instance = kante.django_mutation(
+        description="Withdraw one difference claim. The sameness it vetoed counts again, and the component is rebuilt",
+        resolver=mutations.retract_different_instance,
+    )
 
     request_media_upload = kante.django_mutation(
         description="Upload media and return a URL for access",
@@ -585,6 +593,7 @@ def create_schema(
             # produces it.
             types.Classification,
             types.Sameness,
+            types.Difference,
             types.Derivation,
             types.InputParticipation,
             types.OutputParticipation,

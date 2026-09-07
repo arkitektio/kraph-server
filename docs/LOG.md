@@ -166,7 +166,7 @@ three are organization-grain — a retracted metric is retracted everywhere.
 
 ### `Link` — a claim relating two things
 
-One table, nine kinds. `source_ref` and `target_ref` are opaque bare uuids.
+One table, ten kinds. `source_ref` and `target_ref` are opaque bare uuids.
 Every row carries `observed_at` like an `Instance` does: when the relation held,
 when the classification was seen to apply, when the participation took place.
 Same default, same meaning. And an optional `confidence`, like every claim.
@@ -174,8 +174,9 @@ Same default, same meaning. And an optional `confidence`, like every claim.
 | Kind | Says | Projected as |
 |---|---|---|
 | `INFORMS` | this structure is evidence for that node | nothing — it drives derivation |
-| `CLASSIFIES` | this node is of that term | the node's **label**, per view |
+| `CLASSIFIES` | this node is of that term | one of the node's **labels**, per view — a node is drawn under every category that admits it (RFC 0019) |
 | `SAME_AS` | these two instances are one individual | nothing — it folds the **component** (`evidence/identity.py`) |
+| `DIFFERENT_FROM` | these two instances are **not** one individual (RFC 0019) | nothing — it vetoes the direct `SAME_AS` between its ends in every fold; a disagreement through a third instance is reported as `conflicts` |
 | `RELATION` | these two entities are connected | an edge |
 | `PARTICIPATES_AS_INPUT` | this entity went into that event, in this role | an edge, entity → event |
 | `PARTICIPATES_AS_OUTPUT` | that event produced this entity, in this role | an edge, event → entity |
@@ -186,8 +187,8 @@ Same default, same meaning. And an optional `confidence`, like every claim.
 Three of these are drawn. The rest are not, and it is not a gap. A structure
 relation has both endpoints organization-scoped, so an edge in one graph's
 projection would be the wrong place to keep it; `INFORMS`/`MEASUREMENT` move
-derived values instead; `CLASSIFIES` and `SAME_AS` decide what a vertex *is*
-rather than adding one; and `DERIVED_FROM` relates claims, not the things the
+derived values instead; `CLASSIFIES`, `SAME_AS` and `DIFFERENT_FROM` decide what a
+vertex *is* rather than adding one; and `DERIVED_FROM` relates claims, not the things the
 claims are about — its ends may be a metric, a structure or another link, none
 of which is a vertex. It is written under the **same assertion** as the claim
 that cites, because "this, because of that" is one act; every claim-making input
@@ -521,9 +522,13 @@ Recorded so nobody has to rediscover them.
   `koherent.Task`, which is built from the same claims — so the `action_names`
   branch of every selector filter is still dead. Filter on `action_id`, which is
   real. Giving `action_name` a value would mean inventing one.
-- **One label per node.** Apache AGE permits exactly one label per vertex, so a
-  node satisfying two defined categories in one graph is refused rather than
-  projected under an arbitrary one.
+- ~~**One label per node.**~~ **Closed** (RFC 0019). Apache AGE permitted one
+  label per vertex, and the refusal of a node two defined categories admitted
+  outlived AGE by a year. Labels are rows on `ProjectionLabel` now, one per
+  (vertex, category): a node is drawn under **every** category of the view that
+  admits it, existence folds per category, and properties are the union. The
+  one refusal left is a key two of the node's categories define *differently*
+  — one vertex has one value per key.
 - ~~**No merge.**~~ **Closed.** `Link.Kind.SAME_AS` is the claim and
   `evidence/identity.py` is the fold. The shape worth keeping in mind: **every
   observation mints its own instance.** Saying "this is an AIS" writes a *fresh*
@@ -541,6 +546,14 @@ Recorded so nobody has to rediscover them.
   one. Union is incremental, retraction cannot un-union so it flags the component
   and `recompute` rebuilds it, and `manage.py rebuild_identity --check` is the
   backstop that says whether the two agree.
+
+  Sameness has a negative (RFC 0019): `Link.Kind.DIFFERENT_FROM`, written by
+  `assertDifferentInstance` one claim per pair, read under the same `SAMENESS`
+  rule. Every fold applies one rule through `identity.admitted_sameness`: a
+  standing, trusted difference removes the *direct* `SAME_AS` between its two
+  ends and nothing else. Two instances still joined through a third stay one
+  component, and the panel reports the difference as a **conflict** for a
+  person to settle — the fold does not guess whose other claim to drop.
 
   Still true, and now literally so: **do not assume a vertex's `id` property is
   the identity of one observation.** A vertex stands for every member of an

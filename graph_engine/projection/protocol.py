@@ -28,7 +28,7 @@ BY clause, a SKIP/LIMIT string, built by the controller); it takes a
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
@@ -53,7 +53,9 @@ class PropertyPredicate:
     """One comparison against a drawn node's record.
 
     `key` names a property of the drawn record: a derived property, or one of
-    the identity trio — ``id`` (the node's uuid), ``category_id``, ``type``.
+    the identity trio — ``id`` (the node's uuid), ``category_ids`` (every
+    category the view draws it under, RFC 0019 — ``EQUALS``/``IN`` ask whether
+    the value is *among* them), ``type``.
     ``IS_NOT_NULL`` takes no value and means *the view derived this key for
     this node* — a key present with an explicit null does not count, matching
     what the Cypher form (`e.key IS NOT NULL`) always meant.
@@ -119,25 +121,27 @@ class Projector(Protocol):
 
     # ------------------------------------------------------------------ writer: nodes
 
-    def draw_node(self, graph: Any, ref: str, label: str, category_id: Any, kind: str, members: Iterable[str]) -> None:
-        """Draw (or re-draw) one node under `label`, carrying `{id, category_id, type}`, standing for `members`.
+    def draw_node(self, graph: Any, ref: str, categories: Sequence[tuple[str, Any]], kind: str, members: Iterable[str]) -> None:
+        """Draw (or re-draw) one node under every `(label, category_id)` in `categories`, carrying `{id, category_ids, type}`, standing for `members`.
 
         `ref` is the individual's representative and `members` every instance
         the vertex stands for — `ref` among them. Any member addresses the vertex
         afterwards: as an edge endpoint, in `drawn_nodes`, in `erase_nodes`.
-        Converging: drawing a ref that is already drawn under this label leaves
-        one vertex, and the member list is **replaced**, not merged. It does
-        **not** move a node between labels or between individuals — the caller
-        clears first (`erase_nodes`) when either may have changed.
+        `categories` is non-empty: a vertex is drawn under at least one category
+        (RFC 0019), and one drawn under several is **one** vertex with several
+        labels. Converging: drawing a ref that is already drawn leaves one
+        vertex, and both the label set and the member list are **replaced**,
+        not merged. It does **not** move a node between individuals — the
+        caller clears first (`erase_nodes`) when membership may have changed.
         """
         ...
 
-    def write_properties(self, graph: Any, ref: str, label: str, values: Mapping[str, Any]) -> bool:
-        """Set derived properties on a drawn node. Returns whether the node was there to write onto."""
+    def write_properties(self, graph: Any, ref: str, values: Mapping[str, Any]) -> bool:
+        """Set derived properties on the drawn node holding `ref`. Returns whether the node was there to write onto."""
         ...
 
     def clear_properties(self, graph: Any, label: str, refs: Iterable[str], keys: Iterable[str]) -> None:
-        """Remove these property keys from these drawn nodes. The sweep before a redraw."""
+        """Remove these property keys from these drawn nodes, where drawn under `label`. The sweep before a redraw."""
         ...
 
     def erase_nodes(self, graph: Any, refs: Iterable[str]) -> int:
@@ -169,11 +173,13 @@ class Projector(Protocol):
     # ------------------------------------------------------------------ reader
 
     def drawn_nodes(self, graph: Any, refs: Iterable[str]) -> dict[str, dict[str, Any]]:
-        """The drawn records for these refs, keyed by the ref **asked for** — `{id, label, properties, members}` each; a missing key means undrawn.
+        """The drawn records for these refs, keyed by the ref **asked for** — `{id, label, labels, properties, members}` each; a missing key means undrawn.
 
         Several asked refs may share one record: members of one individual. The
         record's `properties["id"]` is the representative, which may differ from
-        the key it sits under.
+        the key it sits under. `labels` is every label the vertex is drawn
+        under, sorted; `label` is the first of them, for a reader that shows
+        one (RFC 0019).
         """
         ...
 

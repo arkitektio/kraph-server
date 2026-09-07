@@ -20,6 +20,17 @@ counted, so ingest and replay produced different numbers from the same evidence
 — and a per-view cache would put a graph foreign key into `evidence/`, which
 this app may not grow.
 
+**A `DIFFERENT_FROM` vetoes the direct `SAME_AS`** (RFC 0019). The one rule
+every fold here applies, through :func:`admitted_sameness`: a standing
+`DIFFERENT_FROM(a, b)` — trusted under the same `SAMENESS` rule as the claim it
+contradicts, wherever a view is in scope — removes every `SAME_AS` between
+exactly a and b, in either orientation, from the fold. It does nothing else. If
+a and b are still connected through a third instance the component stays whole:
+the fold does not guess which of the other claims to drop, and the panel
+reports the difference as a *conflict* for a person to settle by retracting
+one. Local to the pair by design, so a frontier walk that loads the claims
+touching a ref sees both the sameness and its veto in the same query.
+
 **The representative is the lowest uuid in the component.** Not the first
 asserted — identity must not depend on arrival order, and a deterministic rule is
 what lets a replay land where the original write did.
@@ -28,7 +39,7 @@ what lets a replay land where the original write did.
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any, Iterable
 
 from django.db import transaction
@@ -40,14 +51,53 @@ from evidence import models as evidence_models
 #: What a component is folded from. Kept as a name rather than inlined so the
 #: fold, the rebuild and the consistency test cannot drift apart about it.
 SAME_AS = evidence_models.Link.Kind.SAME_AS
+#: What subtracts from it.
+DIFFERENT_FROM = evidence_models.Link.Kind.DIFFERENT_FROM
+#: Both, in the order a fold reads them: everything the identity fold is about.
+IDENTITY_KINDS: tuple[Any, ...] = (SAME_AS, DIFFERENT_FROM)
 
 
-def _standing_same_as(organization: Any) -> Any:
-    """Every sameness claim that still stands in this organization."""
+def _standing_identity(organization: Any, kinds: Sequence[Any] = IDENTITY_KINDS) -> Any:
+    """Every sameness and difference claim that still stands in this organization."""
     return claims_module.standing(
-        evidence_models.Link.objects.for_organization(organization).filter(kind=SAME_AS),
+        evidence_models.Link.objects.for_organization(organization).filter(kind__in=list(kinds)),
         "link",
     )
+
+
+def _pair(link: Any) -> frozenset[str]:
+    return frozenset((str(link.source_ref), str(link.target_ref)))
+
+
+def vetoed_pairs(links: Iterable[Any]) -> set[frozenset[str]]:
+    """The unordered endpoint pairs the `DIFFERENT_FROM` claims among `links` name."""
+    return {_pair(link) for link in links if link.kind == DIFFERENT_FROM}
+
+
+def admitted_sameness(links: Iterable[Any]) -> list[Any]:
+    """The `SAME_AS` claims among `links` that no `DIFFERENT_FROM` among them
+    vetoes — the one place the veto rule is written. `links` must already be
+    the standing, trusted set for whatever scope is folding."""
+    links = list(links)
+    vetoed = vetoed_pairs(links)
+    return [link for link in links if link.kind == SAME_AS and _pair(link) not in vetoed]
+
+
+def _adjacency(links: Iterable[Any]) -> dict[str, set[str]]:
+    """Symmetric adjacency over the admitted sameness among `links`."""
+    adjacency: dict[str, set[str]] = defaultdict(set)
+    for link in admitted_sameness(links):
+        source, target = str(link.source_ref), str(link.target_ref)
+        adjacency[source].add(target)
+        adjacency[target].add(source)
+    return adjacency
+
+
+def standing_adjacency(organization: Any) -> dict[str, set[str]]:
+    """The organization's whole sameness graph, vetoes applied — what
+    :func:`refold` writes and what `manage.py rebuild_identity --check`
+    compares the cache against. One query."""
+    return _adjacency(_standing_identity(organization).only("id", "kind", "source_ref", "target_ref"))
 
 
 def canonical_for(organization: Any, node_ref: str) -> str:
@@ -93,128 +143,34 @@ def component_refs(organization: Any, node_refs: Iterable[str]) -> dict[str, lis
     return {ref: sorted(members.get(canonical[ref], [ref])) for ref in refs}
 
 
-def view_sameness_links(graph: Any, refs: Iterable[str]) -> list[Any]:
-    """The SAME_AS claims a view counts that touch these refs — one hop.
+def _trusted_in_view(graph: Any, links: list[Any], resolved: Mapping[str, Sequence[Any]]) -> list[Any]:
+    """The identity claims among `links` a view counts, given where their
+    endpoints resolved.
 
     RFC 0011: sameness is **within a category, across words** (an AIS and an
     AxonInitialSegment may be one individual; an AIS and a Cell may not — a
-    thing is one kind of thing). A claim counts here when both endpoints
-    resolve to the *same* category in this view and the claim and its standing
-    fold under that category's `KIND SAMENESS` trust. A primitive category
-    trusts everybody, but still never unions across categories.
-    """
-    from django.db.models import Q
-
-    from evidence import models as inner_models
-    from evidence import selector as selector_module
-    from graph_engine import projector as projector_module
-
-    wanted = [str(ref) for ref in refs]
-    if not wanted:
-        return []
-
-    touching = inner_models.Link.objects.for_organization(graph.organization).filter(kind=SAME_AS).filter(Q(source_ref__in=wanted) | Q(target_ref__in=wanted))
-    links = list(touching.only("id", "source_ref", "target_ref"))
-    if not links:
-        return []
-
-    endpoint_refs = {str(link.source_ref) for link in links} | {str(link.target_ref) for link in links}
-    nodes = list(inner_models.Instance.objects.for_organization(graph.organization).filter(id__in=endpoint_refs).select_related("term"))
-    resolved, _ = projector_module.resolve_categories(graph, nodes)
-
-    by_category: dict[Any, list[Any]] = defaultdict(list)
-    for link in links:
-        source = resolved.get(str(link.source_ref))
-        target = resolved.get(str(link.target_ref))
-        if source is None or target is None or source.pk != target.pk:
-            continue
-        by_category[source.pk].append(link)
-
-    categories = {category.pk: category for category in resolved.values()}
-    surviving: list[Any] = []
-    for category_pk, candidate_links in by_category.items():
-        category = categories[category_pk]
-        admitted = claims_module.standing(
-            inner_models.Link.objects.for_organization(graph.organization)
-            .filter(pk__in=[link.pk for link in candidate_links])
-            .filter(selector_module.trust_filter(category.definition, kind="SAMENESS")),
-            "link",
-            predicate=selector_module.trust_predicate(category.definition, kind="SAMENESS"),
-        )
-        surviving.extend(admitted)
-    return surviving
-
-
-def component_refs_for_view(graph: Any, node_refs: Iterable[str]) -> dict[str, list[str]]:
-    """One view's components: sameness folded under each category's rule.
-
-    The rule-driven successor of the selector walk RFC 0009 deleted (RFC 0011):
-    the frontier loop `recompute` uses, but each hop keeps only the claims
-    :func:`view_sameness_links` admits — same-category endpoints, the
-    category's `KIND SAMENESS` trust for the claim and its standing. The
-    organization-grain cache (`component_refs`) remains the no-view answer.
-    """
-    refs = [str(ref) for ref in node_refs]
-
-    adjacency: dict[str, set[str]] = defaultdict(set)
-    seen: set[str] = set()
-    frontier = set(refs)
-    while frontier:
-        seen |= frontier
-        discovered: set[str] = set()
-        for link in view_sameness_links(graph, frontier):
-            source, target = str(link.source_ref), str(link.target_ref)
-            adjacency[source].add(target)
-            adjacency[target].add(source)
-            discovered |= {source, target}
-        frontier = discovered - seen
-
-    return {ref: sorted(_reachable(ref, adjacency)) for ref in refs}
-
-
-def view_components(graph: Any, resolved: Mapping[str, Any]) -> dict[str, list[str]]:
-    """The individuals a view draws among these already-resolved nodes (RFC 0018).
-
-    `resolved` maps a ref to the category it resolved to in this view
-    (`projector.resolve_categories`); the answer maps each component's
-    **representative** — its lowest member uuid — to its sorted members, every
-    ref appearing in exactly one. The fold is the one :func:`view_sameness_links`
-    applies — same category at both ends, the category's `KIND SAMENESS` trust
-    for the claim and its standing — but over the whole set at once: one link
-    query, one standing fold per category, and a union-find in memory, so a
-    rebuild does not walk a frontier per node.
-
-    Closed over `resolved` on purpose: a sameness claim to a node the view does
-    not admit (unclassified here, retracted under its category's rule, skipped
-    as ambiguous) is not a bridge. That node is not in this view, so it cannot
-    hold two of its individuals together.
+    thing is one kind of thing). A node holds several categories in a view
+    (RFC 0019), so a claim counts here when the two endpoints **share** a
+    category and the claim and its standing fold under that shared category's
+    `KIND SAMENESS` trust — any shared one: a category that holds both nodes
+    and counts the claim is a view's reason to draw them as one. A primitive
+    category trusts everybody, but still never unions across categories.
+    `DIFFERENT_FROM` is read under exactly the same rule (RFC 0019): the
+    category that decides whose "these are one" counts decides whose "these
+    are two" does.
     """
     from evidence import selector as selector_module
-
-    refs = sorted(str(ref) for ref in resolved)
-    if not refs:
-        return {}
-
-    links = list(evidence_models.Link.objects.for_organization(graph.organization).filter(kind=SAME_AS, source_ref__in=refs, target_ref__in=refs).only("id", "source_ref", "target_ref"))
 
     by_category: dict[Any, list[Any]] = defaultdict(list)
     categories: dict[Any, Any] = {}
     for link in links:
-        source = resolved.get(str(link.source_ref))
-        target = resolved.get(str(link.target_ref))
-        if source is None or target is None or source.pk != target.pk:
-            continue
-        by_category[source.pk].append(link)
-        categories[source.pk] = source
+        source = {category.pk: category for category in resolved.get(str(link.source_ref), ())}
+        target = {category.pk for category in resolved.get(str(link.target_ref), ())}
+        for pk in sorted(set(source) & target):
+            by_category[pk].append(link)
+            categories[pk] = source[pk]
 
-    parent: dict[str, str] = {ref: ref for ref in refs}
-
-    def find(ref: str) -> str:
-        while parent[ref] != ref:
-            parent[ref] = parent[parent[ref]]
-            ref = parent[ref]
-        return ref
-
+    surviving: dict[Any, Any] = {}
     for category_pk, candidate_links in by_category.items():
         category = categories[category_pk]
         admitted = claims_module.standing(
@@ -225,10 +181,112 @@ def view_components(graph: Any, resolved: Mapping[str, Any]) -> dict[str, list[s
             predicate=selector_module.trust_predicate(category.definition, kind="SAMENESS"),
         )
         for link in admitted:
-            left, right = find(str(link.source_ref)), find(str(link.target_ref))
-            if left != right:
-                # Union under the lower root: the root is then the representative.
-                parent[max(left, right)] = min(left, right)
+            # Once, however many shared categories count it.
+            surviving.setdefault(link.pk, link)
+    return list(surviving.values())
+
+
+def view_identity_links(graph: Any, refs: Iterable[str], kinds: Sequence[Any] = IDENTITY_KINDS) -> list[Any]:
+    """The sameness and difference claims a view counts that touch these refs
+    — one hop, resolved and trusted per category (:func:`_trusted_in_view`).
+    The veto is *not* applied: this is the list of claims, for the panel; a
+    fold takes :func:`admitted_sameness` of it."""
+    from graph_engine import projector as projector_module
+
+    wanted = [str(ref) for ref in refs]
+    if not wanted:
+        return []
+
+    touching = evidence_models.Link.objects.for_organization(graph.organization).filter(kind__in=list(kinds)).filter(Q(source_ref__in=wanted) | Q(target_ref__in=wanted))
+    links = list(touching.only("id", "kind", "source_ref", "target_ref"))
+    if not links:
+        return []
+
+    endpoint_refs = {str(link.source_ref) for link in links} | {str(link.target_ref) for link in links}
+    nodes = list(evidence_models.Instance.objects.for_organization(graph.organization).filter(id__in=endpoint_refs).select_related("term"))
+    resolved, _ = projector_module.resolve_categories(graph, nodes)
+    return _trusted_in_view(graph, links, resolved)
+
+
+def view_sameness_links(graph: Any, refs: Iterable[str]) -> list[Any]:
+    """The `SAME_AS` claims a view counts that touch these refs — vetoed ones
+    included, because a claim the fold outweighs is still a claim somebody made
+    and may want to retract."""
+    return view_identity_links(graph, refs, kinds=(SAME_AS,))
+
+
+def view_difference_links(graph: Any, refs: Iterable[str]) -> list[Any]:
+    """The `DIFFERENT_FROM` claims a view counts that touch these refs."""
+    return view_identity_links(graph, refs, kinds=(DIFFERENT_FROM,))
+
+
+def component_refs_for_view(graph: Any, node_refs: Iterable[str]) -> dict[str, list[str]]:
+    """One view's components: sameness folded under each category's rule.
+
+    The rule-driven successor of the selector walk RFC 0009 deleted (RFC 0011):
+    the frontier loop `recompute` uses, but each hop keeps only the claims
+    :func:`view_identity_links` admits — same-category endpoints, the
+    category's `KIND SAMENESS` trust for the claim and its standing — with the
+    difference veto applied per hop, which is exact because a veto is local to
+    its pair. The organization-grain cache (`component_refs`) remains the
+    no-view answer.
+    """
+    refs = [str(ref) for ref in node_refs]
+
+    adjacency: dict[str, set[str]] = defaultdict(set)
+    seen: set[str] = set()
+    frontier = set(refs)
+    while frontier:
+        seen |= frontier
+        discovered: set[str] = set()
+        for link in admitted_sameness(view_identity_links(graph, frontier)):
+            source, target = str(link.source_ref), str(link.target_ref)
+            adjacency[source].add(target)
+            adjacency[target].add(source)
+            discovered |= {source, target}
+        frontier = discovered - seen
+
+    return {ref: sorted(_reachable(ref, adjacency)) for ref in refs}
+
+
+def view_components(graph: Any, resolved: Mapping[str, Sequence[Any]]) -> dict[str, list[str]]:
+    """The individuals a view draws among these already-resolved nodes (RFC 0018).
+
+    `resolved` maps a ref to the categories it resolved to in this view
+    (`projector.resolve_categories`); the answer maps each component's
+    **representative** — its lowest member uuid — to its sorted members, every
+    ref appearing in exactly one. The fold is the one :func:`view_sameness_links`
+    applies — a shared category at both ends, that category's `KIND SAMENESS`
+    trust for the claim and its standing — but over the whole set at once: one
+    link query, one standing fold per category, and a union-find in memory, so
+    a rebuild does not walk a frontier per node. Two nodes holding different
+    category sets may be one individual when the sets intersect (RFC 0019);
+    the vertex is then drawn under the union.
+
+    Closed over `resolved` on purpose: a sameness claim to a node the view does
+    not admit (unclassified here, retracted under its category's rule, skipped
+    as ambiguous) is not a bridge. That node is not in this view, so it cannot
+    hold two of its individuals together.
+    """
+    refs = sorted(str(ref) for ref in resolved)
+    if not refs:
+        return {}
+
+    links = list(evidence_models.Link.objects.for_organization(graph.organization).filter(kind__in=list(IDENTITY_KINDS), source_ref__in=refs, target_ref__in=refs).only("id", "kind", "source_ref", "target_ref"))
+
+    parent: dict[str, str] = {ref: ref for ref in refs}
+
+    def find(ref: str) -> str:
+        while parent[ref] != ref:
+            parent[ref] = parent[parent[ref]]
+            ref = parent[ref]
+        return ref
+
+    for link in admitted_sameness(_trusted_in_view(graph, links, resolved)):
+        left, right = find(str(link.source_ref)), find(str(link.target_ref))
+        if left != right:
+            # Union under the lower root: the root is then the representative.
+            parent[max(left, right)] = min(left, right)
 
     components: dict[str, list[str]] = defaultdict(list)
     for ref in refs:
@@ -244,10 +302,17 @@ def merge(organization: Any, left_ref: str, right_ref: str) -> str:
     agreement to the log and changes nothing here, which is the correct
     behaviour — the fold records *which nodes are one thing*, not how many people
     said so. How many said so is a question for the claims.
+
+    A standing `DIFFERENT_FROM` between exactly these two vetoes the union (RFC
+    0019): the claim is in the log, the cache does not move, and what is
+    returned is the left node's representative as it stands.
     """
     left, right = str(left_ref), str(right_ref)
     current = canonical_for_many(organization, [left, right])
     left_canonical, right_canonical = current[left], current[right]
+
+    if _standing_identity(organization, kinds=(DIFFERENT_FROM,)).filter(Q(source_ref=left, target_ref=right) | Q(source_ref=right, target_ref=left)).exists():
+        return left_canonical
 
     members = set(component_members(organization, left_canonical)) | set(component_members(organization, right_canonical)) | {left, right}
     canonical = min(members)
@@ -306,8 +371,28 @@ def retract(organization: Any, link: evidence_models.Link) -> None:
 
 
 @transaction.atomic
+def separate(organization: Any, left_ref: str, right_ref: str) -> list[str]:
+    """Apply a newly written `DIFFERENT_FROM` to the cache (RFC 0019).
+
+    The mirror of :func:`merge` with :func:`retract`'s shape: a veto can only
+    ever *remove* a union, and union-find has no split, so when the two nodes
+    share a component it is flagged and rebuilt on the spot — the rebuild is
+    what decides whether the vetoed claim was the bridge. Two nodes in
+    different components need nothing; the veto is enforced by :func:`merge`
+    from now on. Returns the representatives that exist afterwards.
+    """
+    left, right = str(left_ref), str(right_ref)
+    current = canonical_for_many(organization, [left, right])
+    if current[left] != current[right]:
+        return []
+    evidence_models.InstanceIdentity.objects.for_organization(organization).filter(canonical_id=current[left]).update(needs_recompute=True)
+    return recompute(organization, current[left])
+
+
+@transaction.atomic
 def recompute(organization: Any, canonical_ref: str) -> list[str]:
-    """Rebuild one component from the sameness claims that still stand.
+    """Rebuild one component from the sameness claims that still stand,
+    less the ones a standing difference vetoes.
 
     The correctness backstop: whatever incremental maintenance did, this is what
     the answer should have been. A retraction can split one component into
@@ -325,14 +410,13 @@ def recompute(organization: Any, canonical_ref: str) -> list[str]:
     seen: set[str] = set()
     frontier = set(members)
     while frontier:
-        links = _standing_same_as(organization).filter(Q(source_ref__in=frontier) | Q(target_ref__in=frontier))
+        links = _standing_identity(organization).filter(Q(source_ref__in=frontier) | Q(target_ref__in=frontier)).only("id", "kind", "source_ref", "target_ref")
         seen |= frontier
         discovered: set[str] = set()
-        for source_ref, target_ref in links.values_list("source_ref", "target_ref"):
-            source, target = str(source_ref), str(target_ref)
-            adjacency[source].add(target)
-            adjacency[target].add(source)
-            discovered |= {source, target}
+        for source, neighbours in _adjacency(links).items():
+            adjacency[source] |= neighbours
+            discovered.add(source)
+            discovered |= neighbours
         frontier = discovered - seen
 
     members |= seen
@@ -383,11 +467,7 @@ def refold(organization: Any) -> int:
     disagrees with what incremental maintenance produced, the incremental path is
     wrong — which is the whole reason it exists separately.
     """
-    adjacency: dict[str, set[str]] = defaultdict(set)
-    for source_ref, target_ref in _standing_same_as(organization).values_list("source_ref", "target_ref"):
-        source, target = str(source_ref), str(target_ref)
-        adjacency[source].add(target)
-        adjacency[target].add(source)
+    adjacency = standing_adjacency(organization)
 
     evidence_models.InstanceIdentity.objects.for_organization(organization).delete()
 

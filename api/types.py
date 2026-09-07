@@ -16,7 +16,7 @@ import strawberry
 from strawberry.scalars import JSON
 from asgiref.sync import sync_to_async
 from enum import Enum
-from typing import Annotated, Any, Generic, Optional, List, Type, TypeVar, Union, cast
+from typing import Annotated, Any, Generic, Optional, List, Sequence, Type, TypeVar, Union, cast
 from datetime import datetime
 from api import loaders, order, pagination, filters
 from datalayer.types import MediaStore
@@ -965,7 +965,7 @@ class Node(Generic[V]):
     #   under which category.
     # - `globalId` **raised** for every node read out of a projection.
     #   `RetrievedNode.global_id` requires a `global_id` vertex property and
-    #   `projector.create_vertex` writes exactly `{id, category_id}`, so nothing
+    #   `projector.create_vertex` writes exactly `{id, category_ids, type}`, so nothing
     #   ever set one. Only the row-backed branch worked, which is why the one test
     #   covering the field — asking a structure — stayed green.
     # - `localId` returned "0" for every row-backed node and a reassigned vertex
@@ -975,10 +975,14 @@ class Node(Generic[V]):
     #
     # `id` is the identity, and it is a bare uuid.
 
-    @strawberry.field(description="The label this view draws the node under — its category's `ageName` — or the claim's word when the view has not drawn it yet")
+    @strawberry.field(description="The first of `drawnLabels`, for a reader that shows one — or the claim's word when the view has not drawn it yet")
     def label(self) -> str:
-        """Should return the most specific label for this node (e.g. 'Cell' instead of 'Entity') Composed by its propetries"""
+        """One label, where `drawnLabels` is all of them (RFC 0019)."""
         return self._value.label
+
+    @strawberry.field(description="Every label the view this was read through draws the node under — one per category that admits it, each its `ageName`, sorted (RFC 0019). Empty when the view has not drawn it yet")
+    def drawn_labels(self) -> List[str]:
+        return list(self._value.labels)
 
     @strawberry.field(description="This node's durable identity — a bare uuid, world-unique and stable across reprojects. In a view it is the individual's representative: the lowest of `members`, which may differ from the member id you asked for")
     def id(self) -> strawberry.ID:
@@ -991,7 +995,7 @@ class Node(Generic[V]):
 
     # `externalId` is gone, and it is the sixth vertex-shaped field to go. It read
     # an `external_id` vertex property that **nothing in this repo has ever
-    # written** — `projector.create_vertex` writes `{id, category_id, type}`, and
+    # written** — `projector.create_vertex` writes `{id, category_ids, type}`, and
     # `external_id` appears only in `RESERVED_PROPERTY_KEYS` and the two readers
     # that are now deleted. So it answered null for every node ever returned,
     # exactly like the `globalId` removed above, and a field that is structurally
@@ -1055,6 +1059,16 @@ class Node(Generic[V]):
         known = await loaders.known_about_node_loader.load((self._value.graph_name, self._value.unique_id))
         return [Sameness(_value=RetrievedEdge.from_link(get_controller(), link)) for link in known.sameness]
 
+    @strawberry.field(description="The standing claims that this instance and another are two things, with who said so (RFC 0019). Under this view's rule, like `sameAs`")
+    async def different_from(self) -> List["Difference"]:
+        known = await loaders.known_about_node_loader.load((self._value.graph_name, self._value.unique_id))
+        return [Difference(_value=RetrievedEdge.from_link(get_controller(), link)) for link in known.differences]
+
+    @strawberry.field(description="Differences the fold could not honour: both ends are still members of this individual through a third instance (a~b, b~c, a≠c). Nothing resolves these automatically — retract one of the claims that disagree")
+    async def conflicts(self) -> List["Difference"]:
+        known = await loaders.known_about_node_loader.load((self._value.graph_name, self._value.unique_id))
+        return [Difference(_value=RetrievedEdge.from_link(get_controller(), link)) for link in known.conflicts]
+
     @strawberry.field(description="Every standing claim connecting this thing to something else — relations, participations and the structures that inform it. Needs no graph query: they are all evidence rows, and the drawing of them is a projection")
     async def connections(self) -> List["Edge"]:
         known = await loaders.known_about_node_loader.load((self._value.graph_name, self._value.unique_id))
@@ -1097,6 +1111,18 @@ class Node(Generic[V]):
 # answer has — two annotators may disagree about whether a thing exists, and each
 # graph's selector decides whose word it counts.
 
+def _explaining(categories: Sequence[Any], key: str) -> Any:
+    """The first of a node's categories declaring `key`, else the first category (RFC 0019).
+
+    Any declaring category explains the key the same way: the projector refuses
+    a node whose categories define one key differently.
+    """
+    for category in categories:
+        if key in category.property_map:
+            return category
+    return categories[0]
+
+
 # ===========================================
 # ENTITY TYPE
 # ===========================================
@@ -1113,22 +1139,25 @@ class Entity(Node[RetrievedNode]):
     def kind(self) -> str:
         return self._value.kind or self._value.label
 
-    @strawberry.field(description="Category ID linking to EntityCategory model")
-    def category_id(self) -> Optional[str]:
-        return self._value.category_id
+    @strawberry.field(description="The ids of every category the view this was read through draws it under (RFC 0019). Empty when no view does")
+    def category_ids(self) -> List[str]:
+        return list(self._value.category_ids)
 
-    @kante.django_field(description="How the view this was read through draws it, if any view does")
-    def category(self) -> Optional[EntityCategory]:
-        """This entity's category in the view it was read through.
+    @kante.django_field(description="Every category the view this was read through draws it under, one per label (RFC 0019). Empty when no view does")
+    def categories(self) -> List[EntityCategory]:
+        """This entity's categories in the view it was read through.
 
-        Nullable, because a node names one of the organization's words and a
+        Possibly empty, because a node names one of the organization's words and a
         category is one view's rule for that word — so an entity claimed under a
         word no view declares has none. `assertEntityExists` names a term, which makes
-        that a state one mutation can reach.
+        that a state one mutation can reach. Several when several of the view's
+        categories admit it: a cell that is Pyramidal and Excitatory is drawn once,
+        under both.
         """
-        if self._value.category_id is None:
-            return None
-        return cast(EntityCategory, models.EntityCategory.objects.get(id=self._value.category_id))
+        if not self._value.category_ids:
+            return []
+        by_id = {str(category.pk): category for category in models.EntityCategory.objects.filter(id__in=self._value.category_ids)}
+        return [cast(EntityCategory, by_id[category_id]) for category_id in self._value.category_ids if category_id in by_id]
 
     @strawberry.field(description="When this entity became valid. When did it start existing?")
     def valid_from(self) -> Optional[datetime]:
@@ -1138,26 +1167,32 @@ class Entity(Node[RetrievedNode]):
     def valid_to(self) -> Optional[datetime]:
         return self._value.valid_to
 
-    @strawberry.field(description="List of properties derived for this entity. Empty when this reading has no category — a property definition is one view's rule, and a claim no view draws has none")
+    @strawberry.field(description="List of properties derived for this entity — the union over its categories in this view. Empty when this reading has no category — a property definition is one view's rule, and a claim no view draws has none")
     async def rich_properties(self) -> List[RichProperty]:
         """Combine raw properties with schema definitions for a rich view.
 
         The empty answer used to be an `assert category_id is not None`, which made
         an ordinary state — a claim under a word no view declares — an
         `AssertionError`. What explains a property is a category, so with no category
-        there is nothing to explain and nothing to raise about.
+        there is nothing to explain and nothing to raise about. With several
+        categories (RFC 0019) each declared key is explained by the first category
+        declaring it — the projector refuses a node whose categories disagree
+        about a key, so any of them explains it the same way.
         """
-        if self._value.category_id is None:
+        if not self._value.category_ids:
             return []
-        category = await loaders.entity_category_loader.load(self._value.category_id)
+        categories = [await loaders.entity_category_loader.load(category_id) for category_id in self._value.category_ids]
 
         # Enumerated from the schema, not from the node's stored keys. Only
         # indexed properties live on the node now, so iterating those would hide
         # every derived-on-read property — exactly the ones this type exists to
         # explain.
-        declared = list(category.property_map.keys())
-        stored = [key for key in self._value.cleaned_properties if key not in declared]
-        return [RichProperty(_entity=self._value, _key=key, _category=category) for key in declared + stored]
+        explained: dict[str, Any] = {}
+        for category in categories:
+            for key in category.property_map:
+                explained.setdefault(key, category)
+        stored = [key for key in self._value.cleaned_properties if key not in explained]
+        return [RichProperty(_entity=self._value, _key=key, _category=explained.get(key, categories[0])) for key in [*explained, *stored]]
 
     @strawberry.field(description="The current derived properties for this entity")
     async def properties(self) -> AnyScalar:
@@ -1327,9 +1362,9 @@ class NaturalEvent(Node[RetrievedNode], Event):
     def kind(self) -> str:
         return self._value.kind or self._value.label
 
-    @strawberry.field(description="Category ID linking to NaturalEventCategory model")
-    def category_id(self) -> Optional[str]:
-        return self._value.category_id
+    @strawberry.field(description="The ids of every category the view this was read through draws it under (RFC 0019). Empty when no view does")
+    def category_ids(self) -> List[str]:
+        return list(self._value.category_ids)
 
     # `measuredFrom` and `measuredTo` used to sit here. Both were annotated
     # `-> datetime` and returned `cleaned_properties`, a **dict** — so selecting
@@ -1337,12 +1372,13 @@ class NaturalEvent(Node[RetrievedNode], Event):
     # node carries no observation window; the metrics informing it do, and those
     # are reachable through `richProperties { contributingAssertions }`.
 
-    @kante.django_field(description="How the view this was read through draws it, if any view does")
-    def category(self) -> Optional[NaturalEventCategory]:
-        """This event's category in the view it was read through — see `Entity.category`."""
-        if self._value.category_id is None:
-            return None
-        return cast(NaturalEventCategory, models.NaturalEventCategory.objects.get(id=self._value.category_id))
+    @kante.django_field(description="Every category the view this was read through draws it under, one per label (RFC 0019). Empty when no view does")
+    def categories(self) -> List[NaturalEventCategory]:
+        """This event's categories in the view it was read through — see `Entity.categories`."""
+        if not self._value.category_ids:
+            return []
+        by_id = {str(category.pk): category for category in models.NaturalEventCategory.objects.filter(id__in=self._value.category_ids)}
+        return [cast(NaturalEventCategory, by_id[category_id]) for category_id in self._value.category_ids if category_id in by_id]
 
     @strawberry.field(description="List of properties derived for this entity")
     async def rich_properties(self) -> List[RichProperty]:
@@ -1350,13 +1386,13 @@ class NaturalEvent(Node[RetrievedNode], Event):
 
         Empty when no view declares the word: a rich property is a raw value read
         against a category's declared shape, and with no category there is no shape
-        to read it against.
+        to read it against. Each key is explained by the first of the node's
+        categories declaring it — see `Entity.rich_properties`.
         """
-        if self._value.category_id is None:
+        if not self._value.category_ids:
             return []
-        category = await loaders.natural_event_category_loader.load(self._value.category_id)
-
-        return [RichProperty(_entity=self._value, _key=var, _category=category) for var in self._value.cleaned_properties]
+        categories = [await loaders.natural_event_category_loader.load(category_id) for category_id in self._value.category_ids]
+        return [RichProperty(_entity=self._value, _key=var, _category=_explaining(categories, var)) for var in self._value.cleaned_properties]
 
     @strawberry.field(description="List of the current derived properties for this entity")
     async def properties(self) -> AnyScalar:
@@ -1482,9 +1518,9 @@ class ProtocolEvent(Node[RetrievedNode], Event):
     def kind(self) -> str:
         return self._value.kind or self._value.label
 
-    @strawberry.field(description="Category ID linking to ProtocolEventCategory model")
-    def category_id(self) -> Optional[str]:
-        return self._value.category_id
+    @strawberry.field(description="The ids of every category the view this was read through draws it under (RFC 0019). Empty when no view does")
+    def category_ids(self) -> List[str]:
+        return list(self._value.category_ids)
 
     # `measuredFrom` and `measuredTo` used to sit here. Both were annotated
     # `-> datetime` and returned `cleaned_properties`, a **dict** — so selecting
@@ -1492,12 +1528,13 @@ class ProtocolEvent(Node[RetrievedNode], Event):
     # node carries no observation window; the metrics informing it do, and those
     # are reachable through `richProperties { contributingAssertions }`.
 
-    @kante.django_field(description="How the view this was read through draws it, if any view does")
-    def category(self) -> Optional[ProtocolEventCategory]:
-        """This event's category in the view it was read through — see `Entity.category`."""
-        if self._value.category_id is None:
-            return None
-        return cast(ProtocolEventCategory, models.ProtocolEventCategory.objects.get(id=self._value.category_id))
+    @kante.django_field(description="Every category the view this was read through draws it under, one per label (RFC 0019). Empty when no view does")
+    def categories(self) -> List[ProtocolEventCategory]:
+        """This event's categories in the view it was read through — see `Entity.categories`."""
+        if not self._value.category_ids:
+            return []
+        by_id = {str(category.pk): category for category in models.ProtocolEventCategory.objects.filter(id__in=self._value.category_ids)}
+        return [cast(ProtocolEventCategory, by_id[category_id]) for category_id in self._value.category_ids if category_id in by_id]
 
     @strawberry.field(description="List of properties derived for this entity")
     async def rich_properties(self) -> List[RichProperty]:
@@ -1505,11 +1542,10 @@ class ProtocolEvent(Node[RetrievedNode], Event):
 
         Empty when no view declares the word — see `NaturalEvent.rich_properties`.
         """
-        if self._value.category_id is None:
+        if not self._value.category_ids:
             return []
-        category = await loaders.protocol_event_category_loader.load(self._value.category_id)
-
-        return [RichProperty(_entity=self._value, _key=var, _category=category) for var in self._value.cleaned_properties]
+        categories = [await loaders.protocol_event_category_loader.load(category_id) for category_id in self._value.category_ids]
+        return [RichProperty(_entity=self._value, _key=var, _category=_explaining(categories, var)) for var in self._value.cleaned_properties]
 
     @strawberry.field(description="List of the current derived properties for this entity")
     async def properties(self) -> AnyScalar:
@@ -1918,6 +1954,16 @@ class Instance:
         known = await loaders.known_about_node_loader.load(("", str(cast(evidence_models.Instance, self).pk)))
         return cast(List["Link"], list(known.sameness))
 
+    @strawberry.field(description="The standing claims that this instance and another are two things, with who said so (RFC 0019)")
+    async def different_from(self) -> List["Link"]:
+        known = await loaders.known_about_node_loader.load(("", str(cast(evidence_models.Instance, self).pk)))
+        return cast(List["Link"], list(known.differences))
+
+    @strawberry.field(description="Differences whose two ends the organization-grain fold still holds to be one thing, through a third instance. Retract one of the claims that disagree to settle it")
+    async def conflicts(self) -> List["Link"]:
+        known = await loaders.known_about_node_loader.load(("", str(cast(evidence_models.Instance, self).pk)))
+        return cast(List["Link"], list(known.conflicts))
+
     @strawberry.field(description="Every standing claim connecting this thing to something else — relations, participations, classifications and the structures that inform it")
     async def connections(self) -> List["Link"]:
         known = await loaders.known_about_node_loader.load(("", str(cast(evidence_models.Instance, self).pk)))
@@ -1939,11 +1985,12 @@ class Instance:
 
 @kante.django_type(evidence_models.Link, description="A claim relating two things — as the log has it, whether or not any view draws it")
 class Link:
-    """One row of `evidence.Link`: nine kinds of claim, one shape.
+    """One row of `evidence.Link`: ten kinds of claim, one shape.
 
-    A `Relation` or a `Measurement` is how a graph *draws* one of these, and four
-    of the nine kinds are never drawn at all (measurements and structure relations
-    have no edge to draw; `INFORMS` drives derivation instead; `DERIVED_FROM` is
+    A `Relation` or a `Measurement` is how a graph *draws* one of these, and six
+    of the ten kinds are never drawn at all (measurements and structure relations
+    have no edge to draw; `INFORMS` drives derivation instead; `SAME_AS` and
+    `DIFFERENT_FROM` decide which vertices exist rather than being one; `DERIVED_FROM` is
     lineage between claims, read through `derivedFrom`/`derivations`). So the claim
     is what a write returns, and the drawings say where it went.
 
@@ -2038,6 +2085,7 @@ InformsTarget = Annotated[
 _ENDPOINT_TABLES: dict[str, tuple[str, str]] = {
     evidence_models.Link.Kind.RELATION: ("instance", "instance"),
     evidence_models.Link.Kind.SAME_AS: ("instance", "instance"),
+    evidence_models.Link.Kind.DIFFERENT_FROM: ("instance", "instance"),
     evidence_models.Link.Kind.PARTICIPATES_AS_INPUT: ("instance", "instance"),
     evidence_models.Link.Kind.PARTICIPATES_AS_OUTPUT: ("instance", "instance"),
     evidence_models.Link.Kind.MEASUREMENT: ("structure", "instance"),
@@ -2295,6 +2343,25 @@ class Sameness(Edge):
         return cast(Node, cast_node_to_graphql_type(await _endpoint_node(self._value.target_ref, info)))
 
 
+@kante.type(description="A claim that two instances are two things, not one (RFC 0019)")
+class Difference(Edge):
+    """The mirror of `Sameness`: a standing, trusted difference vetoes every
+    direct sameness between its two endpoints in the fold. Reported on a node as
+    `differentFrom`, and as `conflicts` when the two ends still share a
+    component through a third instance."""
+
+    pass
+
+    @kante.django_field(description="One of the two instances claimed to be distinct")
+    async def source(self, info: kante.Info) -> Node:
+        """Either end; like sameness, difference has no primary."""
+        return cast(Node, cast_node_to_graphql_type(await _endpoint_node(self._value.source_ref, info)))
+
+    @kante.django_field(description="The other instance claimed to be distinct")
+    async def target(self, info: kante.Info) -> Node:
+        return cast(Node, cast_node_to_graphql_type(await _endpoint_node(self._value.target_ref, info)))
+
+
 @kante.type(description="A DERIVED_FROM claim: this claim came from that one (RFC 0017)")
 class Derivation(Edge):
     """Lineage between two claims of any shape.
@@ -2444,9 +2511,9 @@ NodeSubtype = Union[Entity, NaturalEvent, ProtocolEvent]
 # Union type for all edge subtypes
 # `Assertion` is deliberately absent: it is the evidence row now, not an AGE edge.
 # `ReifiesAsSource`/`ReifiesAsTarget` used to be here. `RetrievedEdge.from_link`
-# sets `type` from `Link.Kind`, whose nine values map onto the nine cases in
+# sets `type` from `Link.Kind`, whose ten values map onto the ten cases in
 # `cast_edge_to_graphql_type` — neither reifies branch was reachable.
-EdgeSubtype = Union[Relation, StructureRelation, Description, Measurement, InputParticipation, OutputParticipation, Sameness, Classification, Derivation]
+EdgeSubtype = Union[Relation, StructureRelation, Description, Measurement, InputParticipation, OutputParticipation, Sameness, Difference, Classification, Derivation]
 
 
 def cast_node_to_graphql_type(node: RetrievedNode) -> NodeSubtype:
@@ -2507,6 +2574,8 @@ def cast_edge_to_graphql_type(edge: RetrievedEdge) -> EdgeSubtype:
             return StructureRelation(_value=edge)
         case "SAME_AS":
             return Sameness(_value=edge)
+        case "DIFFERENT_FROM":
+            return Difference(_value=edge)
         case "PARTICIPATES_AS_INPUT":
             return InputParticipation(_value=edge)
         case "PARTICIPATES_AS_OUTPUT":
@@ -2929,6 +2998,22 @@ class AssertedSameness:
         return cast(Assertion, self._value.assertion)
 
     @strawberry.field(description="The sameness claims this act recorded. Asserting that three instances are one records every pair among them, under one assertion")
+    def links(self) -> List[Link]:
+        return [cast(Link, subject) for subject in self._value.subjects]
+
+
+@strawberry.type(description="What asserting that instances are distinct recorded (RFC 0019)")
+class AssertedDifference:
+    """Like `AssertedSameness`: no `drawings`, because a difference draws nothing
+    — it changes which vertices a view draws, and every member is redrawn."""
+
+    _value: strawberry.Private[results.Asserted]
+
+    @strawberry.field(description=_ASSERTION_DESCRIPTION)
+    def assertion(self) -> Assertion:
+        return cast(Assertion, self._value.assertion)
+
+    @strawberry.field(description="The difference claims this act recorded — every pair among the named instances, because difference is not transitive")
     def links(self) -> List[Link]:
         return [cast(Link, subject) for subject in self._value.subjects]
 

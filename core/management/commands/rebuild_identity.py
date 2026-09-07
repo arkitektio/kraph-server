@@ -1,4 +1,5 @@
-"""Rebuild the instance-identity fold from the sameness claims that still stand.
+"""Rebuild the instance-identity fold from the sameness claims that still stand,
+less the ones a standing difference vetoes (RFC 0019).
 
 The out-of-band half of :mod:`evidence.identity`, and the same escape hatch
 `manage.py reproject` is for the AGE projection: if this cannot reproduce what
@@ -9,6 +10,7 @@ Three reasons to reach for it:
 
 - **A retraction left work owed.** `identity.retract` flags a component rather
   than splitting it, because union-find has no un-union; `--stale` finishes those.
+  (`identity.separate` — a `DIFFERENT_FROM` write — flags and rebuilds at once.)
 - **The fold and the claims disagree.** `--check` recomputes without writing and
   reports the difference, so a suspicion can be settled without changing
   anything.
@@ -32,7 +34,7 @@ from evidence import models as evidence_models
 class Command(BaseCommand):
     """Rebuild or verify the components instance-identity claims fold into."""
 
-    help = "Rebuild the instance-identity fold from standing SAME_AS claims."
+    help = "Rebuild the instance-identity fold from standing SAME_AS claims, DIFFERENT_FROM vetoes applied."
 
     def add_arguments(self, parser) -> None:
         """Declare the command's arguments."""
@@ -101,14 +103,9 @@ class Command(BaseCommand):
             self.stdout.write(f"  moved    {node} is under {stored[node]}, should be {expected[node]}")
 
     def _expected(self, organization: Organization) -> dict[str, str]:
-        """The fold the standing claims imply, computed without touching the table."""
-        from collections import defaultdict
-
-        adjacency: dict[str, set[str]] = defaultdict(set)
-        for source_ref, target_ref in identity_module._standing_same_as(organization).values_list("source_ref", "target_ref"):
-            source, target = str(source_ref), str(target_ref)
-            adjacency[source].add(target)
-            adjacency[target].add(source)
+        """The fold the standing claims imply, computed without touching the
+        table — the same adjacency `refold` writes, difference vetoes applied."""
+        adjacency = identity_module.standing_adjacency(organization)
 
         expected: dict[str, str] = {}
         unassigned = set(adjacency)

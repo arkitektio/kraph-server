@@ -30,7 +30,8 @@ only ever agree with that vertex's own presence.
 from __future__ import annotations
 
 import logging
-from typing import Any, Iterable, Mapping
+from itertools import combinations
+from typing import Any, Iterable, Mapping, Sequence
 
 from django.db.models import Q
 
@@ -587,6 +588,21 @@ def _observation_window(graph: core_models.Graph, claim_ref: str | Iterable[str]
     }
 
 
+def _widen_window(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
+    """The observation window over two categories' evidence: earliest from, latest to (RFC 0019).
+
+    ISO strings compare as timestamps — `_observation_window` renders them in
+    one format — and `None` (no bounded evidence) never narrows the other side.
+    """
+    if not left:
+        return dict(right)
+    if not right:
+        return dict(left)
+    froms = [value for value in (left.get("valid_from"), right.get("valid_from")) if value is not None]
+    tos = [value for value in (left.get("valid_to"), right.get("valid_to")) if value is not None]
+    return {"valid_from": min(froms) if froms else None, "valid_to": max(tos) if tos else None}
+
+
 def project(
     controller: Any,
     graph: core_models.Graph,
@@ -616,9 +632,9 @@ def project(
 
     refs = [str(ref) for ref in instance_refs]
     nodes = list(evidence_models.Instance.objects.for_organization(graph.organization).filter(id__in=refs))
-    # Which category a node projects as is this graph's question to answer, and
-    # `_write_properties` needs the answer to find the vertex at all — it matches
-    # on the label. Resolved once for the batch rather than per node.
+    # Which categories a node projects under is this graph's question to answer,
+    # and the properties are theirs. Resolved once for the batch rather than per
+    # node.
     resolved, _ = resolve_categories(graph, nodes)
 
     # The grouping is the drawing's: which vertex holds each ref, and what else
@@ -629,11 +645,12 @@ def project(
     written: set[str] = set()
 
     for claim_ref in refs:
-        category = resolved.get(claim_ref)
-        if category is None:
+        categories = resolved.get(claim_ref)
+        if not categories:
             # Either no such node, or no category in this graph admits it. Either
             # way there is no vertex to write onto.
             continue
+        labels = sorted(category.age_name for category in categories)
 
         record = records.get(claim_ref)
         if record is None:
@@ -643,10 +660,23 @@ def project(
             logger.warning(
                 "%s: no vertex labelled %s to write onto; the projection is behind the evidence. Run `manage.py reproject --graph %s`.",
                 claim_ref,
-                category.age_name,
+                ", ".join(labels),
                 graph.pk,
             )
             continue
+
+        if sorted(record["labels"]) != labels:
+            # Drawn, but not under what the claims now admit: a label the view
+            # gained or lost since the vertex was drawn. The values below are
+            # the categories' union either way, but a reader of the drawing sees
+            # the old label set, and `reproject` is what fixes that.
+            logger.warning(
+                "%s: drawn under %s, but its categories are %s; the projection is behind the evidence. Run `manage.py reproject --graph %s`.",
+                claim_ref,
+                ", ".join(sorted(record["labels"])),
+                ", ".join(labels),
+                graph.pk,
+            )
 
         representative = str(record["properties"]["id"])
         if representative in written:
@@ -659,9 +689,16 @@ def project(
         # the rest to `api/types._derive_unindexed`, which folded state per node
         # on every read — and since `index` defaults to False, that was almost
         # all of them.
-        values = derive_properties(graph, members, category)
-        values.update(_property_statistics(graph, members, category))
-        values.update(_observation_window(graph, members, category))
+        # The union over the node's categories (RFC 0019). `resolve_categories`
+        # has refused any pair that defines one key differently, so the union
+        # is a union of disjoint keys, plus keys the pair defines identically.
+        values: dict[str, Any] = {}
+        window: dict[str, Any] = {}
+        for category in categories:
+            values.update(derive_properties(graph, members, category))
+            values.update(_property_statistics(graph, members, category))
+            window = _widen_window(window, _observation_window(graph, members, category))
+        values.update(window)
         values["__schema_version"] = schema_version
         # No `__last_derived` any more. It was a wall-clock millisecond on every
         # vertex — the one projected value `reproject` could not reproduce, so the
@@ -669,11 +706,11 @@ def project(
         # per node. "When was this view last derived" is `Projection.derived_at`,
         # stamped once per call below.
 
-        if not _write_properties(controller, graph, representative, category, values):
+        if not _write_properties(controller, graph, representative, values):
             logger.warning(
                 "%s: no vertex labelled %s to write onto; the projection is behind the evidence. Run `manage.py reproject --graph %s`.",
                 claim_ref,
-                category.age_name,
+                ", ".join(labels),
                 graph.pk,
             )
             continue
@@ -740,8 +777,10 @@ def categories_by_term(graph: core_models.Graph) -> dict[Any, Any]:
     # admit claims stated in *other* words (its clauses' `asserted_as`), and an
     # edge drawn from such a claim still needs this view's label. Resolved by
     # (key, kind of the defining category), declared categories winning; a word
-    # two definitions of the same kind both derive from is left unmapped — the
-    # same one-category-per-claim refusal `resolve_categories` makes for nodes.
+    # two definitions of the same kind both derive from is left unmapped. An
+    # edge is drawn under one label, unlike a node (RFC 0019 lifted that for
+    # nodes only): two edge categories deriving from one word would be two
+    # edges for one claim, which `proposition_key` keys by word and cannot hold.
     from evidence import models as term_models
     from evidence import selector as selector_module
 
@@ -863,41 +902,77 @@ def project_edges(
     return projected
 
 
-def resolve_categories(graph: core_models.Graph, nodes: list[Any]) -> tuple[dict[str, Any], dict[str, str]]:
-    """Which category each node projects as, and why some project as none.
+def property_conflicts(categories: Iterable[core_models.Category]) -> dict[frozenset[Any], str]:
+    """Which pairs of categories cannot draw one node together, and why (RFC 0019).
 
-    Returns `(ref -> category, ref -> reason)`. A ref appears in exactly one of
-    the two.
+    A node drawn under two categories carries the union of their properties, so
+    a key both define has to mean one thing. It does when the two property
+    definitions are equal **and** the two categories' `definition`s are equal:
+    a property's value is a fold — which structures inform it, whose metrics it
+    counts — and the category's rule is part of that fold, so two categories
+    with the same `avg_length` rule but different trust would derive two
+    different numbers for one key. Keyed by the unordered pair of category
+    pks; a pair with no entry may share a node.
+    """
+    conflicts: dict[frozenset[Any], str] = {}
+    listed = [(category, category.property_map) for category in categories]
+    for index, (left, left_props) in enumerate(listed):
+        for right, right_props in listed[index + 1 :]:
+            for key in sorted(set(left_props) & set(right_props)):
+                same_property = left_props[key].model_dump() == right_props[key].model_dump()
+                same_rule = (left.definition or None) == (right.definition or None)
+                if same_property and same_rule:
+                    continue
+                first, second = sorted((left.key, right.key))
+                conflicts[frozenset((left.pk, right.pk))] = f"property {key!r} is defined by both {first} and {second} and would not mean one thing on one vertex"
+                break
+    return conflicts
+
+
+def resolve_categories(graph: core_models.Graph, nodes: list[Any]) -> tuple[dict[str, list[Any]], dict[str, str]]:
+    """Which categories each node projects under, and why some project under none.
+
+    Returns `(ref -> categories, ref -> reason)`. A ref appears in exactly one of
+    the two, and every list is non-empty, sorted by category pk.
 
     This is what makes a category's meaning a property of the *graph* rather than
     of the entity. A category with an empty `definition` is **primitive**:
-    membership is whatever was asserted, which is the old behaviour and stays the
-    default. A category carrying a definition is **defined** — necessary and
-    sufficient conditions over classification claims — so the same node can be an
-    `AIS` in one graph and an `AISproximal` in another with no evidence rewritten.
+    membership is whatever was asserted under its word, which is the old
+    behaviour and stays the default. A category carrying a definition is
+    **defined** — necessary and sufficient conditions over classification claims
+    — so the same node can be an `AIS` in one graph and an `AISproximal` in
+    another with no evidence rewritten.
 
-    Three refusals, all deliberate:
+    **A node is drawn under every category that admits it** (RFC 0019). The
+    categories are a union: every defined category whose definition matches,
+    and every primitive category declaring a word a standing classification
+    names (its own term, when nothing classifies it). A view that declares Pyramidal and
+    Excitatory draws a cell that is both once, under both; a view that declares
+    AIS primitively beside a defined AISproximal draws an AIS the definition
+    admits under both too, because "anything claimed AIS" is what a primitive
+    category means. There is no ordering between defined and primitive and no
+    refusal for matching two definitions — one vertex has room for every label,
+    which the table projection always had (Apache AGE happened to allow one
+    label per vertex, and the old one-category rule was that limit dressed as
+    policy).
 
-    - **The claims say it does not exist.** Somebody retracted it, and nobody
-      this node's category counts has attested it since. A node the evidence
-      says is not there is not in the view — there is no such thing as a node
-      that is present but flagged. Since RFC 0009 this folds under the *resolved
-      category's* clauses — the category is resolved first, then its trust rule
-      decides whose retraction counts — so a retraction by somebody a category
-      does not listen to does not remove its nodes here.
-    - **No definition matches, and the node's own claims name no primitive
-      category this graph declares** — the node is not in the view. A graph is a
-      selection; a node satisfying nothing in it does not belong to it. The caller
-      reports the count, because a definition silently shrinking a graph is the
-      class of silence this codebase treats as a defect.
-    - **More than one definition matches.** A view draws each node under exactly
-      one category — that is the view's *policy*, stated here, not a limit of any
-      store (Apache AGE happens to allow one label per vertex; a table projection
-      would not care). Two definitions both admitting a node is a disagreement
-      inside one view's own rules, and choosing arbitrarily would bury exactly the
-      disagreement the evidence base exists to preserve, so this refuses and names
-      the node — the same way `_value_kinds_for_rule` refuses an ambiguous term
-      rather than picking one. A view that wants both has to say which.
+    Three refusals remain, all deliberate:
+
+    - **The claims say it does not exist — under every category.** Existence
+      folds *per category* (RFC 0009 and 0019): each category is what says whose
+      retractions count for its nodes, so a retraction somebody one category
+      trusts and another does not removes the first label and keeps the second.
+      A node with no label left is not in the view — there is no such thing as
+      a node that is present but flagged.
+    - **No category admits it** — the node is not in the view. A graph is a
+      selection; a node satisfying nothing in it does not belong to it. The
+      caller reports the count, because a definition silently shrinking a graph
+      is the class of silence this codebase treats as a defect.
+    - **Two of its categories define one property differently**
+      (:func:`property_conflicts`). One vertex carries one value per key, and
+      choosing which category's fold to write would bury the disagreement, so
+      the node is refused with a reason naming the key and both categories.
+      Identical definitions under identical rules are fine.
     """
     from evidence import claims as claims_module
     from evidence import selector as selector_module
@@ -910,7 +985,7 @@ def resolve_categories(graph: core_models.Graph, nodes: list[Any]) -> tuple[dict
     by_term = {category.term_id: category for category in categories}
 
     # The unfolded claim base, built once. A defined category folds the claims
-    # *and their standings* under its own clauses; the primitive fallback folds
+    # *and their standings* under its own clauses; a primitive category folds
     # standing organization-grain — the old unscoped behaviour.
     claim_base = selector_module.classification_claims(graph)
     standing_claims = claims_module.standing(claim_base, "link")
@@ -939,51 +1014,59 @@ def resolve_categories(graph: core_models.Graph, nodes: list[Any]) -> tuple[dict
         matched_by_definition[category.pk] = {str(ref) for ref in matched.values_list("source_ref", flat=True)}
 
     by_pk = {category.pk: category for category in categories}
-    resolved: dict[str, Any] = {}
+    conflicts = property_conflicts(categories)
+    resolved: dict[str, list[Any]] = {}
     skipped: dict[str, str] = {}
 
     for node in nodes:
         ref = str(node.ref)
 
-        matches = [by_pk[pk] for pk, refs in matched_by_definition.items() if ref in refs]
+        admitted: dict[Any, Any] = {}
+        for pk, refs in matched_by_definition.items():
+            if ref in refs:
+                admitted[pk] = by_pk[pk]
 
-        if len(matches) > 1:
-            names = ", ".join(sorted(category.key for category in matches))
-            # Reported, not logged. This is read by the *read* paths too now
-            # (`refs_admitted_by`), and a warning here fired on every list query for
-            # as long as the ambiguity existed — the same line `project_all` already
-            # emits at rebuild. Whoever can act on it does the logging.
-            skipped[ref] = f"matches more than one defined category ({names}); a view draws a node under exactly one category, and choosing between them would hide the disagreement"
+        # A *primitive* category this graph declares for a word the node was
+        # claimed under — a graph with no definitions at all therefore behaves
+        # exactly as it did before any of this existed. The word the node was
+        # minted under (`Instance.term`) is what it falls back on only when
+        # **no** classification of it stands: a node whose every claim is
+        # retracted is not thereby a node under a word nobody claims, but a
+        # node nothing has classified needs a word to be drawn at all.
+        claims = claims_by_ref.get(ref, [])
+        for claim in claims:
+            category = by_term.get(claim.term_id)
+            if category is not None and not category.definition:
+                admitted[category.pk] = category
+        own = by_term.get(node.term_id)
+        if not claims and own is not None and not own.definition:
+            admitted[own.pk] = own
+
+        if not admitted:
+            skipped[ref] = "no category in this graph admits it: every term it was asserted as is defined, and none of those definitions match"
             continue
 
-        if matches:
-            resolved[ref] = matches[0]
+        conflict = next((conflicts[pair] for pair in (frozenset(pks) for pks in combinations(sorted(admitted), 2)) if pair in conflicts), None)
+        if conflict is not None:
+            # Reported, not logged. This is read by the *read* paths too
+            # (`refs_admitted_by`), and a warning here would fire on every list
+            # query for as long as the conflict existed — the same line
+            # `project_all` already emits at rebuild. Whoever can act on it does
+            # the logging.
+            skipped[ref] = f"drawn under categories that disagree: {conflict}"
             continue
 
-        # No definition claimed it. Fall back to a *primitive* category this graph
-        # declares for a word the node was claimed under — a graph with no
-        # definitions at all therefore behaves exactly as it did before any of
-        # this existed.
-        primitive = [by_term[claim.term_id] for claim in claims_by_ref.get(ref, []) if claim.term_id in by_term and not by_term[claim.term_id].definition]
-        if primitive:
-            resolved[ref] = primitive[0]
-            continue
+        resolved[ref] = [admitted[pk] for pk in sorted(admitted)]
 
-        # Nothing to fall back on either: every word it was claimed under is
-        # defined here, and none of those definitions admitted it.
-        if node.term_id in by_term and not by_term[node.term_id].definition:
-            resolved[ref] = by_term[node.term_id]
-            continue
-
-        skipped[ref] = "no category in this graph admits it: every term it was asserted as is defined, and none of those definitions match"
-
-    # Existence last, per resolved category, in bulk per category (RFC 0009):
-    # the category is what says whose retractions count for its nodes, so it
-    # has to be known before the fold. One query per category rather than per
-    # node — a rebuild resolves every node in the graph.
+    # Existence last, per category, in bulk per category (RFC 0009): the
+    # category is what says whose retractions count for its nodes, so it has to
+    # be known before the fold. One query per category rather than per node — a
+    # rebuild resolves every node in the graph. A retraction one category counts
+    # takes that category's label and leaves the others (RFC 0019).
     refs_by_category: dict[Any, list[str]] = {}
-    for ref, category in resolved.items():
-        refs_by_category.setdefault(category.pk, []).append(ref)
+    for ref, admitted_categories in resolved.items():
+        for category in admitted_categories:
+            refs_by_category.setdefault(category.pk, []).append(ref)
 
     for category_pk, refs in refs_by_category.items():
         category = by_pk[category_pk]
@@ -995,8 +1078,12 @@ def resolve_categories(graph: core_models.Graph, nodes: list[Any]) -> tuple[dict
             selector_module.trust_filter(category.definition, kind="EXISTENCE", observed_at_column="at"),
         )
         for ref in retracted:
-            resolved.pop(ref, None)
-            skipped[ref] = "the claims this node's category counts say it does not exist"
+            remaining = [category for category in resolved.get(ref, []) if category.pk != category_pk]
+            if remaining:
+                resolved[ref] = remaining
+            else:
+                resolved.pop(ref, None)
+                skipped[ref] = "the claims this node's categories count say it does not exist"
 
     return resolved, skipped
 
@@ -1036,21 +1123,28 @@ def refs_admitted_by(category: core_models.Category) -> set[str]:
     candidates = list(selector_module.instances_for(graph).filter(Q(term_id=category.term_id) | Q(id__in=claimed_refs)).select_related("term"))
     resolved, _ = resolve_categories(graph, candidates)
 
-    return {ref for ref, drawn_as in resolved.items() if drawn_as.pk == category.pk}
+    # A node counts in every category it holds (RFC 0019).
+    return {ref for ref, drawn_as in resolved.items() if any(drawn.pk == category.pk for drawn in drawn_as)}
 
 
 def representatives_admitted_by(category: core_models.Category) -> set[str]:
     """Every individual this category draws, by representative (RFC 0018).
 
-    :func:`refs_admitted_by` folded once more through `identity.view_components`
-    — the same fold `project_all` draws with — so `entities(category:)` lists one
-    row per individual rather than one per observation. Components never cross
-    a category, so folding this category's refs alone is the whole answer.
+    :func:`refs_admitted_by` folded once more through the view's sameness
+    (`identity.component_refs_for_view`) — the same fold `project_all` draws
+    with — so `entities(category:)` lists one row per individual rather than one
+    per observation. Folded through the frontier walk rather than
+    `view_components` over this category's refs alone: a member may hold this
+    category and another, and a sameness claim the other one trusts joins it to
+    an individual whose representative this category never admitted on its own
+    (RFC 0019). The representative is the individual's, whichever of its
+    categories the caller asked through.
     """
     from evidence import identity as identity_module
 
     admitted = refs_admitted_by(category)
-    return set(identity_module.view_components(category.graph, {ref: category for ref in admitted}))
+    components = identity_module.component_refs_for_view(category.graph, sorted(admitted))
+    return {min(str(member) for member in members) for members in components.values()}
 
 
 def refs_in_graph(graph: core_models.Graph) -> set[str]:
@@ -1261,7 +1355,6 @@ def _write_properties(
     controller: Any,
     graph: core_models.Graph,
     claim_ref: str,
-    category: core_models.Category,
     values: dict[str, Any],
 ) -> bool:
     """Set properties on the drawn vertex holding a durable instance ref.
@@ -1274,10 +1367,10 @@ def _write_properties(
     silent no-op in Cypher, so without this the caller cannot tell a written
     node from an absent one — and reports both as projected.
     """
-    return controller.projector.write_properties(graph, str(claim_ref), category.age_name, values)
+    return controller.projector.write_properties(graph, str(claim_ref), values)
 
 
-def create_vertex(controller: Any, graph: core_models.Graph, nodes: list[Any], category: Any) -> str:
+def create_vertex(controller: Any, graph: core_models.Graph, nodes: list[Any], categories: Sequence[Any]) -> str:
     """Draw one individual into the projection: one vertex for these member instances.
 
     Shared by `rebuild` and `reproject_refs` so that a replayed vertex and a
@@ -1290,8 +1383,10 @@ def create_vertex(controller: Any, graph: core_models.Graph, nodes: list[Any], c
     organization-grain identity cache uses; every member is written beside it so
     any of them addresses the vertex. Returns that representative.
 
-    The vertex carries its identity, **what kind of thing it is**, and its label.
-    Every other value on it is derived, and `project` is what derives them.
+    The vertex carries its identity, **what kind of thing it is**, and its
+    labels — one per category in ``categories``, the union of what admitted its
+    members (RFC 0019). Every other value on it is derived, and `project` is
+    what derives them.
 
     ``type`` comes from `Instance.kind` — the claim's own account of what it is —
     rather than from the label, which is `category.age_name` and therefore this
@@ -1301,26 +1396,29 @@ def create_vertex(controller: Any, graph: core_models.Graph, nodes: list[Any], c
     it could never be one of. A node's kind is a fact about the claim, so the
     claim is where it is taken from — and it is written here so that a vertex is
     self-describing to any reader, which is what removes the fallback entirely.
-    Members share a category, so they share a kind.
+    Members share at least one category, so they share a kind.
     """
     members = sorted(str(node.ref) for node in nodes)
     representative = members[0]
+    by_pk = {category.pk: category for category in categories}
+    labelled = [(category.age_name, category.pk) for _, category in sorted(by_pk.items())]
     # Converging: drawing an individual that is already drawn — `attest_node` on
     # a standing node, `project_all` over a populated namespace, an incremental
     # replay — leaves one vertex. One whose *label* or *membership* moved still
     # needs its old vertex cleared first; `reproject_refs` does that, `rebuild`
     # drops the namespace, and `project_all` relies on one of the two having
     # happened.
-    controller.projector.draw_node(graph, representative, category.age_name, category.pk, str(nodes[0].kind).upper(), members)
+    controller.projector.draw_node(graph, representative, labelled, str(nodes[0].kind).upper(), members)
     return representative
 
 
-def draw_components(controller: Any, graph: core_models.Graph, nodes: Iterable[Any], resolved: Mapping[str, Any]) -> dict[str, list[str]]:
+def draw_components(controller: Any, graph: core_models.Graph, nodes: Iterable[Any], resolved: Mapping[str, Sequence[Any]]) -> dict[str, list[str]]:
     """Draw every individual among the resolved nodes; returns representative → members.
 
     The one place the component fold meets the drawing: `identity.view_components`
     says which resolved nodes this view holds to be one thing, and each component
-    becomes one `create_vertex`. Nodes `resolve_categories` skipped are not in
+    becomes one `create_vertex`, labelled by the **union** of its members'
+    categories (RFC 0019). Nodes `resolve_categories` skipped are not in
     `resolved`, so they are drawn nowhere and bridge nothing.
     """
     from evidence import identity as identity_module
@@ -1328,7 +1426,8 @@ def draw_components(controller: Any, graph: core_models.Graph, nodes: Iterable[A
     by_ref = {str(node.ref): node for node in nodes}
     components = identity_module.view_components(graph, resolved)
     for representative, members in components.items():
-        create_vertex(controller, graph, [by_ref[member] for member in members], resolved[representative])
+        categories = {category.pk: category for member in members for category in resolved[member]}
+        create_vertex(controller, graph, [by_ref[member] for member in members], [categories[pk] for pk in sorted(categories)])
     return components
 
 
@@ -1434,7 +1533,7 @@ def refs_drawn_as(graph: core_models.Graph, category: core_models.Category) -> l
     """
     nodes = list(selector_module.instances_for(graph).select_related("term"))
     resolved, _ = resolve_categories(graph, nodes)
-    return [ref for ref, resolved_category in resolved.items() if resolved_category.pk == category.pk]
+    return [ref for ref, categories in resolved.items() if any(drawn.pk == category.pk for drawn in categories)]
 
 
 def rematerialize_category(
@@ -1524,7 +1623,7 @@ def rebuild(controller: Any, graph: core_models.Graph) -> dict[str, int]:
 
     # Every cache the replay reads is refolded or checked **before** the replay
     # reads it, or the rebuild would only prove the projection can be rebuilt from
-    # other caches. Three of them, all organization-grain:
+    # other caches. All organization-grain:
     #
     # - `CategoryAssertedTerm` — which words each definition derives from. It is
     #   what `selector.term_ids_for` reads to decide membership, so a stale row
@@ -1532,9 +1631,17 @@ def rebuild(controller: Any, graph: core_models.Graph) -> dict[str, int]:
     # - `InstanceIdentity` — the SAME_AS components. A retraction only flags a
     #   component; the flagged ones are recomputed here.
     # - `CurrentStanding` — what every "which of these still count" narrowing reads.
+    #
+    # Four, with the metrics' fold below.
     asserted_terms.refold(organization)
     identity_module.recompute_stale(organization)
     claims_current = claims_module.refold_current(organization)
+    # - `State` — the folded metrics an unconstrained property reads
+    #   (`derive_properties` → `state_for_many`). This used to be refolded
+    #   *after* the replay, so a rebuild derived every plain property from the
+    #   cache it was about to rebuild: a metric whose `merge` never ran was
+    #   missing from the drawing until the *next* rebuild.
+    states = refold_state(organization)
 
     # The log position this replay is a picture of. Read before enumerating, so an
     # assertion that commits while the replay runs is either in the picture or
@@ -1542,7 +1649,7 @@ def rebuild(controller: Any, graph: core_models.Graph) -> dict[str, int]:
     head = watermark.max_seq(organization)
 
     # Resolved once here purely to fail *before* the drop. A definition that
-    # admits nothing, or one that admits a node under two categories, has to raise
+    # admits nothing has to raise
     # while the projection it would replace is still standing — the alternative is
     # an empty namespace and an exception, with nothing left to fall back on.
     # `project_all` resolves again after the drop; one redundant pass is the price
@@ -1559,7 +1666,7 @@ def rebuild(controller: Any, graph: core_models.Graph) -> dict[str, int]:
 
     counts = project_all(controller, graph)
     counts["claims"] = claims_current
-    counts["states"] = refold_state(organization)
+    counts["states"] = states
 
     watermark.mark_consistent(graph, through_seq=head, schema_hash=watermark.active_schema_hash(graph), rebuilt=True)
     return counts
@@ -1651,8 +1758,8 @@ def touched_refs(organization: Any, assertion_ids: Iterable[Any], since_seq: int
     to the node(s) whose vertex, edges or derived properties it can move:
 
     - an `Instance` — itself;
-    - a `Link` — its node endpoints by kind: RELATION, PARTICIPATES_*, SAME_AS on
-      both sides; CLASSIFIES, INFORMS, MEASUREMENT on the node side only (the
+    - a `Link` — its node endpoints by kind: RELATION, PARTICIPATES_*, SAME_AS and
+      DIFFERENT_FROM on both sides; CLASSIFIES, INFORMS, MEASUREMENT on the node side only (the
       other end is a term or a structure). STRUCTURE_RELATION touches no node;
     - a `Structure` or a `Metric` — every node the structure informs
       (`refs_informed_by`), since that is what its derived properties fold over;
@@ -1665,6 +1772,8 @@ def touched_refs(organization: Any, assertion_ids: Iterable[Any], since_seq: int
     without leaving an outbox row. A ref that names no `Instance` (an INFORMS onto
     a link, say) is harmless: it resolves to no node and is never drawn.
     """
+    from evidence import identity as identity_module
+
     ids = list(assertion_ids)
     if not ids and since_seq is None:
         return set(), False
@@ -1678,7 +1787,7 @@ def touched_refs(organization: Any, assertion_ids: Iterable[Any], since_seq: int
 
     refs.update(str(pk) for pk in evidence_models.Instance.objects.for_organization(organization).filter(predicate).values_list("id", flat=True))
 
-    both = {evidence_models.Link.Kind.RELATION, evidence_models.Link.Kind.PARTICIPATES_AS_INPUT, evidence_models.Link.Kind.PARTICIPATES_AS_OUTPUT, evidence_models.Link.Kind.SAME_AS}
+    both = {evidence_models.Link.Kind.RELATION, evidence_models.Link.Kind.PARTICIPATES_AS_INPUT, evidence_models.Link.Kind.PARTICIPATES_AS_OUTPUT, *identity_module.IDENTITY_KINDS}
     source_side = {evidence_models.Link.Kind.CLASSIFIES}
     target_side = {evidence_models.Link.Kind.INFORMS, evidence_models.Link.Kind.MEASUREMENT}
 
@@ -1688,7 +1797,7 @@ def touched_refs(organization: Any, assertion_ids: Iterable[Any], since_seq: int
             if kind in both:
                 refs.add(str(source_ref))
                 refs.add(str(target_ref))
-                if kind == evidence_models.Link.Kind.SAME_AS:
+                if kind in identity_module.IDENTITY_KINDS:
                     saw_same_as = True
             elif kind in source_side:
                 refs.add(str(source_ref))

@@ -32,7 +32,7 @@ async def test_drawings_report_the_rules_category_not_the_vertex_stamp(api_schem
         # still expressible is a *declared but wrong* category of the same graph —
         # which is exactly the stale-vertex shape the original bug had.
         wrong = core_models.EntityCategory.objects.get(graph=test_graph, key="Cell")
-        graph_engine_models.ProjectionVertex.objects.filter(graph=test_graph, ref=entity_id).update(category_pk=wrong.pk)
+        graph_engine_models.ProjectionLabel.objects.filter(graph=test_graph, vertex__ref=entity_id).update(category_pk=wrong.pk, label=wrong.age_name)
         node = evidence_models.Instance.objects.for_organization(test_graph.organization).select_related("term").get(pk=entity_id)
         drawings = GraphController(projector=table_projector).drawings_for_instance(node)
         rule = core_models.EntityCategory.objects.get(graph=test_graph, key="AIS")
@@ -59,7 +59,7 @@ def test_two_undrawn_nodes_are_two_objects(test_graph: core_models.Graph, table_
 
 @pytest.mark.django_db(transaction=True)
 def test_deleting_a_graph_row_drops_its_namespace(test_graph: core_models.Graph, table_projector) -> None:
-    table_projector.draw_node(test_graph, "00000000-0000-0000-0000-000000000001", "Cell", None, "ENTITY", ["00000000-0000-0000-0000-000000000001"])
+    table_projector.draw_node(test_graph, "00000000-0000-0000-0000-000000000001", [("Cell", None)], "ENTITY", ["00000000-0000-0000-0000-000000000001"])
     assert graph_engine_models.ProjectionVertex.objects.filter(graph=test_graph).exists()
     core_models.Graph.objects.filter(pk=test_graph.pk).delete()
     assert not graph_engine_models.ProjectionVertex.objects.filter(graph_id=test_graph.pk).exists(), "a deleted view takes its drawing with it, on every deletion path"

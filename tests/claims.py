@@ -94,6 +94,17 @@ def same(organization: Any, left_ref: str, right_ref: str, subject: str, *, app_
     return link
 
 
+def different(organization: Any, left_ref: str, right_ref: str, subject: str, *, app_id: str = "pytest", asserted_at: datetime | None = None, observed_at: datetime | None = None, confidence: float | None = None) -> Any:
+    """One annotator's claim that two observations are two individuals (RFC
+    0019), folded into the organization-grain cache as the controller folds it."""
+    from evidence import identity
+
+    assertion = _assertion(organization, subject, app_id, asserted_at)
+    link = writer.create_link(organization, kind=evidence_models.Link.Kind.DIFFERENT_FROM, source_ref=str(left_ref), target_ref=str(right_ref), assertion=assertion, observed_at=observed_at, confidence=confidence)
+    identity.separate(organization, str(left_ref), str(right_ref))
+    return link
+
+
 def retract_link(organization: Any, link: Any, subject: str, *, app_id: str = "pytest", asserted_at: datetime | None = None, at: datetime | None = None) -> Any:
     """One annotator's position that a link claim no longer holds."""
     assertion = _assertion(organization, subject, app_id, asserted_at)

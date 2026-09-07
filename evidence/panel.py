@@ -42,9 +42,10 @@ from evidence import identity as identity_module
 from evidence import models as evidence_models
 
 #: What "connected to" means. Enumerated positively rather than as an exclusion
-#: of `CLASSIFIES`, `SAME_AS` and `DERIVED_FROM` — those are claims *about* a
-#: node (or about the claim itself, for lineage), not connections from it, and
-#: each is answered elsewhere (`labels`, `sameAs`, `derivedFrom`) — because the index is
+#: of `CLASSIFIES`, `SAME_AS`, `DIFFERENT_FROM` and `DERIVED_FROM` — those are
+#: claims *about* a node (or about the claim itself, for lineage), not
+#: connections from it, and each is answered elsewhere (`labels`, `sameAs`,
+#: `differentFrom`, `derivedFrom`) — because the index is
 #: `(organization, kind, source_ref)` and a query naming no kind cannot seek on
 #: the ref. An `exclude` reads more naturally and scans.
 #:
@@ -170,17 +171,29 @@ def sameness_for(organization: Any, refs: Iterable[str], graph: Any = None) -> d
 
     Exposed alongside the component rather than folded into it, so a merge is
     visible and contestable instead of silent: the panel can say *who* said two
-    observations were one thing, and the claim can be retracted.
+    observations were one thing, and the claim can be retracted. A sameness a
+    difference vetoes (RFC 0019) is still listed — it still stands, and it is
+    the claim a reader may want to withdraw.
     """
+    return _identity_for(organization, refs, graph, kind=evidence_models.Link.Kind.SAME_AS)
+
+
+def difference_for(organization: Any, refs: Iterable[str], graph: Any = None) -> dict[str, list[Any]]:
+    """The standing `DIFFERENT_FROM` claims touching each ref (RFC 0019), under
+    the same scope rule as :func:`sameness_for`."""
+    return _identity_for(organization, refs, graph, kind=evidence_models.Link.Kind.DIFFERENT_FROM)
+
+
+def _identity_for(organization: Any, refs: Iterable[str], graph: Any, *, kind: Any) -> dict[str, list[Any]]:
     wanted = [str(ref) for ref in refs]
     if not wanted:
         return {}
 
     if graph is not None:
-        links = identity_module.view_sameness_links(graph, wanted)
+        links = identity_module.view_identity_links(graph, wanted, kinds=(kind,))
     else:
         links = claims_module.standing(
-            evidence_models.Link.objects.for_organization(organization).filter(_touching(wanted), kind=evidence_models.Link.Kind.SAME_AS),
+            evidence_models.Link.objects.for_organization(organization).filter(_touching(wanted), kind=kind),
             "link",
         ).select_related("assertion")
 
@@ -266,6 +279,13 @@ class Known:
     component: list[str]
     labels: list[Label]
     sameness: list[Any]
+    #: The standing `DIFFERENT_FROM` claims touching any member (RFC 0019).
+    differences: list[Any]
+    #: The subset of `differences` with **both** ends inside the component: a
+    #: difference the fold could not honour, because the two are still joined
+    #: through a third instance. Nothing here is resolved automatically; the
+    #: list exists so a person can retract one of the claims that disagree.
+    conflicts: list[Any]
     connections: list[Any]
 
 
@@ -307,19 +327,24 @@ def known_about(refs: Iterable[str], graph: Any = None) -> list[Known]:
 
         labels = labels_for(organization, every_member)
         sameness = sameness_for(organization, every_member, graph=graph)
+        differences = difference_for(organization, every_member, graph=graph)
         connections = connections_for(organization, every_member)
 
         for ref in node_refs:
             members = components[ref]
+            inside = set(members)
+            distinct_differences = _distinct_links(differences, members)
             known[ref] = Known(
                 node_ref=ref,
                 component=members,
                 labels=[label for member in members for label in labels.get(member, ())],
                 sameness=_distinct_links(sameness, members),
+                differences=distinct_differences,
+                conflicts=[link for link in distinct_differences if str(link.source_ref) in inside and str(link.target_ref) in inside],
                 connections=_distinct_links(connections, members),
             )
 
-    return [known.get(ref, Known(node_ref=ref, component=[ref], labels=[], sameness=[], connections=[])) for ref in wanted]
+    return [known.get(ref, Known(node_ref=ref, component=[ref], labels=[], sameness=[], differences=[], conflicts=[], connections=[])) for ref in wanted]
 
 
 def _distinct_links(grouped: dict[str, list[Any]], members: Iterable[str]) -> list[Any]:

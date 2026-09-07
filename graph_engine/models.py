@@ -86,21 +86,26 @@ class Projection(models.Model):
 class ProjectionVertex(models.Model):
     """One drawn node: how one view draws one **individual** (RFC 0018).
 
-    An individual is a component of instances the view's category holds to be
-    one thing — the closure of the standing `SAME_AS` claims its rules trust —
+    An individual is a component of instances the view's categories hold to be
+    one thing — the closure of the standing `SAME_AS` claims their rules trust —
     and most often a single instance. `ref` is the component's representative,
     the lowest member uuid, so it is arrival-independent; every member is a
     `ProjectionMember` row, the representative included. `ref` is held as a
     plain value, never a foreign key: the drawing may not hold the log in place,
-    and a rebuild must be free to happen while evidence is written. `label` is
-    the view's own word for the category (`Category.age_name`), `category_pk`
-    the category row that admitted the node, and `kind` the claim's
-    `Instance.Kind` — the fact `RetrievedNode.node_type` reads.
+    and a rebuild must be free to happen while evidence is written. `kind` is
+    the claim's `Instance.Kind` — the fact `RetrievedNode.node_type` reads.
+
+    **What the vertex is drawn as lives on `ProjectionLabel`** (RFC 0019): one
+    row per category of the view that admits the individual, so a cell the view
+    holds to be both Pyramidal and Excitatory is one vertex with two labels. A
+    vertex has at least one label; the last label going takes the vertex with it
+    (a trigger, migration 0009). `label` and `category_pk` used to be columns
+    here, which is why a node two definitions admitted was refused.
 
     `properties` holds only the **derived** values (`Projector.write_properties`);
-    the identity trio (`id`, `category_id`, `type`) lives in real columns and is
-    folded back into the record by the reader, so a drawn record looks the same
-    as it always did: ``{id, label, properties}``.
+    the identity trio (`id`, `category_ids`, `type`) is folded back into the
+    record by the reader from the columns and the label rows, so a drawn record
+    looks the same as it always did: ``{id, label, labels, properties}``.
 
     The row id is the drawing's opaque vertex id — reassigned by every rebuild,
     carried on `RetrievedNode.vertex_id`, never identity.
@@ -108,25 +113,45 @@ class ProjectionVertex(models.Model):
 
     graph = models.ForeignKey("core.Graph", on_delete=models.CASCADE, related_name="projection_vertices")
     ref = models.UUIDField(help_text="The drawn claim's uuid. A value, not a FK: the drawing never holds evidence in place.")
-    label = models.CharField(max_length=1000, help_text="The view's word for the category (`Category.age_name`).")
-    category_pk = models.BigIntegerField(
-        null=True,
-        blank=True,
-        help_text=(
-            "The category row that admitted this node. A plain integer to Django, but backed by a "
-            "raw composite foreign key `(graph_id, category_pk) REFERENCES core_category (graph_id, id)` "
-            "ON DELETE CASCADE (migration 0005 — Django cannot express a composite FK), so the database "
-            "itself refuses a vertex drawn under a category its graph does not declare, and a deleted "
-            "category takes its drawings with it. NULL passes the constraint (MATCH SIMPLE): only rows "
-            "an older projector drew carry it, and `manage.py reproject` is their repair. RFC 0006."
-        ),
-    )
     kind = models.CharField(max_length=32, help_text="The claim's `Instance.Kind` (ENTITY, NATURAL_EVENT, PROTOCOL_EVENT).")
     properties = models.JSONField(default=dict, blank=True, help_text="Derived properties only; identity lives in the columns.")
 
     class Meta:
         default_related_name = "projection_vertices"
         constraints = [models.UniqueConstraint(fields=["graph", "ref"], name="one_vertex_per_ref_per_view")]
+
+    def __str__(self) -> str:
+        return f"vertex {self.ref} in graph #{self.graph_id}"
+
+
+class ProjectionLabel(models.Model):
+    """One category a drawn vertex is drawn under (RFC 0019).
+
+    `label` is the view's own word for the category (`Category.age_name`) and
+    `category_pk` the category row that admitted the individual. A plain integer
+    to Django, but backed by a raw composite foreign key
+    `(graph_id, category_pk) REFERENCES core_category (graph_id, id)`
+    ON DELETE CASCADE (migration 0009, relocated from the vertex — Django cannot
+    express a composite FK), so the database itself refuses a label under a
+    category its graph does not declare, and a deleted category takes its labels
+    with it. NULL passes the constraint (MATCH SIMPLE): only rows an older
+    projector drew carry it, and `manage.py reproject` is their repair.
+
+    `graph` is carried redundantly so the per-category views of the namespace
+    and the composite FK never join through the vertex. Cascades with the vertex;
+    the reverse holds too — a vertex whose last label is deleted is deleted by
+    the `projectionlabel_last_label_deletes_vertex` trigger, because a vertex
+    drawn under nothing is a node the view does not admit.
+    """
+
+    graph = models.ForeignKey("core.Graph", on_delete=models.CASCADE, related_name="projection_labels")
+    vertex = models.ForeignKey(ProjectionVertex, on_delete=models.CASCADE, related_name="labels")
+    label = models.CharField(max_length=1000, help_text="The view's word for the category (`Category.age_name`).")
+    category_pk = models.BigIntegerField(null=True, blank=True, help_text="The category row that admitted this node; composite FK to `core_category (graph_id, id)` in SQL (migration 0009). RFC 0006, RFC 0019.")
+
+    class Meta:
+        default_related_name = "projection_labels"
+        constraints = [models.UniqueConstraint(fields=["vertex", "category_pk"], name="one_label_per_category_per_vertex")]
         indexes = [
             models.Index(fields=["graph", "label"]),
             # Serves both the composite FK's delete-cascade lookups and the
@@ -136,7 +161,7 @@ class ProjectionVertex(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"vertex {self.ref} ({self.label}) in graph #{self.graph_id}"
+        return f"label {self.label} on vertex #{self.vertex_id} in graph #{self.graph_id}"
 
 
 class ProjectionMember(models.Model):

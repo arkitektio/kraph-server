@@ -12,7 +12,9 @@ evidence rather than a status; the projection holding only what exists, so no ve
 view exists to hold it and a view can be declared over history it did not witness; and a view
 drawing **one vertex per individual** rather than per observation (RFC 0018), so §3's "one
 projection write per node" is per component, and the sufficient statistics of §3.1 compose across
-the members of one individual the same way they compose across value kinds.
+the members of one individual the same way they compose across value kinds; and that vertex
+carrying **every category that admits it** (RFC 0019) — labels are `ProjectionLabel` rows, so
+wherever this text says a vertex's label or `category_id`, read labels and `category_ids`.
 
 It also predates everything that made the projection *droppable in practice*: §1's "inside a
 single AGE label space" describes evidence as AGE labels, which it has not been since the
@@ -355,7 +357,7 @@ Enforce the two tiers as an invariant rather than a convention.
 - **Evidence is append-only.** No `SET`, no `DELETE`, ever. `update_structure`'s
   `SET s.object = $obj` (`controller.py:1123`) becomes a new `Structure` plus a supersede
   assertion.
-- **Projection is droppable.** Everything on `Entity` beyond `id` and `category_id` is derivable
+- **Projection is droppable.** Everything on `Entity` beyond `id` and `category_ids` is derivable
   from evidence plus a `GraphSchema` version.
 
 Replace the scattered `_recalculate_*` calls with a single `Projector` owning three operations:

@@ -693,6 +693,15 @@ class Link(models.Model):
         # `(identifier, object)`, so sameness there is either a duplicate row
         # (which cannot happen) or a claim about the entities they inform.
         SAME_AS = "same_as", "Same as"
+        # "These two are *not* one." The mirror of SAME_AS, under the same rule
+        # (a category that trusts one trusts the other — both are SAMENESS), so
+        # a merge can be contested by a claim of one's own rather than only by a
+        # position on somebody else's. Its effect on the fold is fixed: a
+        # standing, trusted DIFFERENT_FROM(a, b) vetoes every direct SAME_AS
+        # between a and b. A disagreement through a third instance is *not*
+        # resolved by the fold — the component stays and the panel reports the
+        # difference as a conflict (RFC 0019).
+        DIFFERENT_FROM = "different_from", "Different from"
         # "This claim came from that one." Lineage between claims of any shape:
         # `source_ref` is the new claim, `target_ref` the one it derives from, and
         # either end may be an instance, a link, a metric or a structure. Written

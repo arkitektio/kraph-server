@@ -164,7 +164,7 @@ def test_the_property_graph_answers_for_the_drawing(test_graph, table_projector)
 
     ais = _cat(test_graph, "AIS")
     ref = "00000000-0000-0000-0000-00000000a15e"
-    table_projector.draw_node(test_graph, ref, ais.age_name, ais.pk, "ENTITY", [ref])
+    table_projector.draw_node(test_graph, ref, [(ais.age_name, ais.pk)], "ENTITY", [ref])
 
     with connection.cursor() as cursor:
         cursor.execute(f'SELECT ref FROM GRAPH_TABLE ("{test_graph.age_name}".graph MATCH (a IS "AIS") COLUMNS (a.__ref AS ref))')

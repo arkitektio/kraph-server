@@ -20,7 +20,7 @@ from .natural_event import assert_natural_event_exists, retract_natural_event, a
 from .protocol_event import assert_protocol_event_exists, retract_protocol_event, attest_protocol_event
 from .participation import assert_participation, assert_participations, retract_participation
 from .link import classify_nodes, retract_links, attest_link
-from .identity import assert_same_instance, retract_same_instance
+from .identity import assert_different_instance, assert_same_instance, retract_different_instance, retract_same_instance
 from .comment import comment_on_structure, retract_comment, attest_comment
 from .schema import *
 from .schema import create_graph_table_query_through_builder
@@ -81,6 +81,8 @@ __all__ = [
     "retract_links",
     "assert_same_instance",
     "retract_same_instance",
+    "assert_different_instance",
+    "retract_different_instance",
     "create_graph_table_query_through_builder",
     # Insights graph query subtype mutations
     "create_graph_table_query",

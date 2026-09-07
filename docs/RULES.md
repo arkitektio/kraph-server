@@ -161,7 +161,32 @@ in a view, no matter who claims it. A thing is one kind of thing.
 
 The organization-wide component (what you see without a graph in scope) still
 unions every standing sameness claim. The per-view component applies the
-category's rules and the within-category constraint.
+category's rules and the within-category constraint. Since a node may hold
+several categories of one view (below), two nodes merge when any category they
+*share* trusts the claim.
+
+### Saying two things are different
+
+`assertDifferentInstance` records the opposite claim, `DIFFERENT_FROM`, one per
+pair. It is read under the same rule as sameness — a rule that covers `SAMENESS`
+covers both — and does exactly one thing in every fold: a standing, trusted
+difference between a and b removes every *direct* sameness claim between a and
+b. If a and b are still joined through a third instance (a~b, b~c, a≠c), they
+stay one individual and the difference is reported under `conflicts` on the
+node, for a person to settle by retracting one of the claims that disagree. The
+fold never guesses whose other claim to drop.
+
+## A node holds every category that admits it
+
+A view draws a node under **every** category whose rule admits it — a defined
+Pyramidal and a defined Excitatory both matching one cell is a cell with two
+labels, not an ambiguity. Existence is judged per category: a retraction the
+Pyramidal rule counts but the Excitatory rule does not leaves the node under
+Excitatory alone. Its properties are the union of both categories' properties.
+The one thing two categories may not do is define the **same** property key
+differently — one vertex has one value per key — and a node caught between two
+such categories is refused with a reason naming both. Identical definitions are
+fine.
 
 ## Property rules
 
@@ -271,7 +296,8 @@ Settled and implemented:
 - per-view existence, edge trust, evidence routing and measurement scope
 - definitions on all five category families (entities, relations, events,
   structure relations, measurements)
-- per-view, within-category sameness
+- per-view, within-category sameness, and its negative (`DIFFERENT_FROM`)
+- a node under every category that admits it
 - `rule.evidence` on properties, as a rule list with `unless`
 - `KEY` in measurement rules
 - `CONFIDENCE` on every claim, with `AT_LEAST`/`BELOW`

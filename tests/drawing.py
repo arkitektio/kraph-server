@@ -12,6 +12,11 @@ is the representative, and `ProjectionMember` lists every instance it stands
 for. Every helper that takes a ref accepts **any member**, so "does the view
 draw this observation" keeps its answer whether or not the observation was
 merged into a larger individual.
+
+A vertex is drawn under every category that admits it (RFC 0019): its labels
+are `ProjectionLabel` rows, so "how many vertices under this label" counts
+vertices that carry the label among others, and one vertex can count under
+several labels.
 """
 
 from __future__ import annotations
@@ -48,8 +53,16 @@ def members_of(graph: Any, ref: str) -> list[str]:
 def vertex_count(graph: Any, label: str | None = None) -> int:
     queryset = models.ProjectionVertex.objects.filter(graph=graph)
     if label is not None:
-        queryset = queryset.filter(label=str(label))
-    return queryset.count()
+        queryset = queryset.filter(labels__label=str(label))
+    return queryset.distinct().count()
+
+
+def labels_of(graph: Any, ref: str) -> set[str]:
+    """Every label the vertex holding `ref` is drawn under; `set()` if undrawn."""
+    vertex = _vertex_holding(graph, ref)
+    if vertex is None:
+        return set()
+    return {str(label) for label in models.ProjectionLabel.objects.filter(vertex=vertex).values_list("label", flat=True)}
 
 
 def edge_count(graph: Any, label: str | None = None) -> int:
@@ -75,7 +88,7 @@ def edge_properties_between(graph: Any, source_ref: str, target_ref: str, label:
 
 def refs_with_label(graph: Any, label: str) -> list[str]:
     """The **representative** ref of every vertex this view draws under `label`."""
-    return [str(ref) for ref in models.ProjectionVertex.objects.filter(graph=graph, label=str(label)).values_list("ref", flat=True)]
+    return [str(ref) for ref in models.ProjectionVertex.objects.filter(graph=graph, labels__label=str(label)).distinct().values_list("ref", flat=True)]
 
 
 def all_vertex_properties(graph: Any) -> dict[str, dict[str, Any]]:
@@ -89,18 +102,22 @@ def edge_property_values(graph: Any, label: str, key: str) -> list[Any]:
 
 
 def vertex_record(graph: Any, ref: str) -> dict[str, Any] | None:
-    """The drawn record for the vertex holding `ref` — `{id, label, properties}` — or None if undrawn.
+    """The drawn record for the vertex holding `ref` — `{id, label, labels, properties}` — or None if undrawn.
 
     `properties["id"]` is the representative, which may differ from the ref asked for.
+    `labels` is sorted and `label` the first of them; `properties["category_ids"]`
+    is the sorted category pks behind the labels (RFC 0019).
     """
     row = _vertex_holding(graph, ref)
     if row is None:
         return None
+    label_rows = list(models.ProjectionLabel.objects.filter(vertex=row).order_by("label"))
     properties = dict(row.properties or {})
     properties["id"] = str(row.ref)
-    properties["category_id"] = row.category_pk
+    properties["category_ids"] = sorted(label_row.category_pk for label_row in label_rows if label_row.category_pk is not None)
     properties["type"] = row.kind
-    return {"id": int(row.pk), "label": row.label, "properties": properties}
+    labels = [str(label_row.label) for label_row in label_rows]
+    return {"id": int(row.pk), "label": labels[0] if labels else "", "labels": labels, "properties": properties}
 
 
 def vertex_properties(graph: Any, ref: str) -> dict[str, Any]:

@@ -59,12 +59,15 @@ class NodeDrawing:
 
     graph: core_models.Graph
     #: Non-null by construction: `projector.create_vertex` is the only writer of a
-    #: vertex and takes a category to label it with, so "drawn under no category"
-    #: is unreachable. This is the category the **vertex** carries, read back from
-    #: its `category_id`, not the one a resolver thinks it should have.
+    #: vertex and takes at least one category to label it with, so "drawn under
+    #: no category" is unreachable. One drawing per category (RFC 0019): a view
+    #: that draws a node under Pyramidal and Excitatory reports two drawings, on
+    #: the same `graph` and the same `node`. This is the rule's answer
+    #: (`resolve_categories`), checked against the `category_ids` the vertex
+    #: carries.
     category: core_models.Category
     #: The node as *this* graph holds it — derived properties and all. Its
-    #: `graph_name` and `label` are finally true, which they cannot be on a
+    #: `graph_name` and `labels` are finally true, which they cannot be on a
     #: result that has to stand for every view at once.
     node: retrieved.RetrievedNode
 

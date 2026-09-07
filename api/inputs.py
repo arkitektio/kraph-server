@@ -601,6 +601,20 @@ class RetractSameInstanceInput:
     pass
 
 
+@pydantic.input(model=input_models.AssertDifferentInstanceInput, all_fields=True, description="Input for claiming that several recorded instances are distinct things (RFC 0019)")
+class AssertDifferentInstanceInput:
+    """Input for claiming that several recorded instances are distinct things."""
+
+    pass
+
+
+@pydantic.input(model=input_models.RetractDifferentInstanceInput, all_fields=True, description="Input for withdrawing one difference claim")
+class RetractDifferentInstanceInput:
+    """Input for withdrawing one difference claim."""
+
+    pass
+
+
 @pydantic.input(model=input_models.RetractEntityInput, description="Input for retracting an entity claim")
 class RetractEntityInput:
     """Input for retracting an entity claim."""

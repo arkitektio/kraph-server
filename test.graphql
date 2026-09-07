@@ -31,6 +31,31 @@ input ArchiveGraphTableQueryInput {
   id: ID!
 }
 
+"""
+Input for claiming that several recorded instances are distinct things (RFC 0019)
+"""
+input AssertDifferentInstanceInput {
+  """
+  Two or more instance ids that are not one thing. Every pair among them is claimed, under one assertion — difference is not transitive, so each pair is its own claim.
+  """
+  instances: [String!]!
+
+  """
+  When the world was in this state — world time, the axis a scientist means by 'when'. Distinct from when it is claimed, which the assertion records; left unset, the two are equal. A point, not an interval: a duration is a metric.
+  """
+  observedAt: DateTime = null
+
+  """
+  How sure you are, 0 to 1. Left unset, the claim carries no number — which is neither 1.0 nor 0.0: a category rule with a CONFIDENCE condition admits only claims that carry one.
+  """
+  confidence: Float = null
+
+  """
+  The claims this one came from — ids of instances, links, metrics or structures in your organization. Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.
+  """
+  derivedFrom: [String!]! = []
+}
+
 """Input for creating a new entity"""
 input AssertEntityExistsInput {
   """
@@ -402,6 +427,19 @@ type AssertedDescription {
   What was claimed, as the log has it. Not a drawing of it: derived properties, a label and a category are one view's account and live on each entry in `drawings`. This is addressable whether or not any view draws it, which is the case a write has to answer for.
   """
   link: Link!
+}
+
+"""What asserting that instances are distinct recorded (RFC 0019)"""
+type AssertedDifference {
+  """
+  The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
+  """
+  assertion: Assertion!
+
+  """
+  The difference claims this act recorded — every pair among the named instances, because difference is not transitive
+  """
+  links: [Link!]!
 }
 
 """
@@ -1908,6 +1946,40 @@ type Description implements Edge {
   target: InformsTarget!
 }
 
+"""A claim that two instances are two things, not one (RFC 0019)"""
+type Difference implements Edge {
+  """This claim's durable identity — the `Link` primary key, a bare uuid"""
+  id: ID!
+
+  """The edge label/type"""
+  label: String!
+
+  """The source endpoint, as evidence names it — a bare uuid"""
+  sourceId: ID!
+
+  """The target endpoint, as evidence names it — a bare uuid"""
+  targetId: ID!
+
+  """
+  When the world was in the state this claim describes — world time, distinct from `assertion.assertedAt` (RFC 0015)
+  """
+  observedAt: DateTime!
+
+  """
+  How sure the claimant was, 0 to 1. Null when they gave no number (RFC 0016)
+  """
+  confidence: Float
+
+  """Who claimed this, and when"""
+  assertion: Assertion!
+
+  """One of the two instances claimed to be distinct"""
+  source: Node!
+
+  """The other instance claimed to be distinct"""
+  target: Node!
+}
+
 """
 A claim relating two things — one `evidence.Link` row, typed by its kind. Not a drawing: several kinds are never projected to an AGE edge at all
 """
@@ -1995,9 +2067,14 @@ input EnsureStructureInput {
 """An entity in the knowledge graph with derived properties"""
 type Entity implements Node {
   """
-  The label this view draws the node under — its category's `ageName` — or the claim's word when the view has not drawn it yet
+  The first of `drawnLabels`, for a reader that shows one — or the claim's word when the view has not drawn it yet
   """
   label: String!
+
+  """
+  Every label the view this was read through draws the node under — one per category that admits it, each its `ageName`, sorted (RFC 0019). Empty when the view has not drawn it yet
+  """
+  drawnLabels: [String!]!
 
   """
   This node's durable identity — a bare uuid, world-unique and stable across reprojects. In a view it is the individual's representative: the lowest of `members`, which may differ from the member id you asked for
@@ -2035,6 +2112,16 @@ type Entity implements Node {
   sameAs: [Sameness!]!
 
   """
+  The standing claims that this instance and another are two things, with who said so (RFC 0019). Under this view's rule, like `sameAs`
+  """
+  differentFrom: [Difference!]!
+
+  """
+  Differences the fold could not honour: both ends are still members of this individual through a third instance (a~b, b~c, a≠c). Nothing resolves these automatically — retract one of the claims that disagree
+  """
+  conflicts: [Difference!]!
+
+  """
   Every standing claim connecting this thing to something else — relations, participations and the structures that inform it. Needs no graph query: they are all evidence rows, and the drawing of them is a projection
   """
   connections: [Edge!]!
@@ -2047,11 +2134,15 @@ type Entity implements Node {
   """The entity type/kind (e.g. 'AIS', 'Cell')"""
   kind: String!
 
-  """Category ID linking to EntityCategory model"""
-  categoryId: String
+  """
+  The ids of every category the view this was read through draws it under (RFC 0019). Empty when no view does
+  """
+  categoryIds: [String!]!
 
-  """How the view this was read through draws it, if any view does"""
-  category: EntityCategory
+  """
+  Every category the view this was read through draws it under, one per label (RFC 0019). Empty when no view does
+  """
+  categories: [EntityCategory!]!
 
   """When this entity became valid. When did it start existing?"""
   validFrom: DateTime
@@ -2060,7 +2151,7 @@ type Entity implements Node {
   validTo: DateTime
 
   """
-  List of properties derived for this entity. Empty when this reading has no category — a property definition is one view's rule, and a claim no view draws has none
+  List of properties derived for this entity — the union over its categories in this view. Empty when this reading has no category — a property definition is one view's rule, and a claim no view draws has none
   """
   richProperties: [RichProperty!]!
 
@@ -2900,6 +2991,16 @@ type Instance @key(fields: "id", resolvable: true) {
   sameAs: [Link!]!
 
   """
+  The standing claims that this instance and another are two things, with who said so (RFC 0019)
+  """
+  differentFrom: [Link!]!
+
+  """
+  Differences whose two ends the organization-grain fold still holds to be one thing, through a third instance. Retract one of the claims that disagree to settle it
+  """
+  conflicts: [Link!]!
+
+  """
   Every standing claim connecting this thing to something else — relations, participations, classifications and the structures that inform it
   """
   connections: [Link!]!
@@ -3069,6 +3170,7 @@ enum LinkKind {
   PARTICIPATES_AS_OUTPUT
   CLASSIFIES
   SAME_AS
+  DIFFERENT_FROM
   DERIVED_FROM
 }
 
@@ -3769,6 +3871,16 @@ type Mutation {
   """
   retractSameInstance(input: RetractSameInstanceInput!): AssertedSameness!
 
+  """
+  Claim that several already-recorded instances are distinct things (RFC 0019). A standing, trusted difference vetoes every direct sameness between its two ends; a disagreement through a third instance is reported as a conflict, not resolved
+  """
+  assertDifferentInstance(input: AssertDifferentInstanceInput!): AssertedDifference!
+
+  """
+  Withdraw one difference claim. The sameness it vetoed counts again, and the component is rebuilt
+  """
+  retractDifferentInstance(input: RetractDifferentInstanceInput!): AssertedDifference!
+
   """Upload media and return a URL for access"""
   requestMediaUpload(input: RequestMediaUploadInput!): MediaUploadGrant!
 
@@ -3909,9 +4021,14 @@ type Mutation {
 """A natural event in the knowledge graph"""
 type NaturalEvent implements Node & Event {
   """
-  The label this view draws the node under — its category's `ageName` — or the claim's word when the view has not drawn it yet
+  The first of `drawnLabels`, for a reader that shows one — or the claim's word when the view has not drawn it yet
   """
   label: String!
+
+  """
+  Every label the view this was read through draws the node under — one per category that admits it, each its `ageName`, sorted (RFC 0019). Empty when the view has not drawn it yet
+  """
+  drawnLabels: [String!]!
 
   """
   This node's durable identity — a bare uuid, world-unique and stable across reprojects. In a view it is the individual's representative: the lowest of `members`, which may differ from the member id you asked for
@@ -3949,6 +4066,16 @@ type NaturalEvent implements Node & Event {
   sameAs: [Sameness!]!
 
   """
+  The standing claims that this instance and another are two things, with who said so (RFC 0019). Under this view's rule, like `sameAs`
+  """
+  differentFrom: [Difference!]!
+
+  """
+  Differences the fold could not honour: both ends are still members of this individual through a third instance (a~b, b~c, a≠c). Nothing resolves these automatically — retract one of the claims that disagree
+  """
+  conflicts: [Difference!]!
+
+  """
   Every standing claim connecting this thing to something else — relations, participations and the structures that inform it. Needs no graph query: they are all evidence rows, and the drawing of them is a projection
   """
   connections: [Edge!]!
@@ -3961,11 +4088,15 @@ type NaturalEvent implements Node & Event {
   """The event type/kind"""
   kind: String!
 
-  """Category ID linking to NaturalEventCategory model"""
-  categoryId: String
+  """
+  The ids of every category the view this was read through draws it under (RFC 0019). Empty when no view does
+  """
+  categoryIds: [String!]!
 
-  """How the view this was read through draws it, if any view does"""
-  category: NaturalEventCategory
+  """
+  Every category the view this was read through draws it under, one per label (RFC 0019). Empty when no view does
+  """
+  categories: [NaturalEventCategory!]!
 
   """List of properties derived for this entity"""
   richProperties: [RichProperty!]!
@@ -4131,9 +4262,14 @@ input NaturalEventPaginationInput {
 """Base interface for all graph nodes"""
 interface Node {
   """
-  The label this view draws the node under — its category's `ageName` — or the claim's word when the view has not drawn it yet
+  The first of `drawnLabels`, for a reader that shows one — or the claim's word when the view has not drawn it yet
   """
   label: String!
+
+  """
+  Every label the view this was read through draws the node under — one per category that admits it, each its `ageName`, sorted (RFC 0019). Empty when the view has not drawn it yet
+  """
+  drawnLabels: [String!]!
 
   """
   This node's durable identity — a bare uuid, world-unique and stable across reprojects. In a view it is the individual's representative: the lowest of `members`, which may differ from the member id you asked for
@@ -4169,6 +4305,16 @@ interface Node {
   The standing claims that this instance and another are one thing, with who said so. Exposed so a merge is visible and contestable rather than silent
   """
   sameAs: [Sameness!]!
+
+  """
+  The standing claims that this instance and another are two things, with who said so (RFC 0019). Under this view's rule, like `sameAs`
+  """
+  differentFrom: [Difference!]!
+
+  """
+  Differences the fold could not honour: both ends are still members of this individual through a third instance (a~b, b~c, a≠c). Nothing resolves these automatically — retract one of the claims that disagree
+  """
+  conflicts: [Difference!]!
 
   """
   Every standing claim connecting this thing to something else — relations, participations and the structures that inform it. Needs no graph query: they are all evidence rows, and the drawing of them is a projection
@@ -4517,9 +4663,14 @@ enum PropertyType {
 """A protocol event in the graph"""
 type ProtocolEvent implements Node & Event {
   """
-  The label this view draws the node under — its category's `ageName` — or the claim's word when the view has not drawn it yet
+  The first of `drawnLabels`, for a reader that shows one — or the claim's word when the view has not drawn it yet
   """
   label: String!
+
+  """
+  Every label the view this was read through draws the node under — one per category that admits it, each its `ageName`, sorted (RFC 0019). Empty when the view has not drawn it yet
+  """
+  drawnLabels: [String!]!
 
   """
   This node's durable identity — a bare uuid, world-unique and stable across reprojects. In a view it is the individual's representative: the lowest of `members`, which may differ from the member id you asked for
@@ -4557,6 +4708,16 @@ type ProtocolEvent implements Node & Event {
   sameAs: [Sameness!]!
 
   """
+  The standing claims that this instance and another are two things, with who said so (RFC 0019). Under this view's rule, like `sameAs`
+  """
+  differentFrom: [Difference!]!
+
+  """
+  Differences the fold could not honour: both ends are still members of this individual through a third instance (a~b, b~c, a≠c). Nothing resolves these automatically — retract one of the claims that disagree
+  """
+  conflicts: [Difference!]!
+
+  """
   Every standing claim connecting this thing to something else — relations, participations and the structures that inform it. Needs no graph query: they are all evidence rows, and the drawing of them is a projection
   """
   connections: [Edge!]!
@@ -4569,11 +4730,15 @@ type ProtocolEvent implements Node & Event {
   """The event type/kind"""
   kind: String!
 
-  """Category ID linking to ProtocolEventCategory model"""
-  categoryId: String
+  """
+  The ids of every category the view this was read through draws it under (RFC 0019). Empty when no view does
+  """
+  categoryIds: [String!]!
 
-  """How the view this was read through draws it, if any view does"""
-  category: ProtocolEventCategory
+  """
+  Every category the view this was read through draws it under, one per label (RFC 0019). Empty when no view does
+  """
+  categories: [ProtocolEventCategory!]!
 
   """List of properties derived for this entity"""
   richProperties: [RichProperty!]!
@@ -5234,6 +5399,22 @@ Input for claiming a remark no longer stands — withdrawn or resolved; the asse
 """
 input RetractCommentInput {
   """The ID of the comment to retract"""
+  id: String!
+
+  """
+  When this position took effect — world time. Left unset, the moment of the claim. A rule bounding OBSERVED_AT on EXISTENCE reads this.
+  """
+  at: DateTime = null
+
+  """
+  How sure you are, 0 to 1. Left unset, the claim carries no number — which is neither 1.0 nor 0.0: a category rule with a CONFIDENCE condition admits only claims that carry one.
+  """
+  confidence: Float = null
+}
+
+"""Input for withdrawing one difference claim"""
+input RetractDifferentInstanceInput {
+  """The id of the difference claim to retract"""
   id: String!
 
   """

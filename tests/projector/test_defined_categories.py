@@ -279,23 +279,23 @@ async def test_definitions_can_partition_one_term_by_annotator(
     got = await counts()
     assert got["AISprox"] == 1, "Johannes's node carries the proximal term"
     assert got["AISdistal"] == 1, "Christian's carries the distal one"
-    assert got["AIS"] == 0, "And neither falls back to the term they were actually asserted under"
+    assert got["AIS"] == 2, "And both still carry the primitive word they were claimed under — a primitive category admits anything claimed as it (RFC 0019)"
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_a_node_matching_two_definitions_is_refused_not_guessed(
+async def test_a_node_matching_two_definitions_is_drawn_under_both(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
     table_projector,
 ) -> None:
-    """A vertex carries one label, so a node both definitions admit has no answer.
-
-    Picking one would bury exactly the disagreement the evidence base exists to
-    preserve. The codebase already refuses rather than guesses in the same
-    situation — `_value_kinds_for_rule` returns None and warns when a key has
-    terms in more than one family.
+    """A vertex carries every label that admits it (RFC 0019), so a node both
+    definitions admit is drawn once, under both — and under the primitive AIS
+    it was claimed as, because a primitive category means "anything claimed
+    under this word". Refusing it as ambiguous used to be the answer; that was
+    Apache AGE's one-label-per-vertex dressed as policy, and choosing between
+    the two would have buried exactly the disagreement the view can now show.
     """
 
     await _an_ais(api_schema, simple_api_context, test_graph)
@@ -323,14 +323,14 @@ async def test_a_node_matching_two_definitions_is_refused_not_guessed(
 
     result = await both_claim_it()
 
-    assert result["nodes"] == 0, "An ambiguous node is not projected under an arbitrary label"
-    assert result["unclassified"] == 1, "It is reported instead"
+    assert result["nodes"] == 1, "A node two definitions admit is drawn — once"
+    assert result["unclassified"] == 0
 
     @sync_to_async
     def counts() -> dict[str, int]:
         return _labels(table_projector, test_graph, ["AISprox", "AISdistal", "AIS"])
 
-    assert await counts() == {"AISprox": 0, "AISdistal": 0, "AIS": 0}
+    assert await counts() == {"AISprox": 1, "AISdistal": 1, "AIS": 1}, "one vertex, three labels"
 
 
 @pytest.mark.django_db(transaction=True)

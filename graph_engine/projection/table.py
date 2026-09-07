@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 from django.db import connection
@@ -73,8 +73,9 @@ def _quote_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 #: The record keys that live in real columns rather than in the `properties`
-#: jsonb — the identity trio every drawn record carries.
-_VIRTUAL_KEYS = ("id", "category_id", "type")
+#: jsonb — the identity trio every drawn record carries. `category_ids` is the
+#: label rows (RFC 0019), one per category the vertex is drawn under.
+_VIRTUAL_KEYS = ("id", "category_ids", "type")
 
 
 def _like_pattern(value: Any, *, prefix: str = "", suffix: str = "") -> str:
@@ -106,6 +107,9 @@ class TableProjector:
 
     def _member_table(self) -> str:
         return self._models.ProjectionMember._meta.db_table
+
+    def _label_table(self) -> str:
+        return self._models.ProjectionLabel._meta.db_table
 
     # ------------------------------------------------------------------ namespace
 
@@ -160,18 +164,27 @@ class TableProjector:
         member = self._models.ProjectionMember.objects.filter(graph=graph, ref=str(ref)).select_related("vertex").first()
         return member.vertex if member is not None else None
 
-    def draw_node(self, graph: Any, ref: str, label: str, category_id: Any, kind: str, members: Iterable[str]) -> None:
+    def draw_node(self, graph: Any, ref: str, categories: Sequence[tuple[str, Any]], kind: str, members: Iterable[str]) -> None:
         # Upsert on (graph, ref) — the unique constraint is the convergence the
         # protocol promises. Derived properties survive a redraw, exactly as the
         # Cypher `MERGE … SET` left them; a label move without a prior
-        # `erase_nodes` converges here too (the row moves), where AGE would have
-        # minted a duplicate vertex.
+        # `erase_nodes` converges here too (the label rows are replaced), where
+        # AGE would have minted a duplicate vertex.
+        labels = {(str(label), int(category_id) if category_id is not None else None) for label, category_id in categories}
+        if not labels:
+            raise ValueError(f"a vertex is drawn under at least one category; {ref} was given none")
         members = sorted({str(member) for member in members} | {str(ref)})
-        vertex, _ = self._models.ProjectionVertex.objects.update_or_create(
-            graph=graph,
-            ref=str(ref),
-            defaults={"label": str(label), "category_pk": int(category_id) if category_id is not None else None, "kind": str(kind)},
-        )
+        vertex, _ = self._models.ProjectionVertex.objects.update_or_create(graph=graph, ref=str(ref), defaults={"kind": str(kind)})
+        # Labels: insert the new set **before** deleting the stale one. The
+        # `projectionlabel_last_label_deletes_vertex` trigger (migration 0009)
+        # takes a vertex the moment its last label goes, so a redraw that
+        # deleted first would lose the vertex — and its properties — between
+        # the two statements.
+        held_labels = {(row.label, row.category_pk): row for row in self._models.ProjectionLabel.objects.filter(vertex=vertex)}
+        self._models.ProjectionLabel.objects.bulk_create([self._models.ProjectionLabel(graph=graph, vertex=vertex, label=label, category_pk=category_pk) for label, category_pk in sorted(labels, key=lambda pair: (pair[0], pair[1] or 0)) if (label, category_pk) not in held_labels])
+        stale = [row.pk for key, row in held_labels.items() if key not in labels]
+        if stale:
+            self._models.ProjectionLabel.objects.filter(pk__in=stale).delete()
         # The member list is replaced, not merged: a member that left the
         # individual (its sameness retracted, itself retracted) must stop
         # addressing this vertex. A member another vertex still holds is the
@@ -181,11 +194,11 @@ class TableProjector:
         held = {str(row) for row in self._models.ProjectionMember.objects.filter(vertex=vertex).values_list("ref", flat=True)}
         self._models.ProjectionMember.objects.bulk_create([self._models.ProjectionMember(graph=graph, vertex=vertex, ref=member) for member in members if member not in held])
 
-    def write_properties(self, graph: Any, ref: str, label: str, values: Mapping[str, Any]) -> bool:
+    def write_properties(self, graph: Any, ref: str, values: Mapping[str, Any]) -> bool:
         if not values:
             return True
         row = self._vertex_for_member(graph, ref)
-        if row is None or row.label != str(label):
+        if row is None:
             return False
         for key, value in values.items():
             row.properties[self.validate_key(key)] = value
@@ -197,7 +210,7 @@ class TableProjector:
         refs = [str(ref) for ref in refs]
         if not owned or not refs:
             return
-        rows = list(self._models.ProjectionVertex.objects.filter(graph=graph, label=str(label), members__ref__in=refs).distinct())
+        rows = list(self._models.ProjectionVertex.objects.filter(graph=graph, labels__label=str(label), members__ref__in=refs).distinct())
         for row in rows:
             for key in owned:
                 row.properties.pop(key, None)
@@ -260,13 +273,21 @@ class TableProjector:
 
     # ------------------------------------------------------------------ reader
 
-    def _record(self, row: Any, members: Iterable[str]) -> dict[str, Any]:
-        """A drawn record in the shape readers have always seen — `{id, label, properties}` — plus `members`."""
-        properties = dict(row.properties or {})
-        properties["id"] = str(row.ref)
-        properties["category_id"] = row.category_pk
-        properties["type"] = row.kind
-        return {"id": int(row.pk), "label": row.label, "properties": properties, "members": tuple(sorted(str(member) for member in members))}
+    @staticmethod
+    def _record(pk: int, ref: str, kind: str, properties: dict[str, Any], labels: Iterable[tuple[str, Any]], members: Iterable[str]) -> dict[str, Any]:
+        """A drawn record in the shape readers have always seen — `{id, label, properties}` — plus `labels` and `members`.
+
+        `labels` is every (label, category pk) the vertex is drawn under; the
+        record's `label` is the first label sorted, `properties["category_ids"]`
+        the pks sorted (RFC 0019).
+        """
+        pairs = sorted((str(label), category_pk) for label, category_pk in labels)
+        properties = dict(properties or {})
+        properties["id"] = str(ref)
+        properties["category_ids"] = sorted((category_pk for _, category_pk in pairs if category_pk is not None))
+        properties["type"] = kind
+        names = tuple(label for label, _ in pairs)
+        return {"id": int(pk), "label": names[0] if names else "", "labels": names, "properties": properties, "members": tuple(sorted(str(member) for member in members))}
 
     def drawn_nodes(self, graph: Any, refs: Iterable[str]) -> dict[str, dict[str, Any]]:
         refs = [str(ref) for ref in refs]
@@ -277,7 +298,10 @@ class TableProjector:
         members_by_vertex: dict[int, list[str]] = {}
         for vertex_id, ref in self._models.ProjectionMember.objects.filter(vertex_id__in=list(vertices)).values_list("vertex_id", "ref"):
             members_by_vertex.setdefault(vertex_id, []).append(str(ref))
-        records = {vertex_id: self._record(vertex, members_by_vertex.get(vertex_id, ())) for vertex_id, vertex in vertices.items()}
+        labels_by_vertex: dict[int, list[tuple[str, Any]]] = {}
+        for vertex_id, label, category_pk in self._models.ProjectionLabel.objects.filter(vertex_id__in=list(vertices)).values_list("vertex_id", "label", "category_pk"):
+            labels_by_vertex.setdefault(vertex_id, []).append((label, category_pk))
+        records = {vertex_id: self._record(vertex.pk, str(vertex.ref), vertex.kind, vertex.properties, labels_by_vertex.get(vertex_id, ()), members_by_vertex.get(vertex_id, ())) for vertex_id, vertex in vertices.items()}
         return {str(member.ref): records[member.vertex_id] for member in held}
 
     def drawn_edge(self, graph: Any, source_ref: str, target_ref: str, label: str) -> DrawnEdge | None:
@@ -291,7 +315,7 @@ class TableProjector:
 
     def list_drawn(self, graph: Any, spec: ListDrawnSpec) -> list[dict[str, Any]]:
         params: dict[str, Any] = {"graph_pk": graph.pk, "label": str(spec.label)}
-        clauses = ["v.graph_id = %(graph_pk)s", "v.label = %(label)s"]
+        clauses = ["v.graph_id = %(graph_pk)s", f"EXISTS (SELECT 1 FROM {self._label_table()} l WHERE l.vertex_id = v.id AND l.label = %(label)s)"]
 
         for index, predicate in enumerate(spec.predicates):
             clauses.append(self._predicate_sql("v", predicate, params, f"p{index}"))
@@ -307,7 +331,9 @@ class TableProjector:
         params["offset"] = int(spec.offset)
         params["limit"] = int(spec.limit)
         sql = (
-            f"SELECT v.id, v.ref::text AS ref, v.label, v.category_pk, v.kind, v.properties, "
+            f"SELECT v.id, v.ref::text AS ref, v.kind, v.properties, "
+            f"(SELECT array_agg(l.label ORDER BY l.label) FROM {self._label_table()} l WHERE l.vertex_id = v.id) AS labels, "
+            f"(SELECT array_agg(l.category_pk ORDER BY l.label) FROM {self._label_table()} l WHERE l.vertex_id = v.id) AS category_pks, "
             f"(SELECT array_agg(m.ref::text ORDER BY m.ref) FROM {self._member_table()} m WHERE m.vertex_id = v.id) AS members "
             f"FROM {self._vertex_table()} v WHERE {' AND '.join(clauses)}"
             + (f" ORDER BY {', '.join(order_parts)}" if order_parts else "")
@@ -317,14 +343,7 @@ class TableProjector:
             cursor.execute(sql, params)
             rows = cursor.fetchall()
 
-        records: list[dict[str, Any]] = []
-        for pk, ref, label, category_pk, kind, properties, members in rows:
-            properties = self._as_dict(properties)
-            properties["id"] = str(ref)
-            properties["category_id"] = category_pk
-            properties["type"] = kind
-            records.append({"id": int(pk), "label": label, "properties": properties, "members": tuple(members or ())})
-        return records
+        return [self._record(pk, ref, kind, self._as_dict(properties), zip(labels or (), category_pks or ()), members or ()) for pk, ref, kind, properties, labels, category_pks, members in rows]
 
     def render_table(self, graph: Any, plan: Any, *, filters: Any = None, order: Any = None, pagination: Any = None) -> list[Any]:
         sql, params = compile_table_plan_sql(self, plan, graph=graph, filters=filters, order=order, pagination=pagination)
@@ -362,13 +381,17 @@ class TableProjector:
                 return value
         return value
 
+    def _category_ids_jsonb(self, var: str) -> str:
+        """The vertex's category pks as a sorted jsonb array — the label rows (RFC 0019)."""
+        return f"(SELECT COALESCE(jsonb_agg(l.category_pk ORDER BY l.category_pk), '[]'::jsonb) FROM {self._label_table()} l WHERE l.vertex_id = {var}.id AND l.category_pk IS NOT NULL)"
+
     def _prop_jsonb(self, var: str, key: str, params: dict[str, Any], slot: str) -> str:
         """The jsonb expression for a record property — column-backed for the identity trio."""
         key = self.validate_key(key)
         if key == "id":
             return f"to_jsonb({var}.ref::text)"
-        if key == "category_id":
-            return f"to_jsonb({var}.category_pk)"
+        if key == "category_ids":
+            return self._category_ids_jsonb(var)
         if key == "type":
             return f"to_jsonb({var}.kind)"
         params[f"k_{slot}"] = key
@@ -379,8 +402,8 @@ class TableProjector:
         key = self.validate_key(key)
         if key == "id":
             return f"{var}.ref::text"
-        if key == "category_id":
-            return f"{var}.category_pk::text"
+        if key == "category_ids":
+            return f"{self._category_ids_jsonb(var)}::text"
         if key == "type":
             return f"{var}.kind"
         params[f"k_{slot}"] = key
@@ -396,11 +419,20 @@ class TableProjector:
         if operator == "IS_NOT_NULL":
             if key == "id" or key == "type":
                 return "TRUE"
-            if key == "category_id":
-                return f"{var}.category_pk IS NOT NULL"
+            if key == "category_ids":
+                return f"EXISTS (SELECT 1 FROM {self._label_table()} l WHERE l.vertex_id = {var}.id AND l.category_pk IS NOT NULL)"
             params[f"k_{slot}"] = key
             # Present-and-not-json-null, which is what `e.key IS NOT NULL` meant.
             return f"(({var}.properties -> %(k_{slot})s) IS NOT NULL AND ({var}.properties -> %(k_{slot})s) <> 'null'::jsonb)"
+
+        if key == "category_ids" and operator in {"EQUALS", "NOT_EQUALS", "IN", "NOT_IN"}:
+            # Membership, not equality: "category_ids = 7" asks whether the
+            # vertex is drawn under category 7, which is what every caller of
+            # the old scalar `category_id` meant (RFC 0019).
+            values = list(predicate.value) if isinstance(predicate.value, (list, tuple, set)) else [predicate.value]
+            params[f"v_{slot}"] = [int(value) for value in values]
+            clause = f"EXISTS (SELECT 1 FROM {self._label_table()} l WHERE l.vertex_id = {var}.id AND l.category_pk = ANY(%(v_{slot})s))"
+            return clause if operator in {"EQUALS", "IN"} else f"NOT ({clause})"
 
         return self._compare_sql(self._prop_jsonb(var, key, params, slot), self._prop_text(var, key, params, f"{slot}t"), operator, predicate.value, params, slot)
 
@@ -453,14 +485,22 @@ def compile_namespace_ddl(projector: TableProjector, spec: Any) -> list[str]:
     graph_pk = int(spec.graph_pk)
     vertex_table = projector._vertex_table()
     edge_table = projector._edge_table()
+    label_table = projector._label_table()
 
     statements = [f"CREATE SCHEMA {schema}"]
 
+    # A vertex element table is the vertices drawn under one category — the
+    # label rows say which (RFC 0019), so a vertex drawn under two categories
+    # is a row of two element tables. That is what SQL/PGQ allows and what
+    # `MATCH (a IS "Pyramidal")` and `MATCH (a IS "Excitatory")` both finding
+    # the same cell means. Each row carries *its* label and category, so an
+    # unlabelled pattern variable still binds one (label, category) per row.
     for vertex in spec.vertices:
         statements.append(
             f"CREATE VIEW {schema}.{_quote_ident(vertex.view_name)} AS "
-            f"SELECT id, ref, label, category_pk, kind, properties FROM {vertex_table} "
-            f"WHERE graph_id = {graph_pk} AND category_pk = {int(vertex.category_pk)}"
+            f"SELECT v.id, v.ref, l.label, l.category_pk, v.kind, v.properties "
+            f"FROM {vertex_table} v JOIN {label_table} l ON l.vertex_id = v.id "
+            f"WHERE v.graph_id = {graph_pk} AND l.category_pk = {int(vertex.category_pk)}"
         )
 
     for edge in spec.edges:
@@ -468,8 +508,8 @@ def compile_namespace_ddl(projector: TableProjector, spec: Any) -> list[str]:
             f"CREATE VIEW {schema}.{_quote_ident(edge.view_name)} AS "
             f"SELECT e.id, e.source_id, e.target_id, e.properties "
             f"FROM {edge_table} e "
-            f"JOIN {vertex_table} s ON s.id = e.source_id "
-            f"JOIN {vertex_table} t ON t.id = e.target_id "
+            f"JOIN {label_table} s ON s.vertex_id = e.source_id "
+            f"JOIN {label_table} t ON t.vertex_id = e.target_id "
             f"WHERE e.graph_id = {graph_pk} AND e.label = {_quote_literal(edge.label)} "
             f"AND s.category_pk = {int(edge.source_pk)} AND t.category_pk = {int(edge.target_pk)}"
         )
@@ -505,6 +545,12 @@ def compile_namespace_ddl(projector: TableProjector, spec: Any) -> list[str]:
 
 #: The exposed-column suffixes every node variable carries out of its
 #: GRAPH_TABLE — the uniform vertex element properties, one column each.
+#: `__label`/`__category_id` are **singular here on purpose**: a pattern
+#: variable binds one row of one element table, and an element table is one
+#: category's view of the drawing (RFC 0019) — a vertex drawn under two
+#: categories is two rows, each carrying its own label, so a rendered table's
+#: `category_id` is the category the *match* went through, not the vertex's
+#: whole set (that is `category_ids` on the drawn record).
 _NODE_COLUMN_SUFFIXES = ("__vid", "__ref", "__label", "__category_id", "__kind", "__props")
 
 

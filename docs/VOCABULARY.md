@@ -35,7 +35,7 @@ Append-only: corrections are new rows, never edits, and there is no hard delete.
 | `Assertion` | The **act** — who claimed it, with what tool, when. Carries `seq`, the log's total order. Every write records exactly one | `evidence.Assertion` |
 | *claim* | Any **recorded statement**. A prose word covering `Instance`, `Link`, `Metric`, `Structure` and `Comment` — not a table. An instance, link, metric or standing may carry a `confidence` in [0, 1]; null is silence, and a `CONFIDENCE` rule never admits silence (RFC 0016) | — |
 | `Instance` | A claimed **individual**: `entity`, `natural_event` or `protocol_event`. Every observation mints its own. Carries `observed_at` — when it was seen, or for an event when it happened | `evidence.Instance` |
-| `Link` | A claim **relating two things**. Nine kinds: `RELATION`, `SAME_AS`, `CLASSIFIES`, `INFORMS`, `MEASUREMENT`, `STRUCTURE_RELATION`, `PARTICIPATES_AS_INPUT`, `PARTICIPATES_AS_OUTPUT`, `DERIVED_FROM` (lineage: this claim came from that one, either end any claim row — RFC 0017). Carries `observed_at` — when the relation held | `evidence.Link` |
+| `Link` | A claim **relating two things**. Ten kinds: `RELATION`, `SAME_AS`, `DIFFERENT_FROM` (negative sameness: vetoes the direct `SAME_AS` between its ends — RFC 0019), `CLASSIFIES`, `INFORMS`, `MEASUREMENT`, `STRUCTURE_RELATION`, `PARTICIPATES_AS_INPUT`, `PARTICIPATES_AS_OUTPUT`, `DERIVED_FROM` (lineage: this claim came from that one, either end any claim row — RFC 0017). Carries `observed_at` — when the relation held | `evidence.Link` |
 | `Structure` | A pointer to an **external datum**, identified by `(identifier, object)` — an ROI, an image, a file. Never itself claimed to be an AIS | `evidence.Structure` |
 | `Metric` | A **measured value** about a structure. Carries `observed_at` (was `measured_at`) | `evidence.Metric` |
 | `Comment` | A **remark** about a structure, with a threaded reply tree | `evidence.Comment` |
@@ -81,7 +81,7 @@ conceptually: each has a `--check`able rebuild.
 
 | Word | Means | Rebuild |
 |---|---|---|
-| `InstanceIdentity` | Components folded from `SAME_AS` claims. Organization grain, lowest uuid as representative; **only merged nodes get a row**. What the panel reads; a view's drawing folds its own (`identity.view_components`) | `manage.py rebuild_identity [--check]` |
+| `InstanceIdentity` | Components folded from `SAME_AS` claims, less the pairs a standing `DIFFERENT_FROM` vetoes. Organization grain, lowest uuid as representative; **only merged nodes get a row**. What the panel reads; a view's drawing folds its own (`identity.view_components`) | `manage.py rebuild_identity [--check]` |
 | `State` | Sufficient statistics for one derived property, kept incrementally. Grain `(claim_ref, source_kind, key, value_kind)`. Holds **statistics, not an answer** — switching MEAN→MAX changes the next read without writing anything | `evidence.state.recompute` |
 | `CurrentStanding` | see above | `evidence.claims.record_current` |
 
@@ -171,8 +171,9 @@ kind — a per-view table — implements `Projector` and is chosen in `api/schem
 
 ### What actually gets drawn
 
-`projector.create_vertex` writes exactly `{id, category_id, type}` and labels the
-vertex with `category.age_name`. Everything else on it is derived. Since RFC 0018 a
+`projector.create_vertex` writes exactly `{id, category_ids, type}` and labels the
+vertex with the `age_name` of **every** category that admits it, one
+`ProjectionLabel` row each (RFC 0019). Everything else on it is derived. Since RFC 0018 a
 vertex stands for an **individual** — every instance in one view-scoped sameness
 component — and `ProjectionMember` lists them; `id` is the lowest member.
 
@@ -181,7 +182,7 @@ component — and `ProjectionMember` lists them; `id` is the lowest member.
 | `Instance` (entity, natural event, protocol event) | **yes**, one vertex per **individual** — several instances the view's sameness claims join share one, listed on `ProjectionMember` | |
 | `Link` of kind `RELATION`, `PARTICIPATES_AS_*` | **yes**, a drawn edge | |
 | `Link` of kind `MEASUREMENT`, `STRUCTURE_RELATION` | **no** | endpoints have no vertex, or nothing projects it |
-| `Link` of kind `INFORMS`, `CLASSIFIES`, `SAME_AS` | **no** | read from evidence directly |
+| `Link` of kind `INFORMS`, `CLASSIFIES`, `SAME_AS`, `DIFFERENT_FROM` | **no** | read from evidence directly |
 | `Structure`, `Metric`, `Assertion`, `Comment` | **no** | evidence rows with no drawn presence at all |
 
 ### Vertex properties
@@ -189,13 +190,14 @@ component — and `ProjectionMember` lists them; `id` is the lowest member.
 | Property | Written by | Meaning |
 |---|---|---|
 | `id` | `create_vertex` | the individual's **representative**: the lowest member uuid, an `Instance` id. `Node.id` reports it, and `node(id: <any member>)` finds the vertex |
-| `category_id` | `create_vertex` | the `core.Category` pk this view drew it under |
+| `category_ids` | `create_vertex` | the `core.Category` pks this view drew it under, sorted — one per label. A predicate on it asks whether a value is *among* them |
 | `type` | `create_vertex` | from `Instance.kind`. **The claim's own account**, never inferred from the label |
 | `__schema_version`, `__measured__*` | `project` | derived; the `__` prefix is the projection layer's own encoding (`__last_derived` is no longer written — "when was this view derived" is `Projection.derived_at`) |
 | everything else | `project` / `rollup` | derived properties from the category's rules |
 
-> A vertex's **label** is `category.age_name` — one view's private rename of a
-> word ("Cell", "Mitosis"). It is *not* a type discriminator. Reading kind off the
+> A vertex's **labels** are its categories' `age_name`s — one view's private renames
+> of words ("Cell", "Mitosis"); a node holds every one that admits it. A label is
+> *not* a type discriminator. Reading kind off the
 > label is the defect `VocabNodeTypeMap` was deleted for.
 >
 > The drawing's **vertex id** is reassigned by every reproject and is never the
@@ -222,7 +224,7 @@ from a vertex **or** from an evidence row.
 
 | Word | Means | Where |
 |---|---|---|
-| *drawing* | How **one view** draws one claim: a vertex or an edge, and the category it drew it under | `graph_engine/results.py` |
+| *drawing* | How **one view** draws one claim under **one category**: a vertex or an edge, and the category it drew it under. A node several categories admit has one drawing per category, on one vertex (RFC 0019) | `graph_engine/results.py` |
 | `NodeDrawing` / `EdgeDrawing` | The two drawing shapes | `results.NodeDrawing`, `results.EdgeDrawing` |
 | `Asserted` | What a write returns: the assertion, the claim, and **every** view that draws it — empty when none does | `results.Asserted` |
 

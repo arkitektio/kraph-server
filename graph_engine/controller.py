@@ -499,7 +499,7 @@ class GraphController:
             # one assertion — and `Assertion.action_id`, the field that would tie
             # two calls back together, is never populated.
             for other_ref in getattr(payload, "same_as", ()) or ():
-                self._claim_same_instance(organization, claim_ref, str(other_ref), assertion, info, observed_at=payload.observed_at, confidence=payload.confidence)
+                self._claim_identity(organization, evidence_models.Link.Kind.SAME_AS, claim_ref, str(other_ref), assertion, info, observed_at=payload.observed_at, confidence=payload.confidence)
 
             # What this claim came from, under the same act (RFC 0017).
             self._cite(organization, assertion, claim_ref, cited)
@@ -1660,9 +1660,9 @@ class GraphController:
         graphs.update({graph.pk: graph for graph in projector.graphs_for_refs(organization, refs)})
 
         # A concurring claim moves nothing, and must cost nothing. Only a label
-        # that actually changed needs a rebuild, because Apache AGE has no
-        # relabel — a vertex has to be dropped and recreated to carry a different
-        # one, and `rebuild` is the operation that does that honestly.
+        # set that actually changed needs a rebuild: a vertex is redrawn under
+        # what its categories now admit (RFC 0019), and `rebuild` is the
+        # operation that does that honestly.
         after = self._resolved_labels(list(graphs.values()), refs)
         for graph in graphs.values():
             if before.get(graph.pk) != after.get(graph.pk):
@@ -1682,8 +1682,8 @@ class GraphController:
             drawings=tuple(drawing for node in nodes for drawing in self.drawings_for_instance(node)),
         )
 
-    def _resolved_labels(self, graphs: list[models.Graph], refs: list[str]) -> dict[Any, dict[str, str]]:
-        """Which category each of these nodes currently projects as, per graph.
+    def _resolved_labels(self, graphs: list[models.Graph], refs: list[str]) -> dict[Any, dict[str, tuple[str, ...]]]:
+        """Which categories each of these nodes currently projects under, per graph (RFC 0019).
 
         Takes the graphs and the refs separately because a node's views are no
         longer something the caller named — they are computed, and the same ref has
@@ -1691,11 +1691,11 @@ class GraphController:
         """
         from graph_engine import projector
 
-        labels: dict[Any, dict[str, str]] = {}
+        labels: dict[Any, dict[str, tuple[str, ...]]] = {}
         for graph in graphs:
             nodes = list(evidence_models.Instance.objects.for_organization(graph.organization).filter(id__in=refs).select_related("term"))
             categories, _ = projector.resolve_categories(graph, nodes)
-            labels[graph.pk] = {ref: category.age_name for ref, category in categories.items()}
+            labels[graph.pk] = {ref: tuple(sorted(category.age_name for category in drawn)) for ref, drawn in categories.items()}
         return labels
 
     def get_instance_by_ref(self, graph: models.Graph, ref: str) -> retrieved.RetrievedNode:
@@ -1819,6 +1819,16 @@ class GraphController:
             identity_module.retract(organization, link)
             identity_module.recompute(organization, identity_module.canonical_for(organization, str(link.source_ref)))
             self._reproject_instances(organization, members)
+        elif link.kind == evidence_models.Link.Kind.DIFFERENT_FROM:
+            # The mirror: a lifted veto may re-union the two sides (RFC 0019).
+            # `recompute` from one side walks across the sameness the veto held
+            # back, so one rebuild covers both; the redraw takes every member
+            # either side had before and has after.
+            endpoints = [str(link.source_ref), str(link.target_ref)]
+            before = {member for members in identity_module.component_refs(organization, endpoints).values() for member in members}
+            identity_module.recompute(organization, identity_module.canonical_for(organization, endpoints[0]))
+            after = {member for members in identity_module.component_refs(organization, endpoints).values() for member in members}
+            self._reproject_instances(organization, sorted(before | after))
         elif link.kind == evidence_models.Link.Kind.INFORMS:
             # Nothing to un-draw — an INFORMS link has no edge — but the derived
             # values it fed have to stop counting it.
@@ -2044,9 +2054,10 @@ class GraphController:
         for graph in self._graphs_for_endpoints(organization, claim_ref, event_ref):
             self._reproject_participation(graph, organization, claim_ref, event_ref, kind, role)
 
-    def _claim_same_instance(
+    def _claim_identity(
         self,
         organization: Any,
+        kind: Any,
         left_ref: str,
         right_ref: str,
         assertion: evidence_models.Assertion,
@@ -2055,7 +2066,8 @@ class GraphController:
         observed_at: datetime.datetime | None = None,
         confidence: float | None = None,
     ) -> evidence_models.Link:
-        """Record that two entities are one thing, and fold it.
+        """Record that two entities are one thing (`SAME_AS`) or two
+        (`DIFFERENT_FROM`), and fold it.
 
         **Entities only.** A structure is a pointer to an external datum, already
         idempotent by `(identifier, object)`, so two structures are never "the
@@ -2073,14 +2085,14 @@ class GraphController:
 
         for node in (left, right):
             if str(node.kind) != str(evidence_models.Instance.Kind.ENTITY):
-                raise ValueError(f"Only entities can be claimed the same; node {node.pk} is a {node.kind}.")
+                raise ValueError(f"Only entities can be claimed the same or different; node {node.pk} is a {node.kind}.")
 
         if str(left.pk) == str(right.pk):
             raise ValueError("A node is already itself; there is nothing to claim.")
 
         link = writer.create_link(
             organization,
-            kind=evidence_models.Link.Kind.SAME_AS,
+            kind=kind,
             source_ref=str(left.pk),
             target_ref=str(right.pk),
             assertion=assertion,
@@ -2091,8 +2103,47 @@ class GraphController:
         # Fold immediately, in the same transaction as the claim. The alternative
         # — writing the claim and folding later — is what lets the fold and the
         # log disagree, which is the failure `State` already had once.
-        identity_module.merge(organization, str(left.pk), str(right.pk))
+        if kind == evidence_models.Link.Kind.SAME_AS:
+            identity_module.merge(organization, str(left.pk), str(right.pk))
+        else:
+            identity_module.separate(organization, str(left.pk), str(right.pk))
         return link
+
+    def _assert_identity(
+        self,
+        organization: Any,
+        kind: Any,
+        pairs: list[tuple[str, str]],
+        refs: list[str],
+        info: Info,
+        *,
+        observed_at: datetime.datetime | None,
+        confidence: float | None,
+        derived_from: Iterable[str],
+    ) -> results.Asserted:
+        """One assertion, one identity link per pair, every member redrawn."""
+        cited = self._resolve_citations(organization, derived_from)
+
+        with transaction.atomic():
+            assertion = self._create_assertion(organization, self._provenance_from_info(info))
+            links = [self._claim_identity(organization, kind, left, right, assertion, info, observed_at=observed_at, confidence=confidence) for left, right in pairs]
+            # One statement, several pair links: each pair is what the caller
+            # concluded from the cited claims.
+            for link in links:
+                self._cite(organization, assertion, str(link.pk), cited)
+
+        # Every view drawing any member may now draw the component differently, so
+        # each member is reprojected — the same fan-out a classification does.
+        # `reproject_refs` widens to the members of the vertex each ref was drawn
+        # on, so a split reaches the individual it came out of.
+        self._reproject_instances(organization, refs)
+
+        self._settle(assertion)
+        return results.Asserted(
+            assertion=assertion,
+            subjects=tuple(links),
+            drawings=(),
+        )
 
     def assert_same_instance(
         self,
@@ -2119,26 +2170,50 @@ class GraphController:
         refs = [str(ref) for ref in instance_refs]
         if len(set(refs)) < 2:
             raise ValueError("Claiming sameness needs at least two distinct entities.")
-        cited = self._resolve_citations(organization, derived_from)
+        pairs = [(refs[0], other) for other in refs[1:]]
+        return self._assert_identity(organization, evidence_models.Link.Kind.SAME_AS, pairs, refs, info, observed_at=observed_at, confidence=confidence, derived_from=derived_from)
+
+    def assert_different_instance(
+        self,
+        organization: Any,
+        instance_refs: list[Any],
+        info: Info,
+        *,
+        observed_at: datetime.datetime | None = None,
+        confidence: float | None = None,
+        derived_from: Iterable[str] = (),
+    ) -> results.Asserted:
+        """Claim that several already-recorded instances are *distinct* things
+        (RFC 0019), under one assertion.
+
+        Every pair, not a star: difference is not transitive, so "these three
+        are all different" is three claims, and a `DIFFERENT_FROM` only ever
+        vetoes the `SAME_AS` between exactly its own two endpoints.
+        """
+        refs = [str(ref) for ref in instance_refs]
+        if len(set(refs)) < 2:
+            raise ValueError("Claiming difference needs at least two distinct entities.")
+        pairs = [(refs[i], refs[j]) for i in range(len(refs)) for j in range(i + 1, len(refs))]
+        return self._assert_identity(organization, evidence_models.Link.Kind.DIFFERENT_FROM, pairs, refs, info, observed_at=observed_at, confidence=confidence, derived_from=derived_from)
+
+    def _retract_identity(self, kind: Any, claim_id: str, info: Info, *, at: datetime.datetime | None, confidence: float | None) -> results.Asserted:
+        link = self.resolve_edge_link(claim_id, info)
+        if link.kind != kind:
+            raise ValueError(f"Claim {claim_id} is a {link.kind}, not a {kind} claim")
+
+        organization = link.organization
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            links = [self._claim_same_instance(organization, refs[0], other, assertion, info, observed_at=observed_at, confidence=confidence) for other in refs[1:]]
-            # One statement, several pair links: each pair is what the caller
-            # concluded from the cited claims.
-            for link in links:
-                self._cite(organization, assertion, str(link.pk), cited)
+            writer.retract(organization, link, assertion, at=at, confidence=confidence)
 
-        # Every view drawing any member may now draw the component differently, so
-        # each member is reprojected — the same fan-out a classification does.
-        self._reproject_instances(organization, refs)
+        # The rebuild and the reprojection are `_reproject_claim`'s SAME_AS /
+        # DIFFERENT_FROM branches, shared with `retractLinks` so a claim
+        # withdrawn in a batch and one withdrawn alone cannot diverge.
+        self._reproject_claim(organization, link)
 
         self._settle(assertion)
-        return results.Asserted(
-            assertion=assertion,
-            subjects=tuple(links),
-            drawings=(),
-        )
+        return results.Asserted.of(assertion, link, ())
 
     def retract_same_instance(self, claim_id: str, info: Info, *, at: datetime.datetime | None = None, confidence: float | None = None) -> results.Asserted:
         """Withdraw one sameness claim, and rebuild whatever it may have held together.
@@ -2147,23 +2222,12 @@ class GraphController:
         — so `identity.retract` flags and `identity.recompute` rebuilds, the same
         division of labour `state.retract` and `state.recompute` already use.
         """
-        link = self.resolve_edge_link(claim_id, info)
-        if link.kind != evidence_models.Link.Kind.SAME_AS:
-            raise ValueError(f"Claim {claim_id} is a {link.kind}, not a sameness claim")
+        return self._retract_identity(evidence_models.Link.Kind.SAME_AS, claim_id, info, at=at, confidence=confidence)
 
-        organization = link.organization
-
-        with transaction.atomic():
-            assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            writer.retract(organization, link, assertion, at=at, confidence=confidence)
-
-        # The rebuild and the reprojection are `_reproject_claim`'s SAME_AS
-        # branch, shared with `retractLinks` so a sameness claim withdrawn in a
-        # batch and one withdrawn alone cannot diverge.
-        self._reproject_claim(organization, link)
-
-        self._settle(assertion)
-        return results.Asserted.of(assertion, link, ())
+    def retract_different_instance(self, claim_id: str, info: Info, *, at: datetime.datetime | None = None, confidence: float | None = None) -> results.Asserted:
+        """Withdraw one difference claim; the sameness it vetoed counts again
+        (RFC 0019), so the component is rebuilt and every member redrawn."""
+        return self._retract_identity(evidence_models.Link.Kind.DIFFERENT_FROM, claim_id, info, at=at, confidence=confidence)
 
     def _reproject_instances(self, organization: Any, refs: list[str]) -> None:
         """Redraw these nodes in every view that holds them."""
@@ -2198,7 +2262,9 @@ class GraphController:
 
         `except ValueError: continue` is the ordinary path, not an error case: a
         view declares the word but its `definition` refused this node, so it is
-        not drawn there. That is the whole reason `drawings` is a list.
+        not drawn there. That is the whole reason `drawings` is a list — and a
+        view that draws the node under several categories (RFC 0019) is several
+        entries, one per category, all naming the one vertex.
         """
         from graph_engine import projector
 
@@ -2209,33 +2275,34 @@ class GraphController:
             except ValueError:
                 continue
 
-            # The category is the **rule's** answer — `resolve_categories`, the
-            # same function that decides membership for `nodes(graph:)` — and
-            # drawn-ness is the projection's. The vertex carries a `category_id`
-            # too, stamped when it was drawn; reading *that* back made the cache
-            # authoritative for what a write reported, so a stale vertex made the
-            # write payload stale and a reproject could silently change it. When
-            # the two disagree the drawing is behind the rule, which is logged,
-            # and the rule is what is reported.
+            # The categories are the **rule's** answer — `resolve_categories`,
+            # the same function that decides membership for `nodes(graph:)` —
+            # and drawn-ness is the projection's. The vertex carries its
+            # `category_ids` too, stamped when it was drawn; reading *those*
+            # back made the cache authoritative for what a write reported, so a
+            # stale vertex made the write payload stale and a reproject could
+            # silently change it. When the two disagree the drawing is behind
+            # the rule, which is logged, and the rule is what is reported.
             resolved, _ = projector.resolve_categories(graph, [node])
-            category = resolved.get(str(node.ref))
-            if category is None:
+            categories = resolved.get(str(node.ref))
+            if not categories:
                 logger.warning(
                     "graph #%s draws node %s but its rule no longer admits it; the projection is behind the rule — run `manage.py reproject`. Reporting no drawing there.",
                     graph.pk,
                     node.pk,
                 )
                 continue
-            if projected.category_id is not None and str(projected.category_id) != str(category.pk):
+            if projected.category_ids and set(projected.category_ids) != {str(category.pk) for category in categories}:
                 logger.warning(
-                    "graph #%s draws node %s under category_id %s but its rule says %s; the projection is behind the rule — run `manage.py reproject`.",
+                    "graph #%s draws node %s under category_ids %s but its rule says %s; the projection is behind the rule — run `manage.py reproject`.",
                     graph.pk,
                     node.pk,
-                    projected.category_id,
-                    category.pk,
+                    ", ".join(projected.category_ids),
+                    ", ".join(str(category.pk) for category in categories),
                 )
 
-            drawings.append(results.NodeDrawing(graph=graph, category=category, node=projected))
+            for category in categories:
+                drawings.append(results.NodeDrawing(graph=graph, category=category, node=projected))
 
         return tuple(drawings)
 

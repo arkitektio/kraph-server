@@ -1,0 +1,318 @@
+"""A node is drawn under every category of the view that admits it (RFC 0019).
+
+A vertex used to carry one label — an Apache AGE limitation the table
+projection never had, kept alive by `resolve_categories` refusing any node two
+definitions admitted. "Pyramidal" and "Excitatory" are not a disagreement: a
+cell can be both, and a view that declares both words draws the cell under
+both. What was a refusal is now the union.
+
+What stays a refusal is a **property** two of the node's categories both
+define under different rules, because one vertex has one value per key and
+picking either category's would bury the other's.
+"""
+
+import kante
+import pytest
+from asgiref.sync import sync_to_async
+from kante.context import HttpContext
+
+from core import models as core_models
+from evidence import models as evidence_models
+from evidence import selector as selector_module
+from graph_engine import projector as projector_module
+from graph_engine.controller import GraphController
+from tests import claims, drawing, rules
+
+JOHANNES = "johannes"
+CHRISTIAN = "christian"
+
+CREATE_ENTITY = """
+    mutation CreateEntity($input: AssertEntityExistsInput!) {
+        assertEntityExists(input: $input) {
+            instance { id }
+            drawings { category { id } node { id drawnLabels } }
+        }
+    }
+"""
+
+ENTITY = """
+    query Entity($id: ID!, $graph: ID!) {
+        entity(id: $id, graph: $graph) {
+            id
+            label
+            drawnLabels
+            categoryIds
+            categories { id key }
+            richProperties { key value }
+        }
+    }
+"""
+
+ENTITIES = """
+    query Entities($category: ID!) {
+        entities(entityCategoryId: $category) { id }
+    }
+"""
+
+
+async def _an_ais(api_schema: kante.Schema, ctx: HttpContext) -> str:
+    created = await api_schema.execute(CREATE_ENTITY, variable_values={"input": {"term": "AIS", "supportingEvidence": []}}, context_value=ctx)
+    assert created.errors is None, f"GraphQL errors: {created.errors}"
+    return created.data["assertEntityExists"]["instance"]["id"]
+
+
+def _the_node(graph: core_models.Graph):
+    return evidence_models.Instance.objects.for_organization(graph.organization).filter(term__in=selector_module.term_ids_for(graph)).get()
+
+
+def _define(graph: core_models.Graph, key: str, definition: dict, properties: list[dict] | None = None) -> core_models.EntityCategory:
+    """A defined entity category over the word AIS, created or redefined."""
+    category, _ = core_models.EntityCategory.objects.get_or_create(graph=graph, key=key, defaults={"age_name": key.lower(), "label": key})
+    category.age_name = key.lower()  # the fixture's AIS is labelled "AIS"; one spelling for every assertion below
+    category.definition = definition
+    if properties is not None:
+        category.property_definitions = properties
+    category.save()
+    return category
+
+
+def _rollup(key: str, aggregation: str) -> dict:
+    return {"key": key, "value_kind": "FLOAT", "derivation": "ROLLUP", "rule": {"source_node": "ROI", "key": "vector_length", "aggregation": aggregation}}
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_a_node_two_categories_admit_is_drawn_once_under_both(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    table_projector,
+) -> None:
+    """One vertex, two labels — not a refusal, and not two vertices."""
+
+    await _an_ais(api_schema, simple_api_context)
+
+    @sync_to_async
+    def both_admit_it() -> tuple[str, dict]:
+        node = _the_node(test_graph)
+        ais = _define(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"), rules.by(JOHANNES))))
+        _define(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"), rules.by(CHRISTIAN))))
+        claims.retract_classifications(test_graph, node.ref)
+        claims.classify(test_graph, node.ref, ais, JOHANNES)
+        claims.classify(test_graph, node.ref, ais, CHRISTIAN)
+        return str(node.ref), GraphController(projector=table_projector).rebuild_projection(test_graph)
+
+    ref, result = await both_admit_it()
+    assert result["nodes"] == 1, "The node is drawn — a second admitting category is not an ambiguity"
+    assert result["unclassified"] == 0
+
+    @sync_to_async
+    def drawn() -> tuple[int, set[str], int, int]:
+        return drawing.vertices_with_ref(test_graph, ref), drawing.labels_of(test_graph, ref), drawing.vertex_count(test_graph, "ais"), drawing.vertex_count(test_graph, "excitatory")
+
+    vertices, labels, ais_count, excitatory_count = await drawn()
+    assert vertices == 1, "one individual, one vertex"
+    assert labels == {"ais", "excitatory"}
+    assert ais_count == 1 and excitatory_count == 1, "and it counts under each label"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_it_is_listed_under_each_category_and_in_each_namespace_view(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    table_projector,
+) -> None:
+    """`entities(category:)` for either category lists it, and so does the
+    category's element table in the property graph."""
+
+    from django.db import connection
+
+    ref = await _an_ais(api_schema, simple_api_context)
+
+    @sync_to_async
+    def both_admit_it() -> tuple[int, int]:
+        ais = _define(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"))))
+        excitatory = _define(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"))))
+        GraphController(projector=table_projector).rebuild_projection(test_graph)
+        return ais.pk, excitatory.pk
+
+    ais_pk, excitatory_pk = await both_admit_it()
+
+    for pk in (ais_pk, excitatory_pk):
+        listed = await api_schema.execute(ENTITIES, variable_values={"category": str(pk)}, context_value=simple_api_context)
+        assert listed.errors is None, f"GraphQL errors: {listed.errors}"
+        assert [row["id"] for row in listed.data["entities"]] == [ref]
+
+    @sync_to_async
+    def in_property_graph() -> dict[str, list[str]]:
+        found = {}
+        with connection.cursor() as cursor:
+            for label in ("ais", "excitatory"):
+                cursor.execute(f'SELECT ref FROM GRAPH_TABLE ("{test_graph.age_name}".graph MATCH (a IS "{label}") COLUMNS (a.__ref AS ref))')
+                found[label] = [row[0] for row in cursor.fetchall()]
+        return found
+
+    assert await in_property_graph() == {"ais": [ref], "excitatory": [ref]}
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_a_write_reports_one_drawing_per_category(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    table_projector,
+) -> None:
+    """`drawings` lists the node once per (view, category) — that is what the
+    field promises, and now it can be more than one entry for one view."""
+
+    @sync_to_async
+    def declare() -> set[str]:
+        ais = _define(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"))))
+        excitatory = _define(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"))))
+        return {str(ais.pk), str(excitatory.pk)}
+
+    category_ids = await declare()
+
+    created = await api_schema.execute(CREATE_ENTITY, variable_values={"input": {"term": "AIS", "supportingEvidence": []}}, context_value=simple_api_context)
+    assert created.errors is None, f"GraphQL errors: {created.errors}"
+    drawings = created.data["assertEntityExists"]["drawings"]
+    assert {entry["category"]["id"] for entry in drawings} == category_ids
+    assert all(sorted(entry["node"]["drawnLabels"]) == ["ais", "excitatory"] for entry in drawings)
+
+    ref = created.data["assertEntityExists"]["instance"]["id"]
+    read = await api_schema.execute(ENTITY, variable_values={"id": ref, "graph": str(test_graph.pk)}, context_value=simple_api_context)
+    assert read.errors is None, f"GraphQL errors: {read.errors}"
+    entity = read.data["entity"]
+    assert entity["drawnLabels"] == ["ais", "excitatory"]
+    assert entity["label"] == "ais", "the first label, for a client that shows one"
+    assert set(entity["categoryIds"]) == category_ids
+    assert {c["key"] for c in entity["categories"]} == {"AIS", "Excitatory"}
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_properties_are_the_union_over_the_categories(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    table_projector,
+) -> None:
+    """AIS derives `avg_length`; Excitatory derives `max_length`; the vertex has both."""
+
+    ref = await _an_ais(api_schema, simple_api_context)
+
+    @sync_to_async
+    def measure_and_rebuild() -> dict:
+        _define(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"))))
+        _define(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"))), properties=[_rollup("max_length", "MAX")])
+        for obj, value in (("roi-1", 2.0), ("roi-2", 4.0)):
+            claims.measure(test_graph.organization, ref, obj=obj, key="vector_length", value=value, subject=JOHANNES)
+        GraphController(projector=table_projector).rebuild_projection(test_graph)
+        return drawing.vertex_properties(test_graph, ref)
+
+    properties = await measure_and_rebuild()
+    assert properties["avg_length"] == 3.0, "AIS's rule"
+    assert properties["max_length"] == 4.0, "Excitatory's rule, on the same vertex"
+
+    read = await api_schema.execute(ENTITY, variable_values={"id": ref, "graph": str(test_graph.pk)}, context_value=simple_api_context)
+    assert read.errors is None, f"GraphQL errors: {read.errors}"
+    rich = {row["key"]: row["value"] for row in read.data["entity"]["richProperties"]}
+    assert rich["avg_length"] == 3.0 and rich["max_length"] == 4.0, "richProperties declares the keys of every category"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_a_key_two_categories_define_differently_is_refused_naming_both(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    table_projector,
+) -> None:
+    """One vertex has one value per key. AIS says `avg_length` is the MEAN,
+    Excitatory says the MAX: whichever was written would misreport the other,
+    so the node is refused with a reason that names both."""
+
+    await _an_ais(api_schema, simple_api_context)
+
+    @sync_to_async
+    def conflict() -> tuple[dict, dict[str, str]]:
+        _define(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"))))
+        _define(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"))), properties=[_rollup("avg_length", "MAX")])
+        result = GraphController(projector=table_projector).rebuild_projection(test_graph)
+        _, skipped = projector_module.resolve_categories(test_graph, [_the_node(test_graph)])
+        return result, skipped
+
+    result, skipped = await conflict()
+    assert result["nodes"] == 0 and result["unclassified"] == 1
+    (reason,) = skipped.values()
+    assert "avg_length" in reason and "AIS" in reason and "Excitatory" in reason
+
+    @sync_to_async
+    def agree() -> dict:
+        # The same rule on both is not a conflict: there is one answer.
+        _define(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"))), properties=[_rollup("avg_length", "MEAN")])
+        _define(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"))), properties=[_rollup("avg_length", "MEAN")])
+        return GraphController(projector=table_projector).rebuild_projection(test_graph)
+
+    assert (await agree())["nodes"] == 1
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_existence_folds_per_category(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    table_projector,
+) -> None:
+    """Retracted by somebody one category counts and the other does not: the
+    node keeps only the label whose rule still says it exists. No label left,
+    no vertex."""
+
+    await _an_ais(api_schema, simple_api_context)
+
+    @sync_to_async
+    def christian_retracts() -> tuple[str, set[str]]:
+        node = _the_node(test_graph)
+        ais = _define(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"))))
+        _define(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"), rules.by(JOHANNES))))
+        claims.retract_classifications(test_graph, node.ref)
+        claims.classify(test_graph, node.ref, ais, JOHANNES)
+        claims.retract_node(test_graph.organization, node.ref, CHRISTIAN)
+        GraphController(projector=table_projector).rebuild_projection(test_graph)
+        return str(node.ref), drawing.labels_of(test_graph, node.ref)
+
+    ref, labels = await christian_retracts()
+    assert labels == {"excitatory"}, "AIS counts Christian's retraction; Excitatory listens to Johannes only"
+
+    @sync_to_async
+    def johannes_retracts() -> int:
+        claims.retract_node(test_graph.organization, ref, JOHANNES)
+        GraphController(projector=table_projector).rebuild_projection(test_graph)
+        return drawing.vertices_with_ref(test_graph, ref)
+
+    assert await johannes_retracts() == 0
+
+
+@pytest.mark.django_db(transaction=True)
+def test_deleting_one_category_keeps_the_vertex_under_the_other(test_graph, table_projector) -> None:
+    """The composite FK cascades the deleted category's *label*; the vertex
+    stays while another label holds it, and goes with its last one."""
+    from graph_engine import models as projection_models
+
+    ais = core_models.Category.objects.get(graph=test_graph, key="AIS")
+    soma = core_models.Category.objects.get(graph=test_graph, key="Soma")
+    ref = "00000000-0000-0000-0000-00000000a15e"
+    table_projector.draw_node(test_graph, ref, [(ais.age_name, ais.pk), (soma.age_name, soma.pk)], "ENTITY", [ref])
+    assert drawing.labels_of(test_graph, ref) == {ais.age_name, soma.age_name}
+
+    core_models.Category.objects.filter(pk=soma.pk).delete()
+    assert drawing.labels_of(test_graph, ref) == {ais.age_name}
+    assert projection_models.ProjectionVertex.objects.filter(graph=test_graph, ref=ref).exists()
+
+    core_models.Category.objects.filter(pk=ais.pk).delete()
+    assert not projection_models.ProjectionVertex.objects.filter(graph=test_graph, ref=ref).exists(), "no label left, no vertex"
+    assert not projection_models.ProjectionMember.objects.filter(graph=test_graph, ref=ref).exists()

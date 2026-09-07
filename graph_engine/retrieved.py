@@ -33,6 +33,7 @@ RESERVED_PROPERTY_KEYS = frozenset(
     {
         "type",
         "category_id",
+        "category_ids",
         "valid_from",
         "valid_to",
         "external_id",
@@ -107,7 +108,7 @@ NodeType = Literal[
 # Type literals for edge discrimination. Exactly the nine `Link.Kind` values,
 # uppercased — `from_link` writes `type` as `str(link.kind).upper()` and every
 # edge the API builds goes through it, so these are the values `edge_type` can
-# actually hold and the nine cases `cast_edge_to_graphql_type` dispatches on.
+# actually hold and the ten cases `cast_edge_to_graphql_type` dispatches on.
 #
 # `PARTICIPANT`, `DESCRIPTION`, `ASSERTION` and `EDITED` used to be here and
 # five of the producible kinds were not — the same defect `NodeType` above was
@@ -121,6 +122,7 @@ EdgeType = Literal[
     "PARTICIPATES_AS_OUTPUT",
     "CLASSIFIES",
     "SAME_AS",
+    "DIFFERENT_FROM",
     "DERIVED_FROM",
 ]
 
@@ -161,6 +163,7 @@ class RetrievedNode:
     #: stable. Zero for a row-backed shape, which has no vertex.
     vertex_id: int
     label: str
+    """The first of `labels`, for a reader that shows one — or the word itself when undrawn."""
     properties: Dict[str, Any] = field(default_factory=dict)
     row_id: Optional[str] = None
     """Primary key when this node is backed by a relational evidence row.
@@ -170,6 +173,14 @@ class RetrievedNode:
     is the node's identity and `id`/`graph_name` carry no information. Everything
     still projected into AGE — entities, events, relation edges — leaves it None
     and keeps the composite `{graph_name}:{id}` form unchanged.
+    """
+    labels: tuple[str, ...] = ()
+    """Every label the view it was read through draws this node under, sorted (RFC 0019).
+
+    One per category that admits it — `category.age_name` each. A view that
+    declares Pyramidal and Excitatory draws a cell that is both once, under
+    both. Empty for a row-backed shape: a claim read outside any view is drawn
+    as nothing there, and `label` is then the word.
     """
     members: tuple[str, ...] = ()
     """The instance uuids this node stands for, in the view it was read through (RFC 0018).
@@ -277,11 +288,12 @@ class RetrievedNode:
             graph_name=graph_name,
             vertex_id=0,
             label=str(row.term.key),
+            labels=(),
             row_id=str(row.pk),
             members=(str(row.pk),),
             properties={
                 "id": str(row.pk),
-                "category_id": None,
+                "category_ids": [],
                 # From the row's own kind, so `node_type` discriminates correctly
                 # without a category to read a label off. Without this, dispatch
                 # falls back to `VocabNodeTypeMap.get(self.label, "ENTITY")` — and
@@ -308,16 +320,16 @@ class RetrievedNode:
     # === Type Discrimination ===
 
     @property
-    def category_id(self) -> Optional[str]:
-        """This node's category in the view it was read through, if there is one.
+    def category_ids(self) -> tuple[str, ...]:
+        """Every category the view it was read through draws this node under (RFC 0019).
 
-        `None` is an ordinary answer, and used to raise. A node names a *word*, and
-        a category is one view's rule for that word — so a node claimed under a
-        word no view declares has no category, and since writes name terms that is
-        a state a client can reach with one mutation. Raising here turned a
-        perfectly recorded claim into an error on read.
+        Empty is an ordinary answer, and the scalar this replaced used to raise.
+        A node names a *word*, and a category is one view's rule for that word —
+        so a node claimed under a word no view declares has no category, and
+        since writes name terms that is a state a client can reach with one
+        mutation. Sorted by pk, parallel to nothing: `labels` is sorted by name.
         """
-        return self.properties.get("category_id")
+        return tuple(str(pk) for pk in (self.properties.get("category_ids") or ()))
 
     @property
     def node_type(self) -> NodeType:
@@ -439,11 +451,13 @@ class RetrievedNode:
         """Build one from a drawn record — `{id, label, properties, members}` as `Projector.drawn_nodes` returns it."""
         properties = node.get("properties", {})
         members = tuple(str(member) for member in node.get("members", ()))
+        labels = tuple(str(label) for label in node.get("labels", ()))
         return cls(
             controller=controller,
             graph_name=graph_name,
             vertex_id=node.get("id", 0),
-            label=node.get("label", "Unknown"),
+            label=node.get("label") or (labels[0] if labels else "Unknown"),
+            labels=labels or ((str(node["label"]),) if node.get("label") else ()),
             properties=properties,
             # A record without members came from an older projector; the vertex
             # then stood for exactly the instance its `id` names.

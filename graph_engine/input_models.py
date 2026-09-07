@@ -1921,6 +1921,27 @@ class RetractSameInstanceInput(StrictModel):
     confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
 
 
+class AssertDifferentInstanceInput(StrictModel):
+    """Input for claiming that several recorded instances are distinct things (RFC 0019)."""
+
+    instances: List[str] = Field(
+        ...,
+        min_length=2,
+        description="Two or more instance ids that are not one thing. Every pair among them is claimed, under one assertion — difference is not transitive, so each pair is its own claim.",
+    )
+    observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    derived_from: List[str] = _derived_from_field()
+
+
+class RetractDifferentInstanceInput(StrictModel):
+    """Input for withdrawing one difference claim."""
+
+    id: str = Field(..., description="The id of the difference claim to retract")
+    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+
+
 class CategoryNodePositionInput(StrictModel):
     """Input for specifying the position of a node in the graph visualization."""
 

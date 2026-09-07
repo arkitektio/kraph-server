@@ -100,7 +100,7 @@ renames that fixed that are in `evidence/migrations/0008_instance_and_standing.p
 | `Assertion` | evidence | the **act** — who claimed it, with what tool, when. Carries `seq`, the log's total order | `evidence.Assertion` |
 | *claim* | evidence | any **recorded statement**: an `Instance`, a `Link`, a `Metric`, a `Structure`, a `Comment`. A prose word, not a table | — |
 | `Instance` | evidence | a claimed **individual** — `entity`, `natural_event` or `protocol_event`. Every observation mints its own | `evidence.Instance` |
-| `Link` | evidence | a claim **relating two things**. Nine kinds — see `Link.Kind`. `DERIVED_FROM` is lineage between claims of any shape, written under the citing claim's own assertion, never drawn (RFC 0017) | `evidence.Link` |
+| `Link` | evidence | a claim **relating two things**. Ten kinds — see `Link.Kind`. `DIFFERENT_FROM` is negative sameness, vetoing the direct `SAME_AS` between its ends in every fold (RFC 0019). `DERIVED_FROM` is lineage between claims of any shape, written under the citing claim's own assertion, never drawn (RFC 0017) | `evidence.Link` |
 | `Standing` | evidence | somebody's **position** on whether a claim still holds (`stands=True/False`) | `evidence.Standing` |
 | `CurrentStanding` | evidence (cache) | the folded answer. No row for instances — their standing is per view | `evidence.CurrentStanding` |
 | `Term` | evidence | a **word** the organization uses. What a claim names | `evidence.Term` |
@@ -168,8 +168,9 @@ The load-bearing facts:
   from `drawings[0]`, an arbitrary view (`projected_instance`, deleted with its caller
   `get_node`). Anything that reads a drawn record should be checked against
   `Projector.draw_node` (`graph_engine/projection/table.py`), which stores exactly the identity
-  trio `{id, category_id, type}` beside the derived properties and labels with
-  `category.age_name`.
+  trio `{id, category_ids, type}` beside the derived properties and labels it with the
+  `age_name` of **every** category that admits it — one `graph_engine.models.ProjectionLabel` row
+  per (vertex, category), RFC 0019.
 - **What a node *is* comes from the claim, never from the label.** `Instance.kind` is the fact;
   `draw_node` writes it onto the vertex as `type`, and `RetrievedNode.node_type` reads that and
   nothing else. There is no label-to-kind map any more — a vertex is labelled `category.age_name`
@@ -250,6 +251,23 @@ The load-bearing facts:
   row per individual (`representatives_in_graph`). Every redraw is `projector.converge`, which
   widens the touched set to whole individuals (`reproject_refs`, not a per-node call). The org-grain
   *cache* is what the panel reads; a view's `members` and the panel's `component` may disagree.
+  **Sameness has a negative (RFC 0019)**: `Link.Kind.DIFFERENT_FROM`, one claim per pair
+  (`assertDifferentInstance`), read under the same `SAMENESS` rule. Every fold — view, org cache,
+  `merge`, `rebuild_identity --check` — goes through `identity.admitted_sameness`, which drops the
+  *direct* `SAME_AS` between a vetoed pair and nothing else; a pair still joined through a third
+  instance stays merged and is reported as `Node.conflicts`/`Instance.conflicts`. Never resolve a
+  conflict by guessing which other claim to drop.
+- **A node is drawn under every category that admits it (RFC 0019).** `resolve_categories` answers
+  `dict[ref, list[Category]]`: the union of defined categories whose rule admits the node and
+  primitive categories of the words its standing classifications name (its own `Instance.term`
+  only when nothing classifies it). Existence folds **per category**; properties are the union;
+  the one refusal left is `projector.property_conflicts` — a key two of the node's categories
+  define differently (`PropertyDefinitionInput` or category `definition` differ). `draw_node`
+  takes `categories: [(label, category_id), …]`, `write_properties` takes no label, a drawn record
+  carries `labels` (sorted) with `label` the first; `NodeDrawing` stays one per (view, category),
+  so a write's `drawings` lists a node once per category. API: `Node.drawnLabels`,
+  `Entity.categoryIds`/`categories` (no `categoryId`/`category`). Two nodes may union (RFC 0018)
+  when a category they *share* trusts the sameness. Edges are still drawn under one label.
 - **`State` is organization grain**, and nothing folds under a graph-level scope — `merge`,
   `recompute` and `refold_state` all count every live metric. Which metrics a *property* counts
   is applied on read by `metric_scope(category.definition, rule)` in `projector._scoped_state`:
@@ -315,9 +333,11 @@ The load-bearing facts:
   transactional — no second staleness ledger; the signal is `is_suspended()`-gated because
   `materialize` refreshes once itself, after its categories exist). Out-of-band repair:
   `manage.py refresh_namespaces`. Write-side, a raw composite FK
-  `ProjectionVertex(graph, category_pk) → Category(graph, id) ON DELETE CASCADE`
-  (graph_engine migration 0005; the edge FKs are DB-level CASCADE for the same reason) makes the
-  database refuse a vertex drawn under a category its graph does not declare. Measurement and
+  `ProjectionLabel(graph, category_pk) → Category(graph, id) ON DELETE CASCADE`
+  (graph_engine migration 0005, relocated to the label table by 0009; the edge, member and label
+  FKs are DB-level CASCADE for the same reason) makes the database refuse a vertex drawn under a
+  category its graph does not declare. A category delete cascades its label rows, and the
+  `projectionlabel_last_label_deletes_vertex` trigger takes a vertex whose last label went. Measurement and
   structure-relation categories draw nothing and appear nowhere; an edge drawn outside the
   declared endpoint pairs exists in the base tables but not in the property graph — the namespace
   is the schema's shape, not a mirror.
