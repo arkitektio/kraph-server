@@ -23,7 +23,7 @@ from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 from core import models as core_models
 from evidence import writer as evidence_writer
-from tests.support import writes
+from tests.support import reads, writes
 from evidence import writer
 
 
@@ -291,88 +291,21 @@ async def test_a_claim_cannot_reach_into_another_organization(
     assert source, "The in-tenant write that set this up still succeeded"
 
 
-ASSERT_ENTITY = """
-    mutation AssertEntityExists($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) {
-            assertion { id seq }
-            instance { id }
-        }
-    }
-"""
-
-
-ASSERTIONS = """
-    query Assertions($filters: AssertionFilter, $pagination: LogPaginationInput) {
-        assertions(filters: $filters, pagination: $pagination) { id seq subject appId }
-    }
-"""
-
-
-ASSERTION = """
-    query Assertion($id: ID!) {
-        assertion(id: $id) {
-            id
-            seq
-            actionArgs
-            instances { id term { key } }
-            links { id kind }
-            metrics { id }
-            structures { id }
-            standings { id stands target { __typename ... on Instance { id } ... on Link { id } } }
-            comments { id }
-        }
-    }
-"""
-
-
-CHANGES = """
-    query Changes($afterSeq: Int!, $limit: Int) {
-        changes(afterSeq: $afterSeq, limit: $limit) {
-            assertions { id seq }
-            nextSeq
-            horizon
-        }
-    }
-"""
-
-
-STANDINGS = """
-    query Standings($id: ID, $filters: StandingFilter) {
-        standings(id: $id, filters: $filters) {
-            id
-            stands
-            target { __typename ... on Instance { id } ... on Link { id } }
-        }
-    }
-"""
-
-
-async def _execute(api_schema, ctx, document: str, variables: dict | None = None) -> dict:
-    result = await api_schema.execute(document, variable_values=variables or {}, context_value=ctx)
-    assert result.errors is None, f"GraphQL errors: {result.errors}"
-    return result.data
-
-
-async def _assert_entity(api_schema, ctx, term: str = "AIS", evidence: list | None = None) -> dict:
-    data = await _execute(api_schema, ctx, ASSERT_ENTITY, {"input": {"term": term, "supportingEvidence": evidence or []}})
-    return data["assertEntityExists"]
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_the_log_is_tenant_scoped(api_schema, simple_api_context, test_graph, other_organization) -> None:  # noqa: F811
     foreign = await sync_to_async(writer.create_assertion)(other_organization, subject="1", app_id="test")
-    own = await _assert_entity(api_schema, simple_api_context)
+    own = await writes.assert_entity(api_schema, simple_api_context, "AIS")
 
-    listed = (await _execute(api_schema, simple_api_context, ASSERTIONS))["assertions"]
+    listed = (await writes.execute(api_schema, simple_api_context, reads.ASSERTIONS))["assertions"]
     assert str(foreign.pk) not in [row["id"] for row in listed]
 
-    feed = (await _execute(api_schema, simple_api_context, CHANGES, {"afterSeq": 0}))["changes"]
+    feed = (await writes.execute(api_schema, simple_api_context, reads.CHANGES, {"afterSeq": 0}))["changes"]
     assert str(foreign.pk) not in [row["id"] for row in feed["assertions"]]
     assert own["assertion"]["id"] in [row["id"] for row in feed["assertions"]]
 
-    result = await api_schema.execute(ASSERTION, variable_values={"id": str(foreign.pk)}, context_value=simple_api_context)
+    result = await api_schema.execute(reads.ASSERTION, variable_values={"id": str(foreign.pk)}, context_value=simple_api_context)
     assert result.errors, "another tenant's assertion is refused by id"
 
-    positions = (await _execute(api_schema, simple_api_context, STANDINGS, {"filters": {"subjects": ["1"]}}))["standings"]
+    positions = (await writes.execute(api_schema, simple_api_context, reads.STANDINGS_FILTERED, {"filters": {"subjects": ["1"]}}))["standings"]
     assert all(row["target"]["id"] != str(foreign.pk) for row in positions)

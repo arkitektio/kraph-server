@@ -27,12 +27,7 @@ from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 
 from core import models as core_models
-
-CREATE_ENTITY = """
-    mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { instance { id } }
-    }
-"""
+from tests.support import writes
 
 ENTITY = """
     query Entity($id: ID!, $graph: ID!) {
@@ -56,7 +51,7 @@ async def _node(api_schema: kante.Schema, ctx: HttpContext, entity_id: str, grap
 async def _measured_ais(api_schema: kante.Schema, ctx: HttpContext, values: tuple[float, ...]) -> str:
     """An `AIS` drawn into the projection, with `values` measured behind it."""
     created = await api_schema.execute(
-        CREATE_ENTITY,
+        writes.ASSERT_ENTITY_EXISTS,
         variable_values={
             "input": {
                 "term": "AIS",

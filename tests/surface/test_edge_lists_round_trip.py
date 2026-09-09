@@ -28,24 +28,9 @@ import pytest
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 from core import models as core_models
-from tests.support import writes
+from tests.support import reads, writes
 
 
-ASSERT_STRUCTURE = """
-    mutation AssertStructureExists($input: AssertStructureExistsInput!) {
-        assertStructureExists(input: $input) { structure { id } }
-    }
-"""
-ASSERT_ENTITY = """
-    mutation AssertEntityExists($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { instance { id } }
-    }
-"""
-ASSERT_RELATION = """
-    mutation AssertRelationExists($input: AssertRelationExistsInput!) {
-        assertRelationExists(input: $input) { link { id } }
-    }
-"""
 LIST_RELATIONS = """
     query Relations($category: ID!, $ids: [ID!]) {
         relations(relationCategoryId: $category, filters: {ids: $ids}) {
@@ -66,7 +51,7 @@ GET_RELATION = """
 
 async def _entity(api_schema: kante.Schema, ctx: HttpContext, term: str) -> str:
     result = await api_schema.execute(
-        ASSERT_ENTITY,
+        writes.ASSERT_ENTITY_EXISTS,
         variable_values={"input": {"term": term, "supportingEvidence": []}},
         context_value=ctx,
     )
@@ -76,7 +61,7 @@ async def _entity(api_schema: kante.Schema, ctx: HttpContext, term: str) -> str:
 
 async def _relation(api_schema: kante.Schema, ctx: HttpContext, term: str, source: str, target: str) -> str:
     result = await api_schema.execute(
-        ASSERT_RELATION,
+        writes.ASSERT_RELATION_EXISTS,
         variable_values={"input": {"term": term, "sourceId": source, "targetId": target}},
         context_value=ctx,
     )
@@ -210,13 +195,6 @@ async def test_a_property_filter_is_refused_rather_than_ignored(
     assert result.errors, "A filter that cannot be honoured must not silently pass"
 
 
-RELATION_BY_ID = """
-    query Relation($id: ID!) {
-        relation(id: $id) { id }
-    }
-"""
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_an_edge_can_be_read_back_by_the_id_it_was_given(
@@ -241,7 +219,7 @@ async def test_an_edge_can_be_read_back_by_the_id_it_was_given(
     target = await writes.create_entity(api_schema, simple_api_context, "Cell")
     relation_id = await writes.create_relation(api_schema, simple_api_context, "IS_CONNECTED_TO", source, target)
 
-    result = await api_schema.execute(RELATION_BY_ID, variable_values={"id": relation_id}, context_value=simple_api_context)
+    result = await api_schema.execute(reads.RELATION, variable_values={"id": relation_id}, context_value=simple_api_context)
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     assert result.data["relation"]["id"] == relation_id, "The claim reads back as itself"

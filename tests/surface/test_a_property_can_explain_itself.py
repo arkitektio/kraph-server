@@ -17,19 +17,9 @@ import kante
 import pytest
 from kante.context import HttpContext
 from core import models as core_models
-from graph_engine.retrieved import RetrievedNode
+from tests.support import reads, writes
 
 
-CREATE_ENTITY = """
-    mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { instance { id } }
-    }
-"""
-RECORD_METRIC = """
-    mutation RecordMetric($input: AssertMetricValueInput!) {
-        assertMetricValue(input: $input) { metric { id } }
-    }
-"""
 THE_SENTENCE = """
     query Explain($id: ID!, $graph: ID!) {
         node(id: $id, graph: $graph) {
@@ -64,7 +54,7 @@ async def _entity_with_measurements(
     object_id = f"roi_{uuid.uuid4().hex[:8]}"
 
     created = await api_schema.execute(
-        CREATE_ENTITY,
+        writes.ASSERT_ENTITY_EXISTS,
         variable_values={
             "input": {
                 "term": category.key,
@@ -83,7 +73,7 @@ async def _entity_with_measurements(
 
     for value in values[1:]:
         recorded = await api_schema.execute(
-            RECORD_METRIC,
+            writes.ASSERT_METRIC_VALUE,
             variable_values={
                 "input": {
                     "identifier": "ROI",
@@ -198,7 +188,7 @@ async def test_a_property_with_no_evidence_reports_nothing_rather_than_zero(
     """Absence of evidence must not read as a measured zero."""
     category = await core_models.EntityCategory.objects.filter(graph=test_graph, key="AIS").afirst()
     created = await api_schema.execute(
-        CREATE_ENTITY,
+        writes.ASSERT_ENTITY_EXISTS,
         variable_values={"input": {"term": category.key}},
         context_value=simple_api_context,
     )
@@ -214,16 +204,6 @@ async def test_a_property_with_no_evidence_reports_nothing_rather_than_zero(
     for prop in result.data["node"]["richProperties"]:
         assert prop["nEvidence"] in (None, 0)
         assert prop["supportingEvidence"] == []
-
-
-def _entity(properties: dict) -> RetrievedNode:
-    return RetrievedNode(
-        controller=None,  # type: ignore[arg-type]
-        graph_name="testgraph",
-        vertex_id=1,
-        label="AIS",
-        properties=properties,
-    )
 
 
 def test_rich_property_definition_resolves_from_the_category_schema() -> None:
@@ -246,7 +226,7 @@ def test_rich_property_definition_resolves_from_the_category_schema() -> None:
     # Unsaved instance: property_map reads the JSON field, so no database is involved.
     category = core_models.EntityCategory(property_definitions=[d.model_dump(mode="json") for d in definitions])
 
-    entity = _entity({"avg_length": 45.2})
+    entity = reads.retrieved_node({"avg_length": 45.2})
     prop = RichProperty(_entity=entity, _key="avg_length", _category=category)
 
     resolved = asyncio.run(prop.definition())
@@ -263,6 +243,6 @@ def test_rich_property_definition_is_none_for_an_undeclared_key() -> None:
     from core import models as core_models
 
     category = core_models.EntityCategory(property_definitions=[])
-    prop = RichProperty(_entity=_entity({"stray": 1}), _key="stray", _category=category)
+    prop = RichProperty(_entity=reads.retrieved_node({"stray": 1}), _key="stray", _category=category)
 
     assert asyncio.run(prop.definition()) is None

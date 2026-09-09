@@ -30,22 +30,11 @@ from graph_engine.controller import GraphController
 from graph_engine.input_models import ProvenanceContext
 from tests.support.identity import static_identity as _static_identity
 import datetime
-from tests.support import writes
+from tests.support import drawing, writes
 from evidence import identity
-from tests.support.writes import ASSERT_SAME, assert_entity as _assert_entity
-from tests.support import drawing
+from tests.support.writes import ASSERT_SAME
 
 
-CREATE_ENTITY = """
-    mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { instance { id } }
-    }
-"""
-CREATE_NATURAL_EVENT = """
-    mutation CreateNaturalEvent($input: AssertNaturalEventExistsInput!) {
-        assertNaturalEventExists(input: $input) { instance { id } }
-    }
-"""
 ASSERT_PARTICIPATION = """
     mutation AssertParticipation($input: AssertParticipationInput!) {
         assertParticipation(input: $input) { link { id } }
@@ -63,30 +52,6 @@ CLASSIFY_NODES = """
 """
 
 
-async def _cell(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph) -> str:
-    category = await core_models.EntityCategory.objects.filter(graph=graph, key="Cell").afirst()
-    assert category is not None
-    created = await api_schema.execute(
-        CREATE_ENTITY,
-        variable_values={"input": {"term": category.key, "supportingEvidence": []}},
-        context_value=ctx,
-    )
-    assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertEntityExists"]["instance"]["id"]
-
-
-async def _mitosis(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph) -> str:
-    category = await core_models.NaturalEventCategory.objects.filter(graph=graph, key="Mitosis").afirst()
-    assert category is not None
-    created = await api_schema.execute(
-        CREATE_NATURAL_EVENT,
-        variable_values={"input": {"term": category.key, "inputs": [], "outputs": [], "supportingEvidence": []}},
-        context_value=ctx,
-    )
-    assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertNaturalEventExists"]["instance"]["id"]
-
-
 @sync_to_async
 def _assertion_count(graph: core_models.Graph) -> int:
     return evidence_models.Assertion.objects.for_organization(graph.organization).count()
@@ -100,8 +65,8 @@ async def test_a_batch_of_participations_is_one_assertion(
     test_graph: core_models.Graph,
 ) -> None:
     """Three participants asserted together are one act, so one assertion."""
-    event = await _mitosis(api_schema, simple_api_context, test_graph)
-    entities = [await _cell(api_schema, simple_api_context, test_graph) for _ in range(3)]
+    event = await writes.create_event(api_schema, simple_api_context, "Mitosis")
+    entities = [await writes.create_entity(api_schema, simple_api_context, "Cell") for _ in range(3)]
 
     before = await _assertion_count(test_graph)
 
@@ -149,8 +114,8 @@ async def test_the_same_work_one_at_a_time_is_three_assertions(
     Same three claims, same actor, same moment — but recorded as three separate
     acts, and no field ties them back together.
     """
-    event = await _mitosis(api_schema, simple_api_context, test_graph)
-    entities = [await _cell(api_schema, simple_api_context, test_graph) for _ in range(3)]
+    event = await writes.create_event(api_schema, simple_api_context, "Mitosis")
+    entities = [await writes.create_entity(api_schema, simple_api_context, "Cell") for _ in range(3)]
 
     before = await _assertion_count(test_graph)
 
@@ -181,8 +146,8 @@ async def test_a_bad_id_in_the_batch_writes_nothing(
     on top of that — it fails earlier and does no AGE work first — but it is not
     what makes the batch atomic, and this test passes without it.
     """
-    event = await _mitosis(api_schema, simple_api_context, test_graph)
-    good = await _cell(api_schema, simple_api_context, test_graph)
+    event = await writes.create_event(api_schema, simple_api_context, "Mitosis")
+    good = await writes.create_entity(api_schema, simple_api_context, "Cell")
 
     before = await _assertion_count(test_graph)
 
@@ -224,7 +189,7 @@ async def test_classifying_several_nodes_is_one_assertion(
     so the only way to say "this is actually a Soma" was `updateEntity`, which
     archived the node and minted a new uuid.
     """
-    entities = [await _cell(api_schema, simple_api_context, test_graph) for _ in range(2)]
+    entities = [await writes.create_entity(api_schema, simple_api_context, "Cell") for _ in range(2)]
 
     @sync_to_async
     def soma_id() -> str:
@@ -284,7 +249,7 @@ async def test_retracting_claims_reports_them_as_one_act(
     meant it could not drift on unnoticed. `Classification` exists now, so this
     failed and pointed at the decision, which is what the tripwire was for.
     """
-    entity = await _cell(api_schema, simple_api_context, test_graph)
+    entity = await writes.create_entity(api_schema, simple_api_context, "Cell")
 
     @sync_to_async
     def classification_id() -> str:
@@ -336,13 +301,6 @@ SUBSCRIPTION = """
         assertionRecorded { id seq subject instances { id } }
     }
 """
-ASSERT_ENTITY = """
-    mutation AssertEntityExists($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { assertion { id seq } instance { id } }
-    }
-"""
-
-
 class _StubConsumer:
     """The three things `Channel.listen` reads off a consumer."""
 
@@ -416,7 +374,7 @@ async def _close(task: asyncio.Task) -> None:
 async def test_a_committed_write_is_announced(api_schema, simple_api_context, test_graph) -> None:
     task, received = await _subscribe(api_schema)
     try:
-        result = await api_schema.execute(ASSERT_ENTITY, variable_values={"input": {"term": "AIS", "supportingEvidence": []}}, context_value=simple_api_context)
+        result = await api_schema.execute(writes.ASSERT_ENTITY, variable_values={"input": {"term": "AIS", "supportingEvidence": []}}, context_value=simple_api_context)
         assert result.errors is None, f"GraphQL errors: {result.errors}"
         written = result.data["assertEntityExists"]
 
@@ -473,7 +431,7 @@ async def test_an_act_whose_claims_fail_is_not_recorded(api_schema, simple_api_c
     monkeypatch.setattr(writer, "create_instance", refuse)
     task, received = await _subscribe(api_schema)
     try:
-        result = await api_schema.execute(ASSERT_ENTITY, variable_values={"input": {"term": "AIS"}}, context_value=simple_api_context)
+        result = await api_schema.execute(writes.ASSERT_ENTITY, variable_values={"input": {"term": "AIS"}}, context_value=simple_api_context)
         assert result.errors, "the write fails"
 
         assert await evidence_models.Assertion.all_objects.acount() == before, "no act was recorded"
@@ -668,9 +626,9 @@ async def test_this_is_ais_6_is_one_act(
     were a second call it could never be reassembled with the instance it belongs
     to.
     """
-    established = await _assert_entity(api_schema, simple_api_context, "AIS")
+    established = await writes.assert_entity(api_schema, simple_api_context, "AIS")
 
-    observed = await _assert_entity(api_schema, simple_api_context, "AIS", same_as=[established["instance"]["id"]])
+    observed = await writes.assert_entity(api_schema, simple_api_context, "AIS", same_as=[established["instance"]["id"]])
 
     assert observed["instance"]["id"] != established["instance"]["id"], "The observation mints its own instance rather than reusing one"
 
@@ -707,7 +665,7 @@ async def test_three_instances_claimed_together_are_one_assertion(
     sameness has no primary — making the first argument the hub would let identity
     depend on argument order.
     """
-    entities = [(await _assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"] for _ in range(3)]
+    entities = [(await writes.assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"] for _ in range(3)]
 
     result = await api_schema.execute(
         ASSERT_SAME,
@@ -756,7 +714,7 @@ async def test_a_protocol_event_with_inputs_succeeds_and_is_recorded_as_one(
         )
 
     category = await a_protocol_category()
-    source = await _cell(api_schema, simple_api_context, test_graph)
+    source = await writes.create_entity(api_schema, simple_api_context, "Cell")
 
     created = await api_schema.execute(
         """

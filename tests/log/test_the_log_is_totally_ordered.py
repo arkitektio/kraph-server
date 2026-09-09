@@ -20,8 +20,7 @@ from evidence import models as evidence_models
 from evidence import writer
 import asyncio
 import uuid
-import psycopg
-from django.conf import settings
+from tests.support import reads, sessions, writes
 
 
 @pytest.mark.django_db(transaction=True)
@@ -135,64 +134,26 @@ def test_the_sequence_survives_a_gap(organization) -> None:
     assert before.seq < burned < after.seq, "The burned value is skipped, and order still holds across the hole"
 
 
-ASSERT_ENTITY = """
-    mutation AssertEntityExists($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) {
-            assertion { id seq }
-            instance { id }
-        }
-    }
-"""
-
-
-CHANGES = """
-    query Changes($afterSeq: Int!, $limit: Int) {
-        changes(afterSeq: $afterSeq, limit: $limit) {
-            assertions { id seq }
-            nextSeq
-            horizon
-        }
-    }
-"""
-
-
-async def _execute(api_schema, ctx, document: str, variables: dict | None = None) -> dict:
-    result = await api_schema.execute(document, variable_values=variables or {}, context_value=ctx)
-    assert result.errors is None, f"GraphQL errors: {result.errors}"
-    return result.data
-
-
-async def _assert_entity(api_schema, ctx, term: str = "AIS", evidence: list | None = None) -> dict:
-    data = await _execute(api_schema, ctx, ASSERT_ENTITY, {"input": {"term": term, "supportingEvidence": evidence or []}})
-    return data["assertEntityExists"]
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_changes_reads_forward_from_a_cursor(api_schema, simple_api_context, test_graph) -> None:
-    first, second, third = [await _assert_entity(api_schema, simple_api_context) for _ in range(3)]
+    first, second, third = [await writes.assert_entity(api_schema, simple_api_context, "AIS") for _ in range(3)]
     seqs = [entry["assertion"]["seq"] for entry in (first, second, third)]
 
-    data = await _execute(api_schema, simple_api_context, CHANGES, {"afterSeq": seqs[0]})
+    data = await writes.execute(api_schema, simple_api_context, reads.CHANGES, {"afterSeq": seqs[0]})
     feed = data["changes"]
 
     assert [row["seq"] for row in feed["assertions"]] == seqs[1:], "ascending, strictly after the cursor"
     assert feed["nextSeq"] == seqs[2], "the cursor to hand back next time"
     assert feed["horizon"] >= seqs[2], "everything returned is at or below the horizon"
 
-    caught_up = (await _execute(api_schema, simple_api_context, CHANGES, {"afterSeq": feed["nextSeq"]}))["changes"]
+    caught_up = (await writes.execute(api_schema, simple_api_context, reads.CHANGES, {"afterSeq": feed["nextSeq"]}))["changes"]
     assert caught_up["assertions"] == []
     assert caught_up["nextSeq"] == feed["nextSeq"], "an empty page keeps the cursor where it was"
 
-    limited = (await _execute(api_schema, simple_api_context, CHANGES, {"afterSeq": seqs[0], "limit": 1}))["changes"]
+    limited = (await writes.execute(api_schema, simple_api_context, reads.CHANGES, {"afterSeq": seqs[0], "limit": 1}))["changes"]
     assert [row["seq"] for row in limited["assertions"]] == [seqs[1]]
     assert limited["nextSeq"] == seqs[1]
-
-
-def _raw_connection() -> psycopg.Connection:
-    """A second session, outside Django's connection — the other writer."""
-    db = settings.DATABASES["default"]
-    return psycopg.connect(host=db["HOST"], port=db["PORT"], dbname=db["NAME"], user=db["USER"], password=db["PASSWORD"], autocommit=False)
 
 
 @pytest.mark.django_db(transaction=True)
@@ -207,10 +168,10 @@ async def test_changes_withholds_what_may_still_be_committing(api_schema, simple
     tell "nothing new" from "something is being withheld".
     """
     organization = simple_api_context.request._organization
-    before = await _assert_entity(api_schema, simple_api_context)
+    before = await writes.assert_entity(api_schema, simple_api_context, "AIS")
     cursor = before["assertion"]["seq"]
 
-    other = await asyncio.to_thread(_raw_connection)
+    other = await asyncio.to_thread(sessions.raw_connection)
     try:
         # The other writer takes the next seq and holds its transaction open.
         def start_and_hold() -> int:
@@ -224,10 +185,10 @@ async def test_changes_withholds_what_may_still_be_committing(api_schema, simple
         assert held_seq == cursor + 1
 
         # Meanwhile this connection commits the seq after it.
-        after = await _assert_entity(api_schema, simple_api_context)
+        after = await writes.assert_entity(api_schema, simple_api_context, "AIS")
         assert after["assertion"]["seq"] == held_seq + 1
 
-        withheld = (await _execute(api_schema, simple_api_context, CHANGES, {"afterSeq": cursor}))["changes"]
+        withheld = (await writes.execute(api_schema, simple_api_context, reads.CHANGES, {"afterSeq": cursor}))["changes"]
         assert withheld["assertions"] == [], "the committed later row must not be handed out ahead of the one still open"
         assert withheld["nextSeq"] == cursor
         assert withheld["horizon"] < held_seq
@@ -236,6 +197,6 @@ async def test_changes_withholds_what_may_still_be_committing(api_schema, simple
     finally:
         await asyncio.to_thread(other.close)
 
-    settled = (await _execute(api_schema, simple_api_context, CHANGES, {"afterSeq": cursor}))["changes"]
+    settled = (await writes.execute(api_schema, simple_api_context, reads.CHANGES, {"afterSeq": cursor}))["changes"]
     assert [row["seq"] for row in settled["assertions"]] == [held_seq, held_seq + 1]
     assert settled["horizon"] >= held_seq + 1

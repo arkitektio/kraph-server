@@ -17,7 +17,7 @@ import kante
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 from evidence import models as evidence_models
-from tests.support import claims, drawing, rules, writes
+from tests.support import claims, drawing, reads, rules, writes
 from typing import Any, Dict
 from api.schema import schema
 from graph_engine.input_models import GraphDefinitionInput
@@ -526,13 +526,6 @@ async def test_create_graph_from_schema(
     assert sub.data["createGraph"]["name"] == "Test Model"
 
 
-TERMS = """
-    query Terms($filters: TermFilter) {
-        terms(filters: $filters) { id kind key label description purl }
-    }
-"""
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_materializing_a_graph_puts_its_words_in_the_vocabulary(
@@ -541,7 +534,7 @@ async def test_materializing_a_graph_puts_its_words_in_the_vocabulary(
     test_graph: core_models.Graph,
 ) -> None:
     """Terms are minted by declaring a category, so the list is never empty."""
-    result = await api_schema.execute(TERMS, variable_values={"filters": None}, context_value=simple_api_context)
+    result = await api_schema.execute(reads.TERMS, variable_values={"filters": None}, context_value=simple_api_context)
     assert result.errors is None, f"GraphQL errors: {result.errors}"
 
     listed = {(row["kind"], row["key"]) for row in result.data["terms"]}

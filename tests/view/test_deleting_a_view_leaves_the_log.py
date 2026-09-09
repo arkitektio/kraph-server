@@ -29,6 +29,7 @@ from kante.context import HttpContext
 from core import models as core_models
 import uuid
 from evidence import models as evidence_models
+from tests.support import writes
 
 
 DELETE_GRAPH = """
@@ -36,18 +37,6 @@ DELETE_GRAPH = """
         deleteGraph(input: $input)
     }
 """
-ARCHIVE_GRAPH = """
-    mutation ArchiveGraph($input: ArchiveGraphInput!) {
-        archiveGraph(input: $input) { id isArchived }
-    }
-"""
-CREATE_ENTITY = """
-    mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { instance { id } }
-    }
-"""
-
-
 async def _delete(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph):
     return await api_schema.execute(DELETE_GRAPH, variable_values={"input": {"id": str(graph.id)}}, context_value=ctx)
 
@@ -101,7 +90,7 @@ async def test_an_archived_graph_holding_nodes_is_still_deletable(
     from evidence import models as evidence_models
 
     created = await api_schema.execute(
-        CREATE_ENTITY,
+        writes.ASSERT_ENTITY_EXISTS,
         variable_values={"input": {"term": "AIS"}},
         context_value=simple_api_context,
     )
@@ -114,7 +103,7 @@ async def test_an_archived_graph_holding_nodes_is_still_deletable(
     before = await node_count()
     assert before >= 1
 
-    await api_schema.execute(ARCHIVE_GRAPH, variable_values={"input": {"id": str(test_graph.id)}}, context_value=authenticated_context)
+    await api_schema.execute(writes.ARCHIVE_GRAPH, variable_values={"input": {"id": str(test_graph.id)}}, context_value=authenticated_context)
 
     result = await _delete(api_schema, authenticated_context, test_graph)
     assert result.errors is None, f"A used view is still deletable: {result.errors}"
@@ -169,13 +158,6 @@ DELETE_ENTITY_CATEGORY = """
 """
 
 
-CREATE_STRUCTURE = """
-    mutation CreateStructure($input: AssertStructureExistsInput!) {
-        assertStructureExists(input: $input) { structure { id } }
-    }
-"""
-
-
 DELETE_STRUCTURE_KIND = """
     mutation DeleteStructureKind($input: DeleteStructureKindInput!) {
         deleteStructureKind(input: $input)
@@ -187,7 +169,7 @@ async def _an_entity(api_schema: kante.Schema, ctx: HttpContext, graph: core_mod
     category = await core_models.EntityCategory.objects.filter(graph=graph, key="AIS").afirst()
     assert category is not None
     created = await api_schema.execute(
-        CREATE_ENTITY,
+        writes.ASSERT_ENTITY_EXISTS,
         variable_values={"input": {"term": category.key, "supportingEvidence": []}},
         context_value=ctx,
     )
@@ -340,7 +322,7 @@ async def test_deleting_a_used_structure_kind_is_refused(
     evidence expressed in it" — which is exactly what append-only forbids.
     """
     created = await api_schema.execute(
-        CREATE_STRUCTURE,
+        writes.ASSERT_STRUCTURE,
         variable_values={"input": {"identifier": "ROI", "object": f"roi_{uuid.uuid4().hex[:8]}", "metrics": []}},
         context_value=simple_api_context,
     )

@@ -14,11 +14,6 @@ from core import models as core_models
 from graph_engine import projector
 from graph_engine.controller import GraphController
 from tests.support import drawing, writes
-from tests.support.writes import ASSERT_SAME
-
-
-def _vertices_with_id(table_projector, graph: core_models.Graph, ref: str) -> int:
-    return drawing.vertices_with_ref(graph, ref)
 
 
 @pytest.mark.django_db(transaction=True)
@@ -31,7 +26,7 @@ async def test_reproject_refs_twice_is_one_vertex(api_schema, simple_api_context
         controller = GraphController(projector=table_projector)
         projector.reproject_refs(controller, test_graph, [entity_id])
         projector.reproject_refs(controller, test_graph, [entity_id])
-        return _vertices_with_id(table_projector, test_graph, entity_id)
+        return drawing.vertices_with_ref(test_graph, entity_id)
 
     assert await redraw_twice() == 1
 
@@ -48,23 +43,12 @@ async def test_project_all_over_a_populated_namespace_converges(api_schema, simp
         controller = GraphController(projector=table_projector)
         projector.project_all(controller, test_graph)
         projector.project_all(controller, test_graph)
-        return _vertices_with_id(table_projector, test_graph, a), drawing.vertex_count(test_graph), drawing.edge_count(test_graph)
+        return drawing.vertices_with_ref(test_graph, a), drawing.vertex_count(test_graph), drawing.edge_count(test_graph)
 
     one, vertices, edges = await count_after_two_passes()
     assert one == 1
     assert vertices == 2
     assert edges == 1
-
-
-async def _execute(api_schema, ctx, document: str, variables: dict) -> dict:
-    result = await api_schema.execute(document, variable_values=variables, context_value=ctx)
-    assert result.errors is None, f"GraphQL errors: {result.errors}"
-    return result.data
-
-
-async def _merge(api_schema, ctx, refs: list[str]) -> str:
-    data = await _execute(api_schema, ctx, ASSERT_SAME, {"input": {"instances": refs}})
-    return data["assertSameInstance"]["links"][0]["id"]
 
 
 @pytest.mark.django_db(transaction=True)
@@ -73,7 +57,7 @@ async def test_redrawing_a_merged_individual_converges(api_schema, simple_api_co
     """`reproject_refs` through any member, twice, leaves one vertex with all its members."""
     a = await writes.create_entity(api_schema, simple_api_context, "AIS")
     b = await writes.create_entity(api_schema, simple_api_context, "AIS")
-    await _merge(api_schema, simple_api_context, [a, b])
+    await writes.merge(api_schema, simple_api_context, [a, b])
 
     @sync_to_async
     def redraw():

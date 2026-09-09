@@ -27,8 +27,6 @@ organization the request is not a member of, and asserts the caller cannot see i
 import pytest
 from authentikate.models import Membership, User
 from core import models as core_models
-import uuid
-import kante
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 from graph_engine import input_models as models
@@ -156,73 +154,6 @@ async def test_saved_queries_do_not_list_another_tenants_row(api_schema, simple_
     assert str(foreign.pk) not in ids, "`graphTableQueries` handed back a saved query from another organization"
 
 
-CREATE_STRUCTURE = """
-    mutation CreateStructure($input: AssertStructureExistsInput!) {
-        assertStructureExists(input: $input) { structure { id } }
-    }
-"""
-
-
-CREATE_ENTITY = """
-    mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { instance { id } }
-    }
-"""
-
-
-CREATE_STRUCTURE_RELATION = """
-    mutation CreateStructureRelation($input: AssertStructureRelationExistsInput!) {
-        assertStructureRelationExists(input: $input) {
-            link {
-                id
-                kind
-                sourceRef
-                targetRef
-                source { ... on Structure { id object } }
-                target { ... on Structure { id object } }
-            }
-        }
-    }
-"""
-
-
-ARCHIVE_STRUCTURE_RELATION = """
-    mutation ArchiveStructureRelation($input: RetractStructureRelationInput!) {
-        retractStructureRelation(input: $input) { link { id } }
-    }
-"""
-
-
-UPDATE_STRUCTURE_RELATION = """
-    mutation UpdateStructureRelation($input: SupersedeStructureRelationInput!) {
-        supersedeStructureRelation(input: $input) { link { id } }
-    }
-"""
-
-
-CREATE_MEASUREMENT = """
-    mutation CreateMeasurement($input: AssertMeasurementExistsInput!) {
-        assertMeasurementExists(input: $input) {
-            link {
-                id
-                kind
-                source { ... on Structure { id object } }
-                target { ... on Instance { id } }
-            }
-        }
-    }
-"""
-
-
-ENTITY_PROPERTIES = """
-    query Entity($id: ID!, $graph: ID!) {
-        node(id: $id, graph: $graph) {
-            ... on Entity { id properties }
-        }
-    }
-"""
-
-
 @pytest.fixture(scope="session")
 def edge_schema() -> models.GraphDefinitionInput:
     """A schema that declares the two edge kinds the bio schema leaves out.
@@ -278,28 +209,6 @@ def edge_graph(transactional_db, table_projector, edge_schema, authenticated_con
         membership=request.membership,
         name="edge_graph",
     )
-
-
-async def _structure(api_schema: kante.Schema, ctx: HttpContext, metrics: list[dict] | None = None) -> str:
-    created = await api_schema.execute(
-        CREATE_STRUCTURE,
-        variable_values={"input": {"identifier": "ROI", "object": f"roi_{uuid.uuid4().hex[:8]}", "metrics": metrics or []}},
-        context_value=ctx,
-    )
-    assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertStructureExists"]["structure"]["id"]
-
-
-async def _ais(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph) -> str:
-    category = await core_models.EntityCategory.objects.filter(graph=graph, key="AIS").afirst()
-    assert category is not None
-    created = await api_schema.execute(
-        CREATE_ENTITY,
-        variable_values={"input": {"term": category.key, "supportingEvidence": []}},
-        context_value=ctx,
-    )
-    assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertEntityExists"]["instance"]["id"]
 
 
 @pytest.mark.django_db(transaction=True)

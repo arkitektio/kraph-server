@@ -75,7 +75,9 @@ def relate(organization: Any, word: str, source_ref: str, target_ref: str, subje
     return writer.create_link(organization, kind=evidence_models.Link.Kind.RELATION, source_ref=str(source_ref), target_ref=str(target_ref), assertion=assertion, term=term, observed_at=observed_at, confidence=confidence)
 
 
-def participate(organization: Any, event_word: str, entity_ref: str, event_ref: str, subject: str, *, role: str = "a", app_id: str = "pytest", asserted_at: datetime | None = None, observed_at: datetime | None = None, confidence: float | None = None, output: bool = False, term_kind: str = "NATURAL_EVENT") -> Any:
+def participate(
+    organization: Any, event_word: str, entity_ref: str, event_ref: str, subject: str, *, role: str = "a", app_id: str = "pytest", asserted_at: datetime | None = None, observed_at: datetime | None = None, confidence: float | None = None, output: bool = False, term_kind: str = "NATURAL_EVENT"
+) -> Any:
     """One annotator's participation claim: entity → event, under the event's word."""
     term = writer.ensure_term(organization, term_kind, event_word)
     assertion = _assertion(organization, subject, app_id, asserted_at)
@@ -169,3 +171,29 @@ def measure_between(organization: Any, word: str, source_structure: str, entity_
     term = writer.ensure_term(organization, "MEASUREMENT", word)
     assertion = _assertion(organization, subject, app_id, asserted_at)
     return writer.create_link(organization, kind=evidence_models.Link.Kind.MEASUREMENT, source_ref=str(source_structure), target_ref=str(entity_ref), assertion=assertion, term=term)
+
+
+async def ensure_kind(graph: Any, identifier: str = "roi_test") -> Any:
+    """The organization's kind for this datum identifier. No graph is involved —
+    kinds are organization vocabulary — the graph only names the tenant."""
+    kind, _ = await evidence_models.StructureKind.all_objects.aget_or_create(organization=graph.organization, identifier=identifier)
+    return kind
+
+
+def only_instance(graph: Any) -> Any:
+    """The one instance the view's words admit — for tests that wrote exactly one."""
+    from evidence import selector as selector_module
+
+    return evidence_models.Instance.objects.for_organization(graph.organization).filter(term__in=selector_module.term_ids_for(graph)).get()
+
+
+def structure_row(organization: Any, kind: Any, assertion: Any, object_id: str = "roi-1") -> Any:
+    """A structure row to hang measurements off, written directly."""
+    return evidence_models.Structure.objects.create_for_organization(organization=organization, kind=kind, identifier="@mikro/roi", object=object_id, assertion=assertion)
+
+
+def metric_row(organization: Any, structure: Any, kind: Any, assertion: Any, *, value: float, observed_at: datetime, asserted_at: datetime) -> Any:
+    """One measurement with both time axes set explicitly, written directly."""
+    from core.enums import ValueKind
+
+    return evidence_models.Metric.objects.create_for_organization(organization=organization, structure=structure, kind=kind, key="vector_length", value_kind=ValueKind.FLOAT.value, value_num=value, observed_at=observed_at, asserted_at=asserted_at, assertion=assertion)

@@ -18,13 +18,11 @@ import kante
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 from core import models as core_models
-from tests.support import drawing, writes
+from tests.support import drawing, graphs, reads, rules, writes
 from evidence import models as evidence_models
 from graph_engine import models as graph_engine_models
 from graph_engine.controller import GraphController
 from graph_engine.retrieved import RetrievedNode
-from tests.support.writes import assert_entity as _assert_entity
-from tests.support import rules
 import uuid
 
 
@@ -44,47 +42,9 @@ ASSERT_ENTITY = """
         }
     }
 """
-ATTEST_ENTITY = """
-    mutation AttestEntity($input: AttestEntityInput!) {
-        attestEntity(input: $input) {
-            instance { id standings { stands at } }
-            drawings { graph { id } }
-        }
-    }
-"""
-RETRACT_ENTITY = """
-    mutation RetractEntity($input: RetractEntityInput!) {
-        retractEntity(input: $input) {
-            assertion { id }
-            instance { id standings { stands } }
-            drawings { graph { id } }
-        }
-    }
-"""
-READ_INSTANCE = """
-    query ReadInstance($id: ID!) {
-        instance(id: $id) { id kind term { key } standings { stands } }
-    }
-"""
 READ_ENTITY = """
     query ReadEntity($id: ID!, $graph: ID!) {
         entity(id: $id, graph: $graph) { id graph { id } asOfSeq categoryIds richProperties { key value } drawnIn { graph { id } } }
-    }
-"""
-ASSERT_RELATION = """
-    mutation AssertRelation($input: AssertRelationExistsInput!) {
-        assertRelationExists(input: $input) {
-            link {
-                id
-                kind
-                term { key }
-                sourceRef
-                targetRef
-                source { ... on Instance { id kind } }
-                target { ... on Instance { id kind } }
-            }
-            drawings { graph { id } }
-        }
     }
 """
 CLASSIFY = """
@@ -202,7 +162,7 @@ async def test_a_links_endpoints_resolve_by_kind(
     target = await writes.create_entity(api_schema, simple_api_context, "Cell")
 
     created = await api_schema.execute(
-        ASSERT_RELATION,
+        writes.ASSERT_RELATION,
         variable_values={"input": {"term": "IS_CONNECTED_TO", "sourceId": source, "targetId": target, "supportingEvidence": []}},
         context_value=simple_api_context,
     )
@@ -352,7 +312,7 @@ def test_two_undrawn_nodes_are_two_objects(test_graph: core_models.Graph, table_
 @pytest.mark.asyncio
 async def test_the_write_reports_the_individuals_drawing(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
     """Asserting an entity `sameAs` an existing one returns the drawing of the individual, not of the observation alone."""
-    a = (await _assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"]
+    a = (await writes.assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"]
     result = await api_schema.execute(
         """
         mutation AssertEntityExists($input: AssertEntityExistsInput!) {
@@ -378,31 +338,6 @@ CREATE_ENTITY = """
         }
     }
 """
-ENTITY = """
-    query Entity($id: ID!, $graph: ID!) {
-        entity(id: $id, graph: $graph) {
-            id
-            label
-            drawnLabels
-            categoryIds
-            categories { id key }
-            richProperties { key value }
-        }
-    }
-"""
-
-
-def _define(graph: core_models.Graph, key: str, definition: dict, properties: list[dict] | None = None) -> core_models.EntityCategory:
-    """A defined entity category over the word AIS, created or redefined."""
-    category, _ = core_models.EntityCategory.objects.get_or_create(graph=graph, key=key, defaults={"age_name": key.lower(), "label": key})
-    category.age_name = key.lower()  # the fixture's AIS is labelled "AIS"; one spelling for every assertion below
-    category.definition = definition
-    if properties is not None:
-        category.property_definitions = properties
-    category.save()
-    return category
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_write_reports_one_drawing_per_category(
@@ -416,8 +351,8 @@ async def test_a_write_reports_one_drawing_per_category(
 
     @sync_to_async
     def declare() -> set[str]:
-        ais = _define(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"))))
-        excitatory = _define(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"))))
+        ais = graphs.define_entity(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"))))
+        excitatory = graphs.define_entity(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"))))
         return {str(ais.pk), str(excitatory.pk)}
 
     category_ids = await declare()
@@ -429,7 +364,7 @@ async def test_a_write_reports_one_drawing_per_category(
     assert all(sorted(entry["node"]["drawnLabels"]) == ["ais", "excitatory"] for entry in drawings)
 
     ref = created.data["assertEntityExists"]["instance"]["id"]
-    read = await api_schema.execute(ENTITY, variable_values={"id": ref, "graph": str(test_graph.pk)}, context_value=simple_api_context)
+    read = await api_schema.execute(reads.ENTITY, variable_values={"id": ref, "graph": str(test_graph.pk)}, context_value=simple_api_context)
     assert read.errors is None, f"GraphQL errors: {read.errors}"
     entity = read.data["entity"]
     assert entity["drawnLabels"] == ["ais", "excitatory"]
@@ -573,81 +508,9 @@ CREATE_ENTITY_FOR_PARTICIPATION = """
 """
 
 
-CREATE_NATURAL_EVENT = """
-    mutation CreateNaturalEvent($input: AssertNaturalEventExistsInput!) {
-        assertNaturalEventExists(input: $input) { instance { id } }
-    }
-"""
-
-
-async def _cell(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph) -> str:
-    category = await core_models.EntityCategory.objects.filter(graph=graph, key="Cell").afirst()
-    assert category is not None
-    created = await api_schema.execute(
-        CREATE_ENTITY_FOR_PARTICIPATION,
-        variable_values={"input": {"term": category.key, "supportingEvidence": []}},
-        context_value=ctx,
-    )
-    assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertEntityExists"]["instance"]["id"]
-
-
-async def _mitosis(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph, source: str, target: str) -> str:
-    category = await core_models.NaturalEventCategory.objects.filter(graph=graph, key="Mitosis").afirst()
-    assert category is not None, "The bio schema declares a Mitosis event with Cell in and out"
-    created = await api_schema.execute(
-        CREATE_NATURAL_EVENT,
-        variable_values={
-            "input": {
-                "term": category.key,
-                "inputs": [{"role": "a", "entityId": source}],
-                "outputs": [{"role": "b", "entityId": target}],
-                "supportingEvidence": [],
-            }
-        },
-        context_value=ctx,
-    )
-    assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertNaturalEventExists"]["instance"]["id"]
-
-
-def _participations(table_projector, graph: core_models.Graph) -> list[tuple[str, str]]:
-    """Every projected participation edge, as (label, role).
-
-    Two queries rather than one `UNION ALL`: AGE rejects the union with "column
-    name 'label' specified more than once", and the point here is the edges, not
-    the query.
-    """
-    found: list[tuple[str, str]] = []
-    for label in ("WENT_THROUGH", "CAME_OUT_OF"):
-        found.extend((label, str(role)) for role in drawing.edge_property_values(graph, label, "role"))
-    return sorted(found)
-
-
 ASSERT_PARTICIPATION = """
     mutation AssertParticipation($input: AssertParticipationInput!) {
         assertParticipation(input: $input) { link { id } }
-    }
-"""
-
-
-ARCHIVE_PARTICIPATION = """
-    mutation ArchiveParticipation($input: RetractParticipationInput!) {
-        retractParticipation(input: $input) { link { id } }
-    }
-"""
-
-
-def _assertion_count(table_projector, graph: core_models.Graph, label: str) -> list[int]:
-    return sorted(int(count) for count in drawing.edge_property_values(graph, label, "__assertion_count"))
-
-
-ASSERT_PARTICIPATION = """
-    mutation AssertParticipation($input: AssertParticipationInput!) {
-        assertParticipation(input: $input) {
-            link { kind id }
-            drawings { graph { id } category { id } edge { __typename id } }
-        }
     }
 """
 
@@ -681,12 +544,12 @@ async def test_a_participation_reports_the_view_that_drew_it(
     participations were permanently invisible. `projector.edge_pattern_for` is
     now the single source of the label and the direction, shared with the writer.
     """
-    entity = await _cell(api_schema, simple_api_context, test_graph)
-    other = await _cell(api_schema, simple_api_context, test_graph)
-    event = await _mitosis(api_schema, simple_api_context, test_graph, other, other)
+    entity = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    other = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    event = await writes.create_event(api_schema, simple_api_context, "Mitosis", inputs=[{"role": "a", "entityId": other}], outputs=[{"role": "b", "entityId": other}])
 
     result = await api_schema.execute(
-        ASSERT_PARTICIPATION,
+        writes.ASSERT_PARTICIPATION,
         variable_values={"input": {"event": event, "entity": entity, "role": "extra", "isInput": is_input}},
         context_value=simple_api_context,
     )

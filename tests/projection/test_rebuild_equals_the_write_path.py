@@ -33,28 +33,14 @@ from django.core.management import call_command
 from evidence import claims as claims_module
 from evidence import writer
 from graph_engine import watermark
-from tests.support import drawing, graphs, rules, writes
+from tests.support import drawing, graphs, reads, rules, writes
 
 
-CREATE_ENTITY = """
-    mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { instance { id } }
-    }
-"""
 RECORD_METRIC = """
     mutation RecordMetric($input: AssertMetricValueInput!) {
         assertMetricValue(input: $input) { metric { id value } }
     }
 """
-ENTITY_PROPERTIES = """
-    query Entity($id: ID!, $graph: ID!) {
-        node(id: $id, graph: $graph) {
-            ... on Entity { id properties }
-        }
-    }
-"""
-
-
 async def _ais_category(test_graph: core_models.Graph) -> core_models.EntityCategory:
     category = await core_models.EntityCategory.objects.filter(graph=test_graph, key="AIS").afirst()
     assert category is not None, "The bio schema declares an AIS entity with a MEAN rollup over ROI"
@@ -72,7 +58,7 @@ async def _build_measured_entity(
     object_id = f"roi_{uuid.uuid4().hex[:8]}"
 
     created = await api_schema.execute(
-        CREATE_ENTITY,
+        writes.ASSERT_ENTITY_EXISTS,
         variable_values={
             "input": {
                 "term": category.key,
@@ -118,7 +104,7 @@ async def test_reproject_reproduces_the_projection(
 
     entity_id = await _build_measured_entity(api_schema, simple_api_context, test_graph, [10.0, 30.0, 20.0])
 
-    before = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
+    before = await api_schema.execute(reads.NODE_PROPERTIES, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
     assert before.errors is None, f"GraphQL errors: {before.errors}"
     properties_before = before.data["node"]["properties"]
 
@@ -133,7 +119,7 @@ async def test_reproject_reproduces_the_projection(
     assert result["nodes"] >= 1
     assert result["projected"] >= 1
 
-    after = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
+    after = await api_schema.execute(reads.NODE_PROPERTIES, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
     assert after.errors is None, f"GraphQL errors: {after.errors}"
     properties_after = after.data["node"]["properties"]
 
@@ -207,18 +193,13 @@ async def test_instance_refs_survive_a_rebuild(
         uuid.UUID(ref)
     assert result["projected"] == 1
 
-    after = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
+    after = await api_schema.execute(reads.NODE_PROPERTIES, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
     assert after.errors is None, f"GraphQL errors: {after.errors}"
 
 
 RECORD_METRIC_ID = """
     mutation RecordMetric($input: AssertMetricValueInput!) {
         assertMetricValue(input: $input) { metric { id } }
-    }
-"""
-SCOPED_ENTITY_PROPERTIES = """
-    query Entity($id: ID!, $graph: ID!) {
-        node(id: $id, graph: $graph) { ... on Entity { id properties } }
     }
 """
 WINDOW = ["2026-01-01T00:00:00Z", "2100-01-01T00:00:00Z"]
@@ -232,7 +213,7 @@ async def _ais_with_roi(api_schema: kante.Schema, ctx: HttpContext, graph: core_
 
     object_id = f"roi_{uuid.uuid4().hex[:8]}"
     created = await api_schema.execute(
-        CREATE_ENTITY,
+        writes.ASSERT_ENTITY_EXISTS,
         variable_values={
             "input": {
                 "term": category.key,
@@ -270,12 +251,6 @@ def _record_observed_at(graph: core_models.Graph, object_id: str, value: float, 
         observed_at=observed_at,
     )
     state_module.merge(metric, projector.refs_informed_by(organization, [structure.pk]))
-
-
-async def _avg_length(api_schema: kante.Schema, ctx: HttpContext, entity_id: str, graph) -> float | None:
-    read = await api_schema.execute(SCOPED_ENTITY_PROPERTIES, variable_values={"id": entity_id, "graph": str(graph.id)}, context_value=ctx)
-    assert read.errors is None, f"GraphQL errors: {read.errors}"
-    return read.data["node"]["properties"].get("avg_length")
 
 
 @pytest.mark.django_db(transaction=True)
@@ -318,7 +293,7 @@ async def test_a_scoped_graph_reads_the_same_value_before_and_after_a_rebuild(
     entity_id, object_id = await _ais_with_roi(api_schema, simple_api_context, test_graph, 10.0)
     await sync_to_async(_record_observed_at)(test_graph, object_id, 1000.0, LONG_AGO)
 
-    incremental = await _avg_length(api_schema, simple_api_context, entity_id, test_graph)
+    incremental = await reads.property_of(api_schema, simple_api_context, test_graph, entity_id, "avg_length")
     assert incremental == pytest.approx(10.0), "Only the measurement observed inside the window may count"
 
     @sync_to_async
@@ -327,7 +302,7 @@ async def test_a_scoped_graph_reads_the_same_value_before_and_after_a_rebuild(
 
     await rebuild()
 
-    rebuilt = await _avg_length(api_schema, simple_api_context, entity_id, test_graph)
+    rebuilt = await reads.property_of(api_schema, simple_api_context, test_graph, entity_id, "avg_length")
     assert rebuilt == pytest.approx(incremental), "A replay must produce the value the ingest did"
 
 
@@ -381,14 +356,14 @@ async def test_a_retraction_after_a_rebuild_does_not_widen_the_scope(
     )
     assert recorded.errors is None, f"GraphQL errors: {recorded.errors}"
 
-    assert await _avg_length(api_schema, simple_api_context, entity_id, test_graph) == pytest.approx(15.0)
+    assert await reads.property_of(api_schema, simple_api_context, test_graph, entity_id, "avg_length") == pytest.approx(15.0)
 
     @sync_to_async
     def rebuild() -> dict:
         return GraphController(projector=table_projector).rebuild_projection(test_graph)
 
     await rebuild()
-    assert await _avg_length(api_schema, simple_api_context, entity_id, test_graph) == pytest.approx(15.0)
+    assert await reads.property_of(api_schema, simple_api_context, test_graph, entity_id, "avg_length") == pytest.approx(15.0)
 
     # Now retract one in-window metric, then materialize. The read below is a
     # traversal, so it shows what the last materialization wrote — a retraction
@@ -410,7 +385,7 @@ async def test_a_retraction_after_a_rebuild_does_not_widen_the_scope(
 
     await retract_one_and_materialize()
 
-    after = await _avg_length(api_schema, simple_api_context, entity_id, test_graph)
+    after = await reads.property_of(api_schema, simple_api_context, test_graph, entity_id, "avg_length")
     assert after == pytest.approx(10.0), "The surviving in-window measurement, and nothing the selector excludes"
     assert after != pytest.approx(505.0), "The out-of-window measurement must not be re-admitted by the recompute"
 
@@ -439,17 +414,8 @@ async def test_edge_state_survives_a_rebuild(
     cell_category = await core_models.EntityCategory.objects.filter(graph=test_graph, key="Cell").afirst()
     assert cell_category is not None
 
-    async def _cell() -> str:
-        created = await api_schema.execute(
-            CREATE_ENTITY,
-            variable_values={"input": {"term": cell_category.key, "supportingEvidence": []}},
-            context_value=simple_api_context,
-        )
-        assert created.errors is None, f"GraphQL errors: {created.errors}"
-        return created.data["assertEntityExists"]["instance"]["id"]
-
-    source = await _cell()
-    target = await _cell()
+    source = await writes.create_entity(api_schema, simple_api_context, cell_category.key)
+    target = await writes.create_entity(api_schema, simple_api_context, cell_category.key)
 
     created = await api_schema.execute(
         """
@@ -492,18 +458,6 @@ async def test_edge_state_survives_a_rebuild(
     assert await edge_state() == before, "The rebuild must reproduce edge-keyed state, not skip it"
 
 
-CREATE_RELATION = """
-    mutation CreateRelation($input: AssertRelationExistsInput!) {
-        assertRelationExists(input: $input) { link { id term { key } } }
-    }
-"""
-ARCHIVE_RELATION = """
-    mutation ArchiveRelation($input: RetractRelationInput!) {
-        retractRelation(input: $input) { link { id } }
-    }
-"""
-
-
 async def _cell_category(test_graph: core_models.Graph) -> core_models.EntityCategory:
     category = await core_models.EntityCategory.objects.filter(graph=test_graph, key="Cell").afirst()
     assert category is not None, "The bio schema declares a Cell entity"
@@ -514,35 +468,6 @@ async def _connected_to_category(test_graph: core_models.Graph) -> core_models.R
     category = await core_models.RelationCategory.objects.filter(graph=test_graph, key="IS_CONNECTED_TO").afirst()
     assert category is not None, "The bio schema declares IS_CONNECTED_TO between two Cells"
     return category
-
-
-async def _make_cell(api_schema: kante.Schema, ctx: HttpContext, category: core_models.EntityCategory) -> str:
-    created = await api_schema.execute(
-        CREATE_ENTITY,
-        variable_values={
-            "input": {
-                "term": category.key,
-                "supportingEvidence": [{"identifier": "ROI", "object": f"roi_{uuid.uuid4().hex[:8]}", "metrics": []}],
-            }
-        },
-        context_value=ctx,
-    )
-    assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertEntityExists"]["instance"]["id"]
-
-
-async def _connect(api_schema: kante.Schema, ctx: HttpContext, category: core_models.RelationCategory, source: str, target: str) -> str:
-    created = await api_schema.execute(
-        CREATE_RELATION,
-        variable_values={"input": {"term": category.key, "sourceId": source, "targetId": target}},
-        context_value=ctx,
-    )
-    assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertRelationExists"]["link"]["id"]
-
-
-def _count_edges(table_projector, graph: core_models.Graph, age_name: str) -> int:
-    return drawing.edge_count(graph, age_name)
 
 
 @pytest.mark.django_db(transaction=True)
@@ -561,13 +486,13 @@ async def test_relation_survives_a_rebuild(
     entity_category = await _cell_category(test_graph)
     relation_category = await _connected_to_category(test_graph)
 
-    source = await _make_cell(api_schema, simple_api_context, entity_category)
-    target = await _make_cell(api_schema, simple_api_context, entity_category)
-    await _connect(api_schema, simple_api_context, relation_category, source, target)
+    source = await writes.create_entity(api_schema, simple_api_context, entity_category.key, evidence=writes.roi(f"roi_{uuid.uuid4().hex[:8]}", None))
+    target = await writes.create_entity(api_schema, simple_api_context, entity_category.key, evidence=writes.roi(f"roi_{uuid.uuid4().hex[:8]}", None))
+    await writes.create_relation(api_schema, simple_api_context, relation_category.key, source, target)
 
     @sync_to_async
     def edges_before() -> int:
-        return _count_edges(table_projector, test_graph, relation_category.age_name)
+        return drawing.edge_count(test_graph, relation_category.age_name)
 
     assert await edges_before() == 1, "Asserting a relation must project an edge in the first place"
 
@@ -585,7 +510,7 @@ async def test_relation_survives_a_rebuild(
 
     @sync_to_async
     def edges_after() -> int:
-        return _count_edges(table_projector, test_graph, relation_category.age_name)
+        return drawing.edge_count(test_graph, relation_category.age_name)
 
     assert await edges_after() == 1, "The edge must be present in AGE after the replay, not merely counted"
 
@@ -607,16 +532,16 @@ async def test_archiving_the_last_assertion_removes_the_edge_and_the_replay_agre
     entity_category = await _cell_category(test_graph)
     relation_category = await _connected_to_category(test_graph)
 
-    source = await _make_cell(api_schema, simple_api_context, entity_category)
-    target = await _make_cell(api_schema, simple_api_context, entity_category)
-    relation = await _connect(api_schema, simple_api_context, relation_category, source, target)
+    source = await writes.create_entity(api_schema, simple_api_context, entity_category.key, evidence=writes.roi(f"roi_{uuid.uuid4().hex[:8]}", None))
+    target = await writes.create_entity(api_schema, simple_api_context, entity_category.key, evidence=writes.roi(f"roi_{uuid.uuid4().hex[:8]}", None))
+    relation = await writes.create_relation(api_schema, simple_api_context, relation_category.key, source, target)
 
-    archived = await api_schema.execute(ARCHIVE_RELATION, variable_values={"input": {"id": relation}}, context_value=simple_api_context)
+    archived = await api_schema.execute(writes.RETRACT_RELATION, variable_values={"input": {"id": relation}}, context_value=simple_api_context)
     assert archived.errors is None, f"GraphQL errors: {archived.errors}"
 
     @sync_to_async
     def after_archive() -> int:
-        return _count_edges(table_projector, test_graph, relation_category.age_name)
+        return drawing.edge_count(test_graph, relation_category.age_name)
 
     assert await after_archive() == 0, "A retracted relation leaves no edge behind"
 
@@ -630,60 +555,9 @@ async def test_archiving_the_last_assertion_removes_the_edge_and_the_replay_agre
 
     @sync_to_async
     def after_rebuild() -> int:
-        return _count_edges(table_projector, test_graph, relation_category.age_name)
+        return drawing.edge_count(test_graph, relation_category.age_name)
 
     assert await after_rebuild() == 0
-
-
-CREATE_NATURAL_EVENT = """
-    mutation CreateNaturalEvent($input: AssertNaturalEventExistsInput!) {
-        assertNaturalEventExists(input: $input) { instance { id } }
-    }
-"""
-
-
-async def _cell(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph) -> str:
-    category = await core_models.EntityCategory.objects.filter(graph=graph, key="Cell").afirst()
-    assert category is not None
-    created = await api_schema.execute(
-        CREATE_ENTITY,
-        variable_values={"input": {"term": category.key, "supportingEvidence": []}},
-        context_value=ctx,
-    )
-    assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertEntityExists"]["instance"]["id"]
-
-
-async def _mitosis(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph, source: str, target: str) -> str:
-    category = await core_models.NaturalEventCategory.objects.filter(graph=graph, key="Mitosis").afirst()
-    assert category is not None, "The bio schema declares a Mitosis event with Cell in and out"
-    created = await api_schema.execute(
-        CREATE_NATURAL_EVENT,
-        variable_values={
-            "input": {
-                "term": category.key,
-                "inputs": [{"role": "a", "entityId": source}],
-                "outputs": [{"role": "b", "entityId": target}],
-                "supportingEvidence": [],
-            }
-        },
-        context_value=ctx,
-    )
-    assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertNaturalEventExists"]["instance"]["id"]
-
-
-def _participations(table_projector, graph: core_models.Graph) -> list[tuple[str, str]]:
-    """Every projected participation edge, as (label, role).
-
-    Two queries rather than one `UNION ALL`: AGE rejects the union with "column
-    name 'label' specified more than once", and the point here is the edges, not
-    the query.
-    """
-    found: list[tuple[str, str]] = []
-    for label in ("WENT_THROUGH", "CAME_OUT_OF"):
-        found.extend((label, str(role)) for role in drawing.edge_property_values(graph, label, "role"))
-    return sorted(found)
 
 
 @pytest.mark.django_db(transaction=True)
@@ -700,9 +574,9 @@ async def test_participation_survives_a_rebuild(
     it was recorded — so a reproject silently returned a graph where every event
     had lost its participants.
     """
-    source = await _cell(api_schema, simple_api_context, test_graph)
-    target = await _cell(api_schema, simple_api_context, test_graph)
-    await _mitosis(api_schema, simple_api_context, test_graph, source, target)
+    source = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    target = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    await writes.create_event(api_schema, simple_api_context, "Mitosis", inputs=[{"role": "a", "entityId": source}], outputs=[{"role": "b", "entityId": target}])
 
     @sync_to_async
     def drop_then_rebuild() -> dict:
@@ -716,7 +590,7 @@ async def test_participation_survives_a_rebuild(
 
     @sync_to_async
     def edges() -> list[tuple[str, str]]:
-        return _participations(table_projector, test_graph)
+        return drawing.participations(test_graph)
 
     assert await edges() == [("CAME_OUT_OF", "b"), ("WENT_THROUGH", "a")], "And be present in AGE afterwards, not merely counted"
 

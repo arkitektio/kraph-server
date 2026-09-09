@@ -2,8 +2,7 @@ import pytest
 import kante
 from kante.context import HttpContext
 from core import models as core_models
-from evidence import models as evidence_models
-from tests.support import writes
+from tests.support import claims, reads, writes
 
 
 @pytest.mark.django_db(transaction=True)
@@ -87,15 +86,6 @@ async def test_list_entities_filtered_by_property_with_supporting_evidence(
     assert entity_id_small not in returned_ids
 
 
-async def _get_or_create_structure_kind(test_graph: core_models.Graph) -> evidence_models.StructureKind:
-    """The organization's ROI term. No graph — kinds are organization vocabulary."""
-    kind, _ = await evidence_models.StructureKind.all_objects.aget_or_create(
-        organization=test_graph.organization,
-        identifier="roi_test",
-    )
-    return kind
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_list_structures_with_filters_ordering_and_pagination(
@@ -103,7 +93,7 @@ async def test_list_structures_with_filters_ordering_and_pagination(
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
 ):
-    structure_kind = await _get_or_create_structure_kind(test_graph)
+    structure_kind = await claims.ensure_kind(test_graph)
 
     create_structure_mutation = """
         mutation CreateStructure($input: AssertStructureExistsInput!) {
@@ -177,18 +167,13 @@ async def test_list_structures_with_filters_ordering_and_pagination(
     assert returned_ids == [structure_id_b, structure_id_c]
 
 
-NODES_BY_SEQ = """
-    query L($graph: ID!) { nodes(graph: $graph, ordering: [{seq: DESC}]) { id } }
-"""
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_claim_lists_order_by_the_logs_own_order(api_schema, simple_api_context, test_graph) -> None:
     first = await writes.create_entity(api_schema, simple_api_context, "AIS")
     second = await writes.create_entity(api_schema, simple_api_context, "AIS")
 
-    read = await api_schema.execute(NODES_BY_SEQ, variable_values={"graph": str(test_graph.pk)}, context_value=simple_api_context)
+    read = await api_schema.execute(reads.NODES_BY_SEQ, variable_values={"graph": str(test_graph.pk)}, context_value=simple_api_context)
     assert read.errors is None, f"GraphQL errors: {read.errors}"
     ids = [row["id"] for row in read.data["nodes"]]
     assert ids.index(second) < ids.index(first), "the later act comes first under seq DESC"

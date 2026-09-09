@@ -19,6 +19,7 @@ import kante
 from kante.context import HttpContext
 from core import models as core_models
 from datetime import datetime, timezone
+from tests.support import claims
 
 
 def test_a_string_under_a_float_term_names_all_three(
@@ -308,29 +309,13 @@ LAST_YEAR = datetime(2025, 3, 1, 9, 0, tzinfo=timezone.utc)
 TODAY = datetime(2026, 8, 11, 9, 0, tzinfo=timezone.utc)
 
 
-def _structure(
-    organization: Organization,
-    category: evidence_models.StructureKind,
-    assertion: evidence_models.Assertion,
-    object_id: str = "roi-1",
-) -> evidence_models.Structure:
-    """A structure to hang measurements off."""
-    return evidence_models.Structure.objects.create_for_organization(
-        organization=organization,
-        kind=category,
-        identifier="@mikro/roi",
-        object=object_id,
-        assertion=assertion,
-    )
-
-
 def test_value_kind_selects_the_value_column(organization: Organization, roi_category_a: evidence_models.StructureKind, length_category: evidence_models.MetricKind, assertion: evidence_models.Assertion) -> None:
     """Each ValueKind reads back through the column its kind designates.
 
     The typed-column split is what keeps numeric aggregation in the database
     instead of in Python, so the mapping has to be exhaustive and exercised.
     """
-    structure = _structure(organization, roi_category_a, assertion)
+    structure = claims.structure_row(organization, roi_category_a, assertion)
 
     cases = [
         (ValueKind.FLOAT, {"value_num": 45.2}, 45.2),

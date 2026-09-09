@@ -30,13 +30,9 @@ from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 from core import models as core_models
 from core.models import Graph
+from tests.support import writes
 
 
-ARCHIVE_GRAPH = """
-    mutation ArchiveGraph($input: ArchiveGraphInput!) {
-        archiveGraph(input: $input) { id isArchived }
-    }
-"""
 UPDATE_GRAPH = """
     mutation UpdateGraph($input: UpdateGraphInput!) {
         updateGraph(input: $input) { id isArchived }
@@ -57,7 +53,7 @@ async def test_archiving_a_graph_persists(
     would have passed before the column existed, because the resolver hands back
     the in-memory object it just set the attribute on.
     """
-    result = await api_schema.execute(ARCHIVE_GRAPH, variable_values={"input": {"id": str(test_graph.id)}}, context_value=authenticated_context)
+    result = await api_schema.execute(writes.ARCHIVE_GRAPH, variable_values={"input": {"id": str(test_graph.id)}}, context_value=authenticated_context)
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     assert result.data["archiveGraph"]["isArchived"] is True
 
@@ -78,7 +74,7 @@ async def test_archiving_is_reversible(
     `unarchiveGraph` — so if this did not work, archiving would be an
     irreversible hide, which is a delete with extra steps.
     """
-    await api_schema.execute(ARCHIVE_GRAPH, variable_values={"input": {"id": str(test_graph.id)}}, context_value=authenticated_context)
+    await api_schema.execute(writes.ARCHIVE_GRAPH, variable_values={"input": {"id": str(test_graph.id)}}, context_value=authenticated_context)
 
     result = await api_schema.execute(
         UPDATE_GRAPH,
@@ -106,7 +102,7 @@ async def test_an_archived_graph_is_still_reachable_by_id(
     default exclusion would hide the row from the only mutation that can bring it
     back.
     """
-    await api_schema.execute(ARCHIVE_GRAPH, variable_values={"input": {"id": str(test_graph.id)}}, context_value=authenticated_context)
+    await api_schema.execute(writes.ARCHIVE_GRAPH, variable_values={"input": {"id": str(test_graph.id)}}, context_value=authenticated_context)
 
     result = await api_schema.execute(
         "query Graph($id: ID!) { graph(id: $id) { id isArchived } }",
@@ -191,13 +187,6 @@ def test_deleting_an_image_does_not_delete_the_view(test_graph: Graph) -> None:
     assert test_graph.image is None and category.image is None
 
 
-UPDATE_GRAPH_VISUAL = """
-    mutation UpdateGraphVisual($input: UpdateGraphVisualInput!) {
-        updateGraphVisual(input: $input) { id }
-    }
-"""
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_moving_a_box_runs_no_ddl(api_schema, simple_api_context, test_graph, table_projector, monkeypatch) -> None:
@@ -215,7 +204,7 @@ async def test_moving_a_box_runs_no_ddl(api_schema, simple_api_context, test_gra
 
     category = await sync_to_async(core_models.Category.objects.get)(graph=test_graph, key="AIS")
     result = await api_schema.execute(
-        UPDATE_GRAPH_VISUAL,
+        writes.UPDATE_GRAPH_VISUAL,
         variable_values={"input": {"id": str(test_graph.pk), "nodePositions": [{"category": str(category.pk), "positionX": 3.0, "positionY": 4.0}]}},
         context_value=simple_api_context,
     )

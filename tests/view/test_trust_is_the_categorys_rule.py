@@ -18,18 +18,15 @@ below is the example agreed there, verbatim in spirit.
 import pytest
 from asgiref.sync import sync_to_async
 from core import models as core_models
-from tests.support import claims, drawing, graphs
+from tests.support import claims, drawing, graphs, rules, rules as R, writes
 from tests.support.graphs import example_graph as _example_graph, rebuild as _rebuild
 from tests.support.writes import CREATE_GRAPH
 import kante
 from kante.context import HttpContext
-from tests.support import rules
-from tests.support import writes
 from tests.support.graphs import graph_declaring as _graph_declaring
 from graph_engine import input_models as models
 from graph_engine.materialize import materialize
-from tests.support import rules as R
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 
 
 @pytest.mark.django_db(transaction=True)
@@ -43,12 +40,12 @@ async def test_metrics_fold_under_rule_evidence(api_schema, simple_api_context, 
     def build_and_read():
         graph = core_models.Graph.objects.get(pk=graph_id)
         org = graph.organization
-        ais = claims.mint(org, "AIS", "peter", asserted_at=BEFORE)
+        ais = claims.mint(org, "AIS", "peter", asserted_at=graphs.BEFORE_TREATMENT)
         # Routing (INFORMS) by Peter inside his clause; the numbers by the
         # pipeline app the rule names — and one by a rival app, excluded.
-        claims.measure(org, ais, obj="roi-1", key="vector_length", value=10.0, subject="pipeline", app_id="segmenter-v3", inform_subject="peter", inform_asserted_at=BEFORE)
-        claims.measure(org, ais, obj="roi-2", key="vector_length", value=30.0, subject="pipeline", app_id="segmenter-v3", inform_subject="peter", inform_asserted_at=BEFORE)
-        claims.measure(org, ais, obj="roi-3", key="vector_length", value=1000.0, subject="pipeline", app_id="rival-tool", inform_subject="peter", inform_asserted_at=BEFORE)
+        claims.measure(org, ais, obj="roi-1", key="vector_length", value=10.0, subject="pipeline", app_id="segmenter-v3", inform_subject="peter", inform_asserted_at=graphs.BEFORE_TREATMENT)
+        claims.measure(org, ais, obj="roi-2", key="vector_length", value=30.0, subject="pipeline", app_id="segmenter-v3", inform_subject="peter", inform_asserted_at=graphs.BEFORE_TREATMENT)
+        claims.measure(org, ais, obj="roi-3", key="vector_length", value=1000.0, subject="pipeline", app_id="rival-tool", inform_subject="peter", inform_asserted_at=graphs.BEFORE_TREATMENT)
         _rebuild(graph_id, table_projector)
         return drawing.vertex_properties(graph, ais)
 
@@ -66,11 +63,11 @@ async def test_informs_routing_folds_under_the_categorys_clauses(api_schema, sim
     def build_and_read():
         graph = core_models.Graph.objects.get(pk=graph_id)
         org = graph.organization
-        ais = claims.mint(org, "AIS", "peter", asserted_at=BEFORE)
+        ais = claims.mint(org, "AIS", "peter", asserted_at=graphs.BEFORE_TREATMENT)
         # The numbers come from the trusted app either way; only the INFORMS
         # claim's author differs.
-        claims.measure(org, ais, obj="roi-good", key="vector_length", value=20.0, subject="pipeline", app_id="segmenter-v3", inform_subject="peter", inform_asserted_at=BEFORE)
-        claims.measure(org, ais, obj="roi-smuggled", key="vector_length", value=9000.0, subject="pipeline", app_id="segmenter-v3", inform_subject="stranger", inform_asserted_at=BEFORE)
+        claims.measure(org, ais, obj="roi-good", key="vector_length", value=20.0, subject="pipeline", app_id="segmenter-v3", inform_subject="peter", inform_asserted_at=graphs.BEFORE_TREATMENT)
+        claims.measure(org, ais, obj="roi-smuggled", key="vector_length", value=9000.0, subject="pipeline", app_id="segmenter-v3", inform_subject="stranger", inform_asserted_at=graphs.BEFORE_TREATMENT)
         _rebuild(graph_id, table_projector)
         return drawing.vertex_properties(graph, ais)
 
@@ -116,13 +113,6 @@ EXPLAIN = """
         }
     }
 """
-INPUT_PARTICIPATIONS = """
-    query P($graph: ID!) {
-        inputParticipations(graph: $graph) { id }
-    }
-"""
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_supporting_evidence_agrees_with_the_fold(api_schema: kante.Schema, simple_api_context: HttpContext, table_projector) -> None:
@@ -219,29 +209,6 @@ async def test_narrowing_a_categorys_trust_takes_derived_values_and_windows_with
     assert after.get("id") == ref, "the node stands — the curator classified it"
     assert after.get("size") is None, f"but the untrusted measurements no longer derive a size — got {after}"
     assert after.get("valid_from") is None, "and the observation window they stretched is gone with them"
-
-
-ASSERT_ENTITY_WITH_CONFIDENCE = """
-    mutation N($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { instance { id confidence } }
-    }
-"""
-ASSERT_RELATION_WITH_CONFIDENCE = """
-    mutation R($input: AssertRelationExistsInput!) {
-        assertRelationExists(input: $input) { link { id confidence drawnIn { edge { confidence } } } }
-    }
-"""
-RETRACT_ENTITY = """
-    mutation X($input: RetractEntityInput!) {
-        retractEntity(input: $input) { instance { id standings { stands confidence } } }
-    }
-"""
-
-
-async def _execute(api_schema: kante.Schema, ctx: HttpContext, document: str, payload: dict) -> dict:
-    result = await api_schema.execute(document, variable_values={"input": payload}, context_value=ctx)
-    assert result.errors is None, f"GraphQL errors: {result.errors}"
-    return result.data
 
 
 def test_confidence_takes_the_numeric_operators_only() -> None:
@@ -397,81 +364,21 @@ def test_a_relation_rule_may_demand_a_confidence(transactional_db, table_project
     assert drawing.edges_between(graph, b, c, "IS_CONNECTED_TO") == 0
 
 
-TREATMENT = datetime(2026, 6, 1, tzinfo=timezone.utc)
-BEFORE = TREATMENT - timedelta(days=30)
-AFTER = TREATMENT + timedelta(days=30)
-
-
-def _rule(*conditions: dict) -> dict:
-    return {"when": list(conditions)}
-
-
-def _observed_before(moment: datetime) -> dict:
-    return {"field": "OBSERVED_AT", "operator": "BEFORE", "value": moment.isoformat()}
-
-
-def _observed_since(moment: datetime) -> dict:
-    return {"field": "OBSERVED_AT", "operator": "SINCE", "value": moment.isoformat()}
-
-
-DEFINITION = {
-    "systemVersion": "2.0.0",
-    "extensions": {
-        "entities": [
-            {
-                "key": "Cell",
-                "definition": {
-                    "rules": [
-                        # No KIND: the bound applies to every kind of claim about a
-                        # Cell — a classification by when the cell was seen, a
-                        # death by when it took effect (`Standing.at`).
-                        _rule({"field": "WORD", "operator": "IS", "value": "Cell"}, _observed_before(TREATMENT)),
-                    ]
-                },
-            }
-        ],
-        "relations": [
-            {
-                "key": "IS_CONNECTED_TO",
-                "source": {"keys": ["Cell"]},
-                "target": {"keys": ["Cell"]},
-                "definition": {"rules": [_rule({"field": "WORD", "operator": "IS", "value": "IS_CONNECTED_TO"}, _observed_before(TREATMENT))]},
-            }
-        ],
-        "events": [
-            {
-                "key": "Mitosis",
-                "kind": "INTRINSIC",
-                "definition": {"rules": [_rule({"field": "WORD", "operator": "IS", "value": "Mitosis"}, _observed_since(TREATMENT))]},
-                "inputs": [{"key": "Cell", "role": "mother", "descriptor": {"keys": ["Cell"]}}],
-                "outputs": [{"key": "Cell", "role": "daughter", "descriptor": {"keys": ["Cell"]}}],
-            }
-        ],
-    },
-}
-
-
-async def _graph(api_schema: kante.Schema, ctx: HttpContext, name: str) -> str:
-    made = await api_schema.execute(CREATE_GRAPH, variable_values={"input": {"name": name, "definition": DEFINITION}}, context_value=ctx)
-    assert made.errors is None, f"GraphQL errors: {made.errors}"
-    return made.data["createGraph"]["id"]
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_classification_rule_bounds_when_the_world_was_seen(api_schema, simple_api_context, table_projector) -> None:
     """Both claims were *recorded* after the treatment; only the one that says
     the cell was seen before it is admitted. `ASSERTED_AT` could not tell them
     apart."""
-    graph_id = await _graph(api_schema, simple_api_context, "observed-classification")
+    graph_id = await graphs.graph_with(api_schema, simple_api_context, "observed-classification", graphs.TREATMENT_DEFINITION)
 
     @sync_to_async
     def build_and_read():
         graph = core_models.Graph.objects.get(pk=graph_id)
         org = graph.organization
-        seen_before = claims.mint(org, "Cell", "peter", asserted_at=AFTER, observed_at=BEFORE)
-        seen_after = claims.mint(org, "Cell", "peter", asserted_at=AFTER, observed_at=AFTER)
-        silent = claims.mint(org, "Cell", "peter", asserted_at=AFTER)
+        seen_before = claims.mint(org, "Cell", "peter", asserted_at=graphs.AFTER_TREATMENT, observed_at=graphs.BEFORE_TREATMENT)
+        seen_after = claims.mint(org, "Cell", "peter", asserted_at=graphs.AFTER_TREATMENT, observed_at=graphs.AFTER_TREATMENT)
+        silent = claims.mint(org, "Cell", "peter", asserted_at=graphs.AFTER_TREATMENT)
         _rebuild(graph_id, table_projector)
         return drawing.vertices_with_ref(graph, seen_before), drawing.vertices_with_ref(graph, seen_after), drawing.vertices_with_ref(graph, silent)
 
@@ -488,16 +395,16 @@ async def test_an_existence_rule_reads_the_standings_own_time(api_schema, simple
     standing's own `at`: a death that took effect before the treatment removes
     the cell from this view; one after it does not, however early it was
     recorded."""
-    graph_id = await _graph(api_schema, simple_api_context, "observed-existence")
+    graph_id = await graphs.graph_with(api_schema, simple_api_context, "observed-existence", graphs.TREATMENT_DEFINITION)
 
     @sync_to_async
     def build_and_read():
         graph = core_models.Graph.objects.get(pk=graph_id)
         org = graph.organization
-        died_before = claims.mint(org, "Cell", "peter", observed_at=BEFORE)
-        died_after = claims.mint(org, "Cell", "peter", observed_at=BEFORE)
-        claims.retract_node(org, died_before, "peter", asserted_at=AFTER, at=BEFORE + timedelta(days=1))
-        claims.retract_node(org, died_after, "peter", asserted_at=BEFORE, at=AFTER)
+        died_before = claims.mint(org, "Cell", "peter", observed_at=graphs.BEFORE_TREATMENT)
+        died_after = claims.mint(org, "Cell", "peter", observed_at=graphs.BEFORE_TREATMENT)
+        claims.retract_node(org, died_before, "peter", asserted_at=graphs.AFTER_TREATMENT, at=graphs.BEFORE_TREATMENT + timedelta(days=1))
+        claims.retract_node(org, died_after, "peter", asserted_at=graphs.BEFORE_TREATMENT, at=graphs.AFTER_TREATMENT)
         _rebuild(graph_id, table_projector)
         return drawing.vertices_with_ref(graph, died_before), drawing.vertices_with_ref(graph, died_after)
 
@@ -509,17 +416,17 @@ async def test_an_existence_rule_reads_the_standings_own_time(api_schema, simple
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_relation_rule_bounds_when_the_relation_held(api_schema, simple_api_context, table_projector) -> None:
-    graph_id = await _graph(api_schema, simple_api_context, "observed-relation")
+    graph_id = await graphs.graph_with(api_schema, simple_api_context, "observed-relation", graphs.TREATMENT_DEFINITION)
 
     @sync_to_async
     def build_and_read():
         graph = core_models.Graph.objects.get(pk=graph_id)
         org = graph.organization
-        a = claims.mint(org, "Cell", "peter", observed_at=BEFORE)
-        b = claims.mint(org, "Cell", "peter", observed_at=BEFORE)
-        c = claims.mint(org, "Cell", "peter", observed_at=BEFORE)
-        claims.relate(org, "IS_CONNECTED_TO", a, b, "karl", asserted_at=AFTER, observed_at=BEFORE)
-        claims.relate(org, "IS_CONNECTED_TO", b, c, "karl", asserted_at=AFTER, observed_at=AFTER)
+        a = claims.mint(org, "Cell", "peter", observed_at=graphs.BEFORE_TREATMENT)
+        b = claims.mint(org, "Cell", "peter", observed_at=graphs.BEFORE_TREATMENT)
+        c = claims.mint(org, "Cell", "peter", observed_at=graphs.BEFORE_TREATMENT)
+        claims.relate(org, "IS_CONNECTED_TO", a, b, "karl", asserted_at=graphs.AFTER_TREATMENT, observed_at=graphs.BEFORE_TREATMENT)
+        claims.relate(org, "IS_CONNECTED_TO", b, c, "karl", asserted_at=graphs.AFTER_TREATMENT, observed_at=graphs.AFTER_TREATMENT)
         _rebuild(graph_id, table_projector)
         return drawing.edges_between(graph, a, b, "IS_CONNECTED_TO"), drawing.edges_between(graph, b, c, "IS_CONNECTED_TO")
 
@@ -534,17 +441,17 @@ async def test_an_event_rule_bounds_when_the_event_happened(api_schema, simple_a
     """The event category's rule governs the event and its participations alike
     (`create_event` stamps both with the event's time): a division after the
     treatment is drawn with its edge, one before it is not."""
-    graph_id = await _graph(api_schema, simple_api_context, "observed-event")
+    graph_id = await graphs.graph_with(api_schema, simple_api_context, "observed-event", graphs.TREATMENT_DEFINITION)
 
     @sync_to_async
     def build_and_read():
         graph = core_models.Graph.objects.get(pk=graph_id)
         org = graph.organization
-        mother = claims.mint(org, "Cell", "peter", observed_at=BEFORE)
-        late = claims.mint(org, "Mitosis", "peter", kind="NATURAL_EVENT", observed_at=AFTER)
-        claims.participate(org, "Mitosis", mother, late, "peter", role="mother", observed_at=AFTER)
-        early = claims.mint(org, "Mitosis", "peter", kind="NATURAL_EVENT", observed_at=BEFORE)
-        claims.participate(org, "Mitosis", mother, early, "peter", role="mother", observed_at=BEFORE)
+        mother = claims.mint(org, "Cell", "peter", observed_at=graphs.BEFORE_TREATMENT)
+        late = claims.mint(org, "Mitosis", "peter", kind="NATURAL_EVENT", observed_at=graphs.AFTER_TREATMENT)
+        claims.participate(org, "Mitosis", mother, late, "peter", role="mother", observed_at=graphs.AFTER_TREATMENT)
+        early = claims.mint(org, "Mitosis", "peter", kind="NATURAL_EVENT", observed_at=graphs.BEFORE_TREATMENT)
+        claims.participate(org, "Mitosis", mother, early, "peter", role="mother", observed_at=graphs.BEFORE_TREATMENT)
         _rebuild(graph_id, table_projector)
         return (
             drawing.vertices_with_ref(graph, late),

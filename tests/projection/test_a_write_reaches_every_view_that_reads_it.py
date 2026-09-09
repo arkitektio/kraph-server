@@ -15,7 +15,10 @@ views show those nodes. Splitting them is what lets the fold reach edge refs,
 which belong to no graph and which the old grouped version silently dropped.
 """
 
+import uuid
+
 import pytest
+from asgiref.sync import sync_to_async
 from authentikate.models import Organization
 from core import models as core_models
 from evidence import models as evidence_models
@@ -23,6 +26,7 @@ from evidence import writer
 from graph_engine import projector
 from datetime import datetime, timedelta, timezone
 from evidence import state as state_module
+from tests.support import reads, writes
 
 
 @pytest.fixture
@@ -171,23 +175,6 @@ def test_the_fan_out_stops_at_the_organization(
     assert projector.refs_informed_by(other_organization, [structure.pk]) == []
 
 
-CREATE_ENTITY = """
-    mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { instance { id } }
-    }
-"""
-RECORD_METRIC = """
-    mutation RecordMetric($input: AssertMetricValueInput!) {
-        assertMetricValue(input: $input) { metric { id } }
-    }
-"""
-ENTITY_PROPERTIES = """
-    query Entity($id: ID!, $graph: ID!) {
-        node(id: $id, graph: $graph) { ... on Entity { id properties } }
-    }
-"""
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_one_recorded_metric_moves_both_projections(
@@ -207,56 +194,19 @@ async def test_one_recorded_metric_moves_both_projections(
     the write path has to project all of them. Testing the pieces separately
     would pass even if nothing joined them up.
     """
-    import uuid as uuid_module
+    object_id = f"roi_{uuid.uuid4().hex[:8]}"
 
-    from asgiref.sync import sync_to_async
+    # Both views declare AIS with a MEAN over ROI; the write names the word, not a view.
+    entity_ids = {str(graph.pk): await writes.create_entity(api_schema, simple_api_context, "AIS", evidence=writes.roi(object_id, 40.0)) for graph in (test_graph, second_graph)}
 
-    object_id = f"roi_{uuid_module.hex if False else uuid_module.uuid4().hex[:8]}"
-
-    entity_ids = {}
-    for graph in (test_graph, second_graph):
-        category = await core_models.EntityCategory.objects.filter(graph=graph, key="AIS").afirst()
-        assert category is not None, f"{graph.name} must declare AIS with a MEAN rollup over ROI"
-
-        created = await api_schema.execute(
-            CREATE_ENTITY,
-            variable_values={
-                "input": {
-                    "term": category.key,
-                    "supportingEvidence": [{"identifier": "ROI", "object": object_id, "metrics": [{"key": "vector_length", "value": 40.0, "valueKind": "FLOAT"}]}],
-                }
-            },
-            context_value=simple_api_context,
-        )
-        assert created.errors is None, f"GraphQL errors: {created.errors}"
-        entity_ids[str(graph.pk)] = created.data["assertEntityExists"]["instance"]["id"]
-
-    @sync_to_async
-    def structure_count() -> int:
-        return evidence_models.Structure.all_objects.filter(object=object_id).count()
-
-    assert await structure_count() == 1, "Both graphs must be informed by the *same* structure row"
+    structures = await sync_to_async(lambda: evidence_models.Structure.objects.for_organization(test_graph.organization).filter(object=object_id).count())()
+    assert structures == 1, "Both graphs must be informed by the *same* structure row"
 
     # One measurement, no graph named anywhere.
-    recorded = await api_schema.execute(
-        RECORD_METRIC,
-        variable_values={
-            "input": {
-                "identifier": "ROI",
-                "object": object_id,
-                "key": "vector_length",
-                "value": 60.0,
-                "valueKind": "FLOAT",
-            }
-        },
-        context_value=simple_api_context,
-    )
-    assert recorded.errors is None, f"GraphQL errors: {recorded.errors}"
+    await writes.execute(api_schema, simple_api_context, writes.ASSERT_METRIC_VALUE, {"input": {"identifier": "ROI", "object": object_id, "key": "vector_length", "value": 60.0, "valueKind": "FLOAT"}})
 
     for graph_id, entity_id in entity_ids.items():
-        result = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity_id, "graph": graph_id}, context_value=simple_api_context)
-        assert result.errors is None, f"GraphQL errors: {result.errors}"
-        avg = result.data["node"]["properties"].get("avg_length")
+        avg = await reads.property_of(api_schema, simple_api_context, graph_id, entity_id, "avg_length")
         assert avg == pytest.approx(50.0), f"graph #{graph_id} still reads {avg}: mean of 40 and 60 is 50. A projection that did not move is the stale-second-graph bug."
 
 

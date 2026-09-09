@@ -23,11 +23,6 @@ from evidence import models as evidence_models
 from tests.support import writes
 
 
-CREATE_ENTITY_CATEGORY = """
-    mutation CreateEntityCategory($input: CreateEntityCategoryInput!) {
-        createEntityCategory(input: $input) { id key }
-    }
-"""
 WRITE_INPUTS = [
     "AssertEntityExistsInput",
     "AssertNaturalEventExistsInput",
@@ -122,11 +117,6 @@ async def test_classifying_an_event_claims_an_event_word(
     # interface and resolves either way. The claim carries its own `kind` now, so the
     # question needs no type name to ask.
     assert classified.data["classifyNodes"]["instances"][0]["kind"] == "NATURAL_EVENT", "A classified event comes back as an event"
-RELATION_BY_ID = """
-    query Relation($id: ID!) {
-        relation(id: $id) { id }
-    }
-"""
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_an_edge_under_an_undeclared_word_is_recorded_too(

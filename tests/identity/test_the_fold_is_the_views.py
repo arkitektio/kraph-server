@@ -8,14 +8,13 @@ refolds the individuals.
 import pytest
 from asgiref.sync import sync_to_async
 from core import models as core_models
-from tests.support import claims, drawing, graphs
+from tests.support import claims, drawing, graphs, rules, writes
 import uuid
 import kante
 from kante.context import HttpContext
 from evidence import identity, models as evidence_models
-from tests.support.writes import ASSERT_SAME, RETRACT_SAME, assert_entity as _assert_entity
+from tests.support.writes import ASSERT_SAME, RETRACT_SAME
 from evidence import panel
-from tests.support import rules, writes
 from tests.support.graphs import graph_declaring as _graph_declaring, merge_as as _merge_as
 from tests.support.graphs import BEFORE, example_graph as _example_graph
 from tests.support.writes import CREATE_GRAPH
@@ -83,8 +82,8 @@ async def test_noticing_later_that_two_instances_are_one(
     test_graph: core_models.Graph,
 ) -> None:
     """The standalone claim, for the case that is genuinely its own act."""
-    first = await _assert_entity(api_schema, simple_api_context, "AIS")
-    second = await _assert_entity(api_schema, simple_api_context, "AIS")
+    first = await writes.assert_entity(api_schema, simple_api_context, "AIS")
+    second = await writes.assert_entity(api_schema, simple_api_context, "AIS")
 
     result = await api_schema.execute(
         ASSERT_SAME,
@@ -118,8 +117,8 @@ async def test_retracting_sameness_splits_the_component(
     survive rather than adjusted — and this is the test that says the rebuild
     reaches the API.
     """
-    first = await _assert_entity(api_schema, simple_api_context, "AIS")
-    second = await _assert_entity(api_schema, simple_api_context, "AIS", same_as=[first["instance"]["id"]])
+    first = await writes.assert_entity(api_schema, simple_api_context, "AIS")
+    second = await writes.assert_entity(api_schema, simple_api_context, "AIS", same_as=[first["instance"]["id"]])
 
     @sync_to_async
     def sameness_id() -> str:
@@ -161,7 +160,7 @@ async def test_a_structure_cannot_be_claimed_the_same_as_anything(
     data, and a sameness claim about them is really a claim about the entities
     they inform. Refusing is better than folding a claim no reader can act on.
     """
-    entity = (await _assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"]
+    entity = (await writes.assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"]
 
     created = await api_schema.execute(
         """
@@ -191,7 +190,7 @@ async def test_a_node_cannot_be_claimed_the_same_as_itself(
     test_graph: core_models.Graph,
 ) -> None:
     """A node is trivially itself, so the claim carries no information."""
-    entity = (await _assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"]
+    entity = (await writes.assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"]
 
     result = await api_schema.execute(
         ASSERT_SAME,
@@ -270,17 +269,6 @@ async def test_the_component_of_a_primitive_view_unions_its_categorys_merges(api
     assert await component_in(everyone_id) == sorted([a, b]), "a primitive category trusts every merger — within the category"
 
 
-async def _execute(api_schema, ctx, document: str, variables: dict) -> dict:
-    result = await api_schema.execute(document, variable_values=variables, context_value=ctx)
-    assert result.errors is None, f"GraphQL errors: {result.errors}"
-    return result.data
-
-
-async def _merge(api_schema, ctx, refs: list[str]) -> str:
-    data = await _execute(api_schema, ctx, ASSERT_SAME, {"input": {"instances": refs}})
-    return data["assertSameInstance"]["links"][0]["id"]
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_sameness_the_category_does_not_trust_draws_two_vertices(api_schema, simple_api_context, table_projector) -> None:
@@ -316,7 +304,7 @@ async def test_a_sameness_claim_survives_in_the_log_when_a_view_ignores_it(api_s
 
     a = await writes.create_entity(api_schema, simple_api_context, "AIS")
     b = await writes.create_entity(api_schema, simple_api_context, "AIS")
-    await _merge(api_schema, simple_api_context, [a, b])
+    await writes.merge(api_schema, simple_api_context, [a, b])
 
     @sync_to_async
     def cached():

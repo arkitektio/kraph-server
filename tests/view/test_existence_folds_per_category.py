@@ -28,31 +28,13 @@ from kante.context import HttpContext
 from core import models as core_models
 from evidence import claims as claims_module
 from evidence import models as evidence_models
-from tests.support import drawing, graphs, rules
-from tests.support import claims
+from tests.support import claims, drawing, graphs, reads, rules, writes
 from tests.support.graphs import AFTER, BEFORE, example_graph as _example_graph, rebuild as _rebuild
 from django.utils import timezone as django_timezone
 from evidence import writer
-from tests.support import writes
 from tests.support.graphs import graph_declaring as _graph_declaring
-from evidence import selector as selector_module
 
 
-CREATE_ENTITY = """
-    mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { instance { id } }
-    }
-"""
-CREATE_NATURAL_EVENT = """
-    mutation CreateNaturalEvent($input: AssertNaturalEventExistsInput!) {
-        assertNaturalEventExists(input: $input) { instance { id } }
-    }
-"""
-CREATE_RELATION = """
-    mutation CreateRelation($input: AssertRelationExistsInput!) {
-        assertRelationExists(input: $input) { link { id } }
-    }
-"""
 RETRACT_ENTITY = """
     mutation RetractEntity($input: RetractEntityInput!) {
         retractEntity(input: $input) { instance { id } drawings { graph { id } } }
@@ -68,31 +50,12 @@ RETRACT_NATURAL_EVENT = """
         retractNaturalEvent(input: $input) { instance { id } drawings { graph { id } } }
     }
 """
-ENTITY_PROPERTIES = """
-    query Entity($id: ID!, $graph: ID!) {
-        node(id: $id, graph: $graph) { ... on Entity { id properties } }
-    }
-"""
-
-
-async def _cell(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph) -> str:
-    category = await core_models.EntityCategory.objects.filter(graph=graph, key="Cell").afirst()
-    assert category is not None
-    created = await api_schema.execute(
-        CREATE_ENTITY,
-        variable_values={"input": {"term": category.key, "supportingEvidence": []}},
-        context_value=ctx,
-    )
-    assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertEntityExists"]["instance"]["id"]
-
-
 async def _ais_with_length(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph, value: float) -> str:
     """An AIS carrying a measurement, so it has a derived property worth comparing."""
     category = await core_models.EntityCategory.objects.filter(graph=graph, key="AIS").afirst()
     assert category is not None, "The bio schema declares an AIS with a MEAN rollup over ROI"
     created = await api_schema.execute(
-        CREATE_ENTITY,
+        writes.ASSERT_ENTITY_EXISTS,
         variable_values={
             "input": {
                 "term": category.key,
@@ -109,25 +72,6 @@ async def _ais_with_length(api_schema: kante.Schema, ctx: HttpContext, graph: co
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
     return created.data["assertEntityExists"]["instance"]["id"]
-
-
-async def _mitosis(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph, source: str, target: str) -> str:
-    category = await core_models.NaturalEventCategory.objects.filter(graph=graph, key="Mitosis").afirst()
-    assert category is not None
-    created = await api_schema.execute(
-        CREATE_NATURAL_EVENT,
-        variable_values={
-            "input": {
-                "term": category.key,
-                "inputs": [{"role": "a", "entityId": source}],
-                "outputs": [{"role": "b", "entityId": target}],
-                "supportingEvidence": [],
-            }
-        },
-        context_value=ctx,
-    )
-    assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertNaturalEventExists"]["instance"]["id"]
 
 
 def _vertices(table_projector, graph: core_models.Graph, node_id: str) -> int:
@@ -153,9 +97,9 @@ async def test_archiving_a_natural_event_removes_its_vertex(
     event spellings came to disagree, and why an archived event was invisible to
     the code that stamped the projection. There is one controller path now.
     """
-    source = await _cell(api_schema, simple_api_context, test_graph)
-    target = await _cell(api_schema, simple_api_context, test_graph)
-    event_id = await _mitosis(api_schema, simple_api_context, test_graph, source, target)
+    source = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    target = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    event_id = await writes.create_event(api_schema, simple_api_context, "Mitosis", inputs=[{"role": "a", "entityId": source}], outputs=[{"role": "b", "entityId": target}])
 
     @sync_to_async
     def vertices() -> int:
@@ -198,11 +142,11 @@ async def test_archiving_an_entity_removes_its_edges_but_keeps_the_claims(
     relation_category = await core_models.RelationCategory.objects.filter(graph=test_graph, key="IS_CONNECTED_TO").afirst()
     assert relation_category is not None
 
-    source = await _cell(api_schema, simple_api_context, test_graph)
-    target = await _cell(api_schema, simple_api_context, test_graph)
+    source = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    target = await writes.create_entity(api_schema, simple_api_context, "Cell")
 
     created = await api_schema.execute(
-        CREATE_RELATION,
+        writes.ASSERT_RELATION_EXISTS,
         variable_values={"input": {"term": relation_category.key, "sourceId": source, "targetId": target}},
         context_value=simple_api_context,
     )
@@ -259,7 +203,7 @@ async def test_attesting_a_retracted_entity_brings_it_back_unchanged(
     """
     entity_id = await _ais_with_length(api_schema, simple_api_context, test_graph, 42.0)
 
-    before = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
+    before = await api_schema.execute(reads.NODE_PROPERTIES, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
     assert before.errors is None, f"GraphQL errors: {before.errors}"
     properties_before = before.data["node"]["properties"]
     assert properties_before.get("avg_length") == pytest.approx(42.0), "The rollup must have produced a value to compare against"
@@ -280,7 +224,7 @@ async def test_attesting_a_retracted_entity_brings_it_back_unchanged(
 
     assert await vertices() == 1, "The node is back, drawn from the evidence"
 
-    after = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
+    after = await api_schema.execute(reads.NODE_PROPERTIES, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
     assert after.errors is None, f"GraphQL errors: {after.errors}"
 
     volatile = {"__last_derived"}
@@ -316,7 +260,7 @@ async def test_two_categories_can_disagree_about_whether_a_node_exists(
     from asgiref.sync import sync_to_async
     from django.utils import timezone as django_timezone
 
-    entity_id = await _cell(api_schema, simple_api_context, test_graph)
+    entity_id = await writes.create_entity(api_schema, simple_api_context, "Cell")
     cutoff = django_timezone.now()
 
     archived = await api_schema.execute(RETRACT_ENTITY, variable_values={"input": {"id": entity_id}}, context_value=simple_api_context)
@@ -575,11 +519,6 @@ async def test_archiving_an_entity_removes_the_vertex_and_the_replay_agrees(
     assert retracted, "With a claim on the record saying it no longer stands"
 
 
-UPDATE_ENTITY_CATEGORY = """
-    mutation U($input: UpdateEntityCategoryInput!) {
-        updateEntityCategory(input: $input) { id definition { rules { when { field operator value } } } }
-    }
-"""
 RETRACT_ENTITY_ID = """
     mutation R($input: RetractEntityInput!) {
         retractEntity(input: $input) { instance { id } }
@@ -633,7 +572,7 @@ async def test_an_as_of_clause_ignores_a_later_retraction(api_schema: kante.Sche
         return str(core_models.EntityCategory.objects.get(graph_id=graph_id, key="AsOfCell").pk)
 
     updated = await api_schema.execute(
-        UPDATE_ENTITY_CATEGORY,
+        writes.UPDATE_ENTITY_CATEGORY,
         variable_values={"input": {"id": await category_id(), "definition": rules.definition(rules.rule(rules.word("AsOfCell"), rules.before(django_timezone.now())))}},
         context_value=simple_api_context,
     )
@@ -655,37 +594,6 @@ JOHANNES = "johannes"
 CHRISTIAN = "christian"
 
 
-CREATE_ENTITY_WITH_DRAWINGS = """
-    mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) {
-            instance { id }
-            drawings { category { id } node { id drawnLabels } }
-        }
-    }
-"""
-
-
-async def _an_ais(api_schema: kante.Schema, ctx: HttpContext) -> str:
-    created = await api_schema.execute(CREATE_ENTITY_WITH_DRAWINGS, variable_values={"input": {"term": "AIS", "supportingEvidence": []}}, context_value=ctx)
-    assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertEntityExists"]["instance"]["id"]
-
-
-def _the_node(graph: core_models.Graph):
-    return evidence_models.Instance.objects.for_organization(graph.organization).filter(term__in=selector_module.term_ids_for(graph)).get()
-
-
-def _define(graph: core_models.Graph, key: str, definition: dict, properties: list[dict] | None = None) -> core_models.EntityCategory:
-    """A defined entity category over the word AIS, created or redefined."""
-    category, _ = core_models.EntityCategory.objects.get_or_create(graph=graph, key=key, defaults={"age_name": key.lower(), "label": key})
-    category.age_name = key.lower()  # the fixture's AIS is labelled "AIS"; one spelling for every assertion below
-    category.definition = definition
-    if properties is not None:
-        category.property_definitions = properties
-    category.save()
-    return category
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_existence_folds_per_category(
@@ -698,13 +606,13 @@ async def test_existence_folds_per_category(
     node keeps only the label whose rule still says it exists. No label left,
     no vertex."""
 
-    await _an_ais(api_schema, simple_api_context)
+    await writes.create_entity(api_schema, simple_api_context, "AIS")
 
     @sync_to_async
     def christian_retracts() -> tuple[str, set[str]]:
-        node = _the_node(test_graph)
-        ais = _define(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"))))
-        _define(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"), rules.by(JOHANNES))))
+        node = claims.only_instance(test_graph)
+        ais = graphs.define_entity(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"))))
+        graphs.define_entity(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"), rules.by(JOHANNES))))
         claims.retract_classifications(test_graph, node.ref)
         claims.classify(test_graph, node.ref, ais, JOHANNES)
         claims.retract_node(test_graph.organization, node.ref, CHRISTIAN)

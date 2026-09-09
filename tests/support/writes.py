@@ -201,3 +201,211 @@ async def classify(api_schema: kante.Schema, ctx: HttpContext, pairs: Iterable[t
         {"classifications": [{"node": node, "term": term} for node, term in pairs]},
     )
     return [entry["id"] for entry in classified["instances"]]
+
+
+ASSERT_RELATION = """
+    mutation AssertRelation($input: AssertRelationExistsInput!) {
+        assertRelationExists(input: $input) {
+            link {
+                id
+                kind
+                term { key }
+                sourceRef
+                targetRef
+                source { ... on Instance { id kind } }
+                target { ... on Instance { id kind } }
+            }
+            drawings { graph { id } }
+        }
+    }
+"""
+
+ASSERT_STRUCTURE = """
+    mutation CreateStructure($input: AssertStructureExistsInput!) {
+        assertStructureExists(input: $input) { structure { id } }
+    }
+"""
+
+ASSERT_MEASUREMENT = """
+    mutation CreateMeasurement($input: AssertMeasurementExistsInput!) {
+        assertMeasurementExists(input: $input) {
+            link {
+                id
+                kind
+                source { ... on Structure { id object } }
+                target { ... on Instance { id } }
+            }
+        }
+    }
+"""
+
+RETRACT_STRUCTURE_RELATION = """
+    mutation ArchiveStructureRelation($input: RetractStructureRelationInput!) {
+        retractStructureRelation(input: $input) { link { id } }
+    }
+"""
+
+ASSERT_STRUCTURE_RELATION = """
+    mutation CreateStructureRelation($input: AssertStructureRelationExistsInput!) {
+        assertStructureRelationExists(input: $input) {
+            link {
+                id
+                kind
+                sourceRef
+                targetRef
+                source { ... on Structure { id object } }
+                target { ... on Structure { id object } }
+            }
+        }
+    }
+"""
+
+SUPERSEDE_STRUCTURE_RELATION = """
+    mutation UpdateStructureRelation($input: SupersedeStructureRelationInput!) {
+        supersedeStructureRelation(input: $input) { link { id } }
+    }
+"""
+
+CREATE_TERM = """
+    mutation CreateTerm($input: CreateTermInput!) {
+        createTerm(input: $input) { id kind key label description purl }
+    }
+"""
+
+UPDATE_TERM = """
+    mutation UpdateTerm($input: UpdateTermInput!) {
+        updateTerm(input: $input) { id kind key label description }
+    }
+"""
+
+CREATE_ENTITY_CATEGORY = """
+    mutation CreateEntityCategory($input: CreateEntityCategoryInput!) {
+        createEntityCategory(input: $input) { id key }
+    }
+"""
+
+ASSERT_ENTITY_OBSERVED = """
+    mutation N($input: AssertEntityExistsInput!) {
+        assertEntityExists(input: $input) { instance { id observedAt } }
+    }
+"""
+
+ASSERT_ENTITY_WITH_CONFIDENCE = """
+    mutation N($input: AssertEntityExistsInput!) {
+        assertEntityExists(input: $input) { instance { id confidence } }
+    }
+"""
+
+ASSERT_RELATION_WITH_CONFIDENCE = """
+    mutation R($input: AssertRelationExistsInput!) {
+        assertRelationExists(input: $input) { link { id confidence drawnIn { edge { confidence } } } }
+    }
+"""
+
+RETRACT_ENTITY_SCORED = """
+    mutation X($input: RetractEntityInput!) {
+        retractEntity(input: $input) { instance { id standings { stands confidence } } }
+    }
+"""
+
+RETRACT_ENTITY_AT = """
+    mutation X($input: RetractEntityInput!) {
+        retractEntity(input: $input) { instance { id standings { stands at } } }
+    }
+"""
+
+ATTEST_ENTITY = """
+    mutation AttestEntity($input: AttestEntityInput!) {
+        attestEntity(input: $input) {
+            instance { id standings { stands at } }
+            drawings { graph { id } }
+        }
+    }
+"""
+
+RETRACT_ENTITY = """
+    mutation RetractEntity($input: RetractEntityInput!) {
+        retractEntity(input: $input) {
+            assertion { id }
+            instance { id standings { stands } }
+            drawings { graph { id } }
+        }
+    }
+"""
+
+ARCHIVE_GRAPH = """
+    mutation ArchiveGraph($input: ArchiveGraphInput!) {
+        archiveGraph(input: $input) { id isArchived }
+    }
+"""
+
+UPDATE_GRAPH_VISUAL = """
+    mutation UpdateGraphVisual($input: UpdateGraphVisualInput!) {
+        updateGraphVisual(input: $input) { id }
+    }
+"""
+
+UPDATE_ENTITY_CATEGORY = """
+    mutation U($input: UpdateEntityCategoryInput!) {
+        updateEntityCategory(input: $input) { id definition { rules { when { field operator value } } } }
+    }
+"""
+
+ASSERT_METRIC_VALUE = """
+    mutation RecordMetric($input: AssertMetricValueInput!) {
+        assertMetricValue(input: $input) { metric { id } }
+    }
+"""
+
+RETRACT_RELATION = """
+    mutation ArchiveRelation($input: RetractRelationInput!) {
+        retractRelation(input: $input) { link { id } }
+    }
+"""
+
+ASSERT_RELATION_WITH_TERM = """
+    mutation CreateRelation($input: AssertRelationExistsInput!) {
+        assertRelationExists(input: $input) { link { id term { key } } }
+    }
+"""
+
+RETRACT_PARTICIPATION = """
+    mutation ArchiveParticipation($input: RetractParticipationInput!) {
+        retractParticipation(input: $input) { link { id } }
+    }
+"""
+
+ASSERT_PARTICIPATION = """
+    mutation AssertParticipation($input: AssertParticipationInput!) {
+        assertParticipation(input: $input) {
+            link { kind id }
+            drawings { graph { id } category { id } edge { __typename id } }
+        }
+    }
+"""
+
+ASSERT_ENTITY_DRAWN = """
+    mutation CreateEntity($input: AssertEntityExistsInput!) {
+        assertEntityExists(input: $input) {
+            instance { id }
+            drawings { category { id } node { id drawnLabels } }
+        }
+    }
+"""
+
+
+def roi(obj: str, length: float | None) -> list[dict[str, Any]]:
+    """One ROI as supporting evidence, measured once when `length` is given."""
+    metrics = [] if length is None else [{"key": "vector_length", "value": length, "valueKind": "FLOAT"}]
+    return [{"identifier": "ROI", "object": obj, "metrics": metrics}]
+
+
+async def create_structure(api_schema: kante.Schema, ctx: HttpContext, *, identifier: str = "ROI", object: str | None = None, metrics: Iterable[dict[str, Any]] | None = None) -> str:
+    """Claim that an external datum exists, with any measurements of it. Returns its id.
+
+    The kind is minted on demand — kinds are the organization's vocabulary and a
+    write may name one nobody has used yet (RFC 0023)."""
+    import uuid
+
+    payload = {"identifier": identifier, "object": object or f"roi_{uuid.uuid4().hex[:8]}", "metrics": list(metrics or [])}
+    return (await _mutate(api_schema, ctx, ASSERT_STRUCTURE, "assertStructureExists", payload))["structure"]["id"]

@@ -11,9 +11,8 @@ import pytest
 from core import models as core_models
 from graph_engine import namespace as namespace_module
 from asgiref.sync import sync_to_async
-from tests.support import namespaces, writes
+from tests.support import drawing, namespaces, writes
 import re
-from graph_engine import models as graph_engine_models
 
 
 def _cat(graph, key):
@@ -141,11 +140,6 @@ def test_the_property_graph_answers_for_the_drawing(test_graph, table_projector)
     with connection.cursor() as cursor:
         cursor.execute(f'SELECT ref FROM GRAPH_TABLE ("{test_graph.age_name}".graph MATCH (a IS "AIS") COLUMNS (a.__ref AS ref))')
         assert [row[0] for row in cursor.fetchall()] == [ref]
-UPDATE_GRAPH_VISUAL = """
-    mutation UpdateGraphVisual($input: UpdateGraphVisualInput!) {
-        updateGraphVisual(input: $input) { id }
-    }
-"""
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_the_smallest_schema_gets_a_working_namespace(api_schema, simple_api_context, minimal_graph, table_projector) -> None:
@@ -377,6 +371,6 @@ def test_a_graph_row_needs_no_handle_to_be_created(test_graph: core_models.Graph
 @pytest.mark.django_db(transaction=True)
 def test_deleting_a_graph_row_drops_its_namespace(test_graph: core_models.Graph, table_projector) -> None:
     table_projector.draw_node(test_graph, "00000000-0000-0000-0000-000000000001", [("Cell", None)], "ENTITY", ["00000000-0000-0000-0000-000000000001"])
-    assert graph_engine_models.ProjectionVertex.objects.filter(graph=test_graph).exists()
+    assert drawing.vertex_count(test_graph) == 1
     core_models.Graph.objects.filter(pk=test_graph.pk).delete()
-    assert not graph_engine_models.ProjectionVertex.objects.filter(graph_id=test_graph.pk).exists(), "a deleted view takes its drawing with it, on every deletion path"
+    assert drawing.vertex_count(test_graph) == 0, "a deleted view takes its drawing with it, on every deletion path"

@@ -28,3 +28,99 @@ async def node_properties(api_schema: Any, ctx: Any, graph: Any, ref: str) -> di
 async def standings_of(api_schema: Any, ctx: Any, claim_id: str) -> list[dict[str, Any]]:
     """Every position taken on one claim, newest first."""
     return list((await execute(api_schema, ctx, STANDINGS, {"id": claim_id}))["standings"])
+
+
+RELATION = """
+    query Relation($id: ID!) {
+        relation(id: $id) { id }
+    }
+"""
+
+INSTANCE_STANDINGS = """
+    query ReadInstance($id: ID!) {
+        instance(id: $id) { id kind term { key } standings { stands } }
+    }
+"""
+
+ASSERTION = """
+    query Assertion($id: ID!) {
+        assertion(id: $id) {
+            id
+            seq
+            actionArgs
+            instances { id term { key } }
+            links { id kind }
+            metrics { id }
+            structures { id }
+            standings { id stands target { __typename ... on Instance { id } ... on Link { id } } }
+            comments { id }
+        }
+    }
+"""
+
+ASSERTIONS = """
+    query Assertions($filters: AssertionFilter, $pagination: LogPaginationInput) {
+        assertions(filters: $filters, pagination: $pagination) { id seq subject appId }
+    }
+"""
+
+CHANGES = """
+    query Changes($afterSeq: Int!, $limit: Int) {
+        changes(afterSeq: $afterSeq, limit: $limit) {
+            assertions { id seq }
+            nextSeq
+            horizon
+        }
+    }
+"""
+
+STANDINGS_FILTERED = """
+    query Standings($id: ID, $filters: StandingFilter) {
+        standings(id: $id, filters: $filters) {
+            id
+            stands
+            target { __typename ... on Instance { id } ... on Link { id } }
+        }
+    }
+"""
+
+ENTITY = """
+    query Entity($id: ID!, $graph: ID!) {
+        entity(id: $id, graph: $graph) {
+            id
+            label
+            drawnLabels
+            categoryIds
+            categories { id key }
+            richProperties { key value }
+        }
+    }
+"""
+
+NODES_BY_SEQ = """
+    query L($graph: ID!) { nodes(graph: $graph, ordering: [{seq: DESC}]) { id } }
+"""
+
+TERMS = """
+    query Terms($filters: TermFilter) {
+        terms(filters: $filters) { id kind key label description purl }
+    }
+"""
+
+INPUT_PARTICIPATIONS = """
+    query P($graph: ID!) {
+        inputParticipations(graph: $graph) { id }
+    }
+"""
+
+
+def retrieved_node(properties: dict[str, Any]) -> Any:
+    """A drawn record with these properties and nothing else — for the read-side filters."""
+    from graph_engine.retrieved import RetrievedNode
+
+    return RetrievedNode(controller=None, graph_name="testgraph", vertex_id=1, label="AIS", properties=properties)  # type: ignore[arg-type]
+
+
+async def property_of(api_schema: Any, ctx: Any, graph: Any, ref: str, key: str) -> Any:
+    """One derived property a view draws for an individual — None when it draws none."""
+    return (await node_properties(api_schema, ctx, graph, ref)).get(key)

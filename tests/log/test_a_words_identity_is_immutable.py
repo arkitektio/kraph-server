@@ -14,6 +14,7 @@ import kante
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 from core import models as core_models
+from tests.support import writes
 
 
 REFUSED = IntegrityError
@@ -62,20 +63,6 @@ def test_the_identity_guard_honours_the_redaction_hatch(organization) -> None:
     assert term.key == "Misspelled"
 
 
-CREATE_TERM = """
-    mutation CreateTerm($input: CreateTermInput!) {
-        createTerm(input: $input) { id kind key label description purl }
-    }
-"""
-
-
-UPDATE_TERM = """
-    mutation UpdateTerm($input: UpdateTermInput!) {
-        updateTerm(input: $input) { id kind key label description }
-    }
-"""
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_declaring_a_word_that_exists_describes_it_rather_than_duplicating(
@@ -94,7 +81,7 @@ async def test_declaring_a_word_that_exists_describes_it_rather_than_duplicating
     existing_id = str(category.term_id)
 
     result = await api_schema.execute(
-        CREATE_TERM,
+        writes.CREATE_TERM,
         variable_values={"input": {"kind": "ENTITY", "key": "AIS", "description": "Axon initial segment", "purl": "http://purl.obolibrary.org/obo/UBERON_0006090"}},
         context_value=simple_api_context,
     )
@@ -128,7 +115,7 @@ async def test_the_same_word_under_two_kinds_is_two_terms(
     assert category is not None
 
     result = await api_schema.execute(
-        CREATE_TERM,
+        writes.CREATE_TERM,
         variable_values={"input": {"kind": "RELATION", "key": "AIS", "label": "a relation that happens to be spelled AIS"}},
         context_value=simple_api_context,
     )
@@ -153,7 +140,7 @@ async def test_updating_a_term_edits_its_presentation_only(
     assert category is not None
 
     result = await api_schema.execute(
-        UPDATE_TERM,
+        writes.UPDATE_TERM,
         variable_values={"input": {"id": str(category.term_id), "label": "AIS (curated)", "description": "The initial segment of an axon"}},
         context_value=simple_api_context,
     )

@@ -30,6 +30,7 @@ from core.enums import ValueKind
 from evidence import models as evidence_models
 from evidence import state as state_module
 from evidence import writer
+from tests.support import reads, writes
 
 
 INDEXED = {"key": "indexed_length", "value_kind": "FLOAT", "derivation": "ROLLUP", "index": True, "rule": {"source_node": "ROI", "key": "vector_length", "aggregation": "MEAN"}}
@@ -258,25 +259,8 @@ def test_an_unknown_sort_direction_is_rejected(test_graph: core_models.Graph, ta
     assert controller._validate_direction("DESC") == "DESC"
 
 
-CREATE_ENTITY = """
-    mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { instance { id } }
-    }
-"""
-RECORD_METRIC = """
-    mutation RecordMetric($input: AssertMetricValueInput!) {
-        assertMetricValue(input: $input) { metric { id } }
-    }
-"""
-ENTITY = """
-    query Entity($id: ID!, $graph: ID!) {
-        node(id: $id, graph: $graph) { ... on Entity { id properties } }
-    }
-"""
-
-
 async def _properties(api_schema: kante.Schema, ctx: HttpContext, entity_id: str, graph) -> dict:
-    result = await api_schema.execute(ENTITY, variable_values={"id": entity_id, "graph": str(graph.id)}, context_value=ctx)
+    result = await api_schema.execute(reads.NODE_PROPERTIES, variable_values={"id": entity_id, "graph": str(graph.id)}, context_value=ctx)
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     return result.data["node"]["properties"]
 
@@ -294,7 +278,7 @@ async def test_recording_a_metric_updates_the_derived_value(
     object_id = f"roi_{uuid.uuid4().hex[:8]}"
 
     created = await api_schema.execute(
-        CREATE_ENTITY,
+        writes.ASSERT_ENTITY_EXISTS,
         variable_values={
             "input": {
                 "term": category.key,
@@ -310,7 +294,7 @@ async def test_recording_a_metric_updates_the_derived_value(
 
     # A second measurement, recorded against the structure — not the entity.
     recorded = await api_schema.execute(
-        RECORD_METRIC,
+        writes.ASSERT_METRIC_VALUE,
         variable_values={
             "input": {
                 "identifier": "ROI",
@@ -344,7 +328,7 @@ async def test_the_projection_carries_its_schema_version(
     assert category is not None
 
     created = await api_schema.execute(
-        CREATE_ENTITY,
+        writes.ASSERT_ENTITY_EXISTS,
         variable_values={"input": {"term": category.key}},
         context_value=simple_api_context,
     )

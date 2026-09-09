@@ -18,7 +18,7 @@ from asgiref.sync import sync_to_async
 from core import models as core_models
 from tests.support import claims, drawing, graphs, writes
 from tests.support.graphs import BEFORE, example_graph as _example_graph
-from tests.support.writes import ASSERT_SAME, RETRACT_SAME, assert_entity as _assert_entity
+from tests.support.writes import RETRACT_SAME
 
 
 NODE = """
@@ -31,21 +31,12 @@ NODES = """
         nodes(graph: $graph) { id members }
     }
 """
-async def _execute(api_schema, ctx, document: str, variables: dict) -> dict:
-    result = await api_schema.execute(document, variable_values=variables, context_value=ctx)
-    assert result.errors is None, f"GraphQL errors: {result.errors}"
-    return result.data
-async def _merge(api_schema, ctx, refs: list[str]) -> str:
-    data = await _execute(api_schema, ctx, ASSERT_SAME, {"input": {"instances": refs}})
-    return data["assertSameInstance"]["links"][0]["id"]
-def _roi(obj: str, length: float) -> list[dict]:
-    return [{"identifier": "ROI", "object": obj, "metrics": [{"key": "vector_length", "value": length, "valueKind": "FLOAT"}]}]
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_two_observations_claimed_the_same_draw_one_vertex(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
     """One vertex, addressed by either member, identified by the lowest uuid."""
-    a = (await _assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"]
-    b = (await _assert_entity(api_schema, simple_api_context, "AIS", same_as=[a]))["instance"]["id"]
+    a = (await writes.assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"]
+    b = (await writes.assert_entity(api_schema, simple_api_context, "AIS", same_as=[a]))["instance"]["id"]
     representative = min(a, b)
 
     @sync_to_async
@@ -57,12 +48,12 @@ async def test_two_observations_claimed_the_same_draw_one_vertex(api_schema, sim
     assert rep_a == rep_b == representative, "the vertex is named by the lowest member uuid, whichever was asked for"
     assert members == sorted([a, b])
 
-    via_a = (await _execute(api_schema, simple_api_context, NODE, {"id": a, "graph": str(test_graph.pk)}))["node"]
-    via_b = (await _execute(api_schema, simple_api_context, NODE, {"id": b, "graph": str(test_graph.pk)}))["node"]
+    via_a = (await writes.execute(api_schema, simple_api_context, NODE, {"id": a, "graph": str(test_graph.pk)}))["node"]
+    via_b = (await writes.execute(api_schema, simple_api_context, NODE, {"id": b, "graph": str(test_graph.pk)}))["node"]
     assert via_a["id"] == via_b["id"] == representative, "`node(id:)` through any member answers the individual"
     assert sorted(via_a["members"]) == sorted([a, b])
 
-    listed = (await _execute(api_schema, simple_api_context, NODES, {"graph": str(test_graph.pk)}))["nodes"]
+    listed = (await writes.execute(api_schema, simple_api_context, NODES, {"graph": str(test_graph.pk)}))["nodes"]
     assert [row["id"] for row in listed] == [representative], "`nodes(graph:)` lists one row per individual"
     assert sorted(listed[0]["members"]) == sorted([a, b])
 @pytest.mark.django_db(transaction=True)
@@ -74,7 +65,7 @@ async def test_edges_to_any_member_land_on_the_one_vertex(api_schema, simple_api
     c = await writes.create_entity(api_schema, simple_api_context, "Cell")
     await writes.create_relation(api_schema, simple_api_context, "IS_CONNECTED_TO", c, a)
     await writes.create_relation(api_schema, simple_api_context, "IS_CONNECTED_TO", c, b)
-    await _merge(api_schema, simple_api_context, [a, b])
+    await writes.merge(api_schema, simple_api_context, [a, b])
 
     @sync_to_async
     def drawn():
@@ -96,7 +87,7 @@ async def test_a_relation_between_two_members_is_a_self_edge(api_schema, simple_
     a = await writes.create_entity(api_schema, simple_api_context, "Cell")
     b = await writes.create_entity(api_schema, simple_api_context, "Cell")
     await writes.create_relation(api_schema, simple_api_context, "IS_CONNECTED_TO", a, b)
-    await _merge(api_schema, simple_api_context, [a, b])
+    await writes.merge(api_schema, simple_api_context, [a, b])
 
     @sync_to_async
     def drawn():
@@ -108,8 +99,8 @@ async def test_a_relation_between_two_members_is_a_self_edge(api_schema, simple_
 @pytest.mark.asyncio
 async def test_measurements_of_either_member_fold_into_the_individuals_properties(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
     """`avg_length` folds every ROI that informs any member (the cached `State` path)."""
-    a = await writes.create_entity(api_schema, simple_api_context, "AIS", evidence=_roi("roi-a", 10.0))
-    b = await writes.create_entity(api_schema, simple_api_context, "AIS", evidence=_roi("roi-b", 30.0))
+    a = await writes.create_entity(api_schema, simple_api_context, "AIS", evidence=writes.roi("roi-a", 10.0))
+    b = await writes.create_entity(api_schema, simple_api_context, "AIS", evidence=writes.roi("roi-b", 30.0))
 
     @sync_to_async
     def before():
@@ -117,7 +108,7 @@ async def test_measurements_of_either_member_fold_into_the_individuals_propertie
 
     assert await before() == (pytest.approx(10.0), pytest.approx(30.0))
 
-    await _merge(api_schema, simple_api_context, [a, b])
+    await writes.merge(api_schema, simple_api_context, [a, b])
 
     @sync_to_async
     def after():
@@ -127,7 +118,7 @@ async def test_measurements_of_either_member_fold_into_the_individuals_propertie
     assert count == 1
     assert via_a == via_b == pytest.approx(20.0), "the mean over both observations' ROIs"
 
-    node = (await _execute(api_schema, simple_api_context, NODE, {"id": b, "graph": str(test_graph.pk)}))["node"]
+    node = (await writes.execute(api_schema, simple_api_context, NODE, {"id": b, "graph": str(test_graph.pk)}))["node"]
     assert node["properties"]["avg_length"] == pytest.approx(20.0)
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
@@ -155,12 +146,12 @@ async def test_a_rule_bound_property_folds_over_every_member(api_schema, simple_
 @pytest.mark.asyncio
 async def test_retracting_the_sameness_splits_the_vertex(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
     """Each observation is its own individual again: own vertex, own fold, own edges."""
-    a = await writes.create_entity(api_schema, simple_api_context, "AIS", evidence=_roi("roi-a", 10.0))
-    b = await writes.create_entity(api_schema, simple_api_context, "AIS", evidence=_roi("roi-b", 30.0))
+    a = await writes.create_entity(api_schema, simple_api_context, "AIS", evidence=writes.roi("roi-a", 10.0))
+    b = await writes.create_entity(api_schema, simple_api_context, "AIS", evidence=writes.roi("roi-b", 30.0))
     c = await writes.create_entity(api_schema, simple_api_context, "Cell")
     await writes.create_relation(api_schema, simple_api_context, "PART_OF", a, c)
     await writes.create_relation(api_schema, simple_api_context, "PART_OF", b, c)
-    sameness = await _merge(api_schema, simple_api_context, [a, b])
+    sameness = await writes.merge(api_schema, simple_api_context, [a, b])
 
     @sync_to_async
     def merged():
@@ -168,7 +159,7 @@ async def test_retracting_the_sameness_splits_the_vertex(api_schema, simple_api_
 
     assert await merged() == (1, 1)
 
-    await _execute(api_schema, simple_api_context, RETRACT_SAME, {"input": {"id": sameness}})
+    await writes.execute(api_schema, simple_api_context, RETRACT_SAME, {"input": {"id": sameness}})
 
     @sync_to_async
     def split():
@@ -190,7 +181,7 @@ async def test_retracting_the_sameness_splits_the_vertex(api_schema, simple_api_
     assert a_to_c == 1 and b_to_c == 1
     assert [p["__assertion_count"] for p in properties] == [1]
 
-    listed = (await _execute(api_schema, simple_api_context, NODES, {"graph": str(test_graph.pk)}))["nodes"]
+    listed = (await writes.execute(api_schema, simple_api_context, NODES, {"graph": str(test_graph.pk)}))["nodes"]
     assert {row["id"] for row in listed} == {a, b, c}
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
@@ -198,7 +189,7 @@ async def test_a_retracted_member_leaves_the_individual(api_schema, simple_api_c
     """A member the view no longer admits is not a member; the vertex is renamed if it was the representative."""
     a = await writes.create_entity(api_schema, simple_api_context, "AIS")
     b = await writes.create_entity(api_schema, simple_api_context, "AIS")
-    await _merge(api_schema, simple_api_context, [a, b])
+    await writes.merge(api_schema, simple_api_context, [a, b])
     lowest, highest = sorted([a, b])
 
     retracted = await api_schema.execute("mutation($id: ID!) { retractEntity(input: {id: $id}) { assertion { id } } }", variable_values={"id": lowest}, context_value=simple_api_context)

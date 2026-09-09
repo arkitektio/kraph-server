@@ -16,54 +16,17 @@ import pytest
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 from core import models as core_models
-from evidence import models as evidence_models
-from evidence import selector as selector_module
 from graph_engine import projector as projector_module
-from tests.support import claims, drawing, graphs, rules
+from tests.support import claims, drawing, graphs, reads, rules, writes
 
 
 JOHANNES = "johannes"
 CHRISTIAN = "christian"
-CREATE_ENTITY_WITH_DRAWINGS = """
-    mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) {
-            instance { id }
-            drawings { category { id } node { id drawnLabels } }
-        }
-    }
-"""
-ENTITY = """
-    query Entity($id: ID!, $graph: ID!) {
-        entity(id: $id, graph: $graph) {
-            id
-            label
-            drawnLabels
-            categoryIds
-            categories { id key }
-            richProperties { key value }
-        }
-    }
-"""
 ENTITIES = """
     query Entities($category: ID!) {
         entities(entityCategoryId: $category) { id }
     }
 """
-async def _an_ais(api_schema: kante.Schema, ctx: HttpContext) -> str:
-    created = await api_schema.execute(CREATE_ENTITY_WITH_DRAWINGS, variable_values={"input": {"term": "AIS", "supportingEvidence": []}}, context_value=ctx)
-    assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertEntityExists"]["instance"]["id"]
-def _the_node(graph: core_models.Graph):
-    return evidence_models.Instance.objects.for_organization(graph.organization).filter(term__in=selector_module.term_ids_for(graph)).get()
-def _define(graph: core_models.Graph, key: str, definition: dict, properties: list[dict] | None = None) -> core_models.EntityCategory:
-    """A defined entity category over the word AIS, created or redefined."""
-    category, _ = core_models.EntityCategory.objects.get_or_create(graph=graph, key=key, defaults={"age_name": key.lower(), "label": key})
-    category.age_name = key.lower()  # the fixture's AIS is labelled "AIS"; one spelling for every assertion below
-    category.definition = definition
-    if properties is not None:
-        category.property_definitions = properties
-    category.save()
-    return category
 def _rollup(key: str, aggregation: str) -> dict:
     return {"key": key, "value_kind": "FLOAT", "derivation": "ROLLUP", "rule": {"source_node": "ROI", "key": "vector_length", "aggregation": aggregation}}
 @pytest.mark.django_db(transaction=True)
@@ -76,13 +39,13 @@ async def test_a_node_two_categories_admit_is_drawn_once_under_both(
 ) -> None:
     """One vertex, two labels — not a refusal, and not two vertices."""
 
-    await _an_ais(api_schema, simple_api_context)
+    await writes.create_entity(api_schema, simple_api_context, "AIS")
 
     @sync_to_async
     def both_admit_it() -> tuple[str, dict]:
-        node = _the_node(test_graph)
-        ais = _define(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"), rules.by(JOHANNES))))
-        _define(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"), rules.by(CHRISTIAN))))
+        node = claims.only_instance(test_graph)
+        ais = graphs.define_entity(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"), rules.by(JOHANNES))))
+        graphs.define_entity(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"), rules.by(CHRISTIAN))))
         claims.retract_classifications(test_graph, node.ref)
         claims.classify(test_graph, node.ref, ais, JOHANNES)
         claims.classify(test_graph, node.ref, ais, CHRISTIAN)
@@ -113,12 +76,12 @@ async def test_it_is_listed_under_each_category_and_in_each_namespace_view(
 
     from django.db import connection
 
-    ref = await _an_ais(api_schema, simple_api_context)
+    ref = await writes.create_entity(api_schema, simple_api_context, "AIS")
 
     @sync_to_async
     def both_admit_it() -> tuple[int, int]:
-        ais = _define(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"))))
-        excitatory = _define(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"))))
+        ais = graphs.define_entity(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"))))
+        excitatory = graphs.define_entity(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"))))
         graphs.rebuild(test_graph, table_projector)
         return ais.pk, excitatory.pk
 
@@ -149,12 +112,12 @@ async def test_properties_are_the_union_over_the_categories(
 ) -> None:
     """AIS derives `avg_length`; Excitatory derives `max_length`; the vertex has both."""
 
-    ref = await _an_ais(api_schema, simple_api_context)
+    ref = await writes.create_entity(api_schema, simple_api_context, "AIS")
 
     @sync_to_async
     def measure_and_rebuild() -> dict:
-        _define(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"))))
-        _define(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"))), properties=[_rollup("max_length", "MAX")])
+        graphs.define_entity(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"))))
+        graphs.define_entity(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"))), properties=[_rollup("max_length", "MAX")])
         for obj, value in (("roi-1", 2.0), ("roi-2", 4.0)):
             claims.measure(test_graph.organization, ref, obj=obj, key="vector_length", value=value, subject=JOHANNES)
         graphs.rebuild(test_graph, table_projector)
@@ -164,7 +127,7 @@ async def test_properties_are_the_union_over_the_categories(
     assert properties["avg_length"] == 3.0, "AIS's rule"
     assert properties["max_length"] == 4.0, "Excitatory's rule, on the same vertex"
 
-    read = await api_schema.execute(ENTITY, variable_values={"id": ref, "graph": str(test_graph.pk)}, context_value=simple_api_context)
+    read = await api_schema.execute(reads.ENTITY, variable_values={"id": ref, "graph": str(test_graph.pk)}, context_value=simple_api_context)
     assert read.errors is None, f"GraphQL errors: {read.errors}"
     rich = {row["key"]: row["value"] for row in read.data["entity"]["richProperties"]}
     assert rich["avg_length"] == 3.0 and rich["max_length"] == 4.0, "richProperties declares the keys of every category"
@@ -180,14 +143,14 @@ async def test_a_key_two_categories_define_differently_is_refused_naming_both(
     Excitatory says the MAX: whichever was written would misreport the other,
     so the node is refused with a reason that names both."""
 
-    await _an_ais(api_schema, simple_api_context)
+    await writes.create_entity(api_schema, simple_api_context, "AIS")
 
     @sync_to_async
     def conflict() -> tuple[dict, dict[str, str]]:
-        _define(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"))))
-        _define(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"))), properties=[_rollup("avg_length", "MAX")])
+        graphs.define_entity(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"))))
+        graphs.define_entity(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"))), properties=[_rollup("avg_length", "MAX")])
         result = graphs.rebuild(test_graph, table_projector)
-        _, skipped = projector_module.resolve_categories(test_graph, [_the_node(test_graph)])
+        _, skipped = projector_module.resolve_categories(test_graph, [claims.only_instance(test_graph)])
         return result, skipped
 
     result, skipped = await conflict()
@@ -198,8 +161,8 @@ async def test_a_key_two_categories_define_differently_is_refused_naming_both(
     @sync_to_async
     def agree() -> dict:
         # The same rule on both is not a conflict: there is one answer.
-        _define(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"))), properties=[_rollup("avg_length", "MEAN")])
-        _define(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"))), properties=[_rollup("avg_length", "MEAN")])
+        graphs.define_entity(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"))), properties=[_rollup("avg_length", "MEAN")])
+        graphs.define_entity(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"))), properties=[_rollup("avg_length", "MEAN")])
         return graphs.rebuild(test_graph, table_projector)
 
     assert (await agree())["nodes"] == 1

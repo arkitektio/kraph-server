@@ -21,23 +21,13 @@ from kante.context import HttpContext
 from core import models as core_models
 from asgiref.sync import sync_to_async
 from django.utils import timezone as django_timezone
-from tests.support import drawing, rules, writes
+from tests.support import drawing, reads, rules, writes
 from tests.support.graphs import graph_declaring as _graph_declaring
 
 
-CREATE_ENTITY = """
-    mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { instance { id } }
-    }
-"""
 UPDATE_CATEGORY = """
     mutation UpdateEntityCategory($input: UpdateEntityCategoryInput!) {
         updateEntityCategory(input: $input) { id }
-    }
-"""
-ENTITY = """
-    query Entity($id: ID!, $graph: ID!) {
-        node(id: $id, graph: $graph) { ... on Entity { id properties } }
     }
 """
 AVG_LENGTH = {"key": "avg_length", "valueKind": "FLOAT", "derivation": "ROLLUP", "rule": {"sourceNode": "ROI", "key": "vector_length", "aggregation": "MEAN"}}
@@ -46,7 +36,7 @@ NAME = {"key": "name", "valueKind": "STRING", "derivation": "ROLLUP", "rule": {"
 
 
 async def _node(api_schema: kante.Schema, ctx: HttpContext, entity_id: str, graph) -> dict:
-    result = await api_schema.execute(ENTITY, variable_values={"id": entity_id, "graph": str(graph.id)}, context_value=ctx)
+    result = await api_schema.execute(reads.NODE_PROPERTIES, variable_values={"id": entity_id, "graph": str(graph.id)}, context_value=ctx)
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     return result.data["node"]
 
@@ -54,7 +44,7 @@ async def _node(api_schema: kante.Schema, ctx: HttpContext, entity_id: str, grap
 async def _measured_ais(api_schema: kante.Schema, ctx: HttpContext, value: float = 40.0) -> str:
     """An `AIS` with one ROI measurement behind it, drawn into the projection."""
     created = await api_schema.execute(
-        CREATE_ENTITY,
+        writes.ASSERT_ENTITY_EXISTS,
         variable_values={
             "input": {
                 "term": "AIS",
@@ -197,7 +187,7 @@ async def test_a_node_that_derived_nothing_is_not_reported_stale(
     from django.core.management import call_command
 
     created = await api_schema.execute(
-        CREATE_ENTITY,
+        writes.ASSERT_ENTITY_EXISTS,
         variable_values={"input": {"term": "Cell"}},
         context_value=simple_api_context,
     )
@@ -239,13 +229,6 @@ async def test_relabelling_a_category_redraws_nothing(
     assert await sync_to_async(_rematerialize.rematerialize_if_moved)(reloaded, fingerprint) == 0, "An edit that touches no rule must redraw nothing"
 
 
-UPDATE_ENTITY_CATEGORY = """
-    mutation U($input: UpdateEntityCategoryInput!) {
-        updateEntityCategory(input: $input) { id definition { rules { when { field operator value } } } }
-    }
-"""
-
-
 RETRACT_ENTITY = """
     mutation R($input: RetractEntityInput!) {
         retractEntity(input: $input) { instance { id } }
@@ -282,7 +265,7 @@ async def test_updating_the_definition_reprojects_before_returning(api_schema: k
     # was made by the same request identity, so scope the clause to the creator
     # with an as_of *before* the retraction instead: same effect, no guessing.
     updated = await api_schema.execute(
-        UPDATE_ENTITY_CATEGORY,
+        writes.UPDATE_ENTITY_CATEGORY,
         variable_values={"input": {"id": category_pk, "definition": rules.definition(rules.rule(rules.word("UpCell"), rules.by("somebody-who-said-nothing", creator), rules.before(retract_cutoff)))}},
         context_value=simple_api_context,
     )

@@ -19,31 +19,13 @@ from kante.context import HttpContext
 from core import models as core_models
 from evidence import claims as claims_module
 from evidence import models as evidence_models
-from tests.support import drawing, graphs
-from tests.support import claims
+from tests.support import claims, drawing, graphs, reads, rules, writes
 from tests.support.graphs import AFTER, BEFORE, example_graph as _example_graph, rebuild as _rebuild
 from tests.support.writes import CREATE_GRAPH
-from tests.support import rules
 from evidence import writer
-from tests.support import writes
 from tests.support.graphs import graph_declaring as _graph_declaring
 
 
-CREATE_ENTITY = """
-    mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { instance { id } }
-    }
-"""
-CREATE_RELATION = """
-    mutation CreateRelation($input: AssertRelationExistsInput!) {
-        assertRelationExists(input: $input) { link { id term { key } } }
-    }
-"""
-ARCHIVE_RELATION = """
-    mutation ArchiveRelation($input: RetractRelationInput!) {
-        retractRelation(input: $input) { link { id } }
-    }
-"""
 UPDATE_RELATION = """
     mutation UpdateRelation($input: SupersedeRelationInput!) {
         supersedeRelation(input: $input) { link { id } }
@@ -63,35 +45,6 @@ async def _connected_to_category(test_graph: core_models.Graph) -> core_models.R
     return category
 
 
-async def _make_cell(api_schema: kante.Schema, ctx: HttpContext, category: core_models.EntityCategory) -> str:
-    created = await api_schema.execute(
-        CREATE_ENTITY,
-        variable_values={
-            "input": {
-                "term": category.key,
-                "supportingEvidence": [{"identifier": "ROI", "object": f"roi_{uuid.uuid4().hex[:8]}", "metrics": []}],
-            }
-        },
-        context_value=ctx,
-    )
-    assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertEntityExists"]["instance"]["id"]
-
-
-async def _connect(api_schema: kante.Schema, ctx: HttpContext, category: core_models.RelationCategory, source: str, target: str) -> str:
-    created = await api_schema.execute(
-        CREATE_RELATION,
-        variable_values={"input": {"term": category.key, "sourceId": source, "targetId": target}},
-        context_value=ctx,
-    )
-    assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertRelationExists"]["link"]["id"]
-
-
-def _count_edges(table_projector, graph: core_models.Graph, age_name: str) -> int:
-    return drawing.edge_count(graph, age_name)
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_two_assertions_make_two_rows_and_one_edge(
@@ -108,11 +61,11 @@ async def test_two_assertions_make_two_rows_and_one_edge(
     entity_category = await _cell_category(test_graph)
     relation_category = await _connected_to_category(test_graph)
 
-    source = await _make_cell(api_schema, simple_api_context, entity_category)
-    target = await _make_cell(api_schema, simple_api_context, entity_category)
+    source = await writes.create_entity(api_schema, simple_api_context, entity_category.key, evidence=writes.roi(f"roi_{uuid.uuid4().hex[:8]}", None))
+    target = await writes.create_entity(api_schema, simple_api_context, entity_category.key, evidence=writes.roi(f"roi_{uuid.uuid4().hex[:8]}", None))
 
-    first = await _connect(api_schema, simple_api_context, relation_category, source, target)
-    second = await _connect(api_schema, simple_api_context, relation_category, source, target)
+    first = await writes.create_relation(api_schema, simple_api_context, relation_category.key, source, target)
+    second = await writes.create_relation(api_schema, simple_api_context, relation_category.key, source, target)
 
     assert first != second, "Two assertions of the same relation are two distinct claims"
 
@@ -120,7 +73,7 @@ async def test_two_assertions_make_two_rows_and_one_edge(
     def rows_and_edges() -> tuple[int, int, int]:
         links = evidence_models.Link.objects.for_organization(test_graph.organization).filter(kind=evidence_models.Link.Kind.RELATION)
         counts = drawing.edge_property_values(test_graph, relation_category.age_name, "__assertion_count")
-        return links.count(), _count_edges(table_projector, test_graph, relation_category.age_name), int(counts[0])
+        return links.count(), drawing.edge_count(test_graph, relation_category.age_name), int(counts[0])
 
     link_count, edge_count, assertion_count = await rows_and_edges()
 
@@ -146,20 +99,20 @@ async def test_archiving_one_of_two_assertions_keeps_the_edge(
     entity_category = await _cell_category(test_graph)
     relation_category = await _connected_to_category(test_graph)
 
-    source = await _make_cell(api_schema, simple_api_context, entity_category)
-    target = await _make_cell(api_schema, simple_api_context, entity_category)
+    source = await writes.create_entity(api_schema, simple_api_context, entity_category.key, evidence=writes.roi(f"roi_{uuid.uuid4().hex[:8]}", None))
+    target = await writes.create_entity(api_schema, simple_api_context, entity_category.key, evidence=writes.roi(f"roi_{uuid.uuid4().hex[:8]}", None))
 
-    first = await _connect(api_schema, simple_api_context, relation_category, source, target)
-    await _connect(api_schema, simple_api_context, relation_category, source, target)
+    first = await writes.create_relation(api_schema, simple_api_context, relation_category.key, source, target)
+    await writes.create_relation(api_schema, simple_api_context, relation_category.key, source, target)
 
-    archived = await api_schema.execute(ARCHIVE_RELATION, variable_values={"input": {"id": first}}, context_value=simple_api_context)
+    archived = await api_schema.execute(writes.RETRACT_RELATION, variable_values={"input": {"id": first}}, context_value=simple_api_context)
     assert archived.errors is None, f"GraphQL errors: {archived.errors}"
 
     @sync_to_async
     def state() -> tuple[int, int, int]:
         counts = drawing.edge_property_values(test_graph, relation_category.age_name, "__assertion_count")
         events = evidence_models.Standing.objects.for_organization(test_graph.organization).filter(target_type="link", target_id=first)
-        return _count_edges(table_projector, test_graph, relation_category.age_name), int(counts[0]), events.count()
+        return drawing.edge_count(test_graph, relation_category.age_name), int(counts[0]), events.count()
 
     edge_count, assertion_count, lifecycle_rows = await state()
 
@@ -192,31 +145,31 @@ async def test_a_retraction_folds_survivors_under_the_rule_not_the_drawing(
     entity_category = await _cell_category(test_graph)
     relation_category = await _connected_to_category(test_graph)
 
-    a = await _make_cell(api_schema, simple_api_context, entity_category)
-    b = await _make_cell(api_schema, simple_api_context, entity_category)
-    c = await _make_cell(api_schema, simple_api_context, entity_category)
+    a = await writes.create_entity(api_schema, simple_api_context, entity_category.key, evidence=writes.roi(f"roi_{uuid.uuid4().hex[:8]}", None))
+    b = await writes.create_entity(api_schema, simple_api_context, entity_category.key, evidence=writes.roi(f"roi_{uuid.uuid4().hex[:8]}", None))
+    c = await writes.create_entity(api_schema, simple_api_context, entity_category.key, evidence=writes.roi(f"roi_{uuid.uuid4().hex[:8]}", None))
 
     # The sameness claim lands in the log only; the drawing still shows two cells.
     await sync_to_async(claims_module_helpers.same)(test_graph.organization, a, b, "annotator")
     assert await sync_to_async(drawing.members_of)(test_graph, a) == [a], "nothing has redrawn the individual yet"
 
-    first = await _connect(api_schema, simple_api_context, relation_category, a, c)
-    await _connect(api_schema, simple_api_context, relation_category, b, c)
+    first = await writes.create_relation(api_schema, simple_api_context, relation_category.key, a, c)
+    await writes.create_relation(api_schema, simple_api_context, relation_category.key, b, c)
 
     @sync_to_async
     def converged() -> tuple[list[str], int]:
-        return drawing.members_of(test_graph, a), _count_edges(table_projector, test_graph, relation_category.age_name)
+        return drawing.members_of(test_graph, a), drawing.edge_count(test_graph, relation_category.age_name)
 
     members, edges = await converged()
     assert members == sorted([a, b]), "the correction path converged the individual the rule describes"
     assert edges == 1, "one individual, one edge to c"
 
-    archived = await api_schema.execute(ARCHIVE_RELATION, variable_values={"input": {"id": first}}, context_value=simple_api_context)
+    archived = await api_schema.execute(writes.RETRACT_RELATION, variable_values={"input": {"id": first}}, context_value=simple_api_context)
     assert archived.errors is None, f"GraphQL errors: {archived.errors}"
 
     @sync_to_async
     def after() -> tuple[int, list]:
-        return _count_edges(table_projector, test_graph, relation_category.age_name), drawing.edge_property_values(test_graph, relation_category.age_name, "__assertion_count")
+        return drawing.edge_count(test_graph, relation_category.age_name), drawing.edge_property_values(test_graph, relation_category.age_name, "__assertion_count")
 
     edges, counts = await after()
     assert edges == 1, "b -> c still holds the edge up"
@@ -225,7 +178,7 @@ async def test_a_retraction_folds_survivors_under_the_rule_not_the_drawing(
     @sync_to_async
     def rebuild() -> int:
         graphs.rebuild(test_graph, table_projector)
-        return _count_edges(table_projector, test_graph, relation_category.age_name)
+        return drawing.edge_count(test_graph, relation_category.age_name)
 
     assert await rebuild() == 1, "and a rebuild says the same"
 
@@ -247,9 +200,9 @@ async def test_updating_a_relation_replaces_the_claim_and_keeps_the_old_one(
     entity_category = await _cell_category(test_graph)
     relation_category = await _connected_to_category(test_graph)
 
-    source = await _make_cell(api_schema, simple_api_context, entity_category)
-    target = await _make_cell(api_schema, simple_api_context, entity_category)
-    original = await _connect(api_schema, simple_api_context, relation_category, source, target)
+    source = await writes.create_entity(api_schema, simple_api_context, entity_category.key, evidence=writes.roi(f"roi_{uuid.uuid4().hex[:8]}", None))
+    target = await writes.create_entity(api_schema, simple_api_context, entity_category.key, evidence=writes.roi(f"roi_{uuid.uuid4().hex[:8]}", None))
+    original = await writes.create_relation(api_schema, simple_api_context, relation_category.key, source, target)
 
     updated = await api_schema.execute(
         UPDATE_RELATION,
@@ -269,7 +222,7 @@ async def test_updating_a_relation_replaces_the_claim_and_keeps_the_old_one(
             # log so the log could be immutable.
             claims_module.current(organization, "link", original),
             claims_module.current(organization, "link", replacement),
-            _count_edges(table_projector, test_graph, relation_category.age_name),
+            drawing.edge_count(test_graph, relation_category.age_name),
         )
 
     original_status, replacement_status, edge_count = await state()
@@ -295,9 +248,9 @@ async def test_relation_endpoints_key_on_uuids_not_vertex_ids(
     entity_category = await _cell_category(test_graph)
     relation_category = await _connected_to_category(test_graph)
 
-    source = await _make_cell(api_schema, simple_api_context, entity_category)
-    target = await _make_cell(api_schema, simple_api_context, entity_category)
-    await _connect(api_schema, simple_api_context, relation_category, source, target)
+    source = await writes.create_entity(api_schema, simple_api_context, entity_category.key, evidence=writes.roi(f"roi_{uuid.uuid4().hex[:8]}", None))
+    target = await writes.create_entity(api_schema, simple_api_context, entity_category.key, evidence=writes.roi(f"roi_{uuid.uuid4().hex[:8]}", None))
+    await writes.create_relation(api_schema, simple_api_context, relation_category.key, source, target)
 
     @sync_to_async
     def refs() -> list[tuple[str, str]]:
@@ -336,15 +289,15 @@ async def test_a_relation_reaches_every_view_declaring_its_word(
     cells = await _cell_category(test_graph)
     connected = await _connected_to_category(test_graph)
 
-    source = await _make_cell(api_schema, simple_api_context, cells)
-    target = await _make_cell(api_schema, simple_api_context, cells)
-    relation_id = await _connect(api_schema, simple_api_context, connected, source, target)
+    source = await writes.create_entity(api_schema, simple_api_context, cells.key, evidence=writes.roi(f"roi_{uuid.uuid4().hex[:8]}", None))
+    target = await writes.create_entity(api_schema, simple_api_context, cells.key, evidence=writes.roi(f"roi_{uuid.uuid4().hex[:8]}", None))
+    relation_id = await writes.create_relation(api_schema, simple_api_context, connected.key, source, target)
 
     @sync_to_async
     def edges() -> tuple[int, int]:
         return (
-            _count_edges(table_projector, test_graph, connected.age_name),
-            _count_edges(table_projector, second_graph, connected.age_name),
+            drawing.edge_count(test_graph, connected.age_name),
+            drawing.edge_count(second_graph, connected.age_name),
         )
 
     here, there = await edges()
@@ -352,7 +305,7 @@ async def test_a_relation_reaches_every_view_declaring_its_word(
     assert there == 1, "And in the other, which declares the same word — from the one claim"
 
     archived = await api_schema.execute(
-        ARCHIVE_RELATION,
+        writes.RETRACT_RELATION,
         variable_values={"input": {"id": relation_id}},
         context_value=simple_api_context,
     )
@@ -361,57 +314,6 @@ async def test_a_relation_reaches_every_view_declaring_its_word(
     here, there = await edges()
     assert here == 0, "Retracting removes the drawing here"
     assert there == 0, "And there — a retraction honoured in one view only is a projection lying"
-
-
-CREATE_NATURAL_EVENT = """
-    mutation CreateNaturalEvent($input: AssertNaturalEventExistsInput!) {
-        assertNaturalEventExists(input: $input) { instance { id } }
-    }
-"""
-
-
-async def _cell(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph) -> str:
-    category = await core_models.EntityCategory.objects.filter(graph=graph, key="Cell").afirst()
-    assert category is not None
-    created = await api_schema.execute(
-        CREATE_ENTITY,
-        variable_values={"input": {"term": category.key, "supportingEvidence": []}},
-        context_value=ctx,
-    )
-    assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertEntityExists"]["instance"]["id"]
-
-
-async def _mitosis(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph, source: str, target: str) -> str:
-    category = await core_models.NaturalEventCategory.objects.filter(graph=graph, key="Mitosis").afirst()
-    assert category is not None, "The bio schema declares a Mitosis event with Cell in and out"
-    created = await api_schema.execute(
-        CREATE_NATURAL_EVENT,
-        variable_values={
-            "input": {
-                "term": category.key,
-                "inputs": [{"role": "a", "entityId": source}],
-                "outputs": [{"role": "b", "entityId": target}],
-                "supportingEvidence": [],
-            }
-        },
-        context_value=ctx,
-    )
-    assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertNaturalEventExists"]["instance"]["id"]
-
-
-def _participations(table_projector, graph: core_models.Graph) -> list[tuple[str, str]]:
-    """Every projected participation edge, as (label, role).
-
-    Two queries rather than one `UNION ALL`: AGE rejects the union with "column
-    name 'label' specified more than once", and the point here is the edges, not
-    the query.
-    """
-    found: list[tuple[str, str]] = []
-    for label in ("WENT_THROUGH", "CAME_OUT_OF"):
-        found.extend((label, str(role)) for role in drawing.edge_property_values(graph, label, "role"))
-    return sorted(found)
 
 
 @pytest.mark.django_db(transaction=True)
@@ -423,13 +325,13 @@ async def test_participation_is_projected_with_its_role(
     table_projector,
 ) -> None:
     """Both entities reach the event, on the right side, carrying their role."""
-    source = await _cell(api_schema, simple_api_context, test_graph)
-    target = await _cell(api_schema, simple_api_context, test_graph)
-    await _mitosis(api_schema, simple_api_context, test_graph, source, target)
+    source = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    target = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    await writes.create_event(api_schema, simple_api_context, "Mitosis", inputs=[{"role": "a", "entityId": source}], outputs=[{"role": "b", "entityId": target}])
 
     @sync_to_async
     def edges() -> list[tuple[str, str]]:
-        return _participations(table_projector, test_graph)
+        return drawing.participations(test_graph)
 
     assert await edges() == [("CAME_OUT_OF", "b"), ("WENT_THROUGH", "a")], "An input and an output edge, each naming the role the schema gave it"
 
@@ -442,9 +344,9 @@ async def test_participation_is_evidence(
     test_graph: core_models.Graph,
 ) -> None:
     """The claim is a row, keyed on durable refs, before it is ever an edge."""
-    source = await _cell(api_schema, simple_api_context, test_graph)
-    target = await _cell(api_schema, simple_api_context, test_graph)
-    await _mitosis(api_schema, simple_api_context, test_graph, source, target)
+    source = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    target = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    await writes.create_event(api_schema, simple_api_context, "Mitosis", inputs=[{"role": "a", "entityId": source}], outputs=[{"role": "b", "entityId": target}])
 
     @sync_to_async
     def links() -> list[tuple[str, str, str]]:
@@ -465,17 +367,6 @@ ASSERT_PARTICIPATION = """
         assertParticipation(input: $input) { link { id } }
     }
 """
-ARCHIVE_PARTICIPATION = """
-    mutation ArchiveParticipation($input: RetractParticipationInput!) {
-        retractParticipation(input: $input) { link { id } }
-    }
-"""
-
-
-def _assertion_count(table_projector, graph: core_models.Graph, label: str) -> list[int]:
-    return sorted(int(count) for count in drawing.edge_property_values(graph, label, "__assertion_count"))
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_two_observers_can_claim_the_same_participation(
@@ -491,12 +382,12 @@ async def test_two_observers_can_claim_the_same_participation(
     `updateNaturalEvent`, which archived the event and made a new one, so a
     second opinion produced a second event.
     """
-    source = await _cell(api_schema, simple_api_context, test_graph)
-    target = await _cell(api_schema, simple_api_context, test_graph)
-    event = await _mitosis(api_schema, simple_api_context, test_graph, source, target)
+    source = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    target = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    event = await writes.create_event(api_schema, simple_api_context, "Mitosis", inputs=[{"role": "a", "entityId": source}], outputs=[{"role": "b", "entityId": target}])
 
     again = await api_schema.execute(
-        ASSERT_PARTICIPATION,
+        writes.ASSERT_PARTICIPATION,
         variable_values={"input": {"event": event, "entity": source, "role": "a", "isInput": True}},
         context_value=simple_api_context,
     )
@@ -505,7 +396,7 @@ async def test_two_observers_can_claim_the_same_participation(
     @sync_to_async
     def state() -> tuple[int, list[tuple[str, str]], list[int]]:
         claims = evidence_models.Link.objects.for_organization(test_graph.organization).filter(kind=evidence_models.Link.Kind.PARTICIPATES_AS_INPUT)
-        return claims.count(), _participations(table_projector, test_graph), _assertion_count(table_projector, test_graph, "WENT_THROUGH")
+        return claims.count(), drawing.participations(test_graph), drawing.assertion_counts(test_graph, "WENT_THROUGH")
 
     claim_count, edges, counts = await state()
 
@@ -523,19 +414,19 @@ async def test_retracting_one_participation_claim_keeps_the_edge(
     table_projector,
 ) -> None:
     """One observer withdrawing does not undo the other's claim."""
-    source = await _cell(api_schema, simple_api_context, test_graph)
-    target = await _cell(api_schema, simple_api_context, test_graph)
-    event = await _mitosis(api_schema, simple_api_context, test_graph, source, target)
+    source = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    target = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    event = await writes.create_event(api_schema, simple_api_context, "Mitosis", inputs=[{"role": "a", "entityId": source}], outputs=[{"role": "b", "entityId": target}])
 
     second = await api_schema.execute(
-        ASSERT_PARTICIPATION,
+        writes.ASSERT_PARTICIPATION,
         variable_values={"input": {"event": event, "entity": source, "role": "a", "isInput": True}},
         context_value=simple_api_context,
     )
     assert second.errors is None, f"GraphQL errors: {second.errors}"
 
     archived = await api_schema.execute(
-        ARCHIVE_PARTICIPATION,
+        writes.RETRACT_PARTICIPATION,
         variable_values={"input": {"id": second.data["assertParticipation"]["link"]["id"]}},
         context_value=simple_api_context,
     )
@@ -544,7 +435,7 @@ async def test_retracting_one_participation_claim_keeps_the_edge(
     @sync_to_async
     def state() -> tuple[list[tuple[str, str]], list[int], int]:
         events = evidence_models.Standing.objects.for_organization(test_graph.organization).filter(target_type="link")
-        return _participations(table_projector, test_graph), _assertion_count(table_projector, test_graph, "WENT_THROUGH"), events.count()
+        return drawing.participations(test_graph), drawing.assertion_counts(test_graph, "WENT_THROUGH"), events.count()
 
     edges, counts, lifecycle_rows = await state()
 
@@ -562,9 +453,9 @@ async def test_retracting_the_last_participation_claim_removes_the_edge(
     table_projector,
 ) -> None:
     """With no live claim the edge states nothing, and a replay must agree."""
-    source = await _cell(api_schema, simple_api_context, test_graph)
-    target = await _cell(api_schema, simple_api_context, test_graph)
-    await _mitosis(api_schema, simple_api_context, test_graph, source, target)
+    source = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    target = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    await writes.create_event(api_schema, simple_api_context, "Mitosis", inputs=[{"role": "a", "entityId": source}], outputs=[{"role": "b", "entityId": target}])
 
     @sync_to_async
     def the_input_claim() -> str:
@@ -572,33 +463,23 @@ async def test_retracting_the_last_participation_claim_removes_the_edge(
 
     claim_id = await the_input_claim()
 
-    archived = await api_schema.execute(ARCHIVE_PARTICIPATION, variable_values={"input": {"id": claim_id}}, context_value=simple_api_context)
+    archived = await api_schema.execute(writes.RETRACT_PARTICIPATION, variable_values={"input": {"id": claim_id}}, context_value=simple_api_context)
     assert archived.errors is None, f"GraphQL errors: {archived.errors}"
 
     @sync_to_async
     def after() -> list[tuple[str, str]]:
-        return _participations(table_projector, test_graph)
+        return drawing.participations(test_graph)
 
     assert await after() == [("CAME_OUT_OF", "b")], "The retracted input participation is gone; the output one stands"
 
     @sync_to_async
     def rebuild() -> tuple[dict, list[tuple[str, str]]]:
         result = graphs.rebuild(test_graph, table_projector)
-        return result, _participations(table_projector, test_graph)
+        return result, drawing.participations(test_graph)
 
     result, edges = await rebuild()
     assert result["participations"] == 1, "A replay must not resurrect a retracted participation"
     assert edges == [("CAME_OUT_OF", "b")]
-
-
-ASSERT_PARTICIPATION = """
-    mutation AssertParticipation($input: AssertParticipationInput!) {
-        assertParticipation(input: $input) {
-            link { kind id }
-            drawings { graph { id } category { id } edge { __typename id } }
-        }
-    }
-"""
 
 
 @pytest.mark.django_db(transaction=True)
@@ -658,13 +539,6 @@ async def test_participations_fold_under_the_event_categorys_clauses(api_schema,
     assert untrusted == 0, "one claimed through any other app does not"
 
 
-INPUT_PARTICIPATIONS = """
-    query P($graph: ID!) {
-        inputParticipations(graph: $graph) { id }
-    }
-"""
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_participation_lists_fold_under_the_event_categorys_clauses(api_schema: kante.Schema, simple_api_context: HttpContext, table_projector) -> None:
@@ -697,7 +571,7 @@ async def test_participation_lists_fold_under_the_event_categorys_clauses(api_sc
         return str(trusted.pk), str(untrusted.pk)
 
     trusted_id, untrusted_id = await build()
-    listed = await api_schema.execute(INPUT_PARTICIPATIONS, variable_values={"graph": graph_id}, context_value=simple_api_context)
+    listed = await api_schema.execute(reads.INPUT_PARTICIPATIONS, variable_values={"graph": graph_id}, context_value=simple_api_context)
     assert listed.errors is None, f"GraphQL errors: {listed.errors}"
     ids = {row["id"] for row in listed.data["inputParticipations"]}
     assert trusted_id in ids, "the trusted app's participation is listed"

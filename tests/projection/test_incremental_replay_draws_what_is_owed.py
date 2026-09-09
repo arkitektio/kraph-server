@@ -17,15 +17,8 @@ from evidence import models as evidence_models
 from graph_engine import models as projection_models
 from graph_engine import projector, watermark
 from graph_engine.controller import GraphController
-from tests.support import drawing, writes
+from tests.support import drawing, reads, writes
 from tests.support.writes import ASSERT_SAME
-
-
-ENTITY_PROPERTIES = """
-    query Entity($id: ID!, $graph: ID!) {
-        node(id: $id, graph: $graph) { ... on Entity { id properties } }
-    }
-"""
 
 
 def _down(*args, **kwargs):
@@ -36,10 +29,6 @@ def _replay(organization_slug: str) -> str:
     out = StringIO()
     call_command("reproject", incremental=True, organization=organization_slug, stdout=out)
     return out.getvalue()
-
-
-def _vertices_with_id(table_projector, graph, ref: str) -> int:
-    return drawing.vertices_with_ref(graph, ref)
 
 
 @pytest.mark.django_db(transaction=True)
@@ -58,7 +47,7 @@ async def test_replay_draws_a_node_the_write_path_could_not(api_schema, simple_a
     def before():
         organization = test_graph.organization
         node = evidence_models.Instance.objects.for_organization(organization).latest("created_at")
-        return str(node.pk), watermark.pending_count(organization), _vertices_with_id(table_projector, test_graph, str(node.pk)), watermark.position(test_graph)
+        return str(node.pk), watermark.pending_count(organization), drawing.vertices_with_ref(test_graph, str(node.pk)), watermark.position(test_graph)
 
     ref, pending, drawn, position = await before()
     assert pending == 1 and drawn == 0 and position.lag >= 1
@@ -66,7 +55,7 @@ async def test_replay_draws_a_node_the_write_path_could_not(api_schema, simple_a
     @sync_to_async
     def replay():
         output = _replay(test_graph.organization.slug)
-        return output, watermark.pending_count(test_graph.organization), _vertices_with_id(table_projector, test_graph, ref), watermark.position(test_graph)
+        return output, watermark.pending_count(test_graph.organization), drawing.vertices_with_ref(test_graph, ref), watermark.position(test_graph)
 
     output, pending, drawn, position = await replay()
     assert pending == 0, f"the replay settles what it applied: {output}"
@@ -74,7 +63,7 @@ async def test_replay_draws_a_node_the_write_path_could_not(api_schema, simple_a
     assert position.lag == 0
     assert "1 ref" in output or "refs" in output
 
-    properties = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": ref, "graph": str(test_graph.pk)}, context_value=simple_api_context)
+    properties = await api_schema.execute(reads.NODE_PROPERTIES, variable_values={"id": ref, "graph": str(test_graph.pk)}, context_value=simple_api_context)
     assert properties.errors is None, f"GraphQL errors: {properties.errors}"
     assert properties.data["node"]["properties"].get("avg_length") == pytest.approx(30.0), "derived properties come with the node"
 
@@ -91,9 +80,9 @@ async def test_replay_removes_a_node_whose_retraction_was_not_drawn(api_schema, 
 
     @sync_to_async
     def replay():
-        assert _vertices_with_id(table_projector, test_graph, entity_id) == 1, "the failed unproject left the vertex"
+        assert drawing.vertices_with_ref(test_graph, entity_id) == 1, "the failed unproject left the vertex"
         _replay(test_graph.organization.slug)
-        return _vertices_with_id(table_projector, test_graph, entity_id), watermark.pending_count(test_graph.organization)
+        return drawing.vertices_with_ref(test_graph, entity_id), watermark.pending_count(test_graph.organization)
 
     drawn, pending = await replay()
     assert drawn == 0
@@ -187,16 +176,12 @@ def test_incremental_refuses_a_single_graph(test_graph: core_models.Graph, table
         call_command("reproject", incremental=True, graph=str(test_graph.pk), stdout=StringIO())
 
 
-def _roi(obj: str, length: float) -> list[dict]:
-    return [{"identifier": "ROI", "object": obj, "metrics": [{"key": "vector_length", "value": length, "valueKind": "FLOAT"}]}]
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_replay_folds_a_merge_the_write_path_could_not_draw(api_schema, simple_api_context, test_graph: core_models.Graph, table_projector, monkeypatch) -> None:
     """The incremental path widens the touched set to the whole component."""
-    a = await writes.create_entity(api_schema, simple_api_context, "AIS", evidence=_roi("roi-a", 10.0))
-    b = await writes.create_entity(api_schema, simple_api_context, "AIS", evidence=_roi("roi-b", 30.0))
+    a = await writes.create_entity(api_schema, simple_api_context, "AIS", evidence=writes.roi("roi-a", 10.0))
+    b = await writes.create_entity(api_schema, simple_api_context, "AIS", evidence=writes.roi("roi-b", 30.0))
 
     def _down(*args, **kwargs):
         raise RuntimeError("projector down")

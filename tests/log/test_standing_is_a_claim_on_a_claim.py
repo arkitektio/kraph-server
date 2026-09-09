@@ -24,8 +24,7 @@ from core import models as core_models
 from evidence import models as evidence_models
 from evidence import claims as claims_module
 from evidence import writer
-from tests.support import claims
-from tests.support import writes
+from tests.support import claims, reads, writes
 from datetime import datetime, timezone
 
 
@@ -231,30 +230,6 @@ def test_the_standing_cache_is_total(test_graph) -> None:
     assert not claims_module.standing(evidence_models.Instance.objects.for_organization(org).filter(pk=node), "node").exists()
 
 
-ATTEST_ENTITY = """
-    mutation AttestEntity($input: AttestEntityInput!) {
-        attestEntity(input: $input) {
-            instance { id standings { stands at } }
-            drawings { graph { id } }
-        }
-    }
-"""
-RETRACT_ENTITY = """
-    mutation RetractEntity($input: RetractEntityInput!) {
-        retractEntity(input: $input) {
-            assertion { id }
-            instance { id standings { stands } }
-            drawings { graph { id } }
-        }
-    }
-"""
-READ_INSTANCE = """
-    query ReadInstance($id: ID!) {
-        instance(id: $id) { id kind term { key } standings { stands } }
-    }
-"""
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_retraction_shows_up_as_a_standing(
@@ -272,7 +247,7 @@ async def test_a_retraction_shows_up_as_a_standing(
     entity_id = await writes.create_entity(api_schema, simple_api_context, "AIS")
 
     retracted = await api_schema.execute(
-        RETRACT_ENTITY,
+        writes.RETRACT_ENTITY,
         variable_values={"input": {"id": entity_id}},
         context_value=simple_api_context,
     )
@@ -283,7 +258,7 @@ async def test_a_retraction_shows_up_as_a_standing(
     assert [row["stands"] for row in payload["instance"]["standings"]] == [False], "The retraction is on the record, newest first, with its own assertion"
     assert payload["drawings"] == [], "No view draws it any more"
 
-    read = await api_schema.execute(READ_INSTANCE, variable_values={"id": entity_id}, context_value=simple_api_context)
+    read = await api_schema.execute(reads.INSTANCE_STANDINGS, variable_values={"id": entity_id}, context_value=simple_api_context)
     assert read.errors is None, f"GraphQL errors: {read.errors}"
     assert [row["stands"] for row in read.data["instance"]["standings"]] == [False], "and the same answer is readable afterwards, without the write"
     assert read.data["instance"]["term"]["key"] == "AIS", "The claim outlives the drawing it lost"
@@ -292,7 +267,7 @@ async def test_a_retraction_shows_up_as_a_standing(
     # first, by `(at, assertion.seq)` — there is no "reinstate" operation, only more
     # evidence, so the order is the whole answer.
     attested = await api_schema.execute(
-        ATTEST_ENTITY,
+        writes.ATTEST_ENTITY,
         variable_values={"input": {"id": entity_id}},
         context_value=simple_api_context,
     )
@@ -303,42 +278,6 @@ async def test_a_retraction_shows_up_as_a_standing(
     assert attested.data["attestEntity"]["drawings"], "and the view that admits the word draws it again"
 
 
-async def _get_or_create_structure_kind(test_graph: core_models.Graph) -> evidence_models.StructureKind:
-    """The organization's ROI term. No graph — kinds are organization vocabulary."""
-    kind, _ = await evidence_models.StructureKind.all_objects.aget_or_create(
-        organization=test_graph.organization,
-        identifier="roi_test",
-    )
-    return kind
-
-
-async def _create_structure(api_schema: kante.Schema, simple_api_context: HttpContext, test_graph: core_models.Graph) -> str:
-    category = await _get_or_create_structure_kind(test_graph)
-    object_id = f"obj_{uuid.uuid4().hex[:8]}"
-
-    create_mutation = """
-        mutation CreateStructure($input: AssertStructureExistsInput!) {
-            assertStructureExists(input: $input) { structure { id } }
-        }
-    """
-
-    create_result = await api_schema.execute(
-        create_mutation,
-        variable_values={
-            "input": {
-                "identifier": category.identifier,
-                "object": object_id,
-                "metrics": [],
-            }
-        },
-        context_value=simple_api_context,
-    )
-
-    assert create_result.errors is None, f"GraphQL errors: {create_result.errors}"
-    assert create_result.data is not None
-    return create_result.data["assertStructureExists"]["structure"]["id"]
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_archive_metric(
@@ -346,7 +285,7 @@ async def test_archive_metric(
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
 ):
-    structure_id = await _create_structure(api_schema, simple_api_context, test_graph)
+    structure_id = await writes.create_structure(api_schema, simple_api_context, identifier="roi_test")
 
     create_mutation = """
         mutation CreateMetric($input: AssertMetricValueForStructureInput!) {
@@ -395,7 +334,7 @@ async def test_archive_metric_retracts_and_is_idempotent(
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
 ):
-    structure_id = await _create_structure(api_schema, simple_api_context, test_graph)
+    structure_id = await writes.create_structure(api_schema, simple_api_context, identifier="roi_test")
 
     create_mutation = """
         mutation CreateMetric($input: AssertMetricValueForStructureInput!) {
@@ -455,7 +394,7 @@ async def test_archive_structure(
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
 ):
-    category = await _get_or_create_structure_kind(test_graph)
+    category = await claims.ensure_kind(test_graph)
     object_id = f"obj_{uuid.uuid4().hex[:8]}"
 
     create_mutation = """
@@ -588,33 +527,13 @@ async def test_archiving_an_entity_returns_it_from_the_log(
 TREATMENT = datetime(2026, 6, 1, tzinfo=timezone.utc)
 
 
-ASSERT_ENTITY = """
-    mutation N($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { instance { id observedAt } }
-    }
-"""
-
-
-RETRACT_ENTITY_AT = """
-    mutation X($input: RetractEntityInput!) {
-        retractEntity(input: $input) { instance { id standings { stands at } } }
-    }
-"""
-
-
-async def _execute(api_schema: kante.Schema, ctx: HttpContext, document: str, payload: dict) -> dict:
-    result = await api_schema.execute(document, variable_values={"input": payload}, context_value=ctx)
-    assert result.errors is None, f"GraphQL errors: {result.errors}"
-    return result.data
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_retraction_may_say_when_it_took_effect(api_schema, simple_api_context) -> None:
     """`at` on a retract input is `Standing.at` — the cell died in June, whenever
     that was recorded."""
-    ref = (await _execute(api_schema, simple_api_context, ASSERT_ENTITY, {"term": "Cell"}))["assertEntityExists"]["instance"]["id"]
-    data = await _execute(api_schema, simple_api_context, RETRACT_ENTITY_AT, {"id": ref, "at": TREATMENT.isoformat()})
+    ref = (await writes.execute(api_schema, simple_api_context, writes.ASSERT_ENTITY_OBSERVED, {"input": {"term": "Cell"}}))["assertEntityExists"]["instance"]["id"]
+    data = await writes.execute(api_schema, simple_api_context, writes.RETRACT_ENTITY_AT, {"input": {"id": ref, "at": TREATMENT.isoformat()}})
     (standing,) = data["retractEntity"]["instance"]["standings"]
     assert standing["stands"] is False
     assert datetime.fromisoformat(standing["at"]) == TREATMENT

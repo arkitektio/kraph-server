@@ -18,31 +18,12 @@ from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 from core import enums, models as core_models
 from evidence import models as evidence_models
+from tests.support import reads, writes
 
 
-TERMS = """
-    query Terms($filters: TermFilter) {
-        terms(filters: $filters) { id kind key label description purl }
-    }
-"""
-CREATE_TERM = """
-    mutation CreateTerm($input: CreateTermInput!) {
-        createTerm(input: $input) { id kind key label description purl }
-    }
-"""
-UPDATE_TERM = """
-    mutation UpdateTerm($input: UpdateTermInput!) {
-        updateTerm(input: $input) { id kind key label description }
-    }
-"""
 DELETE_TERM = """
     mutation DeleteTerm($input: DeleteTermInput!) {
         deleteTerm(input: $input)
-    }
-"""
-CREATE_ENTITY = """
-    mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { instance { id } }
     }
 """
 CATEGORY_TERM = """
@@ -120,7 +101,7 @@ async def test_deleting_a_word_in_use_is_refused(
     assert category is not None
 
     created = await api_schema.execute(
-        CREATE_ENTITY,
+        writes.ASSERT_ENTITY_EXISTS,
         variable_values={"input": {"term": category.key, "supportingEvidence": []}},
         context_value=simple_api_context,
     )
@@ -151,7 +132,7 @@ async def test_an_unused_word_can_be_retired(
     key = f"Ephemeral_{uuid.uuid4().hex[:6]}"
 
     created = await api_schema.execute(
-        CREATE_TERM,
+        writes.CREATE_TERM,
         variable_values={"input": {"kind": "ENTITY", "key": key}},
         context_value=simple_api_context,
     )
@@ -180,15 +161,15 @@ async def test_terms_can_be_filtered_by_kind_and_by_whether_a_graph_speaks_them(
     `createTerm` is worth having.
     """
     key = f"Undeclared_{uuid.uuid4().hex[:6]}"
-    created = await api_schema.execute(CREATE_TERM, variable_values={"input": {"kind": "ENTITY", "key": key}}, context_value=simple_api_context)
+    created = await api_schema.execute(writes.CREATE_TERM, variable_values={"input": {"kind": "ENTITY", "key": key}}, context_value=simple_api_context)
     assert created.errors is None, f"GraphQL errors: {created.errors}"
 
-    entities = await api_schema.execute(TERMS, variable_values={"filters": {"kinds": ["ENTITY"]}}, context_value=simple_api_context)
+    entities = await api_schema.execute(reads.TERMS, variable_values={"filters": {"kinds": ["ENTITY"]}}, context_value=simple_api_context)
     assert entities.errors is None, f"GraphQL errors: {entities.errors}"
     assert {row["kind"] for row in entities.data["terms"]} == {"ENTITY"}
     assert key in {row["key"] for row in entities.data["terms"]}
 
-    undeclared = await api_schema.execute(TERMS, variable_values={"filters": {"declared": False}}, context_value=simple_api_context)
+    undeclared = await api_schema.execute(reads.TERMS, variable_values={"filters": {"declared": False}}, context_value=simple_api_context)
     assert undeclared.errors is None, f"GraphQL errors: {undeclared.errors}"
     keys = {row["key"] for row in undeclared.data["terms"]}
     assert key in keys, "A word no graph declares is still the organization's"

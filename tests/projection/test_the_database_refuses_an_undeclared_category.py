@@ -100,20 +100,6 @@ def test_a_null_category_still_passes(test_graph, table_projector) -> None:
     table_projector.draw_node(test_graph, ref, [("Cell", None)], "ENTITY", [ref])
 
 
-ENTITY = """
-    query Entity($id: ID!, $graph: ID!) {
-        entity(id: $id, graph: $graph) {
-            id
-            label
-            drawnLabels
-            categoryIds
-            categories { id key }
-            richProperties { key value }
-        }
-    }
-"""
-
-
 @pytest.mark.django_db(transaction=True)
 def test_deleting_one_category_keeps_the_vertex_under_the_other(test_graph, table_projector) -> None:
     """The composite FK cascades the deleted category's *label*; the vertex

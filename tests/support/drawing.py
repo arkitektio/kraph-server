@@ -152,3 +152,16 @@ def vertex_properties(graph: Any, ref: str) -> dict[str, Any]:
     """The drawn record's properties, or `{}` if the view does not draw the ref."""
     record = vertex_record(graph, ref)
     return record["properties"] if record is not None else {}
+
+
+def participations(graph: Any) -> list[tuple[str, str]]:
+    """Every drawn participation edge, as (label, role), sorted."""
+    found: list[tuple[str, str]] = []
+    for label in ("WENT_THROUGH", "CAME_OUT_OF"):
+        found.extend((label, str(role)) for role in edge_property_values(graph, label, "role"))
+    return sorted(found)
+
+
+def assertion_counts(graph: Any, label: str) -> list[int]:
+    """How many claims each drawn edge under this label folds, sorted."""
+    return sorted(int(count) for count in edge_property_values(graph, label, "__assertion_count"))

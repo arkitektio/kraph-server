@@ -20,8 +20,7 @@ from evidence import models as evidence_models
 from evidence import selector as selector_module
 from evidence import writer
 from graph_engine import input_models
-from tests.support import rules
-from core.enums import ValueKind
+from tests.support import claims, rules
 
 
 MARCH_1 = datetime(2026, 3, 1, tzinfo=timezone.utc)
@@ -153,46 +152,6 @@ TODAY = datetime(2026, 8, 11, 9, 0, tzinfo=timezone.utc)
 YESTERDAY = datetime(2026, 8, 10, 9, 0, tzinfo=timezone.utc)
 
 
-def _structure(
-    organization: Organization,
-    category: evidence_models.StructureKind,
-    assertion: evidence_models.Assertion,
-    object_id: str = "roi-1",
-) -> evidence_models.Structure:
-    """A structure to hang measurements off."""
-    return evidence_models.Structure.objects.create_for_organization(
-        organization=organization,
-        kind=category,
-        identifier="@mikro/roi",
-        object=object_id,
-        assertion=assertion,
-    )
-
-
-def _metric(
-    organization: Organization,
-    structure: evidence_models.Structure,
-    category: evidence_models.MetricKind,
-    assertion: evidence_models.Assertion,
-    *,
-    value: float,
-    observed_at: datetime,
-    asserted_at: datetime,
-) -> evidence_models.Metric:
-    """One measurement, with both time axes set explicitly."""
-    return evidence_models.Metric.objects.create_for_organization(
-        organization=organization,
-        structure=structure,
-        kind=category,
-        key="vector_length",
-        value_kind=ValueKind.FLOAT.value,
-        value_num=value,
-        observed_at=observed_at,
-        asserted_at=asserted_at,
-        assertion=assertion,
-    )
-
-
 def test_as_of_selects_by_belief_time_not_observation_time(organization: Organization, roi_category_a: evidence_models.StructureKind, length_category: evidence_models.MetricKind, assertion: evidence_models.Assertion) -> None:
     """The query `as_of` will be built on.
 
@@ -200,9 +159,9 @@ def test_as_of_selects_by_belief_time_not_observation_time(organization: Organiz
     on `asserted_at` recovers what was believed at a chosen moment — which is
     impossible if the two axes share a column.
     """
-    structure = _structure(organization, roi_category_a, assertion)
+    structure = claims.structure_row(organization, roi_category_a, assertion)
 
-    _metric(
+    claims.metric_row(
         organization,
         structure,
         length_category,
@@ -211,7 +170,7 @@ def test_as_of_selects_by_belief_time_not_observation_time(organization: Organiz
         observed_at=LAST_YEAR,
         asserted_at=YESTERDAY,
     )
-    _metric(
+    claims.metric_row(
         organization,
         structure,
         length_category,
@@ -235,9 +194,9 @@ def test_observation_window_selects_by_observed_at(organization: Organization, r
     Both rows below were asserted at the same instant, so only `observed_at`
     can separate them.
     """
-    structure = _structure(organization, roi_category_a, assertion)
+    structure = claims.structure_row(organization, roi_category_a, assertion)
 
-    _metric(
+    claims.metric_row(
         organization,
         structure,
         length_category,
@@ -246,7 +205,7 @@ def test_observation_window_selects_by_observed_at(organization: Organization, r
         observed_at=LAST_YEAR,
         asserted_at=TODAY,
     )
-    _metric(
+    claims.metric_row(
         organization,
         structure,
         length_category,

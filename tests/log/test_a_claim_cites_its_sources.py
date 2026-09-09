@@ -10,14 +10,12 @@ original only by an assertion id.
 
 import uuid
 
-import kante
 import pytest
 from asgiref.sync import sync_to_async
 from authentikate.models import Organization
-from kante.context import HttpContext
 
 from evidence import models as evidence_models
-from tests.support import claims
+from tests.support import claims, writes
 
 ASSERT_METRIC = """
     mutation M($input: AssertMetricValueInput!) {
@@ -91,14 +89,8 @@ RETRACT_LINKS = """
 """
 
 
-async def _execute(api_schema: kante.Schema, ctx: HttpContext, document: str, variables: dict) -> dict:
-    result = await api_schema.execute(document, variable_values=variables, context_value=ctx)
-    assert result.errors is None, f"GraphQL errors: {result.errors}"
-    return result.data
-
-
 async def _metric(api_schema, ctx, value: float = 12.0) -> tuple[str, str]:
-    data = await _execute(
+    data = await writes.execute(
         api_schema,
         ctx,
         ASSERT_METRIC,
@@ -113,7 +105,7 @@ async def test_a_claim_cites_the_claims_it_came_from(api_schema, simple_api_cont
     """The citation is a link, readable from both ends, written under the citing claim's own assertion."""
     metric_id, _ = await _metric(api_schema, simple_api_context)
 
-    asserted = (await _execute(api_schema, simple_api_context, ASSERT_ENTITY, {"input": {"term": "Cell", "derivedFrom": [metric_id]}}))["assertEntityExists"]
+    asserted = (await writes.execute(api_schema, simple_api_context, ASSERT_ENTITY, {"input": {"term": "Cell", "derivedFrom": [metric_id]}}))["assertEntityExists"]
     instance = asserted["instance"]
 
     (citation,) = instance["derivedFrom"]
@@ -122,14 +114,14 @@ async def test_a_claim_cites_the_claims_it_came_from(api_schema, simple_api_cont
     assert citation["assertion"]["id"] == asserted["assertion"]["id"], "one act: the claim and what it cites share an assertion"
 
     # The other direction, from the cited claim.
-    metric = (await _execute(api_schema, simple_api_context, METRIC, {"id": metric_id}))["metric"]
+    metric = (await writes.execute(api_schema, simple_api_context, METRIC, {"id": metric_id}))["metric"]
     assert metric["derivedFrom"] == []
     (derivation,) = metric["derivations"]
     assert derivation["id"] == citation["id"]
     assert derivation["source"] == {"__typename": "Instance", "id": instance["id"]}
 
     # And the link itself resolves both ends by kind, never by the shape of a ref.
-    link = (await _execute(api_schema, simple_api_context, LINK, {"id": citation["id"]}))["link"]
+    link = (await writes.execute(api_schema, simple_api_context, LINK, {"id": citation["id"]}))["link"]
     assert link["source"] == {"__typename": "Instance", "id": instance["id"]}
     assert link["target"] == {"__typename": "Metric", "id": metric_id}
 
@@ -138,11 +130,11 @@ async def test_a_claim_cites_the_claims_it_came_from(api_schema, simple_api_cont
 @pytest.mark.asyncio
 async def test_a_claim_may_cite_several_claims_of_different_shapes(api_schema, simple_api_context, test_graph) -> None:
     metric_id, _ = await _metric(api_schema, simple_api_context)
-    a = (await _execute(api_schema, simple_api_context, ASSERT_ENTITY, {"input": {"term": "Cell"}}))["assertEntityExists"]["instance"]
-    b = (await _execute(api_schema, simple_api_context, ASSERT_ENTITY, {"input": {"term": "Cell"}}))["assertEntityExists"]["instance"]
+    a = (await writes.execute(api_schema, simple_api_context, ASSERT_ENTITY, {"input": {"term": "Cell"}}))["assertEntityExists"]["instance"]
+    b = (await writes.execute(api_schema, simple_api_context, ASSERT_ENTITY, {"input": {"term": "Cell"}}))["assertEntityExists"]["instance"]
 
     relation = (
-        await _execute(
+        await writes.execute(
             api_schema,
             simple_api_context,
             ASSERT_RELATION,
@@ -154,11 +146,11 @@ async def test_a_claim_may_cite_several_claims_of_different_shapes(api_schema, s
     assert cited == {("Metric", metric_id), ("Instance", a["id"])}
 
     # A link can be cited too: an instance derived from the relation.
-    c = (await _execute(api_schema, simple_api_context, ASSERT_ENTITY, {"input": {"term": "Cell", "derivedFrom": [relation["id"]]}}))["assertEntityExists"]["instance"]
+    c = (await writes.execute(api_schema, simple_api_context, ASSERT_ENTITY, {"input": {"term": "Cell", "derivedFrom": [relation["id"]]}}))["assertEntityExists"]["instance"]
     (citation,) = c["derivedFrom"]
     assert citation["target"]["__typename"] == "Link"
 
-    instance_a = (await _execute(api_schema, simple_api_context, INSTANCE, {"id": a["id"]}))["instance"]
+    instance_a = (await writes.execute(api_schema, simple_api_context, INSTANCE, {"id": a["id"]}))["instance"]
     assert [d["source"] for d in instance_a["derivations"]] == [{"__typename": "Link", "id": relation["id"]}]
 
 
@@ -168,7 +160,7 @@ async def test_superseding_a_metric_cites_the_one_it_replaces(api_schema, simple
     """The correction and its original were tied only by sharing an assertion id; now the new value says so."""
     old_id, _ = await _metric(api_schema, simple_api_context, 12.0)
 
-    superseded = (await _execute(api_schema, simple_api_context, SUPERSEDE, {"input": {"id": old_id, "key": "area", "value": 99.0, "valueKind": "FLOAT"}}))["supersedeMetricValue"]
+    superseded = (await writes.execute(api_schema, simple_api_context, SUPERSEDE, {"input": {"id": old_id, "key": "area", "value": 99.0, "valueKind": "FLOAT"}}))["supersedeMetricValue"]
     new = superseded["metric"]
     assert new["id"] != old_id
 
@@ -176,7 +168,7 @@ async def test_superseding_a_metric_cites_the_one_it_replaces(api_schema, simple
     assert citation["target"] == {"__typename": "Metric", "id": old_id}
     assert citation["assertion"]["id"] == superseded["assertion"]["id"], "cited under the corrective act itself"
 
-    old = (await _execute(api_schema, simple_api_context, METRIC, {"id": old_id}))["metric"]
+    old = (await writes.execute(api_schema, simple_api_context, METRIC, {"id": old_id}))["metric"]
     assert [d["source"]["id"] for d in old["derivations"]] == [new["id"]]
 
 
@@ -184,14 +176,14 @@ async def test_superseding_a_metric_cites_the_one_it_replaces(api_schema, simple
 @pytest.mark.asyncio
 async def test_retracting_a_citation_removes_it_from_both_ends(api_schema, simple_api_context, test_graph) -> None:
     metric_id, _ = await _metric(api_schema, simple_api_context)
-    instance = (await _execute(api_schema, simple_api_context, ASSERT_ENTITY, {"input": {"term": "Cell", "derivedFrom": [metric_id]}}))["assertEntityExists"]["instance"]
+    instance = (await writes.execute(api_schema, simple_api_context, ASSERT_ENTITY, {"input": {"term": "Cell", "derivedFrom": [metric_id]}}))["assertEntityExists"]["instance"]
     (citation,) = instance["derivedFrom"]
 
-    retracted = (await _execute(api_schema, simple_api_context, RETRACT_LINKS, {"input": {"ids": [citation["id"]]}}))["retractLinks"]
+    retracted = (await writes.execute(api_schema, simple_api_context, RETRACT_LINKS, {"input": {"ids": [citation["id"]]}}))["retractLinks"]
     assert retracted["links"] == [{"id": citation["id"], "kind": "DERIVED_FROM"}]
 
-    assert (await _execute(api_schema, simple_api_context, INSTANCE, {"id": instance["id"]}))["instance"]["derivedFrom"] == []
-    assert (await _execute(api_schema, simple_api_context, METRIC, {"id": metric_id}))["metric"]["derivations"] == []
+    assert (await writes.execute(api_schema, simple_api_context, INSTANCE, {"id": instance["id"]}))["instance"]["derivedFrom"] == []
+    assert (await writes.execute(api_schema, simple_api_context, METRIC, {"id": metric_id}))["metric"]["derivations"] == []
 
 
 @pytest.mark.django_db(transaction=True)
@@ -225,8 +217,8 @@ async def test_citing_another_organizations_claim_is_refused(api_schema, simple_
 async def test_lineage_is_not_a_connection(api_schema, simple_api_context, test_graph) -> None:
     """The panel's `connections` enumerates its kinds positively; lineage has fields of its own."""
     metric_id, _ = await _metric(api_schema, simple_api_context)
-    instance = (await _execute(api_schema, simple_api_context, ASSERT_ENTITY, {"input": {"term": "Cell", "derivedFrom": [metric_id]}}))["assertEntityExists"]["instance"]
+    instance = (await writes.execute(api_schema, simple_api_context, ASSERT_ENTITY, {"input": {"term": "Cell", "derivedFrom": [metric_id]}}))["assertEntityExists"]["instance"]
 
-    data = await _execute(api_schema, simple_api_context, "query C($id: ID!) { instance(id: $id) { connections { kind } derivedFrom { kind } } }", {"id": instance["id"]})
+    data = await writes.execute(api_schema, simple_api_context, "query C($id: ID!) { instance(id: $id) { connections { kind } derivedFrom { kind } } }", {"id": instance["id"]})
     assert [c["kind"] for c in data["instance"]["connections"]] == []
     assert [c["kind"] for c in data["instance"]["derivedFrom"]] == ["DERIVED_FROM"]

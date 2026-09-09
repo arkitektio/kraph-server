@@ -17,24 +17,12 @@ import uuid
 import kante
 import pytest
 
-from tests.support import rules
+from tests.support import rules, writes
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 
 from core import models as core_models
 from evidence import models as evidence_models
-
-ASSERT_STRUCTURE = """
-    mutation AssertStructureExists($input: AssertStructureExistsInput!) {
-        assertStructureExists(input: $input) { structure { id } }
-    }
-"""
-
-ASSERT_ENTITY = """
-    mutation AssertEntityExists($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { instance { id } }
-    }
-"""
 
 CLASSIFY_NODES = """
     mutation ClassifyNodes($input: ClassifyNodesInput!) {
@@ -77,7 +65,7 @@ async def _structure(api_schema: kante.Schema, ctx: HttpContext, metrics: list[d
     """
     object_id = f"roi-{uuid.uuid4().hex[:8]}"
     result = await api_schema.execute(
-        ASSERT_STRUCTURE,
+        writes.ASSERT_STRUCTURE,
         variable_values={"input": {"identifier": "@mikro/roi", "object": object_id, "metrics": metrics or []}},
         context_value=ctx,
     )
@@ -88,7 +76,7 @@ async def _structure(api_schema: kante.Schema, ctx: HttpContext, metrics: list[d
 async def _entity(api_schema: kante.Schema, ctx: HttpContext, term: str, evidence_object: str | None = None, same_as: list[str] | None = None) -> str:
     evidence = [{"identifier": "@mikro/roi", "object": evidence_object, "metrics": []}] if evidence_object else []
     result = await api_schema.execute(
-        ASSERT_ENTITY,
+        writes.ASSERT_ENTITY_EXISTS,
         variable_values={"input": {"term": term, "supportingEvidence": evidence, "sameAs": same_as or []}},
         context_value=ctx,
     )

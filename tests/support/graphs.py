@@ -5,7 +5,7 @@ through the API — the door a client uses — and `rebuild` re-derives its draw
 from the log, which is the honesty test every projection property comes down to.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from asgiref.sync import sync_to_async
@@ -15,6 +15,7 @@ from evidence import identity as identity_module
 from evidence import models as evidence_models
 from evidence import writer
 from graph_engine.controller import GraphController
+from tests.support import rules
 from tests.support.writes import CREATE_GRAPH, execute
 
 #: Three moments the rule examples bound on: before, at, and after "Dec 5".
@@ -148,3 +149,58 @@ def merge_as(organization: Any, left: str, right: str, subject: str) -> None:
     assertion = writer.create_assertion(organization, subject=subject, app_id="pytest")
     writer.create_link(organization, kind=evidence_models.Link.Kind.SAME_AS, source_ref=left, target_ref=right, assertion=assertion)
     identity_module.merge(organization, left, right)
+
+
+def define_entity(graph: Any, key: str, definition: dict[str, Any], properties: list[dict[str, Any]] | None = None) -> Any:
+    """A defined entity category over a word, created or redefined in place."""
+    category, _ = core_models.EntityCategory.objects.get_or_create(graph=graph, key=key, defaults={"age_name": key.lower(), "label": key})
+    category.age_name = key.lower()  # the fixture's AIS is labelled "AIS"; one spelling for every assertion
+    category.definition = definition
+    if properties is not None:
+        category.property_definitions = properties
+    category.save()
+    return category
+
+
+#: A treatment at a known moment, for rules that bound world time (RFC 0015).
+TREATMENT = datetime(2026, 6, 1, tzinfo=timezone.utc)
+BEFORE_TREATMENT = TREATMENT - timedelta(days=30)
+AFTER_TREATMENT = TREATMENT + timedelta(days=30)
+
+#: A view whose every rule is bounded by the treatment: cells seen before it,
+#: connections seen before it, divisions seen since.
+TREATMENT_DEFINITION: dict[str, Any] = {
+    "systemVersion": "2.0.0",
+    "extensions": {
+        "entities": [
+            {
+                "key": "Cell",
+                "definition": {
+                    "rules": [
+                        # No KIND: the bound applies to every kind of claim about a
+                        # Cell — a classification by when the cell was seen, a
+                        # death by when it took effect (`Standing.at`).
+                        rules.rule({"field": "WORD", "operator": "IS", "value": "Cell"}, rules.observed_before(TREATMENT)),
+                    ]
+                },
+            }
+        ],
+        "relations": [
+            {
+                "key": "IS_CONNECTED_TO",
+                "source": {"keys": ["Cell"]},
+                "target": {"keys": ["Cell"]},
+                "definition": {"rules": [rules.rule({"field": "WORD", "operator": "IS", "value": "IS_CONNECTED_TO"}, rules.observed_before(TREATMENT))]},
+            }
+        ],
+        "events": [
+            {
+                "key": "Mitosis",
+                "kind": "INTRINSIC",
+                "definition": {"rules": [rules.rule({"field": "WORD", "operator": "IS", "value": "Mitosis"}, rules.observed_since(TREATMENT))]},
+                "inputs": [{"key": "Cell", "role": "mother", "descriptor": {"keys": ["Cell"]}}],
+                "outputs": [{"key": "Cell", "role": "daughter", "descriptor": {"keys": ["Cell"]}}],
+            }
+        ],
+    },
+}

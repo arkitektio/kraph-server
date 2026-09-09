@@ -8,7 +8,7 @@ import uuid
 import pytest
 from asgiref.sync import sync_to_async
 from evidence import models as evidence_models
-from tests.support import writes
+from tests.support import claims, drawing, reads, writes
 from django.db import IntegrityError, transaction
 from authentikate.models import Organization
 import kante
@@ -17,7 +17,6 @@ from core import models as core_models
 from evidence import claims as claims_module
 from graph_engine import input_models as models
 from graph_engine.materialize import materialize
-from tests.support import drawing
 
 
 STRUCTURE_BY_IDENTIFIER = """
@@ -49,12 +48,6 @@ async def _structure_id(api_schema, ctx, object_id: str) -> str:
     return found.data["structureByIdentifier"]["id"]
 
 
-async def _avg_length(api_schema, ctx, graph, entity: str):
-    result = await api_schema.execute(NODE_PROPERTIES, variable_values={"id": entity, "graph": str(graph.pk)}, context_value=ctx)
-    assert result.errors is None, f"GraphQL errors: {result.errors}"
-    return result.data["node"]["properties"].get("avg_length")
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_retracting_a_datum_stops_its_evidence_counting(api_schema, simple_api_context, test_graph) -> None:
@@ -63,19 +56,19 @@ async def test_retracting_a_datum_stops_its_evidence_counting(api_schema, simple
     metric claims are untouched either way."""
     object_id = f"roi-{uuid.uuid4().hex[:8]}"
     entity = await _entity_with_roi(api_schema, simple_api_context, object_id, 30.0)
-    assert await _avg_length(api_schema, simple_api_context, test_graph, entity) == pytest.approx(30.0)
+    assert await reads.property_of(api_schema, simple_api_context, test_graph, entity, "avg_length") == pytest.approx(30.0)
     structure = await _structure_id(api_schema, simple_api_context, object_id)
 
     retracted = await api_schema.execute("mutation R($input: RetractStructureInput!) { retractStructure(input: $input) { assertion { id } } }", variable_values={"input": {"id": structure}}, context_value=simple_api_context)
     assert retracted.errors is None, f"GraphQL errors: {retracted.errors}"
-    assert await _avg_length(api_schema, simple_api_context, test_graph, entity) is None, "a retracted datum informs nothing"
+    assert await reads.property_of(api_schema, simple_api_context, test_graph, entity, "avg_length") is None, "a retracted datum informs nothing"
 
     metrics = await sync_to_async(lambda: evidence_models.Metric.all_objects.filter(structure_id=structure).count())()
     assert metrics == 1, "the metric claim is on the record, untouched"
 
     attested = await api_schema.execute("mutation A($input: AttestStructureInput!) { attestStructure(input: $input) { assertion { id } } }", variable_values={"input": {"id": structure}}, context_value=simple_api_context)
     assert attested.errors is None, f"GraphQL errors: {attested.errors}"
-    assert await _avg_length(api_schema, simple_api_context, test_graph, entity) == pytest.approx(30.0), "attested, it counts again"
+    assert await reads.property_of(api_schema, simple_api_context, test_graph, entity, "avg_length") == pytest.approx(30.0), "attested, it counts again"
 
 
 @pytest.mark.django_db(transaction=True)
@@ -116,7 +109,7 @@ async def test_retracting_an_informs_claim_refolds_what_it_fed(api_schema, simpl
     link = await informs_link()
     retracted = await api_schema.execute("mutation R($input: RetractLinksInput!) { retractLinks(input: $input) { assertion { id } } }", variable_values={"input": {"ids": [link]}}, context_value=simple_api_context)
     assert retracted.errors is None, f"GraphQL errors: {retracted.errors}"
-    assert await _avg_length(api_schema, simple_api_context, test_graph, entity) is None
+    assert await reads.property_of(api_schema, simple_api_context, test_graph, entity, "avg_length") is None
 
 
 @pytest.mark.django_db(transaction=True)
@@ -141,7 +134,7 @@ async def test_retracting_a_measurement_retracts_its_informs_row(api_schema, sim
     )
     assert measured.errors is None, f"GraphQL errors: {measured.errors}"
     measurement = measured.data["assertMeasurementExists"]["link"]["id"]
-    assert await _avg_length(api_schema, simple_api_context, test_graph, entity) == pytest.approx(12.0)
+    assert await reads.property_of(api_schema, simple_api_context, test_graph, entity, "avg_length") == pytest.approx(12.0)
 
     retracted = await api_schema.execute("mutation R($input: RetractLinksInput!) { retractLinks(input: $input) { assertion { id } } }", variable_values={"input": {"ids": [measurement]}}, context_value=simple_api_context)
     assert retracted.errors is None, f"GraphQL errors: {retracted.errors}"
@@ -152,7 +145,7 @@ async def test_retracting_a_measurement_retracts_its_informs_row(api_schema, sim
         return {str(row.kind): [s.stands for s in evidence_models.Standing.all_objects.filter(target_type="link", target_id=str(row.pk))] for row in rows}
 
     assert await standings() == {str(evidence_models.Link.Kind.MEASUREMENT): [False], str(evidence_models.Link.Kind.INFORMS): [False]}
-    assert await _avg_length(api_schema, simple_api_context, test_graph, entity) is None
+    assert await reads.property_of(api_schema, simple_api_context, test_graph, entity, "avg_length") is None
 
 
 def test_same_object_from_two_projections_is_one_row(organization: Organization, roi_category_a: evidence_models.StructureKind, roi_category_b: evidence_models.StructureKind, assertion: evidence_models.Assertion) -> None:
@@ -246,15 +239,6 @@ def test_dedup_does_not_span_organizations(organization: Organization, other_org
     assert evidence_models.Structure.objects.for_organization(other_organization).count() == 1
 
 
-async def _get_or_create_structure_kind(test_graph: core_models.Graph) -> evidence_models.StructureKind:
-    """The organization's ROI term. No graph — kinds are organization vocabulary."""
-    kind, _ = await evidence_models.StructureKind.all_objects.aget_or_create(
-        organization=test_graph.organization,
-        identifier="roi_test",
-    )
-    return kind
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_create_structure(
@@ -262,7 +246,7 @@ async def test_create_structure(
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
 ):
-    category = await _get_or_create_structure_kind(test_graph)
+    category = await claims.ensure_kind(test_graph)
     object_id = f"obj_{uuid.uuid4().hex[:8]}"
 
     mutation = """
@@ -296,7 +280,7 @@ async def test_update_structure(
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
 ):
-    category = await _get_or_create_structure_kind(test_graph)
+    category = await claims.ensure_kind(test_graph)
     object_id = f"obj_{uuid.uuid4().hex[:8]}"
     updated_object_id = f"obj_{uuid.uuid4().hex[:8]}"
 
@@ -366,43 +350,6 @@ async def test_update_structure(
     assert update_result.data["recordMetrics"]["structure"]["object"] == object_id
 
 
-CREATE_STRUCTURE = """
-    mutation CreateStructure($input: AssertStructureExistsInput!) {
-        assertStructureExists(input: $input) { structure { id } }
-    }
-"""
-
-
-CREATE_STRUCTURE_RELATION = """
-    mutation CreateStructureRelation($input: AssertStructureRelationExistsInput!) {
-        assertStructureRelationExists(input: $input) {
-            link {
-                id
-                kind
-                sourceRef
-                targetRef
-                source { ... on Structure { id object } }
-                target { ... on Structure { id object } }
-            }
-        }
-    }
-"""
-
-
-ARCHIVE_STRUCTURE_RELATION = """
-    mutation ArchiveStructureRelation($input: RetractStructureRelationInput!) {
-        retractStructureRelation(input: $input) { link { id } }
-    }
-"""
-
-
-UPDATE_STRUCTURE_RELATION = """
-    mutation UpdateStructureRelation($input: SupersedeStructureRelationInput!) {
-        supersedeStructureRelation(input: $input) { link { id } }
-    }
-"""
-
-
 @pytest.fixture(scope="session")
 def edge_schema() -> models.GraphDefinitionInput:
     """A schema that declares the two edge kinds the bio schema leaves out.
@@ -460,16 +407,6 @@ def edge_graph(transactional_db, table_projector, edge_schema, authenticated_con
     )
 
 
-async def _structure(api_schema: kante.Schema, ctx: HttpContext, metrics: list[dict] | None = None) -> str:
-    created = await api_schema.execute(
-        CREATE_STRUCTURE,
-        variable_values={"input": {"identifier": "ROI", "object": f"roi_{uuid.uuid4().hex[:8]}", "metrics": metrics or []}},
-        context_value=ctx,
-    )
-    assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertStructureExists"]["structure"]["id"]
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_structure_relation_is_an_evidence_row_with_no_projection(
@@ -482,11 +419,11 @@ async def test_structure_relation_is_an_evidence_row_with_no_projection(
     category = await core_models.StructureRelationCategory.objects.filter(graph=edge_graph, key="CONTAINS").afirst()
     assert category is not None, "The schema declares a CONTAINS structure relation"
 
-    source = await _structure(api_schema, simple_api_context)
-    target = await _structure(api_schema, simple_api_context)
+    source = await writes.create_structure(api_schema, simple_api_context)
+    target = await writes.create_structure(api_schema, simple_api_context)
 
     created = await api_schema.execute(
-        CREATE_STRUCTURE_RELATION,
+        writes.ASSERT_STRUCTURE_RELATION,
         variable_values={"input": {"term": category.key, "sourceId": source, "targetId": target}},
         context_value=simple_api_context,
     )
@@ -523,18 +460,18 @@ async def test_archiving_a_structure_relation_is_a_lifecycle_row(
 ) -> None:
     """Retraction never deletes. This whole path previously raised AttributeError."""
     category = await core_models.StructureRelationCategory.objects.filter(graph=edge_graph, key="CONTAINS").afirst()
-    source = await _structure(api_schema, simple_api_context)
-    target = await _structure(api_schema, simple_api_context)
+    source = await writes.create_structure(api_schema, simple_api_context)
+    target = await writes.create_structure(api_schema, simple_api_context)
 
     created = await api_schema.execute(
-        CREATE_STRUCTURE_RELATION,
+        writes.ASSERT_STRUCTURE_RELATION,
         variable_values={"input": {"term": category.key, "sourceId": source, "targetId": target}},
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
     relation_id = created.data["assertStructureRelationExists"]["link"]["id"]
 
-    archived = await api_schema.execute(ARCHIVE_STRUCTURE_RELATION, variable_values={"input": {"id": relation_id}}, context_value=simple_api_context)
+    archived = await api_schema.execute(writes.RETRACT_STRUCTURE_RELATION, variable_values={"input": {"id": relation_id}}, context_value=simple_api_context)
     assert archived.errors is None, f"GraphQL errors: {archived.errors}"
 
     @sync_to_async
@@ -563,11 +500,11 @@ async def test_structure_relation_update_and_archive_reach_the_row(
     for.
     """
     category = await core_models.StructureRelationCategory.objects.filter(graph=edge_graph, key="CONTAINS").afirst()
-    source = await _structure(api_schema, simple_api_context)
-    target = await _structure(api_schema, simple_api_context)
+    source = await writes.create_structure(api_schema, simple_api_context)
+    target = await writes.create_structure(api_schema, simple_api_context)
 
     created = await api_schema.execute(
-        CREATE_STRUCTURE_RELATION,
+        writes.ASSERT_STRUCTURE_RELATION,
         variable_values={"input": {"term": category.key, "sourceId": source, "targetId": target}},
         context_value=simple_api_context,
     )
@@ -575,7 +512,7 @@ async def test_structure_relation_update_and_archive_reach_the_row(
     original = created.data["assertStructureRelationExists"]["link"]["id"]
 
     updated = await api_schema.execute(
-        UPDATE_STRUCTURE_RELATION,
+        writes.SUPERSEDE_STRUCTURE_RELATION,
         variable_values={"input": {"id": original, "sourceId": source, "targetId": target}},
         context_value=simple_api_context,
     )
@@ -593,7 +530,7 @@ async def test_structure_relation_update_and_archive_reach_the_row(
     assert original_status == False
     assert replacement_status == True
 
-    archived = await api_schema.execute(ARCHIVE_STRUCTURE_RELATION, variable_values={"input": {"id": replacement}}, context_value=simple_api_context)
+    archived = await api_schema.execute(writes.RETRACT_STRUCTURE_RELATION, variable_values={"input": {"id": replacement}}, context_value=simple_api_context)
     assert archived.errors is None, f"GraphQL errors: {archived.errors}"
 
     @sync_to_async

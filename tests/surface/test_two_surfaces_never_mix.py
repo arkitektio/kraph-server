@@ -13,8 +13,6 @@ from tests.support import drawing, writes
 import kante
 from kante.context import HttpContext
 from core import models as core_models
-import uuid
-from evidence import models as evidence_models
 
 
 NODE = """
@@ -27,11 +25,6 @@ RELATION = """
         relation(id: $id) { id label category { id } source { __typename id drawnIn { graph { id } } } target { __typename id } }
     }
 """
-NODES_BY_SEQ = """
-    query L($graph: ID!) { nodes(graph: $graph, ordering: [{seq: DESC}]) { id } }
-"""
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_node_names_its_view_its_position_and_its_claim(api_schema, simple_api_context, test_graph, table_projector) -> None:
@@ -110,41 +103,6 @@ async def test_the_top_level_node_carries_no_borrowed_category(
     assert payload["drawings"][0]["category"]["id"], "which is a real category"
 
 
-async def _get_or_create_structure_kind(test_graph: core_models.Graph) -> evidence_models.StructureKind:
-    """The organization's ROI term. No graph — kinds are organization vocabulary."""
-    kind, _ = await evidence_models.StructureKind.all_objects.aget_or_create(
-        organization=test_graph.organization,
-        identifier="roi_test",
-    )
-    return kind
-
-
-async def _create_structure(
-    api_schema: kante.Schema,
-    ctx: HttpContext,
-    test_graph: core_models.Graph,
-    object_id: str,
-) -> str:
-    category = await _get_or_create_structure_kind(test_graph)
-    result = await api_schema.execute(
-        """
-        mutation CreateStructure($input: AssertStructureExistsInput!) {
-            assertStructureExists(input: $input) { structure { id } }
-        }
-        """,
-        variable_values={
-            "input": {
-                "identifier": category.identifier,
-                "object": object_id,
-                "metrics": [{"key": "vector_length", "value": 45.2, "valueKind": "FLOAT"}],
-            }
-        },
-        context_value=ctx,
-    )
-    assert result.errors is None, f"GraphQL errors: {result.errors}"
-    return result.data["assertStructureExists"]["structure"]["id"]
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_node_interface_fields_resolve_for_a_structure(
@@ -153,7 +111,7 @@ async def test_node_interface_fields_resolve_for_a_structure(
     test_graph: core_models.Graph,
 ) -> None:
     """None of the inherited identity fields may raise."""
-    structure_id = await _create_structure(api_schema, simple_api_context, test_graph, f"obj_{uuid.uuid4().hex[:8]}")
+    structure_id = await writes.create_structure(api_schema, simple_api_context, identifier="roi_test")
 
     result = await api_schema.execute(
         """

@@ -20,43 +20,24 @@ zero writes for the same reason.
 
 import kante
 import pytest
-from tests.support import graphs, rules
+from tests.support import claims, drawing, graphs, namespaces, rules, writes
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 from core import models as core_models
 from evidence import models as evidence_models
 from evidence import selector as selector_module
 from evidence import writer
-from tests.support import claims, drawing
 from datetime import datetime, timezone
 from graph_engine import input_models
 from graph_engine.materialize import materialize
-from tests.support import namespaces, writes
 from core import asserted_terms
 from graph_engine import projector
 import uuid
 from tests.support.graphs import AFTER, BEFORE, example_graph as _example_graph, rebuild as _rebuild
 
 
-CREATE_ENTITY = """
-    mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { instance { id } }
-    }
-"""
 JOHANNES = "johannes"
 CHRISTIAN = "christian"
-
-
-async def _an_ais(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph) -> str:
-    category = await core_models.EntityCategory.objects.filter(graph=graph, key="AIS").afirst()
-    assert category is not None
-    created = await api_schema.execute(
-        CREATE_ENTITY,
-        variable_values={"input": {"term": category.key, "supportingEvidence": []}},
-        context_value=ctx,
-    )
-    assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertEntityExists"]["instance"]["id"]
 
 
 _claim = claims.classify
@@ -97,7 +78,7 @@ async def test_two_annotators_can_disagree_without_forking_the_entity(
     opinion produced a second entity.
     """
 
-    entity_id = await _an_ais(api_schema, simple_api_context, test_graph)
+    entity_id = await writes.create_entity(api_schema, simple_api_context, "AIS")
 
     @sync_to_async
     def disagree() -> tuple[int, int]:
@@ -129,8 +110,8 @@ async def test_a_definition_narrows_what_the_graph_contains(
     the view — and the count is reported rather than the graph quietly shrinking.
     """
 
-    await _an_ais(api_schema, simple_api_context, test_graph)
-    await _an_ais(api_schema, simple_api_context, test_graph)
+    await writes.create_entity(api_schema, simple_api_context, "AIS")
+    await writes.create_entity(api_schema, simple_api_context, "AIS")
 
     @sync_to_async
     def define_and_rebuild() -> dict:
@@ -177,8 +158,8 @@ async def test_changing_a_definition_moves_membership_and_writes_no_evidence(
     true of identity, only of values.
     """
 
-    await _an_ais(api_schema, simple_api_context, test_graph)
-    await _an_ais(api_schema, simple_api_context, test_graph)
+    await writes.create_entity(api_schema, simple_api_context, "AIS")
+    await writes.create_entity(api_schema, simple_api_context, "AIS")
 
     @sync_to_async
     def setup() -> int:
@@ -249,8 +230,8 @@ async def test_definitions_can_partition_one_term_by_annotator(
     no evidence says "AISprox" — the split exists only in this graph's terms.
     """
 
-    await _an_ais(api_schema, simple_api_context, test_graph)
-    await _an_ais(api_schema, simple_api_context, test_graph)
+    await writes.create_entity(api_schema, simple_api_context, "AIS")
+    await writes.create_entity(api_schema, simple_api_context, "AIS")
 
     @sync_to_async
     def partition() -> dict:
@@ -301,7 +282,7 @@ async def test_a_node_matching_two_definitions_is_drawn_under_both(
     the two would have buried exactly the disagreement the view can now show.
     """
 
-    await _an_ais(api_schema, simple_api_context, test_graph)
+    await writes.create_entity(api_schema, simple_api_context, "AIS")
 
     @sync_to_async
     def both_claim_it() -> dict:
@@ -351,7 +332,7 @@ async def test_a_primitive_category_behaves_exactly_as_before(
     back to what was asserted.
     """
 
-    await _an_ais(api_schema, simple_api_context, test_graph)
+    await writes.create_entity(api_schema, simple_api_context, "AIS")
 
     @sync_to_async
     def rebuild() -> tuple[dict, dict[str, int]]:
@@ -391,8 +372,8 @@ async def test_a_category_can_derive_from_several_words_the_graph_never_declares
     Note what the node is *not*: reclassified. Nothing writes "Neuron" anywhere.
     Both nodes keep their own claims, and a second view is free to disagree.
     """
-    await _an_ais(api_schema, simple_api_context, test_graph)
-    await _an_ais(api_schema, simple_api_context, test_graph)
+    await writes.create_entity(api_schema, simple_api_context, "AIS")
+    await writes.create_entity(api_schema, simple_api_context, "AIS")
 
     @sync_to_async
     def regroup() -> dict:
@@ -612,13 +593,6 @@ async def test_an_entity_category_defined_over_an_event_word_admits_no_events(ap
     assert listed.data["entities"] == []
 
 
-CREATE_ENTITY_CATEGORY = """
-    mutation CreateEntityCategory($input: CreateEntityCategoryInput!) {
-        createEntityCategory(input: $input) { id key }
-    }
-"""
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_view_that_declares_the_word_later_can_pick_the_claim_up(
@@ -646,7 +620,7 @@ async def test_a_view_that_declares_the_word_later_can_pick_the_claim_up(
     # Declaring the word alone does not project the history — the flag is opt-in
     # because the work is proportional to the organization's evidence.
     quiet = await api_schema.execute(
-        CREATE_ENTITY_CATEGORY,
+        writes.CREATE_ENTITY_CATEGORY,
         variable_values={"input": {"graph": str(test_graph.pk), "key": word, "backfill": False}},
         context_value=simple_api_context,
     )
@@ -654,7 +628,7 @@ async def test_a_view_that_declares_the_word_later_can_pick_the_claim_up(
     assert await drawn_in(test_graph) == 0, "Declared, but the history was not asked for"
 
     asked = await api_schema.execute(
-        CREATE_ENTITY_CATEGORY,
+        writes.CREATE_ENTITY_CATEGORY,
         variable_values={"input": {"graph": str(test_graph.pk), "key": word, "backfill": True}},
         context_value=simple_api_context,
     )

@@ -17,9 +17,9 @@ from asgiref.sync import sync_to_async
 
 from core import models as core_models
 from evidence import identity, models as evidence_models
-from tests.support import claims, drawing, graphs
+from tests.support import claims, drawing, graphs, writes
 from tests.support.graphs import BEFORE, example_graph as _example_graph
-from tests.support.writes import ASSERT_DIFFERENT, ASSERT_SAME, RETRACT_DIFFERENT, assert_entity as _assert_entity
+from tests.support.writes import ASSERT_DIFFERENT, ASSERT_SAME, RETRACT_DIFFERENT
 
 NODE = """
     query Node($id: ID!, $graph: ID!) {
@@ -46,22 +46,16 @@ LINK = """
 """
 
 
-async def _execute(api_schema, ctx, document: str, variables: dict) -> dict:
-    result = await api_schema.execute(document, variable_values=variables, context_value=ctx)
-    assert result.errors is None, f"GraphQL errors: {result.errors}"
-    return result.data
-
-
 async def _same(api_schema, ctx, refs: list[str]) -> str:
-    return (await _execute(api_schema, ctx, ASSERT_SAME, {"input": {"instances": refs}}))["assertSameInstance"]["links"][0]["id"]
+    return (await writes.execute(api_schema, ctx, ASSERT_SAME, {"input": {"instances": refs}}))["assertSameInstance"]["links"][0]["id"]
 
 
 async def _different(api_schema, ctx, refs: list[str]) -> dict:
-    return (await _execute(api_schema, ctx, ASSERT_DIFFERENT, {"input": {"instances": refs}}))["assertDifferentInstance"]
+    return (await writes.execute(api_schema, ctx, ASSERT_DIFFERENT, {"input": {"instances": refs}}))["assertDifferentInstance"]
 
 
 async def _node(api_schema, ctx, graph: core_models.Graph, ref: str) -> dict:
-    return (await _execute(api_schema, ctx, NODE, {"id": ref, "graph": str(graph.pk)}))["node"]
+    return (await writes.execute(api_schema, ctx, NODE, {"id": ref, "graph": str(graph.pk)}))["node"]
 
 
 @sync_to_async
@@ -82,8 +76,8 @@ async def test_a_difference_vetoes_the_direct_sameness(api_schema, simple_api_co
     """Two merged observations come apart when somebody says they are two — in
     the view's drawing and in the organization's cache — and the claim that
     merged them is still in the log, not retracted, only outweighed."""
-    a = (await _assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"]
-    b = (await _assert_entity(api_schema, simple_api_context, "AIS", same_as=[a]))["instance"]["id"]
+    a = (await writes.assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"]
+    b = (await writes.assert_entity(api_schema, simple_api_context, "AIS", same_as=[a]))["instance"]["id"]
     assert (await _drawn(test_graph, a))[0] == 1, "precondition: merged"
 
     made = await _different(api_schema, simple_api_context, [a, b])
@@ -103,10 +97,10 @@ async def test_a_difference_vetoes_the_direct_sameness(api_schema, simple_api_co
     assert node["conflicts"] == [], "a direct veto is resolved by the fold, not reported as a conflict"
     assert [s["id"] for s in node["sameAs"]] != [], "the vetoed sameness is still a standing claim the panel shows"
 
-    instance = (await _execute(api_schema, simple_api_context, INSTANCE, {"id": b}))["instance"]
+    instance = (await writes.execute(api_schema, simple_api_context, INSTANCE, {"id": b}))["instance"]
     assert [d["id"] for d in instance["differentFrom"]] == [link["id"]], "readable at claim grain too"
 
-    read = (await _execute(api_schema, simple_api_context, LINK, {"id": link["id"]}))["link"]
+    read = (await writes.execute(api_schema, simple_api_context, LINK, {"id": link["id"]}))["link"]
     assert read["kind"] == "DIFFERENT_FROM" and {read["source"]["id"], read["target"]["id"]} == {a, b}, "`link(id:)` reads it at claim grain; both ends dispatch to `Instance`"
 
 
@@ -115,8 +109,8 @@ async def test_a_difference_vetoes_the_direct_sameness(api_schema, simple_api_co
 async def test_a_difference_asserted_first_prevents_the_merge(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
     """Order does not matter: the sameness claim written after the difference is
     recorded but does not union."""
-    a = (await _assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"]
-    b = (await _assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"]
+    a = (await writes.assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"]
+    b = (await writes.assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"]
     await _different(api_schema, simple_api_context, [a, b])
 
     same_id = await _same(api_schema, simple_api_context, [a, b])
@@ -138,9 +132,9 @@ async def test_a_difference_asserted_first_prevents_the_merge(api_schema, simple
 async def test_a_conflict_through_a_third_instance_stays_merged_and_is_reported(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
     """a~b, b~c, a≠c: no direct sameness is vetoed, so the fold keeps one
     individual of three, and `conflicts` names the difference that disagrees."""
-    a = (await _assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"]
-    b = (await _assert_entity(api_schema, simple_api_context, "AIS", same_as=[a]))["instance"]["id"]
-    c = (await _assert_entity(api_schema, simple_api_context, "AIS", same_as=[b]))["instance"]["id"]
+    a = (await writes.assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"]
+    b = (await writes.assert_entity(api_schema, simple_api_context, "AIS", same_as=[a]))["instance"]["id"]
+    c = (await writes.assert_entity(api_schema, simple_api_context, "AIS", same_as=[b]))["instance"]["id"]
     representative = min(a, b, c)
 
     made = await _different(api_schema, simple_api_context, [a, c])
@@ -161,12 +155,12 @@ async def test_a_conflict_through_a_third_instance_stays_merged_and_is_reported(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_retracting_the_difference_restores_the_union(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
-    a = (await _assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"]
-    b = (await _assert_entity(api_schema, simple_api_context, "AIS", same_as=[a]))["instance"]["id"]
+    a = (await writes.assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"]
+    b = (await writes.assert_entity(api_schema, simple_api_context, "AIS", same_as=[a]))["instance"]["id"]
     made = await _different(api_schema, simple_api_context, [a, b])
     assert (await _drawn(test_graph, a))[0] == 2, "precondition: split"
 
-    retracted = (await _execute(api_schema, simple_api_context, RETRACT_DIFFERENT, {"input": {"id": made["links"][0]["id"]}}))["retractDifferentInstance"]
+    retracted = (await writes.execute(api_schema, simple_api_context, RETRACT_DIFFERENT, {"input": {"id": made["links"][0]["id"]}}))["retractDifferentInstance"]
     assert retracted["links"][0]["id"] == made["links"][0]["id"]
 
     count, folds = await _drawn(test_graph, a, b)
@@ -214,7 +208,7 @@ async def test_a_difference_the_category_does_not_trust_is_ignored(api_schema, s
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_difference_needs_two_distinct_instances(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
-    a = (await _assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"]
+    a = (await writes.assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"]
     result = await api_schema.execute(ASSERT_DIFFERENT, variable_values={"input": {"instances": [a, a]}}, context_value=simple_api_context)
     assert result.errors is not None, "an instance cannot be different from itself"
 
@@ -228,9 +222,9 @@ async def test_rebuild_identity_check_agrees_under_the_veto(api_schema, simple_a
 
     from django.core.management import call_command
 
-    a = (await _assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"]
-    b = (await _assert_entity(api_schema, simple_api_context, "AIS", same_as=[a]))["instance"]["id"]
-    c = (await _assert_entity(api_schema, simple_api_context, "AIS", same_as=[b]))["instance"]["id"]
+    a = (await writes.assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"]
+    b = (await writes.assert_entity(api_schema, simple_api_context, "AIS", same_as=[a]))["instance"]["id"]
+    c = (await writes.assert_entity(api_schema, simple_api_context, "AIS", same_as=[b]))["instance"]["id"]
     await _different(api_schema, simple_api_context, [a, c])
     await _different(api_schema, simple_api_context, [b, c])
 

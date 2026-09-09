@@ -10,43 +10,7 @@ from graph_engine import input_models
 from asgiref.sync import sync_to_async
 from graph_engine import input_models as models
 from graph_engine.materialize import materialize
-from tests.support import writes
-
-
-async def _get_or_create_structure_kind(test_graph: core_models.Graph) -> evidence_models.StructureKind:
-    """The organization's ROI term. No graph — kinds are organization vocabulary."""
-    kind, _ = await evidence_models.StructureKind.all_objects.aget_or_create(
-        organization=test_graph.organization,
-        identifier="roi_test",
-    )
-    return kind
-
-
-async def _create_structure(api_schema: kante.Schema, simple_api_context: HttpContext, test_graph: core_models.Graph) -> str:
-    category = await _get_or_create_structure_kind(test_graph)
-    object_id = f"obj_{uuid.uuid4().hex[:8]}"
-
-    create_mutation = """
-        mutation CreateStructure($input: AssertStructureExistsInput!) {
-            assertStructureExists(input: $input) { structure { id } }
-        }
-    """
-
-    create_result = await api_schema.execute(
-        create_mutation,
-        variable_values={
-            "input": {
-                "identifier": category.identifier,
-                "object": object_id,
-                "metrics": [],
-            }
-        },
-        context_value=simple_api_context,
-    )
-
-    assert create_result.errors is None, f"GraphQL errors: {create_result.errors}"
-    assert create_result.data is not None
-    return create_result.data["assertStructureExists"]["structure"]["id"]
+from tests.support import claims, reads, writes
 
 
 async def _prepare_record_metric_categories(graph: core_models.Graph, identifier: str, key: str) -> evidence_models.StructureKind:
@@ -126,7 +90,7 @@ async def test_create_metric(
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
 ):
-    structure_id = await _create_structure(api_schema, simple_api_context, test_graph)
+    structure_id = await writes.create_structure(api_schema, simple_api_context, identifier="roi_test")
 
     mutation = """
         mutation CreateMetric($input: AssertMetricValueForStructureInput!) {
@@ -159,7 +123,7 @@ async def test_update_metric(
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
 ):
-    structure_id = await _create_structure(api_schema, simple_api_context, test_graph)
+    structure_id = await writes.create_structure(api_schema, simple_api_context, identifier="roi_test")
 
     create_mutation = """
         mutation CreateMetric($input: AssertMetricValueForStructureInput!) {
@@ -206,37 +170,6 @@ async def test_update_metric(
     assert update_result.errors is None, f"GraphQL errors: {update_result.errors}"
     assert update_result.data is not None
     assert update_result.data["supersedeMetricValue"]["metric"]["id"] != metric_id
-
-
-CREATE_STRUCTURE = """
-    mutation CreateStructure($input: AssertStructureExistsInput!) {
-        assertStructureExists(input: $input) { structure { id } }
-    }
-"""
-CREATE_ENTITY = """
-    mutation CreateEntity($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { instance { id } }
-    }
-"""
-CREATE_MEASUREMENT = """
-    mutation CreateMeasurement($input: AssertMeasurementExistsInput!) {
-        assertMeasurementExists(input: $input) {
-            link {
-                id
-                kind
-                source { ... on Structure { id object } }
-                target { ... on Instance { id } }
-            }
-        }
-    }
-"""
-ENTITY_PROPERTIES = """
-    query Entity($id: ID!, $graph: ID!) {
-        node(id: $id, graph: $graph) {
-            ... on Entity { id properties }
-        }
-    }
-"""
 
 
 @pytest.fixture(scope="session")
@@ -296,28 +229,6 @@ def edge_graph(transactional_db, table_projector, edge_schema, authenticated_con
     )
 
 
-async def _structure(api_schema: kante.Schema, ctx: HttpContext, metrics: list[dict] | None = None) -> str:
-    created = await api_schema.execute(
-        CREATE_STRUCTURE,
-        variable_values={"input": {"identifier": "ROI", "object": f"roi_{uuid.uuid4().hex[:8]}", "metrics": metrics or []}},
-        context_value=ctx,
-    )
-    assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertStructureExists"]["structure"]["id"]
-
-
-async def _ais(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph) -> str:
-    category = await core_models.EntityCategory.objects.filter(graph=graph, key="AIS").afirst()
-    assert category is not None
-    created = await api_schema.execute(
-        CREATE_ENTITY,
-        variable_values={"input": {"term": category.key, "supportingEvidence": []}},
-        context_value=ctx,
-    )
-    assert created.errors is None, f"GraphQL errors: {created.errors}"
-    return created.data["assertEntityExists"]["instance"]["id"]
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_measurement_rolls_its_metrics_up(
@@ -334,15 +245,15 @@ async def test_measurement_rolls_its_metrics_up(
     category = await core_models.MeasurementCategory.objects.filter(graph=edge_graph, key="MEASURES").afirst()
     assert category is not None, "The schema declares a MEASURES measurement"
 
-    structure = await _structure(api_schema, simple_api_context, metrics=[{"key": "vector_length", "value": 42.0, "valueKind": "FLOAT"}])
-    entity = await _ais(api_schema, simple_api_context, edge_graph)
+    structure = await writes.create_structure(api_schema, simple_api_context, metrics=[{"key": "vector_length", "value": 42.0, "valueKind": "FLOAT"}])
+    entity = await writes.create_entity(api_schema, simple_api_context, "AIS")
 
-    before = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity, "graph": str(edge_graph.id)}, context_value=simple_api_context)
+    before = await api_schema.execute(reads.NODE_PROPERTIES, variable_values={"id": entity, "graph": str(edge_graph.id)}, context_value=simple_api_context)
     assert before.errors is None, f"GraphQL errors: {before.errors}"
     assert before.data["node"]["properties"].get("avg_length") is None, "Nothing may derive before the measurement is asserted"
 
     created = await api_schema.execute(
-        CREATE_MEASUREMENT,
+        writes.ASSERT_MEASUREMENT,
         variable_values={"input": {"term": category.key, "sourceId": structure, "targetId": entity}},
         context_value=simple_api_context,
     )
@@ -354,7 +265,7 @@ async def test_measurement_rolls_its_metrics_up(
     assert measurement["source"]["object"], "The structure that did the measuring"
     assert measurement["target"]["id"], "and the entity it is about"
 
-    after = await api_schema.execute(ENTITY_PROPERTIES, variable_values={"id": entity, "graph": str(edge_graph.id)}, context_value=simple_api_context)
+    after = await api_schema.execute(reads.NODE_PROPERTIES, variable_values={"id": entity, "graph": str(edge_graph.id)}, context_value=simple_api_context)
     assert after.errors is None, f"GraphQL errors: {after.errors}"
     assert after.data["node"]["properties"].get("avg_length") == pytest.approx(42.0), "Asserting a measurement must move the derived value"
 
@@ -367,24 +278,6 @@ async def test_measurement_rolls_its_metrics_up(
     kinds = await link_kinds()
     assert evidence_models.Link.Kind.MEASUREMENT in kinds, "The typed claim names which term of the schema was asserted"
     assert evidence_models.Link.Kind.INFORMS in kinds, "The plain claim is what dirty() matches, and without it nothing rolls up"
-
-
-ASSERT_RELATION = """
-    mutation AssertRelation($input: AssertRelationExistsInput!) {
-        assertRelationExists(input: $input) {
-            link {
-                id
-                kind
-                term { key }
-                sourceRef
-                targetRef
-                source { ... on Instance { id kind } }
-                target { ... on Instance { id kind } }
-            }
-            drawings { graph { id } }
-        }
-    }
-"""
 
 
 @pytest.mark.django_db(transaction=True)
@@ -406,7 +299,7 @@ async def test_evidence_can_inform_a_claim_rather_than_a_node(
     target = await writes.create_entity(api_schema, simple_api_context, "Cell")
 
     created = await api_schema.execute(
-        ASSERT_RELATION,
+        writes.ASSERT_RELATION,
         variable_values={
             "input": {
                 "term": "IS_CONNECTED_TO",
@@ -456,7 +349,7 @@ async def _create_structure_row(
     test_graph: core_models.Graph,
     object_id: str,
 ) -> str:
-    category = await _get_or_create_structure_kind(test_graph)
+    category = await claims.ensure_kind(test_graph)
     result = await api_schema.execute(
         """
         mutation CreateStructure($input: AssertStructureExistsInput!) {
