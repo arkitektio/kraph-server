@@ -12,7 +12,7 @@ from asgiref.sync import sync_to_async
 
 from core import models as core_models
 from graph_engine import namespace as namespace_module
-from tests import namespaces, writes
+from tests.support import namespaces, writes
 
 
 def _cat(graph, key):

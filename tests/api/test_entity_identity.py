@@ -24,41 +24,7 @@ from kante.context import HttpContext
 
 from core import models as core_models
 from evidence import identity, models as evidence_models
-
-ASSERT_ENTITY = """
-    mutation AssertEntityExists($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) {
-            assertion { id seq }
-            instance { id }
-        }
-    }
-"""
-
-ASSERT_SAME = """
-    mutation AssertSameEntity($input: AssertSameInstanceInput!) {
-        assertSameInstance(input: $input) {
-            assertion { id }
-            links { kind id source { ... on Instance { id } } target { ... on Instance { id } } }
-        }
-    }
-"""
-
-RETRACT_SAME = """
-    mutation RetractSameEntity($input: RetractSameInstanceInput!) {
-        retractSameInstance(input: $input) { assertion { id } links { id } }
-    }
-"""
-
-
-async def _assert_entity(api_schema, ctx, term: str, same_as: list[str] | None = None) -> dict:
-    result = await api_schema.execute(
-        ASSERT_ENTITY,
-        variable_values={"input": {"term": term, "supportingEvidence": [], "sameAs": same_as or []}},
-        context_value=ctx,
-    )
-    assert result.errors is None, f"GraphQL errors: {result.errors}"
-    return result.data["assertEntityExists"]
-
+from tests.support.writes import ASSERT_SAME, RETRACT_SAME, assert_entity as _assert_entity
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio

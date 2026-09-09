@@ -16,7 +16,7 @@ from core import models as core_models
 from evidence import models as evidence_models
 from core import asserted_terms
 from graph_engine import projector
-from tests import rules, writes
+from tests.support import rules, writes
 
 ENTITIES = """
     query($category: ID!) {

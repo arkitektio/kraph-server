@@ -17,7 +17,7 @@ from authentikate.models import Organization
 from kante.context import HttpContext
 
 from evidence import models as evidence_models
-from tests import claims
+from tests.support import claims
 
 ASSERT_METRIC = """
     mutation M($input: AssertMetricValueInput!) {

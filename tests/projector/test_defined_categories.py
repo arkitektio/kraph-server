@@ -21,7 +21,7 @@ zero writes for the same reason.
 import kante
 import pytest
 
-from tests import rules
+from tests.support import rules
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 
@@ -30,7 +30,7 @@ from evidence import models as evidence_models
 from evidence import selector as selector_module
 from evidence import writer
 from graph_engine.controller import GraphController
-from tests import claims, drawing
+from tests.support import claims, drawing
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {

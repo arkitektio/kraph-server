@@ -22,9 +22,9 @@ from core import models as core_models
 from evidence import models as evidence_models
 from graph_engine import projector, watermark
 from graph_engine.controller import GraphController
-from tests import claims, drawing, writes
-from tests.api.test_category_trust import BEFORE, _example_graph
-from tests.api.test_entity_identity import ASSERT_SAME, RETRACT_SAME, _assert_entity
+from tests.support import claims, drawing, writes
+from tests.support.graphs import BEFORE, example_graph as _example_graph
+from tests.support.writes import ASSERT_SAME, RETRACT_SAME, assert_entity as _assert_entity
 
 NODE = """
     query Node($id: ID!, $graph: ID!) {

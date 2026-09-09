@@ -96,7 +96,7 @@ def test_an_unless_group_may_not_name_words() -> None:
 
 
 def test_rule_evidence_refuses_words_and_requires_a_source() -> None:
-    from tests import rules as R
+    from tests.support import rules as R
 
     with pytest.raises(ValidationError, match="WORD"):
         models.DerivationRuleInput(source_node="ROI", key="k", evidence=R.evidence(R.rule(R.word("X"))))
@@ -105,7 +105,7 @@ def test_rule_evidence_refuses_words_and_requires_a_source() -> None:
 
 
 def test_rule_evidence_accepts_observed_at() -> None:
-    from tests import rules as R
+    from tests.support import rules as R
 
     rule = models.DerivationRuleInput(source_node="ROI", key="k", evidence=R.evidence(R.rule(R.observed_since(DEC5))))
     stored = rule.model_dump(mode="json")["evidence"]
@@ -193,7 +193,7 @@ def test_a_word_only_rule_restricts_trust_for_nobody(organization) -> None:
 
 # --------------------------------------------------------------------------- KIND (RFC 0011)
 
-from tests import rules as R  # noqa: E402
+from tests.support import rules as R  # noqa: E402
 
 
 def test_a_rule_without_kind_covers_every_kind() -> None:

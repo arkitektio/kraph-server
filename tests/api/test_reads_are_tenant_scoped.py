@@ -25,16 +25,9 @@ organization the request is not a member of, and asserts the caller cannot see i
 """
 
 import pytest
-from authentikate.models import Membership, Organization, User
+from authentikate.models import Membership, User
 
 from core import models as core_models
-
-
-@pytest.fixture
-def other_organization(db) -> Organization:
-    """An organization the static test token is **not** a member of."""
-    org, _ = Organization.objects.get_or_create(slug="a_tenant_you_are_not_in")
-    return org
 
 
 @pytest.fixture

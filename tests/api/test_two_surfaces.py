@@ -10,7 +10,7 @@ view a `Node` could be drawn in.
 import pytest
 from asgiref.sync import sync_to_async
 
-from tests import drawing, writes
+from tests.support import drawing, writes
 
 NODE = """
     query N($id: ID!, $graph: ID!) {

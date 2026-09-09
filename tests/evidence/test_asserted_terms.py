@@ -14,7 +14,7 @@ maintained incrementally or rebuilt, and **the reads actually use it**.
 
 import pytest
 
-from tests import rules
+from tests.support import rules
 from authentikate.models import Organization
 
 from core import asserted_terms, models as core_models

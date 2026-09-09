@@ -14,7 +14,7 @@ import pytest
 from asgiref.sync import sync_to_async
 
 from core import models as core_models
-from tests import writes
+from tests.support import writes
 
 HANDLE = re.compile(r"^g[0-9a-f]{32}$")
 

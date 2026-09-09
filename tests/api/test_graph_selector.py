@@ -15,13 +15,8 @@ from kante.context import HttpContext
 
 from core import models as core_models
 from evidence import writer
-from tests import drawing, rules, writes
-
-CREATE_GRAPH = """
-    mutation G($input: CreateGraphInput!) {
-        createGraph(input: $input) { id }
-    }
-"""
+from tests.support import drawing, rules, writes
+from tests.support.graphs import graph_declaring as _graph_declaring
 
 UPDATE_ENTITY_CATEGORY = """
     mutation U($input: UpdateEntityCategoryInput!) {
@@ -34,16 +29,6 @@ RETRACT_ENTITY = """
         retractEntity(input: $input) { instance { id } }
     }
 """
-
-
-async def _graph_declaring(api_schema, ctx, word: str, *, definition: dict | None = None) -> str:
-    entity: dict = {"key": word}
-    if definition is not None:
-        entity["definition"] = definition
-    payload = {"name": f"view-of-{word}", "definition": {"extensions": {"entities": [entity]}}}
-    made = await api_schema.execute(CREATE_GRAPH, variable_values={"input": payload}, context_value=ctx)
-    assert made.errors is None, f"GraphQL errors: {made.errors}"
-    return made.data["createGraph"]["id"]
 
 
 @pytest.mark.django_db(transaction=True)
@@ -63,7 +48,7 @@ async def test_a_category_scoped_at_creation_does_not_count_an_unlisted_retracto
         from graph_engine.controller import GraphController
 
         graph = core_models.Graph.objects.get(pk=graph_id)
-        from tests import claims
+        from tests.support import claims
 
         entity_id = claims.mint(graph.organization, "SelCell", "annotator-this-view-trusts")
         node = evidence_models.Instance.objects.for_organization(graph.organization).get(pk=entity_id)

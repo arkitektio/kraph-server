@@ -18,7 +18,7 @@ from core import models as core_models
 from graph_engine import input_models as models
 from graph_engine.controller import GraphController
 from graph_engine.materialize import compute_definition_hash, materialize
-from tests import claims, drawing, rules as R
+from tests.support import claims, drawing, rules as R
 
 SUMMER_START = datetime(2026, 6, 1, tzinfo=timezone.utc)
 SUMMER_END = datetime(2026, 8, 31, tzinfo=timezone.utc)

@@ -48,11 +48,77 @@ CLASSIFY_NODES = """
     }
 """
 
+#: The entity write with the act's position, for tests that read the log's order.
+ASSERT_ENTITY = """
+    mutation AssertEntityExists($input: AssertEntityExistsInput!) {
+        assertEntityExists(input: $input) {
+            assertion { id seq }
+            instance { id }
+        }
+    }
+"""
+
+ASSERT_SAME = """
+    mutation AssertSameInstance($input: AssertSameInstanceInput!) {
+        assertSameInstance(input: $input) {
+            assertion { id }
+            links { kind id source { ... on Instance { id } } target { ... on Instance { id } } }
+        }
+    }
+"""
+
+RETRACT_SAME = """
+    mutation RetractSameInstance($input: RetractSameInstanceInput!) {
+        retractSameInstance(input: $input) { assertion { id } links { id } }
+    }
+"""
+
+ASSERT_DIFFERENT = """
+    mutation AssertDifferentInstance($input: AssertDifferentInstanceInput!) {
+        assertDifferentInstance(input: $input) {
+            assertion { id }
+            links { kind id source { ... on Instance { id } } target { ... on Instance { id } } }
+        }
+    }
+"""
+
+RETRACT_DIFFERENT = """
+    mutation RetractDifferentInstance($input: RetractDifferentInstanceInput!) {
+        retractDifferentInstance(input: $input) { assertion { id } links { id } }
+    }
+"""
+
+CREATE_GRAPH = """
+    mutation CreateGraph($input: CreateGraphInput!) {
+        createGraph(input: $input) { id }
+    }
+"""
+
+
+async def execute(api_schema: kante.Schema, ctx: HttpContext, document: str, variables: dict[str, Any] | None = None) -> Any:
+    """Run one document and hand back its data; a GraphQL error is a failed test."""
+    result = await api_schema.execute(document, variable_values=variables or {}, context_value=ctx)
+    assert result.errors is None, f"GraphQL errors: {result.errors}"
+    return result.data
+
 
 async def _mutate(api_schema: kante.Schema, ctx: HttpContext, document: str, field: str, payload: dict[str, Any]) -> Any:
-    result = await api_schema.execute(document, variable_values={"input": payload}, context_value=ctx)
-    assert result.errors is None, f"GraphQL errors: {result.errors}"
-    return result.data[field]
+    return (await execute(api_schema, ctx, document, {"input": payload}))[field]
+
+
+async def assert_entity(api_schema: kante.Schema, ctx: HttpContext, term: str, *, same_as: Iterable[str] | None = None, evidence: Iterable[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Claim that an entity of this word exists, optionally as one thing with others. Returns the whole payload."""
+    return await _mutate(api_schema, ctx, ASSERT_ENTITY, "assertEntityExists", {"term": term, "supportingEvidence": list(evidence or []), "sameAs": list(same_as or [])})
+
+
+async def merge(api_schema: kante.Schema, ctx: HttpContext, refs: Iterable[str]) -> str:
+    """Claim that these instances are one thing. Returns the first sameness claim's id."""
+    return (await _mutate(api_schema, ctx, ASSERT_SAME, "assertSameInstance", {"instances": list(refs)}))["links"][0]["id"]
+
+
+async def differ(api_schema: kante.Schema, ctx: HttpContext, refs: Iterable[str]) -> str:
+    """Claim that these instances are two things. Returns the difference claim's id."""
+    return (await _mutate(api_schema, ctx, ASSERT_DIFFERENT, "assertDifferentInstance", {"instances": list(refs)}))["links"][0]["id"]
 
 
 async def create_entity(

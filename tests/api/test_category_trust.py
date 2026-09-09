@@ -15,119 +15,14 @@ This file is the acceptance test for the design discussion: the definition
 below is the example agreed there, verbatim in spirit.
 """
 
-from datetime import datetime, timezone
-
-import kante
 import pytest
 from asgiref.sync import sync_to_async
-from kante.context import HttpContext
 
 from core import models as core_models
 from graph_engine.controller import GraphController
-from tests import claims, drawing
-
-CREATE_GRAPH = """
-    mutation G($input: CreateGraphInput!) {
-        createGraph(input: $input) { id }
-    }
-"""
-
-DEC5 = datetime(2026, 12, 5, tzinfo=timezone.utc)
-BEFORE = datetime(2026, 11, 1, tzinfo=timezone.utc)
-AFTER = datetime(2026, 12, 20, tzinfo=timezone.utc)
-
-DEFINITION = {
-    "systemVersion": "2.0.0",
-    "extensions": {
-        "entities": [
-            {
-                "key": "AIS",
-                "definition": {
-                    "rules": [
-                        {
-                            "when": [
-                                {"field": "WORD", "operator": "IS", "value": "AIS"},
-                                {"field": "SUBJECT", "operator": "IS", "value": "peter"},
-                                {"field": "ASSERTED_AT", "operator": "BEFORE", "value": DEC5.isoformat()},
-                            ],
-                            "unless": [{"when": [{"field": "APP", "operator": "IS", "value": "sloppy-import"}]}],
-                        },
-                        {
-                            "when": [
-                                {"field": "WORD", "operator": "IS", "value": "AxonInitialSegment"},
-                                {"field": "SUBJECT", "operator": "IS", "value": "karl"},
-                                {"field": "ASSERTED_AT", "operator": "SINCE", "value": DEC5.isoformat()},
-                            ]
-                        },
-                    ]
-                },
-                "propertyDefinitions": [
-                    {
-                        "key": "avg_length",
-                        "valueKind": "FLOAT",
-                        "derivation": "ROLLUP",
-                        "rule": {
-                            "sourceNode": "ROI",
-                            "key": "vector_length",
-                            "aggregation": "MEAN",
-                            "evidence": {"rules": [{"when": [{"field": "APP", "operator": "IS", "value": "segmenter-v3"}]}]},
-                        },
-                    }
-                ],
-            },
-            {"key": "Cell"},
-        ],
-        "relations": [
-            {
-                "key": "IS_CONNECTED_TO",
-                "source": {"keys": ["Cell"]},
-                "target": {"keys": ["Cell"]},
-                "definition": {
-                    "rules": [
-                        {
-                            "when": [
-                                {"field": "WORD", "operator": "IS", "value": "IS_CONNECTED_TO"},
-                                {"field": "SUBJECT", "operator": "IS", "value": "karl"},
-                                {"field": "ASSERTED_AT", "operator": "SINCE", "value": DEC5.isoformat()},
-                            ]
-                        }
-                    ]
-                },
-            }
-        ],
-        "events": [
-            {
-                "key": "Mitosis",
-                "kind": "INTRINSIC",
-                "definition": {
-                    "rules": [
-                        {
-                            "when": [
-                                {"field": "WORD", "operator": "IS", "value": "Mitosis"},
-                                {"field": "APP", "operator": "IS", "value": "event-annotator"},
-                            ]
-                        }
-                    ]
-                },
-                "inputs": [{"key": "Cell", "role": "mother", "descriptor": {"keys": ["Cell"]}}],
-                "outputs": [{"key": "Cell", "role": "daughter", "descriptor": {"keys": ["Cell"]}}],
-            }
-        ],
-    },
-}
-
-
-async def _example_graph(api_schema: kante.Schema, ctx: HttpContext, name: str) -> str:
-    made = await api_schema.execute(CREATE_GRAPH, variable_values={"input": {"name": name, "definition": DEFINITION}}, context_value=ctx)
-    assert made.errors is None, f"GraphQL errors: {made.errors}"
-    return made.data["createGraph"]["id"]
-
-
-def _rebuild(graph_id: str, table_projector) -> core_models.Graph:
-    graph = core_models.Graph.objects.get(pk=graph_id)
-    GraphController(projector=table_projector).rebuild_projection(graph)
-    return graph
-
+from tests.support import claims, drawing
+from tests.support.graphs import AFTER, BEFORE, example_graph as _example_graph, rebuild as _rebuild
+from tests.support.writes import CREATE_GRAPH
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio

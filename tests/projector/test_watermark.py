@@ -16,7 +16,7 @@ from evidence import models as evidence_models
 from graph_engine import models as projection_models
 from graph_engine import projector, watermark
 from graph_engine.controller import GraphController
-from tests import writes
+from tests.support import writes
 
 
 def test_cursor_is_a_pure_function_of_three_numbers() -> None:

@@ -18,7 +18,7 @@ from evidence import models as evidence_models
 from graph_engine import models as projection_models
 from graph_engine import projector, watermark
 from graph_engine.controller import GraphController
-from tests import drawing, writes
+from tests.support import drawing, writes
 
 ENTITY_PROPERTIES = """
     query Entity($id: ID!, $graph: ID!) {

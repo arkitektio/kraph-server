@@ -96,6 +96,34 @@ def all_vertex_properties(graph: Any) -> dict[str, dict[str, Any]]:
     return {record["properties"]["id"]: record["properties"] for record in (vertex_record(graph, ref) for ref in models.ProjectionVertex.objects.filter(graph=graph).values_list("ref", flat=True))}
 
 
+def snapshot(graph: Any) -> dict[str, dict[str, Any]]:
+    """Everything a view draws for its nodes, keyed by representative ref.
+
+    `{rep: {"labels": sorted labels, "members": sorted members, "properties": {…}}}` —
+    labels and members included, which `all_vertex_properties` drops. The shape
+    two drawings are compared in when the question is whether the write path and
+    a rebuild drew the same thing (C2).
+    """
+    out: dict[str, dict[str, Any]] = {}
+    for vertex in models.ProjectionVertex.objects.filter(graph=graph):
+        record = vertex_record(graph, str(vertex.ref))
+        assert record is not None
+        out[str(vertex.ref)] = {
+            "labels": list(record["labels"]),
+            "members": sorted(str(member) for member in models.ProjectionMember.objects.filter(vertex=vertex).values_list("ref", flat=True)),
+            "properties": {key: value for key, value in record["properties"].items() if not str(key).startswith("__")},
+        }
+    return out
+
+
+def edge_snapshot(graph: Any) -> dict[tuple[str, str, str], dict[str, Any]]:
+    """Every edge a view draws, keyed by `(source rep, target rep, label)`, with its properties minus the drawing's own stamps."""
+    out: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for edge in models.ProjectionEdge.objects.filter(graph=graph).select_related("source", "target"):
+        out[(str(edge.source.ref), str(edge.target.ref), str(edge.label))] = {key: value for key, value in (edge.properties or {}).items() if key != "category_id"}
+    return out
+
+
 def edge_property_values(graph: Any, label: str, key: str) -> list[Any]:
     """The value of one property on every edge this view draws under `label`."""
     return [(edge.properties or {}).get(key) for edge in models.ProjectionEdge.objects.filter(graph=graph, label=str(label))]

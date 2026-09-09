@@ -17,7 +17,7 @@ import uuid
 import kante
 import pytest
 
-from tests import rules
+from tests.support import rules
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 

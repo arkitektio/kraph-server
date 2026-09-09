@@ -25,7 +25,7 @@ from kante.context import HttpContext
 
 from core import models as core_models
 from evidence import models as evidence_models
-from tests import writes
+from tests.support import writes
 
 
 class _Actor:

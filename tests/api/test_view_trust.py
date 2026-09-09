@@ -14,35 +14,9 @@ from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 
 from core import models as core_models
-from evidence import identity as identity_module
-from evidence import models as evidence_models
-from evidence import panel, writer
-from tests import claims, rules, writes
-
-CREATE_GRAPH = """
-    mutation G($input: CreateGraphInput!) {
-        createGraph(input: $input) { id }
-    }
-"""
-
-
-async def _graph_declaring(api_schema, ctx, word: str, *, name: str, definition: dict | None = None) -> str:
-    entity: dict = {"key": word}
-    if definition is not None:
-        entity["definition"] = definition
-    payload: dict = {"name": name, "definition": {"extensions": {"entities": [entity]}}}
-    made = await api_schema.execute(CREATE_GRAPH, variable_values={"input": payload}, context_value=ctx)
-    assert made.errors is None, f"GraphQL errors: {made.errors}"
-    return made.data["createGraph"]["id"]
-
-
-def _merge_as(organization, left: str, right: str, subject: str) -> None:
-    """A sameness claim by a named annotator, folded into the org-grain cache
-    exactly as the controller folds it."""
-    assertion = writer.create_assertion(organization, subject=subject, app_id="pytest")
-    writer.create_link(organization, kind=evidence_models.Link.Kind.SAME_AS, source_ref=left, target_ref=right, assertion=assertion)
-    identity_module.merge(organization, left, right)
-
+from evidence import panel
+from tests.support import claims, rules, writes
+from tests.support.graphs import graph_declaring as _graph_declaring, merge_as as _merge_as
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
@@ -153,7 +127,7 @@ async def test_narrowing_a_categorys_trust_takes_derived_values_and_windows_with
     @sync_to_async
     def narrow_and_read():
         from graph_engine.controller import GraphController
-        from tests import drawing
+        from tests.support import drawing
 
         graph = core_models.Graph.objects.get(pk=graph_id)
         category = core_models.EntityCategory.objects.get(graph=graph, key="Probe")

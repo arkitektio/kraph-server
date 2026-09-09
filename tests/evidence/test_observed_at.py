@@ -18,7 +18,7 @@ from core import models as core_models
 from evidence import models as evidence_models
 from evidence import writer
 from graph_engine.controller import GraphController
-from tests import claims, drawing
+from tests.support import claims, drawing
 
 TREATMENT = datetime(2026, 6, 1, tzinfo=timezone.utc)
 BEFORE = TREATMENT - timedelta(days=30)

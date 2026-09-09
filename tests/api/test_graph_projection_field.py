@@ -3,7 +3,7 @@
 import pytest
 
 from core import models as core_models
-from tests import writes
+from tests.support import writes
 
 PROJECTION = """
     query($id: ID!) {

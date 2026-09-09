@@ -24,7 +24,7 @@ from core import models as core_models
 from evidence import models as evidence_models
 from evidence import writer as evidence_writer
 from graph_engine import input_models
-from tests import drawing, writes
+from tests.support import drawing, writes
 
 CREATE_ENTITY_CATEGORY = """
     mutation CreateEntityCategory($input: CreateEntityCategoryInput!) {

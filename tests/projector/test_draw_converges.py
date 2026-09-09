@@ -14,7 +14,7 @@ from asgiref.sync import sync_to_async
 from core import models as core_models
 from graph_engine import projector
 from graph_engine.controller import GraphController
-from tests import drawing, writes
+from tests.support import drawing, writes
 
 
 def _vertices_with_id(table_projector, graph: core_models.Graph, ref: str) -> int:

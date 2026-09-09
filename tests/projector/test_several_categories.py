@@ -21,7 +21,7 @@ from evidence import models as evidence_models
 from evidence import selector as selector_module
 from graph_engine import projector as projector_module
 from graph_engine.controller import GraphController
-from tests import claims, drawing, rules
+from tests.support import claims, drawing, rules
 
 JOHANNES = "johannes"
 CHRISTIAN = "christian"
@@ -341,7 +341,7 @@ async def test_an_edge_two_relation_categories_admit_is_drawn_under_both(api_sch
     nothing — so a claim both categories admitted was drawn under neither.
     """
     from evidence import writer
-    from tests import rules, writes
+    from tests.support import rules, writes
 
     @sync_to_async
     def declare() -> None:

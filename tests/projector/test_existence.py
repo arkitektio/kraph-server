@@ -31,7 +31,7 @@ from core import models as core_models
 from evidence import claims as claims_module
 from evidence import models as evidence_models
 from graph_engine.controller import GraphController
-from tests import drawing, rules
+from tests.support import drawing, rules
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {
@@ -416,7 +416,7 @@ async def test_a_clause_since_ignores_earlier_retractions(
     from asgiref.sync import sync_to_async
     from django.utils import timezone as django_timezone
 
-    from tests import claims
+    from tests.support import claims
 
     cutoff = django_timezone.now()
 

@@ -12,14 +12,14 @@ from datetime import datetime, timezone
 
 import pytest
 
-from tests import rules
+from tests.support import rules
 from asgiref.sync import sync_to_async
 
 from core import models as core_models
 from graph_engine import input_models
 from graph_engine.controller import GraphController
 from graph_engine.materialize import materialize
-from tests import claims, namespaces, writes
+from tests.support import claims, namespaces, writes
 
 PETER = "peter"
 KARL = "karl"

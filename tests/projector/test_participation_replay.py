@@ -24,7 +24,7 @@ from kante.context import HttpContext
 from core import models as core_models
 from evidence import models as evidence_models
 from graph_engine.controller import GraphController
-from tests import drawing
+from tests.support import drawing
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {

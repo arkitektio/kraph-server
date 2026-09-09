@@ -17,7 +17,7 @@ from evidence import models as evidence_models
 from graph_engine import models as graph_engine_models
 from graph_engine.controller import GraphController
 from graph_engine.retrieved import RetrievedNode
-from tests import writes
+from tests.support import writes
 
 
 @pytest.mark.django_db(transaction=True)

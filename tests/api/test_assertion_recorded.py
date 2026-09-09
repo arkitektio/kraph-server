@@ -26,8 +26,7 @@ from kante.testing import build_ws_context
 from evidence import channel, models as evidence_models, writer
 from graph_engine.controller import GraphController
 from graph_engine.input_models import ProvenanceContext
-from tests.api.test_reads_are_tenant_scoped import other_organization  # noqa: F401  (fixture)
-from tests.conftest import _static_identity
+from tests.support.identity import static_identity as _static_identity
 
 SUBSCRIPTION = """
     subscription AssertionRecorded {

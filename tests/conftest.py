@@ -1,32 +1,44 @@
-import time
+"""The one conftest.
 
-# (Generator import removed with the AGE engine fixture)
-import pytest
-import boto3
-from moto import mock_aws
+Two tenants appear in this suite and they are not the same organization:
+
+- `api_context` authenticates as the static token's identity — user
+  `static_issuer_1`, organization `static_org` (`tests.support.identity`). Every
+  graph fixture below is owned by it, and every GraphQL write lands in it.
+- `organization` (slug `evidence-org`) and `other_organization` are tenants for
+  tests that write evidence rows directly through `evidence.writer`.
+
+A test that mixes the two writes evidence the API caller cannot see. Pick one.
+"""
+
 import os
+import time
+from datetime import datetime, timezone
 
-from graph_engine.controller import GraphController
-from api.schema import create_schema
-from authentikate.models import Client, Organization, User, Membership
-from kante.context import HttpContext, UniversalRequest
-from strawberry.http.temporal_response import TemporalResponse
+import boto3
+import pytest
+from authentikate.models import Client, Membership, Organization, User
 from dokker import local
+from kante.context import HttpContext, UniversalRequest
+from moto import mock_aws
+from strawberry.http.temporal_response import TemporalResponse
+
+from core import models as core_models
+from core.enums import ValueKind
+from evidence import models as evidence_models
 from graph_engine import input_models as models
+from graph_engine.controller import GraphController
 from graph_engine.materialize import materialize
 from graph_engine.projection import TableProjector
-from core import models as core_models
-from tests import rules
+from tests.support import rules
+from tests.support.identity import static_identity
 
 
 @pytest.fixture(scope="function")
-def aws_credentials() -> None:
-    """Mocked AWS Credentials for moto."""
-    os.environ["AWS_ACCESS_KEY_ID"] = "testing"
-    os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
-    os.environ["AWS_SECURITY_TOKEN"] = "testing"
-    os.environ["AWS_SESSION_TOKEN"] = "testing"
-    os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
+def aws_credentials(monkeypatch) -> None:
+    """Mocked AWS credentials for moto, restored after the test."""
+    for key, value in (("AWS_ACCESS_KEY_ID", "testing"), ("AWS_SECRET_ACCESS_KEY", "testing"), ("AWS_SECURITY_TOKEN", "testing"), ("AWS_SESSION_TOKEN", "testing"), ("AWS_DEFAULT_REGION", "us-east-1")):
+        monkeypatch.setenv(key, value)
 
 
 @pytest.fixture(scope="function")
@@ -61,30 +73,10 @@ def backend_stack():
         yield
 
 
-# The identity `authentikate`'s static test token resolves to. Fixtures must build
-# graphs under *this* organization, not one of their own invention: the auth
-# extension overwrites the request's user and organization at execution time, so a
-# graph owned by anything else belongs to a tenant the request cannot act for.
-# That mismatch was invisible while `validate_graph_access` returned unconditionally;
-# it stops being invisible the moment anything checks membership.
-STATIC_USERNAME = "static_issuer_1"
-STATIC_ORG_SLUG = "static_org"
-
-
-def _static_identity():
-    """The user, organization and membership the static test token authenticates as."""
-    user, _ = User.objects.get_or_create(
-        username=STATIC_USERNAME,
-        defaults={"sub": "1", "iss": "static_issuer"},
-    )
-    org, _ = Organization.objects.get_or_create(slug=STATIC_ORG_SLUG)
-    membership, _ = Membership.objects.get_or_create(user=user, organization=org)
-    return user, org, membership
-
-
 @pytest.fixture(scope="function")
-def authenticated_context(db, backend_stack):
-    user, org, membership = _static_identity()
+def api_context(db, backend_stack) -> HttpContext:
+    """The request context every GraphQL test executes under: the static token's identity."""
+    user, org, membership = static_identity()
     client, _ = Client.objects.get_or_create(client_id="oinsoins")
 
     request = UniversalRequest(
@@ -96,6 +88,18 @@ def authenticated_context(db, backend_stack):
     request.set_membership(membership)  # type: ignore
 
     return HttpContext(request=request, response=TemporalResponse(), headers={"Authorization": "Bearer test"}, type="http")
+
+
+@pytest.fixture(scope="function")
+def authenticated_context(api_context) -> HttpContext:
+    """`api_context` under its old name. One release, then gone."""
+    return api_context
+
+
+@pytest.fixture(scope="function")
+def simple_api_context(api_context) -> HttpContext:
+    """`api_context` under its old name. One release, then gone."""
+    return api_context
 
 
 @pytest.fixture(scope="session")
@@ -273,29 +277,16 @@ def table_projector(transactional_db, backend_stack) -> TableProjector:
 
 @pytest.fixture(scope="function")
 def api_schema(table_projector):
-    """The served schema, drawing through the table projector."""
+    """The served schema — the one `api/schema.py` builds, drawing through the table projector.
 
-    return create_schema(
-        max_depth=10,
-        debug=True,
-        projector=table_projector,
-    )
+    Not rebuilt per test: `create_schema` binds only a `ProjectionExtension` over
+    a stateless projector, and the module-level schema is built with exactly these
+    arguments. Still function-scoped over `table_projector` so a test that asks
+    for the schema alone keeps the transactional database it always had.
+    """
+    from api.schema import schema
 
-
-@pytest.fixture(scope="function")
-def simple_api_context(db, backend_stack) -> HttpContext:
-    user, org, membership = _static_identity()
-    client, _ = Client.objects.get_or_create(client_id="oinsoins")
-
-    request = UniversalRequest(
-        _extensions={"token": "test"},
-        _client=client,  # type: ignore
-        _user=user,  # type: ignore
-        _organization=org,  # type: ignore
-    )
-    request.set_membership(membership)  # type: ignore
-
-    return HttpContext(request=request, response=TemporalResponse(), headers={"Authorization": "Bearer test"}, type="http")
+    return schema
 
 
 # ---------------------------------------------------------------------------
@@ -529,3 +520,116 @@ def subsumption_graph(transactional_db, table_projector, authenticated_context) 
         membership=request.membership,
         name="subsumption",
     )
+
+
+# ---------------------------------------------------------------------------
+# Evidence-layer fixtures: tenants and vocabulary for tests that write rows
+# through `evidence.writer` rather than through the API. `organization` is
+# **not** the API caller's organization — see the module docstring.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def organization(db: None, backend_stack: None) -> Organization:
+    """The tenant most evidence-level tests write under (slug `evidence-org`)."""
+    org, _ = Organization.objects.get_or_create(slug="evidence-org")
+    return org
+
+
+@pytest.fixture
+def other_organization(db: None, backend_stack: None) -> Organization:
+    """An organization the static test token is **not** a member of. Nothing it owns may be visible to any other tenant."""
+    org, _ = Organization.objects.get_or_create(slug="a_tenant_you_are_not_in")
+    return org
+
+
+@pytest.fixture
+def user(db: None, backend_stack: None) -> User:
+    """A user to own the graphs categories still hang off."""
+    user, _ = User.objects.get_or_create(username="evidence-user", sub="evidence-sub")
+    return user
+
+
+def _make_graph(name: str, organization: Organization, user: User) -> core_models.Graph:
+    """A bare `Graph` row: categories hang off one, and no projection is built from it here."""
+    membership, _ = Membership.objects.get_or_create(user=user, organization=organization)
+    return core_models.Graph.objects.create(name=name, user=user, membership=membership, organization=organization)
+
+
+@pytest.fixture
+def graph_a(organization: Organization, user: User) -> core_models.Graph:
+    """One view over the organization's evidence."""
+    return _make_graph("graph_a", organization, user)
+
+
+@pytest.fixture
+def graph_b(organization: Organization, user: User) -> core_models.Graph:
+    """A second view over the *same* organization's evidence."""
+    return _make_graph("graph_b", organization, user)
+
+
+def _category(graph: core_models.Graph, key: str) -> core_models.EntityCategory:
+    """A view's category for a word, minting the organization's term for it."""
+    from evidence import writer
+
+    return core_models.EntityCategory.objects.create(graph=graph, term=writer.ensure_term(graph.organization, core_models.EntityCategory.KIND, key), key=key, age_name=key, label=key)
+
+
+@pytest.fixture
+def entity_category_a(graph_a: core_models.Graph) -> core_models.EntityCategory:
+    """A word graph A declares, so nodes claimed under it belong to graph A."""
+    return _category(graph_a, "AIS")
+
+
+@pytest.fixture
+def entity_category_b(graph_b: core_models.Graph) -> core_models.EntityCategory:
+    """A **different** word, declared by graph B alone — two graphs declaring one word share it."""
+    return _category(graph_b, "Soma")
+
+
+@pytest.fixture
+def make_node(organization: Organization, assertion: evidence_models.Assertion):
+    """Mint a real instance under a category's word and hand back its ref."""
+
+    def _make(category: core_models.Category) -> str:
+        node = evidence_models.Instance.objects.create_for_organization(organization=organization, kind=evidence_models.Instance.Kind.ENTITY, term=category.term, assertion=assertion)
+        return node.ref
+
+    return _make
+
+
+@pytest.fixture
+def roi_kind(organization: Organization) -> evidence_models.StructureKind:
+    """The ROI kind. One per organization — there is no per-graph variant to have."""
+    return evidence_models.StructureKind.all_objects.create(organization=organization, identifier="@mikro/roi")
+
+
+@pytest.fixture
+def roi_category_a(roi_kind: evidence_models.StructureKind) -> evidence_models.StructureKind:
+    """The ROI kind as reached from graph A — the same row as from graph B."""
+    return roi_kind
+
+
+@pytest.fixture
+def roi_category_b(roi_kind: evidence_models.StructureKind) -> evidence_models.StructureKind:
+    """The same kind, reached from graph B. Deliberately identical to `roi_category_a`."""
+    return roi_kind
+
+
+@pytest.fixture
+def length_category(organization: Organization, roi_kind: evidence_models.StructureKind) -> evidence_models.MetricKind:
+    """A float-valued measurement kind describing an ROI."""
+    return evidence_models.MetricKind.all_objects.create(organization=organization, structure_kind=roi_kind, key="vector_length", value_kind=ValueKind.FLOAT.value)
+
+
+@pytest.fixture
+def assertion(organization: Organization) -> evidence_models.Assertion:
+    """An act every other fixture can hang evidence off."""
+    return evidence_models.Assertion.objects.create_for_organization(organization=organization, subject="tester", app_id="pytest", action_name="record_evidence", asserted_at=datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc))
+
+
+@pytest.fixture
+def second_graph(test_graph: core_models.Graph, bio_graph_schema, table_projector, api_context) -> core_models.Graph:
+    """A second full view over the same organization's evidence, from the same schema as `test_graph`."""
+    request = api_context.request
+    return materialize(bio_graph_schema, table_projector, user=request._user, organization=request._organization, membership=request.membership, name="second_graph")

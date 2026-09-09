@@ -18,24 +18,9 @@ from asgiref.sync import sync_to_async
 from core import models as core_models
 from evidence import identity, models as evidence_models
 from graph_engine.controller import GraphController
-from tests import claims, drawing
-from tests.api.test_category_trust import BEFORE, _example_graph
-from tests.api.test_entity_identity import ASSERT_SAME, _assert_entity
-
-ASSERT_DIFFERENT = """
-    mutation AssertDifferentInstance($input: AssertDifferentInstanceInput!) {
-        assertDifferentInstance(input: $input) {
-            assertion { id }
-            links { kind id source { ... on Instance { id } } target { ... on Instance { id } } }
-        }
-    }
-"""
-
-RETRACT_DIFFERENT = """
-    mutation RetractDifferentInstance($input: RetractDifferentInstanceInput!) {
-        retractDifferentInstance(input: $input) { assertion { id } links { id } }
-    }
-"""
+from tests.support import claims, drawing
+from tests.support.graphs import BEFORE, example_graph as _example_graph
+from tests.support.writes import ASSERT_DIFFERENT, ASSERT_SAME, RETRACT_DIFFERENT, assert_entity as _assert_entity
 
 NODE = """
     query Node($id: ID!, $graph: ID!) {

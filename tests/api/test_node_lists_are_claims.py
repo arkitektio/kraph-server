@@ -25,7 +25,7 @@ from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 
 from core import models as core_models
-from tests import drawing, writes
+from tests.support import drawing, writes
 
 NODE_BY_ID = """
     query GetNode($id: ID!, $graph: ID!) {

@@ -20,7 +20,6 @@ from django.conf import settings
 from django.utils import timezone
 
 from evidence import writer
-from tests.api.test_reads_are_tenant_scoped import other_organization  # noqa: F401  (fixture)
 
 ASSERT_ENTITY = """
     mutation AssertEntityExists($input: AssertEntityExistsInput!) {

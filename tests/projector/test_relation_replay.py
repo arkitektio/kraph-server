@@ -22,7 +22,7 @@ from core import models as core_models
 from evidence import claims as claims_module
 from evidence import models as evidence_models
 from graph_engine.controller import GraphController
-from tests import drawing
+from tests.support import drawing
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {
@@ -230,7 +230,7 @@ async def test_a_retraction_folds_survivors_under_the_rule_not_the_drawing(
     disagreed exactly when the cache was behind. Now the rule answers, the
     individual is converged first, and the retraction leaves `b -> c` standing.
     """
-    from tests import claims as claims_module_helpers
+    from tests.support import claims as claims_module_helpers
 
     entity_category = await _cell_category(test_graph)
     relation_category = await _connected_to_category(test_graph)

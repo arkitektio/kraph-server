@@ -30,7 +30,7 @@ from evidence import claims as claims_module
 from evidence import models as evidence_models
 from graph_engine import input_models as models
 from graph_engine.materialize import materialize
-from tests import drawing
+from tests.support import drawing
 
 CREATE_STRUCTURE = """
     mutation CreateStructure($input: AssertStructureExistsInput!) {

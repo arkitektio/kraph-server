@@ -19,7 +19,7 @@ from kante.context import HttpContext
 
 from core import models as core_models
 from graph_engine.controller import GraphController
-from tests import claims, rules
+from tests.support import claims, rules
 
 CREATE_GRAPH = """
     mutation G($input: CreateGraphInput!) {

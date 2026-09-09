@@ -19,8 +19,8 @@ from evidence import writer
 from graph_engine import input_models as models
 from graph_engine.controller import GraphController
 from graph_engine.materialize import materialize
-from tests import claims, drawing
-from tests import rules as R
+from tests.support import claims, drawing
+from tests.support import rules as R
 
 # --- the columns ------------------------------------------------------------
 

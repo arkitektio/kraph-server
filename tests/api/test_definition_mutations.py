@@ -13,7 +13,7 @@ from kante.context import HttpContext
 
 from core import models as core_models
 from evidence import models as evidence_models
-from tests import claims, drawing, rules, writes
+from tests.support import claims, drawing, rules, writes
 
 CREATE_CATEGORY = """
     mutation C($input: CreateEntityCategoryInput!) {

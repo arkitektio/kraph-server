@@ -9,7 +9,7 @@ import pytest
 
 from core import models as core_models
 from graph_engine import input_models
-from tests import writes
+from tests.support import writes
 
 
 def test_a_legacy_raw_cypher_row_is_refused(graph_controller, test_graph: core_models.Graph) -> None:
@@ -56,7 +56,7 @@ async def test_a_relation_path_renders_through_the_namespace(api_schema, simple_
     """A two-node path is one GRAPH_TABLE pattern with label dispatch."""
     from asgiref.sync import sync_to_async
 
-    from tests import writes as writes_module
+    from tests.support import writes as writes_module
 
     cell_a = await writes_module.create_entity(api_schema, simple_api_context, "Cell")
     cell_b = await writes_module.create_entity(api_schema, simple_api_context, "Cell")
@@ -83,7 +83,7 @@ async def test_an_optional_path_null_fills_like_optional_match(api_schema, simpl
     """An optional path is a LEFT JOIN of its own GRAPH_TABLE: unmatched rows stay, with nulls."""
     from asgiref.sync import sync_to_async
 
-    from tests import writes as writes_module
+    from tests.support import writes as writes_module
 
     await writes_module.create_entity(api_schema, simple_api_context, "AIS")
 

@@ -22,7 +22,7 @@ from evidence import models as evidence_models
 from evidence import selector as selector_module
 from evidence import writer
 from graph_engine import input_models
-from tests import rules
+from tests.support import rules
 
 MARCH_1 = datetime(2026, 3, 1, tzinfo=timezone.utc)
 MARCH_3 = datetime(2026, 3, 3, tzinfo=timezone.utc)

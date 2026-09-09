@@ -11,7 +11,7 @@ from asgiref.sync import sync_to_async
 from core import models as core_models
 from evidence import models as evidence_models
 from evidence import writer
-from tests import claims, drawing
+from tests.support import claims, drawing
 
 CREATE_GRAPH = """
     mutation Create($input: CreateGraphInput!) {

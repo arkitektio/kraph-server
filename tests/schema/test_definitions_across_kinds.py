@@ -17,7 +17,7 @@ from evidence import models as evidence_models
 from evidence import writer
 from graph_engine import input_models as models
 from graph_engine.materialize import materialize
-from tests import claims, rules
+from tests.support import claims, rules
 
 DEC5 = datetime(2026, 12, 5, tzinfo=timezone.utc)
 
@@ -327,7 +327,7 @@ async def test_a_protocol_event_categorys_rules_govern_its_participations(api_sc
     from asgiref.sync import sync_to_async
 
     from graph_engine.controller import GraphController
-    from tests import drawing
+    from tests.support import drawing
 
     request = authenticated_context.request
 

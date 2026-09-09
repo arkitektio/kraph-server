@@ -10,7 +10,7 @@ import pytest
 from asgiref.sync import sync_to_async
 
 from evidence import models as evidence_models
-from tests import writes
+from tests.support import writes
 
 STRUCTURE_BY_IDENTIFIER = """
     query S($identifier: StructureIdentifier!, $object: StructureObject!) {
