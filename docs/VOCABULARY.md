@@ -66,6 +66,14 @@ a fact because nobody had declared the word would be refusing it on a bookkeepin
 technicality. All three are `PROTECT`ed from the rows that name them — a word
 that has been used can be retired, never deleted.
 
+A word's **identity is immutable** and its **presentation is not evidence** (RFC
+0022). The identity columns — `(organization, kind, key)`, `(organization,
+identifier)`, `(organization, structure_kind, key, value_kind)` — are what claims
+reference, and a `BEFORE UPDATE` trigger refuses to rewrite them (evidence
+migration 0016, same hatch as the log's). `label`, `description`, `purl`, `color`
+and `image` are how the word shows; they may be edited in place and no act
+records it, because nothing a rule reads depends on them.
+
 ### Two clocks
 
 | Word | Means | Where |

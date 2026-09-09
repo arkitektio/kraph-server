@@ -255,3 +255,46 @@ def test_the_migrations_escape_hatch_actually_rewrites_the_log(organization, roi
     # And it does not outlive the transaction it was set in — `SET LOCAL`, not `SET`.
     with pytest.raises(REFUSED), transaction.atomic(), connection.cursor() as cursor:
         cursor.execute("UPDATE evidence_standing SET target_type = 'structure'")
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_words_identity_cannot_be_rewritten(organization, roi_kind, length_category) -> None:
+    """RFC 0022: the identity columns every claim references are immutable in the
+    database, not by convention in one resolver."""
+    term = writer.ensure_term(organization, "ENTITY", "AIS")
+
+    with pytest.raises(REFUSED), transaction.atomic():
+        evidence_models.Term.all_objects.filter(pk=term.pk).update(key="Axon")
+    with pytest.raises(REFUSED), transaction.atomic():
+        evidence_models.Term.all_objects.filter(pk=term.pk).update(kind="RELATION")
+    with pytest.raises(REFUSED), transaction.atomic():
+        evidence_models.StructureKind.all_objects.filter(pk=roi_kind.pk).update(identifier="@mikro/image")
+    with pytest.raises(REFUSED), transaction.atomic():
+        evidence_models.MetricKind.all_objects.filter(pk=length_category.pk).update(value_kind="INT")
+
+    term.refresh_from_db()
+    assert (term.kind, term.key) == ("ENTITY", "AIS")
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_words_presentation_is_not_evidence(organization, roi_kind, length_category) -> None:
+    """How a word shows may change in place: no rule reads it, no claim references it."""
+    term = writer.ensure_term(organization, "ENTITY", "AIS")
+
+    evidence_models.Term.all_objects.filter(pk=term.pk).update(label="Axon initial segment", description="the AIS")
+    evidence_models.StructureKind.all_objects.filter(pk=roi_kind.pk).update(label="Region of interest")
+    evidence_models.MetricKind.all_objects.filter(pk=length_category.pk).update(label="Length")
+
+    term.refresh_from_db()
+    assert term.label == "Axon initial segment"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_the_identity_guard_honours_the_redaction_hatch(organization) -> None:
+    term = writer.ensure_term(organization, "ENTITY", "Misspelt")
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL kraph.allow_log_rewrite = 'on'")
+        evidence_models.Term.all_objects.filter(pk=term.pk).update(key="Misspelled")
+    term.refresh_from_db()
+    assert term.key == "Misspelled"

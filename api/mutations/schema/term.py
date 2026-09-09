@@ -74,7 +74,9 @@ def update_term(info: Info, input: inputs.UpdateTermInput) -> types.Term:
     Descriptive fields only. `kind` and `key` are the term's identity, and every
     claim ever recorded points at it — renaming would silently re-point all of
     them at a different word. Correcting a mistaken word means declaring the right
-    one and re-classifying, which leaves both claims on the record.
+    one and re-classifying, which leaves both claims on the record. The database
+    refuses an identity rewrite outright (evidence migration 0016, RFC 0022), so
+    this is not a convention this resolver happens to keep.
     """
     model = input.to_pydantic()
     term = _resolve(info, str(model.id))
