@@ -169,3 +169,37 @@ def test_the_property_graph_answers_for_the_drawing(test_graph, table_projector)
     with connection.cursor() as cursor:
         cursor.execute(f'SELECT ref FROM GRAPH_TABLE ("{test_graph.age_name}".graph MATCH (a IS "AIS") COLUMNS (a.__ref AS ref))')
         assert [row[0] for row in cursor.fetchall()] == [ref]
+
+
+UPDATE_GRAPH_VISUAL = """
+    mutation UpdateGraphVisual($input: UpdateGraphVisualInput!) {
+        updateGraphVisual(input: $input) { id }
+    }
+"""
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_moving_a_box_runs_no_ddl(api_schema, simple_api_context, test_graph, table_projector, monkeypatch) -> None:
+    """Layout is presentation. `updateGraphVisual` used to `save()` each category,
+    and the category-write signal then dropped and recreated the graph's whole
+    Postgres schema once per moved box."""
+    from asgiref.sync import sync_to_async
+
+    from graph_engine.projection import table as table_module
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("a layout change must not touch the namespace")
+
+    monkeypatch.setattr(table_module.TableProjector, "refresh_namespace", refuse)
+
+    category = await sync_to_async(core_models.Category.objects.get)(graph=test_graph, key="AIS")
+    result = await api_schema.execute(
+        UPDATE_GRAPH_VISUAL,
+        variable_values={"input": {"id": str(test_graph.pk), "nodePositions": [{"category": str(category.pk), "positionX": 3.0, "positionY": 4.0}]}},
+        context_value=simple_api_context,
+    )
+    assert result.errors is None, f"GraphQL errors: {result.errors}"
+
+    await sync_to_async(category.refresh_from_db)()
+    assert (category.position_x, category.position_y) == (3.0, 4.0)

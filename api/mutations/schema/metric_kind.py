@@ -48,7 +48,11 @@ def update_metric_kind(info: Info, input: inputs.UpdateMetricKindInput) -> types
 
 
 def delete_metric_kind(info: Info, input: inputs.DeleteMetricKindInput) -> strawberry.ID:
-    """Retire a metric kind, and the measurements recorded under it."""
+    """Retire a metric kind nothing has been recorded under.
+
+    The FK from `Metric` is `PROTECT`: a kind that has been used can be retired
+    only after its metrics are retracted, never by deleting them.
+    """
     model = input.to_pydantic()
     delete_or_explain(_resolve(info, str(model.id)), what="this metric kind", instead="Archive the metrics recorded under it first.")
     return model.id

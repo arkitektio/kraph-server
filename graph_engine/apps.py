@@ -21,6 +21,14 @@ class GraphEngineConfig(AppConfig):
         connect_projection_lifecycle()
 
 
+#: Graphs whose deletion is in flight. Django's collector deletes the categories
+#: before the graph row, so their `post_delete` handlers would otherwise refresh
+#: the namespace just dropped (`connect_projection_lifecycle`) or record a schema
+#: version for a graph about to go (`versioning.on_category_changed` — an insert
+#: the collector did not see, which then breaks the graph's own delete on the FK).
+deleting_graphs: set[int] = set()
+
+
 def connect_projection_lifecycle() -> None:
     """Keep a graph's namespace in step with its rows — on every path.
 
@@ -57,7 +65,7 @@ def connect_projection_lifecycle() -> None:
     from core import models as core_models
 
     logger = logging.getLogger(__name__)
-    _deleting_graphs: set[int] = set()
+    _deleting_graphs = deleting_graphs
 
     def _drop(instance) -> None:
         from graph_engine.projection.context import current_or_default

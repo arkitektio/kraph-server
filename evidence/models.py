@@ -1349,4 +1349,4 @@ class InstanceIdentity(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"{self.node_id} ~ {self.canonical_id}"
+        return f"{self.instance_id} ~ {self.canonical_id}"

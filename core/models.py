@@ -96,7 +96,7 @@ class Graph(models.Model):
     )
     image = models.ForeignKey(
         datalayer_models.MediaStore,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
         help_text="The store of the image if associated with the category",
@@ -430,7 +430,7 @@ class Category(KindDiscriminatedModel):
     )
     image = models.ForeignKey(
         datalayer_models.MediaStore,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
         help_text="The store of the image if associated with the category",

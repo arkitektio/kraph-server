@@ -88,16 +88,22 @@ def snapshot_definition(graph: core_models.Graph) -> dict[str, Any]:
         for category in graph.relation_categories.order_by("key")
     ]
 
+    # Both event kinds, each carrying the `kind` `EventDefinitionInput` requires,
+    # so the snapshot round-trips through `materialize`. Protocol events used to
+    # be left out here — and out of `materialize` — so creating or editing one
+    # changed the view's function and no version, and no `schemaStale`, said so.
     events = [
         {
             "key": category.key,
+            "kind": kind,
             "description": category.description,
             "inputs": list(category.source_entity_roles or []),
             "outputs": list(category.target_entity_roles or []),
             "properties": _property_definitions(category),
             **({"definition": dict(category.definition)} if category.definition else {}),
         }
-        for category in graph.natural_event_categories.order_by("key")
+        for kind, categories in (("INTRINSIC", graph.natural_event_categories), ("EXTRINSIC", graph.protocol_event_categories))
+        for category in categories.order_by("key")
     ]
 
     structure_relations = [
@@ -200,6 +206,11 @@ def on_category_changed(sender: Any, instance: Any, **kwargs: Any) -> None:
     if is_suspended():
         return
 
+    from graph_engine.apps import deleting_graphs
+
+    if int(getattr(instance, "graph_id", None) or 0) in deleting_graphs:
+        return
+
     graph = getattr(instance, "graph", None)
     if graph is None:
         return
@@ -244,23 +255,23 @@ def connect() -> None:
     # vocabulary, not schema, so there is no graph whose version changed when one
     # appears. They are also created lazily on every write, which would have
     # emitted a schema version per ingest.
-    for model in (
-        models_module.EntityCategory,
-        models_module.RelationCategory,
-        models_module.MeasurementCategory,
-        models_module.StructureRelationCategory,
-        models_module.NaturalEventCategory,
-        models_module.ProtocolEventCategory,
-    ):
-        post_save.connect(on_category_changed, sender=model, dispatch_uid=f"schema_version_{model.__name__}_save")
-        post_delete.connect(on_category_changed, sender=model, dispatch_uid=f"schema_version_{model.__name__}_delete")
-
+    #
+    # Every class a category row can be saved through, not only the seven leaf
+    # proxies: Django sends `post_save` with the class the save went through as
+    # sender, and `Category.objects` / `NodeCategory.objects` are managers too.
+    # The namespace and asserted-term handlers below always listened on the wide
+    # set; the version handler listened on the leaves only, so a save through a
+    # base class refreshed the namespace and emitted no version.
     category_classes = {
         models_module.Category,
         models_module.NodeCategory,
         models_module.EdgeCategory,
         *models_module.CATEGORY_PROXIES.values(),
     }
+    for model in category_classes:
+        post_save.connect(on_category_changed, sender=model, dispatch_uid=f"schema_version_{model.__name__}_save")
+        post_delete.connect(on_category_changed, sender=model, dispatch_uid=f"schema_version_{model.__name__}_delete")
+
     for model in category_classes:
         post_save.connect(asserted_terms.on_category_saved, sender=model, dispatch_uid=f"asserted_terms_{model.__name__}_save")
         post_delete.connect(asserted_terms.on_category_deleted, sender=model, dispatch_uid=f"asserted_terms_{model.__name__}_delete")

@@ -4024,7 +4024,9 @@ type Mutation {
   """Retire a word nothing has been claimed under"""
   deleteTerm(input: DeleteTermInput!): ID!
 
-  """Retire a structure kind and the evidence recorded under it"""
+  """
+  Retire a structure kind. Refused while any structure is recorded under it — evidence is never deleted; retract the structures first
+  """
   deleteStructureKind(input: DeleteStructureKindInput!): ID!
 
   """Update a structure kind's label, description or colour"""
@@ -4039,7 +4041,9 @@ type Mutation {
   """Update an existing structure relation category in the graph"""
   updateStructureRelationCategory(input: UpdateStructureRelationCategoryInput!): StructureRelationCategory!
 
-  """Retire a metric kind and the measurements recorded under it"""
+  """
+  Retire a metric kind. Refused while any metric is recorded under it — evidence is never deleted; retract the metrics first
+  """
   deleteMetricKind(input: DeleteMetricKindInput!): ID!
 
   """Update a metric kind's label, description or colour"""

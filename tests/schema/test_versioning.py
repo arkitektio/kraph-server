@@ -152,3 +152,34 @@ def test_versions_are_diffable_and_addition_costs_work(test_graph: core_models.G
     assert difference, "Adding a property must register as a change"
     assert "Bouton2" in difference.categories_needing_reprojection
     assert not difference.is_free
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_protocol_event_category_is_part_of_the_schema(test_graph: core_models.Graph) -> None:
+    """Creating one emits a version, and the snapshot carries it with its kind.
+
+    Protocol events were absent from `snapshot_definition` and from
+    `materialize`, so a schema change nothing could see: no version, no
+    `schemaStale`, and a graph re-materialized from its own snapshot lost them.
+    """
+    before = core_models.GraphSchema.objects.filter(graph=test_graph).count()
+
+    core_models.ProtocolEventCategory.objects.create(graph=test_graph, key="Fixation", age_name="Fixation", label="Fixation")
+
+    assert core_models.GraphSchema.objects.filter(graph=test_graph).count() == before + 1
+    events = {event["key"]: event for event in versioning.snapshot_definition(test_graph)["extensions"]["events"]}
+    assert events["Fixation"]["kind"] == "EXTRINSIC"
+    assert events["Mitosis"]["kind"] == "INTRINSIC"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_save_through_the_base_class_emits_a_version(test_graph: core_models.Graph) -> None:
+    """The signal listens on every class a category can be saved through, not
+    only the leaf proxies — the namespace refresh always did."""
+    before = core_models.GraphSchema.objects.filter(graph=test_graph).count()
+
+    row = core_models.Category.objects.get(graph=test_graph, key="AIS")
+    row.description = "an axon initial segment"
+    row.save()
+
+    assert core_models.GraphSchema.objects.filter(graph=test_graph).count() == before + 1

@@ -66,7 +66,7 @@ def test_an_unmerged_node_is_its_own_component(organization: Organization, node_
 
 @pytest.mark.django_db(transaction=True)
 def test_merging_two_instances_makes_one_component(organization: Organization, assertion, node_factory) -> None:
-    """"This is AIS 6": a fresh instance, then a claim that it is one already known."""
+    """ "This is AIS 6": a fresh instance, then a claim that it is one already known."""
     first, second = node_factory(), node_factory()
     _same(organization, assertion, first, second)
 
@@ -101,6 +101,16 @@ def test_sameness_is_transitive(organization: Organization, assertion, node_fact
     _same(organization, assertion, b, c)
 
     assert identity.component_refs(organization, [a])[a] == sorted([a, b, c])
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_fold_row_can_say_what_it_is(organization: Organization, assertion, node_factory) -> None:
+    """`str(row)` read `node_id`, a field migration 0008 renamed, and raised."""
+    a, b = node_factory(), node_factory()
+    _same(organization, assertion, a, b)
+
+    for row in evidence_models.InstanceIdentity.objects.for_organization(organization):
+        assert str(row) == f"{row.instance_id} ~ {row.canonical_id}"
 
 
 @pytest.mark.django_db(transaction=True)

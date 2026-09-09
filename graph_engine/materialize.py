@@ -12,7 +12,7 @@ import logging
 from typing import Any, Optional
 from pydantic import BaseModel, Field
 
-from .input_models import DerivationType, GraphDefinitionInput
+from .input_models import DerivationType, EventKind, GraphDefinitionInput
 from .projection import Projector
 from core import models
 from authentikate.models import Organization, Membership, User
@@ -384,7 +384,10 @@ def _materialize_categories(graph, definition: GraphDefinitionInput, user) -> No
             definition=measurement_def.definition.to_stored() if measurement_def.definition else {},
         )
 
-    # Create NaturalEventCategories
+    # Create the event categories — natural for INTRINSIC, protocol for EXTRINSIC.
+    # `kind` used to be read by nothing here: every event became a natural event
+    # category, and a schema declaring a protocol step materialized the wrong
+    # kind, which `snapshot_definition` then could not see.
     for event_def in definition.extensions.events:
         property_defs = [p.model_dump(mode="json") for p in event_def.properties]
 
@@ -392,9 +395,13 @@ def _materialize_categories(graph, definition: GraphDefinitionInput, user) -> No
         source_roles = [p.model_dump(mode="json") for p in event_def.inputs]
         target_roles = [p.model_dump(mode="json") for p in event_def.outputs]
 
-        models.NaturalEventCategory.objects.create(
+        extrinsic = event_def.kind == EventKind.EXTRINSIC
+        event_model = models.ProtocolEventCategory if extrinsic else models.NaturalEventCategory
+        event_kind = core_enums.CategoryKindChoices.PROTOCOL_EVENT if extrinsic else core_enums.CategoryKindChoices.NATURAL_EVENT
+
+        event_model.objects.create(
             graph=graph,
-            term=term_for(core_enums.CategoryKindChoices.NATURAL_EVENT, event_def.key),
+            term=term_for(event_kind, event_def.key),
             age_name=event_def.key,
             definition=event_def.definition.to_stored() if event_def.definition else {},
             # Set like every other category kind. Events were the one kind that

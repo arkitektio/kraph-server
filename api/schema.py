@@ -449,7 +449,7 @@ class Mutation:
     # No `create`: structure kinds are minted lazily by `ensure_structure_kind`
     # the first time a measurement names an identifier.
     delete_structure_kind = kante.django_mutation(
-        description="Retire a structure kind and the evidence recorded under it",
+        description="Retire a structure kind. Refused while any structure is recorded under it — evidence is never deleted; retract the structures first",
         resolver=mutations.delete_structure_kind,
     )
     update_structure_kind = kante.django_mutation(
@@ -471,7 +471,7 @@ class Mutation:
     # No `create`: metric kinds are minted by the write that first records one,
     # because that write is what knows the value kind.
     delete_metric_kind = kante.django_mutation(
-        description="Retire a metric kind and the measurements recorded under it",
+        description="Retire a metric kind. Refused while any metric is recorded under it — evidence is never deleted; retract the metrics first",
         resolver=mutations.delete_metric_kind,
     )
     update_metric_kind = kante.django_mutation(

@@ -273,3 +273,22 @@ def test_get_entity_def_raises_for_unknown_key(transactional_db, table_projector
 
     with pytest.raises(core_models.EntityCategory.DoesNotExist):
         graph.get_entity_def("UnknownEntity")
+
+
+def test_an_extrinsic_event_materializes_as_a_protocol_event_category(transactional_db, table_projector, authenticated_context) -> None:
+    """`EventDefinitionInput.kind` decides the category kind. It used to be read
+    by nothing, so every event became a natural event category."""
+    definition = models.GraphDefinitionInput(
+        system_version="1.0.0",
+        extensions=models.GraphExtensionsInput(
+            entities=[models.EntityDefinitionInput(key="Sample", property_definitions=[])],
+            events=[
+                models.EventDefinitionInput(key="Mitosis", kind=models.EventKind.INTRINSIC),
+                models.EventDefinitionInput(key="Fixation", kind=models.EventKind.EXTRINSIC),
+            ],
+        ),
+    )
+    graph = _materialize_with_context(definition, table_projector, authenticated_context, name="protocol")
+
+    assert set(graph.natural_event_categories.values_list("key", flat=True)) == {"Mitosis"}
+    assert set(graph.protocol_event_categories.values_list("key", flat=True)) == {"Fixation"}

@@ -51,7 +51,9 @@ def _refuse_unless_archived(graph: models.Graph) -> None:
     `_record_what_deletion_destroys`.
     """
     if not graph.is_archived:
-        raise ValueError(f"Cannot delete graph '{graph.name}': archive it first. Deleting a graph is irreversible and takes every rule for reading the evidence with it — its categories, their definitions and its whole schema history. Archiving is reversible; if the graph is still wanted later, nothing has been lost.")
+        raise ValueError(
+            f"Cannot delete graph '{graph.name}': archive it first. Deleting a graph is irreversible and takes every rule for reading the evidence with it — its categories, their definitions and its whole schema history. Archiving is reversible; if the graph is still wanted later, nothing has been lost."
+        )
 
 
 def _record_what_deletion_destroys(graph: models.Graph) -> None:
@@ -207,12 +209,17 @@ def update_graph_visual(info: Info, input: inputs.UpdateGraphVisualInput) -> typ
 
     graph = accessible_graph(info, model.id)
 
+    # Layout is presentation, not the view's rule: `schema_diff.COSMETIC_KEYS` and
+    # `snapshot_definition` both ignore it. A queryset update bypasses the
+    # category signals on purpose — `save()` used to fire the namespace refresh,
+    # which drops and recreates the graph's Postgres schema, once per moved box.
     for node_position in model.node_positions:
-        categories = graph.categories.get(id=node_position.category)
-        categories.position_x = node_position.position_x
-        categories.position_y = node_position.position_y
-        categories.width = node_position.width
-        categories.height = node_position.height
-        categories.save()
+        if not graph.categories.filter(id=node_position.category).update(
+            position_x=node_position.position_x,
+            position_y=node_position.position_y,
+            width=node_position.width,
+            height=node_position.height,
+        ):
+            raise ValueError(f"Category {node_position.category} is not a category of graph {graph.pk}")
 
     return graph
