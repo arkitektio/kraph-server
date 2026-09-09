@@ -132,7 +132,20 @@ class Graph(models.Model):
     # superuser — see `validate_definition_editable`.
     # `selector` is gone (RFC 0009): a graph has no claim scope of its own.
     # What counts as evidence is each category's `definition` — the complete
-    # rule for its word — and each derived property's `rule.evidence`.
+    # rule for its word — and each derived property's `rule.evidence`. The one
+    # rule a view holds itself is the one that cannot be a category's:
+    sameness_rule = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=(
+            "Whose SAME_AS / DIFFERENT_FROM claims this view counts — a rule list in the "
+            "shape of a category definition minus WORD, KIND and KEY (RFC 0024). Empty "
+            "means everyone. Identity is a property of the view, not of a category: within "
+            "one view there is exactly one answer to how many things are here, and two "
+            "nodes the view admits are one individual when a trusted claim says so, "
+            "whatever categories each is drawn under."
+        ),
+    )
     is_archived = models.BooleanField(
         default=False,
         help_text=(

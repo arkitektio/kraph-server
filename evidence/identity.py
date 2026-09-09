@@ -11,9 +11,9 @@ asymmetry :mod:`evidence.state` has, for the same reason:
   expensive path, reached only when a retraction may have broken it apart.
 
 Nothing here decides *whether* a claim counts. The fold counts every standing
-`SAME_AS`; a view that refuses one (a category's KIND SAMENESS rule, RFC 0011) applies that on read — which is
-:func:`component_refs_for_view` (RFC 0008): a walk of the trusted claims for the
-scoped view, the cached component for everyone else. The *cache* stays
+`SAME_AS`; a view that refuses one (its `Graph.sameness_rule`, RFC 0024) applies
+that on read — which is :func:`component_refs_for_view` (RFC 0008): a walk of
+the trusted claims for the scoped view, the cached component for everyone else. The *cache* stays
 organization grain on purpose; `CLAUDE.md` records what the alternative costs:
 `merge`, `recompute` and `refold_state` once disagreed about which metrics
 counted, so ingest and replay produced different numbers from the same evidence
@@ -144,51 +144,40 @@ def component_refs(organization: Any, node_refs: Iterable[str]) -> dict[str, lis
 
 
 def _trusted_in_view(graph: Any, links: list[Any], resolved: Mapping[str, Sequence[Any]]) -> list[Any]:
-    """The identity claims among `links` a view counts, given where their
-    endpoints resolved.
+    """The identity claims among `links` a view counts, given which endpoints it admits.
 
-    RFC 0011: sameness is **within a category, across words** (an AIS and an
-    AxonInitialSegment may be one individual; an AIS and a Cell may not — a
-    thing is one kind of thing). A node holds several categories in a view
-    (RFC 0019), so a claim counts here when the two endpoints **share** a
-    category and the claim and its standing fold under that shared category's
-    `KIND SAMENESS` trust — any shared one: a category that holds both nodes
-    and counts the claim is a view's reason to draw them as one. A primitive
-    category trusts everybody, but still never unions across categories.
-    `DIFFERENT_FROM` is read under exactly the same rule (RFC 0019): the
-    category that decides whose "these are one" counts decides whose "these
-    are two" does.
+    RFC 0024: identity is the **view's**. A claim counts when both endpoints are
+    nodes of this view — `resolved` says which refs any category admitted — and
+    the claim and its standing fold under the view's own `sameness_rule`
+    (everyone, when it has none). It used to be per *category*: a claim counted
+    only when the two endpoints shared a category and that category's `KIND
+    SAMENESS` trust admitted it — so one view could hold instance *a* in one
+    individual under `Cell` and another under `StemCell`, two answers to how many
+    things were there. A view is one function of the log and gives one.
+    `DIFFERENT_FROM` is read under exactly the same rule (RFC 0019): whoever
+    decides whose "these are one" counts decides whose "these are two" does.
     """
     from evidence import selector as selector_module
 
-    by_category: dict[Any, list[Any]] = defaultdict(list)
-    categories: dict[Any, Any] = {}
-    for link in links:
-        source = {category.pk: category for category in resolved.get(str(link.source_ref), ())}
-        target = {category.pk for category in resolved.get(str(link.target_ref), ())}
-        for pk in sorted(set(source) & target):
-            by_category[pk].append(link)
-            categories[pk] = source[pk]
+    admitted_refs = {str(ref) for ref, categories in resolved.items() if categories}
+    candidates = [link for link in links if str(link.source_ref) in admitted_refs and str(link.target_ref) in admitted_refs]
+    if not candidates:
+        return []
 
-    surviving: dict[Any, Any] = {}
-    for category_pk, candidate_links in by_category.items():
-        category = categories[category_pk]
-        admitted = claims_module.standing(
+    rule = graph.sameness_rule or None
+    return list(
+        claims_module.standing(
             evidence_models.Link.objects.for_organization(graph.organization)
-            .filter(pk__in=[link.pk for link in candidate_links])
-            .filter(selector_module.trust_filter(category.definition, kind="SAMENESS")),
+            .filter(pk__in=[link.pk for link in candidates])
+            .filter(selector_module.trust_filter(rule, kind="SAMENESS")),
             "link",
-            predicate=selector_module.trust_predicate(category.definition, kind="SAMENESS"),
+            predicate=selector_module.trust_predicate(rule, kind="SAMENESS"),
         )
-        for link in admitted:
-            # Once, however many shared categories count it.
-            surviving.setdefault(link.pk, link)
-    return list(surviving.values())
-
-
+    )
 def view_identity_links(graph: Any, refs: Iterable[str], kinds: Sequence[Any] = IDENTITY_KINDS) -> list[Any]:
     """The sameness and difference claims a view counts that touch these refs
-    — one hop, resolved and trusted per category (:func:`_trusted_in_view`).
+    — one hop, both ends admitted and trusted under the view's rule
+    (:func:`_trusted_in_view`).
     The veto is *not* applied: this is the list of claims, for the panel; a
     fold takes :func:`admitted_sameness` of it."""
     from graph_engine import projector as projector_module
@@ -221,15 +210,14 @@ def view_difference_links(graph: Any, refs: Iterable[str]) -> list[Any]:
 
 
 def component_refs_for_view(graph: Any, node_refs: Iterable[str]) -> dict[str, list[str]]:
-    """One view's components: sameness folded under each category's rule.
+    """One view's components: sameness folded under the view's rule (RFC 0024).
 
-    The rule-driven successor of the selector walk RFC 0009 deleted (RFC 0011):
-    the frontier loop `recompute` uses, but each hop keeps only the claims
-    :func:`view_identity_links` admits — same-category endpoints, the
-    category's `KIND SAMENESS` trust for the claim and its standing — with the
+    The frontier loop `recompute` uses, but each hop keeps only the claims
+    :func:`view_identity_links` admits — both ends nodes of the view, the
+    view's `sameness_rule` for the claim and its standing — with the
     difference veto applied per hop, which is exact because a veto is local to
     its pair. The organization-grain cache (`component_refs`) remains the
-    no-view answer.
+    trust-everyone answer.
     """
     refs = [str(ref) for ref in node_refs]
 
@@ -256,12 +244,11 @@ def view_components(graph: Any, resolved: Mapping[str, Sequence[Any]]) -> dict[s
     (`projector.resolve_categories`); the answer maps each component's
     **representative** — its lowest member uuid — to its sorted members, every
     ref appearing in exactly one. The fold is the one :func:`view_sameness_links`
-    applies — a shared category at both ends, that category's `KIND SAMENESS`
-    trust for the claim and its standing — but over the whole set at once: one
-    link query, one standing fold per category, and a union-find in memory, so
-    a rebuild does not walk a frontier per node. Two nodes holding different
-    category sets may be one individual when the sets intersect (RFC 0019);
-    the vertex is then drawn under the union.
+    applies — both ends admitted, the view's `sameness_rule` for the claim and
+    its standing (RFC 0024) — but over the whole set at once: one link query,
+    one standing fold, and a union-find in memory, so a rebuild does not walk a
+    frontier per node. Two nodes holding different category sets may be one
+    individual; the vertex is then drawn under the union (RFC 0019).
 
     Closed over `resolved` on purpose: a sameness claim to a node the view does
     not admit (unclassified here, retracted under its category's rule, skipped

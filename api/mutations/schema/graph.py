@@ -30,6 +30,7 @@ def create_graph(
         description=model.description,
         membership=info.context.request.membership,
         backfill=model.backfill,
+        sameness_rule=model.sameness_rule.to_stored() if model.sameness_rule is not None else None,
     )
 
     return graph
@@ -187,6 +188,18 @@ def update_graph(
         if not info.context.request.user.is_superuser and graph.user != info.context.request.user:
             raise PermissionError("You do not have permission to archive this graph — archiving is the step before deletion, so it stays with the owner.")
         graph.is_archived = model.archived
+    if model.sameness_rule is not None:
+        # Identity is the view's function of the log (RFC 0024): a new rule is
+        # a new fold of every individual, so the drawing is rebuilt from it —
+        # and versioned, because the rule is part of what the view means.
+        from graph_engine import versioning
+        from graph_engine.controller import GraphController
+
+        graph.validate_definition_editable(info)
+        graph.sameness_rule = model.sameness_rule.to_stored()
+        graph.save(update_fields=["sameness_rule"])
+        versioning.emit_schema_version(graph, description="sameness rule changed")
+        GraphController(projector=current_or_default()).rebuild_projection(graph)
     if model.pin is not None:
         if model.pin:
             graph.pinned_by.add(info.context.request.user)

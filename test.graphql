@@ -1420,6 +1420,11 @@ input CreateGraphInput {
   definition: GraphDefinitionInput
 
   """
+  Whose sameness claims this view counts (RFC 0024). Omitted means everyone
+  """
+  samenessRule: SamenessRuleInput = null
+
+  """
   Draw the evidence this graph's words already admit. A graph is a view over the organization's evidence, so a new one can be a view over history: with this on, every node and edge already claimed under a word this schema declares is projected as the graph is created. Off by default because the work is proportional to the organization's evidence and happens before this mutation returns.
   """
   backfill: Boolean! = false
@@ -2707,6 +2712,11 @@ type Graph @key(fields: "id", resolvable: true) {
 
   """List of graph queries defined in this graph"""
   queries: [GraphQuery!]!
+
+  """
+  Whose sameness claims this view counts when folding its nodes into individuals (RFC 0024). Identity is the view's, not a category's: one answer per view to how many things are here. Null means everyone's claims count
+  """
+  samenessRule: SamenessRule
 
   """Whether the requesting user has pinned this graph for quick access"""
   pinned: Boolean!
@@ -5806,6 +5816,26 @@ type Sameness implements Edge {
   target: Node!
 }
 
+"""
+A view's sameness rule: whose SAME_AS / DIFFERENT_FROM claims it counts when folding nodes into individuals (RFC 0024)
+"""
+type SamenessRule {
+  """
+  A sameness claim counts when any rule matches; no rules means every claim counts
+  """
+  rules: [ClaimRule!]!
+}
+
+"""
+A view's sameness rule: whose SAME_AS / DIFFERENT_FROM claims it counts when folding nodes into individuals (RFC 0024). No rules means everyone
+"""
+input SamenessRuleInput {
+  """
+  A sameness claim counts when any rule matches; no rules means every claim counts
+  """
+  rules: [ClaimRuleInput!]! = []
+}
+
 """A saved scatter-plot configuration over a graph query"""
 type ScatterPlot @key(fields: "id", resolvable: true) {
   """Description of the scatter plot definition"""
@@ -6556,6 +6586,11 @@ input UpdateGraphInput {
 
   """Optional pin flag update for the user making the request"""
   pin: Boolean = null
+
+  """
+  Replace whose sameness claims this view counts (RFC 0024); an empty rule list means everyone. Omitted means unchanged. Changing it refolds the view's individuals — the projection is rebuilt
+  """
+  samenessRule: SamenessRuleInput = null
 }
 
 """Input for updating a graph table query through builder arguments"""

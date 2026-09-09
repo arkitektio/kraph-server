@@ -198,6 +198,11 @@ class MetricEvidence:
     """A property's metric rule list, as read back."""
 
 
+@kante.pydantic_type(input_models.SamenessRuleInput, all_fields=True, description="A view's sameness rule: whose SAME_AS / DIFFERENT_FROM claims it counts when folding nodes into individuals (RFC 0024)")
+class SamenessRule:
+    """A view's sameness rule, as read back. Null when the view counts everyone's."""
+
+
 @kante.pydantic_type(input_models.DerivationRuleInput, all_fields=True, description="A derivation rule in the graph schema")
 class DerivationRule:
     """A derivation rule in the graph schema, which defines how to derive new entities or relations based on existing ones."""
@@ -300,6 +305,11 @@ class Graph:
     # Readable, because a flag a client can write and never observe is how
     # `archiveGraph` managed to do nothing for as long as it did.
     is_archived: bool = strawberry.field(description="Whether this graph has been archived. Archiving is the reversible alternative to deleting it — a delete destroys every rule for reading the evidence, which survives without them")
+
+    @strawberry.field(description="Whose sameness claims this view counts when folding its nodes into individuals (RFC 0024). Identity is the view's, not a category's: one answer per view to how many things are here. Null means everyone's claims count")
+    async def sameness_rule(self) -> Optional[SamenessRule]:
+        stored = await sync_to_async(lambda: input_models.SamenessRuleInput.from_stored(cast(models.Graph, self).sameness_rule))()
+        return SamenessRule.from_pydantic(stored) if stored is not None else None
 
     # Schemas
     node_categories: List["NodeCategory"] = strawberry.field(default_factory=list, description="List of node categories defined in this graph")

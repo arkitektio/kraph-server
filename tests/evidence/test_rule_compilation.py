@@ -232,7 +232,7 @@ def test_kind_refusals() -> None:
     with pytest.raises(ValidationError, match="WORD"):  # classification-covering rule needs WORD
         models.CategoryDefinitionInput.model_validate(R.definition(R.rule(R.by("peter"))))
     with pytest.raises(ValidationError, match="WORD"):  # non-classification rule may not carry WORD
-        models.CategoryDefinitionInput.model_validate(R.definition(R.rule(R.word("X")), R.rule(R.word("Y"), R.of_kind("SAMENESS"), R.by("c"))))
+        models.CategoryDefinitionInput.model_validate(R.definition(R.rule(R.word("X")), R.rule(R.word("Y"), R.of_kind("EXISTENCE"), R.by("c"))))
     with pytest.raises(ValidationError, match="KEY"):  # KEY outside MEASUREMENT-only
         models.CategoryDefinitionInput.model_validate(R.definition(R.rule(R.word("X"), R.key("area"))))
 

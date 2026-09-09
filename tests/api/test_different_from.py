@@ -196,14 +196,17 @@ async def test_retracting_the_difference_restores_the_union(api_schema, simple_a
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_difference_the_category_does_not_trust_is_ignored(api_schema, simple_api_context, table_projector) -> None:
-    """Sameness is the category's rule, and so is its negation: the AIS rule
-    trusts Peter, so a stranger's `DIFFERENT_FROM` changes nothing in this view
-    — while Peter's own splits it."""
+    """Sameness is the view's rule (RFC 0024), and so is its negation: this view
+    trusts Peter, so a stranger's `DIFFERENT_FROM` changes nothing in it —
+    while Peter's own splits it."""
     graph_id = await _example_graph(api_schema, simple_api_context, "difference-trust")
 
     @sync_to_async
     def build_and_read():
         graph = core_models.Graph.objects.get(pk=graph_id)
+        # Sameness is the view's rule (RFC 0024): this view counts Peter's merges.
+        graph.sameness_rule = {"rules": [{"when": [{"field": "SUBJECT", "operator": "IS", "value": "peter"}]}]}
+        graph.save(update_fields=["sameness_rule"])
         org = graph.organization
         a = claims.mint(org, "AIS", "peter", asserted_at=BEFORE)
         b = claims.mint(org, "AIS", "peter", asserted_at=BEFORE)
@@ -221,7 +224,7 @@ async def test_a_difference_the_category_does_not_trust_is_ignored(api_schema, s
 
     merged, ignored, trusted, a, b = await build_and_read()
     assert merged == (1, sorted([a, b]))
-    assert ignored == (1, sorted([a, b])), "the stranger's veto is not this category's evidence"
+    assert ignored == (1, sorted([a, b])), "the stranger's veto is not one this view counts"
     assert trusted == (2, [a]), "Peter's is"
 
 

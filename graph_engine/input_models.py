@@ -596,7 +596,7 @@ class ClaimKind(str, Enum):
 
     CLASSIFICATION = "CLASSIFICATION"  #: which claims admit/label — the whole-rule reading, WORD included
     EXISTENCE = "EXISTENCE"  #: whose standings count — retraction/attest of nodes, and of an edge category's links
-    SAMENESS = "SAMENESS"  #: whose SAME_AS may merge this category's nodes (within the category, across words)
+    SAMENESS = "SAMENESS"  #: whose SAME_AS / DIFFERENT_FROM count — the **view's** rule (`Graph.samenessRule`, RFC 0024), never a category's
     EVIDENCE = "EVIDENCE"  #: whose INFORMS may route evidence under this category's nodes
     MEASUREMENT = "MEASUREMENT"  #: the default metric scope, when a property has no `rule.evidence`
 
@@ -771,6 +771,39 @@ class MetricEvidenceInput(StrictModel):
 
     def to_stored(self) -> Dict[str, Any]:
         return {"rules": [rule.to_stored() for rule in self.rules]}
+
+
+class SamenessRuleInput(StrictModel):
+    """A view's sameness rule (RFC 0024): whose `SAME_AS` and `DIFFERENT_FROM`
+    claims — and whose standings on them — this view counts when folding its
+    nodes into individuals. The definition's rule logic over identity claims,
+    minus WORD (a sameness claim names no word), KIND (it is one kind) and KEY.
+    An empty list means everyone, which is the default."""
+
+    rules: List[ClaimRuleInput] = Field(default_factory=list, description="A sameness claim counts when any rule matches; no rules means every claim counts")
+
+    @model_validator(mode="after")
+    def rules_are_identity_shaped(self) -> "SamenessRuleInput":
+        for index, rule in enumerate(self.rules):
+            groups = [rule.when] + [group.when for group in rule.unless or []]
+            for conditions in groups:
+                for condition in conditions:
+                    if condition.field in (ClaimField.WORD, ClaimField.KIND, ClaimField.KEY):
+                        raise ValueError(f"rules[{index}]: a sameness rule takes SUBJECT, APP, ACTION, ASSERTED_AT, OBSERVED_AT or CONFIDENCE — not {condition.field.value}.")
+        return self
+
+    def to_stored(self) -> Dict[str, Any]:
+        """The exact JSON `Graph.sameness_rule` stores; `{}` for everyone."""
+        return {"rules": [rule.to_stored() for rule in self.rules]} if self.rules else {}
+
+    @classmethod
+    def from_stored(cls, stored: Any) -> Optional["SamenessRuleInput"]:
+        if not isinstance(stored, dict) or not isinstance(stored.get("rules"), list) or not stored["rules"]:
+            return None
+        try:
+            return cls.model_validate(stored)
+        except ValueError:
+            return None
 
 
 class DerivationRuleInput(StrictModel):
@@ -1052,6 +1085,11 @@ class CategoryDefinitionInput(StrictModel):
             if not covers_classification and has_word:
                 raise ValueError(f"rules[{index}]: a WORD condition means nothing on a rule that does not cover CLASSIFICATION — a standing or a SAME_AS claim names no word.")
 
+            for condition in rule.when:
+                if condition.field == ClaimField.KIND:
+                    named = [condition.value] if isinstance(condition.value, str) else list(condition.value or [])
+                    if ClaimKind.SAMENESS.value in named:
+                        raise ValueError(f"rules[{index}]: KIND SAMENESS is not a category's to rule on — sameness trust is the view's (`Graph.samenessRule`, RFC 0024). A category decides what a word means and whose claims exist; the view decides how many things there are.")
             for condition in rule.when:
                 if condition.field in _METRIC_ONLY_FIELDS and not measurement_only:
                     raise ValueError(f"rules[{index}]: {condition.field.value} is meaningful only on a rule covering MEASUREMENT alone — other claims have no metric key.")
@@ -2144,6 +2182,7 @@ class CreateGraphFromSchema(StrictModel):
     name: str = Field(..., description="Name of the graph")
     description: Optional[str] = Field(None, description="Description of the graph")
     definition: Optional[GraphDefinitionInput] = Field(default_factory=lambda: GraphDefinitionInput(), description="The complete graph schema definition")
+    sameness_rule: Optional[SamenessRuleInput] = Field(default=None, description="Whose sameness claims this view counts (RFC 0024). Omitted means everyone")
     backfill: bool = Field(
         default=False,
         description=(
@@ -2165,6 +2204,7 @@ class UpdateGraphInput(StrictModel):
     description: Optional[str] = Field(default=None, description="New graph description")
     archived: Optional[bool] = Field(default=None, description="Optional archived flag update")
     pin: Optional[bool] = Field(default=None, description="Optional pin flag update for the user making the request")
+    sameness_rule: Optional[SamenessRuleInput] = Field(default=None, description="Replace whose sameness claims this view counts (RFC 0024); an empty rule list means everyone. Omitted means unchanged. Changing it refolds the view's individuals — the projection is rebuilt")
 
 
 class DeleteGraphInput(StrictModel):

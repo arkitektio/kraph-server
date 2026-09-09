@@ -132,6 +132,7 @@ def snapshot_definition(graph: core_models.Graph) -> dict[str, Any]:
 
     return {
         "system_version": version,
+        **({"sameness_rule": dict(graph.sameness_rule)} if graph.sameness_rule else {}),
         "extensions": {
             "entities": entities,
             "relations": relations,

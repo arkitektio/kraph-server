@@ -764,6 +764,11 @@ class GraphDefinitionInput:
     pass
 
 
+@pydantic.input(model=input_models.SamenessRuleInput, all_fields=True, description="A view's sameness rule: whose SAME_AS / DIFFERENT_FROM claims it counts when folding nodes into individuals (RFC 0024). No rules means everyone")
+class SamenessRuleInput:
+    pass
+
+
 @pydantic.input(model=input_models.CreateGraphFromSchema, all_fields=True, description="Input for creating a new graph from a schema definition")
 class CreateGraphInput:
     pass

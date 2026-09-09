@@ -88,8 +88,8 @@ def good_schemas() -> dict[str, models.GraphDefinitionInput]:
                 _entity(
                     "AIS",
                     _definition_input(
-                        rules.rule(rules.word("AIS"), rules.by("peter"), rules.not_kind("SAMENESS")),
-                        rules.rule(rules.of_kind("SAMENESS"), rules.by("curator")),
+                        rules.rule(rules.word("AIS"), rules.by("peter"), rules.not_kind("EVIDENCE")),
+                        rules.rule(rules.of_kind("EVIDENCE"), rules.by("curator")),
                     ),
                 )
             ]
@@ -164,6 +164,10 @@ def test_bad_schemas_are_refused() -> None:
     assert _measurement("SHOWS", _definition_input(rules.rule(rules.word("SHOWS"), rules.observed_since(DEC5)))) is not None
     with pytest.raises(ValidationError, match="KIND"):  # KIND in an unless group, on an event
         _event("Mitosis", models.CategoryDefinitionInput.model_validate(rules.definition(rules.rule(rules.word("Mitosis"), unless=[[rules.of_kind("SAMENESS")]]))))
+    with pytest.raises(ValidationError, match="samenessRule"):  # sameness is the view's rule (RFC 0024)
+        _entity("AIS", _definition_input(rules.rule(rules.word("AIS"), rules.by("peter"), rules.not_kind("SAMENESS"))))
+    with pytest.raises(ValidationError, match="samenessRule"):
+        _entity("AIS", _definition_input(rules.rule(rules.of_kind("SAMENESS"), rules.by("curator"))))
     with pytest.raises(ValidationError, match="KEY"):  # a metric key on a classification rule
         _entity("Cell", _definition_input(rules.rule(rules.word("Cell"), rules.key("area"))))
     with pytest.raises(ValidationError):  # the flat evidence list is not an input any more

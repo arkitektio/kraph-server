@@ -221,12 +221,15 @@ async def test_retracting_the_sameness_splits_the_vertex(api_schema, simple_api_
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_sameness_the_category_does_not_trust_draws_two_vertices(api_schema, simple_api_context, table_projector) -> None:
-    """Sameness is view-scoped: the AIS rule trusts Peter, so a stranger's merge changes nothing here."""
+    """Sameness is the view's rule (RFC 0024): this view trusts Peter, so a stranger's merge changes nothing here."""
     graph_id = await _example_graph(api_schema, simple_api_context, "individual-trust")
 
     @sync_to_async
     def build_and_read():
         graph = core_models.Graph.objects.get(pk=graph_id)
+        # Sameness is the view's rule (RFC 0024): this view counts Peter's merges.
+        graph.sameness_rule = {"rules": [{"when": [{"field": "SUBJECT", "operator": "IS", "value": "peter"}]}]}
+        graph.save(update_fields=["sameness_rule"])
         org = graph.organization
         a = claims.mint(org, "AIS", "peter", asserted_at=BEFORE)
         b = claims.mint(org, "AIS", "peter", asserted_at=BEFORE)
@@ -239,7 +242,7 @@ async def test_a_sameness_the_category_does_not_trust_draws_two_vertices(api_sch
         return ignored, (drawing.vertex_count(graph, "AIS"), drawing.members_of(graph, a)), a, b
 
     ignored, trusted, a, b = await build_and_read()
-    assert ignored == (2, [a]), "the stranger's claim is not this category's evidence"
+    assert ignored == (2, [a]), "the stranger's claim is not one this view counts"
     assert trusted == (1, sorted([a, b])), "Peter's is"
 
 

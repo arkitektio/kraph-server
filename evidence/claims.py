@@ -117,7 +117,11 @@ def retracted_ids(
 #: view instead, because a graph's selector decides whose claims it counts. A
 #: comment's is organization grain like a structure's — no selector ever scopes
 #: whether a remark stands — so the folded boolean is honest and cached.
-CACHED_TARGETS = ("structure", "metric", "link", "comment")
+#: Every claim kind, the instance included (RFC 0024). The cache is the
+#: trust-everyone fold — the answer under no view — and an instance has one of
+#: those like any claim. What a *view* says about a node's existence is still
+#: its category's rule (`resolve_categories`), which never reads this table.
+CACHED_TARGETS = ("node", "structure", "metric", "link", "comment")
 
 
 def standing(queryset: Any, target_type: str, predicate: Q | None = None) -> Any:
@@ -180,8 +184,8 @@ def record_current(organization: Any, target_type: str, target_id: Any, standing
     column on the log row; it is this instead, which is a projection, and which is
     therefore allowed to be compared against and rewritten.
 
-    Nothing is written for an instance: its answer is per-view. Returns ``False``
-    for those, since there is no organization-wide edge to report.
+    Every claim kind is cached (RFC 0024): the row is the trust-everyone
+    answer, and a view that trusts fewer folds the log itself.
     """
     from evidence import models as evidence_models
 

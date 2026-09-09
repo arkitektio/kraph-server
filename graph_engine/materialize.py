@@ -177,6 +177,7 @@ def materialize(
     name: Optional[str] = None,
     description: Optional[str] = None,
     backfill: bool = False,
+    sameness_rule: Optional[dict] = None,
 ) -> models.Graph:
     """
     Materialize a graph based on the provided graph definition.
@@ -219,11 +220,11 @@ def materialize(
     if name is None:
         name = f"graph_{schema_hash}"
 
-    return _materialize_atomically(definition, projector, user, organization, membership, name, description, backfill, schema_hash)
+    return _materialize_atomically(definition, projector, user, organization, membership, name, description, backfill, schema_hash, sameness_rule or {})
 
 
 @__import__("django").db.transaction.atomic
-def _materialize_atomically(definition, projector, user, organization, membership, name, description, backfill, schema_hash):
+def _materialize_atomically(definition, projector, user, organization, membership, name, description, backfill, schema_hash, sameness_rule):
     """One transaction for the whole bring-up.
 
     A `NamespaceSpecError` from `refresh_namespace` used to leave a committed
@@ -240,6 +241,7 @@ def _materialize_atomically(definition, projector, user, organization, membershi
         user=user,
         organization=organization,
         membership=membership,
+        sameness_rule=sameness_rule,
         # No selector and no access rules: what counts as evidence is each
         # category's definition (RFC 0009); who may change the schema is RBAC
         # (RFC 0013). Both live outside this row.

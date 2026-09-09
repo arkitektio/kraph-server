@@ -302,18 +302,13 @@ SAMENESS_DEFINITION = {
                 "key": "Axon",
                 "definition": {
                     "rules": [
-                        # Peter and Karl decide what exists and what classifies —
-                        # but not what is the same (the KIND carve-out).
-                        {"when": [
-                            {"field": "WORD", "operator": "IN", "value": ["AIS", "AxonInitialSegment"]},
-                            {"field": "SUBJECT", "operator": "IN", "value": ["peter", "karl"]},
-                            {"field": "KIND", "operator": "NOT_IN", "value": ["SAMENESS"]},
-                        ]},
-                        # Only the curator may say two of these are one individual.
-                        {"when": [
-                            {"field": "KIND", "operator": "IS", "value": "SAMENESS"},
-                            {"field": "SUBJECT", "operator": "IS", "value": "curator"},
-                        ]},
+                        # Peter and Karl decide what exists and what classifies.
+                        {
+                            "when": [
+                                {"field": "WORD", "operator": "IN", "value": ["AIS", "AxonInitialSegment"]},
+                                {"field": "SUBJECT", "operator": "IN", "value": ["peter", "karl"]},
+                            ]
+                        },
                     ]
                 },
             },
@@ -322,12 +317,17 @@ SAMENESS_DEFINITION = {
     },
 }
 
+#: Only the curator may say two things are one — the view's rule, not a category's (RFC 0024).
+CURATOR_MERGES = {"rules": [{"when": [{"field": "SUBJECT", "operator": "IS", "value": "curator"}]}]}
+
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_existence_and_sameness_are_distinct_rules(api_schema, simple_api_context, table_projector) -> None:
-    """The motivating scenario (RFC 0011): Peter may retract, only the curator may merge."""
-    made = await api_schema.execute(CREATE_GRAPH, variable_values={"input": {"name": "kinds-apart", "definition": SAMENESS_DEFINITION}}, context_value=simple_api_context)
+    """The motivating scenario (RFC 0011, restated by RFC 0024): Peter may
+    retract, only the curator may merge — and merging is the view's rule, so
+    it reaches across categories: a thing the view holds is one thing."""
+    made = await api_schema.execute(CREATE_GRAPH, variable_values={"input": {"name": "kinds-apart", "definition": SAMENESS_DEFINITION, "samenessRule": CURATOR_MERGES}}, context_value=simple_api_context)
     assert made.errors is None, f"GraphQL errors: {made.errors}"
     graph_id = made.data["createGraph"]["id"]
 
@@ -352,9 +352,9 @@ async def test_existence_and_sameness_are_distinct_rules(api_schema, simple_api_
             # The org-grain cache folds every claim, exactly as the controller does.
             identity.merge(org, left, right)
 
-        merge_as(a1, a2, "curator")   # trusted, same category, two words
-        merge_as(b1, b2, "peter")     # carved out of SAMENESS
-        merge_as(a1, cell, "curator") # cross-category — never unions in a view
+        merge_as(a1, a2, "curator")  # trusted: two words of one category
+        merge_as(b1, b2, "peter")  # not the curator: the view does not count it
+        merge_as(a1, cell, "curator")  # trusted, across categories: one thing, drawn under both
 
         curator_component = panel.components_for(org, [a1], graph=graph)[a1]
         peters_component = panel.components_for(org, [b1], graph=graph)[b1]
@@ -364,17 +364,27 @@ async def test_existence_and_sameness_are_distinct_rules(api_schema, simple_api_
         claims.retract_node(org, b2, "peter")
         GraphController(projector=table_projector).rebuild_projection(graph)
         after_retraction = drawing.vertices_with_ref(graph, b2)
-        # The curator's retraction counts for nothing but sameness.
+        # The curator decides sameness only — their retraction counts for nothing.
         claims.retract_node(org, b1, "curator")
         GraphController(projector=table_projector).rebuild_projection(graph)
         curator_cannot_retract = drawing.vertices_with_ref(graph, b1)
+        drawn_labels = drawing.labels_of(graph, a1)
 
-        return curator_component, peters_component, org_component, after_retraction, curator_cannot_retract, a1, a2, cell
+        return curator_component, peters_component, org_component, after_retraction, curator_cannot_retract, a1, a2, cell, drawn_labels
 
-    curator_component, peters_component, org_component, after_retraction, curator_cannot_retract, a1, a2, cell = await story()
-    assert sorted(curator_component) == sorted([a1, a2]), "the curator's merge unions two words of ONE category — and never the Cell"
-    assert cell not in curator_component, "no cross-category sameness: identity lives within a kind"
-    assert peters_component == [str(peters_component[0])] and len(peters_component) == 1, "Peter is carved out of SAMENESS, so his merge does not union here"
-    assert len(org_component) == 2, "the organization-grain fold still unions everything — the view disagrees, the log does not"
+    curator_component, peters_component, org_component, after_retraction, curator_cannot_retract, a1, a2, cell, drawn_labels = await story()
+    assert sorted(curator_component) == sorted([a1, a2, cell]), "the curator's merges union across words and across categories: the view holds one thing"
+    assert drawn_labels == {"Axon", "Cell"}, "drawn once, under every category that admits a member"
+    assert peters_component == [str(peters_component[0])] and len(peters_component) == 1, "Peter is not trusted on sameness here, so his merge does not union"
+    assert len(org_component) == 2, "the trust-everyone fold still unions everything — the view disagrees, the log does not"
     assert after_retraction == 0, "Peter still decides existence"
-    assert curator_cannot_retract == 1, "the curator's rule covers SAMENESS only — their retraction counts for nothing"
+    assert curator_cannot_retract == 1, "the curator's word counts for sameness only — their retraction counts for nothing"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_a_category_may_not_rule_on_sameness(api_schema, simple_api_context) -> None:
+    """KIND SAMENESS in a category definition is refused (RFC 0024)."""
+    definition = {"extensions": {"entities": [{"key": "X", "definition": {"rules": [{"when": [{"field": "WORD", "operator": "IS", "value": "X"}, {"field": "KIND", "operator": "NOT_IN", "value": ["SAMENESS"]}]}]}}]}}
+    made = await api_schema.execute(CREATE_GRAPH, variable_values={"input": {"name": "no-category-sameness", "definition": definition}}, context_value=simple_api_context)
+    assert made.errors is not None and "samenessRule" in str(made.errors[0]), "a category's rule may not name SAMENESS; the view's rule does"

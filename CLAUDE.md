@@ -322,9 +322,13 @@ The load-bearing facts:
   0011)** scopes a rule to what a claim *says* — CLASSIFICATION/EXISTENCE/SAMENESS/EVIDENCE/
   MEASUREMENT; a rule covers every kind its KIND conditions do not exclude (`rule_covers`, the
   one coverage implementation), `trust_filter(kind=…)` is a required keyword at every call site,
-  an uncovered kind counts **nothing**. Sameness is view-scoped again — rule-driven and **within
-  a category, across words** (`identity.view_sameness_links`; no cross-category merges; the
-  org-grain cache is the no-view answer). Tests build the shape via `tests/rules.py`.
+  an uncovered kind counts **nothing**. **Sameness is the view's rule (RFC 0024)**:
+  `Graph.sameness_rule` (`samenessRule` on `createGraph`/`updateGraph`, a rule list minus
+  WORD/KIND/KEY, empty = everyone) decides whose `SAME_AS`/`DIFFERENT_FROM` count, across every
+  category the view draws; a category definition may not name `KIND SAMENESS`. Changing the rule
+  versions the view and rebuilds it. The org-grain identity cache is the trust-everyone answer.
+  `CurrentStanding` is total over claim kinds, instances included. Tests build the shape via
+  `tests/rules.py`.
 - **Schema changes are RBAC (RFC 0013).** `Graph.rules` (per-action allow/deny) is gone; every
   category create/update/delete goes through `schema_graph`/`schema_scoped`
   (`api/mutations/_scoped.py`) → `Graph.validate_definition_editable`: owner, organization admin
