@@ -141,8 +141,8 @@ def standing(queryset: Any, target_type: str, predicate: Q | None = None) -> Any
     everybody's positions. A retraction by somebody the predicate excludes is
     not this view's retraction; a row nobody the view counts has spoken about
     stands, because silence is not dissent. The predicate is
-    `selector.claim_filter(graph.selector)` in every caller; passing the empty
-    `Q()` explicitly is the caller's bug — hand in ``None`` and take the cache.
+    `selector.trust_predicate(definition, kind=…)` in every caller; passing the
+    empty `Q()` explicitly is the caller's bug — hand in ``None`` and take the cache.
     """
     from django.db.models import CharField, OuterRef, Subquery
     from django.db.models.functions import Cast
@@ -153,12 +153,7 @@ def standing(queryset: Any, target_type: str, predicate: Q | None = None) -> Any
         retracted = evidence_models.CurrentStanding.all_objects.filter(target_type=target_type, stands=False).values("target_id")
         return queryset.exclude(pk__in=retracted)
 
-    latest = (
-        evidence_models.Standing.all_objects.filter(target_type=target_type, target_id=Cast(OuterRef("pk"), output_field=CharField()))
-        .filter(predicate)
-        .order_by(*_LATEST)
-        .values("stands")[:1]
-    )
+    latest = evidence_models.Standing.all_objects.filter(target_type=target_type, target_id=Cast(OuterRef("pk"), output_field=CharField())).filter(predicate).order_by(*_LATEST).values("stands")[:1]
     # NULL (no position this view counts) is not False: unmentioned rows stand.
     # Spelled as a filter, not `exclude(_view_stands=False)` — under SQL's
     # three-valued logic `NOT (NULL = FALSE)` is NULL, which would silently

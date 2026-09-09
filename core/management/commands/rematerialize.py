@@ -16,9 +16,11 @@ reach for `reproject` instead:
 [`docs/REMATERIALIZATION.md`](../../../docs/REMATERIALIZATION.md).** Two things
 that decide how this file reads:
 
-- `--stale` is the usual invocation. It costs nothing when nothing is owed,
-  because `projector.project` stamps `__schema_version` on every vertex and a
-  vertex behind `GraphSchema.active_for(graph)` is exactly what needs redrawing.
+- `--stale` is the usual invocation. It costs nothing when nothing is owed:
+  `Projection.schema_hash` (Postgres, `graph_engine.watermark.schema_stale`) is
+  compared against `GraphSchema.active_for(graph)`, and a graph whose drawing
+  was derived under an older schema is exactly what needs redrawing. No vertex
+  stamp is read for that decision.
 - **Narrower than `reproject` is not cheaper at every scale.**
   `rematerialize_category` resolves graph membership once per category, so
   `--all` over G graphs with C node categories each pays G×C full membership
@@ -133,4 +135,3 @@ class Command(BaseCommand):
         Per graph, so every node category of a stale graph is redrawn.
         """
         return watermark.schema_stale(graph)
-

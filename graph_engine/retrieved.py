@@ -491,20 +491,17 @@ class RetrievedNode:
 
 @dataclass
 class RetrievedEdge:
-    """
-    A retrieved edge from the AGE graph.
+    """A claim relating two things, in the edge-shaped form the API reads.
 
-    This dataclass wraps raw AGE edge query results and provides convenient
-    accessors for type discrimination and property access. It mirrors
-    the core/age.py RetrievedRelation pattern.
+    Always built from a `Link` row (`from_link`), optionally with the category
+    one view read it under. Claim grain when no category is given (RFC 0025):
+    no label beyond the claim's kind, no category.
 
     Attributes:
-        graph_name: The name of the AGE graph
-        id: The AGE edge ID
-        label: The edge label (e.g., 'MEASURES', 'ASSERTS')
-        left_id: The source vertex ID
-        right_id: The target vertex ID
-        properties: Raw properties dictionary from AGE
+        graph_name: The view's projection handle when read in a view, else empty
+        edge_id: The drawing's edge id when drawn — not the identity, which is `unique_id`
+        label: The view's label for the edge, or the claim's kind at claim grain
+        properties: The drawn record's properties, or the claim's own
     """
 
     graph_name: str
@@ -815,28 +812,28 @@ class RetrievedStructure(RetrievedNode):
 
 @dataclass
 class RetrievedMeasurementLink(RetrievedNode):
-    """A retrieved MeasurementLink node from the AGE graph."""
+    """A measurement link in node-shaped form."""
 
     pass
 
 
 @dataclass
 class RetrievedNaturalEvent(RetrievedNode):
-    """A retrieved Event node from the AGE graph."""
+    """An event, as a view draws it or as the log has it."""
 
     pass
 
 
 @dataclass
 class RetrievedProtocolEvent(RetrievedNode):
-    """A retrieved Event node from the AGE graph."""
+    """An event, as a view draws it or as the log has it."""
 
     pass
 
 
 @dataclass
 class RetrievedMeasurement(RetrievedEdge):
-    """A retrieved Measurement edge from the AGE graph."""
+    """A measurement claim in edge-shaped form."""
 
     pass
 
@@ -911,7 +908,7 @@ class RetrievedMetric(RetrievedNode):
 
 
 # ==========================================
-# Factory Functions for Creating from AGE Data
+# Factory functions for building reading shapes from drawn records
 # ==========================================
 
 

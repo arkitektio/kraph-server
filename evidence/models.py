@@ -368,8 +368,8 @@ class MetricKind(models.Model):
     grain — `MEAN` over a key would become one mean per tool with nothing to
     combine them — and `action_id` is per-deployment, so cardinality would be
     unbounded rather than eleven. It lives on each metric's :class:`Assertion`,
-    and "only what AI_Model_X measured" is a read-time question answered
-    reversibly by a conflict policy or a graph selector.
+    and "only what AI_Model_X measured" is a read-time question a property's
+    `rule.evidence` (or its category's rule) answers reversibly.
 
     Because the value kind is part of identity, `State`'s grain carries it too —
     otherwise two terms would fold into one row and `MEAN` would divide a numeric
@@ -1240,14 +1240,11 @@ class Instance(models.Model):
         help_text=("When the world contained this individual — for an event, when it happened; for an entity, when it was seen. A point, not an interval: a duration is a metric. Defaults to the assertion's `asserted_at` on save (RFC 0015)."),
     )
     confidence = _confidence_field()
-    # Deliberately **no cached `stands` column**, unlike Structure/Metric/Link.
-    #
-    # Those three are organization-grain: a retracted metric is retracted
-    # everywhere, so one boolean is a correct denormalization. Whether a *node*
-    # stands can differ per view, because a graph's selector decides whose claims
-    # count — so a single cached answer would be wrong in the same way the
-    # `{age_name}:` prefix on the ref was wrong. Existence is folded at
-    # projection time, against the reading graph's selector.
+    # No cached `stands` column, like every claim table. The trust-everyone
+    # answer is `CurrentStanding` (total over claim kinds since RFC 0024); what
+    # a *view* says about a node's existence is its category's rule, folded at
+    # projection time (`resolve_categories`) — a single boolean here would be
+    # one view's answer written where every view reads.
     #
     # There was such a column. `rebuild` filtered on it and nothing ever wrote
     # it, so the filter was a no-op and the two paths agreed only by accident.

@@ -67,8 +67,11 @@ startup hard).
 
 ## Architecture
 
-Full write-up: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — note its header still says
-"design proposal"; most of it has since been built. What the append-only log actually records,
+Full write-up: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — historical; the reasoning that
+got here, superseded where `LOG.md` and the RFCs say otherwise. **The model, from first
+principles, is [`docs/rfcs/0021`–`0025`](docs/rfcs/README.md)**: an act is one transaction; every
+fold is a fold under some view; identity is the view's; a datum is an individual with an external
+identity; a `Node` is one view's drawing and an `Instance` is the claim. What the append-only log actually records,
 and which operation writes which claim: [`docs/LOG.md`](docs/LOG.md). Domain rationale for the
 evidence/provenance model: [`docs/BIOLOGIST.md`](docs/BIOLOGIST.md). When a category's
 properties change and every vertex it draws goes stale — what redraws them, in-request versus
@@ -102,7 +105,7 @@ renames that fixed that are in `evidence/migrations/0008_instance_and_standing.p
 | `Instance` | evidence | a claimed **individual** — `entity`, `natural_event` or `protocol_event`. Every observation mints its own | `evidence.Instance` |
 | `Link` | evidence | a claim **relating two things**. Ten kinds — see `Link.Kind`. `DIFFERENT_FROM` is negative sameness, vetoing the direct `SAME_AS` between its ends in every fold (RFC 0019). `DERIVED_FROM` is lineage between claims of any shape, written under the citing claim's own assertion, never drawn (RFC 0017) | `evidence.Link` |
 | `Standing` | evidence | somebody's **position** on whether a claim still holds (`stands=True/False`) | `evidence.Standing` |
-| `CurrentStanding` | evidence (cache) | the folded answer. No row for instances — their standing is per view | `evidence.CurrentStanding` |
+| `CurrentStanding` | evidence (cache) | the folded answer under the trust-everyone view — total over claim kinds, instances included (RFC 0024). A view's answer for a node is still its category's rule | `evidence.CurrentStanding` |
 | `Term` | evidence | a **word** the organization uses. What a claim names | `evidence.Term` |
 | `Graph` | schema | a **view** over the organization's claims. No selector (RFC 0009): whose claims count is each *category's* rule | `core.Graph` |
 | `Category` | schema | one **view's rule** for a word: `age_name`, `definition`, layout. `Category.term` is the join to evidence | `core.Category` |
@@ -202,11 +205,10 @@ The load-bearing facts:
   only a projection supplies (gone since RFC 0025 — `asOfSeq` is the view's cursor), and
   `richProperties` opened with `assert category_id is not None` (now `[]`). So the payload
   carries no category and no label: a claim names a **word** (`term`), and what a view makes of that
-  word lives in its drawing. **There is no folded `stands` on either**: whether an instance exists
-  has no organization-wide answer — `CurrentStanding` deliberately holds no row for one, because a
-  node's category decides whose claims it counts (RFC 0009) — so the positions are reported as
-  `standings` (newest first, empty meaning nobody disputed it) and the per-view answer is
-  `drawings`. `Instance` and `Link` are also
+  word lives in its drawing. **There is no folded `stands` on either**: the trust-everyone fold
+  (`CurrentStanding`, total since RFC 0024) is one view's answer, and a node's category decides
+  whose claims count in *its* view (RFC 0009) — so the positions are reported as `standings`
+  (newest first, empty meaning nobody disputed it) and the per-view answer is `drawings`. `Instance` and `Link` are also
   readable by id (`instance(id:)`, `link(id:)`), and `Link.source`/`target` resolve through the
   `ClaimEndpoint` union by dispatching on `kind` — never by inspecting a ref, since every ref is a
   bare uuid addressing one of four tables (`api/types.py::_ENDPOINT_TABLES`).
@@ -298,9 +300,9 @@ The load-bearing facts:
   clauses, else everything. **Trust is the category's rule (RFC 0009)**: there is no
   `Graph.selector` — a category's `definition` clauses govern its classification, its nodes'
   existence standings, its edges' claims *and* standings (relations per `RelationCategory`,
-  participations per event category, both lanes dispatching through `categories_by_term`, which
-  also maps derived words), and INFORMS routing. The panel and sameness are organization grain
-  again (deliberate 0008 rollback; `component_refs_for_view` is gone). `evidence/selector.py` is
+  participations per event category, both lanes reading `projector.admitting_categories` — RFC
+  0021), and INFORMS routing. The panel's `labels`/`connections` are the trust-everyone fold;
+  sameness is the view's (`identity.component_refs_for_view`, RFC 0024). `evidence/selector.py` is
   still the single home: `classification_filter` (whole rule, WORD included),
   `trust_filter`/`trust_predicate` (who-and-when, WORD skipped), `rule_metric_filter`,
   `metric_scope`; `_rules` is the only walker of the stored shape. **The shape is a rule

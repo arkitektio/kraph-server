@@ -394,11 +394,11 @@ whichever view `graphs_for_refs` yielded first, with nothing on the result sayin
 which; they now go through the same membership-then-drawing path as `nodes(graph:)`
 (`api/queries/_nodes.py::one_in_graph`), so `node(id, g)` succeeds exactly when
 `nodes(graph: g)` could list the node. Admitted but not yet drawn answers as the
-bare row shape (`schemaVersion` null); a node the view does not admit is refused,
+bare row shape (no derived properties, categories from the rule, `graph` and `asOfSeq` named — RFC 0025); a node the view does not admit is refused,
 and the claim-grain reader for it is `instance(id:)`. Nothing answers both grains at
 once any more — the payloads used to, handing back an `Entity` for a claim that
-might be drawn nowhere, and two of its fields (`schemaVersion`, `richProperties`)
-could not answer at all in that case. `Structure` and `Metric` are claim shapes
+might be drawn nowhere, and two of its fields (`schemaVersion` — since removed, RFC 0025 — and
+`richProperties`) could not answer at all in that case. `Structure` and `Metric` are claim shapes
 outright: neither implements the GraphQL `Node` interface, because neither has any
 AGE presence for the interface's `label`/`externalId` to describe. And every `Edge`
 the API builds is row-backed, so `Edge.assertion` is non-null and the

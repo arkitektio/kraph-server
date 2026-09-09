@@ -45,7 +45,7 @@ Append-only: corrections are new rows, never edits, and there is no hard delete.
 | Word | Means | Where |
 |---|---|---|
 | `Standing` | Somebody's **position** on whether a claim still holds (`stands=True/False`). Retraction and attestation both write one. `at` is when the position took effect — the world-time column an `OBSERVED_AT` rule reads over standings | `evidence.Standing` |
-| `CurrentStanding` | The folded answer, a **cache** over `Standing`. Holds **no row for an instance** — whether an instance exists has no organization-wide answer, because the node's category clauses decide whose claims count (RFC 0009) | `evidence.CurrentStanding` |
+| `CurrentStanding` | The folded answer, a **cache** over `Standing` — the fold under the trust-everyone view, total over claim kinds since RFC 0024, instances included. What a *view* says about a node's existence is its category's rule (`resolve_categories`), which never reads this table | `evidence.CurrentStanding` |
 
 ### The organization's vocabulary
 
@@ -257,6 +257,16 @@ These name a **response shape**, not a table. Nothing here is stored.
 | `InformsTarget` | What a structure is evidence *for*: a node, or another claim |
 
 ### Grain: which reads answer at which layer
+
+Two surfaces, never mixed silently (RFC 0025). **The log surface** — `Instance`, `Link`,
+`Metric`, `Structure`, `Assertion`, `Standing`, `changes`, and every edge's `source`/`target`
+— is exact, complete and never stale. **The view surface** — `Node` and its subtypes,
+`nodes(graph:)`, `node(id:, graph:)`, a write's `drawings`, `renderGraphTable` — is one view's
+fold of the log as of its cursor: every `Node` names its `graph`, its `asOfSeq`, and the
+`claim` beneath it, and answers its categories from the view's rule. A reading with no view is
+an `Instance`, never a `Node`. Identity is the view's (`Graph.samenessRule`, RFC 0024); a datum
+is an individual with an external identity (RFC 0023); a claim is drawn under every category
+that admits it, edges included (RFC 0021).
 
 | Grain | Scope | Fields |
 |---|---|---|

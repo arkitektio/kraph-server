@@ -1,4 +1,4 @@
-"""Building the Apache AGE projection from the evidence base.
+"""Building a view's drawing — the table projection — from the evidence base.
 
 The projection is a cache. Everything in it is derivable from
 :mod:`evidence.models` plus a schema version, which means it can be dropped and
@@ -9,7 +9,7 @@ not the source of truth whatever the documentation says.
 Four operations, and nothing else:
 
 - :func:`dirty` — which entities a change invalidates
-- :func:`project` — recompute those entities' properties into AGE
+- :func:`project` — recompute those entities' properties into the drawing
 - :func:`unproject` — remove nodes the evidence no longer says are there
 - :func:`rebuild` — drop the graph and replay it from evidence
 
