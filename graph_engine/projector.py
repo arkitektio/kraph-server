@@ -1728,7 +1728,14 @@ def refold_state(organization: Any) -> int:
         # `high_water_assertion` is assigned unconditionally, so it ended up naming
         # an arbitrary assertion rather than the furthest one. `assertion.seq` is
         # arrival order, cannot tie, and makes the name true.
-        for metric in claims_module.standing(evidence_models.Metric.objects.for_organization(organization), "metric").select_related("structure", "structure__kind", "assertion").order_by("assertion__seq"):
+        # A metric reaches an individual through a datum, and only a datum that
+        # stands informs anything (RFC 0023): the write path refolds without a
+        # retracted structure's metrics (`state.refold` → `_structures_informing`),
+        # and this fold has to agree with it. It used to filter the metric's own
+        # standing only, so a rebuild fed every retracted datum back in.
+        standing_metrics = claims_module.standing(evidence_models.Metric.objects.for_organization(organization), "metric")
+        standing_structures = claims_module.standing(evidence_models.Structure.objects.for_organization(organization), "structure").values("pk")
+        for metric in standing_metrics.filter(structure__in=standing_structures).select_related("structure", "structure__kind", "assertion").order_by("assertion__seq"):
             refs = refs_informed_by(organization, [metric.structure_id])
             if refs:
                 state_module.merge(metric, refs)
