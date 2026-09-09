@@ -11,6 +11,7 @@ filter compared a uuid's first segment to the view's handle.
 import uuid
 import kante
 import pytest
+from evidence import models as evidence_models
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 from core import models as core_models
@@ -209,3 +210,18 @@ async def test_an_edge_can_be_read_back_by_the_id_it_was_given(
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     assert result.data["relation"]["id"] == relation_id, "The claim reads back as itself"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_an_edge_no_view_draws_is_labelled_by_its_kind(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
+    """C4: a relation under a word no view declares is a claim with no drawing.
+    Read back as an edge it carries the claim's kind as its label, because there
+    is no category to have named it."""
+    a = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    b = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    link = await writes.create_relation(api_schema, simple_api_context, f"touches_nobody_{uuid.uuid4().hex[:6]}", a, b)
+
+    read = (await writes.execute(api_schema, simple_api_context, "query R($id: ID!) { relation(id: $id) { id label } }", {"id": link}))["relation"]
+    assert read["id"] == link
+    assert read["label"] == evidence_models.Link.Kind.RELATION.value, "no view named it, so the label is the kind"

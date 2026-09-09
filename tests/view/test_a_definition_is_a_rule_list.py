@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from evidence import models as evidence_models
 from evidence import selector, writer
 from graph_engine import input_models as models
-from tests.support import rules as R  # noqa: E402
+from tests.support import rules, rules as R  # noqa: E402
 import importlib
 from core import models as core_models
 from evidence.selector import rule_metric_filter
@@ -512,3 +512,36 @@ class _Apps0020:
     def get_model(self, app_label, model_name):
         assert (app_label, model_name) == ("core", "Category")
         return core_models.Category
+
+
+@pytest.mark.parametrize("kind", ["CLASSIFICATION", "EXISTENCE", "SAMENESS", "EVIDENCE", "MEASUREMENT"])
+def test_confidence_and_observed_at_bound_every_kind(kind: str) -> None:
+    """RFC 0015 / RFC 0016: `CONFIDENCE` and `OBSERVED_AT` compile to a bound on
+    the claim's own columns for every claim kind — no kind is silently unbounded,
+    and a standing's world time is its `at`."""
+    definition = rules.definition(rules.rule(rules.at_least(0.5), rules.observed_since(datetime(2026, 1, 1, tzinfo=timezone.utc))))
+    compiled = str(selector.trust_filter(definition, kind=kind))
+    assert "confidence" in compiled, f"{kind}: the confidence bound compiled to nothing"
+    assert "observed_at" in compiled, f"{kind}: the observation bound compiled to nothing"
+    standing = str(selector.trust_filter(definition, kind=kind, observed_at_column="at"))
+    assert "'at__gte'" in standing, f"{kind}: over standings the bound has to read `at`"
+
+
+migration_0024 = importlib.import_module("core.migrations.0024_sameness_is_the_views")
+
+
+def test_migration_0024_strips_sameness_from_every_shape_a_rule_can_take() -> None:
+    """RFC 0024: a category definition may no longer name `KIND SAMENESS`. The
+    migration drops a rule that covered sameness only, removes SAMENESS from a
+    KIND list, drops a KIND condition that named nothing else, and leaves every
+    other rule as it was."""
+    strip = migration_0024._strip_sameness
+    word = {"field": "WORD", "operator": "IS", "value": "Cell"}
+
+    assert strip({"when": [{"field": "KIND", "operator": "IS", "value": "SAMENESS"}, word]}) is None, "a rule covering sameness only is gone"
+    assert strip({"when": [{"field": "KIND", "operator": "IN", "value": ["SAMENESS"]}, word]}) is None
+    assert strip({"when": [word, {"field": "KIND", "operator": "IN", "value": ["SAMENESS", "EXISTENCE"]}]}) == {"when": [word, {"field": "KIND", "operator": "IN", "value": ["EXISTENCE"]}]}, "SAMENESS leaves the list, the rest stays"
+    assert strip({"when": [word, {"field": "KIND", "operator": "NOT_IN", "value": ["SAMENESS", "EXISTENCE"]}]}) == {"when": [word, {"field": "KIND", "operator": "NOT_IN", "value": ["EXISTENCE"]}]}
+    assert strip({"when": [word, {"field": "KIND", "operator": "NOT_IN", "value": ["SAMENESS"]}]}) == {"when": [word]}, "a carve-out that excluded sameness only excludes nothing now"
+    untouched = {"when": [word, {"field": "SUBJECT", "operator": "IS", "value": "peter"}], "unless": [{"when": [{"field": "APP", "operator": "IS", "value": "sloppy"}]}]}
+    assert strip(untouched) == untouched

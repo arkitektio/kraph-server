@@ -473,3 +473,22 @@ async def test_link_structure_to_entity_records_the_claim(
 
     assert informing.errors is None, f"GraphQL errors: {informing.errors}"
     assert [s["object"] for s in informing.data["informingStructures"]] == [object_id]
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_retracting_the_informs_claim_stops_the_datum_feeding_the_value(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
+    """RFC 0023: that a datum informs an individual is a claim, and the fold
+    honours its standing. Retract the INFORMS link and the datum's measurements
+    stop feeding the derived value; attest it and they feed it again."""
+    object_id = f"roi_{uuid.uuid4().hex[:8]}"
+    entity = await writes.create_entity(api_schema, simple_api_context, "AIS", evidence=writes.roi(object_id, 42.0))
+    assert await reads.property_of(api_schema, simple_api_context, test_graph, entity, "avg_length") == pytest.approx(42.0)
+
+    informs = await sync_to_async(lambda: str(evidence_models.Link.objects.for_organization(test_graph.organization).get(kind=evidence_models.Link.Kind.INFORMS, target_ref=entity).pk))()
+
+    await writes.execute(api_schema, simple_api_context, writes.RETRACT_LINKS, {"input": {"ids": [informs]}})
+    assert await reads.property_of(api_schema, simple_api_context, test_graph, entity, "avg_length") is None, "a datum that no longer informs the individual feeds nothing"
+
+    await writes.execute(api_schema, simple_api_context, writes.ATTEST_LINK, {"input": {"id": informs}})
+    assert await reads.property_of(api_schema, simple_api_context, test_graph, entity, "avg_length") == pytest.approx(42.0), "attested, it feeds the value again"

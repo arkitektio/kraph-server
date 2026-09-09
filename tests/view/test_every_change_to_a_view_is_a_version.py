@@ -12,6 +12,10 @@ import pytest
 
 from core import models as core_models
 from graph_engine import schema_diff, versioning
+import json
+from asgiref.sync import sync_to_async
+from evidence import models as evidence_models
+from tests.support import rules, writes
 
 
 @pytest.mark.django_db(transaction=True)
@@ -179,3 +183,56 @@ def test_a_save_through_the_base_class_emits_a_version(test_graph: core_models.G
     row.save()
 
     assert core_models.GraphSchema.objects.filter(graph=test_graph).count() == before + 1
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_changing_the_sameness_rule_is_a_version(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
+    """RFC 0024: whose sameness claims a view counts is part of what the view
+    means, so changing it records a version that carries the rule."""
+    before = await sync_to_async(lambda: core_models.GraphSchema.objects.filter(graph=test_graph).count())()
+
+    await writes.execute(api_schema, simple_api_context, writes.UPDATE_GRAPH_SAMENESS_RULE, {"input": {"id": str(test_graph.pk), "samenessRule": rules.definition(rules.rule(rules.by("curator")))}})
+
+    @sync_to_async
+    def newest():
+        schemas = core_models.GraphSchema.objects.filter(graph=test_graph).order_by("-index")
+        return schemas.count(), schemas.first()
+
+    count, schema = await newest()
+    assert count == before + 1
+    assert schema.is_active
+    assert "curator" in json.dumps(schema.definition), "the version carries the rule it was made for"
+
+
+def _inert_mutations(graph: core_models.Graph) -> list[tuple[str, str, dict]]:
+    category = core_models.Category.objects.get(graph=graph, key="AIS")
+    term = evidence_models.Term.objects.for_organization(graph.organization).get(key="Cell", kind="ENTITY")
+    return [
+        ("archiveGraph", writes.ARCHIVE_GRAPH, {"input": {"id": str(graph.pk)}}),
+        ("pin", "mutation P($input: UpdateGraphInput!) { updateGraph(input: $input) { id } }", {"input": {"id": str(graph.pk), "pin": True}}),
+        ("updateGraphVisual", writes.UPDATE_GRAPH_VISUAL, {"input": {"id": str(graph.pk), "nodePositions": [{"category": str(category.pk), "positionX": 3.0, "positionY": 4.0}]}}),
+        ("updateTerm", writes.UPDATE_TERM, {"input": {"id": str(term.pk), "label": "Zelle"}}),
+    ]
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+@pytest.mark.parametrize("which", [0, 1, 2, 3], ids=["archiveGraph", "pin", "updateGraphVisual", "updateTerm"])
+async def test_product_state_emits_no_version_and_runs_no_ddl(api_schema, simple_api_context, test_graph: core_models.Graph, monkeypatch, which: int) -> None:
+    """C7: archiving, pinning, layout and a word's presentation are not part of
+    what a view means. None of them records a version, and none touches the
+    namespace."""
+    from graph_engine.projection import table as table_module
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("product state must not touch the namespace")
+
+    monkeypatch.setattr(table_module.TableProjector, "refresh_namespace", refuse)
+    monkeypatch.setattr(table_module.TableProjector, "drop_namespace", refuse)
+
+    name, document, variables = (await sync_to_async(_inert_mutations)(test_graph))[which]
+    before = await sync_to_async(lambda: core_models.GraphSchema.objects.filter(graph=test_graph).count())()
+    await writes.execute(api_schema, simple_api_context, document, variables)
+    after = await sync_to_async(lambda: core_models.GraphSchema.objects.filter(graph=test_graph).count())()
+    assert after == before, f"{name} is product state and records no version"

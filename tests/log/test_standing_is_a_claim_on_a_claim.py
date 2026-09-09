@@ -530,3 +530,30 @@ async def test_a_retraction_may_say_when_it_took_effect(api_schema, simple_api_c
     (standing,) = data["retractEntity"]["instance"]["standings"]
     assert standing["stands"] is False
     assert datetime.fromisoformat(standing["at"]) == TREATMENT
+
+
+RETRACT_EVENT = {
+    False: "mutation R($input: RetractNaturalEventInput!) { retractNaturalEvent(input: $input) { instance { id } } }",
+    True: "mutation R($input: RetractProtocolEventInput!) { retractProtocolEvent(input: $input) { instance { id } } }",
+}
+ATTEST_EVENT = {
+    False: "mutation A($input: AttestNaturalEventInput!) { attestNaturalEvent(input: $input) { instance { id standings { stands } } drawings { graph { id } } } }",
+    True: "mutation A($input: AttestProtocolEventInput!) { attestProtocolEvent(input: $input) { instance { id standings { stands } } drawings { graph { id } } } }",
+}
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+@pytest.mark.parametrize("protocol", [False, True], ids=["natural", "protocol"])
+async def test_a_retracted_event_can_be_attested(api_schema, simple_api_context, test_graph: core_models.Graph, protocol: bool) -> None:
+    """A3 for events: `attestNaturalEvent` and `attestProtocolEvent` are positions
+    like any other. The retraction stays on the record, the attestation is the
+    newer position, and a view declaring the word draws the event again."""
+    event = await writes.create_event(api_schema, simple_api_context, "Mitosis" if not protocol else "Staining", protocol=protocol)
+    await writes.execute(api_schema, simple_api_context, RETRACT_EVENT[protocol], {"input": {"id": event}})
+    attested = await writes.execute(api_schema, simple_api_context, ATTEST_EVENT[protocol], {"input": {"id": event}})
+    payload = attested["attestProtocolEvent" if protocol else "attestNaturalEvent"]
+
+    assert [row["stands"] for row in payload["instance"]["standings"]] == [True, False], "both positions are on the record, newest first"
+    if not protocol:
+        assert [row["graph"]["id"] for row in payload["drawings"]] == [str(test_graph.pk)], "the view declaring Mitosis draws the event again"

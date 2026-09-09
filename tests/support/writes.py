@@ -88,6 +88,24 @@ RETRACT_DIFFERENT = """
     }
 """
 
+RETRACT_LINKS = """
+    mutation RetractLinks($input: RetractLinksInput!) {
+        retractLinks(input: $input) { assertion { id } links { id kind } }
+    }
+"""
+
+ATTEST_LINK = """
+    mutation AttestLink($input: AttestLinkInput!) {
+        attestLink(input: $input) { assertion { id } links { id kind } }
+    }
+"""
+
+UPDATE_GRAPH_SAMENESS_RULE = """
+    mutation UpdateSamenessRule($input: UpdateGraphInput!) {
+        updateGraph(input: $input) { id samenessRule { rules { when { field operator value } } } }
+    }
+"""
+
 CREATE_GRAPH = """
     mutation CreateGraph($input: CreateGraphInput!) {
         createGraph(input: $input) { id }

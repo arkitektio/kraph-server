@@ -10,7 +10,7 @@ import uuid
 import pytest
 from asgiref.sync import sync_to_async
 from evidence import models as evidence_models
-from tests.support import claims, drawing, reads, writes
+from tests.support import claims, drawing, reads, sdl, writes
 from django.db import IntegrityError, transaction
 from authentikate.models import Organization
 import kante
@@ -541,3 +541,11 @@ async def test_structure_relation_supersede_and_retract_reach_the_row(
         return claims_module.current(link.organization, "link", link.pk)
 
     assert await surviving_status() == False, "Retraction keeps the row and marks it"
+
+
+def test_a_datum_is_claimed_never_ensured() -> None:
+    """C6: a structure is claimed to exist like any individual (`assertStructureExists`);
+    there is no `ensureStructure`, which would have made it an upsert with no act."""
+    fields = sdl.mutation_fields()
+    assert "assertStructureExists" in fields
+    assert "ensureStructure" not in fields

@@ -12,11 +12,11 @@ status active, so `reproject` resurrected every deleted entity. The in-place
 `update*` mutations went the same way: a correction is a new claim.
 """
 
-import re
 
 import pytest
-
 from api.schema import schema
+
+from tests.support import sdl
 
 #: Every mutation that used to destroy instance data.
 REMOVED = [
@@ -67,29 +67,16 @@ RETAINED = [
 ]
 
 
-def _mutation_fields() -> set[str]:
-    """The field names on the root Mutation type.
-
-    Parsed from the Mutation block rather than the whole SDL: `deleteEntity` is a
-    substring of `deleteEntityCategory` and of `DeleteEntityInput`, so a
-    document-wide search would pass while the mutation was still mounted.
-    """
-    sdl = str(schema)
-    block = re.search(r"type Mutation \{(.*?)\n\}", sdl, re.S)
-    assert block, "schema must expose a Mutation type"
-    return set(re.findall(r"^\s+(\w+)\(", block.group(1), re.M))
-
-
 @pytest.mark.parametrize("name", REMOVED)
 def test_hard_delete_mutation_is_absent(name: str) -> None:
     """No API caller can destroy instance data."""
-    assert name not in _mutation_fields()
+    assert name not in sdl.mutation_fields()
 
 
 @pytest.mark.parametrize("name", RETAINED)
 def test_the_retraction_path_remains(name: str) -> None:
     """Removing the destructive path is only correct if the retracting one stayed."""
-    assert name in _mutation_fields()
+    assert name in sdl.mutation_fields()
 
 
 def test_the_additive_correction_path_remains() -> None:
@@ -98,7 +85,7 @@ def test_the_additive_correction_path_remains() -> None:
     Evidence attaches to a live entity through `assertInforms`, and a
     reclassification is a claim rather than a new node. Neither touches identity.
     """
-    fields = _mutation_fields()
+    fields = sdl.mutation_fields()
     assert "assertInforms" in fields, "attaching evidence to an existing entity is how a correction is made"
     assert "assertMetricValue" in fields
     assert "assertParticipation" in fields, "changing who took part in an event must not require replacing the event"
@@ -120,4 +107,4 @@ def test_redact_is_a_management_command_not_a_mutation() -> None:
     from django.core.management import get_commands
 
     assert get_commands().get("redact") == "core"
-    assert not any(field.lower().startswith("redact") for field in _mutation_fields())
+    assert not any(field.lower().startswith("redact") for field in sdl.mutation_fields())

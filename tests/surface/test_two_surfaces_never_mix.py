@@ -8,10 +8,11 @@ edge's endpoint is a claim, because an edge carries no view.
 
 import pytest
 from asgiref.sync import sync_to_async
-from tests.support import drawing, writes
+from tests.support import drawing, graphs, reads, writes
 import kante
 from kante.context import HttpContext
 from core import models as core_models
+import uuid
 
 
 NODE = """
@@ -129,3 +130,23 @@ async def test_node_interface_fields_resolve_for_a_structure(
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     payload = result.data["structure"]
     assert payload["id"] == structure_id, "The primary key is the identity — there is no second, global one"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_drawn_in_names_exactly_the_views_a_node_read_accepts(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
+    """RFC 0025: `Instance.drawnIn` lists the views that draw a claim, and
+    `node(id:, graph:)` answers for exactly those — a view that does not draw it
+    refuses the read rather than answering from another view's drawing."""
+    node = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    elsewhere = await graphs.graph_declaring(api_schema, simple_api_context, f"Nothing_{uuid.uuid4().hex[:6]}")
+
+    drawn_in = (await writes.execute(api_schema, simple_api_context, reads.DRAWN_IN, {"id": node}))["instance"]["drawnIn"]
+    assert sorted(entry["graph"]["id"] for entry in drawn_in) == [str(test_graph.pk)]
+
+    for entry in drawn_in:
+        answered = await writes.execute(api_schema, simple_api_context, reads.NODE, {"id": node, "graph": entry["graph"]["id"]})
+        assert answered["node"]["id"] == node
+
+    refused = await api_schema.execute(reads.NODE, variable_values={"id": node, "graph": elsewhere}, context_value=simple_api_context)
+    assert refused.errors, "a view that does not draw the node refuses the read"

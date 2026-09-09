@@ -27,6 +27,8 @@ import datetime
 from tests.support import drawing, writes
 from evidence import identity
 from tests.support.writes import ASSERT_SAME
+import uuid
+from graph_engine import watermark
 
 
 ASSERT_PARTICIPATION = """
@@ -739,3 +741,32 @@ async def test_a_protocol_event_with_inputs_succeeds_and_is_recorded_as_one(
         return list(evidence_models.Instance.objects.for_organization(test_graph.organization).filter(term=category.term).values_list("kind", flat=True))
 
     assert await kinds() == ["protocol_event"], "A protocol event must be recorded as one"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_an_event_naming_a_missing_participant_writes_nothing(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
+    """A1 on the event path: the event, its participations and the act are one
+    transaction, so an event naming a participant that does not exist leaves no
+    assertion, no instance, no participation and no outbox row behind."""
+    mother = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    organization = test_graph.organization
+
+    @sync_to_async
+    def counts() -> tuple[int, int, int, int]:
+        participations = (evidence_models.Link.Kind.PARTICIPATES_AS_INPUT, evidence_models.Link.Kind.PARTICIPATES_AS_OUTPUT)
+        return (
+            evidence_models.Assertion.objects.for_organization(organization).count(),
+            evidence_models.Instance.objects.for_organization(organization).count(),
+            evidence_models.Link.objects.for_organization(organization).filter(kind__in=participations).count(),
+            watermark.pending_count(organization),
+        )
+
+    before = await counts()
+    failed = await api_schema.execute(
+        writes.ASSERT_NATURAL_EVENT_EXISTS,
+        variable_values={"input": {"term": "Mitosis", "inputs": [{"role": "a", "entityId": mother}], "outputs": [{"role": "a", "entityId": str(uuid.uuid4())}], "supportingEvidence": []}},
+        context_value=simple_api_context,
+    )
+    assert failed.errors, "a participant that names no node is refused"
+    assert await counts() == before, "and the refusal left nothing behind: not the act, not the event, not the one good participation"

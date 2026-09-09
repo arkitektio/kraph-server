@@ -10,7 +10,7 @@ import pytest
 from core import models as core_models
 from graph_engine import namespace as namespace_module
 from asgiref.sync import sync_to_async
-from tests.support import drawing, namespaces, writes
+from tests.support import drawing, namespaces, reads, writes
 import re
 
 
@@ -324,11 +324,6 @@ async def test_a_view_reads_another_words_claims_under_its_own_name(api_schema, 
     assert cytology_rows == [(cell, "Cell")]
     assert census_rows == [(cell, "ObservedCell")], "the same claim, drawn under this view's own word"
 HANDLE = re.compile(r"^g[0-9a-f]{32}$")
-NODE = """
-    query GetNode($id: ID!, $graph: ID!) {
-        node(id: $id, graph: $graph) { id }
-    }
-"""
 def test_two_graphs_with_one_name_get_distinct_random_handles(transactional_db, table_projector, minimal_schema, authenticated_context) -> None:
     """Same name, same organization, twice — two handles, neither derived from the name."""
     from graph_engine.materialize import materialize
@@ -350,11 +345,11 @@ async def test_graph_argument_is_a_primary_key_not_the_handle(api_schema, simple
     """`graph: "<age_name>"` is refused; the same read by id succeeds."""
     entity_id = await writes.create_entity(api_schema, simple_api_context, "AIS")
 
-    by_handle = await api_schema.execute(NODE, variable_values={"id": entity_id, "graph": str(test_graph.age_name)}, context_value=simple_api_context)
+    by_handle = await api_schema.execute(reads.NODE, variable_values={"id": entity_id, "graph": str(test_graph.age_name)}, context_value=simple_api_context)
     assert by_handle.errors, "the namespace handle must not address a graph"
     assert "by its id" in str(by_handle.errors[0]), f"Refused for the wrong reason: {by_handle.errors[0]}"
 
-    by_id = await api_schema.execute(NODE, variable_values={"id": entity_id, "graph": str(test_graph.pk)}, context_value=simple_api_context)
+    by_id = await api_schema.execute(reads.NODE, variable_values={"id": entity_id, "graph": str(test_graph.pk)}, context_value=simple_api_context)
     assert by_id.errors is None, f"GraphQL errors: {by_id.errors}"
     assert by_id.data["node"]["id"] == entity_id
 @pytest.mark.django_db(transaction=True)

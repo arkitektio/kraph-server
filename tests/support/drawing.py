@@ -164,3 +164,9 @@ def participations(graph: Any) -> list[tuple[str, str]]:
 def assertion_counts(graph: Any, label: str) -> list[int]:
     """How many claims each drawn edge under this label folds, sorted."""
     return sorted(int(count) for count in edge_property_values(graph, label, "__assertion_count"))
+
+
+def edge_categories_between(graph: Any, source_ref: str, target_ref: str, label: str) -> list[Any]:
+    """The category each edge drawn between the two refs under `label` was drawn under — one entry per edge (RFC 0021)."""
+    queryset = models.ProjectionEdge.objects.filter(graph=graph, label=str(label), source__members__ref=str(source_ref), target__members__ref=str(target_ref)).distinct()
+    return sorted(((edge.properties or {}).get("category_id") for edge in queryset), key=lambda value: (value is None, value))

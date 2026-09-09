@@ -8,6 +8,14 @@ from typing import Any
 
 from tests.support.writes import execute
 
+NODE = """
+    query Node($id: ID!, $graph: ID!) { node(id: $id, graph: $graph) { id } }
+"""
+
+DRAWN_IN = """
+    query DrawnIn($id: ID!) { instance(id: $id) { id drawnIn { graph { id } category { id } } } }
+"""
+
 NODE_PROPERTIES = """
     query NodeProperties($id: ID!, $graph: ID!) {
         node(id: $id, graph: $graph) { id ... on Entity { properties } ... on NaturalEvent { properties } ... on ProtocolEvent { properties } }

@@ -703,3 +703,34 @@ async def test_classification_admits_per_clause(api_schema, simple_api_context, 
     assert counts[too_late] == 0, "Peter after Dec 5 falls outside his rule"
     assert counts[too_early] == 0, "Karl before Dec 5 falls outside his"
     assert counts[sloppy] == 0, "the `unless` group blocks Peter's claim through the sloppy import"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_a_correction_across_two_derived_words_keeps_the_node(api_schema, simple_api_context, table_projector) -> None:
+    """A category defined over two words admits a node through either. A node
+    claimed under one, then classified under the other, is one vertex; retracting
+    the first classification keeps it, because the second still admits it; and
+    retracting the second removes it."""
+    graph_id = await graphs.graph_declaring(api_schema, simple_api_context, "Neuron", definition=rules.definition(rules.rule(rules.word("PyramidalCell", "Interneuron"))))
+    node = await writes.create_entity(api_schema, simple_api_context, "PyramidalCell")
+    await writes.classify(api_schema, simple_api_context, [(node, "Interneuron")])
+
+    @sync_to_async
+    def classification(word: str) -> str:
+        graph = core_models.Graph.objects.get(pk=graph_id)
+        term = evidence_models.Term.objects.for_organization(graph.organization).get(key=word, kind="ENTITY")
+        return str(evidence_models.Link.objects.for_organization(graph.organization).get(kind=evidence_models.Link.Kind.CLASSIFIES, source_ref=node, target_ref=str(term.pk)).pk)
+
+    @sync_to_async
+    def drawn():
+        graph = core_models.Graph.objects.get(pk=graph_id)
+        return drawing.vertex_count(graph, "Neuron"), drawing.labels_of(graph, node)
+
+    assert await drawn() == (1, {"Neuron"}), "one vertex under the defined word, whichever derived word admitted it"
+
+    await writes.execute(api_schema, simple_api_context, writes.RETRACT_LINKS, {"input": {"ids": [await classification("PyramidalCell")]}})
+    assert await drawn() == (1, {"Neuron"}), "the correction stands in for the retracted word"
+
+    await writes.execute(api_schema, simple_api_context, writes.RETRACT_LINKS, {"input": {"ids": [await classification("Interneuron")]}})
+    assert await drawn() == (0, set()), "with neither word standing, the category admits nothing"

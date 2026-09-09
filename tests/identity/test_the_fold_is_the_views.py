@@ -26,11 +26,6 @@ CREATE_GRAPH_WITH_RULE = """
         createGraph(input: $input) { id samenessRule { rules { when { field operator value } } } }
     }
 """
-UPDATE_GRAPH = """
-    mutation Update($input: UpdateGraphInput!) {
-        updateGraph(input: $input) { id samenessRule { rules { when { field operator value } } } }
-    }
-"""
 NODE = """
     query N($id: ID!, $graph: ID!) { node(id: $id, graph: $graph) { id members drawnLabels } }
 """
@@ -66,7 +61,7 @@ async def test_the_views_rule_decides_and_reaches_across_categories(api_schema, 
     assert sorted(read.data["node"]["members"]) == sorted([cell, nucleus])
 
     # Widen the rule to everyone: Peter's merge now counts, and the drawing is refolded.
-    updated = await api_schema.execute(UPDATE_GRAPH, variable_values={"input": {"id": graph_id, "samenessRule": {"rules": []}}}, context_value=simple_api_context)
+    updated = await api_schema.execute(writes.UPDATE_GRAPH_SAMENESS_RULE, variable_values={"input": {"id": graph_id, "samenessRule": {"rules": []}}}, context_value=simple_api_context)
     assert updated.errors is None, f"GraphQL errors: {updated.errors}"
     assert updated.data["updateGraph"]["samenessRule"] is None, "no rules means everyone, read back as null"
     assert await sync_to_async(drawing.members_of)(graph, cell) == sorted([cell, nucleus, other])

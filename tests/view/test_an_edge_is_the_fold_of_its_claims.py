@@ -12,6 +12,7 @@ without them — the test passed because no code path could create one.
 import uuid
 import kante
 import pytest
+from core import enums
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 from core import models as core_models
@@ -22,6 +23,7 @@ from tests.support.graphs import AFTER, BEFORE, example_graph as _example_graph,
 from tests.support.writes import CREATE_GRAPH
 from evidence import writer
 from tests.support.graphs import graph_declaring as _graph_declaring
+from graph_engine import projector
 
 
 UPDATE_RELATION = """
@@ -654,3 +656,66 @@ async def test_link_claims_and_their_retractions_fold_per_relation_category(api_
     assert trusted_claim == 1, "the trusted claim draws"
     assert untrusted_retraction == 1, "an untrusted retraction does not take a trusted edge"
     assert trusted_retraction == 0, "the trusted retraction does"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_an_event_several_categories_admit_draws_each_participation_once(api_schema, simple_api_context, test_graph: core_models.Graph, table_projector) -> None:
+    """RFC 0021 for participations: two defined event categories deriving from
+    one word each admit the event, so the event is drawn under both labels — but
+    a participation edge is labelled by the event *kind* (`WENT_THROUGH`,
+    `CAME_OUT_OF`), not by a category, so every admitting category draws the
+    same edge and the claim is counted once on it."""
+
+    @sync_to_async
+    def declare() -> None:
+        roles_in = [{"key": "Cell", "role": "a", "descriptor": {"keys": ["Cell"]}}]
+        for key, label in (("EarlyMitosis", "EARLY"), ("LateMitosis", "LATE")):
+            core_models.NaturalEventCategory.objects.create(
+                graph=test_graph,
+                key=key,
+                age_name=label,
+                label=key,
+                term=writer.ensure_term(test_graph.organization, enums.CategoryKindChoices.NATURAL_EVENT, key),
+                definition=rules.definition(rules.rule(rules.word("Mitosis"))),
+                source_entity_roles=roles_in,
+                target_entity_roles=roles_in,
+            )
+
+    await declare()
+    mother = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    daughter = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    event = await writes.create_event(api_schema, simple_api_context, "Mitosis", inputs=[{"role": "a", "entityId": mother}], outputs=[{"role": "a", "entityId": daughter}])
+
+    @sync_to_async
+    def drawn():
+        return drawing.labels_of(test_graph, event), drawing.edge_categories_between(test_graph, mother, event, "WENT_THROUGH"), drawing.edge_categories_between(test_graph, event, daughter, "CAME_OUT_OF")
+
+    labels, went_through, came_out_of = await drawn()
+    assert labels == {"Mitosis", "EARLY", "LATE"}, "the primitive category and both defined ones admit the event"
+    assert len(went_through) == 1 and len(came_out_of) == 1, "one edge per side, whichever category names it"
+    assert await sync_to_async(drawing.assertion_counts)(test_graph, "WENT_THROUGH") == [1], "and the claim is folded once onto it"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_admitting_categories_names_every_category_that_admits_a_claim(test_graph: core_models.Graph) -> None:
+    """`projector.admitting_categories` is the one implementation of "which
+    claims draw this category's edges" (RFC 0021): asked about two relation
+    categories over one word, it answers with every category whose rule admits
+    each claim — both for a curator's, one for a bot's — and nothing for a
+    claim no category admits."""
+    organization = test_graph.organization
+    everyone = core_models.RelationCategory.objects.create(graph=test_graph, key="touches_by_anyone", age_name="TOUCHES_ANYONE", label="touches_by_anyone", term=writer.ensure_term(organization, enums.CategoryKindChoices.RELATION, "touches_by_anyone"), source_definition={}, target_definition={}, definition=rules.definition(rules.rule(rules.word("touches"))))
+    curated = core_models.RelationCategory.objects.create(graph=test_graph, key="touches_by_curator", age_name="TOUCHES_CURATED", label="touches_by_curator", term=writer.ensure_term(organization, enums.CategoryKindChoices.RELATION, "touches_by_curator"), source_definition={}, target_definition={}, definition=rules.definition(rules.rule(rules.word("touches"), rules.by("curator"))))
+    a = claims.mint(organization, "Cell", "curator")
+    b = claims.mint(organization, "Cell", "curator")
+    by_curator = claims.relate(organization, "touches", a, b, "curator")
+    by_bot = claims.relate(organization, "touches", b, a, "bot")
+    unrelated = claims.relate(organization, "ignores", a, b, "curator")
+
+    base = evidence_models.Link.objects.for_organization(organization).filter(kind=evidence_models.Link.Kind.RELATION)
+    admitted = projector.admitting_categories([everyone, curated], base)
+
+    assert {category.pk for category in admitted[by_curator.pk][1]} == {everyone.pk, curated.pk}
+    assert {category.pk for category in admitted[by_bot.pk][1]} == {everyone.pk}
+    assert unrelated.pk not in admitted, "a claim no category admits is absent, not an error"
