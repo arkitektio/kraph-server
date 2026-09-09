@@ -749,10 +749,13 @@ def proposition_key(link: evidence_models.Link, canon: Mapping[str, str] | None 
 def representatives_for(controller: Any, graph: core_models.Graph, refs: Iterable[str]) -> dict[str, str]:
     """Member ref → the representative of the individual this view draws it as.
 
-    Asked of the drawing: the vertex holding each ref, and its `id`. A ref the
-    view has not drawn maps to nothing, and its caller falls back to the ref
-    itself — which then fails to match an endpoint, exactly as an undrawn node
-    always did.
+    Asked of the drawing — the one legitimate cache read on the write path,
+    because the question is "which vertex do I attach this edge to", and an edge
+    can only attach to a vertex that exists. Nodes converge before edges
+    (`converge`, and `_members_drawn_as` on the correction paths), so by the
+    time this is asked the vertex is the one the rule describes. A ref the view
+    has not drawn maps to nothing, and its caller falls back to the ref itself —
+    which then fails to match an endpoint, exactly as an undrawn node always did.
     """
     records = controller.projector.drawn_nodes(graph, {str(ref) for ref in refs})
     return {ref: str(record["properties"]["id"]) for ref, record in records.items()}
@@ -1882,8 +1885,9 @@ def replay(controller: Any, organization: Any) -> dict[str, Any]:
 
     Settles **exactly** the outbox rows it read, by id, after applying them to
     every graph it processed. A row committed after the snapshot is left for the
-    next replay; a row whose assertion has no claims (a crash between the two
-    transactions of `create_entity`) is settled with nothing to draw.
+    next replay; a row whose assertion has no claims (one `redact` emptied, or
+    one an older writer recorded before the act became a single transaction) is
+    settled with nothing to draw.
     """
     from evidence import identity as identity_module
     from graph_engine import models as projection_models

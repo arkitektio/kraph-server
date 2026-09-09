@@ -165,7 +165,9 @@ async def test_replay_equals_a_full_rebuild(api_schema, simple_api_context, test
 
 @pytest.mark.django_db(transaction=True)
 def test_replay_tolerates_an_assertion_with_no_claims(test_graph: core_models.Graph, table_projector) -> None:
-    """A crash between the assertion's transaction and the claims' leaves an empty assertion in the outbox."""
+    """An act with no claims — one `redact` emptied, or one an older writer split
+    across two transactions — leaves an outbox row with nothing to draw. A live
+    write cannot produce one any more: the act is a single transaction."""
     from evidence import writer
 
     organization = test_graph.organization

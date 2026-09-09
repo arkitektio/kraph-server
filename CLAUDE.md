@@ -223,9 +223,12 @@ The load-bearing facts:
 - **All graph writes go through `GraphController`** (`graph_engine/controller.py`), which records
   an `Assertion` — a Postgres row, never a drawn vertex — and draws through the projector.
   Corrections are additive: there is no `updateEntity` and no hard delete for instance data.
-  Evidence is written **before** the projection, always — and since the drawing is rows in the
-  same database now, the draw commits in the *same transaction* as the assertion, so in steady
-  state the outbox settles with the write and `lag` is structurally zero.
+  Evidence is written **before** the projection, always: the act — assertion, outbox row, every
+  claim — is **one transaction**, and the draw follows it *outside* that transaction, into every
+  view declaring the word. A failure after the commit leaves a durable act with an outstanding
+  outbox row, which `reproject --incremental` applies; `lag` is that outstanding count, zero in
+  steady state because the draw normally completes within the request. (It used to be two
+  evidence transactions on the ground that AGE could not join one; that gap is closed.)
 - **The graph carries no lifecycle state**, and neither does the API. If the claims do not say a
   node exists, it has no vertex — not a vertex with a flag, and not a `lifecycle` field either. Retracting is a `Standing(stands=False)` and removes the drawing
   (`projector.unproject`; edges go by FK cascade — the `DETACH`); `attest*` writes `Standing(stands=True)` and redraws it. There is

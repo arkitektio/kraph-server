@@ -213,6 +213,68 @@ async def test_archiving_one_of_two_assertions_keeps_the_edge(
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
+async def test_a_retraction_folds_survivors_under_the_rule_not_the_drawing(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    table_projector,
+) -> None:
+    """The survivor set of a correction comes from the rule, and the drawing
+    is converged to it — never the other way round.
+
+    Two observations `a` and `b` are claimed to be one cell *without* the view
+    being redrawn (the claim is written straight to the log, as a replay would
+    find it). Each is related to `c`. The write path used to ask the drawing
+    which members `a` stood for and got "only `a`", so retracting `a -> c` found
+    no survivor and erased an edge the next rebuild would draw again — the two
+    disagreed exactly when the cache was behind. Now the rule answers, the
+    individual is converged first, and the retraction leaves `b -> c` standing.
+    """
+    from tests import claims as claims_module_helpers
+
+    entity_category = await _cell_category(test_graph)
+    relation_category = await _connected_to_category(test_graph)
+
+    a = await _make_cell(api_schema, simple_api_context, entity_category)
+    b = await _make_cell(api_schema, simple_api_context, entity_category)
+    c = await _make_cell(api_schema, simple_api_context, entity_category)
+
+    # The sameness claim lands in the log only; the drawing still shows two cells.
+    await sync_to_async(claims_module_helpers.same)(test_graph.organization, a, b, "annotator")
+    assert await sync_to_async(drawing.members_of)(test_graph, a) == [a], "nothing has redrawn the individual yet"
+
+    first = await _connect(api_schema, simple_api_context, relation_category, a, c)
+    await _connect(api_schema, simple_api_context, relation_category, b, c)
+
+    @sync_to_async
+    def converged() -> tuple[list[str], int]:
+        return drawing.members_of(test_graph, a), _count_edges(table_projector, test_graph, relation_category.age_name)
+
+    members, edges = await converged()
+    assert members == sorted([a, b]), "the correction path converged the individual the rule describes"
+    assert edges == 1, "one individual, one edge to c"
+
+    archived = await api_schema.execute(ARCHIVE_RELATION, variable_values={"input": {"id": first}}, context_value=simple_api_context)
+    assert archived.errors is None, f"GraphQL errors: {archived.errors}"
+
+    @sync_to_async
+    def after() -> tuple[int, list]:
+        return _count_edges(table_projector, test_graph, relation_category.age_name), drawing.edge_property_values(test_graph, relation_category.age_name, "__assertion_count")
+
+    edges, counts = await after()
+    assert edges == 1, "b -> c still holds the edge up"
+    assert counts == [1]
+
+    @sync_to_async
+    def rebuild() -> int:
+        GraphController(projector=table_projector).rebuild_projection(test_graph)
+        return _count_edges(table_projector, test_graph, relation_category.age_name)
+
+    assert await rebuild() == 1, "and a rebuild says the same"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
 async def test_archiving_the_last_assertion_removes_the_edge_and_the_replay_agrees(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
@@ -327,11 +389,7 @@ async def test_relation_endpoints_key_on_uuids_not_vertex_ids(
 
     @sync_to_async
     def refs() -> list[tuple[str, str]]:
-        return list(
-            evidence_models.Link.objects.for_organization(test_graph.organization)
-            .filter(kind=evidence_models.Link.Kind.RELATION)
-            .values_list("source_ref", "target_ref")
-        )
+        return list(evidence_models.Link.objects.for_organization(test_graph.organization).filter(kind=evidence_models.Link.Kind.RELATION).values_list("source_ref", "target_ref"))
 
     endpoints = await refs()
     assert endpoints, "Asserting a relation must record a Link row"

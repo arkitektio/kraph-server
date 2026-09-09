@@ -157,6 +157,35 @@ async def test_a_rolled_back_write_is_not_announced(api_schema, simple_api_conte
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
+async def test_an_act_whose_claims_fail_is_not_recorded(api_schema, simple_api_context, test_graph, monkeypatch) -> None:
+    """The act is one transaction. A failure while writing the claims takes the
+    assertion and its outbox row with it: the log never held an act that said
+    nothing, and nobody hears about it."""
+    from graph_engine import models as projection_models
+
+    before = await evidence_models.Assertion.all_objects.acount()
+    pending_before = await projection_models.PendingProjection.objects.acount()
+
+    def refuse(*args, **kwargs):
+        raise RuntimeError("the claim could not be written")
+
+    monkeypatch.setattr(writer, "create_instance", refuse)
+    task, received = await _subscribe(api_schema)
+    try:
+        result = await api_schema.execute(ASSERT_ENTITY, variable_values={"input": {"term": "AIS"}}, context_value=simple_api_context)
+        assert result.errors, "the write fails"
+
+        assert await evidence_models.Assertion.all_objects.acount() == before, "no act was recorded"
+        assert await projection_models.PendingProjection.objects.acount() == pending_before, "and nothing is owed to the projection"
+
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(received.get(), timeout=1)
+    finally:
+        await _close(task)
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
 async def test_another_tenants_write_is_not_heard(api_schema, simple_api_context, test_graph, other_organization) -> None:  # noqa: F811
     task, received = await _subscribe(api_schema)
     try:

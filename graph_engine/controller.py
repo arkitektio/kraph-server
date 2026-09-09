@@ -408,13 +408,28 @@ class GraphController:
         supporting_evidence = payload.supporting_evidence or []
         cited = self._resolve_citations(organization, payload.derived_from)
 
-        # Evidence first, in one transaction. AGE cannot join a Django
-        # transaction — the engine runs on independent cursors — so the two
-        # stores commit separately by construction. That asymmetry is deliberate
-        # rather than a bug to compensate for: evidence is the source of truth,
-        # so a failure after this commit leaves durable evidence with no
-        # projection, and `reproject` (M3) picks it up. Do not "fix" this by
-        # deleting the evidence when the AGE write fails.
+        # The entity's own uuid, and nothing else. Never a vertex id — those are
+        # assigned by the projection and reassigned when a graph is dropped and
+        # replayed, so keying evidence on one would leave every link dangling
+        # after precisely the operation `reproject` performs. And no graph
+        # prefix either: which views show this entity is a question their
+        # derivation rules answer, not something its name decides.
+        ref_id = self.create_universal_id()
+        claim_ref = str(ref_id)
+
+        # One act, one transaction. The assertion, its outbox row, the supporting
+        # evidence and every claim below commit together or not at all: the log
+        # may not contain an act that recorded nothing. It used to be two
+        # transactions — assertion first, claims second — on the ground that the
+        # AGE engine could not join a Django transaction; the gap between them
+        # was where a crash left an empty act that `replay` then settled silently
+        # and `assertionRecorded` had already announced.
+        #
+        # The drawing is deliberately *outside* this block, and follows it. A
+        # failure after the commit leaves a durable act whose outbox row is still
+        # outstanding, and `reproject --incremental` applies it; pulling the draw
+        # in here would make every write wait on every view and make `lag`
+        # unobservable. Do not "fix" a failed draw by deleting the evidence.
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             materialized_evidence, recorded_metrics = self._materialize_supporting_evidence(
@@ -424,27 +439,9 @@ class GraphController:
                 info=info,
             )
 
-        # The entity's own uuid, and nothing else. Never the AGE vertex id —
-        # those are assigned by AGE and change when a graph is dropped and
-        # replayed, so keying evidence on one would leave every link dangling
-        # after precisely the operation `reproject` performs. And no graph
-        # prefix either: which views show this entity is a question their
-        # derivation rules answer, not something its name decides.
-        ref_id = self.create_universal_id()
-        claim_ref = str(ref_id)
-
-        with transaction.atomic():
             # That an entity exists is itself a claim, so it is evidence. Without
             # this row an entity with no metrics yet would simply vanish on
             # rebuild, and `reproject` could not honestly reconstruct the graph.
-            #
-            # **Written before the vertex, and that ordering is load-bearing.**
-            # AGE cannot join a Django transaction, so one of the two orderings
-            # has to be the recoverable one. This way a crash in between leaves
-            # evidence with no projection, which `reproject` fixes. The other way
-            # round left a vertex the log had never heard of — still queryable,
-            # still resolvable to a ref, so relations could be written naming a
-            # node that did not exist, and those links then dangled forever.
             writer.create_instance(
                 organization,
                 id=claim_ref,
@@ -1120,21 +1117,8 @@ class GraphController:
         """
         supporting_evidence = payload.supporting_evidence or []
 
-        # Evidence first, in one transaction. See the note in `create_entity`
-        # about why the AGE write deliberately sits outside it.
-        with transaction.atomic():
-            assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            materialized_evidence, recorded_metrics = self._materialize_supporting_evidence(
-                organization=organization,
-                supporting_evidence=supporting_evidence,
-                assertion=assertion,
-                info=info,
-            )
-
-        # The uuid, not the AGE vertex id and not a graph-prefixed composite —
-        # for the same reasons entities are; see `create_entity`, which also
-        # explains why the vertex is written after the `Instance` row rather than
-        # before it.
+        # The uuid, not a vertex id and not a graph-prefixed composite — for the
+        # same reasons entities are; see `create_entity`.
         event_ref = str(self.create_universal_id())
 
         # Resolved before the transaction: a bad entity id should fail before any
@@ -1144,7 +1128,16 @@ class GraphController:
         resolved = [(kind, mapping.role, self._node_ref(mapping.entity_id, info, organization=organization)) for kind, mapping in participations]
         cited = self._resolve_citations(organization, payload.derived_from)
 
+        # One act, one transaction, and the drawing after it — see `create_entity`.
         with transaction.atomic():
+            assertion = self._create_assertion(organization, self._provenance_from_info(info))
+            materialized_evidence, recorded_metrics = self._materialize_supporting_evidence(
+                organization=organization,
+                supporting_evidence=supporting_evidence,
+                assertion=assertion,
+                info=info,
+            )
+
             # `observed_at` is when the event happened. The classification and the
             # participations below are claims about the same moment, so they carry
             # it too — a rule bounding OBSERVED_AT on an event category then
@@ -1940,13 +1933,37 @@ class GraphController:
         self.projector.erase_edge(graph, left, right, str(label), {"role": role})
 
     def _members_drawn_as(self, graph: models.Graph, *refs: str) -> dict[str, list[str]]:
-        """Each ref → every member of the individual this view draws it as (RFC 0018).
+        """Each ref → every member of the individual this view holds it in (RFC 0018).
 
-        A ref the view has not drawn is its own only member, so the edge fold
-        over it asks for exactly the claims it always did.
+        Answered from the **rule**, never from the drawing:
+        `identity.component_refs_for_view` folds the sameness claims the view's
+        categories trust, which is exactly what `rebuild` folds. The drawing used
+        to be asked instead, with "its own only member" as the fallback for a ref
+        it had not drawn — so a correction arriving while the cache was cold or
+        behind filtered its survivors over a different individual than the next
+        replay would, and the write path and the replay disagreed precisely when
+        the cache mattered.
+
+        Where the drawing disagrees with the rule — a vertex listing other members,
+        or no vertex for an individual the rule says is merged — the individual is
+        converged first, so the edge pass that follows attaches to the vertex the
+        rule describes rather than to a stale one.
         """
-        records = self.projector.drawn_nodes(graph, [str(ref) for ref in refs])
-        return {str(ref): [str(member) for member in records[str(ref)]["members"]] if str(ref) in records else [str(ref)] for ref in refs}
+        from graph_engine import projector
+
+        wanted = [str(ref) for ref in refs]
+        members = identity_module.component_refs_for_view(graph, wanted)
+        drawn = self.projector.drawn_nodes(graph, wanted)
+        stale = []
+        for ref in wanted:
+            if ref in drawn:
+                if {str(member) for member in drawn[ref]["members"]} != set(members[ref]):
+                    stale.append(ref)
+            elif len(members[ref]) > 1:
+                stale.append(ref)
+        if stale:
+            projector.reproject_refs(self, graph, stale)
+        return members
 
     def _assert_same_organization(self, actual: Any, expected: Any, what: str) -> None:
         """Refuse a reference that belongs to a different tenant than the write.
@@ -2401,10 +2418,10 @@ class GraphController:
         target_ref = self._node_ref(payload.target_id, info, organization=organization)
         cited = self._resolve_citations(organization, payload.derived_from)
 
-        # Evidence first, in one transaction — the same asymmetry `create_entity`
-        # documents at length. AGE cannot join a Django transaction, so a failure
-        # after this commit leaves durable evidence with no projection, which
-        # `reproject` fixes. Do not "fix" it by deleting the evidence.
+        # One act, one transaction, and the drawing after it — see `create_entity`.
+        # A failure after this commit leaves a durable act with an outstanding
+        # outbox row, which `reproject --incremental` applies. Do not "fix" it by
+        # deleting the evidence.
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             _, recorded_metrics = self._materialize_supporting_evidence(
