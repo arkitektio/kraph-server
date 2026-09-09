@@ -1,23 +1,15 @@
-"""Instance data cannot be destroyed through the API.
+"""Instance data cannot be destroyed through the API (A1).
 
-Evidence is append-only, so a retraction is a `Standing` and the record of
-what a derived value once rested on survives. Every `delete*` mutation for
-instance data contradicted that outright — and `deleteEntity` was worse than a
-policy violation: it `DETACH DELETE`d the vertex while leaving `Node.status` at
-ACTIVE, and `rebuild` selected on exactly that, so `reproject` resurrected every
-deleted entity. The deletion was the one thing that did not survive.
+Evidence is append-only, so a retraction is a `Standing` and the record of what
+a derived value once rested on survives. Asserting the *absence* of a surface,
+rather than trusting the removal to stick, is the pattern: a primitive with no
+caller is one the next write path reaches for. Genuine erasure lives in
+`manage.py redact` — deliberate, operator-only, unreachable from a request.
 
-Note what did *not* make it wrong: removing the vertex. `archiveEntity` does
-exactly that now, and a replay agrees, because the claim behind it says the node
-no longer stands. The defect was destroying the projection while the evidence
-still said the thing was there — a graph disagreeing with its own log.
-
-Asserting the *absence* of a surface, rather than trusting the removal to stick,
-is the pattern this repo already uses for `infer_value_kind`: a primitive with no
-caller is one the next write path reaches for.
-
-Genuine erasure lives in `manage.py redact` — deliberate, operator-only, and
-unreachable from a GraphQL request.
+History: every `delete*` mutation for instance data contradicted this, and
+`deleteEntity` was worse — it detached the vertex while leaving the node's
+status active, so `reproject` resurrected every deleted entity. The in-place
+`update*` mutations went the same way: a correction is a new claim.
 """
 
 import re
@@ -40,7 +32,7 @@ REMOVED = [
     # remain — these are config rows, not evidence — so nothing is lost by
     # dropping the pair that lied about what it did.
     "archiveScatterPlot",
-    # `updateEntity` archived the node and created a new uuid, so a correction
+    # The in-place update archived the node and created a new uuid, so a correction  # retired
     # forked identity and every metric and relation keyed on the old ref stopped
     # describing it. Its whole payload was `supportingEvidence` — which
     # `assertInforms` attaches to a *live* entity — plus
@@ -48,13 +40,13 @@ REMOVED = [
     # measurements accumulate, and classification is a `CLASSIFIES` claim. This
     # was the one mutation contradicting BIOLOGIST.md's rule that you cannot
     # change the entity directly, only provide new evidence.
-    "updateEntity",
+    "updateEntity",  # retired
     # Same defect for events: archive the node, mint a new uuid. They survived
-    # `updateEntity`'s removal only because their payload carried role mappings
+    # the entity update's removal only because their payload carried role mappings  # retired
     # and nothing else could change who took part. `assertParticipation` does
     # that additively now, so their last job is gone.
-    "updateNaturalEvent",
-    "updateProtocolEvent",
+    "updateNaturalEvent",  # retired
+    "updateProtocolEvent",  # retired
 ]
 
 #: The retraction path each removed mutation's callers should use instead. Kept as
@@ -101,7 +93,7 @@ def test_the_retraction_path_remains(name: str) -> None:
 
 
 def test_the_additive_correction_path_remains() -> None:
-    """Removing `updateEntity` is only correct because these cover its job.
+    """Removing the in-place entity update is only correct because these cover its job.
 
     Evidence attaches to a live entity through `assertInforms`, and a
     reclassification is a claim rather than a new node. Neither touches identity.

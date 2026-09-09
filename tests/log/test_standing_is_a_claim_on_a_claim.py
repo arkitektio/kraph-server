@@ -1,18 +1,11 @@
-"""Every claim kind that can be retracted can be re-attested.
+"""Standing is a claim on a claim (A3).
 
-`attest*` used to exist for four of ten claim kinds — entity, natural event,
-protocol event and comment. Structures, metrics, relations, measurements,
-structure relations, participations and sameness could all be retracted and had
-no counterpart, so a retraction of any of them was one-way through the API.
+Every claim kind that can be retracted can be re-attested, and both are
+positions on the record — the claim row survives untouched, the positions are
+readable newest first, and `CurrentStanding` is the cached fold over them.
 
-That contradicts the rule the write side is built on, stated in CLAUDE.md:
-existence is evidence, two people may disagree about it, and each graph's
-selector decides whose word it counts. A position you cannot restate is not
-evidence, it is a state machine.
-
-`attestStructure`, `attestMetric` and `attestLink` close the gap — `attestLink`
-covering every `Link.Kind` in one act, as `retractLinks` already does, because
-the act does not differ by kind and the row says which kind it is.
+History: `attest*` used to exist for four of ten claim kinds, so a retraction
+of the other six was one-way through the API.
 """
 
 from __future__ import annotations
@@ -239,10 +232,10 @@ async def test_a_retraction_shows_up_as_a_standing(
 ) -> None:
     """ "Does it still hold" is answerable from the claim, and disagreement is visible.
 
-    The positions are reported and the folding is left to the reader, because for an
-    instance there is no organization-wide answer to fold to: a graph's selector
-    decides whose claims it count, so whether a *view* holds it is `drawings`. That is
-    why there is no `stands` field beside this list.
+    The positions are reported and the folding is left to the reader: the
+    organization-grain fold is `CurrentStanding` (RFC 0024), and whether a *view*
+    holds the node is its category's rule, reported as `drawings`. That is why there
+    is no `stands` field beside this list.
     """
     entity_id = await writes.create_entity(api_schema, simple_api_context, "AIS")
 
@@ -280,7 +273,7 @@ async def test_a_retraction_shows_up_as_a_standing(
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_archive_metric(
+async def test_retract_metric(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
@@ -329,7 +322,7 @@ async def test_archive_metric(
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_archive_metric_retracts_and_is_idempotent(
+async def test_retracting_a_metric_twice_is_one_position(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
@@ -389,7 +382,7 @@ async def test_archive_metric_retracts_and_is_idempotent(
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_archive_structure(
+async def test_retract_structure(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
@@ -451,7 +444,7 @@ async def test_archive_structure(
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_archiving_an_entity_returns_it_from_the_log(
+async def test_retracting_an_entity_returns_it_from_the_log(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
@@ -463,8 +456,8 @@ async def test_archiving_an_entity_returns_it_from_the_log(
     the kind still resolve, because both are properties of the evidence rather
     than of the projection.
 
-    This used to also assert `graphId is None` and `graph is None`. Both fields
-    are gone: `graphId` was the Apache AGE vertex id, reassigned by every
+    History: this used to also assert `graphId is None` and `graph is None`. Both
+    fields are gone: `graphId` was a drawn vertex id, reassigned by every
     reproject, and `graph` asked which single graph a node belongs to when a node
     may be drawn by several. Where a claim stands is `drawings`, asserted below.
     """
@@ -516,7 +509,7 @@ async def test_archiving_an_entity_returns_it_from_the_log(
     assert archived["id"] == entity_id, "The id is the entity's uuid and survives the projection it was removed from"
     assert archived["term"]["key"] == "AIS"
 
-    # What `lifecycle == "retracted"` used to say, said by the shape instead. The
+    # What a state flag used to say, said by the shape instead. The
     # field is gone: a node read out of a graph is one the evidence says exists,
     # so a flag beside it could only agree with its own presence, and a node with
     # no vertex was answering from the claims — two questions under one name.

@@ -1,17 +1,13 @@
-"""Editing a category's rules redraws the vertices it owns.
+"""A rule change redraws exactly the vertices the rule owns (A7).
 
-The bill for the rule that a read is a graph query. While the projection held
-only the `index=True` properties and `api/types` folded the rest at query time,
-changing a category's properties was free — the read applied whatever the
-definition said *at that moment*, so a vertex could not be stale. Now the vertex
-is the answer, and changing the question has to rewrite it.
+The vertex is the answer, so changing the question rewrites it; a category
+edit redraws its own nodes, in-request, and every assertion reads the value
+back through the GraphQL surface after the mutation.
 
-Behavioural throughout, on purpose. The `# TODO: Rematerialize` comments these
-tests replace survived for as long as they did partly because the tests around
-them checked names and shapes; the audit's Tier 1 was the same failure at larger
-scale — ten `archive*` mutations that persisted nothing, passing a test that
-regexed the SDL. So every assertion here reads a value back through the GraphQL
-surface, after the mutation, and would fail on a no-op.
+History: while the projection held only indexed properties and the API folded
+the rest at query time, changing a category's properties was free, and the
+`# TODO: Rematerialize` comments survived because the tests around them
+checked names and shapes.
 """
 
 import uuid

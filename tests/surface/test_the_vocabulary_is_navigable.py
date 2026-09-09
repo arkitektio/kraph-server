@@ -1,14 +1,8 @@
-"""The organization's vocabulary, through the API.
+"""The organization's vocabulary is navigable (A4, C4).
 
-A `Term` is a word — "AIS", "Mitosis" — and it is what the evidence log names. A
-`Category` is one graph's rule for that word. Both are exposed, and the pair is
-navigable in both directions, because "which views speak this word" and "what does
-this view mean by it" are the two questions the split exists to keep apart.
-
-`createTerm` exists where `structureKind` has no create, and the difference is the
-point: `@mikro/roi` is owned by the service producing the datum, so there is
-nothing to declare in advance, while "AIS" is an ontology entry a curator may want
-to describe before any graph uses it.
+A `Term` is a word and is what the log names; a `Category` is one view's rule
+for it. Both are exposed, and the pair is navigable in both directions: which
+views speak this word, and what this view means by it.
 """
 
 import uuid

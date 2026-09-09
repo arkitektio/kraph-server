@@ -1,15 +1,8 @@
-"""The BIOLOGIST.md sentence, as one GraphQL query.
+"""A derived property can explain itself (C4, C5).
 
-    *"45.2µm (confidence 98%), derived from ROI #555, asserted by AI_Model_X on
-    Jan 15th"*
-
-That sentence is the product promise, and until now none of it was answerable.
-`RichProperty.supporting_evidence` returned a hardcoded empty list, so a derived
-value could be read but never explained: no count of contributing measurements,
-no spread, no provenance, no observation window.
-
-A number with no account of where it came from is not a scientific result, it is
-a rumour. This test is the one that says the account exists.
+*"45.2µm (confidence 98%), derived from ROI #555, asserted by AI_Model_X on
+Jan 15th"* — one GraphQL query answers the count of contributing measurements,
+their spread, their provenance and their observation window.
 """
 
 import uuid
@@ -105,7 +98,7 @@ async def test_a_derived_value_can_explain_itself(
     assert result.errors is None, f"GraphQL errors: {result.errors}"
 
     properties = {p["key"]: p for p in result.data["node"]["richProperties"]}
-    assert "avg_length" in properties, "The MEAN rollup must appear among the rich properties"
+    assert "avg_length" in properties, "The MEAN must appear among the rich properties"
 
     avg = properties["avg_length"]
     assert avg["value"] == pytest.approx(45.0)

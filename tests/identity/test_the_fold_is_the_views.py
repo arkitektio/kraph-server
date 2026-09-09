@@ -1,4 +1,4 @@
-"""Identity is the view's function of the log (RFC 0024).
+"""Identity is the view's function of the log (RFC 0024, A5/C3).
 
 One answer per view to how many things are here: the view's `samenessRule`
 decides whose merges count, across every category it draws, and changing it
@@ -233,40 +233,6 @@ async def test_claim_grain_sameness_is_organization_grain(api_schema: kante.Sche
     component, sameness = await fold()
     assert component == sorted([a, b, c]), "the organization-grain fold unions every standing claim, whoever made it"
     assert sameness.get(a), "and the bot's claim shows in the panel — visible and contestable, not hidden"
-
-
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.asyncio
-async def test_the_component_of_a_primitive_view_unions_its_categorys_merges(api_schema: kante.Schema, simple_api_context: HttpContext, table_projector, backend_stack) -> None:
-    everyone_id = await _graph_declaring(api_schema, simple_api_context, "ApiCell", name="api-everyone")
-    curator_id = await _graph_declaring(
-        api_schema,
-        simple_api_context,
-        "ApiCell",
-        name="api-curator",
-        definition=rules.definition(rules.rule(rules.word("ApiCell"), rules.by("curator", "1"))),
-    )
-
-    a = await writes.create_entity(api_schema, simple_api_context, "ApiCell")
-    b = await writes.create_entity(api_schema, simple_api_context, "ApiCell")
-
-    @sync_to_async
-    def merge():
-        organization = core_models.Graph.objects.get(pk=everyone_id).organization
-        _merge_as(organization, a, b, "bot")
-
-    await merge()
-
-    async def component_in(graph_id: str) -> list[str]:
-        result = await api_schema.execute(
-            "query($id: ID!, $graph: ID!) { node(id: $id, graph: $graph) { ... on Entity { component } } }",
-            variable_values={"id": a, "graph": graph_id},
-            context_value=simple_api_context,
-        )
-        assert result.errors is None, f"GraphQL errors: {result.errors}"
-        return sorted(result.data["node"]["component"])
-
-    assert await component_in(everyone_id) == sorted([a, b]), "a primitive category trusts every merger — within the category"
 
 
 @pytest.mark.django_db(transaction=True)

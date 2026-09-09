@@ -1,12 +1,8 @@
-"""`rule.evidence`: a derived property's own metric rule (RFC 0009).
+"""`rule.evidence` is the property's own rule for its measurements (RFC 0009, RFC 0014).
 
-A `DerivationRuleInput` may carry an evidence filter — whose measurements this
-property counts, through which apps, in which belief and observation windows.
-When present it *is* the metric rule for that property; when absent, the owning
-category's clauses apply to the metrics' assertions too, and a primitive
-category folds everything, as always. `conflict_policy` is gone: it was read by
-nothing, and every real way of saying "whose numbers count" now exists —
-derivation types for ranking, `rule.evidence` for filtering.
+When present it *is* the metric rule for that property; when absent, the
+owning category's rules apply to the metrics' assertions too, and a primitive
+category folds everything.
 """
 
 from datetime import datetime, timezone

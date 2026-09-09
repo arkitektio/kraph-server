@@ -1,18 +1,16 @@
-"""Engine-internal node properties must never reach the public `properties` field.
+"""Engine-internal vertex properties never reach the public `properties` field (C4).
 
-The projection layer writes bookkeeping onto entity nodes under a `__` prefix
-(`__schema_version`, `__last_derived`, `__measured__from|to|at`, `__shadow_link_id`).
-`RESERVED_PROPERTY_KEYS` used to list the *unprefixed* spellings of two of those plus
-a typo (`lyfecyle_status`), so every one of them leaked through `cleaned_properties`
-into the GraphQL `properties` scalar.
+The projection writes bookkeeping onto vertices under a `__` prefix
+(`__schema_version`, `__last_derived`, `__measured__from|to|at`,
+`__shadow_link_id`); `cleaned_properties` strips every one of them. There is no
+state flag among them: the graph holds only what exists (C7), so a flag beside
+a vertex would say nothing its presence did not.
 
-`__lifecycle_state` is kept in the list below even though **no vertex carries one
-any more** — the graph holds only what exists, so a flag beside a vertex would say
-nothing its presence did not. The `from_row` family still synthesizes the key when
-adapting an evidence row to the node surface, and it must go on being filtered out
-of the public map.
+No database, no docker stack.
 
-These tests need no database and no docker stack.
+History: `RESERVED_PROPERTY_KEYS` used to list the *unprefixed* spellings of
+two of those plus a typo (`lyfecyle_status`), so every one leaked. The list
+also reserved a `__lifecycle_state` key long after no vertex carried one.
 """
 
 from graph_engine import retrieved
@@ -23,7 +21,6 @@ from tests.support import reads
 WRITTEN_INTERNAL_KEYS = [
     "__schema_version",
     "__last_derived",
-    "__lifecycle_state",
     "__measured__from",
     "__measured__to",
     "__measured__at",

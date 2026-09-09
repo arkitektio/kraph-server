@@ -1,11 +1,9 @@
-"""`reproject --incremental` draws what the outbox says is owed, and only that.
+"""`reproject --incremental` draws what the outbox says is owed, and only that (A7).
 
-The write path projects synchronously; when it cannot (the projector raises, the
-process dies between the evidence commit and the drawing), the outbox row stays
-and the cursor holds below it. An incremental replay reads those assertions'
-claims, converges every touched node in every consistent graph of the
-organization, and settles exactly the rows it read. The result has to equal what
-a full drop-and-replay would draw — that is the comparison at the end.
+When the write path cannot draw, the outbox row stays and the cursor holds
+below it. An incremental replay reads those assertions' claims, converges every
+touched individual in every consistent view of the organization, settles
+exactly the rows it read, and draws what a full rebuild would.
 """
 
 import pytest

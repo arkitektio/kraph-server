@@ -1,25 +1,12 @@
-"""An edge cannot carry a derived property, so declaring one is a schema error.
+"""A definition that names what no view can draw is refused by name (A6).
 
-`projector.project_edges` writes `category_id` and `__assertion_count` onto a
-relationship and stops. Measurements are not drawn as AGE edges at all — they are
-read back from their `Link` rows. No derivation rule has ever run for an edge
-category.
+An edge carries no derived property, a retired input is refused rather than
+dropped, and both doors — `materialize` over a whole document and the
+`create_*_category` mutations — refuse the same thing.
 
-Until this guard, the API accepted such a rule, `validate_derivation_rules`
-*validated* it, and it was stored in `property_definitions` — so a client got a
-valid schema and a permanently empty property, with no error at any point.
-(`Relation.richProperties`/`properties` have since been removed from the schema
-outright, for the same structural reason: nothing ever put a derived value on an
-edge for them to read.)
-
-`bio_graph_schema` itself shipped one (`IS_CONNECTED_TO.distance`, a
-`EUCLIDEAN_RANGE` rollup over `ROI.centroid`), which is how long this survived:
-the fixture the whole suite runs against contained a rule nothing executed and
-nothing failed.
-
-Both surfaces are covered here, because they are separate code paths that accept
-the same input. `materialize` checks a whole `GraphDefinitionInput`; the
-`create_*_category` mutations take one definition at a time and never reach it.
+History: the API accepted a derived property on a relation, validated it, and
+stored it, so a client got a valid schema and a permanently empty property;
+the suite's own fixture shipped one.
 """
 
 import pytest
@@ -214,13 +201,13 @@ def test_validation_logic_works() -> None:
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_create_graph_refuses_a_selector(api_schema, simple_api_context) -> None:
-    """`selector` is gone: trust lives in the definition now."""
+async def test_create_graph_refuses_a_view_level_trust_input(api_schema, simple_api_context) -> None:
+    """A view-level trust input is refused by name: trust lives in the definition (RFC 0009)."""
     made = await api_schema.execute(
         CREATE_GRAPH,
-        variable_values={"input": {"name": "no-selectors", "definition": {"extensions": {"entities": [{"key": "X"}]}}, "selector": {"assertionFilter": {"subjects": ["peter"]}}}},
+        variable_values={"input": {"name": "no-selectors", "definition": {"extensions": {"entities": [{"key": "X"}]}}, "selector": {"assertionFilter": {"subjects": ["peter"]}}}},  # retired
         context_value=simple_api_context,
     )
-    assert made.errors is not None, "a selector must be refused, not silently dropped"
+    assert made.errors is not None, "a retired input must be refused, not silently dropped"
 
 

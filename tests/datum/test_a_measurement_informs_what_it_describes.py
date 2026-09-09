@@ -1,4 +1,9 @@
-"""Instance-level tests for metric mutations via the GraphQL API."""
+"""A measurement is a claim about a datum, and it informs what the datum describes (C6).
+
+`recordMetrics` and `assertMetricValue` write metric rows against a structure;
+a correction is a new claim citing the old one (`supersedeMetricValue`), never
+an edit; and every value the datum informs refolds from what still stands.
+"""
 
 import uuid
 import kante
@@ -118,7 +123,7 @@ async def test_create_metric(
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_update_metric(
+async def test_supersede_metric_value_cites_the_value_it_replaces(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
@@ -176,7 +181,7 @@ async def test_update_metric(
 def edge_schema() -> models.GraphDefinitionInput:
     """A schema that declares the two edge kinds the bio schema leaves out.
 
-    `MEASURES` runs from an ROI to an AIS, and AIS carries a MEAN rollup over
+    `MEASURES` runs from an ROI to an AIS, and AIS carries a MEAN over
     `vector_length` — so attaching a measurement has an observable consequence
     and the INFORMS claim can be tested through its effect rather than by
     inspecting rows.

@@ -1,22 +1,9 @@
-"""A read is a graph query. Nothing it returns is folded at query time.
+"""A read is a graph query; nothing it returns is folded at query time (A7).
 
-The hard part of asserting this is that "did not compute" is a negative, and the
-usual ways of checking it are weak. Counting queries needs a capture that reaches
-across `sync_to_async`'s executor thread; asserting a value is *correct* proves
-nothing, because a read that folds the log correctly and a read that traverses a
-materialized vertex return the same number.
-
-So these tests **destroy the fold's inputs and read again.** `State` is the
-sufficient statistics every derived value is computed from, and it is explicitly
-not part of the log (`docs/LOG.md`, "What is deliberately *not* in the log") — a
-cache, deletable, rebuilt wholesale by `refold_state`. Delete every row of it and
-a read that computes has nothing left to compute from; a read that traverses is
-untouched. The value surviving is the assertion.
-
-Paired with its own control in each case: after the same deletion, a
-rematerialization must *lose* the value. Without that, an unchanged answer could
-just mean the deletion did nothing, and the test would pass vacuously — the shape
-this whole transition has been removing.
+"Did not compute" is a negative, so these tests destroy the fold's inputs and
+read again: delete every `State` row and a read that computes has nothing left
+to compute from, while a read that traverses is untouched. Each case carries
+its control — after the same deletion a redraw must *lose* the value.
 """
 
 import uuid

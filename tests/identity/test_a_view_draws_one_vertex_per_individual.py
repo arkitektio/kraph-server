@@ -1,16 +1,14 @@
-"""A view draws one vertex per individual (RFC 0018).
+"""A view draws one vertex per individual (RFC 0018, C3).
 
-Every observation mints its own instance, and "this is AIS 6" is a `SAME_AS`
-claim between two of them. Until now the panel folded those claims but the
-drawing did not: `create_vertex` drew one vertex per instance, so a view
-showed two nodes for one cell and each edge and each derived property attached
-to whichever observation happened to be named.
-
-Now a view draws one vertex per **component** — the closure of the standing
-sameness claims its category trusts (`identity.view_components`). The vertex's
-ref is the lowest member uuid, `ProjectionMember` lists the rest, and every
+A view draws one vertex per **component** — the closure of the standing
+sameness claims its rule trusts (`identity.view_components`). The vertex's ref
+is the lowest member uuid, `ProjectionMember` lists the rest, and every
 address — `node(id:)`, an edge endpoint, a metric's INFORMS target — reaches
 the vertex through any member.
+
+History: the panel folded sameness claims but the drawing did not; a view
+showed two nodes for one cell and each edge and derived property attached to
+whichever observation happened to be named.
 """
 
 import pytest

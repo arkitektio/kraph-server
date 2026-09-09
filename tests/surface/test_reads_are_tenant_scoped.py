@@ -1,27 +1,12 @@
-"""The read side fences every declaratively-served field to the caller's organization.
+"""Every read is fenced to the caller's organization (C4).
 
-The write side has always closed this deliberately — `api/mutations/_scoped.py`
-resolves a row and then checks the caller belongs to its tenant. The read side did
-not. `api/queries/kinds.py` states the problem exactly, for the two vocabularies it
-resolves by hand:
+Each test builds a graph under a second organization the request is not a
+member of, and asserts the caller cannot see it — list forms and `(id:)`
+forms alike, categories, kinds, saved queries and claims.
 
-    The old `structureCategories` / `metricCategories` fields had no resolver at
-    all — their only tenant fence was the client happening to pass
-    `CategoryFilter.graph`. Kinds have no graph to filter on, so scoping has to
-    happen here or not at all.
-
-That fix was applied to kinds and nowhere else. `graphs`, the six `*Categories`
-families, the twelve saved-query families and `scatterPlots` are bare
-`kante.django_field`s with no resolver, over managers that do not scope
-(`core/managers.py::GraphManager` is a plain `models.Manager`). Neither
-`authentikate`'s schema extension nor `kante` filters querysets — the extension
-resolves the organization onto the request and stops there — so nothing narrowed
-the rows a query could reach, and both the list forms and the `(id:)` forms were
-answerable across tenants by guessing a sequential integer primary key.
-
-`api/types.py::org_scoped` and the fence folded into `_kind_dispatch` close it.
-These tests are the confirmation: each builds a graph under a *second*
-organization the request is not a member of, and asserts the caller cannot see it.
+History: `graphs`, the category families and the saved-query families were
+bare `django_field`s over managers that did not scope, answerable across
+tenants by guessing a sequential primary key.
 """
 
 import pytest
@@ -158,7 +143,7 @@ async def test_saved_queries_do_not_list_another_tenants_row(api_schema, simple_
 def edge_schema() -> models.GraphDefinitionInput:
     """A schema that declares the two edge kinds the bio schema leaves out.
 
-    `MEASURES` runs from an ROI to an AIS, and AIS carries a MEAN rollup over
+    `MEASURES` runs from an ROI to an AIS, and AIS carries a MEAN over
     `vector_length` — so attaching a measurement has an observable consequence
     and the INFORMS claim can be tested through its effect rather than by
     inspecting rows.

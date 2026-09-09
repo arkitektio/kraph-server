@@ -1,16 +1,9 @@
-"""Folding sameness claims into components.
+"""The organization-grain identity cache agrees with a refold from the log (A5, A6).
 
-Every observation mints its own instance — "this is an AIS" writes a fresh node
-rather than reusing one — so identity *between* observations is a claim, and the
-component is the fold over those claims. `docs/LOG.md` listed this as a known
-gap: *"No merge. Identity is a bare uuid, so one vertex standing for several
-nodes is expressible — but nothing implements it."*
-
-The load-bearing property is that **incremental maintenance and the rebuild
-agree**. `evidence.state` has the same split and CLAUDE.md records what happens
-when it slips: `merge`, `recompute` and `refold_state` once disagreed about which
-metrics counted, so ingest and replay produced different numbers from the same
-evidence. These tests pin the analogous agreement here.
+Every observation mints its own instance, so identity *between* observations
+is a claim and the component is the fold over those claims. The load-bearing
+property is that incremental maintenance and the rebuild agree — the same
+split `evidence.state` has, and the one that once slipped there.
 """
 
 import uuid

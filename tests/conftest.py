@@ -111,7 +111,7 @@ def bio_graph_schema() -> models.GraphDefinitionInput:
     Note: Structures (ROI, ToldYouSo) are no longer defined in the schema.
     They are dynamically resolved from the structure identifier at write time.
 
-    Every rollup rule here names an explicit metric key and a *structure* source.
+    Every derivation rule here names an explicit metric key and a *structure* source.
     Both are now enforced: `materialize.validate_derivation_rules` rejects a rule with
     no key, and rejects one whose source is an entity or event kind. Before that, such
     rules rendered as `WHERE m.key = null`, which never matches — so the property
@@ -138,7 +138,7 @@ def bio_graph_schema() -> models.GraphDefinitionInput:
                         # another node kind (a Mitosis event, an AIS entity). The state
                         # vector's grain is (entity, source_category, key) over metrics
                         # reached via (Metric)-[DESCRIBES]->(Structure)-[INFORMS]->(Entity),
-                        # so cross-entity rollups are not expressible — and are now
+                        # so cross-entity derivations are not expressible — and are now
                         # rejected at materialization rather than silently never computing.
                         # Modelled here as metric keys on the supporting structure.
                         models.PropertyDefinitionInput(key="mitosis_count", type=models.PropertyType.INTEGER, derivation=models.DerivationType.ROLLUP, rule=models.DerivationRuleInput(key="mitosis_event", source_node="ROI", aggregation=models.AggregationFunction.COUNT)),
@@ -154,7 +154,7 @@ def bio_graph_schema() -> models.GraphDefinitionInput:
                     target=models.EntityDescriptorInput(keys=["Cell"]),
                     cardinality=models.Cardinality.ONE_TO_ONE,
                     # No `properties`. This used to declare `distance` as a
-                    # EUCLIDEAN_RANGE rollup, and `project_edges` has never run a
+                    # EUCLIDEAN_RANGE derivation, and `project_edges` has never run a
                     # derivation rule — it writes `category_id` and
                     # `__assertion_count` and stops. So the fixture the whole
                     # suite runs against contained a rule nothing executed, and
@@ -269,8 +269,9 @@ def table_projector(transactional_db, backend_stack) -> TableProjector:
 
     Stateless: the drawing lives in the projection tables of the same test
     database, so `transactional_db` flushes it between tests — real isolation,
-    where the Apache AGE namespace this replaced had to be dropped by hand and
-    (before that) was deliberately leaked around a type-cache bug.
+
+    History: the graph-database namespace this replaced had to be dropped by
+    hand and, before that, was deliberately leaked around a type-cache bug.
     """
     return TableProjector()
 

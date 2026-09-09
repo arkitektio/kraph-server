@@ -1,10 +1,8 @@
-"""Who may change a graph's definition: its owner, and admins.
+"""Changing a view is RBAC: its owner, an organization admin, or a superuser (RFC 0013).
 
-The old `Graph.rules` (per-action allow/deny lists) are gone — see RFC 0013.
-Editing the schema — creating, updating or deleting categories — requires that
-the requester is the graph's owner, has the "admin" role in the graph's
-organization, or is a superuser. Reads and instance writes are untouched:
-they stay organization-scoped as before.
+Reads and instance writes are untouched: they stay organization-scoped.
+
+History: `Graph.rules`, per-action allow/deny lists, are gone.
 """
 
 import pytest

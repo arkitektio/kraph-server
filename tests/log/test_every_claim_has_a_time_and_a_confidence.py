@@ -1,10 +1,9 @@
-"""Every claim has a time of observation (RFC 0015).
+"""Every claim has a time of observation and may carry a confidence (RFC 0015, RFC 0016, A2).
 
-`observed_at` is world time on every claim table — an instance, a link, a
-metric — and `Standing.at` is the same axis on a position. It defaults to the
-assertion's `asserted_at`, so the column is never null and a time rule is
-total; a claimant who knows better says so. The rule field `OBSERVED_AT` names
-it on every kind, where `MEASURED_AT` used to be legal on measurements alone.
+`observed_at` is world time on every claim table and `Standing.at` is the same
+axis on a position; it defaults to the assertion's `asserted_at`, so a time
+rule is total. `confidence` is the claimant's own number in [0, 1], null when
+they gave none. Both are readable back through the API.
 """
 
 from datetime import datetime, timezone

@@ -1,19 +1,10 @@
 """Loaders batch, tolerate misses, and do not outlive a request.
 
-The previous fifteen loaders were module-level `DataLoader` instances, which gave
-them three separate defects at once:
+A loader dispatches its batch on the running event loop, so these run async.
 
-- a process-lifetime cache with no tenant boundary, so one organization's
-  category could be served to another's query
-- `for i in ids: await Model.objects.aget(i)` — N queries, which makes a
-  DataLoader a cache with extra steps
-- `aget` raising `DoesNotExist`, so one dangling id failed every id batched
-  alongside it
-
-None of this was covered, because nothing tested the loaders at all.
-
-These run async: a `DataLoader` dispatches its batch on the running event loop,
-so driving one from synchronous code fights the loop rather than exercising it.
+History: fifteen module-level loaders had a process-lifetime cache with no
+tenant boundary, N queries per batch, and one dangling id failing every id
+batched alongside it.
 """
 
 import pytest

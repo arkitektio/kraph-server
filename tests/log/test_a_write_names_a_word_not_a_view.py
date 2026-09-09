@@ -1,16 +1,11 @@
-"""A write names a word; a graph is a view that may or may not draw it.
+"""A write names a word; a view may or may not draw it (A4, A6).
 
-`docs/LOG.md`'s second axiom is that tenancy is the organization and never the
-graph. The evidence layer honoured that from the start — nothing in `evidence/`
-carries a graph foreign key, and membership is computed by
-`evidence.selector.instances_for` rather than stored — but the write API did not: to
-claim "there is an AIS here" you had to name some graph's `EntityCategory` for the
-word "AIS", which the controller then reduced to that category's term and its
-graph's organization before writing anything.
+A claim can be made under a word no view declares; it is recorded; and it
+appears in a view the moment one declares the word and asks for the history.
+Tenancy is the organization, never the graph.
 
-These tests hold the surface to the axiom. A claim can be made under a word no view
-declares; it is recorded; and it appears in a view the moment one declares the word
-and asks for the history.
+History: the write API used to require some graph's category for the word,
+which the controller reduced to that category's term before writing anything.
 """
 
 import uuid

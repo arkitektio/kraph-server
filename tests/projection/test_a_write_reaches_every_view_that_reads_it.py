@@ -1,18 +1,12 @@
-"""One measurement reaches every projection that reads it.
+"""A write reaches every view that reads it (A6, A7).
 
-The behaviour change this whole piece of work is for, and a bug fix rather than a
-feature. `dirty()` asks about a single graph, and every write path passed exactly
-one — so a second projection over the same shared evidence went stale the moment
-somebody recorded a metric through the first, and stayed stale until a manual
-`reproject`.
+Ingest names no graph, so a measurement fans out over `refs_informed_by` and
+`graphs_for_refs` to every view drawing an informed individual — edge refs
+included, which belong to no graph.
 
-That directly contradicts the point of sharing evidence across projections. If
-these tests fail, ingest is graph-less in signature only.
-
-The fan-out is now two steps rather than one: :func:`refs_informed_by` asks the
-evidence base what a structure supports, and :func:`graphs_for_refs` asks which
-views show those nodes. Splitting them is what lets the fold reach edge refs,
-which belong to no graph and which the old grouped version silently dropped.
+History: `dirty()` asked about a single graph and every write path passed
+exactly one, so a second view over shared evidence went stale until a manual
+reproject.
 """
 
 import uuid

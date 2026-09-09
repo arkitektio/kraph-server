@@ -461,7 +461,7 @@ rows for one already-selected node, and nothing filters or sorts on them.
 
 `manage.py reproject` is the stronger tool, and the one to reach for when
 *membership* is wrong rather than the values: it drops a graph's AGE namespace and
-rebuilds it from Postgres alone, which is also the honesty test. `tests/projector/`
+rebuilds it from Postgres alone, which is also the honesty test. `tests/projection/`
 holds the guards that this reproduces what was there.
 
 Three things scope a read — or more precisely, scope the materialization a read

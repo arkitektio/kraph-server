@@ -1,12 +1,11 @@
-"""A value that does not match its declared kind says so.
+"""A claim names its value kind, and a value that disagrees with it says so (A2).
 
-The complement to making `value_kind` required. While the write path guessed, a
-mismatch was the system's fault and the best it could do was fail somewhere
-downstream. Now the caller states the kind, so a mismatch is their own
-declaration disagreeing with what they sent — and the error should say that
-rather than surfacing `could not convert string to float: 'high'` from inside
-`float()`, which names neither the key nor the kind and leaves a caller batching
-many measurements to work out which one it came from.
+The caller states the kind; a mismatch is their own declaration disagreeing
+with what they sent, and the error names the key and the kind. Each kind reads
+back through the column its kind designates.
+
+History: while the write path guessed the kind, a mismatch surfaced as
+`could not convert string to float` from inside `float()`, naming neither.
 """
 
 import pytest

@@ -1,11 +1,10 @@
 """Assertions about a view's drawing, for tests.
 
-Tests used to assert on the drawing by running Cypher through the Apache AGE
-engine. These helpers read the projection tables instead. Tests may: the
-one-module fence in `tests/projector/test_projector_protocol.py` scans
-production packages only, and a test that checks what a write *drew* is asking
-exactly the question these tables answer. Production code goes through the
-`Projector` protocol, always.
+These helpers read the projection tables. Tests may: the fence in
+`tests/guards/test_the_projector_is_a_protocol.py` scans production packages
+only, and a test that checks what a write *drew* is asking exactly the question
+these tables answer. Production code goes through the `Projector` protocol,
+always.
 
 A vertex stands for one individual as the view sees it (RFC 0018): its `ref`
 is the representative, and `ProjectionMember` lists every instance it stands

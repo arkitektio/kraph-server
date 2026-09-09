@@ -1,3 +1,6 @@
+"""Categories and views are listable, and a view's presentation is inert (C4, C7).
+"""
+
 from typing import Set
 import pytest
 from api.schema import schema

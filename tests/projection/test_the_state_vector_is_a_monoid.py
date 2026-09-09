@@ -1,24 +1,11 @@
-"""Incremental maintenance must agree with a full recompute.
+"""The state vector is a monoid: incremental maintenance agrees with a full recompute (A7).
 
-The state vector's entire justification is that every aggregation is a monoid
-over `{n, sum, min, max, first, last}`, so a metric can be folded in as it
-arrives instead of re-reading history. That claim is easy to state and easy to
-get subtly wrong — an off-by-one in `n`, a `min` that never updates, a `last`
-that follows arrival order rather than observation time.
-
-So it is checked the only way that means anything: fold a random sequence of
-metrics incrementally, rebuild the same row from scratch, and require the two to
-match for all eight aggregations.
-
-**The generator emits mixed value kinds on purpose.** Equality between
-incremental and recompute is blind to a whole class of bug on its own: when the
-grain was `(entity, source_kind, key)` and a key had both a FLOAT and a STRING
-term, both folded into one row, `MEAN` divided a numeric sum by a count that
-included the strings — and `recompute` filtered the same way, so it reproduced
-the error faithfully and this test passed. Two wrong answers agreeing is not
-evidence. So the sequence below interleaves string measurements under the same
-key, and the numeric row's `n` is asserted directly against the number of
-numeric values rather than only against a rebuild of itself.
+Every aggregation folds over `{n, sum, min, max, first, last}`, so a metric can
+be folded in as it arrives. Fold a random sequence incrementally, rebuild the
+same row from scratch, and require the two to match for all eight
+aggregations — with mixed value kinds interleaved, because two wrong answers
+agreeing is not evidence. The rows are the organization-grain cache the
+projection reads (`state_for_many`), not part of the log.
 """
 
 import random
@@ -205,8 +192,9 @@ def test_euclidean_range_is_dimension_agnostic(
 ) -> None:
     """Distance between first and last point, for any vector length.
 
-    The Cypher this replaces hardcoded x/y/z and used `^`, which Apache AGE does
-    not implement — so EUCLIDEAN_RANGE could never actually have run.
+
+    History: the query this replaces hardcoded x/y/z and used an operator the
+    graph database did not implement — so EUCLIDEAN_RANGE could never have run.
     """
     centroid_term = _term(organization, linked_structure.kind, "centroid", ValueKind.THREE_D_VECTOR)
     for offset, point in ((0, [0.0, 0.0, 0.0]), (10, [3.0, 4.0, 0.0])):

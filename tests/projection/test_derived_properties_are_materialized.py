@@ -1,20 +1,11 @@
-"""Every derived property is materialized, so every one is filterable.
+"""Every derived property is materialized, so every one is filterable (A7).
 
-This file used to assert the opposite: that only `index=True` properties reached
-the graph and the rest were folded from the state vector on read. That split made
-adding a property free, and made reads expensive in a way that grew with the
-result set — `index` defaults to `False`, so for N entities and P properties a
-read was N × (1 + 3P) Postgres round-trips, or more where a selector forced a
-metric scan.
+A graph is rules plus the log, drawn by an event; a read is a graph query.
+Everything a client can ask for is on the vertex before the query runs, and
+adding a property therefore costs a redraw.
 
-The rule now: a graph is rules plus the log, materialized by an event, and a read
-is a graph query. Everything a client can ask for is on the vertex before the
-query runs. `index` no longer decides what is stored — nothing ever built an
-Apache AGE index from it, so it decided only whether a property was materialized
-at all.
-
-The trade, stated plainly: adding a property is no longer free. It requires a
-rematerialization. Reads become traversals; schema changes get more expensive.
+History: only `index=True` properties reached the graph and the rest were
+folded from the state vector on read, N × (1 + 3P) round-trips per list.
 """
 
 import pytest
@@ -211,7 +202,7 @@ def test_a_rule_less_property_is_not_filterable(test_graph: core_models.Graph) -
 def test_materialize_refuses_a_rule_less_property(table_projector, authenticated_context) -> None:
     """Declaring an uncomputable property fails loudly, naming the fix.
 
-    Same shape as the existing refusal of rollups over an entity source: the
+    Same shape as the existing refusal of a derivation over an entity source: the
     schema is unsatisfiable, so it is rejected before any category exists rather
     than producing one whose property silently never populates.
     """

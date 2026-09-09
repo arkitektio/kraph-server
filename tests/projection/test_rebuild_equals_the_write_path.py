@@ -1,17 +1,12 @@
-"""The projection must be reconstructible from evidence alone.
+"""The drawing is a function of the log: a rebuild draws what the write path drew (C2, A7).
 
-This is the architecture's honesty test, and the one that cannot be argued
-around: build a graph, snapshot every entity property, destroy the entire AGE
-namespace, replay from Postgres, and compare.
-
-*If the graph cannot be rebuilt from the evidence, the evidence is not the source
-of truth, whatever the documentation says.* Everything else in this transition —
-org-scoped evidence, the state vector, dirty tracking — is only worth having if
-this holds.
-
-Note the rebuild also discards the state vectors and refolds them from the
-metrics. Replaying while keeping them would only demonstrate that the projection
-can be rebuilt from *another cache*, which is a much weaker claim.
+Build a view, let the write path draw, destroy the drawing, replay from the
+log alone, and compare whole — labels, members, properties, edges with their
+counts, participations, standings, and what a retracted datum stops feeding.
+The rebuild refolds every cache it reads (asserted terms, identity, standings,
+state) before reading it, or it would only prove the drawing can be rebuilt
+from another cache. The matrix at the end runs every scenario under both
+replays, the full rebuild and the incremental one.
 """
 
 import uuid
@@ -43,7 +38,7 @@ RECORD_METRIC = """
 """
 async def _ais_category(test_graph: core_models.Graph) -> core_models.EntityCategory:
     category = await core_models.EntityCategory.objects.filter(graph=test_graph, key="AIS").afirst()
-    assert category is not None, "The bio schema declares an AIS entity with a MEAN rollup over ROI"
+    assert category is not None, "The bio schema declares an AIS entity with a MEAN over ROI"
     return category
 
 
@@ -97,10 +92,7 @@ async def test_reproject_reproduces_the_projection(
     test_graph: core_models.Graph,
     table_projector,
 ) -> None:
-    """Drop the AGE graph, replay from evidence, compare properties.
-
-    The acceptance test for M3.
-    """
+    """Drop the drawing, replay from the log, compare properties."""
 
     entity_id = await _build_measured_entity(api_schema, simple_api_context, test_graph, [10.0, 30.0, 20.0])
 
@@ -108,7 +100,7 @@ async def test_reproject_reproduces_the_projection(
     assert before.errors is None, f"GraphQL errors: {before.errors}"
     properties_before = before.data["node"]["properties"]
 
-    assert properties_before.get("avg_length") == pytest.approx(20.0), "The MEAN rollup must have produced a value before we test rebuilding it"
+    assert properties_before.get("avg_length") == pytest.approx(20.0), "The MEAN must have produced a value before we test rebuilding it"
 
     @sync_to_async
     def rebuild() -> dict:
@@ -131,13 +123,13 @@ async def test_reproject_reproduces_the_projection(
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_rebuild_survives_the_age_namespace_being_destroyed(
+async def test_rebuild_survives_the_namespace_being_destroyed(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
     table_projector,
 ) -> None:
-    """Nothing may be read out of AGE to perform the rebuild.
+    """Nothing may be read out of the drawing to perform the rebuild.
 
     The graph is dropped *before* rebuild reads anything, so if any input came
     from the projection rather than from Postgres the replay would come back
@@ -170,7 +162,7 @@ async def test_instance_refs_survive_a_rebuild(
 ) -> None:
     """Evidence links must still resolve after the vertex ids change.
 
-    AGE assigns vertex ids, and they are not stable across a drop. Refs key on
+    The projector assigns vertex ids, and they are not stable across a drop. Refs key on
     the entity's own uuid precisely so that a rebuild does not leave every
     INFORMS link dangling — which would have made `reproject` destructive rather
     than idempotent.
@@ -187,7 +179,7 @@ async def test_instance_refs_survive_a_rebuild(
     refs, result = await refs_and_rebuild()
 
     assert refs, "Creating an entity with evidence must record an INFORMS link"
-    # A bare uuid: no graph prefix, and not an integer AGE vertex id. `UUID()`
+    # A bare uuid: no graph prefix, and not a drawn vertex id. `UUID()`
     # raising is the assertion.
     for ref in refs:
         uuid.UUID(ref)
@@ -209,7 +201,7 @@ LONG_AGO = datetime(2025, 1, 1, tzinfo=timezone.utc)
 async def _ais_with_roi(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph, value: float) -> tuple[str, str]:
     """An AIS informed by one ROI carrying one measurement, observed now."""
     category = await core_models.EntityCategory.objects.filter(graph=graph, key="AIS").afirst()
-    assert category is not None, "The bio schema declares an AIS with a MEAN rollup over ROI"
+    assert category is not None, "The bio schema declares an AIS with a MEAN over ROI"
 
     object_id = f"roi_{uuid.uuid4().hex[:8]}"
     created = await api_schema.execute(
@@ -261,12 +253,13 @@ async def test_a_scoped_graph_reads_the_same_value_before_and_after_a_rebuild(
     test_graph: core_models.Graph,
     table_projector,
 ) -> None:
-    """Ingest and replay must agree under a non-empty selector.
+    """Ingest and replay agree under a bounded rule.
 
-    Both measurements come through the same ROI, so the derivation rule admits
-    both and only the selector can exclude one. Before the fix the incremental
-    path counted both (mean 505) while the rebuild counted one (1000) — the two
-    numbers this test would have reported as unequal.
+    Both measurements come through the same ROI, so the derivation admits both
+    and only the category's rule can exclude one.
+
+    History: the incremental path counted both (mean 505) while the rebuild
+    counted one (1000) — the two numbers this test would have reported as unequal.
     """
 
     @sync_to_async
@@ -478,10 +471,10 @@ async def test_relation_survives_a_rebuild(
     test_graph: core_models.Graph,
     table_projector,
 ) -> None:
-    """Drop the AGE namespace, replay from Postgres, and the edge comes back.
+    """Drop the drawing, replay from the log, and the edge comes back.
 
-    Before relations were evidence this returned an edgeless graph: `rebuild`
-    recreated one vertex per `evidence.Node` and nothing else.
+    History: before relations were claims this returned an edgeless graph —
+    `rebuild` recreated one vertex per node row and nothing else.
     """
     entity_category = await _cell_category(test_graph)
     relation_category = await _connected_to_category(test_graph)
@@ -512,12 +505,12 @@ async def test_relation_survives_a_rebuild(
     def edges_after() -> int:
         return drawing.edge_count(test_graph, relation_category.age_name)
 
-    assert await edges_after() == 1, "The edge must be present in AGE after the replay, not merely counted"
+    assert await edges_after() == 1, "The edge must be drawn after the replay, not merely counted"
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_archiving_the_last_assertion_removes_the_edge_and_the_replay_agrees(
+async def test_retracting_the_last_claim_removes_the_edge_and_the_replay_agrees(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
@@ -526,8 +519,8 @@ async def test_archiving_the_last_assertion_removes_the_edge_and_the_replay_agre
     """With no live claim the edge states nothing, and a rebuild must say the same.
 
     The failure this guards against is a projection that disagrees with a replay:
-    an edge lingering behind a lifecycle flag would survive in AGE but vanish on
-    the next reproject.
+    an edge lingering behind a state flag would survive the write path but vanish
+    on the next reproject.
     """
     entity_category = await _cell_category(test_graph)
     relation_category = await _connected_to_category(test_graph)
@@ -592,7 +585,7 @@ async def test_participation_survives_a_rebuild(
     def edges() -> list[tuple[str, str]]:
         return drawing.participations(test_graph)
 
-    assert await edges() == [("CAME_OUT_OF", "b"), ("WENT_THROUGH", "a")], "And be present in AGE afterwards, not merely counted"
+    assert await edges() == [("CAME_OUT_OF", "b"), ("WENT_THROUGH", "a")], "And be drawn afterwards, not merely counted"
 
 
 # ===========================================================================

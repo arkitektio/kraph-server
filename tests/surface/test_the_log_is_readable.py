@@ -1,12 +1,8 @@
-"""The log is readable as a log (RFC 0020).
+"""The log is readable as a log (RFC 0020, C4).
 
-`Assertion` has been served as a row since the Cypher-backed `assertion(id:)` and
-`assertions(graph:)` were deleted — reachable only from the payload of the write
-that made it. These tests pin the three ways in: `assertions(filters:, pagination:)`
-newest first, `assertion(id:)` with every claim the act recorded, and
-`changes(afterSeq:, limit:)` — the forward feed, gated on the **committed horizon**
-so a row whose transaction is still open cannot be skipped by a cursor that has
-already moved past its `seq`.
+`assertions(filters:, pagination:)` newest first, `assertion(id:)` with every
+claim the act recorded, `standings` with their targets, and `changes(afterSeq:,
+limit:)` — the forward feed, gated on the committed horizon.
 """
 
 import uuid

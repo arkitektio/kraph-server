@@ -1,22 +1,12 @@
-"""A node list is a list of claims, and a node's kind is a fact about the claim.
+"""A node names its view, and its kind is a fact about the claim (C4).
 
-Both used to come out of the projection, and both were wrong in the same direction —
-the drawing was treated as the source rather than as the cache.
+`node(id:, graph:)` and `nodes(graph:)` answer from the view's rule and the
+claim: membership is what the rule admits, whether or not the drawing has
+caught up, and the kind is `Instance.kind`, never a label.
 
-**Kind.** `RetrievedNode.node_type` fell back to matching the vertex *label* against
-five fixed vocabulary words. A drawn vertex is labelled `category.age_name` ("Cell",
-"Mitosis"), one view's rename of a word, so the match never hit and the default sent
-everything to `"ENTITY"`: `node(id:)` reported a natural event as an `Entity`, and so
-did every write's `drawings { node }`. It is read from `Node.kind` now, which
-`create_vertex` writes onto the vertex as `type`.
-
-**Membership.** The category-scoped lists ran `MATCH (n) WHERE n.category_id = $id`
-in `category.graph`, so they answered "what has this view drawn" rather than "what
-does this view's rule admit". A claim the projection had not caught up with was
-missing from the list and appeared after a rebuild, with nothing about the claim
-explaining the difference. They read `evidence.Node` now, through
-`projector.refs_admitted_by` — the same function that decides which vertices get
-drawn.
+History: both used to come out of the projection — the kind from matching the
+vertex label against five fixed words, so every drawn event reported as an
+entity, and membership from what the view had drawn.
 """
 
 import pytest

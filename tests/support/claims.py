@@ -1,12 +1,12 @@
 """Writer-level claim helpers: who said what, and when.
 
-The GraphQL helpers (`tests/writes.py`) speak as the request's context, which is
-right for most tests and useless for these: a definition binds *subjects* and
-*times*, so its tests need claims by named annotators at chosen moments.
-`Assertion.asserted_at` is settable on purpose (`evidence/writer.py`) — belief
-time is a fact about the claim, not about ingest. `observed_at` is the other
-axis (RFC 0015): when the world was as the claim says; every helper takes it
-and leaves it at the assertion's time when not given. `confidence` (RFC 0016)
+The GraphQL helpers (`tests/support/writes.py`) speak as the request's context,
+which is right for most tests and useless for these: a definition binds
+*subjects* and *times*, so its tests need claims by named annotators at chosen
+moments. `Assertion.asserted_at` is settable on purpose (`evidence/writer.py`) —
+belief time is a fact about the claim, not about ingest. `observed_at` is the
+other axis (RFC 0015): when the world was as the claim says; every helper takes
+it and leaves it at the assertion's time when not given. `confidence` (RFC 0016)
 is the claimant's own number in [0, 1], None when they gave none.
 """
 

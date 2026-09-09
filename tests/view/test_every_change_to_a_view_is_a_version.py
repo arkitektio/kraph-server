@@ -1,14 +1,11 @@
-"""Every ontology change records a version — and most of them cost nothing.
-
-`GraphSchema` used to be written exactly once per graph, with `index=1` and
-`is_active=True` hardcoded and `activate()` never called. Category mutations
-edited rows in place. With one version and no history there was nothing to
-compare, so every schema change looked like "recalculate everything" — which is
-why the derivation layer appeared expensive in the first place.
+"""Every change to a view's meaning is a version, and nothing else is (A6, C7).
 
 Versioning is driven by a signal rather than by call sites, so the guarantee
-holds for every path into a category: the eight mutation modules, the managers,
-the admin, and anything written later.
+holds for every path into a category; most versions cost nothing to apply.
+
+History: `GraphSchema` was written exactly once per graph and category
+mutations edited rows in place, so every change looked like "recalculate
+everything".
 """
 
 import pytest

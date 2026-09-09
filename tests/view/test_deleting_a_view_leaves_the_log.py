@@ -1,25 +1,13 @@
-"""Deleting a graph destroys the only interpretation of the evidence it read.
+"""Deleting a view leaves the log (A6).
 
-`delete_or_explain` is a `try/except ProtectedError`, not a check, and **nothing
-anywhere `PROTECT`s `core.Graph`** — every foreign key into it cascades. So the
-guard on `delete_graph` could never fire, and the call was an unconditional
-destruction wearing a refusal's clothes.
+A view is the only interpretation of the evidence it read, so deletion is
+guarded — archived first, the reversible step before the irreversible one —
+and a populated deletion records what went. The claims survive, because they
+were never the view's.
 
-What went with it: every `Category`, `GraphSchema`, `GraphOntology`, every saved
-query and plot, and the AGE namespace. The evidence itself survived, because
-it is organization-scoped — the second axiom paying for itself — but the words
-this view declared, what they meant here, and whose claims it counted did not,
-and none of that is versioned anywhere else. `tests/api/test_no_hard_deletes.py`
-says genuine erasure is *"unreachable from a GraphQL request"*. `deleteGraph` was
-reachable and irreversible.
-
-The guard is deliberately narrow: **archived first**, because the reversible step
-should precede the irreversible one, and because it makes that refusal message
-true for the first time. Not a refusal on *emptiness* — a graph is a view, there
-is no foreign key from it to `Node`, and deleting a used view has to stay
-possible. What a populated deletion owes is a record of what went, which
-`_record_what_deletion_destroys` writes; a durable one needs the schema snapshot
-to round-trip first.
+History: nothing `PROTECT`ed `core.Graph`, so the guard on `deleteGraph` could
+never fire and the call was an unconditional destruction wearing a refusal's
+clothes.
 """
 
 import kante
@@ -79,11 +67,11 @@ async def test_an_archived_graph_holding_nodes_is_still_deletable(
     property.
 
     What is genuinely lost is the *interpretation* — the categories, their
-    definitions, the selector, the schema chain — and the answer to that is the
+    definitions, their rules, the schema chain — and the answer to that is the
     record `_record_what_deletion_destroys` writes, not a refusal. A durable
     record needs the schema snapshot to round-trip first, which is Tier 2 work.
 
-    This also exercises the AGE `drop_graph` on a populated namespace, which the
+    This also exercises `drop_namespace` on a populated namespace, which the
     empty case does not: the graph name is unique, so an orphaned namespace would
     collide with the next graph created under it.
     """

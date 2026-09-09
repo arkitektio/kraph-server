@@ -1,3 +1,10 @@
+"""Claim lists page, filter and order at the log's grain (C4).
+
+`entities`, `structures` and their kin read claim rows: ids are the claims',
+ordering is the log's, and a filter the drawing could only approximate is
+refused rather than narrowed silently.
+"""
+
 import pytest
 import kante
 from kante.context import HttpContext
@@ -68,7 +75,7 @@ async def test_list_entities_filtered_by_property_with_supporting_evidence(
             "entityCategoryId": str(entity_category.pk),
             # Selected by id rather than by an ordering over ids. This used to
             # filter `id GREATER_THAN <n>`, which only meant anything while an id
-            # was an integer AGE vertex id — an identifier reassigned by every
+            # was a drawn vertex id — an identifier reassigned by every
             # reproject, so the comparison ordered entities by an accident of
             # storage. Ids are uuids now and have no order to compare.
             "filters": {"ids": [entity_id_large_1, entity_id_large_2]},

@@ -1,14 +1,12 @@
-"""A node is drawn under every category of the view that admits it (RFC 0019).
+"""A claim is drawn under every category of the view that admits it (RFC 0019, A6).
 
-A vertex used to carry one label — an Apache AGE limitation the table
-projection never had, kept alive by `resolve_categories` refusing any node two
-definitions admitted. "Pyramidal" and "Excitatory" are not a disagreement: a
-cell can be both, and a view that declares both words draws the cell under
-both. What was a refusal is now the union.
+"Pyramidal" and "Excitatory" are not a disagreement: a cell can be both, and a
+view that declares both words draws it under both. What stays a refusal is a
+property two of the node's categories define under different rules, because one
+vertex has one value per key.
 
-What stays a refusal is a **property** two of the node's categories both
-define under different rules, because one vertex has one value per key and
-picking either category's would bury the other's.
+History: a vertex carried one label, and `resolve_categories` refused any node
+two definitions admitted.
 """
 
 import kante

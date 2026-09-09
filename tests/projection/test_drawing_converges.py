@@ -1,11 +1,7 @@
-"""Drawing a node twice leaves one vertex.
+"""Drawing converges: drawing a node twice leaves one vertex (A7).
 
-`create_vertex` was a bare Cypher `CREATE`, so redrawing an already drawn node —
-`attest_node` on a standing node, `project_all` over a populated namespace —
-duplicated it, while `project_all`'s docstring promised it was "MERGE-shaped
-throughout". It is now: `create_vertex` merges on the id, and `reproject_refs`
-erases the old vertex first so a node whose label moved does not leave its
-previous self under the previous label.
+`draw_node` is an upsert on `(graph, ref)` and `reproject_refs` erases first,
+so a node whose label moved does not leave its previous self behind.
 """
 
 import pytest

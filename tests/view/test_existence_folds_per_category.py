@@ -1,23 +1,10 @@
-"""Existence is evidence, and the graph holds only what exists.
+"""Existence folds per category, and the view holds only what exists (A6, C7).
 
-The rule: **the graph carries no lifecycle state.** If the evidence does not say
-a node is there, the node is not in the projection — no vertex, no flag beside
-one. That is the rule `_reproject_proposition` has always applied to edges, which
-delete when the last claim behind them is retracted *"rather than lingering with
-a lifecycle flag: `rebuild` would not recreate it, and a projection that
-disagrees with a replay is the failure this layer is supposed to make
-impossible."* Nodes were the last holdout.
-
-Two things follow, and both are tested here rather than assumed:
-
-- Retracting a node removes it and its edges from the drawing, while every
-  `Node`, `Link` and `Standing` row survives untouched. The projection is a cache;
-  the claims are not.
-- Attesting is not "un-archiving". There is no state to reverse — somebody
-  claims the thing is there, which is evidence of the same kind as somebody
-  claiming it is not. Both stay on the record, and *which one a graph believes is
-  its selector's decision*. The last test is that one, and it is the reason
-  existence is a fold rather than a boolean.
+If the evidence does not say a node is there, the node is not in the drawing —
+no vertex, no flag beside one. Retracting removes the vertex and its edges
+while every claim survives; attesting is a claim of the same kind, not an
+undo; and which position a view believes is each category's rule, so one node
+can exist under one label and not another.
 """
 
 import uuid
@@ -53,7 +40,7 @@ RETRACT_NATURAL_EVENT = """
 async def _ais_with_length(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph, value: float) -> str:
     """An AIS carrying a measurement, so it has a derived property worth comparing."""
     category = await core_models.EntityCategory.objects.filter(graph=graph, key="AIS").afirst()
-    assert category is not None, "The bio schema declares an AIS with a MEAN rollup over ROI"
+    assert category is not None, "The bio schema declares an AIS with a MEAN over ROI"
     created = await api_schema.execute(
         writes.ASSERT_ENTITY_EXISTS,
         variable_values={
@@ -84,7 +71,7 @@ def _edges(table_projector, graph: core_models.Graph, age_name: str) -> int:
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_archiving_a_natural_event_removes_its_vertex(
+async def test_retracting_a_natural_event_removes_its_vertex(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
@@ -126,7 +113,7 @@ async def test_archiving_a_natural_event_removes_its_vertex(
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_archiving_an_entity_removes_its_edges_but_keeps_the_claims(
+async def test_retracting_an_entity_removes_its_edges_but_keeps_the_claims(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
@@ -206,7 +193,7 @@ async def test_attesting_a_retracted_entity_brings_it_back_unchanged(
     before = await api_schema.execute(reads.NODE_PROPERTIES, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
     assert before.errors is None, f"GraphQL errors: {before.errors}"
     properties_before = before.data["node"]["properties"]
-    assert properties_before.get("avg_length") == pytest.approx(42.0), "The rollup must have produced a value to compare against"
+    assert properties_before.get("avg_length") == pytest.approx(42.0), "The fold must have produced a value to compare against"
 
     archived = await api_schema.execute(RETRACT_ENTITY, variable_values={"input": {"id": entity_id}}, context_value=simple_api_context)
     assert archived.errors is None, f"GraphQL errors: {archived.errors}"
@@ -403,7 +390,7 @@ async def test_existence_folds_under_the_categorys_clauses(api_schema, simple_ap
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_archiving_an_entity_removes_the_vertex_and_the_replay_agrees(
+async def test_retracting_an_entity_removes_the_vertex_and_the_replay_agrees(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
@@ -411,17 +398,17 @@ async def test_archiving_an_entity_removes_the_vertex_and_the_replay_agrees(
 ):
     """A retracted entity is not in the graph, and a replay does not put it back.
 
-    The graph carries no lifecycle state. If the evidence says a node is not
+    The graph carries no state flag. If the evidence says a node is not
     there, it is not there — the same rule `_reproject_proposition` has always
     applied to edges, which delete rather than linger behind a flag.
 
-    This used to assert the opposite: that the vertex survived stamped
+    History: this used to assert the opposite: that the vertex survived stamped
     `archived`. Nothing filtered that flag, so a retracted entity stayed listable
     and remained a legal endpoint for new relations. And `rebuild` selected on
     `Node.status`, which nothing ever wrote — so the two paths agreed only
     because the cache was dead.
 
-    The last assertion is the one that justifies deleting from Apache AGE at all:
+    The last assertion is the one that justifies deleting from the drawing at all:
     the `Node` row and its `Link` rows are untouched. Only the drawing goes.
     """
     from asgiref.sync import sync_to_async
@@ -498,13 +485,13 @@ async def test_archiving_an_entity_removes_the_vertex_and_the_replay_agrees(
 
     result = await rebuild()
     assert result["nodes"] == 0, "The replay must not recreate a node the evidence says is not there"
-    assert await vertex_count() == 0, "And must not leave one in AGE either"
+    assert await vertex_count() == 0, "And must not leave one drawn either"
 
     after = await api_schema.execute(query, variable_values={"id": entity_id}, context_value=simple_api_context)
     assert after.errors is None, f"GraphQL errors: {after.errors}"
     assert after.data["instance"]["drawnIn"] == [], "A replay must not restore a retracted entity to any view"
 
-    # The justification for deleting from AGE at all: the evidence is untouched.
+    # The justification for deleting from the drawing at all: the evidence is untouched.
     # Only the drawing went.
     @sync_to_async
     def evidence_survives() -> tuple[int, int, bool]:

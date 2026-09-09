@@ -1,11 +1,9 @@
-"""A claim can cite the claims it came from (RFC 0017).
+"""A claim can cite the claims it came from (RFC 0017, A3).
 
 `Link.Kind.DERIVED_FROM` runs from the new claim to the one it derives from,
-and either end may be any claim row — an instance, a link, a metric, a
-structure. It is written under the **same** assertion as the claim it
-annotates, because "this, because of that" is one act. `supersedeMetricValue`
-cites the metric it replaces, so a correction is no longer tied to its
-original only by an assertion id.
+and either end may be any claim row. It is written under the **same**
+assertion as the claim it annotates, because "this, because of that" is one
+act (A1). `supersedeMetricValue` cites the metric it replaces.
 """
 
 import uuid

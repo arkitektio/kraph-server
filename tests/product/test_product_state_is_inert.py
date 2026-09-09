@@ -1,27 +1,11 @@
-"""Archiving something archives it. Eleven mutations did not.
+"""Product state is inert: it persists, and it moves nothing in the log or the drawing (C7).
 
-`archive_graph`, `update_graph`'s `archived` branch and nine `archive_*_query`
-resolvers set an attribute that was a field on no model. Python took it, `save()`
-persisted nothing, and the caller got a success. `Graph` carries
-`ProvenanceField`, so `archiveGraph` additionally wrote a `simple_history` row
-recording a change that had not happened.
+Archiving, pinning, images and visuals are attributes on the product's rows.
+Every assertion here calls the mutation, re-reads the row, and checks the state
+moved — a name check on the schema can never catch a resolver that does nothing.
 
-Two things kept it invisible for as long as it was there. **No GraphQL type
-exposed the flag**, so a client could write it and never read it back — the write
-and the read were never joined up by anyone. And `tests/api/test_no_hard_deletes.py`
-is a **name check**: it regexes the `type Mutation` block and asserts names are
-present or absent. `archiveGraphTableQuery` being on the schema passes it;
-whether it does anything is never asked. That file is right about what it tests —
-the absence of a destructive surface is a real property — but a name check can
-never catch a resolver that does nothing.
-
-So every assertion here calls the mutation, **re-reads the row**, and checks the
-state moved. Any one of them would have caught all eleven.
-
-This is the sanctioned alternative to deleting: `delete_graph`'s own refusal says
-*"Archive the graph instead"*. A soft delete that does not delete makes that
-sentence a lie, which is why this sits under the no-hard-deletes doctrine rather
-than beside it.
+History: eleven `archive*` mutations set an attribute that was a field on no
+model; Python took it, `save()` persisted nothing, and the caller got a success.
 """
 
 import kante

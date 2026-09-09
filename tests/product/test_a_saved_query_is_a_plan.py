@@ -1,10 +1,8 @@
-"""Saving a table query as a plan, reading it back, and changing it.
+"""A saved query is a plan (C7).
 
-The contract is the plan (`graph_engine/query_ir.py`): a client sends matches,
-wheres and returns; it reads the same back under `plan`; and `query` — the
-compiled Cypher — is read-only and deprecated. Raw Cypher is not accepted
-anywhere. The eight other saved-query kinds that used to have create/update
-mutations are gone: nothing could ever render one.
+The contract is `graph_engine/query_ir.py`: a client sends matches, wheres and
+returns, reads the same back under `plan`, and the projector renders it. Raw
+query text is not accepted anywhere. Product state, inert to the log.
 """
 
 import uuid

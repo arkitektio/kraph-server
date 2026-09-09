@@ -1,14 +1,12 @@
-"""Relations must survive a reproject, because relations are evidence.
+"""An edge is the fold of its claims (A6).
 
-The honesty test, applied to edges. Until now `rebuild` replayed only
-`evidence.Node` rows, so a graph with relations came back without them — the test
-passed solely because no working code path could create one. An edge that cannot
-be replayed is an edge the evidence does not actually own.
+Two labs claiming the same synapse are two `Link` rows and one edge, counted
+twice; retracting one keeps the edge, retracting the last removes it; a
+participation is drawn on the side and with the role the claim states; and
+whose claims count is the relation or event category's rule.
 
-The other claim these tests hold up is the proposition/assertion split. Two labs
-claiming the same synapse are two `Link` rows and one edge: the evidence base
-keeps both claims so agreement stays countable, while a traversal sees the
-connection once.
+History: `rebuild` replayed only node rows, so a view with relations came back
+without them — the test passed because no code path could create one.
 """
 
 import uuid
@@ -55,8 +53,8 @@ async def test_two_assertions_make_two_rows_and_one_edge(
 ) -> None:
     """Agreement is countable in the evidence base and collapsed in the projection.
 
-    Deduplicating at write time would destroy the signal; keeping both edges in
-    AGE would make every path query return the relation twice.
+    Deduplicating at write time would destroy the signal; drawing both edges
+    would make every path query return the relation twice.
     """
     entity_category = await _cell_category(test_graph)
     relation_category = await _connected_to_category(test_graph)
@@ -84,7 +82,7 @@ async def test_two_assertions_make_two_rows_and_one_edge(
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_archiving_one_of_two_assertions_keeps_the_edge(
+async def test_retracting_one_of_two_claims_keeps_the_edge(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
@@ -114,11 +112,11 @@ async def test_archiving_one_of_two_assertions_keeps_the_edge(
         events = evidence_models.Standing.objects.for_organization(test_graph.organization).filter(target_type="link", target_id=first)
         return drawing.edge_count(test_graph, relation_category.age_name), int(counts[0]), events.count()
 
-    edge_count, assertion_count, lifecycle_rows = await state()
+    edge_count, assertion_count, standing_rows = await state()
 
     assert edge_count == 1, "One surviving claim keeps the edge"
     assert assertion_count == 1, "The agreement count must fall to the surviving claim"
-    assert lifecycle_rows == 1, "The retraction is a lifecycle row, never a delete"
+    assert standing_rows == 1, "The retraction is a standing, never a delete"
 
 
 @pytest.mark.django_db(transaction=True)
@@ -185,17 +183,17 @@ async def test_a_retraction_folds_survivors_under_the_rule_not_the_drawing(
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_updating_a_relation_replaces_the_claim_and_keeps_the_old_one(
+async def test_superseding_a_relation_replaces_the_claim_and_keeps_the_old_one(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
     table_projector,
 ) -> None:
-    """Update is archive-then-reassert, never an edit in place.
+    """Superseding is retract-then-reassert, never an edit in place.
 
     Both the correction and what it corrected stay on the record — the same shape
-    as `update_metric`. The edge survives throughout because the proposition is
-    unchanged; only which claim states it moves.
+    as `supersedeMetricValue`. The edge survives throughout because the proposition
+    is unchanged; only which claim states it moves.
     """
     entity_category = await _cell_category(test_graph)
     relation_category = await _connected_to_category(test_graph)
@@ -242,7 +240,7 @@ async def test_relation_endpoints_key_on_uuids_not_vertex_ids(
 ) -> None:
     """A relation stored against a vertex id would point at nothing after a replay.
 
-    AGE reassigns vertex ids when a graph is dropped, which is precisely what
+    The projector reassigns vertex ids when a drawing is dropped, which is precisely what
     `reproject` does — so the refs have to name the entity's own uuid.
     """
     entity_category = await _cell_category(test_graph)
@@ -357,7 +355,7 @@ async def test_participation_is_evidence(
     assert len(recorded) == 2, "Both participations must be recorded as evidence"
     assert [(kind, role) for kind, role, _ in recorded] == [("participates_as_input", "a"), ("participates_as_output", "b")]
     for _, _, source_ref in recorded:
-        # A bare uuid, not an AGE vertex id and not a graph-prefixed composite.
+        # A bare uuid, not a drawn vertex id and not a graph-prefixed composite.
         # `UUID()` raising is the assertion.
         uuid.UUID(source_ref)
 
@@ -377,10 +375,11 @@ async def test_two_observers_can_claim_the_same_participation(
 ) -> None:
     """Who took part is contestable, so agreement is countable.
 
-    Two claims, one edge — the same shape relations already use. Before
-    `assertParticipation` the only way to say anything about participants was
-    `updateNaturalEvent`, which archived the event and made a new one, so a
-    second opinion produced a second event.
+    Two claims, one edge — the same shape relations already use.
+
+    History: before `assertParticipation` the only way to say anything about
+    participants was the in-place event update, which archived the event and made
+    a new one, so a second opinion produced a second event.
     """
     source = await writes.create_entity(api_schema, simple_api_context, "Cell")
     target = await writes.create_entity(api_schema, simple_api_context, "Cell")
@@ -437,11 +436,11 @@ async def test_retracting_one_participation_claim_keeps_the_edge(
         events = evidence_models.Standing.objects.for_organization(test_graph.organization).filter(target_type="link")
         return drawing.participations(test_graph), drawing.assertion_counts(test_graph, "WENT_THROUGH"), events.count()
 
-    edges, counts, lifecycle_rows = await state()
+    edges, counts, standing_rows = await state()
 
     assert edges == [("CAME_OUT_OF", "b"), ("WENT_THROUGH", "a")], "The surviving claim keeps the edge"
     assert counts == [1], "And the agreement count falls to it"
-    assert lifecycle_rows == 1, "Retraction is a lifecycle row, never a delete"
+    assert standing_rows == 1, "Retraction is a standing, never a delete"
 
 
 @pytest.mark.django_db(transaction=True)

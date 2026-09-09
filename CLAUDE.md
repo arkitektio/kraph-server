@@ -20,7 +20,7 @@ Dependency management is `uv` (see `uv.lock`); everything runs through `uv run`.
 uv sync --all-extras --dev          # install (what CI does)
 
 uv run pytest                       # full suite
-uv run pytest tests/test_materialize.py::test_name   # single test
+uv run pytest tests/view/test_the_definition_document_is_the_views_meaning.py::test_name   # single test
 uv run pytest --cov --cov-branch    # coverage (CI: coverage.yaml)
 
 uv run ruff check .                 # lint      (CI: advisory, continue-on-error)
@@ -53,7 +53,7 @@ single test pays the full stack bring-up. Settings module is wired in `pyproject
 The drawing lives in the projection tables of the same test database, so `transactional_db`
 flushes it between tests — real isolation. (Under AGE this was impossible: a type-cache bug
 forced graph state to leak across the session, and "passes alone, fails in the suite" was the
-signature. That whole class is gone.) Tests assert on drawings through `tests/drawing.py`, never
+signature. That whole class is gone.) Tests assert on drawings through `tests/support/drawing.py`, never
 by importing the projection models into production code paths.
 
 ### Local `manage.py` gotcha
@@ -333,7 +333,7 @@ The load-bearing facts:
   category the view draws; a category definition may not name `KIND SAMENESS`. Changing the rule
   versions the view and rebuilds it. The org-grain identity cache is the trust-everyone answer.
   `CurrentStanding` is total over claim kinds, instances included. Tests build the shape via
-  `tests/rules.py`.
+  `tests/support/rules.py`.
 - **Schema changes are RBAC (RFC 0013).** `Graph.rules` (per-action allow/deny) is gone; every
   category create/update/delete goes through `schema_graph`/`schema_scoped`
   (`api/mutations/_scoped.py`) → `Graph.validate_definition_editable`: owner, organization admin
@@ -349,7 +349,7 @@ The load-bearing facts:
   `graph_engine/projector.py` decides *what* to draw and calls `controller.projector.*`;
   `graph_engine/namespace.py` decides what a namespace *declares* (pure spec, no SQL);
   `GraphController` holds a projector and runs no query.
-  `tests/projector/test_projector_protocol.py` enforces all of it, including repo-wide scans that
+  `tests/guards/test_the_projector_is_a_protocol.py` enforces all of it, including repo-wide scans that
   no other production module names the projection tables or the DDL. There is no engine layer any
   more — `CypherEngine`, `AgeEngine` and the mock went with Apache AGE (RFC 0005).
 - **The namespace is a derived artifact** (RFC 0006). `Projector.refresh_namespace(graph)`
@@ -421,7 +421,7 @@ The load-bearing facts:
 - **Exclude `core-backup-do-not-delete/` from every search** — it is a legacy snapshot of `core/`
   and will double every grep hit.
 - `test.graphql` at the repo root is a hand-dumped SDL snapshot, **not** asserted by any test.
-  `tests/test_print_schema.py` checks the schema builds *and* that every member of `NodeSubtype` /
+  `tests/guards/test_the_schema_renders_and_splits_its_grain.py` checks the schema builds *and* that every member of `NodeSubtype` /
   `EdgeSubtype` is registered — a type the cast can produce but `create_schema(types=[...])` does
   not list fails at **runtime** ("Abstract type 'Edge' was resolved to a type that does not exist
   inside the schema"), never at build. Regenerate the snapshot after a schema change and read the

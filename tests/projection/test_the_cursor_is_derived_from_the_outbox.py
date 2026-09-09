@@ -1,10 +1,9 @@
-"""The projection cursor: derived from the outbox, safe by construction.
+"""The projection cursor is derived from the outbox, never stored (A7).
 
-`graph_engine/watermark.py` states the invariant; these tests pin the transitions
-that keep it true. A write that finishes drawing deletes its outbox row; a write
-whose projection raises leaves it, and the cursor of **every** graph in the
-organization drops below it; a rebuild that dies after the drop leaves the graph
-`REBUILDING` and honest about it.
+A write that finishes drawing deletes its outbox row; a write whose projection
+raises leaves it, and the cursor of every view in the organization drops below
+it; a rebuild that dies after the drop leaves the view `REBUILDING` and honest
+about it. `Graph.projection` reports all of it.
 """
 
 import pytest

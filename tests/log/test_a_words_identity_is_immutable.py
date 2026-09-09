@@ -1,7 +1,7 @@
 """A word's identity is what claims reference, and it is immutable (A4, RFC 0022).
 
 The identity columns of `Term`, `StructureKind` and `MetricKind` may not be
-rewritten; how a word presents may, and no act records it.
+rewritten; how a word presents may, and no act records it (C7).
 """
 
 from __future__ import annotations

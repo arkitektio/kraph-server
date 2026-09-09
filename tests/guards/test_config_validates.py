@@ -1,6 +1,6 @@
-"""Validate the kraph service's config.yaml against its bespoke schema.
+"""The service's `config.yaml` validates against its own schema.
 
-Standalone — needs no database; run with ``uv run pytest tests/test_config.py``.
+Standalone — needs no database; run with ``uv run pytest tests/guards/test_config_validates.py``.
 """
 
 from kraph_server.configuration import Settings

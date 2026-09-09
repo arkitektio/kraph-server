@@ -1,7 +1,9 @@
-"""A structure is an individual with an external identity (RFC 0023).
+"""A structure is an individual with an external identity (RFC 0023, C6).
 
 Its existence has a standing, the folds honour it, and agreeing that it exists
-is countable — the three things a datum-as-row could not do.
+is countable — the three things a datum-as-row could not do. Its `(identifier,
+object)` is the identity; superseding the object is a claim about the same
+individual, not a new one.
 """
 
 import uuid
@@ -275,7 +277,7 @@ async def test_create_structure(
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_update_structure(
+async def test_supersede_structure_keeps_the_individual(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
@@ -314,7 +316,7 @@ async def test_update_structure(
     # A structure's (identifier, object) is its identity in the evidence base, so
     # repointing `object` is rejected rather than silently creating a second
     # identity or violating the uniqueness constraint. This test previously
-    # asserted the opposite; the in-place AGE `SET s.object = $obj` it exercised
+    # asserted the opposite; the in-place `SET s.object = $obj` it exercised
     # no longer exists.
     reidentify_result = await api_schema.execute(
         update_mutation,
@@ -354,7 +356,7 @@ async def test_update_structure(
 def edge_schema() -> models.GraphDefinitionInput:
     """A schema that declares the two edge kinds the bio schema leaves out.
 
-    `MEASURES` runs from an ROI to an AIS, and AIS carries a MEAN rollup over
+    `MEASURES` runs from an ROI to an AIS, and AIS carries a MEAN over
     `vector_length` — so attaching a measurement has an observable consequence
     and the INFORMS claim can be tested through its effect rather than by
     inspecting rows.
@@ -453,7 +455,7 @@ async def test_structure_relation_is_an_evidence_row_with_no_projection(
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_archiving_a_structure_relation_is_a_lifecycle_row(
+async def test_retracting_a_structure_relation_is_a_standing(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     edge_graph: core_models.Graph,
@@ -480,14 +482,14 @@ async def test_archiving_a_structure_relation_is_a_lifecycle_row(
         events = evidence_models.Standing.objects.for_organization(edge_graph.organization).filter(target_type="link", target_id=relation_id)
         return claims_module.current(link.organization, "link", link.pk), events.count()
 
-    status, lifecycle_rows = await state()
+    status, standing_rows = await state()
     assert status == False
-    assert lifecycle_rows == 1, "The lifecycle log is the authority; the cached status is a projection of it"
+    assert standing_rows == 1, "The positions are the authority; the cached status is a projection of them"
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_structure_relation_update_and_archive_reach_the_row(
+async def test_structure_relation_supersede_and_retract_reach_the_row(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     edge_graph: core_models.Graph,

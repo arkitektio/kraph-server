@@ -1,4 +1,4 @@
-"""The projection seam is a named protocol, and the projector speaks no query language.
+"""The projection seam is a named protocol, and the projector speaks no query language (A7).
 
 `graph_engine/projection/protocol.py::Projector` is what the controller and
 `graph_engine.projector` draw through; `TableProjector` is the Postgres-table

@@ -1,15 +1,9 @@
-"""The database, not just `resolve_categories`, decides what ends up in a graph.
+"""The database refuses a drawing under a category the view does not declare (A7, RFC 0006).
 
 A composite foreign key ties every drawn label's `(graph, category_pk)` to a
-`core_category` row of the *same* graph (graph_engine migration
-`0005_vertex_category_fk`, RFC 0006; relocated from the vertex to
-`ProjectionLabel` by `0009_projection_label`, RFC 0019). These tests pin the
-behaviors the code relies on: a foreign or invented category is refused at the
-row level, a deleted category cascades exactly its own labels — and the vertex
-only when no label is left (the `projectionlabel_last_label_deletes_vertex`
-trigger), edges going by the existing vertex cascade (the DETACH) — and a NULL
-`category_pk` still passes, because rows an older projector drew carry it and
-`manage.py reproject` is their repair, not an IntegrityError.
+category of the same view; a deleted category cascades exactly its own labels,
+and the vertex only when no label is left; a NULL `category_pk` still passes,
+because rows an older projector drew carry it and `reproject` is their repair.
 """
 
 import uuid

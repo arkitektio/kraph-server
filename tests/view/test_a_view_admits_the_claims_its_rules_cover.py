@@ -1,21 +1,12 @@
-"""What a category *means* can be a property of the graph, not of the entity.
+"""A view admits the claims its rules cover (A6).
 
-Classification used to be the `Node.category` foreign key: written once at
-creation, never updated anywhere, one answer per node forever. So two annotators
-could not disagree about what something is — the second one had to create a
-second entity, and every metric and relation keyed on the first node stopped
-describing it.
+Classification is a claim, so a category has something to be defined over: a
+primitive category admits whatever was asserted under its word, a defined one
+admits what its rules cover — across annotators, across words the view never
+declared — and swapping a definition costs zero writes to the log.
 
-Classification is a claim now (`Link.Kind.CLASSIFIES`), which gives a category
-something to be *defined over*. A category with an empty `definition` stays
-**primitive**: membership is whatever was asserted, the old behaviour, and the
-default. A category carrying a definition is **defined** — necessary and
-sufficient conditions, evaluated at projection time.
-
-The claim these tests exist to prove is the identity analogue of one the codebase
-already makes for values: swapping MEAN for MAX costs zero writes because `State`
-holds statistics rather than an answer. Swapping a category's definition must cost
-zero writes for the same reason.
+History: classification was the node's `category` foreign key, written once,
+so two annotators could not disagree about what something is.
 """
 
 import kante
@@ -71,11 +62,11 @@ async def test_two_annotators_can_disagree_without_forking_the_entity(
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
 ) -> None:
-    """The prerequisite for everything else in this file.
+    """Two annotators can disagree about what a node is without forking it.
 
-    Before classification was a claim, the only way to say "actually it's a Soma"
-    was `updateEntity`, which archives the node and creates a new one — a second
-    opinion produced a second entity.
+    History: before classification was a claim, the only way to say "actually
+    it's a Soma" was the in-place entity update, which archived the node and
+    created a new one — a second opinion produced a second entity.
     """
 
     entity_id = await writes.create_entity(api_schema, simple_api_context, "AIS")
@@ -277,9 +268,11 @@ async def test_a_node_matching_two_definitions_is_drawn_under_both(
     """A vertex carries every label that admits it (RFC 0019), so a node both
     definitions admit is drawn once, under both — and under the primitive AIS
     it was claimed as, because a primitive category means "anything claimed
-    under this word". Refusing it as ambiguous used to be the answer; that was
-    Apache AGE's one-label-per-vertex dressed as policy, and choosing between
-    the two would have buried exactly the disagreement the view can now show.
+    under this word".
+
+    History: refusing it as ambiguous used to be the answer; that was the graph
+    database's one-label-per-vertex dressed as policy, and choosing between the
+    two would have buried exactly the disagreement the view can now show.
     """
 
     await writes.create_entity(api_schema, simple_api_context, "AIS")
@@ -603,7 +596,7 @@ async def test_a_view_that_declares_the_word_later_can_pick_the_claim_up(
 ) -> None:
     """Org-scoped write, then materialization — the whole point of the change.
 
-    `materialize` created the categories and the AGE namespace and stopped, so a
+    History: `materialize` created the categories and the namespace and stopped, so a
     graph declaring a word the organization had already used came up empty and
     stayed that way until an operator ran `manage.py reproject`. `backfill` is that
     step, offered at the moment the declaration is made.

@@ -1,10 +1,9 @@
-"""Definitions on every claim-based category family (RFC 0012).
+"""Rules apply to every claim family a category can be declared over (RFC 0012).
 
 Structure relations and measurements are claims like everything else, so their
-categories carry the same rule lists entities, relations and events do. This
-file is the schema zoo the work started from: many `GraphDefinitionInput`
-schemas built through the pydantic models, split into ones that must build,
-ones that must be refused, and the behavior each family's rules drive.
+categories carry the same rule lists entities, relations and events do: the
+documents that must build, the ones that must be refused, and the behaviour
+each family's rules drive.
 """
 
 from datetime import datetime, timezone
@@ -26,7 +25,7 @@ def _definition_input(*rule_dicts: dict) -> models.CategoryDefinitionInput:
     return models.CategoryDefinitionInput.model_validate(rules.definition(*rule_dicts))
 
 
-def _entity(key: str, definition=None, properties=()) -> models.EntityDefinitionInput:
+def _entity_definition(key: str, definition=None, properties=()) -> models.EntityDefinitionInput:
     return models.EntityDefinitionInput(key=key, definition=definition, property_definitions=list(properties))
 
 
@@ -66,7 +65,7 @@ def good_schemas() -> dict[str, models.GraphDefinitionInput]:
     curator_rule = rules.rule(rules.word("ADJACENT_TO"), rules.by("curator"))
     return {
         "primitive-everything": _schema(
-            entities=[_entity("Cell")],
+            entities=[_entity_definition("Cell")],
             relations=[_relation("TOUCHES")],
             events=[_event("Mitosis")],
             structure_relations=[_structure_relation("OVERLAPS")],
@@ -74,7 +73,7 @@ def good_schemas() -> dict[str, models.GraphDefinitionInput]:
         ),
         "entity-two-rules-with-unless": _schema(
             entities=[
-                _entity(
+                _entity_definition(
                     "AIS",
                     _definition_input(
                         rules.rule(rules.word("AIS"), rules.by("peter"), rules.before(DEC5), unless=[[rules.via("sloppy-import")]]),
@@ -85,7 +84,7 @@ def good_schemas() -> dict[str, models.GraphDefinitionInput]:
         ),
         "entity-kind-split": _schema(
             entities=[
-                _entity(
+                _entity_definition(
                     "AIS",
                     _definition_input(
                         rules.rule(rules.word("AIS"), rules.by("peter"), rules.not_kind("EVIDENCE")),
@@ -95,11 +94,11 @@ def good_schemas() -> dict[str, models.GraphDefinitionInput]:
             ]
         ),
         "relation-scoped": _schema(
-            entities=[_entity("Cell")],
+            entities=[_entity_definition("Cell")],
             relations=[_relation("TOUCHES", _definition_input(rules.rule(rules.word("TOUCHES"), rules.by("karl"), rules.since(DEC5))))],
         ),
         "event-app-scoped": _schema(
-            entities=[_entity("Cell")],
+            entities=[_entity_definition("Cell")],
             events=[_event("Mitosis", _definition_input(rules.rule(rules.word("Mitosis", "CellDivision"), rules.via("event-annotator"))))],
         ),
         "structure-relation-scoped": _schema(
@@ -109,16 +108,16 @@ def good_schemas() -> dict[str, models.GraphDefinitionInput]:
             structure_relations=[_structure_relation("NEIGHBOURS", _definition_input(rules.rule(rules.word("ADJACENT_TO", "ABUTS"), rules.by("curator"))))],
         ),
         "measurement-scoped": _schema(
-            entities=[_entity("Cell")],
+            entities=[_entity_definition("Cell")],
             measurements=[_measurement("SHOWS", _definition_input(rules.rule(rules.word("SHOWS"), rules.via("mikro"))))],
         ),
         "measurement-not-in": _schema(
-            entities=[_entity("Cell")],
+            entities=[_entity_definition("Cell")],
             measurements=[_measurement("SHOWS", _definition_input(rules.rule(rules.word("SHOWS"), rules.not_by("untrusted-bot"))))],
         ),
         "entity-measurement-rules-name-keys": _schema(
             entities=[
-                _entity(
+                _entity_definition(
                     "Cell",
                     _definition_input(
                         rules.rule(rules.word("Cell"), rules.not_kind("MEASUREMENT")),
@@ -142,7 +141,7 @@ def good_schemas() -> dict[str, models.GraphDefinitionInput]:
             ]
         ),
         "all-five-defined": _schema(
-            entities=[_entity("Cell", _definition_input(rules.rule(rules.word("Cell"), rules.by("peter"))))],
+            entities=[_entity_definition("Cell", _definition_input(rules.rule(rules.word("Cell"), rules.by("peter"))))],
             relations=[_relation("TOUCHES", _definition_input(rules.rule(rules.word("TOUCHES"), rules.by("peter"))))],
             events=[_event("Mitosis", _definition_input(rules.rule(rules.word("Mitosis"), rules.by("peter"))))],
             structure_relations=[_structure_relation("ADJACENT_TO", _definition_input(rules.rule(rules.word("ADJACENT_TO"), rules.by("peter"))))],
@@ -165,11 +164,11 @@ def test_bad_schemas_are_refused() -> None:
     with pytest.raises(ValidationError, match="KIND"):  # KIND in an unless group, on an event
         _event("Mitosis", models.CategoryDefinitionInput.model_validate(rules.definition(rules.rule(rules.word("Mitosis"), unless=[[rules.of_kind("SAMENESS")]]))))
     with pytest.raises(ValidationError, match="samenessRule"):  # sameness is the view's rule (RFC 0024)
-        _entity("AIS", _definition_input(rules.rule(rules.word("AIS"), rules.by("peter"), rules.not_kind("SAMENESS"))))
+        _entity_definition("AIS", _definition_input(rules.rule(rules.word("AIS"), rules.by("peter"), rules.not_kind("SAMENESS"))))
     with pytest.raises(ValidationError, match="samenessRule"):
-        _entity("AIS", _definition_input(rules.rule(rules.of_kind("SAMENESS"), rules.by("curator"))))
+        _entity_definition("AIS", _definition_input(rules.rule(rules.of_kind("SAMENESS"), rules.by("curator"))))
     with pytest.raises(ValidationError, match="KEY"):  # a metric key on a classification rule
-        _entity("Cell", _definition_input(rules.rule(rules.word("Cell"), rules.key("area"))))
+        _entity_definition("Cell", _definition_input(rules.rule(rules.word("Cell"), rules.key("area"))))
     with pytest.raises(ValidationError):  # the flat evidence list is not an input any more
         models.DerivationRuleInput(source_node="ROI", key="area", evidence=[rules.via("app-b")])
     with pytest.raises(ValidationError):  # empty rule list on a relation

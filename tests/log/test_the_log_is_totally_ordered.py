@@ -1,14 +1,11 @@
-"""The log has an order to replay in.
+"""The log is totally ordered (A1).
 
-`docs/LOG.md` carried this as a known gap: every evidence row is keyed on a
-`uuid4`, so "replay the log in order" had no order. `Standing.recorded_at` broke ties
-within one target and conceded in its own help_text that it was "a tiebreak, not a
-total order" — two claims written in one request share it to the microsecond often
-enough that the fold could return either, so the same evidence could produce two
-different graphs.
+`Assertion.seq` is assigned by the database, is monotonic, and is what the fold
+orders by; `changes(afterSeq:)` reads it forward and is cut at the committed
+horizon so a late-committing act is never skipped.
 
-These tests hold the three properties the column has to have: the database assigns
-it, it is monotonic, and the fold actually uses it.
+History: every row was keyed on a `uuid4`, so "replay the log in order" had no
+order, and two claims written in one request could fold either way.
 """
 
 from __future__ import annotations

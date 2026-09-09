@@ -1,15 +1,10 @@
-"""What is currently known about a structure, in one query.
+"""The panel folds over the component, never over one instance (C3).
 
-The panel the whole exercise is for: which measurements are there, how users have
-labelled the thing, who else says it is the same thing, and where it is connected
-in which graphs.
-
-Two findings shaped it. **Connections need no graph query** — relations,
-participations and INFORMS are all `Link` rows with indexed refs, and Apache AGE
-holds a droppable drawing of them. And **everything is asked about the
-component**, never about one node: every observation mints its own instance, so
-what is known about a thing is spread across the instances somebody has claimed
-are one.
+What is currently known about a datum, in one query: which measurements are
+there, how users have labelled the thing, who else says it is the same thing,
+and where it is drawn. Connections need no graph query — relations,
+participations and INFORMS are `Link` rows with indexed refs, and the drawing
+is a droppable cache of them.
 """
 
 import uuid
@@ -182,8 +177,10 @@ async def test_a_retracted_label_does_not_appear(
     """Retraction is a `Standing(stands=False)`, not a delete.
 
     Nothing about the `CLASSIFIES` row says it is gone; only the anti-join against
-    `CurrentStanding` does. `selector.classification_claims_for` was missing that
-    wrapper while its docstring promised "every *live* claim".
+    `CurrentStanding` does.
+
+    History: `selector.classification_claims_for` was missing that wrapper while
+    its docstring promised "every *live* claim".
     """
     structure_id, object_id = await _structure(api_schema, simple_api_context)
     entity_id = await _entity(api_schema, simple_api_context, "AIS", evidence_object=object_id)

@@ -1,10 +1,9 @@
-"""Two surfaces, never mixed silently (RFC 0025).
+"""Two surfaces, never mixed silently (RFC 0025, C4).
 
 A `Node` is one view's drawing of an individual: it names its view, the log
 position it is as of, and the claim beneath it, and it answers its categories
 from the view's rule rather than from the cache. Everything reached through an
-edge's endpoint is a claim — an `Instance` — because an edge does not carry a
-view a `Node` could be drawn in.
+edge's endpoint is a claim, because an edge carries no view.
 """
 
 import pytest

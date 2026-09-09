@@ -1,16 +1,12 @@
-"""A write returns the claim it recorded, and the claim can answer.
+"""A write returns the act (C5).
 
-The payload used to hand back an `Entity` — a drawing shape — for something that may
-be drawn nowhere. Two of its fields could not answer in that case at all:
-`schemaVersion` is non-null in the SDL and a row-backed reading has no value for it,
-and `richProperties` asserted on a category that a claim under an undeclared word
-does not have. Both were reachable through the mutation the moment a client selected
-them, and through `entity(id:, graph:)` for a node the view admits but has not
-drawn yet.
+The payload is `assertion` + `instance` (or `link`) + `drawings`: the claim
+answers about itself, its positions are readable, and the drawing stays where
+it belongs — one entry per view and category that draws it, empty when none
+does.
 
-So the payload is `assertion` + `instance` (or `link`) + `drawings` now, and these
-tests pin the three things that shape has to get right: the claim answers about
-itself, its standing is readable, and the drawing stays where it belongs.
+History: the payload used to hand back an `Entity`, a drawing shape, for
+something that may be drawn nowhere; two of its fields could not answer.
 """
 
 import pytest
@@ -121,7 +117,7 @@ async def test_reading_an_undrawn_claim_as_an_entity_does_not_fail(
     This used to reach the row-backed shape through a *retracted* claim, back when
     `entity(id:)` took no graph and answered from whichever view came first. A
     view read is refused for a node the view does not hold now — that case is
-    pinned in `tests/instance/test_entity.py` — so the undrawn shape is produced
+    pinned in `tests/surface/test_a_node_names_its_view.py` — so the undrawn shape is produced
     the way `nodes(graph:)` meets it: admitted, not yet drawn.
     """
     entity_id = await writes.create_entity(api_schema, simple_api_context, "AIS")
@@ -239,10 +235,9 @@ async def test_a_link_claim_reports_its_drawing_and_its_standing(
 ) -> None:
     """A relation is one of the three kinds a view actually draws, so `drawnIn` is not empty.
 
-    A link's standing is organization-grain, unlike an instance's — a retracted link is
-    retracted everywhere, which is why `CurrentStanding` caches an answer for one — but
-    it is still reported as the positions rather than as a folded boolean, so there is
-    one way to ask across both kinds of claim.
+    A link's standing is reported as the positions rather than as a folded boolean,
+    exactly as an instance's is, so there is one way to ask across every kind of
+    claim; the organization-grain fold of either is `CurrentStanding` (RFC 0024).
     """
     source = await writes.create_entity(api_schema, simple_api_context, "Cell")
     target = await writes.create_entity(api_schema, simple_api_context, "Cell")
@@ -528,8 +523,10 @@ async def test_a_participation_reports_the_view_that_drew_it(
     """Both sides of a participation must be findable, and this is the test that says so.
 
     **The failure this exists to catch is silent.** Reading a drawing back asks
-    AGE for the edge, and the reader used to build that pattern itself, wrongly
-    in two ways at once:
+    the projector for the edge.
+
+    History: the reader used to build that pattern itself, wrongly in two ways
+    at once:
 
     - it matched `[r:{category.age_name}]`, but a participation's label is not the
       category's `age_name` — it is `AGE_INPUT_EDGE` / `AGE_OUTPUT_EDGE` off the

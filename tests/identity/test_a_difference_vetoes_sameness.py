@@ -1,15 +1,15 @@
-"""Saying "no, these are two" (RFC 0019).
+"""Saying "no, these are two" (RFC 0019, A5).
 
-`SAME_AS` says two observations are one individual. Until now nothing could say
-the opposite: a merge could only be undone by retracting the claim that made
-it, which is a position on somebody *else's* claim, not a claim of one's own.
-`DIFFERENT_FROM` is that claim — the mirror of `SAME_AS`, made under the same
-rule (a category that trusts a `SAME_AS` trusts a `DIFFERENT_FROM`, both are
-`SAMENESS`), with one deterministic effect on the fold: a standing, trusted
-`DIFFERENT_FROM(a, b)` **vetoes every direct `SAME_AS` between a and b**, in
-either orientation. A conflict through a third instance (a~b, b~c, a≠c) is not
-resolved by the fold — the component stays merged and the panel reports the
-difference under `conflicts`, so a person can decide which claim to retract.
+`DIFFERENT_FROM` is the mirror of `SAME_AS`, made under the same rule, with one
+deterministic effect on the fold: a standing, trusted `DIFFERENT_FROM(a, b)`
+vetoes every direct `SAME_AS` between a and b, in either orientation. A
+conflict through a third instance (a~b, b~c, a≠c) is not resolved by the fold —
+the component stays merged and the panel reports it under `conflicts`, so a
+person can decide which claim to retract.
+
+History: until RFC 0019 a merge could only be undone by retracting the claim
+that made it, which is a position on somebody else's claim, not a claim of
+one's own.
 """
 
 import pytest

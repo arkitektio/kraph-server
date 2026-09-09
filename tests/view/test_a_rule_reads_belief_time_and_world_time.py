@@ -1,15 +1,8 @@
-"""What did we believe on March 3rd?
+"""A rule reads belief time and world time as two axes (RFC 0015, A6).
 
-The question the bitemporal split exists to answer, and the one a single
-`timestamp` column made unanswerable. `as_of` filters on `asserted_at` — belief
-time — so a rule can be evaluated as it stood when a decision was made, rather
-than as it stands now.
-
-Since RFC 0009 the scope carrying these bounds is per rule, not per graph:
-a category's clauses (`trust_filter`) or a property's `rule.evidence`
-(`rule_metric_filter`), composed by `metric_scope`. Under per-graph silos this
-needed a fork of the data; over shared evidence it is a `WHERE` clause on an
-indexed column, which is what makes it cheap enough to be routine.
+What did we believe on March 3rd? `ASSERTED_AT` bounds belief time and
+`OBSERVED_AT` bounds world time, on every kind of claim, so a rule can be
+evaluated as it stood when a decision was made or as the world was seen.
 """
 
 from datetime import datetime, timedelta, timezone

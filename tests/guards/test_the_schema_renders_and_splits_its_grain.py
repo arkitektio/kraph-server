@@ -1,6 +1,8 @@
-"""Smoke test: the GraphQL schema must build and render to a non-empty SDL string.
+"""The GraphQL schema builds, renders, and keeps the log's grain apart from the view's (C4).
 
-No database required — this only imports and stringifies the schema.
+Every member of `NodeSubtype` / `EdgeSubtype` is registered, so an abstract
+type always resolves; `Structure` and `Metric` implement neither interface,
+because they are claim rows with no drawing. No database required.
 """
 
 import typing
@@ -42,9 +44,9 @@ def test_the_grain_split_is_visible_in_the_sdl():
     """Claim types stay off the projection interface, and the edge shape is honest.
 
     Each line here pins one half of a conflation the SDL used to carry:
-    - `Structure` and `Metric` are evidence rows with no AGE presence, so they
-      must not implement `Node` — that interface's `label` is "the AGE graph
-      label as recently materialized", which for them was a hard-coded constant.
+    - `Structure` and `Metric` are claim rows with no drawing, so they must not
+      implement `Node` — that interface's `label` is "the label as recently
+      drawn", which for them was a hard-coded constant.
     - Every edge the API can build is row-backed (`RetrievedEdge.from_link`), so
       `Edge.assertion` is non-null; the nullable form documented a projection
       branch nothing can produce.

@@ -1,10 +1,9 @@
-"""The rule language (RFC 0010): (field, operator, value) conditions, compiled.
+"""A definition is a rule list (RFC 0010, A6).
 
-A definition is a list of rules; a claim counts if any rule matches; a rule
-matches when all its `when` conditions hold and no `unless` group does; a group
-holds when all its conditions do. Three sentences, all visible in the syntax —
-this file pins the compiler (`evidence/selector.py`) and the refusal matrix
-that replaced the clause shape's silent edge cases.
+A claim counts if any rule matches; a rule matches when all its `when`
+conditions hold and no `unless` group does. This file pins the compiler
+(`evidence/selector.py`), the refusal of a malformed shape, and the migrations
+that rewrote the stored form.
 """
 
 from __future__ import annotations

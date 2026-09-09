@@ -1,17 +1,10 @@
-"""Interface-typed fields must resolve concrete fragments.
+"""Interface-typed fields resolve concrete fragments (C4).
 
-These are the queries that crashed while the category and query hierarchies were
-multi-table inheritance under django-polymorphic. The strawberry-django optimizer
-built django-polymorphic's *filter*-path syntax (``core__graphnodesquery___graph``)
-and handed it to ``select_related()``, which django-polymorphic never translates, so
-Django raised ``FieldError: Invalid field name(s) given in select_related: 'core'``.
+An interface-typed field whose inline fragment selects a foreign key resolves,
+and its `__typename` is right, because dispatch is on a `kind` column.
 
-The trigger is narrow enough to be easy to lose again: an interface-typed field whose
-concrete inline fragment selects a foreign key. Nothing in the suite covered it.
-
-Each test asserts the ``__typename`` as well as the data, because that is what proves
-type resolution still works now that it dispatches on a ``kind`` column instead of on
-django-polymorphic downcasting the row on the way out.
+History: under django-polymorphic the optimizer built a filter-path
+`select_related` and Django raised `FieldError`.
 """
 
 import kante

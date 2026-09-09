@@ -1,18 +1,10 @@
-"""Trust is the category's rule (RFC 0009): the discussed example, end to end.
+"""Trust is the category's rule (RFC 0009, A6): the discussed example, end to end.
 
-There is no `Graph.selector` any more. A category's `definition` — the union of
-clauses RFC 0007 built — is the complete rule for its word in a view:
-
-- which CLASSIFIES claims admit a node (as before),
-- whose EXISTENCE standings count for its nodes,
-- for a relation or event category, whose LINK claims draw its edges,
-- and, by default, whose measurements its properties fold — overridden per
-  property by `rule.evidence`, which is the property's own metric rule.
-
-Sameness stays organization grain: a view cannot veto a merge claim.
-
-This file is the acceptance test for the design discussion: the definition
-below is the example agreed there, verbatim in spirit.
+A category's `definition` is the complete rule for its word in a view: which
+CLASSIFIES claims admit a node, whose EXISTENCE positions count for its nodes,
+whose LINK claims draw its edges, and by default whose measurements its
+properties fold — overridden per property by `rule.evidence`. Sameness is the
+view's own rule (RFC 0024), held next door.
 """
 
 import pytest

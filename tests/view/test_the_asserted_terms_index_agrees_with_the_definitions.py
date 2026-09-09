@@ -1,15 +1,9 @@
-"""Indexing the words a category's definition derives from.
+"""The asserted-terms index agrees with the definitions (A6).
 
-A graph sees a word two ways: it **declares** one (`Category.term`, an ordinary
-foreign key) or it **derives** from one, by naming it in a WORD condition of
-its definition's rules (RFC 0010). Only the second was un-joinable, so
-`selector._graph_ids_by_term` — which every instance write goes through — read
-every category in the organization and pulled every `definition` blob out of the
-database to loop over in Python.
-
-`core.CategoryAssertedTerm` is that half normalized. These tests pin the two
-things that make it safe to depend on: **the index and the definitions agree**,
-maintained incrementally or rebuilt, and **the reads actually use it**.
+A view sees a word two ways: it declares one (`Category.term`) or derives from
+one by naming it in a WORD condition. `core.CategoryAssertedTerm` is the
+second, normalized; it agrees with the definitions whether maintained
+incrementally or rebuilt, and the reads use it.
 """
 
 import pytest

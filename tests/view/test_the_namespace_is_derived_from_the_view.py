@@ -1,10 +1,9 @@
-"""The namespace is a derived artifact: spec from the schema, DDL from the spec.
+"""The namespace is derived from the view: spec from the definition, DDL from the spec (RFC 0006).
 
-Spec tests pin the expansion rules of `graph_engine/namespace.py` — which element
-tables one graph's categories declare, in which direction participation runs, and
-the loud refusals (blowup cap, over-long labels, label collisions with the
-participation constants). The round-trip tests then hold `refresh_namespace` /
-`drop_namespace` to the spec against the live catalogs (RFC 0006).
+Spec tests pin the expansion rules of `graph_engine/namespace.py`; the
+round-trip tests hold `refresh_namespace` / `drop_namespace` to the spec against
+the live catalogs; and the handle that names the schema is output only, never
+an address.
 """
 
 import pytest
@@ -352,7 +351,7 @@ async def test_graph_argument_is_a_primary_key_not_the_handle(api_schema, simple
     entity_id = await writes.create_entity(api_schema, simple_api_context, "AIS")
 
     by_handle = await api_schema.execute(NODE, variable_values={"id": entity_id, "graph": str(test_graph.age_name)}, context_value=simple_api_context)
-    assert by_handle.errors, "the AGE handle must not address a graph"
+    assert by_handle.errors, "the namespace handle must not address a graph"
     assert "by its id" in str(by_handle.errors[0]), f"Refused for the wrong reason: {by_handle.errors[0]}"
 
     by_id = await api_schema.execute(NODE, variable_values={"id": entity_id, "graph": str(test_graph.pk)}, context_value=simple_api_context)

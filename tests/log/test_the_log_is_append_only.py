@@ -1,18 +1,13 @@
-"""The log is append-only, and the database says so.
+"""The log is append-only, and the database says so (A1).
 
-`evidence/writer.py` promised this in its module docstring from the beginning, and
-for just as long the promise was enforced by nothing — while being false: `record_standing()`
-wrote the row and then flipped a cached `stands` boolean on the target, an `UPDATE`
-on a log table four lines below the sentence saying there were none.
+A trigger refuses `UPDATE` and `DELETE` on every log table. Triggers rather
+than `REVOKE`, because a superuser ignores table privileges and the role the
+test stack connects as is one — a grant-based guard would pass a test that
+asserted nothing.
 
-Two changes made the rule real. The cached answer moved to `CurrentStanding`, a
-projection (`0004`), and a trigger now refuses `UPDATE` and `DELETE` on the six log
-tables (`0005`). These tests hold the second one up. Without them the guard is a
-migration nobody would notice the absence of.
-
-Triggers rather than `REVOKE`, and the reason matters for what can be tested: a
-superuser ignores table privileges, and the role the test stack connects as is one.
-A grant-based guard would pass a test that asserted nothing.
+History: `record_standing()` used to flip a cached `stands` boolean on the
+target, an `UPDATE` on a log table four lines below the docstring saying there
+were none.
 """
 
 from __future__ import annotations

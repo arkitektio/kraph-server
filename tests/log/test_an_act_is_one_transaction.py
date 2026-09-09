@@ -1,14 +1,8 @@
-"""A set of claims made in one act is one assertion.
+"""An act is one assertion and one transaction (A1).
 
-Not an ergonomic point. An `Assertion` records *who claimed something, with which
-tool, when*, so a batch asserted together genuinely is one assertion — which is
-what `create_entity` has always done internally, minting one and reusing it
-across every structure, metric and link it writes.
-
-Doing the same work through N sequential calls records the same act as N
-assertions, and nothing can put them back together: `Assertion.action_id`, the
-field that would tie them, is never populated by any write path. That is the
-difference these tests measure.
+Claims made together are one `Assertion` — who, with what tool, when — and
+either every claim lands or none does. The same work through N sequential
+calls records N acts, and nothing can put them back together.
 """
 
 from __future__ import annotations
@@ -143,7 +137,7 @@ async def test_a_bad_id_in_the_batch_writes_nothing(
     The guarantee is the `transaction.atomic()` around the writes: removing it
     lets the assertion and the valid claim survive a batch that failed, and this
     test fails. Resolving every reference *before* the transaction is defensive
-    on top of that — it fails earlier and does no AGE work first — but it is not
+    on top of that — it fails earlier and draws nothing first — but it is not
     what makes the batch atomic, and this test passes without it.
     """
     event = await writes.create_event(api_schema, simple_api_context, "Mitosis")
@@ -183,10 +177,10 @@ async def test_classifying_several_nodes_is_one_assertion(
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
 ) -> None:
-    """Classification is additive and batchable, and was not reachable at all.
+    """Classification is additive and batchable: several nodes, one act.
 
-    `GraphController.classify` existed with zero callers — no resolver, no test —
-    so the only way to say "this is actually a Soma" was `updateEntity`, which
+    History: `GraphController.classify` existed with zero callers, so the only
+    way to say "this is actually a Soma" was the in-place entity update, which
     archived the node and minted a new uuid.
     """
     entities = [await writes.create_entity(api_schema, simple_api_context, "Cell") for _ in range(2)]
@@ -584,7 +578,7 @@ async def test_the_raw_token_is_never_stored(
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_a_selector_can_filter_by_the_run(
+async def test_a_rule_can_filter_by_the_run(
     api_schema: kante.Schema,
     provenanced_context: HttpContext,
     test_graph: core_models.Graph,

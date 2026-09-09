@@ -1,10 +1,9 @@
-"""Comments are claims: lok's komment model, restated as evidence.
+"""Comments are claims (A2, A3).
 
-What lok kept as mutable state has to show up here as appended rows — the author
-and time are the assertion, resolution is a `Standing`, and the row itself can
-never be edited. These tests pin each translation, plus the two flows lok left
-as `NotImplementedError` (reply, resolve), which arrive here as what they always
-were underneath.
+The author and time are the assertion, resolution is a `Standing`, and the row
+itself can never be edited; a reply is a claim about a claim.
+
+History: lok's komment model kept all of this as mutable state.
 """
 
 import pytest

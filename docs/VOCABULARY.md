@@ -164,7 +164,7 @@ Nothing here is a source of truth.
 
 `graph_engine/projector.py` decides *what* to draw and never says how; `GraphController`
 holds a `projector`, not an engine, and runs no query itself
-(`tests/projector/test_projector_protocol.py` keeps both true). A second projection
+(`tests/guards/test_the_projector_is_a_protocol.py` keeps both true). A second projection
 kind — a per-view table — implements `Projector` and is chosen in `api/schema.py`.
 
 ### The bookkeeping

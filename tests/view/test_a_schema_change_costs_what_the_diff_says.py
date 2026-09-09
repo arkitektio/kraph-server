@@ -1,12 +1,8 @@
-"""What a schema change costs, stated as a table.
+"""A schema change costs what the diff says (A6, A7).
 
-The §3.1 rescan matrix, executable. The row that matters most is the first one:
-**changing an aggregation produces an empty work set.** That is the claim the
-sufficient-statistics state vector was built to support — the row holds
-statistics rather than an answer, so MEAN and MAX read the same data and the
-"migration" is nothing at all.
-
-Needs no database.
+The rescan matrix, executable. Changing an aggregation produces an empty work
+set, because the state vector holds statistics rather than an answer. Needs no
+database.
 """
 
 import pytest

@@ -1,14 +1,13 @@
-"""Evidence must never be readable without naming an organization.
+"""The log is tenant-scoped: nothing in it is readable without naming an organization.
 
-This is one half of the tenancy decision. Structures and metrics used to live in
-a per-graph Apache AGE namespace, where a query against graph A *physically could
-not* read graph B's rows. Sharing evidence across projections gives that
-structural guarantee up, so the guard that replaces it has to be tested as
-carefully as the thing it replaced: one forgotten filter is a cross-tenant leak.
+Evidence is shared across every view of one organization and across none of
+another's; one forgotten filter is a cross-tenant leak, so every manager
+refuses an unscoped read. Both directions are held here: shared within, fenced
+between.
 
-The companion test is `test_cross_projection_visibility.py`, which asserts the
-opposite direction — that evidence *is* shared within an organization. Together
-they are the whole `graph_id` decision.
+History: structures and metrics used to live in a per-graph namespace where a
+query against graph A physically could not read graph B's rows; sharing gave
+that structural guarantee up for a tested one.
 """
 
 import pytest
@@ -133,7 +132,8 @@ def test_a_metric_recorded_under_one_graph_is_readable_under_another(organizatio
 
     Experiment A records a length for an ROI. A projection built for experiment
     B, over the same organization, sees that metric without re-ingesting it.
-    Under per-graph AGE namespaces this was impossible by construction.
+
+    History: under per-graph namespaces this was impossible by construction.
     """
     structure = evidence_models.Structure.objects.create_for_organization(
         organization=organization,
@@ -169,7 +169,7 @@ def test_provenance_scoping_is_a_filter_not_a_fork(organization: Organization, r
     """'Only what AI_Model_X asserted before March 3rd' is a WHERE clause.
 
     Under per-graph silos this needed a separate graph. Over shared evidence it
-    is an indexed filter, which is what makes `Graph.selector` — and the `as_of`
+    is an indexed filter, which is what makes a category's rule — and the `as_of`
     that falls out of it — cheap enough to be routine.
     """
     early = datetime(2026, 3, 1, tzinfo=timezone.utc)

@@ -1,9 +1,8 @@
-"""`manage.py reproject` is the operational form of the rebuild claim.
+"""The operator commands rebuild and redraw, and say what they did (A7).
 
-Second management command in the repo, after `validate_settings`. Worth testing
-because it is the thing someone reaches for at 3am after a bad deploy, and
-because a command that silently rebuilds nothing looks exactly like a command
-that worked.
+`reproject`, `rematerialize --stale` and their kin are the operational form of
+the rebuild claim; a command that silently rebuilds nothing looks exactly like
+one that worked, so each is checked for what it changed and what it printed.
 """
 
 from io import StringIO
@@ -32,7 +31,7 @@ def test_dry_run_touches_nothing(test_graph: core_models.Graph, table_projector)
     output = out.getvalue()
     assert "would rebuild" in output
     assert f"#{test_graph.pk}" in output
-    assert test_graph.age_name not in output, "the AGE handle is internal; the command names a graph by name and id"
+    assert test_graph.age_name not in output, "the namespace handle is internal; the command names a graph by name and id"
 @pytest.mark.django_db(transaction=True)
 def test_rebuilds_by_name_and_reports_what_it_did(test_graph: core_models.Graph, table_projector) -> None:
     """The counts in the output are the evidence that it ran."""

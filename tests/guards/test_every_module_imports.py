@@ -1,12 +1,11 @@
-"""Every module in the project must import.
+"""Every module in the project imports.
 
-This repo has repeatedly accumulated modules that reference deleted siblings — an
-entire `graph_engine/insights/` tree importing `core.age` / `core.types` /
-`core.renderers`, a `core/manager.py` shadowing `core/managers.py`, and several
-call sites of a `graph_engine.base_models` that no longer exists. None of it failed
-CI, because nothing imported it and no test asserted that everything imports.
+No database, no docker stack.
 
-This test is the guard. It needs no database and no docker stack.
+History: the repo repeatedly accumulated modules referencing deleted siblings —
+an `insights/` tree importing `core.age`, a `core/manager.py` shadowing
+`core/managers.py`, call sites of a `graph_engine.base_models` that no longer
+existed — and none of it failed CI, because nothing imported it.
 """
 
 import importlib

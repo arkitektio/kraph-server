@@ -1,25 +1,11 @@
-"""An id a list query hands out must be one the singular fetcher accepts.
+"""An id a list query hands out is one the singular fetcher accepts (C4).
 
-That was not true. The plural edge queries built a `RetrievedEdge` with no
-`row_id`, so `unique_id` fell back to ``{graph_name}:{age_edge_id}`` — while
-`relation(id:)` and its siblings resolve a `Link` primary key. The two halves of
-the same surface disagreed about what an id is, and nothing tested the pair
-together, so each looked fine on its own.
+Edge list queries read `evidence.Link`, so the id *is* the claim id and the
+answer is the claim; the `ids` filter accepts what the list issued.
 
-The `ids` **filter** had the mirror defect. It compared
-`extract_graph_id(id)` against the graph's `age_name`; a uuid contains hyphens,
-so that call returned the uuid's *first segment*, the comparison was never true,
-and the filter silently answered "no matches" to ids the API had just issued.
-
-And most of these queries could not return anything at all. `create_vertex` labels
-a vertex with its category's `age_name` and writes exactly ``{id, category_id}``,
-so the patterns they matched — `(:Entity)-[r]->(:NaturalEvent)` for participations,
-`(m:Metric)-[r]->(s:Structure)` for descriptions — named labels the projector has
-never written. Measurements and structure relations have no AGE edge at all. Only
-`relations` was ever able to produce a row.
-
-They read `evidence.Link` now (`api/queries/_edges.py`), which fixes both halves at
-once: the id *is* the claim id, and the answer is the claim rather than the drawing.
+History: the plural queries built ids from a drawn edge id that a reproject
+reassigns, five of six matched labels the projector never wrote, and the `ids`
+filter compared a uuid's first segment to the view's handle.
 """
 
 import uuid
@@ -146,10 +132,10 @@ async def test_a_listed_edge_carries_its_endpoints_and_provenance(
 ) -> None:
     """Reading the claim rather than the drawing is what makes these resolvable.
 
-    An Apache AGE edge carries neither endpoint uuid nor an assertion — it is a
+    A drawn edge carries neither endpoint uuid nor an assertion — it is a
     projection, and `project_edges` merges every assertion of one proposition onto
-    a single edge. So a Cypher-built edge could report `sourceId` only as another
-    composite, and `assertion` not at all.
+    a single edge. So an edge built from the drawing could report `sourceId` only
+    as another composite, and `assertion` not at all.
     """
     category_id, term = await _relation_category(test_graph)
     source = await _entity(api_schema, simple_api_context, "AIS")
@@ -207,11 +193,11 @@ async def test_an_edge_can_be_read_back_by_the_id_it_was_given(
     It was not. `RetrievedEdge.unique_id` returns the `Link` primary key for any
     row-backed edge — every relation, measurement and structure relation — and the
     resolver split that id on the first hyphen to recover a graph name and an
-    integer AGE edge id. On a uuid that produced
+    integer drawn edge id. On a uuid that produced
     `invalid literal for int() with base 10: '2269-48bc-b049-53535f3be517'`, on the
     very identity the mutation had just returned.
 
-    It was never fixable by parsing more carefully: an AGE edge carries no claim
+    It was never fixable by parsing more carefully: a drawn edge carries no claim
     id, because `project_edges` merges every assertion of one proposition onto one
     edge. The claim's identity lives in Postgres, so the read has to go there.
     """

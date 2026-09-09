@@ -1,12 +1,9 @@
-"""
-Tests for the materialize function.
+"""The definition document is the view's meaning (A6).
 
-These tests verify that:
-1. Graphs can be materialized from a GraphDefinitionModel
-2. All database models (EntityCategory, RelationCategory, NaturalEventCategory) are created
-3. The GraphSchema is created and activated
-4. The AGE graph is created in the database
-5. Property definitions are correctly stored
+`materialize` turns a `GraphDefinitionInput` into the view's categories, its
+schema version, its namespace and its property definitions; the mutations that
+edit a definition change the same rows; and a word's presentation (label,
+description) is not part of the meaning.
 """
 
 import pytest

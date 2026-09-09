@@ -1,18 +1,14 @@
-"""Two graphs measuring the same datum share one term.
+"""Two graphs measuring the same datum share one kind (A4).
 
-This file used to assert the opposite, and that inversion is the point of the
-change rather than a side effect of it.
+`@mikro/roi` is an identifier owned by the service that produces the datum, so
+there is exactly one `StructureKind` for it in the organization and every view
+sees the same one. There is no acting graph to resolve against and no per-graph
+copy to disagree with.
 
-Before, structure and metric categories hung off a graph. A structure introduced
-by graph A carried A's category, so a measurement recorded through graph B
-resolved against A's schema — gated on A's permissions, and filing any
-auto-created metric category under A where B could not see it. The old tests here
-documented that as expected behaviour and pinned it in place.
-
-Now the vocabulary belongs to the organization. `@mikro/roi` is an identifier
-owned by the service that produces the datum, so there is exactly one term for it
-and both graphs see the same one. There is no acting graph to resolve against and
-no per-graph copy to disagree with.
+History: structure and metric categories used to hang off a graph, so a
+measurement recorded through graph B resolved against graph A's schema — gated
+on A's permissions, with any auto-created metric category filed where B could
+not see it. The old tests pinned that as expected behaviour.
 """
 
 import pytest
