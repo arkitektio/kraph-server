@@ -125,12 +125,17 @@ def narrow(links: Any, filter_model: Any, ordering_models: Iterable[Any], pagina
 
     order_by: list[str] = []
     for order_model in ordering_models:
+        # The log's own columns (RFC 0025): the act's position first among them.
+        if getattr(order_model, "seq", None):
+            order_by.append(_direction("assertion__seq", order_model.seq))
+        if getattr(order_model, "observed_at", None):
+            order_by.append(_direction("observed_at", order_model.observed_at))
         if getattr(order_model, "created_at", None):
             order_by.append(_direction("created_at", order_model.created_at))
         if getattr(order_model, "id", None):
             order_by.append(_direction("id", order_model.id))
     if not order_by:
-        order_by = ["-created_at", "-id"]
+        order_by = ["-assertion__seq", "-id"]
 
     offset = int(getattr(pagination_model, "offset", 0) or 0)
     limit = int(getattr(pagination_model, "limit", 100) or 100)

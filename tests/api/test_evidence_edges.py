@@ -66,8 +66,8 @@ ARCHIVE_STRUCTURE_RELATION = """
 """
 
 UPDATE_STRUCTURE_RELATION = """
-    mutation UpdateStructureRelation($input: UpdateStructureRelationInput!) {
-        updateStructureRelation(input: $input) { link { id } }
+    mutation UpdateStructureRelation($input: SupersedeStructureRelationInput!) {
+        supersedeStructureRelation(input: $input) { link { id } }
     }
 """
 
@@ -282,7 +282,7 @@ async def test_structure_relation_update_and_archive_reach_the_row(
         context_value=simple_api_context,
     )
     assert updated.errors is None, f"GraphQL errors: {updated.errors}"
-    replacement = updated.data["updateStructureRelation"]["link"]["id"]
+    replacement = updated.data["supersedeStructureRelation"]["link"]["id"]
     assert replacement != original, "An update supersedes a claim rather than editing it"
 
     @sync_to_async

@@ -108,12 +108,17 @@ def narrow(rows: Any, filter_model: Any, ordering_models: Iterable[Any], paginat
 
     order_by: list[str] = []
     for order_model in ordering_models:
+        # The log's own columns (RFC 0025): the act's position first among them.
+        if getattr(order_model, "seq", None):
+            order_by.append(_direction("assertion__seq", order_model.seq))
+        if getattr(order_model, "observed_at", None):
+            order_by.append(_direction("observed_at", order_model.observed_at))
         if getattr(order_model, "created_at", None):
             order_by.append(_direction("created_at", order_model.created_at))
         if getattr(order_model, "id", None):
             order_by.append(_direction("id", order_model.id))
     if not order_by:
-        order_by = ["-created_at", "-id"]
+        order_by = ["-assertion__seq", "-id"]
 
     offset = int(getattr(pagination_model, "offset", 0) or 0)
     limit = int(getattr(pagination_model, "limit", 100) or 100)
@@ -129,7 +134,9 @@ def one_in_graph(controller: Any, graph: Any, instance: Any) -> RetrievedNode:
     reader — the one that answers for a node no view admits — is `instance(id:)`.
     """
     if str(instance.pk) not in projector.refs_in_graph(graph):
-        raise ValueError(f"Graph '{graph.name}' (#{graph.pk}) does not hold node '{instance.pk}': no category of this view declares or derives from the node's word, or its selector does not count the claim. Read the claim itself with `instance(id:)`, and `Instance.drawnIn` says which views hold it.")
+        raise ValueError(
+            f"Graph '{graph.name}' (#{graph.pk}) does not hold node '{instance.pk}': no category of this view declares or derives from the node's word, or its selector does not count the claim. Read the claim itself with `instance(id:)`, and `Instance.drawnIn` says which views hold it."
+        )
     # Any member names its individual (RFC 0018): the answer is the
     # representative's row, whose id may differ from the one asked for.
     representative = projector.representative_in_graph(graph, str(instance.pk))
@@ -149,7 +156,18 @@ def retrieved_in(controller: Any, graph: Any, rows: list[Any]) -> list[Retrieved
         return []
 
     drawn = controller.drawn_instances(graph, [str(row.pk) for row in rows])
-    return [drawn.get(str(row.pk)) or RetrievedNode.from_row(controller, row) for row in rows]
+    # The rule's answer, stamped on every reading (RFC 0025): a node admitted
+    # but not yet drawn still has its categories, and a drawn one reports the
+    # rule rather than the last stamp — so the API never says "no category"
+    # because the cache is behind.
+    resolved, _ = projector.resolve_categories(graph, rows)
+    nodes = []
+    for row in rows:
+        node = drawn.get(str(row.pk)) or RetrievedNode.from_row(controller, row, graph_name=graph.age_name)
+        node.graph_id = graph.pk
+        node.rule_category_ids = tuple(sorted(str(category.pk) for category in resolved.get(str(row.pk), [])))
+        nodes.append(node)
+    return nodes
 
 
 def _direction(column: str, value: Any) -> str:

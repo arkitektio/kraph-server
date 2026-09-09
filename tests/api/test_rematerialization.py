@@ -36,7 +36,7 @@ UPDATE_CATEGORY = """
 
 ENTITY = """
     query Entity($id: ID!, $graph: ID!) {
-        node(id: $id, graph: $graph) { ... on Entity { id properties schemaVersion } }
+        node(id: $id, graph: $graph) { ... on Entity { id properties } }
     }
 """
 
@@ -159,21 +159,21 @@ async def test_the_redraw_stamps_the_schema_that_produced_it(
 
     Editing a category fires `versioning`'s `post_save`, which emits a new
     `GraphSchema` before the resolver reaches the rematerialization; `project`
-    then reads `GraphSchema.active_for(graph)` and stamps it. A vertex whose
-    `__schema_version` did not move was not redrawn — which is exactly the test
-    `manage.py rematerialize --stale` applies to find work.
+    then redraws under it. A vertex that did not gain the new property was not
+    redrawn; `manage.py rematerialize --stale` finds its work through
+    `Projection.schema_hash`, never through a stamp on the vertex.
     """
     category = await core_models.EntityCategory.objects.filter(graph=test_graph, key="AIS").afirst()
     assert category is not None
 
     entity_id = await _measured_ais(api_schema, simple_api_context)
-    before = (await _node(api_schema, simple_api_context, entity_id, test_graph))["schemaVersion"]
-    assert before, "A projected entity always names the schema that derived it"
+    before = (await _node(api_schema, simple_api_context, entity_id, test_graph))["properties"]
+    assert "max_length" not in before, "the new property does not exist yet"
 
     await _update_ais(api_schema, simple_api_context, category.pk, properties=[AVG_LENGTH, NAME, MAX_LENGTH])
 
-    after = (await _node(api_schema, simple_api_context, entity_id, test_graph))["schemaVersion"]
-    assert after != before, "A redrawn vertex carries the schema version that redrew it"
+    after = (await _node(api_schema, simple_api_context, entity_id, test_graph))["properties"]
+    assert "max_length" in after, "a redrawn vertex carries what the schema that redrew it derives"
 
 
 @pytest.mark.django_db(transaction=True)

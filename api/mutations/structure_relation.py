@@ -40,11 +40,11 @@ def assert_structure_relation_exists(info: Info, input: inputs.AssertStructureRe
     )
 
 
-def update_structure_relation(info: Info, input: inputs.UpdateStructureRelationInput) -> types.AssertedStructureRelation:
+def supersede_structure_relation(info: Info, input: inputs.SupersedeStructureRelationInput) -> types.AssertedStructureRelation:
     """Replace a structure relation, keeping the old assertion on the record.
 
     Two assertions are recorded and the result reports the second — see
-    `update_relation`.
+    `supersede_relation`.
     """
     model = input.to_pydantic()
     controller = context.get_controller()

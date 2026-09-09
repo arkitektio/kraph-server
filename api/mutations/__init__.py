@@ -9,11 +9,11 @@ Contains all GraphQL mutation resolvers for the graph engine.
 from .entity import assert_entity_exists, retract_entity, attest_entity
 from .structure import assert_structure_exists, retract_structure, attest_structure, record_metrics, assert_informs
 from .metric import assert_metric_value, assert_metric_value_for_structure, supersede_metric_value, retract_metric, attest_metric
-from .relation import assert_relation_exists, update_relation, retract_relation
+from .relation import assert_relation_exists, supersede_relation, retract_relation
 from .measurement import assert_measurement_exists, retract_measurement
 from .structure_relation import (
     assert_structure_relation_exists,
-    update_structure_relation,
+    supersede_structure_relation,
     retract_structure_relation,
 )
 from .natural_event import assert_natural_event_exists, retract_natural_event, attest_natural_event
@@ -58,12 +58,12 @@ __all__ = [
     "retract_metric",
     # Relation mutations
     "assert_relation_exists",
-    "update_relation",
+    "supersede_relation",
     "retract_relation",
     "assert_measurement_exists",
     "retract_measurement",
     "assert_structure_relation_exists",
-    "update_structure_relation",
+    "supersede_structure_relation",
     "retract_structure_relation",
     # Natural event mutations
     "assert_natural_event_exists",

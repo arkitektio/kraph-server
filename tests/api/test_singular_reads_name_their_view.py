@@ -7,7 +7,7 @@ nothing on the result saying which. The singular fetchers take a `graph` now and
 go through the same membership-then-drawing path as `nodes(graph:)`:
 
 - drawn in that view → the drawing;
-- admitted but not yet drawn → the bare row shape (`schemaVersion` null), which
+- admitted but not yet drawn → the bare row shape (no derived properties), which
   `tests/api/test_write_payloads_are_claims.py` pins;
 - not admitted by that view → refused, with `instance(id:)` as the claim-grain
   reader.
@@ -28,7 +28,7 @@ from tests import writes
 
 NODE = """
     query GetNode($id: ID!, $graph: ID!) {
-        node(id: $id, graph: $graph) { __typename id ... on Entity { schemaVersion } }
+        node(id: $id, graph: $graph) { __typename id drawnIn { graph { id } } }
     }
 """
 
@@ -76,7 +76,7 @@ async def test_a_view_that_does_not_admit_the_node_refuses_it(
     held = await api_schema.execute(NODE, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
     assert held.errors is None, f"GraphQL errors: {held.errors}"
     assert held.data["node"]["__typename"] == "Entity"
-    assert held.data["node"]["schemaVersion"] is not None, "The write drew it, so this view answers with the drawing"
+    assert held.data["node"]["drawnIn"], "The write drew it, so this view answers with the drawing"
 
     refused = await api_schema.execute(NODE, variable_values={"id": entity_id, "graph": str(other_view.id)}, context_value=simple_api_context)
     assert refused.errors, "A view declaring no category for the word must refuse the node, not borrow another view's drawing"

@@ -182,6 +182,21 @@ class RetrievedNode:
     both. Empty for a row-backed shape: a claim read outside any view is drawn
     as nothing there, and `label` is then the word.
     """
+    graph_id: Optional[int] = None
+    """The view this node was read through — its `Graph` primary key (RFC 0025).
+
+    Every `Node` the API serves is built inside a view: `nodes(graph:)`,
+    `node(id:, graph:)`, a write's `drawings`. A reading with no view is a
+    *claim*, served as `Instance`, never as a `Node`.
+    """
+    rule_category_ids: Optional[tuple[str, ...]] = None
+    """Every category the view's **rule** admits this node under (RFC 0019, 0025).
+
+    Set by the view-scoped readers from `projector.resolve_categories`, so the
+    API answers from the rule — the stamp on the vertex (`properties["category_ids"]`)
+    is what was drawn last, and the two disagree exactly when the projection is
+    behind. `category_ids` reads this when it is set.
+    """
     members: tuple[str, ...] = ()
     """The instance uuids this node stands for, in the view it was read through (RFC 0018).
 
@@ -329,6 +344,15 @@ class RetrievedNode:
         since writes name terms that is a state a client can reach with one
         mutation. Sorted by pk, parallel to nothing: `labels` is sorted by name.
         """
+        if self.rule_category_ids is not None:
+            return self.rule_category_ids
+        return self.drawn_category_ids
+
+    @property
+    def drawn_category_ids(self) -> tuple[str, ...]:
+        """What the vertex was last drawn under — the stamp, not the rule. For
+        the projection's own bookkeeping (`drawings_for_instance` warns when it
+        trails the rule); the API reads `category_ids`."""
         return tuple(str(pk) for pk in (self.properties.get("category_ids") or ()))
 
     @property

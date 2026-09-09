@@ -2317,12 +2317,14 @@ class GraphController:
                     node.pk,
                 )
                 continue
-            if projected.category_ids and set(projected.category_ids) != {str(category.pk) for category in categories}:
+            projected.graph_id = graph.pk
+            projected.rule_category_ids = tuple(sorted(str(category.pk) for category in categories))
+            if projected.drawn_category_ids and set(projected.drawn_category_ids) != {str(category.pk) for category in categories}:
                 logger.warning(
                     "graph #%s draws node %s under category_ids %s but its rule says %s; the projection is behind the rule — run `manage.py reproject`.",
                     graph.pk,
                     node.pk,
-                    ", ".join(projected.category_ids),
+                    ", ".join(projected.drawn_category_ids),
                     ", ".join(str(category.pk) for category in categories),
                 )
 
@@ -2359,27 +2361,6 @@ class GraphController:
         admitted = projector.admitting_categories(projector.categories_drawing(graph, str(link.kind)), base)
         return admitted[link.pk][1] if link.pk in admitted else []
 
-    def _category_for_term(self, term_id: Any, graph: models.Graph | None = None) -> models.Category | None:
-        """How a graph draws a word — its category for that term.
-
-        With a graph, this view's answer. Without one, any view's: some callers
-        return an edge that has no projection at all (structure relations,
-        measurements) and only need the term's shape for the API. `None` is an
-        ordinary answer, meaning no graph declares a category for this word.
-
-        "Any view's" is the **lowest-id** one, not whichever the database happened
-        to return, so two callers asking the same question get the same answer.
-
-        It no longer decides what a *write* reports: a write returns `drawings`,
-        where every category arrives attached to the graph that actually drew the
-        claim. This is left for the edge payloads, which need the term's shape for
-        the API even when nothing draws them — see `create_measurement`.
-        """
-        queryset = models.Category.objects.filter(term_id=term_id)
-        if graph is not None:
-            queryset = queryset.filter(graph=graph)
-        return queryset.order_by("pk").first()
-
     def retrieved_edge(self, link: evidence_models.Link, category: models.Category | None = None) -> RetrievedEdge:
         """One claim, in the edge-shaped form the API reads.
 
@@ -2389,10 +2370,11 @@ class GraphController:
         The list queries used to build their own `RetrievedEdge` with no `row_id`
         and hand out `{age_name}:{vertex_id}` instead.
 
-        ``category`` is passed when the caller already holds one — a category-keyed
-        list has it in hand and would otherwise pay `_category_for_term` per row.
+        ``category`` is the one the caller read the claim under — a category-keyed
+        list has it in hand. Without one the edge is claim grain: no label, no
+        category (RFC 0025).
         """
-        return RetrievedEdge.from_link(self, link, category=category if category is not None else self._category_for_term(link.term_id))
+        return RetrievedEdge.from_link(self, link, category=category)
 
     def _node_ref(self, node_id: Any, info: Info | None = None, organization: Any = None) -> str:
         """Check a client-supplied node id and hand back the ref evidence stores.
@@ -2835,7 +2817,10 @@ class GraphController:
         if kind is not None and str(link.kind) != str(kind):
             return None
         self._assert_can_access(link.organization, info)
-        return RetrievedEdge.from_link(self, link, category=self._category_for_term(link.term_id))
+        # No category: a claim reached without a view has no label and no
+        # category — those are one view's drawing (RFC 0025). `drawings` and
+        # `drawnIn` say how each view draws it.
+        return RetrievedEdge.from_link(self, link)
 
     def drawn_edge(self, graph: models.Graph, link: evidence_models.Link, category: models.Category | None = None) -> Optional[RetrievedEdge]:
         """This link as the graph draws it under `category`, or `None` if it does not.
@@ -3197,24 +3182,19 @@ class GraphController:
         return {f"metrics__{column}{lookup}": coerced}
 
     def _structure_ordering(self, ordering: list[input_models.StructureOrder] | None) -> List[str]:
-        """Translate structure ordering into ORM order_by terms."""
-        if not ordering:
-            return ["created_at"]
+        """Translate structure ordering into ORM order_by terms — the log's own columns (RFC 0025).
 
+        `property` is no longer a field on `StructureOrder`: it used to be
+        silently reinterpreted as ordering by `object`, which is not what anyone
+        asking for a property order meant.
+        """
+        if not ordering:
+            return ["assertion__seq", "id"]
         terms: List[str] = []
         for order in ordering:
-            # `property` is no longer a field on `StructureOrder`: it used to be
-            # silently reinterpreted as ordering by `object`, which is not what
-            # anyone asking for a property order meant.
-            if order.created_at is not None:
-                direction = order.created_at
-                field = "created_at"
-            elif order.id is not None:
-                direction = order.id
-                field = "id"
-            else:
-                continue
-            descending = (direction.value if hasattr(direction, "value") else str(direction)).upper() == "DESC"
-            terms.append(f"-{field}" if descending else field)
-
-        return terms or ["created_at"]
+            for field, direction in (("assertion__seq", order.seq), ("observed_at", order.observed_at), ("created_at", order.created_at), ("id", order.id)):
+                if direction is None:
+                    continue
+                descending = (direction.value if hasattr(direction, "value") else str(direction)).upper() == "DESC"
+                terms.append(f"-{field}" if descending else field)
+        return terms or ["assertion__seq", "id"]

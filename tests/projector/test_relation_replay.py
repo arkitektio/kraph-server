@@ -43,8 +43,8 @@ ARCHIVE_RELATION = """
 """
 
 UPDATE_RELATION = """
-    mutation UpdateRelation($input: UpdateRelationInput!) {
-        updateRelation(input: $input) { link { id } }
+    mutation UpdateRelation($input: SupersedeRelationInput!) {
+        supersedeRelation(input: $input) { link { id } }
     }
 """
 
@@ -345,7 +345,7 @@ async def test_updating_a_relation_replaces_the_claim_and_keeps_the_old_one(
         context_value=simple_api_context,
     )
     assert updated.errors is None, f"GraphQL errors: {updated.errors}"
-    replacement = updated.data["updateRelation"]["link"]["id"]
+    replacement = updated.data["supersedeRelation"]["link"]["id"]
 
     assert replacement != original, "An update must produce a new claim, not mutate the old one"
 

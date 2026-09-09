@@ -43,7 +43,7 @@ NODE = """
             id
             members
             sameAs { __typename id }
-            differentFrom { __typename id source { ... on Entity { id } } target { ... on Entity { id } } }
+            differentFrom { __typename id source { id } target { id } }
             conflicts { __typename id }
         }
     }

@@ -59,7 +59,7 @@ PANEL = """
                 component
                 labels { __typename nodeId assertionCount term { key } latestAssertion { id subject } }
                 sameAs { __typename id }
-                connections { __typename id assertion { id } }
+                connections { __typename id kind assertion { id } }
                 drawnIn { graph { id } category { id } }
             }
         }
@@ -147,7 +147,7 @@ async def test_the_panel_reaches_labels_through_what_the_structure_informs(
     panel = await _panel(api_schema, simple_api_context, structure_id)
 
     assert [node["id"] for node in panel["informs"]] == [entity_id]
-    assert panel["informs"][0]["__typename"] == "Entity"
+    assert panel["informs"][0]["__typename"] == "Instance", "what a datum informs is the claim, as the log has it (RFC 0025)"
     assert [label["term"]["key"] for label in panel["informs"][0]["labels"]] == ["AIS"]
 
 
@@ -249,11 +249,11 @@ async def test_everything_is_unioned_over_the_component(
 
     assert sorted(node["component"]) == sorted([first, second]), "Asking about either instance answers for both"
     assert len(node["sameAs"]) == 1
-    assert node["sameAs"][0]["__typename"] == "Sameness", "A sameness claim used to have no type of its own and came back as a Relation"
+    assert node["sameAs"][0]["__typename"] == "Link", "reached as a claim, the sameness is a Link (RFC 0025)"
 
     # Both observations' INFORMS claims, reachable from either end of the merge.
-    informing = {connection["__typename"] for connection in node["connections"]}
-    assert informing == {"Description"}, f"Only the INFORMS claims here, got {informing}"
+    informing = {connection["kind"] for connection in node["connections"]}
+    assert informing == {"INFORMS"}, f"Only the INFORMS claims here, got {informing}"
     assert len(node["connections"]) == 2, "One per observation — the merge is what makes the second one visible from here"
 
 

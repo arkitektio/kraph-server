@@ -65,7 +65,7 @@ READ_INSTANCE = """
 
 READ_ENTITY = """
     query ReadEntity($id: ID!, $graph: ID!) {
-        entity(id: $id, graph: $graph) { id schemaVersion richProperties { key } drawnIn { graph { id } } }
+        entity(id: $id, graph: $graph) { id graph { id } asOfSeq categoryIds richProperties { key value } drawnIn { graph { id } } }
     }
 """
 
@@ -197,13 +197,14 @@ async def test_reading_an_undrawn_claim_as_an_entity_does_not_fail(
     test_graph: core_models.Graph,
     table_projector,
 ) -> None:
-    """`schemaVersion` is null and `richProperties` is empty, rather than an error.
+    """An admitted-but-undrawn node still names its view and its categories (RFC 0025).
 
-    Both are properties of a *derivation*, and nothing derived anything here: the
-    view admits the node but its projection has not drawn it — the vertex is
-    deleted directly, which is what a projection lagging the log looks like.
-    `schemaVersion` was `String!` over a value only a projection supplies, and
-    `richProperties` opened with `assert category_id is not None`.
+    The view admits the node but its projection has not drawn it — the vertex is
+    deleted directly, which is what a projection lagging the log looks like. The
+    `Node` still knows its `graph` and answers `categoryIds` from the **rule**,
+    not from the missing vertex; `richProperties` is empty because nothing was
+    derived. (`schemaVersion` — a projection stamp on the node interface — is
+    gone; `asOfSeq` is the view's cursor instead.)
 
     This used to reach the row-backed shape through a *retracted* claim, back when
     `entity(id:)` took no graph and answered from whichever view came first. A
@@ -226,8 +227,10 @@ async def test_reading_an_undrawn_claim_as_an_entity_does_not_fail(
     assert read.errors is None, f"GraphQL errors: {read.errors}"
     entity = read.data["entity"]
     assert entity["id"] == entity_id
-    assert entity["schemaVersion"] is None, "No view derived anything, so there is no schema version to name"
-    assert entity["richProperties"] == [], "and no category, so nothing to explain"
+    assert entity["graph"]["id"] == str(test_graph.id), "a Node always names its view"
+    assert entity["asOfSeq"] >= 0
+    assert entity["categoryIds"] == [str(category.pk)], "the rule admits it, whether or not the cache has caught up"
+    assert entity["richProperties"] and all(prop["value"] is None for prop in entity["richProperties"] if prop["key"] != "id"), "the rule's properties are listed; nothing was derived, so none has a value"
     assert entity["drawnIn"] == [], "which is the same thing said as a count"
 
 

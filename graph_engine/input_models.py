@@ -325,18 +325,24 @@ class EntityOrder(StrictModel):
     # `GraphController.list_entities_for_category`, which no GraphQL field is
     # built on. The other orderings below carry no `property` because nothing
     # consumes one anywhere.
-    created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
+    created_at: Optional[Ordering] = Field(default=None, description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order")
+    seq: Optional[Ordering] = Field(default=None, description="Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)")
+    observed_at: Optional[Ordering] = Field(default=None, description="Order by world time — when the claim says the world was so (RFC 0015)")
     id: Optional[Ordering] = Field(default=None, description="Order by entity ID")
     property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific derived property value — drawing-scoped reads only")
 
 
 class NodeOrder(StrictModel):
-    created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
+    created_at: Optional[Ordering] = Field(default=None, description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order")
+    seq: Optional[Ordering] = Field(default=None, description="Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)")
+    observed_at: Optional[Ordering] = Field(default=None, description="Order by world time — when the claim says the world was so (RFC 0015)")
     id: Optional[Ordering] = Field(default=None, description="Order by node ID")
 
 
 class StructureOrder(StrictModel):
-    created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
+    created_at: Optional[Ordering] = Field(default=None, description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order")
+    seq: Optional[Ordering] = Field(default=None, description="Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)")
+    observed_at: Optional[Ordering] = Field(default=None, description="Order by world time — when the claim says the world was so (RFC 0015)")
     id: Optional[Ordering] = Field(default=None, description="Order by structure ID")
 
 
@@ -361,7 +367,9 @@ class NaturalEventPagination(StrictModel):
 
 
 class NaturalEventOrder(StrictModel):
-    created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
+    created_at: Optional[Ordering] = Field(default=None, description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order")
+    seq: Optional[Ordering] = Field(default=None, description="Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)")
+    observed_at: Optional[Ordering] = Field(default=None, description="Order by world time — when the claim says the world was so (RFC 0015)")
     id: Optional[Ordering] = Field(default=None, description="Order by natural event ID")
 
 
@@ -380,7 +388,9 @@ class ProtocolEventPagination(StrictModel):
 
 
 class ProtocolEventOrder(StrictModel):
-    created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
+    created_at: Optional[Ordering] = Field(default=None, description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order")
+    seq: Optional[Ordering] = Field(default=None, description="Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)")
+    observed_at: Optional[Ordering] = Field(default=None, description="Order by world time — when the claim says the world was so (RFC 0015)")
     id: Optional[Ordering] = Field(default=None, description="Order by protocol event ID")
 
 
@@ -399,7 +409,9 @@ class MeasurementPagination(StrictModel):
 
 
 class MeasurementOrder(StrictModel):
-    created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
+    created_at: Optional[Ordering] = Field(default=None, description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order")
+    seq: Optional[Ordering] = Field(default=None, description="Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)")
+    observed_at: Optional[Ordering] = Field(default=None, description="Order by world time — when the claim says the world was so (RFC 0015)")
     id: Optional[Ordering] = Field(default=None, description="Order by measurement ID")
 
 
@@ -418,7 +430,9 @@ class StructureRelationPagination(StrictModel):
 
 
 class StructureRelationOrder(StrictModel):
-    created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
+    created_at: Optional[Ordering] = Field(default=None, description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order")
+    seq: Optional[Ordering] = Field(default=None, description="Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)")
+    observed_at: Optional[Ordering] = Field(default=None, description="Order by world time — when the claim says the world was so (RFC 0015)")
     id: Optional[Ordering] = Field(default=None, description="Order by structure relation ID")
 
 
@@ -437,7 +451,9 @@ class RelationPagination(StrictModel):
 
 
 class RelationOrder(StrictModel):
-    created_at: Optional[Ordering] = Field(default=None, description="Order by creation timestamp")
+    created_at: Optional[Ordering] = Field(default=None, description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order")
+    seq: Optional[Ordering] = Field(default=None, description="Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)")
+    observed_at: Optional[Ordering] = Field(default=None, description="Order by world time — when the claim says the world was so (RFC 0015)")
     id: Optional[Ordering] = Field(default=None, description="Order by relation ID")
 
 
@@ -2046,7 +2062,7 @@ class AssertRelationExistsInput(RelationInput):
     term: str = Field(..., description=TERM_FIELD_DESCRIPTION)
 
 
-class UpdateRelationInput(RelationInput):
+class SupersedeRelationInput(RelationInput):
     """Input for updating an existing relation. Note: this will not update the relation in-place, but rather create a new relation and archive the old one to preserve history."""
 
     id: str = Field(..., description="The ID of the relation to update")
@@ -2066,7 +2082,7 @@ class AssertStructureRelationExistsInput(RelationInput):
     term: str = Field(..., description=TERM_FIELD_DESCRIPTION)
 
 
-class UpdateStructureRelationInput(RelationInput):
+class SupersedeStructureRelationInput(RelationInput):
     """Input for updating an existing structure relation by replacing it with a new edge revision."""
 
     id: str = Field(..., description="The ID of the structure relation to update")

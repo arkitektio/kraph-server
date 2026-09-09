@@ -8,8 +8,9 @@ from strawberry_django.ordering import Ordering
 from graph_engine import input_models
 
 
-# The node, edge and structure orderings below advertise `createdAt` and `id`
-# and nothing else, deliberately. They used to expose the pydantic models whole
+# The node, edge and structure orderings below advertise `seq`, `observedAt`,
+# `createdAt` and `id` and nothing else, deliberately — the log's own columns
+# (RFC 0025): the act's position, world time, arrival time, identity. They used to expose the pydantic models whole
 # (`all_fields=True`), which dragged in `property` and `category` — and those
 # were a lottery: `property` raised on the node lists
 # (`_nodes.refuse_drawing_filters`), was silently dropped on the edge lists
@@ -29,7 +30,9 @@ from graph_engine import input_models
 class EntityOrder:
     """Ordering options for entity queries."""
 
-    created_at: Optional[Ordering] = kante.field(default=None, description="Order by creation timestamp")
+    created_at: Optional[Ordering] = kante.field(default=None, description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order")
+    seq: Optional[Ordering] = kante.field(default=None, description="Order by the act's position in the log — the log's own total order (RFC 0025)")
+    observed_at: Optional[Ordering] = kante.field(default=None, description="Order by world time — when the claim says the world was so (RFC 0015)")
     id: Optional[Ordering] = kante.field(default=None, description="Order by entity ID")
 
 
@@ -37,7 +40,9 @@ class EntityOrder:
 class NodeOrder:
     """Ordering options for node queries."""
 
-    created_at: Optional[Ordering] = kante.field(default=None, description="Order by creation timestamp")
+    created_at: Optional[Ordering] = kante.field(default=None, description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order")
+    seq: Optional[Ordering] = kante.field(default=None, description="Order by the act's position in the log — the log's own total order (RFC 0025)")
+    observed_at: Optional[Ordering] = kante.field(default=None, description="Order by world time — when the claim says the world was so (RFC 0015)")
     id: Optional[Ordering] = kante.field(default=None, description="Order by node ID")
 
 
@@ -45,7 +50,9 @@ class NodeOrder:
 class StructureOrder:
     """Ordering options for structure queries."""
 
-    created_at: Optional[Ordering] = kante.field(default=None, description="Order by creation timestamp")
+    created_at: Optional[Ordering] = kante.field(default=None, description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order")
+    seq: Optional[Ordering] = kante.field(default=None, description="Order by the act's position in the log — the log's own total order (RFC 0025)")
+    observed_at: Optional[Ordering] = kante.field(default=None, description="Order by world time — when the claim says the world was so (RFC 0015)")
     id: Optional[Ordering] = kante.field(default=None, description="Order by structure ID")
 
 
@@ -53,7 +60,9 @@ class StructureOrder:
 class NaturalEventOrder:
     """Ordering options for natural event queries."""
 
-    created_at: Optional[Ordering] = kante.field(default=None, description="Order by creation timestamp")
+    created_at: Optional[Ordering] = kante.field(default=None, description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order")
+    seq: Optional[Ordering] = kante.field(default=None, description="Order by the act's position in the log — the log's own total order (RFC 0025)")
+    observed_at: Optional[Ordering] = kante.field(default=None, description="Order by world time — when the claim says the world was so (RFC 0015)")
     id: Optional[Ordering] = kante.field(default=None, description="Order by natural event ID")
 
 
@@ -61,7 +70,9 @@ class NaturalEventOrder:
 class ProtocolEventOrder:
     """Ordering options for protocol event queries."""
 
-    created_at: Optional[Ordering] = kante.field(default=None, description="Order by creation timestamp")
+    created_at: Optional[Ordering] = kante.field(default=None, description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order")
+    seq: Optional[Ordering] = kante.field(default=None, description="Order by the act's position in the log — the log's own total order (RFC 0025)")
+    observed_at: Optional[Ordering] = kante.field(default=None, description="Order by world time — when the claim says the world was so (RFC 0015)")
     id: Optional[Ordering] = kante.field(default=None, description="Order by protocol event ID")
 
 
@@ -69,7 +80,9 @@ class ProtocolEventOrder:
 class MeasurementOrder:
     """Ordering options for measurement queries."""
 
-    created_at: Optional[Ordering] = kante.field(default=None, description="Order by creation timestamp")
+    created_at: Optional[Ordering] = kante.field(default=None, description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order")
+    seq: Optional[Ordering] = kante.field(default=None, description="Order by the act's position in the log — the log's own total order (RFC 0025)")
+    observed_at: Optional[Ordering] = kante.field(default=None, description="Order by world time — when the claim says the world was so (RFC 0015)")
     id: Optional[Ordering] = kante.field(default=None, description="Order by measurement ID")
 
 
@@ -77,7 +90,9 @@ class MeasurementOrder:
 class StructureRelationOrder:
     """Ordering options for structure relation queries."""
 
-    created_at: Optional[Ordering] = kante.field(default=None, description="Order by creation timestamp")
+    created_at: Optional[Ordering] = kante.field(default=None, description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order")
+    seq: Optional[Ordering] = kante.field(default=None, description="Order by the act's position in the log — the log's own total order (RFC 0025)")
+    observed_at: Optional[Ordering] = kante.field(default=None, description="Order by world time — when the claim says the world was so (RFC 0015)")
     id: Optional[Ordering] = kante.field(default=None, description="Order by structure relation ID")
 
 
@@ -85,7 +100,9 @@ class StructureRelationOrder:
 class ParticipationOrder:
     """Ordering options for participation queries — see `filters.ParticipationFilter`."""
 
-    created_at: Optional[Ordering] = kante.field(default=None, description="Order by creation timestamp")
+    created_at: Optional[Ordering] = kante.field(default=None, description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order")
+    seq: Optional[Ordering] = kante.field(default=None, description="Order by the act's position in the log — the log's own total order (RFC 0025)")
+    observed_at: Optional[Ordering] = kante.field(default=None, description="Order by world time — when the claim says the world was so (RFC 0015)")
     id: Optional[Ordering] = kante.field(default=None, description="Order by participation ID")
 
 
@@ -93,7 +110,9 @@ class ParticipationOrder:
 class RelationOrder:
     """Ordering options for relation queries."""
 
-    created_at: Optional[Ordering] = kante.field(default=None, description="Order by creation timestamp")
+    created_at: Optional[Ordering] = kante.field(default=None, description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order")
+    seq: Optional[Ordering] = kante.field(default=None, description="Order by the act's position in the log — the log's own total order (RFC 0025)")
+    observed_at: Optional[Ordering] = kante.field(default=None, description="Order by world time — when the claim says the world was so (RFC 0015)")
     id: Optional[Ordering] = kante.field(default=None, description="Order by relation ID")
 
 

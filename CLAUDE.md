@@ -145,10 +145,12 @@ The load-bearing facts:
   belongs to one view. `createGraph` and the category-creation mutations take `backfill` to project
   the history a newly declared word already admits.
 - **And so does the read API, now.** Every id in the schema is a **bare uuid** — `Node.id` and
-  `Edge.id` and nothing else. `graphId`, `globalId`, `localId`, `Node.graph`, `Node.pinned` and the
+  `Edge.id` and nothing else. `graphId`, `globalId`, `localId`, `Node.pinned` and the
   `GlobalID`/`LocalID`/`StructureGlobalID` scalars are gone: each named a drawn vertex that a
-  reproject reassigns, a graph a node may not belong to singly, or (for `globalId`) a vertex
-  property nothing has ever written, so it *raised*. The composite `{graph}:{vertex_id}` parsers
+  reproject reassigns or (for `globalId`) a vertex property nothing has ever written, so it
+  *raised*. **`Node.graph` is back, and non-null (RFC 0025)**: a `Node` is one view's drawing and
+  is only ever built inside a view, with `asOfSeq` (the view's cursor) and `claim` (the
+  `Instance` beneath it); a reading with no view is an `Instance`, never a `Node`. The composite `{graph}:{vertex_id}` parsers
   went with them. **Edge list queries read `evidence.Link`**, not Cypher
   (`api/queries/_edges.py`) — five of the six matched labels the projector never writes and could
   only return empty, and all six handed out ids their own singular fetchers could not accept.
@@ -163,7 +165,7 @@ The load-bearing facts:
   `node(id:, graph:)` and the typed forms go through `api/queries/_nodes.py::one_in_graph`, the
   same membership-then-drawing path as `nodes(graph:)`, so the singular and plural reads are
   answer-equivalent — admitted-but-undrawn returns `RetrievedNode.from_row` (the shape a write
-  returns before anything is drawn, `schemaVersion` null), and a node the view does not admit is
+  returns before anything is drawn, no derived properties, categories from the rule), and a node the view does not admit is
   refused, with `instance(id:)` as the claim-grain reader. They used to take no graph and answer
   from `drawings[0]`, an arbitrary view (`projected_instance`, deleted with its caller
   `get_node`). Anything that reads a drawn record should be checked against
@@ -181,8 +183,9 @@ The load-bearing facts:
   home**, and it was not a label map: `Structure.informs`, `Description.target`, `Measurement.target`
   and the relation/sameness/participation endpoints each wrapped an unfiltered `Instance` fetch in a
   hardcoded `Entity(...)`, so an event reached through any of them was reported as an entity. They
-  all dispatch through `cast_node_to_graphql_type` now. If you add an endpoint resolver, dispatch —
-  never construct a subtype directly.
+  all return the **claim** now — `Instance`, through `_endpoint_instance` (RFC 0025): an edge
+  carries no view a `Node` could be drawn in, and `Instance.drawnIn` says which views do. If you add
+  an endpoint resolver, return the claim — never build a `Node` without a view.
 - **A write is named for the act and returns where the claim landed.** `assertEntityExists`, not
   `createEntity`; `retract*`, not `archive*` — and the controller agrees now, where six of its nine
   methods were still spelled `archive_*` while the API called them `retract`. Each returns the
@@ -196,8 +199,8 @@ The load-bearing facts:
   Those are *drawing* types — label, category, derived properties, schema version — and a write's
   result may be drawn nowhere, which is the ordinary outcome of naming a word no view declares. Two
   of `Entity`'s fields could not answer for that case: `schemaVersion` was `String!` over a value
-  only a projection supplies, and `richProperties` opened with `assert category_id is not None`.
-  Both are fixed (nullable, and `[]`) because `entity(id:)` can now reach them too. So the payload
+  only a projection supplies (gone since RFC 0025 — `asOfSeq` is the view's cursor), and
+  `richProperties` opened with `assert category_id is not None` (now `[]`). So the payload
   carries no category and no label: a claim names a **word** (`term`), and what a view makes of that
   word lives in its drawing. **There is no folded `stands` on either**: whether an instance exists
   has no organization-wide answer — `CurrentStanding` deliberately holds no row for one, because a

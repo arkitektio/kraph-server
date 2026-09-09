@@ -955,7 +955,9 @@ interface Category {
   """Description of the category"""
   description: String
 
-  """The name of the category as used in AGE (e.g. 'Cell', 'ROI')"""
+  """
+  The label this view draws the category's nodes or edges under — its name in the projection namespace. One view's rename of the word; never what a node *is* (that is the claim's kind)
+  """
   ageName: String!
 
   """Persistent URL for this category"""
@@ -1160,7 +1162,7 @@ type Classification implements Edge {
   assertion: Assertion!
 
   """The node this word was claimed about"""
-  source: Node!
+  source: Instance!
 
   """The organization's word that was claimed"""
   term: Term
@@ -2051,7 +2053,9 @@ type Description implements Edge {
   """The structure that is evidence here"""
   source: Structure!
 
-  """What this structure is evidence for — a node, or another claim"""
+  """
+  What this datum is evidence for — an individual as the log has it, or another claim (RFC 0025)
+  """
   target: InformsTarget!
 }
 
@@ -2083,10 +2087,10 @@ type Difference implements Edge {
   assertion: Assertion!
 
   """One of the two instances claimed to be distinct"""
-  source: Node!
+  source: Instance!
 
   """The other instance claimed to be distinct"""
-  target: Node!
+  target: Instance!
 }
 
 """
@@ -2172,19 +2176,24 @@ type Entity implements Node {
   id: ID!
 
   """
+  The view this node was read through (RFC 0025). Every `Node` is one view's drawing of an individual; the claim beneath it is `claim`, and a claim no view draws is an `Instance`, never a `Node`
+  """
+  graph: Graph!
+
+  """
+  The log position this view's drawing is as of — its projection cursor (`Graph.projection { projectedThroughSeq }`) at the time of the read. Derived properties and members are this view's fold of the log up to here; `Graph.projection { lag }` is how far behind the log that is
+  """
+  asOfSeq: Int!
+
+  """
+  The claim beneath this drawing: the representative's `Instance` row, as the log has it, with its standings, its own connections and every view that draws it
+  """
+  claim: Instance!
+
+  """
   Every instance this node stands for in the view it was read through — the closure of the sameness claims its category trusts, `id` included. One member when nobody claimed it the same as anything. Any member addresses this node
   """
   members: [ID!]!
-
-  """
-  Schema version the properties were derived under. Null when this reading came from the log rather than from a projection — a claim no view draws has no derived properties, so there is no version to name
-  """
-  schemaVersion: String
-
-  """
-  Always null. A per-node wall-clock stamp the projector no longer writes; ask `Graph.projection { derivedAt }` for when the view was last derived
-  """
-  lastDerived: UnixMilliseconds @deprecated(reason: "`__last_derived` is no longer stamped on vertices — it was the one projected value a rebuild could not reproduce. Read `Graph.projection { derivedAt projectedThroughSeq }` instead. Removed in the next major.")
 
   """
   Every instance claimed to be this same thing, this one included. A component of one means nobody has merged it
@@ -2192,7 +2201,7 @@ type Entity implements Node {
   component: [ID!]!
 
   """
-  What anyone has called this thing, with how many assertions say so. Two words means two people disagreed; one word with a count of two means they agreed
+  What anyone has called this thing, with how many assertions say so. Two words means two people disagreed; one word with a count of two means they agreed. **Organization grain** — the trust-everyone fold over the individual's members, not this view's rule (RFC 0024)
   """
   labels: [Label!]!
 
@@ -2212,7 +2221,7 @@ type Entity implements Node {
   conflicts: [Difference!]!
 
   """
-  Every standing claim connecting this thing to something else — relations, participations and the structures that inform it. Needs no graph query: they are all evidence rows, and the drawing of them is a projection
+  Every standing claim connecting this thing to something else — relations, participations and the datums that inform it. **Organization grain** — every claim in the log, not only what this view draws (RFC 0024)
   """
   connections: [Edge!]!
 
@@ -2220,9 +2229,6 @@ type Entity implements Node {
   Every view that actually draws this thing, and the category it draws it under. Read back from each projection, so a graph that declares the word but whose definition refuses the node is not listed
   """
   drawnIn: [NodeDrawing!]!
-
-  """The entity type/kind (e.g. 'AIS', 'Cell')"""
-  kind: String!
 
   """
   The ids of every category the view this was read through draws it under (RFC 0019). Empty when no view does
@@ -2289,7 +2295,9 @@ type EntityCategory implements NodeCategory & Category @key(fields: "id", resolv
   """
   key: String!
 
-  """The name of the category as used in AGE (e.g. 'Cell', 'ROI')"""
+  """
+  The label this view draws the category's nodes or edges under — its name in the projection namespace. One view's rename of the word; never what a node *is* (that is the claim's kind)
+  """
   ageName: String!
 
   """An image representing this category, for visualization purposes"""
@@ -2455,8 +2463,18 @@ input EntityFilter {
 
 """Ordering options for entity queries"""
 input EntityOrder {
-  """Order by creation timestamp"""
+  """
+  Order by when the row was stored — arrival time. Prefer `seq`, the log's order
+  """
   createdAt: Ordering = null
+
+  """
+  Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)
+  """
+  seq: Ordering = null
+
+  """Order by world time — when the claim says the world was so (RFC 0015)"""
+  observedAt: Ordering = null
 
   """Order by entity ID"""
   id: Ordering = null
@@ -2475,8 +2493,10 @@ input EntityPaginationInput {
 A domain event drawn in a graph — something that happened to the sample, never an entry of the assertion log
 """
 interface Event {
-  """The event's word, e.g. 'Mitosis' — what the claim says happened"""
-  kind: String!
+  """
+  The event's word — what the claim says happened, as the organization's term key (e.g. 'Mitosis'). The claim's, never a view's label
+  """
+  word: String!
 }
 
 """Base interface for event categories"""
@@ -2519,7 +2539,9 @@ interface EventCategory implements NodeCategory & Category {
   """
   key: String!
 
-  """The name of the category as used in AGE (e.g. 'Cell', 'ROI')"""
+  """
+  The label this view draws the category's nodes or edges under — its name in the projection namespace. One view's rename of the word; never what a node *is* (that is the claim's kind)
+  """
   ageName: String!
 
   """An image representing this category, for visualization purposes"""
@@ -2659,7 +2681,7 @@ type Graph @key(fields: "id", resolvable: true) {
   id: ID!
 
   """
-  Internal handle of the graph's Apache AGE namespace. Random, read-only, and not an identifier: address a graph by `id`.
+  Internal handle of the graph's projection namespace — the per-graph Postgres schema its property graph lives in. Random, read-only, and not an identifier: address a graph by `id`.
   """
   ageName: String!
 
@@ -2790,7 +2812,9 @@ input GraphOrder @oneOf {
 How far along the organization's log one view's drawing is. The projection is a cache of the evidence; this says how current a cache it is. `projectedThroughSeq` is a safe cursor: every assertion at or below it has been drawn here. `lag` is the distance to the log head; `pending` is how many assertions organization-wide nobody has finished drawing. `schemaStale` is the other axis — a category's rules moved and the vertices have not been redrawn under them.
 """
 type GraphProjection {
-  """Which kind of projection. Only Apache AGE exists today"""
+  """
+  Which kind of projection. Only the table kind exists today — ordinary Postgres tables plus a per-graph property graph
+  """
   kind: String!
   status: ProjectionStatus!
 
@@ -2949,7 +2973,7 @@ input GraphTableQueryOrder @oneOf {
 """A rendered table result for a saved graph table query"""
 type GraphTableRender {
   """
-  Internal AGE handle of the rendered view (read-only); address the view through `graph { id }`
+  Internal handle of the rendered view's namespace (read-only); address the view through `graph { id }`
   """
   graphName: String!
 
@@ -2963,8 +2987,10 @@ type GraphTableRender {
   rows: [AnyScalar!]!
 }
 
-"""What a structure is evidence for: a node, or another claim"""
-union InformsTarget = Entity | NaturalEvent | ProtocolEvent | Link
+"""
+What a structure is evidence for: an individual (as the log has it) or another claim (RFC 0025)
+"""
+union InformsTarget = Instance | Link
 
 """A claim that an entity went into an event"""
 type InputParticipation implements Edge {
@@ -2997,10 +3023,10 @@ type InputParticipation implements Edge {
   role: String
 
   """The event the node went into"""
-  target: Event!
+  target: Instance!
 
   """The node that took part"""
-  source: Node!
+  source: Instance!
 }
 
 """A claimed individual — an entity or an event, as the log has it"""
@@ -3341,7 +3367,7 @@ type Measurement implements Edge {
   source: Structure!
 
   """The node being measured"""
-  target: Node!
+  target: Instance!
 }
 
 """A measurement category definition"""
@@ -3369,7 +3395,9 @@ type MeasurementCategory implements EdgeCategory & Category @key(fields: "id", r
   """
   key: String!
 
-  """The name of the category as used in AGE (e.g. 'Cell', 'ROI')"""
+  """
+  The label this view draws the category's nodes or edges under — its name in the projection namespace. One view's rename of the word; never what a node *is* (that is the claim's kind)
+  """
   ageName: String!
 
   """An image representing this category, for visualization purposes"""
@@ -3507,8 +3535,18 @@ input MeasurementFilter {
 
 """Ordering options for measurement queries"""
 input MeasurementOrder {
-  """Order by creation timestamp"""
+  """
+  Order by when the row was stored — arrival time. Prefer `seq`, the log's order
+  """
   createdAt: Ordering = null
+
+  """
+  Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)
+  """
+  seq: Ordering = null
+
+  """Order by world time — when the claim says the world was so (RFC 0015)"""
+  observedAt: Ordering = null
 
   """Order by measurement ID"""
   id: Ordering = null
@@ -3856,7 +3894,7 @@ type Mutation {
   """
   Replace a relation with a new assertion, retracting the old one. Two assertions are recorded; the result reports the one that made the relation now standing
   """
-  updateRelation(input: UpdateRelationInput!): AssertedRelation!
+  supersedeRelation(input: SupersedeRelationInput!): AssertedRelation!
 
   """
   Retract a relation assertion without destroying it. The edge survives wherever another live assertion still states the same proposition
@@ -3869,7 +3907,7 @@ type Mutation {
   assertStructureRelationExists(input: AssertStructureRelationExistsInput!): AssertedStructureRelation!
 
   """Replace a structure relation, keeping the old assertion on the record"""
-  updateStructureRelation(input: UpdateStructureRelationInput!): AssertedStructureRelation!
+  supersedeStructureRelation(input: SupersedeStructureRelationInput!): AssertedStructureRelation!
 
   """Retract a structure relation assertion without destroying it"""
   retractStructureRelation(input: RetractStructureRelationInput!): AssertedStructureRelation!
@@ -4100,19 +4138,24 @@ type NaturalEvent implements Node & Event {
   id: ID!
 
   """
+  The view this node was read through (RFC 0025). Every `Node` is one view's drawing of an individual; the claim beneath it is `claim`, and a claim no view draws is an `Instance`, never a `Node`
+  """
+  graph: Graph!
+
+  """
+  The log position this view's drawing is as of — its projection cursor (`Graph.projection { projectedThroughSeq }`) at the time of the read. Derived properties and members are this view's fold of the log up to here; `Graph.projection { lag }` is how far behind the log that is
+  """
+  asOfSeq: Int!
+
+  """
+  The claim beneath this drawing: the representative's `Instance` row, as the log has it, with its standings, its own connections and every view that draws it
+  """
+  claim: Instance!
+
+  """
   Every instance this node stands for in the view it was read through — the closure of the sameness claims its category trusts, `id` included. One member when nobody claimed it the same as anything. Any member addresses this node
   """
   members: [ID!]!
-
-  """
-  Schema version the properties were derived under. Null when this reading came from the log rather than from a projection — a claim no view draws has no derived properties, so there is no version to name
-  """
-  schemaVersion: String
-
-  """
-  Always null. A per-node wall-clock stamp the projector no longer writes; ask `Graph.projection { derivedAt }` for when the view was last derived
-  """
-  lastDerived: UnixMilliseconds @deprecated(reason: "`__last_derived` is no longer stamped on vertices — it was the one projected value a rebuild could not reproduce. Read `Graph.projection { derivedAt projectedThroughSeq }` instead. Removed in the next major.")
 
   """
   Every instance claimed to be this same thing, this one included. A component of one means nobody has merged it
@@ -4120,7 +4163,7 @@ type NaturalEvent implements Node & Event {
   component: [ID!]!
 
   """
-  What anyone has called this thing, with how many assertions say so. Two words means two people disagreed; one word with a count of two means they agreed
+  What anyone has called this thing, with how many assertions say so. Two words means two people disagreed; one word with a count of two means they agreed. **Organization grain** — the trust-everyone fold over the individual's members, not this view's rule (RFC 0024)
   """
   labels: [Label!]!
 
@@ -4140,7 +4183,7 @@ type NaturalEvent implements Node & Event {
   conflicts: [Difference!]!
 
   """
-  Every standing claim connecting this thing to something else — relations, participations and the structures that inform it. Needs no graph query: they are all evidence rows, and the drawing of them is a projection
+  Every standing claim connecting this thing to something else — relations, participations and the datums that inform it. **Organization grain** — every claim in the log, not only what this view draws (RFC 0024)
   """
   connections: [Edge!]!
 
@@ -4149,8 +4192,10 @@ type NaturalEvent implements Node & Event {
   """
   drawnIn: [NodeDrawing!]!
 
-  """The event type/kind"""
-  kind: String!
+  """
+  The event's word — what the claim says happened, as the organization's term key (e.g. 'Mitosis'). The claim's, never a view's label
+  """
+  word: String!
 
   """
   The ids of every category the view this was read through draws it under (RFC 0019). Empty when no view does
@@ -4209,7 +4254,9 @@ type NaturalEventCategory implements EventCategory & NodeCategory & Category @ke
   """
   key: String!
 
-  """The name of the category as used in AGE (e.g. 'Cell', 'ROI')"""
+  """
+  The label this view draws the category's nodes or edges under — its name in the projection namespace. One view's rename of the word; never what a node *is* (that is the claim's kind)
+  """
   ageName: String!
 
   """An image representing this category, for visualization purposes"""
@@ -4307,8 +4354,18 @@ input NaturalEventFilter {
 
 """Ordering options for natural event queries"""
 input NaturalEventOrder {
-  """Order by creation timestamp"""
+  """
+  Order by when the row was stored — arrival time. Prefer `seq`, the log's order
+  """
   createdAt: Ordering = null
+
+  """
+  Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)
+  """
+  seq: Ordering = null
+
+  """Order by world time — when the claim says the world was so (RFC 0015)"""
+  observedAt: Ordering = null
 
   """Order by natural event ID"""
   id: Ordering = null
@@ -4341,19 +4398,24 @@ interface Node {
   id: ID!
 
   """
+  The view this node was read through (RFC 0025). Every `Node` is one view's drawing of an individual; the claim beneath it is `claim`, and a claim no view draws is an `Instance`, never a `Node`
+  """
+  graph: Graph!
+
+  """
+  The log position this view's drawing is as of — its projection cursor (`Graph.projection { projectedThroughSeq }`) at the time of the read. Derived properties and members are this view's fold of the log up to here; `Graph.projection { lag }` is how far behind the log that is
+  """
+  asOfSeq: Int!
+
+  """
+  The claim beneath this drawing: the representative's `Instance` row, as the log has it, with its standings, its own connections and every view that draws it
+  """
+  claim: Instance!
+
+  """
   Every instance this node stands for in the view it was read through — the closure of the sameness claims its category trusts, `id` included. One member when nobody claimed it the same as anything. Any member addresses this node
   """
   members: [ID!]!
-
-  """
-  Schema version the properties were derived under. Null when this reading came from the log rather than from a projection — a claim no view draws has no derived properties, so there is no version to name
-  """
-  schemaVersion: String
-
-  """
-  Always null. A per-node wall-clock stamp the projector no longer writes; ask `Graph.projection { derivedAt }` for when the view was last derived
-  """
-  lastDerived: UnixMilliseconds @deprecated(reason: "`__last_derived` is no longer stamped on vertices — it was the one projected value a rebuild could not reproduce. Read `Graph.projection { derivedAt projectedThroughSeq }` instead. Removed in the next major.")
 
   """
   Every instance claimed to be this same thing, this one included. A component of one means nobody has merged it
@@ -4361,7 +4423,7 @@ interface Node {
   component: [ID!]!
 
   """
-  What anyone has called this thing, with how many assertions say so. Two words means two people disagreed; one word with a count of two means they agreed
+  What anyone has called this thing, with how many assertions say so. Two words means two people disagreed; one word with a count of two means they agreed. **Organization grain** — the trust-everyone fold over the individual's members, not this view's rule (RFC 0024)
   """
   labels: [Label!]!
 
@@ -4381,7 +4443,7 @@ interface Node {
   conflicts: [Difference!]!
 
   """
-  Every standing claim connecting this thing to something else — relations, participations and the structures that inform it. Needs no graph query: they are all evidence rows, and the drawing of them is a projection
+  Every standing claim connecting this thing to something else — relations, participations and the datums that inform it. **Organization grain** — every claim in the log, not only what this view draws (RFC 0024)
   """
   connections: [Edge!]!
 
@@ -4456,8 +4518,18 @@ input NodeFilters {
 
 """Ordering options for node queries"""
 input NodeOrder {
-  """Order by creation timestamp"""
+  """
+  Order by when the row was stored — arrival time. Prefer `seq`, the log's order
+  """
   createdAt: Ordering = null
+
+  """
+  Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)
+  """
+  seq: Ordering = null
+
+  """Order by world time — when the claim says the world was so (RFC 0015)"""
+  observedAt: Ordering = null
 
   """Order by node ID"""
   id: Ordering = null
@@ -4535,10 +4607,10 @@ type OutputParticipation implements Edge {
   role: String
 
   """The node that came out"""
-  source: Node!
+  source: Instance!
 
   """The event the node came out of"""
-  target: Event!
+  target: Instance!
 }
 
 """A paragraph of the comment body"""
@@ -4595,8 +4667,18 @@ input ParticipationFilter {
 
 """Ordering options for participation queries"""
 input ParticipationOrder {
-  """Order by creation timestamp"""
+  """
+  Order by when the row was stored — arrival time. Prefer `seq`, the log's order
+  """
   createdAt: Ordering = null
+
+  """
+  Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)
+  """
+  seq: Ordering = null
+
+  """Order by world time — when the claim says the world was so (RFC 0015)"""
+  observedAt: Ordering = null
 
   """Order by relation ID"""
   id: Ordering = null
@@ -4732,19 +4814,24 @@ type ProtocolEvent implements Node & Event {
   id: ID!
 
   """
+  The view this node was read through (RFC 0025). Every `Node` is one view's drawing of an individual; the claim beneath it is `claim`, and a claim no view draws is an `Instance`, never a `Node`
+  """
+  graph: Graph!
+
+  """
+  The log position this view's drawing is as of — its projection cursor (`Graph.projection { projectedThroughSeq }`) at the time of the read. Derived properties and members are this view's fold of the log up to here; `Graph.projection { lag }` is how far behind the log that is
+  """
+  asOfSeq: Int!
+
+  """
+  The claim beneath this drawing: the representative's `Instance` row, as the log has it, with its standings, its own connections and every view that draws it
+  """
+  claim: Instance!
+
+  """
   Every instance this node stands for in the view it was read through — the closure of the sameness claims its category trusts, `id` included. One member when nobody claimed it the same as anything. Any member addresses this node
   """
   members: [ID!]!
-
-  """
-  Schema version the properties were derived under. Null when this reading came from the log rather than from a projection — a claim no view draws has no derived properties, so there is no version to name
-  """
-  schemaVersion: String
-
-  """
-  Always null. A per-node wall-clock stamp the projector no longer writes; ask `Graph.projection { derivedAt }` for when the view was last derived
-  """
-  lastDerived: UnixMilliseconds @deprecated(reason: "`__last_derived` is no longer stamped on vertices — it was the one projected value a rebuild could not reproduce. Read `Graph.projection { derivedAt projectedThroughSeq }` instead. Removed in the next major.")
 
   """
   Every instance claimed to be this same thing, this one included. A component of one means nobody has merged it
@@ -4752,7 +4839,7 @@ type ProtocolEvent implements Node & Event {
   component: [ID!]!
 
   """
-  What anyone has called this thing, with how many assertions say so. Two words means two people disagreed; one word with a count of two means they agreed
+  What anyone has called this thing, with how many assertions say so. Two words means two people disagreed; one word with a count of two means they agreed. **Organization grain** — the trust-everyone fold over the individual's members, not this view's rule (RFC 0024)
   """
   labels: [Label!]!
 
@@ -4772,7 +4859,7 @@ type ProtocolEvent implements Node & Event {
   conflicts: [Difference!]!
 
   """
-  Every standing claim connecting this thing to something else — relations, participations and the structures that inform it. Needs no graph query: they are all evidence rows, and the drawing of them is a projection
+  Every standing claim connecting this thing to something else — relations, participations and the datums that inform it. **Organization grain** — every claim in the log, not only what this view draws (RFC 0024)
   """
   connections: [Edge!]!
 
@@ -4781,8 +4868,10 @@ type ProtocolEvent implements Node & Event {
   """
   drawnIn: [NodeDrawing!]!
 
-  """The event type/kind"""
-  kind: String!
+  """
+  The event's word — what the claim says happened, as the organization's term key (e.g. 'Mitosis'). The claim's, never a view's label
+  """
+  word: String!
 
   """
   The ids of every category the view this was read through draws it under (RFC 0019). Empty when no view does
@@ -4841,7 +4930,9 @@ type ProtocolEventCategory implements EventCategory & NodeCategory & Category @k
   """
   key: String!
 
-  """The name of the category as used in AGE (e.g. 'Cell', 'ROI')"""
+  """
+  The label this view draws the category's nodes or edges under — its name in the projection namespace. One view's rename of the word; never what a node *is* (that is the claim's kind)
+  """
   ageName: String!
 
   """An image representing this category, for visualization purposes"""
@@ -4939,8 +5030,18 @@ input ProtocolEventFilter {
 
 """Ordering options for protocol event queries"""
 input ProtocolEventOrder {
-  """Order by creation timestamp"""
+  """
+  Order by when the row was stored — arrival time. Prefer `seq`, the log's order
+  """
   createdAt: Ordering = null
+
+  """
+  Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)
+  """
+  seq: Ordering = null
+
+  """Order by world time — when the claim says the world was so (RFC 0015)"""
+  observedAt: Ordering = null
 
   """Order by protocol event ID"""
   id: Ordering = null
@@ -5071,13 +5172,17 @@ type Query {
   """
   node(id: ID!, graph: ID!): Node!
 
-  """List nodes with optional filters, ordering, and pagination"""
+  """
+  List the individuals a view holds, as it draws them — view grain: one row per individual, membership from the view's rule, properties as of the view's cursor
+  """
   nodes(graph: ID!, filters: NodeFilters = null, ordering: [NodeOrder!] = null, pagination: NodePaginationInput = null): [Node!]!
 
   """Get an entity by ID, as the named view holds it — see `node`"""
   entity(id: ID!, graph: ID!): Entity!
 
-  """List entities with optional filters, ordering, and pagination"""
+  """
+  List the entities a category's view holds, as it draws them — view grain: one row per individual
+  """
   entities(entityCategoryId: ID!, filters: EntityFilter = null, ordering: [EntityOrder!] = null, pagination: EntityPaginationInput = null): [Entity!]!
 
   """Get a structure by ID — a bare uuid, its evidence primary key"""
@@ -5097,19 +5202,23 @@ type Query {
   """Get a natural event by ID, as the named view holds it — see `node`"""
   naturalEvent(id: ID!, graph: ID!): NaturalEvent!
 
-  """List natural events for a natural event category"""
+  """
+  List the natural events a category's view holds — view grain: one row per individual
+  """
   naturalEvents(naturalEventCategoryId: ID!, filters: NaturalEventFilter = null, ordering: [NaturalEventOrder!] = null, pagination: NaturalEventPaginationInput = null): [NaturalEvent!]!
 
   """Get a protocol event by ID, as the named view holds it — see `node`"""
   protocolEvent(id: ID!, graph: ID!): ProtocolEvent!
 
-  """List protocol events for a protocol event category"""
+  """
+  List the protocol events a category's view holds — view grain: one row per individual
+  """
   protocolEvents(protocolEventCategoryId: ID!, filters: ProtocolEventFilter = null, ordering: [ProtocolEventOrder!] = null, pagination: ProtocolEventPaginationInput = null): [ProtocolEvent!]!
 
   """Get a measurement claim by ID — a bare uuid, its `Link` primary key"""
   measurement(id: ID!): Measurement!
 
-  """List measurements for a measurement category"""
+  """List the measurement claims a category's rule admits — log grain"""
   measurements(measurementCategoryId: ID!, filters: MeasurementFilter = null, ordering: [MeasurementOrder!] = null, pagination: MeasurementPaginationInput = null): [Measurement!]!
 
   """Get an INFORMS claim by ID — a bare uuid, its `Link` primary key"""
@@ -5120,7 +5229,9 @@ type Query {
   """
   inputParticipation(id: ID!): InputParticipation!
 
-  """List input participation edges in a graph"""
+  """
+  List the input participation claims a view admits — log grain, under the view's event categories' rules
+  """
   inputParticipations(graph: ID!, filters: ParticipationFilter = null, ordering: [ParticipationOrder!] = null, pagination: ParticipationPaginationInput = null): [InputParticipation!]!
 
   """
@@ -5128,7 +5239,9 @@ type Query {
   """
   outputParticipation(id: ID!): OutputParticipation!
 
-  """List output participation edges in a graph"""
+  """
+  List the output participation claims a view admits — log grain, under the view's event categories' rules
+  """
   outputParticipations(graph: ID!, filters: ParticipationFilter = null, ordering: [ParticipationOrder!] = null, pagination: ParticipationPaginationInput = null): [OutputParticipation!]!
 
   """
@@ -5147,7 +5260,9 @@ type Query {
   """Get a relation claim by ID — a bare uuid, its `Link` primary key"""
   relation(id: ID!): Relation!
 
-  """List relations for a relation category"""
+  """
+  List the relation claims a category's rule admits — log grain: every claim, standings folded under the category's rule, however the view draws them
+  """
   relations(relationCategoryId: ID!, filters: RelationFilter = null, ordering: [RelationOrder!] = null, pagination: RelationPaginationInput = null): [Relation!]!
 
   """
@@ -5155,7 +5270,9 @@ type Query {
   """
   structureRelation(id: ID!): StructureRelation!
 
-  """List structure relations for a structure relation category"""
+  """
+  List the structure relation claims a category's rule admits — log grain
+  """
   structureRelations(structureRelationCategoryId: ID!, filters: StructureRelationFilter = null, ordering: [StructureRelationOrder!] = null, pagination: StructureRelationPaginationInput = null): [StructureRelation!]!
 
   """Get a metric by ID"""
@@ -5190,7 +5307,9 @@ type Query {
   """Get one metric kind by ID"""
   metricKind(id: ID!): MetricKind!
 
-  """Render results for a graph table query"""
+  """
+  Render a saved table query. Answers from the **drawing**: a page of the view's property graph as of its cursor, filtered, ordered and paged there — the one read with no log path. `Graph.projection { lag }` says how far behind the log it is
+  """
   renderGraphTable(query: ID!, filters: RenderGraphTableFilter = null, pagination: RenderGraphTablePagination = null, order: RenderGraphTableOrder = null): GraphTableRender
 }
 
@@ -5239,10 +5358,10 @@ type Relation implements Edge {
   assertion: Assertion!
 
   """The node this relation runs from"""
-  source: Node!
+  source: Instance!
 
   """The node this relation runs to"""
-  target: Node!
+  target: Instance!
 
   """When this relation was created"""
   createdAt: DateTime
@@ -5276,7 +5395,9 @@ type RelationCategory implements EdgeCategory & Category @key(fields: "id", reso
   """
   key: String!
 
-  """The name of the category as used in AGE (e.g. 'Cell', 'ROI')"""
+  """
+  The label this view draws the category's nodes or edges under — its name in the projection namespace. One view's rename of the word; never what a node *is* (that is the claim's kind)
+  """
   ageName: String!
 
   """An image representing this category, for visualization purposes"""
@@ -5411,8 +5532,18 @@ input RelationFilter {
 
 """Ordering options for relation queries"""
 input RelationOrder {
-  """Order by creation timestamp"""
+  """
+  Order by when the row was stored — arrival time. Prefer `seq`, the log's order
+  """
   createdAt: Ordering = null
+
+  """
+  Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)
+  """
+  seq: Ordering = null
+
+  """Order by world time — when the claim says the world was so (RFC 0015)"""
+  observedAt: Ordering = null
 
   """Order by relation ID"""
   id: Ordering = null
@@ -5810,10 +5941,10 @@ type Sameness implements Edge {
   assertion: Assertion!
 
   """One of the two instances claimed to be the same"""
-  source: Node!
+  source: Instance!
 
   """The other instance claimed to be the same"""
-  target: Node!
+  target: Instance!
 }
 
 """
@@ -6001,9 +6132,9 @@ type Structure {
   comments: [Comment!]!
 
   """
-  The nodes this structure is evidence for. Where its labels, merges and connections live — a structure is a pointer to an external datum and is never itself claimed to be an AIS
+  The individuals this datum is evidence for, as the log has them (RFC 0025). Where their labels, merges and connections live; `Instance.drawnIn` says which views draw each
   """
-  informs: [Node!]!
+  informs: [Instance!]!
 
   """
   The standing DERIVED_FROM citations this claim made: the claims it came from, one link each, oldest first. Retract one with `retractLinks` (RFC 0017)
@@ -6130,8 +6261,18 @@ scalar StructureObject
 
 """Ordering options for structure queries"""
 input StructureOrder {
-  """Order by creation timestamp"""
+  """
+  Order by when the row was stored — arrival time. Prefer `seq`, the log's order
+  """
   createdAt: Ordering = null
+
+  """
+  Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)
+  """
+  seq: Ordering = null
+
+  """Order by world time — when the claim says the world was so (RFC 0015)"""
+  observedAt: Ordering = null
 
   """Order by structure ID"""
   id: Ordering = null
@@ -6224,7 +6365,9 @@ type StructureRelationCategory implements EdgeCategory & Category @key(fields: "
   """
   key: String!
 
-  """The name of the category as used in AGE (e.g. 'Cell', 'ROI')"""
+  """
+  The label this view draws the category's nodes or edges under — its name in the projection namespace. One view's rename of the word; never what a node *is* (that is the claim's kind)
+  """
   ageName: String!
 
   """An image representing this category, for visualization purposes"""
@@ -6359,8 +6502,18 @@ input StructureRelationFilter {
 
 """Ordering options for structure relation queries"""
 input StructureRelationOrder {
-  """Order by creation timestamp"""
+  """
+  Order by when the row was stored — arrival time. Prefer `seq`, the log's order
+  """
   createdAt: Ordering = null
+
+  """
+  Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)
+  """
+  seq: Ordering = null
+
+  """Order by world time — when the claim says the world was so (RFC 0015)"""
+  observedAt: Ordering = null
 
   """Order by structure relation ID"""
   id: Ordering = null
@@ -6413,6 +6566,66 @@ input SupersedeMetricValueInput {
   derivedFrom: [String!]! = []
 
   """The ID of the metric to update"""
+  id: String!
+}
+
+"""Input for updating an existing relation"""
+input SupersedeRelationInput {
+  """The ID of the source entity/structure"""
+  sourceId: String!
+
+  """The ID of the target entity/structure"""
+  targetId: String!
+
+  """List of evidence structures with measurements"""
+  supportingEvidence: [StructureReferenceInput!]! = []
+
+  """
+  When the world was in this state — world time, the axis a scientist means by 'when'. Distinct from when it is claimed, which the assertion records; left unset, the two are equal. A point, not an interval: a duration is a metric.
+  """
+  observedAt: DateTime = null
+
+  """
+  How sure you are, 0 to 1. Left unset, the claim carries no number — which is neither 1.0 nor 0.0: a category rule with a CONFIDENCE condition admits only claims that carry one.
+  """
+  confidence: Float = null
+
+  """
+  The claims this one came from — ids of instances, links, metrics or structures in your organization. Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.
+  """
+  derivedFrom: [String!]! = []
+
+  """The ID of the relation to update"""
+  id: String!
+}
+
+"""Input for updating an existing structure relation"""
+input SupersedeStructureRelationInput {
+  """The ID of the source entity/structure"""
+  sourceId: String!
+
+  """The ID of the target entity/structure"""
+  targetId: String!
+
+  """List of evidence structures with measurements"""
+  supportingEvidence: [StructureReferenceInput!]! = []
+
+  """
+  When the world was in this state — world time, the axis a scientist means by 'when'. Distinct from when it is claimed, which the assertion records; left unset, the two are equal. A point, not an interval: a duration is a metric.
+  """
+  observedAt: DateTime = null
+
+  """
+  How sure you are, 0 to 1. Left unset, the claim carries no number — which is neither 1.0 nor 0.0: a category rule with a CONFIDENCE condition admits only claims that carry one.
+  """
+  confidence: Float = null
+
+  """
+  The claims this one came from — ids of instances, links, metrics or structures in your organization. Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.
+  """
+  derivedFrom: [String!]! = []
+
+  """The ID of the structure relation to update"""
   id: String!
 }
 
@@ -6520,8 +6733,6 @@ enum TermKind {
   RELATION
   STRUCTURE_RELATION
 }
-
-scalar UnixMilliseconds
 
 """Input for updating an existing entity definition in the graph schema"""
 input UpdateEntityCategoryInput {
@@ -6819,36 +7030,6 @@ input UpdateRelationCategoryInput {
   clearDefinition: Boolean! = false
 }
 
-"""Input for updating an existing relation"""
-input UpdateRelationInput {
-  """The ID of the source entity/structure"""
-  sourceId: String!
-
-  """The ID of the target entity/structure"""
-  targetId: String!
-
-  """List of evidence structures with measurements"""
-  supportingEvidence: [StructureReferenceInput!]! = []
-
-  """
-  When the world was in this state — world time, the axis a scientist means by 'when'. Distinct from when it is claimed, which the assertion records; left unset, the two are equal. A point, not an interval: a duration is a metric.
-  """
-  observedAt: DateTime = null
-
-  """
-  How sure you are, 0 to 1. Left unset, the claim carries no number — which is neither 1.0 nor 0.0: a category rule with a CONFIDENCE condition admits only claims that carry one.
-  """
-  confidence: Float = null
-
-  """
-  The claims this one came from — ids of instances, links, metrics or structures in your organization. Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.
-  """
-  derivedFrom: [String!]! = []
-
-  """The ID of the relation to update"""
-  id: String!
-}
-
 """Input for updating a scatter plot"""
 input UpdateScatterPlotInput {
   """The display name of the scatter plot"""
@@ -6963,36 +7144,6 @@ input UpdateStructureRelationCategoryInput {
   Reset the category to primitive — any claim naming its word counts, standings organization grain
   """
   clearDefinition: Boolean! = false
-}
-
-"""Input for updating an existing structure relation"""
-input UpdateStructureRelationInput {
-  """The ID of the source entity/structure"""
-  sourceId: String!
-
-  """The ID of the target entity/structure"""
-  targetId: String!
-
-  """List of evidence structures with measurements"""
-  supportingEvidence: [StructureReferenceInput!]! = []
-
-  """
-  When the world was in this state — world time, the axis a scientist means by 'when'. Distinct from when it is claimed, which the assertion records; left unset, the two are equal. A point, not an interval: a duration is a metric.
-  """
-  observedAt: DateTime = null
-
-  """
-  How sure you are, 0 to 1. Left unset, the claim carries no number — which is neither 1.0 nor 0.0: a category rule with a CONFIDENCE condition admits only claims that carry one.
-  """
-  confidence: Float = null
-
-  """
-  The claims this one came from — ids of instances, links, metrics or structures in your organization. Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.
-  """
-  derivedFrom: [String!]! = []
-
-  """The ID of the structure relation to update"""
-  id: String!
 }
 
 """Input for editing how one of the organization's words presents itself"""

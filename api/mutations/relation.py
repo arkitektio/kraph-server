@@ -42,7 +42,7 @@ def assert_relation_exists(info: Info, input: inputs.AssertRelationExistsInput) 
     )
 
 
-def update_relation(info: Info, input: inputs.UpdateRelationInput) -> types.AssertedRelation:
+def supersede_relation(info: Info, input: inputs.SupersedeRelationInput) -> types.AssertedRelation:
     """Replace a relation with a new assertion, keeping the old one on the record.
 
     Keeps the name `update`, unlike `supersedeMetricValue`: the retraction here is

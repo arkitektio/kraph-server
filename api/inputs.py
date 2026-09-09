@@ -528,8 +528,8 @@ class RetractRelationInput:
     confidence: Optional[float] = strawberry.field(default=None, description=input_models.CONFIDENCE_FIELD_DESCRIPTION)
 
 
-@pydantic.input(model=input_models.UpdateRelationInput, all_fields=True, description="Input for updating an existing relation")
-class UpdateRelationInput:
+@pydantic.input(model=input_models.SupersedeRelationInput, all_fields=True, description="Input for updating an existing relation")
+class SupersedeRelationInput:
     """Input for updating an existing relation."""
 
     pass
@@ -542,8 +542,8 @@ class AssertStructureRelationExistsInput:
     pass
 
 
-@pydantic.input(model=input_models.UpdateStructureRelationInput, all_fields=True, description="Input for updating an existing structure relation")
-class UpdateStructureRelationInput:
+@pydantic.input(model=input_models.SupersedeStructureRelationInput, all_fields=True, description="Input for updating an existing structure relation")
+class SupersedeStructureRelationInput:
     """Input for updating an existing structure relation."""
 
     pass

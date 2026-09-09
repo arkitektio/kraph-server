@@ -47,25 +47,25 @@ class Query:
     # Entity Type Section
     # =========================
     node = kante.django_field(queries.node, description="Get a node by ID, as the named view holds it. Refused when that view does not admit the node; the claim itself is `instance(id:)`")
-    nodes = kante.django_field(queries.nodes, description="List nodes with optional filters, ordering, and pagination")
+    nodes = kante.django_field(queries.nodes, description="List the individuals a view holds, as it draws them — view grain: one row per individual, membership from the view's rule, properties as of the view's cursor")
 
     entity = kante.django_field(queries.entity, description="Get an entity by ID, as the named view holds it — see `node`")
-    entities = kante.django_field(queries.entities, description="List entities with optional filters, ordering, and pagination")
+    entities = kante.django_field(queries.entities, description="List the entities a category's view holds, as it draws them — view grain: one row per individual")
     structure = kante.django_field(queries.structure, description="Get a structure by ID — a bare uuid, its evidence primary key")
     structures = kante.django_field(queries.structures, description="List structures with optional filters, ordering, and pagination")
     structure_by_identifier = kante.django_field(queries.structure_by_identifier, description="Get a structure by identifier and object. No graph: a structure belongs to the organization and has no vertex in any projection")
     informing_structures = kante.django_field(queries.informing_structures, description="List the structures that are evidence for an entity")
     natural_event = kante.django_field(queries.natural_event, description="Get a natural event by ID, as the named view holds it — see `node`")
-    natural_events = kante.django_field(queries.natural_events, description="List natural events for a natural event category")
+    natural_events = kante.django_field(queries.natural_events, description="List the natural events a category's view holds — view grain: one row per individual")
     protocol_event = kante.django_field(queries.protocol_event, description="Get a protocol event by ID, as the named view holds it — see `node`")
-    protocol_events = kante.django_field(queries.protocol_events, description="List protocol events for a protocol event category")
+    protocol_events = kante.django_field(queries.protocol_events, description="List the protocol events a category's view holds — view grain: one row per individual")
     measurement = kante.django_field(queries.measurement, description="Get a measurement claim by ID — a bare uuid, its `Link` primary key")
-    measurements = kante.django_field(queries.measurements, description="List measurements for a measurement category")
+    measurements = kante.django_field(queries.measurements, description="List the measurement claims a category's rule admits — log grain")
     description = kante.django_field(queries.description, description="Get an INFORMS claim by ID — a bare uuid, its `Link` primary key")
     input_participation = kante.django_field(queries.input_participation, description="Get an input participation claim by ID — a bare uuid, its `Link` primary key")
-    input_participations = kante.django_field(queries.input_participations, description="List input participation edges in a graph")
+    input_participations = kante.django_field(queries.input_participations, description="List the input participation claims a view admits — log grain, under the view's event categories' rules")
     output_participation = kante.django_field(queries.output_participation, description="Get an output participation claim by ID — a bare uuid, its `Link` primary key")
-    output_participations = kante.django_field(queries.output_participations, description="List output participation edges in a graph")
+    output_participations = kante.django_field(queries.output_participations, description="List the output participation claims a view admits — log grain, under the view's event categories' rules")
     # The log itself (RFC 0020). `assertion` / `assertions` existed once before,
     # running Cypher for an AGE `Assertion` edge nothing had ever written, and
     # were removed for it. These read `evidence.Assertion`.
@@ -73,9 +73,9 @@ class Query:
     assertion = kante.django_field(queries.assertion, description="One act of claiming, with every claim it recorded")
     changes = kante.django_field(queries.changes, description="The log forward from a seq, ascending, cut at the committed horizon — the read a consumer polls without ever skipping a late-committing act")
     relation = kante.django_field(queries.relation, description="Get a relation claim by ID — a bare uuid, its `Link` primary key")
-    relations = kante.django_field(queries.relations, description="List relations for a relation category")
+    relations = kante.django_field(queries.relations, description="List the relation claims a category's rule admits — log grain: every claim, standings folded under the category's rule, however the view draws them")
     structure_relation = kante.django_field(queries.structure_relation, description="Get a structure relation claim by ID — a bare uuid, its `Link` primary key")
-    structure_relations = kante.django_field(queries.structure_relations, description="List structure relations for a structure relation category")
+    structure_relations = kante.django_field(queries.structure_relations, description="List the structure relation claims a category's rule admits — log grain")
     metric = kante.django_field(queries.metric, description="Get a metric by ID")
     metrics = kante.django_field(queries.metrics, description="List every un-retracted metric recorded under one metric kind")
     metrics_for_structure = kante.django_field(queries.metrics_for_structure, description="List every un-retracted metric describing a structure")
@@ -116,6 +116,11 @@ class Query:
     # all. A read surface over a cache that stops being maintained is worse than
     # no read surface. See RFC 0001 §6.
 
+    # ------------------------------------------------------------------
+    # Product surface, not the model. Aggregate counts over schema rows,
+    # saved analyses, pins and mentions answer neither from the log nor
+    # from a drawing (RFC 0025).
+    # ------------------------------------------------------------------
     graph_stats: types.GraphStats = kante.django_field(description="Get aggregated graph stats with optional filters", resolver=types.GraphStatsResolver)
     entity_category_stats: types.EntityCategoryStats = kante.django_field(description="Get aggregated entity-category stats with optional filters", resolver=types.EntityCategoryStatsResolver)
     structure_kind_stats: types.StructureKindStats = kante.django_field(description="Aggregated structure-kind stats", resolver=types.StructureKindStatsResolver)
@@ -136,9 +141,9 @@ class Query:
     # `GraphPathQuery` had a type, a dataloader and all four mutations, and no way
     # to read one back — the only member of the family missing its root fields.
 
-
-
-    render_graph_table = kante.django_field(queries.render_graph_table, description="Render results for a graph table query")
+    render_graph_table = kante.django_field(
+        queries.render_graph_table, description="Render a saved table query. Answers from the **drawing**: a page of the view's property graph as of its cursor, filtered, ordered and paged there — the one read with no log path. `Graph.projection { lag }` says how far behind the log it is"
+    )
 
     scatter_plots: list[types.ScatterPlot] = kante.django_field(description="Show all saved scatter plots")
     scatter_plot: types.ScatterPlot = kante.django_field(description="Show a single saved scatter plot by ID")
@@ -239,9 +244,9 @@ class Mutation:
         description="Assert a relation between two entities, under one of the organization's words",
         resolver=mutations.assert_relation_exists,
     )
-    update_relation = kante.django_mutation(
+    supersede_relation = kante.django_mutation(
         description="Replace a relation with a new assertion, retracting the old one. Two assertions are recorded; the result reports the one that made the relation now standing",
-        resolver=mutations.update_relation,
+        resolver=mutations.supersede_relation,
     )
     retract_relation = kante.django_mutation(
         description="Retract a relation assertion without destroying it. The edge survives wherever another live assertion still states the same proposition",
@@ -251,9 +256,9 @@ class Mutation:
         description="Assert a relation between two structures. Drawings are always empty: neither endpoint has a vertex",
         resolver=mutations.assert_structure_relation_exists,
     )
-    update_structure_relation = kante.django_mutation(
+    supersede_structure_relation = kante.django_mutation(
         description="Replace a structure relation, keeping the old assertion on the record",
-        resolver=mutations.update_structure_relation,
+        resolver=mutations.supersede_structure_relation,
     )
     retract_structure_relation = kante.django_mutation(
         description="Retract a structure relation assertion without destroying it",
@@ -320,6 +325,10 @@ class Mutation:
         resolver=mutations.retract_different_instance,
     )
 
+    # ------------------------------------------------------------------
+    # Product surface, not the model. Object-store upload grants: nothing
+    # below records a claim or reads a view (RFC 0025).
+    # ------------------------------------------------------------------
     request_media_upload = kante.django_mutation(
         description="Upload media and return a URL for access",
         resolver=datalayer_mutations.request_media_upload,
@@ -381,14 +390,6 @@ class Mutation:
         description="Archive a graph table query",
         resolver=mutations.archive_graph_table_query,
     )
-
-
-
-
-
-
-
-
 
     create_scatter_plot = kante.django_mutation(
         description="Create a scatter plot",

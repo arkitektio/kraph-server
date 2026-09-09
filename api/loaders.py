@@ -192,13 +192,12 @@ def _batch_known_about_nodes() -> Callable[[list[PKType]], Any]:
     exists to avoid. `evidence.panel.known_about` does the work; this is only the
     thread hop.
 
-    Keys are ``(graph_handle, ref)`` pairs again (RFC 0011): a drawn node's
-    component and sameness fold per view — rule-driven, within its category —
-    so they are that view's answer, while labels and connections stay
-    organization grain inside `known_about` itself. An empty handle — a
-    claim-grain read with no view by construction — gets the organization-wide
-    fold. The handle is resolved internally from our own drawn record; it is
-    still never accepted as *input* (RFC 0006).
+    Keys are ``(graph_pk, ref)`` pairs (RFC 0025): a `Node` always names its
+    view, so its component and sameness fold under that view's rule, while
+    labels and connections stay the trust-everyone fold inside `known_about`
+    itself (RFC 0024). ``None`` for the graph — an `Instance`, the claim-grain
+    read — gets the trust-everyone fold for everything. The view is named by
+    primary key; the projection handle is never an address (RFC 0006).
     """
     from collections import defaultdict
 
@@ -208,18 +207,18 @@ def _batch_known_about_nodes() -> Callable[[list[PKType]], Any]:
         from core import models as core_models
         from evidence import panel
 
-        normalized = [(str(key[0] or ""), str(key[1])) for key in keys]  # type: ignore[index]
+        normalized = [(int(key[0]) if key[0] is not None else None, str(key[1])) for key in keys]  # type: ignore[index]
 
-        def work() -> dict[tuple[str, str], Any]:
-            refs_by_handle: dict[str, list[str]] = defaultdict(list)
-            for handle, ref in normalized:
-                if ref not in refs_by_handle[handle]:
-                    refs_by_handle[handle].append(ref)
-            graphs = {graph.age_name: graph for graph in core_models.Graph.objects.filter(age_name__in=[handle for handle in refs_by_handle if handle])}
-            answers: dict[tuple[str, str], Any] = {}
-            for handle, refs in refs_by_handle.items():
-                for ref, known in zip(refs, panel.known_about(refs, graph=graphs.get(handle))):
-                    answers[(handle, ref)] = known
+        def work() -> dict[tuple[Any, str], Any]:
+            refs_by_graph: dict[Any, list[str]] = defaultdict(list)
+            for graph_id, ref in normalized:
+                if ref not in refs_by_graph[graph_id]:
+                    refs_by_graph[graph_id].append(ref)
+            graphs = {graph.pk: graph for graph in core_models.Graph.objects.filter(pk__in=[graph_id for graph_id in refs_by_graph if graph_id is not None])}
+            answers: dict[tuple[Any, str], Any] = {}
+            for graph_id, refs in refs_by_graph.items():
+                for ref, known in zip(refs, panel.known_about(refs, graph=graphs.get(graph_id))):
+                    answers[(graph_id, ref)] = known
             return answers
 
         answers = await sync_to_async(work)()

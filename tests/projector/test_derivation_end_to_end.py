@@ -116,11 +116,11 @@ async def test_the_projection_carries_its_schema_version(
     result = await api_schema.execute(
         """
         query Entity($id: ID!, $graph: ID!) {
-            node(id: $id, graph: $graph) { ... on Entity { id schemaVersion } }
+            node(id: $id, graph: $graph) { asOfSeq graph { id } ... on Entity { id } }
         }
         """,
         variable_values={"id": created.data["assertEntityExists"]["instance"]["id"], "graph": str(test_graph.id)},
         context_value=simple_api_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
-    assert result.data["node"]["schemaVersion"], "A projected entity must name the schema that derived it"
+    assert result.data["node"]["graph"]["id"] == str(test_graph.id) and result.data["node"]["asOfSeq"] >= 0, "A projected entity names the view and the position it is as of"
