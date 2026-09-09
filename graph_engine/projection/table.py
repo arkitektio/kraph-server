@@ -201,7 +201,12 @@ class TableProjector:
         if row is None:
             return False
         for key, value in values.items():
-            row.properties[self.validate_key(key)] = value
+            # No value, no key: a derived property whose evidence stopped
+            # supporting it is cleared, not left at its last number (RFC 0023).
+            if value is None:
+                row.properties.pop(self.validate_key(key), None)
+            else:
+                row.properties[self.validate_key(key)] = value
         row.save(update_fields=["properties"])
         return True
 

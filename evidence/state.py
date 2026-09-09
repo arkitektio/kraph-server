@@ -195,14 +195,16 @@ def _structures_informing(state: evidence_models.State) -> list[uuid.UUID]:
     uuid = character varying". Parsing at this boundary is the price of keeping
     the refs opaque everywhere else, which is what makes M7 a re-point.
     """
-    refs = (
-        evidence_models.Link.objects.for_organization(state.organization)
-        .filter(
+    # Standing INFORMS links only, from datums that stand (RFC 0023). Both used
+    # to be read unfolded here, so a retracted link — or a retracted datum —
+    # kept feeding the rebuild this function is the backstop for.
+    refs = claims_module.standing(
+        evidence_models.Link.objects.for_organization(state.organization).filter(
             kind=evidence_models.Link.Kind.INFORMS,
             target_ref=state.claim_ref,
-        )
-        .values_list("source_ref", flat=True)
-    )
+        ),
+        "link",
+    ).values_list("source_ref", flat=True)
 
     structure_ids: list[uuid.UUID] = []
     for ref in refs:
@@ -213,7 +215,30 @@ def _structures_informing(state: evidence_models.State) -> list[uuid.UUID]:
             # simply not evidence for a rollup. Skipping is correct; raising
             # would make one unrelated link break every recompute.
             continue
-    return structure_ids
+    if not structure_ids:
+        return []
+    return list(
+        claims_module.standing(
+            evidence_models.Structure.objects.for_organization(state.organization).filter(pk__in=structure_ids),
+            "structure",
+        ).values_list("pk", flat=True)
+    )
+
+
+def refold(organization: Any, claim_refs: Iterable[str], source_kind: Any) -> int:
+    """Recompute every row of these individuals fed by one kind of datum.
+
+    The correction a datum's standing needs (RFC 0023): when a structure is
+    retracted or attested, or an INFORMS link is, the rows it fed cannot be
+    delta-corrected — `retract` takes one metric — so they are rebuilt from the
+    metrics that still count. Returns how many rows were refolded.
+    """
+    rows = evidence_models.State.all_objects.filter(organization=organization, claim_ref__in=[str(ref) for ref in claim_refs], source_kind=source_kind)
+    count = 0
+    for state in list(rows):
+        recompute(state)
+        count += 1
+    return count
 
 
 def recompute_stale(organization: Any, limit: int | None = None) -> int:

@@ -20,7 +20,7 @@ from kante.context import HttpContext
 from core import models as core_models
 from evidence import models as evidence_models
 
-INGEST_INPUTS = ["AssertMetricValueInput", "AssertStructureExistsInput", "EnsureStructureInput"]
+INGEST_INPUTS = ["AssertMetricValueInput", "AssertStructureExistsInput"]
 
 
 @pytest.mark.parametrize("type_name", INGEST_INPUTS)

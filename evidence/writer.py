@@ -231,19 +231,25 @@ def ensure_structure(
     kind: evidence_models.StructureKind,
     object: str,
     assertion: evidence_models.Assertion,
+    *,
+    observed_at: datetime.datetime | None = None,
+    confidence: float | None = None,
 ) -> evidence_models.Structure:
-    """Get or create the structure for an external datum.
+    """Get or create the individual for an external datum (RFC 0023).
 
     Idempotent by identity rather than by kind: two projections resolving the
     same ``(identifier, object)`` converge on one row, which is the whole point of
-    scoping evidence to the organization. The first assertion to introduce the
-    structure is the one recorded — later references are not re-attributions.
+    an external identity. The first assertion to introduce the datum is the one
+    on the row — a later *reference* (a metric, a comment, supporting evidence)
+    is not a re-attribution, exactly as a relation claim between two entities
+    does not re-assert their existence. An explicit second existence claim is
+    the caller's to record as a standing; see `GraphController.create_structure`.
     """
     structure, _ = evidence_models.Structure.objects.for_organization(organization).get_or_create(
         organization=organization,
         identifier=kind.identifier,
         object=object,
-        defaults={"kind": kind, "assertion": assertion},
+        defaults={"kind": kind, "assertion": assertion, "observed_at": observed_at, "confidence": confidence},
     )
     return structure
 
@@ -546,8 +552,14 @@ def active_metrics_for_structures(
     for the Cypher `MATCH (m:Metric)-[:DESCRIBES]->(s)` that rollups used to
     walk.
     """
+    # The datum's own standing counts too (RFC 0023): a retracted structure's
+    # measurements are not evidence for anything until somebody attests it again.
+    standing_structures = claims_module.standing(
+        evidence_models.Structure.objects.for_organization(organization).filter(pk__in=list(structure_ids)),
+        "structure",
+    )
     standing = claims_module.standing(
-        evidence_models.Metric.objects.for_organization(organization).filter(structure_id__in=list(structure_ids)),
+        evidence_models.Metric.objects.for_organization(organization).filter(structure__in=standing_structures),
         "metric",
     )
     return standing.order_by("observed_at")

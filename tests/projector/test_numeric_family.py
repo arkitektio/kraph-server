@@ -186,5 +186,7 @@ def test_a_key_with_no_evidence_derives_nothing_quietly(
     with caplog.at_level(logging.WARNING, logger="graph_engine.projector"):
         derived = projector.derive_properties(graph_a, measured, category)
 
-    assert "score" not in derived
+    # No value, spelled as `None`: the projector hands the writer every key so a
+    # key whose evidence went away is cleared from the drawing (RFC 0023).
+    assert derived.get("score") is None
     assert not [record for record in caplog.records if "source_value_kind" in str(record.msg)]

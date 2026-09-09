@@ -40,30 +40,6 @@ def assert_structure_exists(
     )
 
 
-def ensure_structure(
-    info: Info,
-    input: inputs.EnsureStructureInput,
-) -> types.AssertedStructure:
-    """Get the structure for an external datum, creating it if this is the first sight of it.
-
-    **Identical to `assertStructureExists` in every observable way.** Same
-    controller call, same arguments, and the assertion each records is built from
-    `_provenance_from_info` alone — nothing marks which field was called, so the
-    evidence they produce cannot be told apart. The two names are kept for caller
-    ergonomics: a structure is idempotent by `(identifier, object)`, so an ingest
-    reaching for a handle and an annotator claiming the datum is worth pointing at
-    are the same write, and both spellings read naturally at their own call sites.
-
-    If that distinction ever needs to be recoverable from the log, it has to be
-    *recorded* — an `action_name` on the assertion would do it. Until then, do not
-    document a difference the rows do not carry.
-
-    Delegates rather than repeating the body, so the claim above stays true by
-    construction instead of by a reader diffing two functions.
-    """
-    return assert_structure_exists(info, cast(inputs.AssertStructureExistsInput, input))
-
-
 def retract_structure(
     info: Info,
     input: inputs.RetractStructureInput,
@@ -86,21 +62,21 @@ def retract_structure(
     )
 
 
-def update_structure(
+def record_metrics(
     info: Info,
-    input: inputs.UpdateStructureInput,
+    input: inputs.RecordMetricsInput,
 ) -> types.AssertedStructure:
-    """Append metrics to an existing structure.
+    """Record measurements against a datum already on the record.
 
-    Keeps the name `update` because it genuinely appends: a structure's
-    `(identifier, object)` is its identity, so `object` is immutable and
-    repointing it is rejected rather than superseded.
+    Named for the act (it was `updateStructure`): nothing about the structure
+    changes — its `(identifier, object)` is its identity and repointing it is
+    rejected — only new metric claims are appended under one assertion.
     """
     controller = context.get_controller()
 
     model = input.to_pydantic()
     return types.AssertedStructure(
-        _value=controller.update_structure(
+        _value=controller.record_metrics(
             structure_id=str(model.id),
             payload=model,
             info=info,
@@ -129,15 +105,15 @@ def attest_structure(
     return types.AssertedStructure(_value=controller.attest_structure(str(model.id), info=info, at=model.at, confidence=model.confidence))
 
 
-def link_structure_to_entity(
+def assert_informs(
     info: Info,
-    input: inputs.LinkStructureInput,
+    input: inputs.AssertInformsInput,
 ) -> types.AssertedDescription:
     """
-    Assert that a structure is evidence for an entity.
+    Assert that a datum is evidence for an entity — an INFORMS claim.
 
-    Keeps its name: it is already a claim verb, and what it claims is a relation
-    between two things rather than the existence of either.
+    Named for the claim it records (it was `linkStructureToEntity`): what it
+    claims is a relation between two individuals, not the existence of either.
 
     This is a pure evidence write: it records the claim that a given ROI (or
     image, or file) justifies a given entity, as an `INFORMS` link under a fresh
@@ -157,7 +133,7 @@ def link_structure_to_entity(
     )
 
     return types.AssertedDescription(
-        _value=controller.link_structure_to_entity(
+        _value=controller.assert_informs(
             structure_id=str(structure.pk),
             entity_id=input.entity_id,
             info=info,

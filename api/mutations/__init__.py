@@ -7,7 +7,7 @@ Contains all GraphQL mutation resolvers for the graph engine.
 # `pin_node` is gone. It was a registered schema field whose entire body was
 # `raise NotImplementedError`, so `pinNode` was advertised and could only error.
 from .entity import assert_entity_exists, retract_entity, attest_entity
-from .structure import assert_structure_exists, retract_structure, attest_structure, update_structure, ensure_structure, link_structure_to_entity
+from .structure import assert_structure_exists, retract_structure, attest_structure, record_metrics, assert_informs
 from .metric import assert_metric_value, assert_metric_value_for_structure, supersede_metric_value, retract_metric, attest_metric
 from .relation import assert_relation_exists, update_relation, retract_relation
 from .measurement import assert_measurement_exists, retract_measurement
@@ -46,12 +46,11 @@ __all__ = [
     # Structure mutations
     "assert_structure_exists",
     "retract_structure",
-    "update_structure",
-    "link_structure_to_entity",
+    "record_metrics",
+    "assert_informs",
     "comment_on_structure",
     "retract_comment",
     "attest_comment",
-    "ensure_structure",
     # Metric mutations
     "assert_metric_value",
     "assert_metric_value_for_structure",

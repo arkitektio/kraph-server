@@ -5,7 +5,7 @@ and the entity that structure informs updates. No explicit recalculate, no
 client-side orchestration.
 
 It has never worked before. `create_metric` never re-derived,
-`link_structure_to_entity` raised a `NameError` before reaching derivation, and
+`assert_informs` raised a `NameError` before reaching derivation, and
 `_recalculate_entity` itself was broken in three separate ways. This is the test
 that says it works now, through the real GraphQL surface against a real Apache
 AGE stack.

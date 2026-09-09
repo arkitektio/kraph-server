@@ -172,7 +172,7 @@ class Mutation:
     )
 
     assert_structure_exists = kante.django_mutation(
-        description="Claim that an external datum exists and is worth pointing at. Idempotent by (identifier, object)",
+        description="Claim that an external datum exists. Idempotent by (identifier, object): a second claim about a datum already on the record is agreement, recorded as a standing under this act (RFC 0023)",
         resolver=mutations.assert_structure_exists,
     )
     attest_structure = kante.django_mutation(
@@ -187,21 +187,17 @@ class Mutation:
         description="Claim that a link claim still stands — a relation, a classification, a participation, a measurement. One act for every kind, as `retractLinks` is",
         resolver=mutations.attest_link,
     )
-    ensure_structure = kante.django_mutation(
-        description="Get the structure for an external datum, creating it if this is the first sight of it",
-        resolver=mutations.ensure_structure,
-    )
     retract_structure = kante.django_mutation(
-        description="Claim that a structure should no longer be pointed at. The row and its metrics survive",
+        description="Retract a datum: a Standing(stands=false) against it. Its metrics and INFORMS claims stay on the record, but stop counting for every node it informs until somebody attests it again (RFC 0023)",
         resolver=mutations.retract_structure,
     )
-    link_structure_to_entity = kante.django_mutation(
-        description="Assert that a structure is evidence for an entity",
-        resolver=mutations.link_structure_to_entity,
+    assert_informs = kante.django_mutation(
+        description="Claim that a datum is evidence for an entity — an INFORMS claim",
+        resolver=mutations.assert_informs,
     )
-    update_structure = kante.django_mutation(
-        description="Append metrics to an existing structure. Its (identifier, object) is immutable",
-        resolver=mutations.update_structure,
+    record_metrics = kante.django_mutation(
+        description="Record measurements against a datum already on the record, as one act (was `updateStructure`)",
+        resolver=mutations.record_metrics,
     )
     comment_on_structure = kante.django_mutation(
         description="Record a remark about an external datum, minting its structure if this is the first sight of it. A reply names its parent and stays on the parent's thread",

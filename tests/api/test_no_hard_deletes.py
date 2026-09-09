@@ -43,7 +43,7 @@ REMOVED = [
     # `updateEntity` archived the node and created a new uuid, so a correction
     # forked identity and every metric and relation keyed on the old ref stopped
     # describing it. Its whole payload was `supportingEvidence` — which
-    # `linkStructureToEntity` attaches to a *live* entity — plus
+    # `assertInforms` attaches to a *live* entity — plus
     # `stickyProperties`, which nothing ever read. Corrections are additive now:
     # measurements accumulate, and classification is a `CLASSIFIES` claim. This
     # was the one mutation contradicting BIOLOGIST.md's rule that you cannot
@@ -103,11 +103,11 @@ def test_the_retraction_path_remains(name: str) -> None:
 def test_the_additive_correction_path_remains() -> None:
     """Removing `updateEntity` is only correct because these cover its job.
 
-    Evidence attaches to a live entity through `linkStructureToEntity`, and a
+    Evidence attaches to a live entity through `assertInforms`, and a
     reclassification is a claim rather than a new node. Neither touches identity.
     """
     fields = _mutation_fields()
-    assert "linkStructureToEntity" in fields, "attaching evidence to an existing entity is how a correction is made"
+    assert "assertInforms" in fields, "attaching evidence to an existing entity is how a correction is made"
     assert "assertMetricValue" in fields
     assert "assertParticipation" in fields, "changing who took part in an event must not require replacing the event"
     assert "retractParticipation" in fields, "and withdrawing that claim must not require deleting it"

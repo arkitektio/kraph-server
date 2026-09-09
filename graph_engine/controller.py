@@ -798,6 +798,8 @@ class GraphController:
             RetrievedStructure with the created structure info
         """
         cited = self._resolve_citations(organization, payload.derived_from)
+        observed_at = getattr(payload, "observed_at", None)
+        confidence = getattr(payload, "confidence", None)
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             structure_kind = self.ensure_structure_kind(organization, identifier)
@@ -806,7 +808,15 @@ class GraphController:
                 kind=structure_kind,
                 object=payload.object,
                 assertion=assertion,
+                observed_at=observed_at,
+                confidence=confidence,
             )
+            if structure.assertion_id != assertion.pk:
+                # An explicit existence claim about a datum already on the record
+                # is agreement, and agreement is countable (RFC 0023): a standing
+                # under this act, beside the first assertion on the row. A mere
+                # *reference* (a metric, a comment) records nothing here.
+                writer.attest(organization, structure, assertion, at=observed_at, confidence=confidence)
             for metric in payload.metrics or []:
                 self._record_metric(organization, structure, metric, info=info, assertion=assertion)
             self._cite(organization, assertion, str(structure.pk), cited)
@@ -963,24 +973,44 @@ class GraphController:
         at: datetime.datetime | None = None,
         confidence: float | None = None,
     ) -> results.Asserted:
-        """Retract a structure by writing a `Standing(stands=False)` against it."""
+        """Retract a datum: a `Standing(stands=False)` against it, and its evidence stops counting.
+
+        A structure is an individual (RFC 0023). Retracting it does not retract
+        the metrics and INFORMS links that cite it — those claims stay on the
+        record and stay readable — but the folds honour the datum's standing, so
+        every derived value it fed is refolded without it and every node it
+        informed is redrawn. It used to write the standing and stop.
+        """
+        return self._restand_structure(structure_id, info, stands=False, at=at, confidence=confidence)
+
+    def _restand_structure(self, structure_id: str, info: Info, *, stands: bool, at: datetime.datetime | None, confidence: float | None) -> results.Asserted:
+        from graph_engine import projector
+
         structure = self._resolve_structure(structure_id, info)
         organization = structure.organization
 
+        # Read before the standing lands: after a retraction the datum informs
+        # nothing, and the refs are exactly what has to be refolded.
+        informed = projector.refs_informed_by(organization, [structure.pk])
+
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            writer.retract(organization, structure, assertion, at=at, confidence=confidence)
+            result = writer.record_standing(organization, structure, stands=stands, assertion=assertion, at=at, confidence=confidence)
+            if result.moved:
+                state_module.refold(organization, informed, structure.kind)
 
+        if result.moved:
+            self.project_refs(organization, informed)
         self._settle(assertion)
         return results.Asserted.of(assertion, structure)
 
-    def update_structure(
+    def record_metrics(
         self,
         structure_id: str,
         payload: inputs.StructureInput,
         info: Info,
     ) -> results.Asserted:
-        """Append metrics to an existing structure.
+        """Record measurements against a datum already on the record (was `update_structure`).
 
         A structure's `(identifier, object)` is its identity, so `object` is
         **immutable** and repointing it is rejected. The original plan called for
@@ -1374,7 +1404,7 @@ class GraphController:
         self._settle(assertion)
         return results.Asserted.of(assertion, replacement)
 
-    def link_structure_to_entity(
+    def assert_informs(
         self,
         structure_id: str,
         entity_id: str,
@@ -1740,8 +1770,17 @@ class GraphController:
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            for link in links:
+            for link in list(links):
                 writer.retract(organization, link, assertion, at=at, confidence=confidence)
+                # A measurement is one claim written as two rows — the typed
+                # MEASUREMENT link and the INFORMS link that routes the datum's
+                # metrics (RFC 0023). Retracting the claim retracts both, under
+                # the same act, or the derived values would keep counting a
+                # measurement nobody stands behind.
+                sibling = self._sibling_informs(link)
+                if sibling is not None:
+                    writer.retract(organization, sibling, assertion, at=at, confidence=confidence)
+                    links.append(sibling)
 
         # Rebuilds are collected across the whole batch and run once each at the
         # end. A retracted classification can move a label, and only `rebuild` moves
@@ -1819,7 +1858,12 @@ class GraphController:
             self._reproject_instances(organization, sorted(before | after))
         elif link.kind == evidence_models.Link.Kind.INFORMS:
             # Nothing to un-draw — an INFORMS link has no edge — but the derived
-            # values it fed have to stop counting it.
+            # values it fed have to be refolded without it before the node is
+            # redrawn: `project_refs` reads `State`, and a row that still holds
+            # the withdrawn datum's contribution would redraw the old number.
+            structure = evidence_models.Structure.all_objects.filter(pk=str(link.source_ref)).first()
+            if structure is not None:
+                state_module.refold(organization, [str(link.target_ref)], structure.kind)
             self.project_refs(organization, [str(link.target_ref)])
         # `DERIVED_FROM` falls through: lineage is never drawn and feeds no
         # derivation, so retracting a citation changes nothing any view shows
@@ -2627,36 +2671,44 @@ class GraphController:
         at: datetime.datetime | None = None,
         confidence: float | None = None,
     ) -> results.Asserted:
-        """Claim that a link still stands — the counterpart of `retract_relation`.
-
-        **`attest_*` existed for four claim kinds out of ten**: entity, natural
-        event, protocol event and comment. Structures, metrics, relations,
-        measurements, structure relations, participations and sameness could all
-        be retracted and never re-attested, so a retraction of any of them was in
-        practice one-way through the API — against the rule the write side is
-        built on, that existence is evidence and two people may disagree about it,
-        with each graph's selector deciding whose word it counts.
+        """Claim that a link still stands — the counterpart of `retract_links`.
 
         Not "un-retract": `writer.attest` records a fresh `Standing(stands=True)`
         beside the retraction rather than removing it, exactly as `attest_node`
         does. Both positions stay on the record.
 
         Covers every link kind in one method for the reason `retract_links` does:
-        the act is the same whichever kind the row is, and the row says which.
+        the act is the same whichever kind the row is, and the row says which. A
+        measurement attests its sibling INFORMS link under the same act (RFC
+        0023), and the projection is corrected through the same per-kind dispatch
+        a retraction uses — an attested INFORMS link refolds the values it feeds,
+        an attested relation redraws its edges. Sameness and difference are the
+        exception: their fold is `identity`'s, and an attestation there is not
+        refolded here.
         """
-        from graph_engine import projector
-
         link = self.resolve_edge_link(link_id, info)
         organization = link.organization
+        affected = [link]
 
         with transaction.atomic():
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             writer.attest(organization, link, assertion, at=at, confidence=confidence)
+            sibling = self._sibling_informs(link)
+            if sibling is not None:
+                writer.attest(organization, sibling, assertion, at=at, confidence=confidence)
+                affected.append(sibling)
 
-        source_ref, target_ref, term_id = projector.proposition_key(link)
-        self._reproject_proposition_everywhere(organization, source_ref, target_ref)
+        for row in affected:
+            if row.kind not in (evidence_models.Link.Kind.SAME_AS, evidence_models.Link.Kind.DIFFERENT_FROM):
+                self._reproject_claim(organization, row)
         self._settle(assertion)
         return results.Asserted.of(assertion, link, self.drawings_for_edge(link))
+
+    def _sibling_informs(self, link: evidence_models.Link) -> evidence_models.Link | None:
+        """The INFORMS row written beside a MEASUREMENT claim under the same act, if any."""
+        if link.kind != evidence_models.Link.Kind.MEASUREMENT:
+            return None
+        return evidence_models.Link.objects.for_organization(link.organization).filter(kind=evidence_models.Link.Kind.INFORMS, assertion_id=link.assertion_id, source_ref=link.source_ref, target_ref=link.target_ref).first()
 
     def attest_structure(
         self,
@@ -2666,16 +2718,8 @@ class GraphController:
         at: datetime.datetime | None = None,
         confidence: float | None = None,
     ) -> results.Asserted:
-        """Claim that a structure still stands — the counterpart of `retract_structure`."""
-        structure = self._resolve_structure(structure_id, info)
-        organization = structure.organization
-
-        with transaction.atomic():
-            assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            writer.attest(organization, structure, assertion, at=at, confidence=confidence)
-
-        self._settle(assertion)
-        return results.Asserted.of(assertion, structure)
+        """Claim that a datum stands — the counterpart of `retract_structure`, refolding what it feeds."""
+        return self._restand_structure(structure_id, info, stands=True, at=at, confidence=confidence)
 
     def attest_metric(
         self,

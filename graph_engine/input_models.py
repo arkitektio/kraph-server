@@ -1938,26 +1938,23 @@ class StructureInput(StrictModel):
 
 
 class AssertStructureExistsInput(StructureInput):
-    """Input for creating a new structure instance.
+    """Claim that an external datum exists (RFC 0023).
 
     No graph. A structure points at an external datum owned by another service,
     so it belongs to the organization, and naming a projection to record one was
-    always incidental.
+    always incidental. Idempotent by `(identifier, object)`: a second claim about
+    a datum already on the record is agreement, recorded as a standing.
     """
 
     identifier: scalars.StructureIdentifier = Field(..., description="The structure identifier, e.g. '@mikro/roi'")
+    observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
 
 
-class EnsureStructureInput(StructureInput):
-    """Input for creating a new structure instance, or returning the existing one."""
+class RecordMetricsInput(StructureInput):
+    """Record measurements against a datum already on the record, as one act."""
 
-    identifier: scalars.StructureIdentifier = Field(..., description="The structure identifier, e.g. '@mikro/roi'")
-
-
-class UpdateStructureInput(StructureInput):
-    """Input for updating an existing structure instance."""
-
-    id: str = Field(..., description="The ID of the structure to update")
+    id: str = Field(..., description="The ID of the structure the measurements describe")
 
 
 class RetractStructureInput(StrictModel):

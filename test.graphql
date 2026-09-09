@@ -88,6 +88,18 @@ input AssertEntityExistsInput {
   sameAs: [String!]! = []
 }
 
+"""Input for claiming that a datum is evidence for an entity"""
+input AssertInformsInput {
+  """Structure identifier, e.g. '@mikro/roi'"""
+  structureIdentifier: String!
+
+  """Structure object ID"""
+  structureObject: String!
+
+  """The ID of the entity this structure informs — a bare uuid"""
+  entityId: String!
+}
+
 """Input for creating a new measurement edge"""
 input AssertMeasurementExistsInput {
   """The ID of the source entity/structure"""
@@ -368,6 +380,16 @@ input AssertStructureExistsInput {
 
   """The structure identifier, e.g. '@mikro/roi'"""
   identifier: String!
+
+  """
+  When the world was in this state — world time, the axis a scientist means by 'when'. Distinct from when it is claimed, which the assertion records; left unset, the two are equal. A point, not an interval: a duration is a metric.
+  """
+  observedAt: DateTime = null
+
+  """
+  How sure you are, 0 to 1. Left unset, the claim carries no number — which is neither 1.0 nor 0.0: a category rule with a CONFIDENCE condition admits only claims that carry one.
+  """
+  confidence: Float = null
 }
 
 """Input for creating a new structure relation"""
@@ -2127,25 +2149,6 @@ type EdgeDrawing {
   edge: Edge!
 }
 
-"""
-Input for getting the structure for an external datum, creating it if new
-"""
-input EnsureStructureInput {
-  """The unique ID of the object this structure references"""
-  object: String!
-
-  """List of measurements associated with this structure"""
-  metrics: [MetricInput!]! = []
-
-  """
-  The claims this one came from — ids of instances, links, metrics or structures in your organization. Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.
-  """
-  derivedFrom: [String!]! = []
-
-  """The structure identifier, e.g. '@mikro/roi'"""
-  identifier: String!
-}
-
 """An entity in the knowledge graph with derived properties"""
 type Entity implements Node {
   """
@@ -3229,18 +3232,6 @@ enum LinkKind {
   DERIVED_FROM
 }
 
-"""Input for linking a structure to an entity"""
-input LinkStructureInput {
-  """Structure identifier, e.g. '@mikro/roi'"""
-  structureIdentifier: String!
-
-  """Structure object ID"""
-  structureObject: String!
-
-  """The ID of the entity this structure informs — a bare uuid"""
-  entityId: String!
-}
-
 """Pagination options for reading the log"""
 input LogPaginationInput {
   """Number of items to skip"""
@@ -3772,7 +3763,7 @@ type Mutation {
   attestEntity(input: AttestEntityInput!): AssertedEntity!
 
   """
-  Claim that an external datum exists and is worth pointing at. Idempotent by (identifier, object)
+  Claim that an external datum exists. Idempotent by (identifier, object): a second claim about a datum already on the record is agreement, recorded as a standing under this act (RFC 0023)
   """
   assertStructureExists(input: AssertStructureExistsInput!): AssertedStructure!
 
@@ -3792,22 +3783,17 @@ type Mutation {
   attestLink(input: AttestLinkInput!): AssertedLinks!
 
   """
-  Get the structure for an external datum, creating it if this is the first sight of it
-  """
-  ensureStructure(input: EnsureStructureInput!): AssertedStructure!
-
-  """
-  Claim that a structure should no longer be pointed at. The row and its metrics survive
+  Retract a datum: a Standing(stands=false) against it. Its metrics and INFORMS claims stay on the record, but stop counting for every node it informs until somebody attests it again (RFC 0023)
   """
   retractStructure(input: RetractStructureInput!): AssertedStructure!
 
-  """Assert that a structure is evidence for an entity"""
-  linkStructureToEntity(input: LinkStructureInput!): AssertedDescription!
+  """Claim that a datum is evidence for an entity — an INFORMS claim"""
+  assertInforms(input: AssertInformsInput!): AssertedDescription!
 
   """
-  Append metrics to an existing structure. Its (identifier, object) is immutable
+  Record measurements against a datum already on the record, as one act (was `updateStructure`)
   """
-  updateStructure(input: UpdateStructureInput!): AssertedStructure!
+  recordMetrics(input: RecordMetricsInput!): AssertedStructure!
 
   """
   Record a remark about an external datum, minting its structure if this is the first sight of it. A reply names its parent and stays on the parent's thread
@@ -5198,6 +5184,23 @@ type Query {
   renderGraphTable(query: ID!, filters: RenderGraphTableFilter = null, pagination: RenderGraphTablePagination = null, order: RenderGraphTableOrder = null): GraphTableRender
 }
 
+"""Input for recording measurements against a datum already on the record"""
+input RecordMetricsInput {
+  """The unique ID of the object this structure references"""
+  object: String!
+
+  """List of measurements associated with this structure"""
+  metrics: [MetricInput!]! = []
+
+  """
+  The claims this one came from — ids of instances, links, metrics or structures in your organization. Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.
+  """
+  derivedFrom: [String!]! = []
+
+  """The ID of the structure the measurements describe"""
+  id: String!
+}
+
 """A relation edge between two entities"""
 type Relation implements Edge {
   """This claim's durable identity — the `Link` primary key, a bare uuid"""
@@ -5928,7 +5931,9 @@ enum StandingTargetType {
   COMMENT
 }
 
-"""A pointer to an external datum — a claim, not a graph node"""
+"""
+An individual with an external identity — an ROI, an image, a file. A claim about the world, never a graph node (RFC 0023)
+"""
 type Structure {
   """
   This claim's durable identity — the `Structure` primary key, a bare uuid
@@ -5943,6 +5948,16 @@ type Structure {
 
   """ID of the structure kind this instantiates"""
   kindId: String!
+
+  """
+  When the datum was observed to exist — world time, like every claim's; equal to the assertion's time when the claimant gave no other (RFC 0015, 0023)
+  """
+  observedAt: DateTime!
+
+  """
+  How sure the claimant was that this datum exists, 0 to 1. Null when they gave no number (RFC 0016)
+  """
+  confidence: Float
 
   """The organization's term for this kind of structure"""
   kind: StructureKind
@@ -6836,23 +6851,6 @@ input UpdateScatterPlotInput {
 
   """The database ID of the scatter plot to update"""
   id: Int!
-}
-
-"""Input for updating an existing structure"""
-input UpdateStructureInput {
-  """The unique ID of the object this structure references"""
-  object: String!
-
-  """List of measurements associated with this structure"""
-  metrics: [MetricInput!]! = []
-
-  """
-  The claims this one came from — ids of instances, links, metrics or structures in your organization. Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.
-  """
-  derivedFrom: [String!]! = []
-
-  """The ID of the structure to update"""
-  id: String!
 }
 
 """

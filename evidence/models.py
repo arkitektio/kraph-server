@@ -190,10 +190,7 @@ def _default_observed_at(claim: Any) -> None:
         claim.observed_at = claim.assertion.asserted_at
 
 
-CONFIDENCE_HELP_TEXT = (
-    "How sure the claimant was, 0 to 1. Null means they gave no number — which is not 1.0 and not 0.0: "
-    "a `CONFIDENCE` rule admits only claims that carry one (RFC 0016)."
-)
+CONFIDENCE_HELP_TEXT = "How sure the claimant was, 0 to 1. Null means they gave no number — which is not 1.0 and not 0.0: a `CONFIDENCE` rule admits only claims that carry one (RFC 0016)."
 
 
 def _confidence_field() -> Any:
@@ -429,13 +426,19 @@ class MetricKind(models.Model):
 
 
 class Structure(models.Model):
-    """A pointer to an external datum — a Mikro ROI, an image, a file.
+    """An individual with an **external** identity — a Mikro ROI, an image, a file (RFC 0023).
 
-    A structure has no value of its own; it is the thing metrics are *about*. Its
-    identity is ``(identifier, object)`` scoped to the organization, which is
-    exactly why it deduplicates: the same ROI referenced while building two
-    different projections is one row, and a metric attached during experiment A
-    is visible to a projection built for experiment B.
+    A structure has no value of its own; it is the thing metrics are *about* and
+    INFORMS links are *from*. Unlike an entity, whose identity is minted per
+    observation and joined by sameness claims, its identity is given by the
+    system that produced it: ``(identifier, object)`` scoped to the organization.
+    That is exactly why it deduplicates — the same ROI referenced while building
+    two different projections is one row — and why a second explicit existence
+    claim about it is recorded as a `Standing(stands=True)` under the second act
+    rather than as a second row: agreement stays countable, identity stays one.
+
+    Its existence has a standing like any individual's, and the folds honour it:
+    a retracted datum's metrics stop counting for every node it informs.
 
     That identity is **immutable**. Repointing a structure at a different
     ``object`` is not an edit, it is a different structure — see
@@ -472,6 +475,10 @@ class Structure(models.Model):
         related_name="structures",
         help_text="The assertion that first introduced this structure.",
     )
+    observed_at = models.DateTimeField(
+        help_text="When the datum was observed to exist — world time, like every claim's (RFC 0015, 0023). Equal to the assertion's `asserted_at` when the claimant gave no other.",
+    )
+    confidence = _confidence_field()
     #: No cached `stands`, and deliberately. It used to live here: `writer.record_standing`
     #: wrote the claim and flipped this boolean in one transaction, which made a
     #: log table mutable and blocked `REVOKE UPDATE`. The answer now lives in
@@ -489,7 +496,8 @@ class Structure(models.Model):
             models.UniqueConstraint(
                 fields=["organization", "identifier", "object"],
                 name="unique_structure_per_organization",
-            )
+            ),
+            _confidence_constraint("structure"),
         ]
         indexes = [
             models.Index(fields=["organization", "kind"]),
@@ -497,6 +505,10 @@ class Structure(models.Model):
 
     def __str__(self) -> str:
         return f"{self.identifier}:{self.object}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        _default_observed_at(self)
+        super().save(*args, **kwargs)
 
 
 class Metric(models.Model):
@@ -574,10 +586,7 @@ class Metric(models.Model):
 
     observed_at = models.DateTimeField(
         db_index=True,
-        help_text=(
-            "When the world was observed. The axis a scientist means by 'when'. "
-            "Was `measured_at` until RFC 0015 gave every claim the same column under one name."
-        ),
+        help_text=("When the world was observed. The axis a scientist means by 'when'. Was `measured_at` until RFC 0015 gave every claim the same column under one name."),
     )
     asserted_at = models.DateTimeField(
         db_index=True,
@@ -754,11 +763,7 @@ class Link(models.Model):
     )
     observed_at = models.DateTimeField(
         db_index=True,
-        help_text=(
-            "When the world was in this state: a relation held, a participation happened, a classification "
-            "applied. Defaults to the assertion's `asserted_at` on save when the claimant gave no other time "
-            "(RFC 0015), so `OBSERVED_AT` rules are total."
-        ),
+        help_text=("When the world was in this state: a relation held, a participation happened, a classification applied. Defaults to the assertion's `asserted_at` on save when the claimant gave no other time (RFC 0015), so `OBSERVED_AT` rules are total."),
     )
     confidence = _confidence_field()
     #: No cached `stands`, and deliberately. It used to live here: `writer.record_standing`
@@ -1232,11 +1237,7 @@ class Instance(models.Model):
     )
     observed_at = models.DateTimeField(
         db_index=True,
-        help_text=(
-            "When the world contained this individual — for an event, when it happened; for an entity, "
-            "when it was seen. A point, not an interval: a duration is a metric. Defaults to the assertion's "
-            "`asserted_at` on save (RFC 0015)."
-        ),
+        help_text=("When the world contained this individual — for an event, when it happened; for an entity, when it was seen. A point, not an interval: a duration is a metric. Defaults to the assertion's `asserted_at` on save (RFC 0015)."),
     )
     confidence = _confidence_field()
     # Deliberately **no cached `stands` column**, unlike Structure/Metric/Link.

@@ -498,17 +498,8 @@ class AssertStructureExistsInput:
     pass
 
 
-@pydantic.input(model=input_models.EnsureStructureInput, all_fields=True, description="Input for getting the structure for an external datum, creating it if new")
-class EnsureStructureInput:
-    """Input for creating a new structure."""
-
-    pass
-
-
-@pydantic.input(model=input_models.UpdateStructureInput, all_fields=True, description="Input for updating an existing structure")
-class UpdateStructureInput:
-    """Input for updating an existing structure."""
-
+@pydantic.input(model=input_models.RecordMetricsInput, all_fields=True, description="Input for recording measurements against a datum already on the record")
+class RecordMetricsInput:
     pass
 
 
@@ -663,8 +654,8 @@ class AttestProtocolEventInput:
 # ==========================================
 
 
-@strawberry.input(description="Input for linking a structure to an entity")
-class LinkStructureInput:
+@strawberry.input(description="Input for claiming that a datum is evidence for an entity")
+class AssertInformsInput:
     """Input for asserting that a structure is evidence for an entity.
 
     Identified by `(identifier, object)` rather than by primary key, because that

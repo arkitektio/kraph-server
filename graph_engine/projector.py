@@ -197,7 +197,13 @@ def _structure_ids_informing(graph: core_models.Graph, claim_ref: str | Iterable
     import uuid as uuid_module
 
     refs = selector_module.informs_links_for(graph, definition=definition).filter(target_ref__in=_refs(claim_ref)).values_list("source_ref", flat=True).distinct()
-    return [uuid_module.UUID(str(ref)) for ref in refs]
+    structure_ids = [uuid_module.UUID(str(ref)) for ref in refs]
+    if not structure_ids:
+        return []
+    # Datums that stand (RFC 0023): a retracted structure informs nothing.
+    from evidence import claims as claims_module
+
+    return list(claims_module.standing(evidence_models.Structure.objects.for_organization(graph.organization).filter(pk__in=structure_ids), "structure").values_list("pk", flat=True))
 
 
 def _priority_scoped_value(
@@ -471,8 +477,12 @@ def derive_properties(
 
             value = aggregate.apply(aggregation, state) if aggregation else None
 
-        if value is not None:
-            values[prop.key] = value
+        # Written even when there is no value. A property whose evidence has
+        # stopped supporting it — its datum retracted, its metrics withdrawn —
+        # must clear the number the vertex carried, not keep it: `write_properties`
+        # merges keys, so skipping the key here left a value no surviving
+        # evidence supported on the drawing (RFC 0023).
+        values[prop.key] = value
 
     return values
 

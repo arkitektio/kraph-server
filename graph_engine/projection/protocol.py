@@ -137,7 +137,12 @@ class Projector(Protocol):
         ...
 
     def write_properties(self, graph: Any, ref: str, values: Mapping[str, Any]) -> bool:
-        """Set derived properties on the drawn node holding `ref`. Returns whether the node was there to write onto."""
+        """Set derived properties on the drawn node holding `ref`. Returns whether the node was there to write onto.
+
+        A `None` value **removes** the key: a derived property whose evidence no
+        longer supports it has no value, and the drawing must not keep the last
+        number it had (RFC 0023).
+        """
         ...
 
     def clear_properties(self, graph: Any, label: str, refs: Iterable[str], keys: Iterable[str]) -> None:

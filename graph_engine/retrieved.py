@@ -773,6 +773,8 @@ class RetrievedStructure(RetrievedNode):
             "identifier": row.identifier,
             "object": row.object,
             "category_id": str(row.kind_id),
+            "observed_at": row.observed_at,
+            "confidence": row.confidence,
             # Stated, not inferred from the label. `node_type` has no label
             # fallback any more — see its docstring.
             "type": "STRUCTURE",

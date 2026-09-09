@@ -1241,7 +1241,7 @@ class Entity(Node[RetrievedNode]):
 # ===========================================
 
 
-@strawberry.type(description="A pointer to an external datum — a claim, not a graph node")
+@strawberry.type(description="An individual with an external identity — an ROI, an image, a file. A claim about the world, never a graph node (RFC 0023)")
 class Structure:
     """
     A structure represents an evidence source (e.g. ROI, Image) that
@@ -1275,6 +1275,14 @@ class Structure:
     @strawberry.field(description="ID of the structure kind this instantiates")
     def kind_id(self) -> str:
         return self._value.category_id
+
+    @strawberry.field(description="When the datum was observed to exist — world time, like every claim's; equal to the assertion's time when the claimant gave no other (RFC 0015, 0023)")
+    def observed_at(self) -> datetime:
+        return self._value.properties["observed_at"]
+
+    @strawberry.field(description="How sure the claimant was that this datum exists, 0 to 1. Null when they gave no number (RFC 0016)")
+    def confidence(self) -> Optional[float]:
+        return self._value.properties.get("confidence")
 
     @kante.django_field(description="The organization's term for this kind of structure")
     async def kind(self) -> Optional["StructureKind"]:
