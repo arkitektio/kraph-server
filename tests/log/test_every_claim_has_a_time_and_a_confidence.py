@@ -8,24 +8,23 @@ it on every kind, where `MEASURED_AT` used to be legal on measurements alone.
 """
 
 from datetime import datetime, timedelta, timezone
-
 import kante
 import pytest
-from asgiref.sync import sync_to_async
-from kante.context import HttpContext
 
+from tests.support import graphs
+from kante.context import HttpContext
 from core import models as core_models
 from evidence import models as evidence_models
 from evidence import writer
-from graph_engine.controller import GraphController
-from tests.support import claims, drawing
+from core.enums import ValueKind
+from authentikate.models import Organization
+from tests.support.writes import CREATE_GRAPH
+from django.db import IntegrityError, transaction
+
 
 TREATMENT = datetime(2026, 6, 1, tzinfo=timezone.utc)
 BEFORE = TREATMENT - timedelta(days=30)
 AFTER = TREATMENT + timedelta(days=30)
-
-
-# --- the columns ------------------------------------------------------------
 
 
 @pytest.mark.django_db(transaction=True)
@@ -64,8 +63,6 @@ def test_a_direct_row_insert_gets_the_default_too(organization, assertion: evide
     assert row.observed_at == assertion.asserted_at
 
 
-# --- the API ------------------------------------------------------------------
-
 ASSERT_EVENT = """
     mutation E($input: AssertNaturalEventExistsInput!) {
         assertNaturalEventExists(input: $input) {
@@ -73,25 +70,21 @@ ASSERT_EVENT = """
         }
     }
 """
-
 ASSERT_RELATION = """
     mutation R($input: AssertRelationExistsInput!) {
         assertRelationExists(input: $input) { link { id observedAt } }
     }
 """
-
 ASSERT_ENTITY = """
     mutation N($input: AssertEntityExistsInput!) {
         assertEntityExists(input: $input) { instance { id observedAt } }
     }
 """
-
-RETRACT_ENTITY = """
+RETRACT_ENTITY_AT = """
     mutation X($input: RetractEntityInput!) {
         retractEntity(input: $input) { instance { id standings { stands at } } }
     }
 """
-
 ASSERT_METRIC = """
     mutation M($input: AssertMetricValueInput!) {
         assertMetricValue(input: $input) { metric { id observedAt } }
@@ -137,25 +130,6 @@ async def test_a_relation_and_a_metric_carry_observed_at(api_schema, simple_api_
     assert datetime.fromisoformat(metric["assertMetricValue"]["metric"]["observedAt"]) == BEFORE, "was `timestamp`, unix milliseconds"
 
 
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.asyncio
-async def test_a_retraction_may_say_when_it_took_effect(api_schema, simple_api_context) -> None:
-    """`at` on a retract input is `Standing.at` — the cell died in June, whenever
-    that was recorded."""
-    ref = (await _execute(api_schema, simple_api_context, ASSERT_ENTITY, {"term": "Cell"}))["assertEntityExists"]["instance"]["id"]
-    data = await _execute(api_schema, simple_api_context, RETRACT_ENTITY, {"id": ref, "at": TREATMENT.isoformat()})
-    (standing,) = data["retractEntity"]["instance"]["standings"]
-    assert standing["stands"] is False
-    assert datetime.fromisoformat(standing["at"]) == TREATMENT
-
-
-# --- the rule field, on every kind ---------------------------------------------
-
-CREATE_GRAPH = """
-    mutation G($input: CreateGraphInput!) {
-        createGraph(input: $input) { id }
-    }
-"""
 
 
 def _rule(*conditions: dict) -> dict:
@@ -170,10 +144,6 @@ def _observed_since(moment: datetime) -> dict:
     return {"field": "OBSERVED_AT", "operator": "SINCE", "value": moment.isoformat()}
 
 
-#: Cells as they were before the treatment: a classification counts when the
-#: cell was *seen* before it (world time, whenever the label was typed in), a
-#: death counts only when it *took effect* before it, a connection is drawn when
-#: it *held* before it — and a division event when it *happened* since it.
 DEFINITION = {
     "systemVersion": "2.0.0",
     "extensions": {
@@ -217,107 +187,180 @@ async def _graph(api_schema: kante.Schema, ctx: HttpContext, name: str) -> str:
     return made.data["createGraph"]["id"]
 
 
-def _rebuild(graph_id: str, table_projector) -> core_models.Graph:
+def _rebuild_by_id(graph_id: str, table_projector) -> core_models.Graph:
     graph = core_models.Graph.objects.get(pk=graph_id)
-    GraphController(projector=table_projector).rebuild_projection(graph)
+    graphs.rebuild(graph, table_projector)
     return graph
 
 
+LAST_YEAR = datetime(2025, 3, 1, 9, 0, tzinfo=timezone.utc)
+TODAY = datetime(2026, 8, 11, 9, 0, tzinfo=timezone.utc)
+
+
+def _structure(
+    organization: Organization,
+    category: evidence_models.StructureKind,
+    assertion: evidence_models.Assertion,
+    object_id: str = "roi-1",
+) -> evidence_models.Structure:
+    """A structure to hang measurements off."""
+    return evidence_models.Structure.objects.create_for_organization(
+        organization=organization,
+        kind=category,
+        identifier="@mikro/roi",
+        object=object_id,
+        assertion=assertion,
+    )
+
+
+def _metric(
+    organization: Organization,
+    structure: evidence_models.Structure,
+    category: evidence_models.MetricKind,
+    assertion: evidence_models.Assertion,
+    *,
+    value: float,
+    observed_at: datetime,
+    asserted_at: datetime,
+) -> evidence_models.Metric:
+    """One measurement, with both time axes set explicitly."""
+    return evidence_models.Metric.objects.create_for_organization(
+        organization=organization,
+        structure=structure,
+        kind=category,
+        key="vector_length",
+        value_kind=ValueKind.FLOAT.value,
+        value_num=value,
+        observed_at=observed_at,
+        asserted_at=asserted_at,
+        assertion=assertion,
+    )
+
+
+def test_the_two_axes_are_independently_settable(organization: Organization, roi_category_a: evidence_models.StructureKind, length_category: evidence_models.MetricKind, assertion: evidence_models.Assertion) -> None:
+    """A claim made today about something observed last year."""
+    structure = _structure(organization, roi_category_a, assertion)
+    metric = _metric(
+        organization,
+        structure,
+        length_category,
+        assertion,
+        value=45.2,
+        observed_at=LAST_YEAR,
+        asserted_at=TODAY,
+    )
+
+    metric.refresh_from_db()
+    assert metric.observed_at == LAST_YEAR
+    assert metric.asserted_at == TODAY
+
+
+def test_recorded_at_is_not_asserted_at(organization: Organization, roi_category_a: evidence_models.StructureKind, length_category: evidence_models.MetricKind, assertion: evidence_models.Assertion) -> None:
+    """Ingest time is a third thing, and must not be mistaken for belief time.
+
+    `recorded_at` is auto-stamped when the row is stored. Backfilling a year of
+    historical claims would give every row the same `recorded_at` and wildly
+    different `asserted_at`, so answering questions from `recorded_at` would be
+    silently wrong.
+    """
+    structure = _structure(organization, roi_category_a, assertion)
+    _metric(
+        organization,
+        structure,
+        length_category,
+        assertion,
+        value=1.0,
+        observed_at=LAST_YEAR,
+        asserted_at=LAST_YEAR,
+    )
+
+    assertion.refresh_from_db()
+    assert assertion.asserted_at == datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
+    assert assertion.recorded_at > assertion.asserted_at
+
+
+@pytest.mark.django_db(transaction=True)
+def test_every_claim_may_carry_a_confidence(organization, assertion: evidence_models.Assertion) -> None:
+    term = writer.ensure_term(organization, "ENTITY", "Cell")
+    instance = writer.create_instance(organization, kind=evidence_models.Instance.Kind.ENTITY, term=term, assertion=assertion, confidence=0.95)
+    link = writer.create_link(organization, kind=evidence_models.Link.Kind.CLASSIFIES, source_ref=instance.ref, target_ref=str(term.pk), assertion=assertion, term=term, confidence=0.9)
+    standing = writer.record_standing_for_ref(organization, target_type="node", target_id=instance.ref, stands=False, assertion=assertion, confidence=0.5)
+
+    instance.refresh_from_db()
+    link.refresh_from_db()
+    standing.refresh_from_db()
+    assert instance.confidence == 0.95
+    assert link.confidence == 0.9
+    assert standing.confidence == 0.5
+
+
+@pytest.mark.django_db(transaction=True)
+def test_silence_is_null_not_a_number(organization, assertion: evidence_models.Assertion) -> None:
+    """No default: a claim without a number is one nobody scored, which is not 1.0 and not 0.0."""
+    term = writer.ensure_term(organization, "ENTITY", "Cell")
+    instance = writer.create_instance(organization, kind=evidence_models.Instance.Kind.ENTITY, term=term, assertion=assertion)
+    link = writer.create_link(organization, kind=evidence_models.Link.Kind.CLASSIFIES, source_ref=instance.ref, target_ref=str(term.pk), assertion=assertion, term=term)
+    standing = writer.record_standing_for_ref(organization, target_type="node", target_id=instance.ref, stands=True, assertion=assertion)
+    assert instance.confidence is None and link.confidence is None and standing.confidence is None
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize("bad", [-0.1, 1.5])
+def test_the_database_refuses_a_confidence_outside_the_unit_interval(organization, assertion: evidence_models.Assertion, bad: float) -> None:
+    """The input layer refuses it first; the constraint is for every writer that is not the API."""
+    term = writer.ensure_term(organization, "ENTITY", "Cell")
+    with pytest.raises(IntegrityError), transaction.atomic():
+        writer.create_instance(organization, kind=evidence_models.Instance.Kind.ENTITY, term=term, assertion=assertion, confidence=bad)
+    instance = writer.create_instance(organization, kind=evidence_models.Instance.Kind.ENTITY, term=term, assertion=assertion)
+    with pytest.raises(IntegrityError), transaction.atomic():
+        writer.create_link(organization, kind=evidence_models.Link.Kind.CLASSIFIES, source_ref=instance.ref, target_ref=str(term.pk), assertion=assertion, term=term, confidence=bad)
+    with pytest.raises(IntegrityError), transaction.atomic():
+        writer.record_standing_for_ref(organization, target_type="node", target_id=instance.ref, stands=False, assertion=assertion, confidence=bad)
+
+
+ASSERT_ENTITY_WITH_CONFIDENCE = """
+    mutation N($input: AssertEntityExistsInput!) {
+        assertEntityExists(input: $input) { instance { id confidence } }
+    }
+"""
+
+
+ASSERT_RELATION_WITH_CONFIDENCE = """
+    mutation R($input: AssertRelationExistsInput!) {
+        assertRelationExists(input: $input) { link { id confidence drawnIn { edge { confidence } } } }
+    }
+"""
+
+
+RETRACT_ENTITY = """
+    mutation X($input: RetractEntityInput!) {
+        retractEntity(input: $input) { instance { id standings { stands confidence } } }
+    }
+"""
+
+
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_a_classification_rule_bounds_when_the_world_was_seen(api_schema, simple_api_context, table_projector) -> None:
-    """Both claims were *recorded* after the treatment; only the one that says
-    the cell was seen before it is admitted. `ASSERTED_AT` could not tell them
-    apart."""
-    graph_id = await _graph(api_schema, simple_api_context, "observed-classification")
+async def test_confidence_round_trips_on_an_instance_a_link_and_a_standing(api_schema, simple_api_context, test_graph) -> None:
+    a = (await _execute(api_schema, simple_api_context, ASSERT_ENTITY_WITH_CONFIDENCE, {"term": "Cell", "confidence": 0.95}))["assertEntityExists"]["instance"]
+    assert a["confidence"] == pytest.approx(0.95)
+    b = (await _execute(api_schema, simple_api_context, ASSERT_ENTITY_WITH_CONFIDENCE, {"term": "Cell"}))["assertEntityExists"]["instance"]
+    assert b["confidence"] is None, "no number given, none reported"
 
-    @sync_to_async
-    def build_and_read():
-        graph = core_models.Graph.objects.get(pk=graph_id)
-        org = graph.organization
-        seen_before = claims.mint(org, "Cell", "peter", asserted_at=AFTER, observed_at=BEFORE)
-        seen_after = claims.mint(org, "Cell", "peter", asserted_at=AFTER, observed_at=AFTER)
-        silent = claims.mint(org, "Cell", "peter", asserted_at=AFTER)
-        _rebuild(graph_id, table_projector)
-        return drawing.vertices_with_ref(graph, seen_before), drawing.vertices_with_ref(graph, seen_after), drawing.vertices_with_ref(graph, silent)
+    relation = await _execute(api_schema, simple_api_context, ASSERT_RELATION_WITH_CONFIDENCE, {"term": "IS_CONNECTED_TO", "sourceId": a["id"], "targetId": b["id"], "confidence": 0.4})
+    assert relation["assertRelationExists"]["link"]["confidence"] == pytest.approx(0.4)
+    (drawn,) = relation["assertRelationExists"]["link"]["drawnIn"]
+    assert drawn["edge"]["confidence"] == pytest.approx(0.4), "the Edge interface reports the link's number"
 
-    before, after, silent = await build_and_read()
-    assert before == 1, "seen before the treatment — in the view"
-    assert after == 0, "seen after — not a pre-treatment cell"
-    assert silent == 0, "no time given means as of the claim, which was after"
+    retracted = await _execute(api_schema, simple_api_context, RETRACT_ENTITY, {"id": a["id"], "confidence": 0.7})
+    (standing,) = retracted["retractEntity"]["instance"]["standings"]
+    assert standing["stands"] is False
+    assert standing["confidence"] == pytest.approx(0.7)
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_an_existence_rule_reads_the_standings_own_time(api_schema, simple_api_context, table_projector) -> None:
-    """The same rule, read against `Standing` rows, compiles OBSERVED_AT to the
-    standing's own `at`: a death that took effect before the treatment removes
-    the cell from this view; one after it does not, however early it was
-    recorded."""
-    graph_id = await _graph(api_schema, simple_api_context, "observed-existence")
-
-    @sync_to_async
-    def build_and_read():
-        graph = core_models.Graph.objects.get(pk=graph_id)
-        org = graph.organization
-        died_before = claims.mint(org, "Cell", "peter", observed_at=BEFORE)
-        died_after = claims.mint(org, "Cell", "peter", observed_at=BEFORE)
-        claims.retract_node(org, died_before, "peter", asserted_at=AFTER, at=BEFORE + timedelta(days=1))
-        claims.retract_node(org, died_after, "peter", asserted_at=BEFORE, at=AFTER)
-        _rebuild(graph_id, table_projector)
-        return drawing.vertices_with_ref(graph, died_before), drawing.vertices_with_ref(graph, died_after)
-
-    before, after = await build_and_read()
-    assert before == 0, "a death that took effect before the treatment counts"
-    assert after == 1, "one that took effect after it is outside the rule, recorded early or not"
-
-
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.asyncio
-async def test_a_relation_rule_bounds_when_the_relation_held(api_schema, simple_api_context, table_projector) -> None:
-    graph_id = await _graph(api_schema, simple_api_context, "observed-relation")
-
-    @sync_to_async
-    def build_and_read():
-        graph = core_models.Graph.objects.get(pk=graph_id)
-        org = graph.organization
-        a = claims.mint(org, "Cell", "peter", observed_at=BEFORE)
-        b = claims.mint(org, "Cell", "peter", observed_at=BEFORE)
-        c = claims.mint(org, "Cell", "peter", observed_at=BEFORE)
-        claims.relate(org, "IS_CONNECTED_TO", a, b, "karl", asserted_at=AFTER, observed_at=BEFORE)
-        claims.relate(org, "IS_CONNECTED_TO", b, c, "karl", asserted_at=AFTER, observed_at=AFTER)
-        _rebuild(graph_id, table_projector)
-        return drawing.edges_between(graph, a, b, "IS_CONNECTED_TO"), drawing.edges_between(graph, b, c, "IS_CONNECTED_TO")
-
-    held_before, held_after = await build_and_read()
-    assert held_before == 1
-    assert held_after == 0
-
-
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.asyncio
-async def test_an_event_rule_bounds_when_the_event_happened(api_schema, simple_api_context, table_projector) -> None:
-    """The event category's rule governs the event and its participations alike
-    (`create_event` stamps both with the event's time): a division after the
-    treatment is drawn with its edge, one before it is not."""
-    graph_id = await _graph(api_schema, simple_api_context, "observed-event")
-
-    @sync_to_async
-    def build_and_read():
-        graph = core_models.Graph.objects.get(pk=graph_id)
-        org = graph.organization
-        mother = claims.mint(org, "Cell", "peter", observed_at=BEFORE)
-        late = claims.mint(org, "Mitosis", "peter", kind="NATURAL_EVENT", observed_at=AFTER)
-        claims.participate(org, "Mitosis", mother, late, "peter", role="mother", observed_at=AFTER)
-        early = claims.mint(org, "Mitosis", "peter", kind="NATURAL_EVENT", observed_at=BEFORE)
-        claims.participate(org, "Mitosis", mother, early, "peter", role="mother", observed_at=BEFORE)
-        _rebuild(graph_id, table_projector)
-        return (
-            drawing.vertices_with_ref(graph, late),
-            drawing.edges_between(graph, mother, late),
-            drawing.vertices_with_ref(graph, early),
-        )
-
-    late_drawn, late_edge, early_drawn = await build_and_read()
-    assert late_drawn == 1 and late_edge == 1, "happened since the treatment — event and participation drawn"
-    assert early_drawn == 0, "happened before it — outside the event category's rule"
+@pytest.mark.parametrize("bad", [-0.1, 1.5])
+async def test_the_input_refuses_a_confidence_outside_the_unit_interval(api_schema, simple_api_context, bad: float) -> None:
+    result = await api_schema.execute(ASSERT_ENTITY_WITH_CONFIDENCE, variable_values={"input": {"term": "Cell", "confidence": bad}}, context_value=simple_api_context)
+    assert result.errors is not None and "confidence" in str(result.errors[0]).lower()

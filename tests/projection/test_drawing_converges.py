@@ -10,11 +10,11 @@ previous self under the previous label.
 
 import pytest
 from asgiref.sync import sync_to_async
-
 from core import models as core_models
 from graph_engine import projector
 from graph_engine.controller import GraphController
 from tests.support import drawing, writes
+from tests.support.writes import ASSERT_SAME
 
 
 def _vertices_with_id(table_projector, graph: core_models.Graph, ref: str) -> int:
@@ -54,3 +54,33 @@ async def test_project_all_over_a_populated_namespace_converges(api_schema, simp
     assert one == 1
     assert vertices == 2
     assert edges == 1
+
+
+async def _execute(api_schema, ctx, document: str, variables: dict) -> dict:
+    result = await api_schema.execute(document, variable_values=variables, context_value=ctx)
+    assert result.errors is None, f"GraphQL errors: {result.errors}"
+    return result.data
+
+
+async def _merge(api_schema, ctx, refs: list[str]) -> str:
+    data = await _execute(api_schema, ctx, ASSERT_SAME, {"input": {"instances": refs}})
+    return data["assertSameInstance"]["links"][0]["id"]
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_redrawing_a_merged_individual_converges(api_schema, simple_api_context, test_graph: core_models.Graph, table_projector) -> None:
+    """`reproject_refs` through any member, twice, leaves one vertex with all its members."""
+    a = await writes.create_entity(api_schema, simple_api_context, "AIS")
+    b = await writes.create_entity(api_schema, simple_api_context, "AIS")
+    await _merge(api_schema, simple_api_context, [a, b])
+
+    @sync_to_async
+    def redraw():
+        controller = GraphController(projector=table_projector)
+        projector.reproject_refs(controller, test_graph, [a])
+        projector.reproject_refs(controller, test_graph, [b])
+        projector.project_all(controller, test_graph)
+        return drawing.vertex_count(test_graph, "AIS"), drawing.members_of(test_graph, a)
+
+    assert await redraw() == (1, sorted([a, b]))

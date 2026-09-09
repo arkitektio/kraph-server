@@ -17,8 +17,7 @@ from asgiref.sync import sync_to_async
 
 from core import models as core_models
 from evidence import identity, models as evidence_models
-from graph_engine.controller import GraphController
-from tests.support import claims, drawing
+from tests.support import claims, drawing, graphs
 from tests.support.graphs import BEFORE, example_graph as _example_graph
 from tests.support.writes import ASSERT_DIFFERENT, ASSERT_SAME, RETRACT_DIFFERENT, assert_entity as _assert_entity
 
@@ -196,14 +195,13 @@ async def test_a_difference_the_category_does_not_trust_is_ignored(api_schema, s
         a = claims.mint(org, "AIS", "peter", asserted_at=BEFORE)
         b = claims.mint(org, "AIS", "peter", asserted_at=BEFORE)
         claims.same(org, a, b, "peter", asserted_at=BEFORE)
-        controller = GraphController(projector=table_projector)
-        controller.rebuild_projection(graph)
+        graphs.rebuild(graph, table_projector)
         merged = drawing.vertex_count(graph, "AIS"), drawing.members_of(graph, a)
         claims.different(org, a, b, "stranger", asserted_at=BEFORE)
-        controller.rebuild_projection(graph)
+        graphs.rebuild(graph, table_projector)
         ignored = drawing.vertex_count(graph, "AIS"), drawing.members_of(graph, a)
         claims.different(org, a, b, "peter", asserted_at=BEFORE)
-        controller.rebuild_projection(graph)
+        graphs.rebuild(graph, table_projector)
         trusted = drawing.vertex_count(graph, "AIS"), drawing.members_of(graph, a)
         return merged, ignored, trusted, a, b
 

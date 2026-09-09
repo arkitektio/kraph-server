@@ -13,25 +13,23 @@ a rumour. This test is the one that says the account exists.
 """
 
 import uuid
-
 import kante
 import pytest
 from kante.context import HttpContext
-
 from core import models as core_models
+from graph_engine.retrieved import RetrievedNode
+
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {
         assertEntityExists(input: $input) { instance { id } }
     }
 """
-
 RECORD_METRIC = """
     mutation RecordMetric($input: AssertMetricValueInput!) {
         assertMetricValue(input: $input) { metric { id } }
     }
 """
-
 THE_SENTENCE = """
     query Explain($id: ID!, $graph: ID!) {
         node(id: $id, graph: $graph) {
@@ -216,3 +214,55 @@ async def test_a_property_with_no_evidence_reports_nothing_rather_than_zero(
     for prop in result.data["node"]["richProperties"]:
         assert prop["nEvidence"] in (None, 0)
         assert prop["supportingEvidence"] == []
+
+
+def _entity(properties: dict) -> RetrievedNode:
+    return RetrievedNode(
+        controller=None,  # type: ignore[arg-type]
+        graph_name="testgraph",
+        vertex_id=1,
+        label="AIS",
+        properties=properties,
+    )
+
+
+def test_rich_property_definition_resolves_from_the_category_schema() -> None:
+    """RichProperty.definition must return the schema definition for its key.
+
+    It previously called `.filter(name=...)` on `property_definitions`, which is a JSON
+    list rather than a related manager, so this resolver raised AttributeError for every
+    property. `richProperties` had no coverage at any of its four call sites.
+    """
+    import asyncio
+
+    from api.types import PropertyDefinition, RichProperty
+    from core import models as core_models
+    from graph_engine import input_models as im
+
+    definitions = [
+        im.PropertyDefinitionInput(key="avg_length", type=im.PropertyType.FLOAT),
+        im.PropertyDefinitionInput(key="name", type=im.PropertyType.STRING),
+    ]
+    # Unsaved instance: property_map reads the JSON field, so no database is involved.
+    category = core_models.EntityCategory(property_definitions=[d.model_dump(mode="json") for d in definitions])
+
+    entity = _entity({"avg_length": 45.2})
+    prop = RichProperty(_entity=entity, _key="avg_length", _category=category)
+
+    resolved = asyncio.run(prop.definition())
+
+    assert isinstance(resolved, PropertyDefinition)
+    assert resolved.key == "avg_length"
+
+
+def test_rich_property_definition_is_none_for_an_undeclared_key() -> None:
+    """A property present on the node but absent from the schema resolves to None."""
+    import asyncio
+
+    from api.types import RichProperty
+    from core import models as core_models
+
+    category = core_models.EntityCategory(property_definitions=[])
+    prop = RichProperty(_entity=_entity({"stray": 1}), _key="stray", _category=category)
+
+    assert asyncio.run(prop.definition()) is None

@@ -5,23 +5,29 @@ is countable — the three things a datum-as-row could not do.
 """
 
 import uuid
-
 import pytest
 from asgiref.sync import sync_to_async
-
 from evidence import models as evidence_models
 from tests.support import writes
+from django.db import IntegrityError, transaction
+from authentikate.models import Organization
+import kante
+from kante.context import HttpContext
+from core import models as core_models
+from evidence import claims as claims_module
+from graph_engine import input_models as models
+from graph_engine.materialize import materialize
+from tests.support import drawing
+
 
 STRUCTURE_BY_IDENTIFIER = """
     query S($identifier: StructureIdentifier!, $object: StructureObject!) {
         structureByIdentifier(identifier: $identifier, object: $object) { id observedAt confidence }
     }
 """
-
 NODE_PROPERTIES = """
     query N($id: ID!, $graph: ID!) { node(id: $id, graph: $graph) { ... on Entity { properties } } }
 """
-
 STANDINGS = """
     query S($id: ID!) { standings(id: $id) { stands assertion { id } } }
 """
@@ -147,3 +153,452 @@ async def test_retracting_a_measurement_retracts_its_informs_row(api_schema, sim
 
     assert await standings() == {str(evidence_models.Link.Kind.MEASUREMENT): [False], str(evidence_models.Link.Kind.INFORMS): [False]}
     assert await _avg_length(api_schema, simple_api_context, test_graph, entity) is None
+
+
+def test_same_object_from_two_projections_is_one_row(organization: Organization, roi_category_a: evidence_models.StructureKind, roi_category_b: evidence_models.StructureKind, assertion: evidence_models.Assertion) -> None:
+    """The headline: two graphs, one structure.
+
+    The categories differ — they are still graph-scoped at this point — but
+    identity is `(organization, identifier, object)`, so the second write is a
+    constraint violation rather than a duplicate.
+    """
+    evidence_models.Structure.objects.create_for_organization(
+        organization=organization,
+        kind=roi_category_a,
+        identifier="@mikro/roi",
+        object="roi-42",
+        assertion=assertion,
+    )
+
+    with pytest.raises(IntegrityError), transaction.atomic():
+        evidence_models.Structure.objects.create_for_organization(
+            organization=organization,
+            kind=roi_category_b,
+            identifier="@mikro/roi",
+            object="roi-42",
+            assertion=assertion,
+        )
+
+    assert evidence_models.Structure.objects.for_organization(organization).count() == 1
+
+
+def test_different_objects_are_different_structures(organization: Organization, roi_category_a: evidence_models.StructureKind, assertion: evidence_models.Assertion) -> None:
+    """Identity is per external object, not per identifier."""
+    for object_id in ("roi-1", "roi-2"):
+        evidence_models.Structure.objects.create_for_organization(
+            organization=organization,
+            kind=roi_category_a,
+            identifier="@mikro/roi",
+            object=object_id,
+            assertion=assertion,
+        )
+
+    assert evidence_models.Structure.objects.for_organization(organization).count() == 2
+
+
+def test_different_identifiers_over_the_same_object_are_distinct(organization: Organization, roi_category_a: evidence_models.StructureKind, assertion: evidence_models.Assertion) -> None:
+    """An image and an ROI can share an id string without being the same thing.
+
+    `object` is only unique within an `identifier` namespace, which is why both
+    columns are in the constraint.
+    """
+    evidence_models.Structure.objects.create_for_organization(
+        organization=organization,
+        kind=roi_category_a,
+        identifier="@mikro/roi",
+        object="7",
+        assertion=assertion,
+    )
+    evidence_models.Structure.objects.create_for_organization(
+        organization=organization,
+        kind=roi_category_a,
+        identifier="@mikro/image",
+        object="7",
+        assertion=assertion,
+    )
+
+    assert evidence_models.Structure.objects.for_organization(organization).count() == 2
+
+
+def test_dedup_does_not_span_organizations(organization: Organization, other_organization: Organization, roi_category_a: evidence_models.StructureKind, assertion: evidence_models.Assertion) -> None:
+    """Two tenants may each hold a structure for the same object id.
+
+    They are not the same datum — the id strings live in different namespaces —
+    and collapsing them would be the leak, not the feature.
+    """
+    other_assertion = evidence_models.Assertion.objects.create_for_organization(
+        organization=other_organization,
+        subject="tester",
+        app_id="pytest",
+        asserted_at=assertion.asserted_at,
+    )
+
+    for org, assertion_row in ((organization, assertion), (other_organization, other_assertion)):
+        evidence_models.Structure.objects.create_for_organization(
+            organization=org,
+            kind=roi_category_a,
+            identifier="@mikro/roi",
+            object="roi-42",
+            assertion=assertion_row,
+        )
+
+    assert evidence_models.Structure.objects.for_organization(organization).count() == 1
+    assert evidence_models.Structure.objects.for_organization(other_organization).count() == 1
+
+
+async def _get_or_create_structure_kind(test_graph: core_models.Graph) -> evidence_models.StructureKind:
+    """The organization's ROI term. No graph — kinds are organization vocabulary."""
+    kind, _ = await evidence_models.StructureKind.all_objects.aget_or_create(
+        organization=test_graph.organization,
+        identifier="roi_test",
+    )
+    return kind
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_create_structure(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+):
+    category = await _get_or_create_structure_kind(test_graph)
+    object_id = f"obj_{uuid.uuid4().hex[:8]}"
+
+    mutation = """
+        mutation CreateStructure($input: AssertStructureExistsInput!) {
+            assertStructureExists(input: $input) { structure { id object } }
+        }
+    """
+
+    result = await api_schema.execute(
+        mutation,
+        variable_values={
+            "input": {
+                "identifier": category.identifier,
+                "object": object_id,
+                "metrics": [],
+            }
+        },
+        context_value=simple_api_context,
+    )
+
+    assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
+    assert result.data["assertStructureExists"]["structure"]["id"]
+    assert result.data["assertStructureExists"]["structure"]["object"] == object_id
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_update_structure(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+):
+    category = await _get_or_create_structure_kind(test_graph)
+    object_id = f"obj_{uuid.uuid4().hex[:8]}"
+    updated_object_id = f"obj_{uuid.uuid4().hex[:8]}"
+
+    create_mutation = """
+        mutation CreateStructure($input: AssertStructureExistsInput!) {
+            assertStructureExists(input: $input) { structure { id object } }
+        }
+    """
+
+    create_result = await api_schema.execute(
+        create_mutation,
+        variable_values={
+            "input": {
+                "identifier": category.identifier,
+                "object": object_id,
+                "metrics": [],
+            }
+        },
+        context_value=simple_api_context,
+    )
+
+    assert create_result.errors is None, f"GraphQL errors: {create_result.errors}"
+    structure_id = create_result.data["assertStructureExists"]["structure"]["id"]
+
+    update_mutation = """
+        mutation UpdateStructure($input: RecordMetricsInput!) {
+            recordMetrics(input: $input) { structure { id object } }
+        }
+    """
+
+    # A structure's (identifier, object) is its identity in the evidence base, so
+    # repointing `object` is rejected rather than silently creating a second
+    # identity or violating the uniqueness constraint. This test previously
+    # asserted the opposite; the in-place AGE `SET s.object = $obj` it exercised
+    # no longer exists.
+    reidentify_result = await api_schema.execute(
+        update_mutation,
+        variable_values={
+            "input": {
+                "id": structure_id,
+                "object": updated_object_id,
+                "metrics": [],
+            }
+        },
+        context_value=simple_api_context,
+    )
+
+    assert reidentify_result.errors is not None, "Repointing a structure's object must be rejected"
+    assert "immutable" in str(reidentify_result.errors[0])
+
+    # What update *is* for: appending measurements to an existing structure.
+    update_result = await api_schema.execute(
+        update_mutation,
+        variable_values={
+            "input": {
+                "id": structure_id,
+                "object": object_id,
+                "metrics": [{"key": "vector_length", "value": 42.0, "valueKind": "FLOAT"}],
+            }
+        },
+        context_value=simple_api_context,
+    )
+
+    assert update_result.errors is None, f"GraphQL errors: {update_result.errors}"
+    assert update_result.data is not None
+    assert update_result.data["recordMetrics"]["structure"]["id"] == structure_id
+    assert update_result.data["recordMetrics"]["structure"]["object"] == object_id
+
+
+CREATE_STRUCTURE = """
+    mutation CreateStructure($input: AssertStructureExistsInput!) {
+        assertStructureExists(input: $input) { structure { id } }
+    }
+"""
+
+
+CREATE_STRUCTURE_RELATION = """
+    mutation CreateStructureRelation($input: AssertStructureRelationExistsInput!) {
+        assertStructureRelationExists(input: $input) {
+            link {
+                id
+                kind
+                sourceRef
+                targetRef
+                source { ... on Structure { id object } }
+                target { ... on Structure { id object } }
+            }
+        }
+    }
+"""
+
+
+ARCHIVE_STRUCTURE_RELATION = """
+    mutation ArchiveStructureRelation($input: RetractStructureRelationInput!) {
+        retractStructureRelation(input: $input) { link { id } }
+    }
+"""
+
+
+UPDATE_STRUCTURE_RELATION = """
+    mutation UpdateStructureRelation($input: SupersedeStructureRelationInput!) {
+        supersedeStructureRelation(input: $input) { link { id } }
+    }
+"""
+
+
+@pytest.fixture(scope="session")
+def edge_schema() -> models.GraphDefinitionInput:
+    """A schema that declares the two edge kinds the bio schema leaves out.
+
+    `MEASURES` runs from an ROI to an AIS, and AIS carries a MEAN rollup over
+    `vector_length` — so attaching a measurement has an observable consequence
+    and the INFORMS claim can be tested through its effect rather than by
+    inspecting rows.
+    """
+    return models.GraphDefinitionInput(
+        system_version="1.0.0",
+        extensions=models.GraphExtensionsInput(
+            entities=[
+                models.EntityDefinitionInput(
+                    key="AIS",
+                    property_definitions=[
+                        models.PropertyDefinitionInput(
+                            key="avg_length",
+                            type=models.PropertyType.FLOAT,
+                            index=True,
+                            derivation=models.DerivationType.ROLLUP,
+                            rule=models.DerivationRuleInput(source_node="ROI", key="vector_length", aggregation=models.AggregationFunction.MEAN),
+                        )
+                    ],
+                )
+            ],
+            structure_relations=[
+                models.StructureRelationDefinitionInput(
+                    key="CONTAINS",
+                    source=models.StructureDescriptorInput(identifiers=["ROI"]),
+                    target=models.StructureDescriptorInput(identifiers=["ROI"]),
+                )
+            ],
+            measurements=[
+                models.MeasurementDefinitionInput(
+                    key="MEASURES",
+                    source=models.StructureDescriptorInput(identifiers=["ROI"]),
+                    target=models.EntityDescriptorInput(keys=["AIS"]),
+                )
+            ],
+        ),
+    )
+
+
+@pytest.fixture(scope="function")
+def edge_graph(transactional_db, table_projector, edge_schema, authenticated_context) -> core_models.Graph:
+    request = authenticated_context.request
+    return materialize(
+        edge_schema,
+        table_projector,
+        user=request._user,
+        organization=request._organization,
+        membership=request.membership,
+        name="edge_graph",
+    )
+
+
+async def _structure(api_schema: kante.Schema, ctx: HttpContext, metrics: list[dict] | None = None) -> str:
+    created = await api_schema.execute(
+        CREATE_STRUCTURE,
+        variable_values={"input": {"identifier": "ROI", "object": f"roi_{uuid.uuid4().hex[:8]}", "metrics": metrics or []}},
+        context_value=ctx,
+    )
+    assert created.errors is None, f"GraphQL errors: {created.errors}"
+    return created.data["assertStructureExists"]["structure"]["id"]
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_structure_relation_is_an_evidence_row_with_no_projection(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    edge_graph: core_models.Graph,
+    table_projector,
+) -> None:
+    """The claim is recorded, addressed by its own id, and draws no edge."""
+    category = await core_models.StructureRelationCategory.objects.filter(graph=edge_graph, key="CONTAINS").afirst()
+    assert category is not None, "The schema declares a CONTAINS structure relation"
+
+    source = await _structure(api_schema, simple_api_context)
+    target = await _structure(api_schema, simple_api_context)
+
+    created = await api_schema.execute(
+        CREATE_STRUCTURE_RELATION,
+        variable_values={"input": {"term": category.key, "sourceId": source, "targetId": target}},
+        context_value=simple_api_context,
+    )
+    assert created.errors is None, f"GraphQL errors: {created.errors}"
+    payload = created.data["assertStructureRelationExists"]["link"]
+
+    assert payload["sourceRef"] == source, "Endpoints are named the way evidence names them — opaque refs"
+    assert payload["targetRef"] == target
+
+    # Resolved through the union, and dispatched on `kind` rather than on the ref:
+    # every ref is a bare uuid, so nothing about one says which table it names. A
+    # structure relation runs structure → structure, and this is what proves the
+    # table in `api/types.py::_ENDPOINT_TABLES` agrees with what the writer wrote.
+    assert payload["source"]["id"] == source, "The structure this relation runs from"
+    assert payload["target"]["id"] == target, "and the one it runs to"
+    assert payload["source"]["object"], "resolved as a real structure, not a stub"
+
+    @sync_to_async
+    def links_and_edges() -> tuple[int, int]:
+        links = evidence_models.Link.objects.for_organization(edge_graph.organization).filter(kind=evidence_models.Link.Kind.STRUCTURE_RELATION)
+        return links.count(), drawing.edge_count(edge_graph, category.age_name)
+
+    link_count, edge_count = await links_and_edges()
+    assert link_count == 1, "The claim must be recorded as evidence"
+    assert edge_count == 0, "Structures are not vertices, so there is nothing to draw an edge between"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_archiving_a_structure_relation_is_a_lifecycle_row(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    edge_graph: core_models.Graph,
+) -> None:
+    """Retraction never deletes. This whole path previously raised AttributeError."""
+    category = await core_models.StructureRelationCategory.objects.filter(graph=edge_graph, key="CONTAINS").afirst()
+    source = await _structure(api_schema, simple_api_context)
+    target = await _structure(api_schema, simple_api_context)
+
+    created = await api_schema.execute(
+        CREATE_STRUCTURE_RELATION,
+        variable_values={"input": {"term": category.key, "sourceId": source, "targetId": target}},
+        context_value=simple_api_context,
+    )
+    assert created.errors is None, f"GraphQL errors: {created.errors}"
+    relation_id = created.data["assertStructureRelationExists"]["link"]["id"]
+
+    archived = await api_schema.execute(ARCHIVE_STRUCTURE_RELATION, variable_values={"input": {"id": relation_id}}, context_value=simple_api_context)
+    assert archived.errors is None, f"GraphQL errors: {archived.errors}"
+
+    @sync_to_async
+    def state() -> tuple[str, int]:
+        link = evidence_models.Link.all_objects.get(pk=relation_id)
+        events = evidence_models.Standing.objects.for_organization(edge_graph.organization).filter(target_type="link", target_id=relation_id)
+        return claims_module.current(link.organization, "link", link.pk), events.count()
+
+    status, lifecycle_rows = await state()
+    assert status == False
+    assert lifecycle_rows == 1, "The lifecycle log is the authority; the cached status is a projection of it"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_structure_relation_update_and_archive_reach_the_row(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    edge_graph: core_models.Graph,
+) -> None:
+    """The resolvers must address a UUID-keyed row, not a composite graph id.
+
+    `extract_node_id` int-casts everything after the first hyphen, so the old
+    composite scheme could not name one of these at all — reaching the row is the
+    thing worth asserting, and it is what the whole row-backed edge surface is
+    for.
+    """
+    category = await core_models.StructureRelationCategory.objects.filter(graph=edge_graph, key="CONTAINS").afirst()
+    source = await _structure(api_schema, simple_api_context)
+    target = await _structure(api_schema, simple_api_context)
+
+    created = await api_schema.execute(
+        CREATE_STRUCTURE_RELATION,
+        variable_values={"input": {"term": category.key, "sourceId": source, "targetId": target}},
+        context_value=simple_api_context,
+    )
+    assert created.errors is None, f"GraphQL errors: {created.errors}"
+    original = created.data["assertStructureRelationExists"]["link"]["id"]
+
+    updated = await api_schema.execute(
+        UPDATE_STRUCTURE_RELATION,
+        variable_values={"input": {"id": original, "sourceId": source, "targetId": target}},
+        context_value=simple_api_context,
+    )
+    assert updated.errors is None, f"GraphQL errors: {updated.errors}"
+    replacement = updated.data["supersedeStructureRelation"]["link"]["id"]
+    assert replacement != original, "An update supersedes a claim rather than editing it"
+
+    @sync_to_async
+    def statuses() -> tuple[str, str]:
+        links = evidence_models.Link.all_objects
+        organization = links.get(pk=original).organization
+        return claims_module.current(organization, "link", original), claims_module.current(organization, "link", replacement)
+
+    original_status, replacement_status = await statuses()
+    assert original_status == False
+    assert replacement_status == True
+
+    archived = await api_schema.execute(ARCHIVE_STRUCTURE_RELATION, variable_values={"input": {"id": replacement}}, context_value=simple_api_context)
+    assert archived.errors is None, f"GraphQL errors: {archived.errors}"
+
+    @sync_to_async
+    def surviving_status() -> str:
+        link = evidence_models.Link.all_objects.get(pk=replacement)
+        return claims_module.current(link.organization, "link", link.pk)
+
+    assert await surviving_status() == False, "Retraction keeps the row and marks it"

@@ -17,9 +17,16 @@ import pytest
 import kante
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
-
 from core import models as core_models
 from tests.support import drawing, writes
+from evidence import models as evidence_models
+from graph_engine import models as graph_engine_models
+from graph_engine.controller import GraphController
+from graph_engine.retrieved import RetrievedNode
+from tests.support.writes import assert_entity as _assert_entity
+from tests.support import rules
+import uuid
+
 
 ASSERT_ENTITY = """
     mutation AssertEntityExists($input: AssertEntityExistsInput!) {
@@ -37,7 +44,6 @@ ASSERT_ENTITY = """
         }
     }
 """
-
 ATTEST_ENTITY = """
     mutation AttestEntity($input: AttestEntityInput!) {
         attestEntity(input: $input) {
@@ -46,7 +52,6 @@ ATTEST_ENTITY = """
         }
     }
 """
-
 RETRACT_ENTITY = """
     mutation RetractEntity($input: RetractEntityInput!) {
         retractEntity(input: $input) {
@@ -56,19 +61,16 @@ RETRACT_ENTITY = """
         }
     }
 """
-
 READ_INSTANCE = """
     query ReadInstance($id: ID!) {
         instance(id: $id) { id kind term { key } standings { stands } }
     }
 """
-
 READ_ENTITY = """
     query ReadEntity($id: ID!, $graph: ID!) {
         entity(id: $id, graph: $graph) { id graph { id } asOfSeq categoryIds richProperties { key value } drawnIn { graph { id } } }
     }
 """
-
 ASSERT_RELATION = """
     mutation AssertRelation($input: AssertRelationExistsInput!) {
         assertRelationExists(input: $input) {
@@ -85,7 +87,6 @@ ASSERT_RELATION = """
         }
     }
 """
-
 CLASSIFY = """
     mutation ClassifyNodes($input: ClassifyNodesInput!) {
         classifyNodes(input: $input) {
@@ -94,7 +95,6 @@ CLASSIFY = """
         }
     }
 """
-
 READ_LINK = """
     query ReadLink($id: ID!) {
         link(id: $id) { id kind target { ... on Term { key } ... on Instance { id } } }
@@ -139,54 +139,6 @@ async def test_the_payload_answers_about_the_claim(
     assert payload["drawings"], "The view declaring AIS drew it"
     assert payload["drawings"][0]["node"]["id"] == claim["id"], "and the drawing is of this claim"
     assert [entry["graph"]["id"] for entry in claim["drawnIn"]] == [entry["graph"]["id"] for entry in payload["drawings"]], "`drawnIn` on the claim and `drawings` on the act are the same question, asked of the claim and of the act"
-
-
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.asyncio
-async def test_a_retraction_shows_up_as_a_standing(
-    api_schema: kante.Schema,
-    simple_api_context: HttpContext,
-    test_graph: core_models.Graph,
-) -> None:
-    """ "Does it still hold" is answerable from the claim, and disagreement is visible.
-
-    The positions are reported and the folding is left to the reader, because for an
-    instance there is no organization-wide answer to fold to: a graph's selector
-    decides whose claims it count, so whether a *view* holds it is `drawings`. That is
-    why there is no `stands` field beside this list.
-    """
-    entity_id = await writes.create_entity(api_schema, simple_api_context, "AIS")
-
-    retracted = await api_schema.execute(
-        RETRACT_ENTITY,
-        variable_values={"input": {"id": entity_id}},
-        context_value=simple_api_context,
-    )
-
-    assert retracted.errors is None, f"GraphQL errors: {retracted.errors}"
-    payload = retracted.data["retractEntity"]
-
-    assert [row["stands"] for row in payload["instance"]["standings"]] == [False], "The retraction is on the record, newest first, with its own assertion"
-    assert payload["drawings"] == [], "No view draws it any more"
-
-    read = await api_schema.execute(READ_INSTANCE, variable_values={"id": entity_id}, context_value=simple_api_context)
-    assert read.errors is None, f"GraphQL errors: {read.errors}"
-    assert [row["stands"] for row in read.data["instance"]["standings"]] == [False], "and the same answer is readable afterwards, without the write"
-    assert read.data["instance"]["term"]["key"] == "AIS", "The claim outlives the drawing it lost"
-
-    # **Then attest it again.** Both positions stay on the record and the newest is
-    # first, by `(at, assertion.seq)` — there is no "reinstate" operation, only more
-    # evidence, so the order is the whole answer.
-    attested = await api_schema.execute(
-        ATTEST_ENTITY,
-        variable_values={"input": {"id": entity_id}},
-        context_value=simple_api_context,
-    )
-    assert attested.errors is None, f"GraphQL errors: {attested.errors}"
-    claim = attested.data["attestEntity"]["instance"]
-
-    assert [row["stands"] for row in claim["standings"]] == [True, False], "Newest first: it holds again, and the retraction is still on the record"
-    assert attested.data["attestEntity"]["drawings"], "and the view that admits the word draws it again"
 
 
 @pytest.mark.django_db(transaction=True)
@@ -309,7 +261,6 @@ RETRACT_LINKS = """
         }
     }
 """
-
 ASSERT_RELATION_WITH_EVIDENCE = """
     mutation AssertRelation($input: AssertRelationExistsInput!) {
         assertRelationExists(input: $input) {
@@ -362,62 +313,402 @@ async def test_a_link_claim_reports_its_drawing_and_its_standing(
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_evidence_can_inform_a_claim_rather_than_a_node(
+async def test_drawings_report_the_rules_category_not_the_vertex_stamp(api_schema, simple_api_context, test_graph: core_models.Graph, table_projector) -> None:
+    entity_id = await writes.create_entity(api_schema, simple_api_context, "AIS")
+
+    @sync_to_async
+    def stamp_and_read():
+        # Corrupt the cache on purpose: the payload must not read it back. The
+        # composite FK (RFC 0006) refuses an invented id, so the worst corruption
+        # still expressible is a *declared but wrong* category of the same graph —
+        # which is exactly the stale-vertex shape the original bug had.
+        wrong = core_models.EntityCategory.objects.get(graph=test_graph, key="Cell")
+        graph_engine_models.ProjectionLabel.objects.filter(graph=test_graph, vertex__ref=entity_id).update(category_pk=wrong.pk, label=wrong.age_name)
+        node = evidence_models.Instance.objects.for_organization(test_graph.organization).select_related("term").get(pk=entity_id)
+        drawings = GraphController(projector=table_projector).drawings_for_instance(node)
+        rule = core_models.EntityCategory.objects.get(graph=test_graph, key="AIS")
+        return [(drawing.graph.pk, drawing.category.pk) for drawing in drawings], rule.pk
+
+    reported, rule_pk = await stamp_and_read()
+    assert (test_graph.pk, rule_pk) in reported, f"the payload must name the rule's category, got {reported}"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_two_undrawn_nodes_are_two_objects(test_graph: core_models.Graph, table_projector) -> None:
+    from evidence import writer
+
+    organization = test_graph.organization
+    term = writer.ensure_term(organization, "ENTITY", "AIS")
+    assertion = writer.create_assertion(organization, subject="t", app_id="tests", action_id=None, action_name=None, action_args={})
+    rows = [evidence_models.Instance.objects.create_for_organization(organization=organization, kind=evidence_models.Instance.Kind.ENTITY, term=term, assertion=assertion) for _ in range(2)]
+    controller = GraphController(projector=table_projector)
+    nodes = [RetrievedNode.from_row(controller, row) for row in rows]
+    assert len(set(nodes)) == 2
+    assert nodes[0] != nodes[1]
+    assert nodes[0] == RetrievedNode.from_row(controller, rows[0])
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_the_write_reports_the_individuals_drawing(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
+    """Asserting an entity `sameAs` an existing one returns the drawing of the individual, not of the observation alone."""
+    a = (await _assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"]
+    result = await api_schema.execute(
+        """
+        mutation AssertEntityExists($input: AssertEntityExistsInput!) {
+            assertEntityExists(input: $input) { instance { id } drawings { node { id members } } }
+        }
+        """,
+        variable_values={"input": {"term": "AIS", "supportingEvidence": [], "sameAs": [a]}},
+        context_value=simple_api_context,
+    )
+    assert result.errors is None, f"GraphQL errors: {result.errors}"
+    payload = result.data["assertEntityExists"]
+    b = payload["instance"]["id"]
+    (drawn,) = payload["drawings"]
+    assert drawn["node"]["id"] == min(a, b)
+    assert sorted(drawn["node"]["members"]) == sorted([a, b])
+
+
+CREATE_ENTITY = """
+    mutation CreateEntity($input: AssertEntityExistsInput!) {
+        assertEntityExists(input: $input) {
+            instance { id }
+            drawings { category { id } node { id drawnLabels } }
+        }
+    }
+"""
+ENTITY = """
+    query Entity($id: ID!, $graph: ID!) {
+        entity(id: $id, graph: $graph) {
+            id
+            label
+            drawnLabels
+            categoryIds
+            categories { id key }
+            richProperties { key value }
+        }
+    }
+"""
+
+
+def _define(graph: core_models.Graph, key: str, definition: dict, properties: list[dict] | None = None) -> core_models.EntityCategory:
+    """A defined entity category over the word AIS, created or redefined."""
+    category, _ = core_models.EntityCategory.objects.get_or_create(graph=graph, key=key, defaults={"age_name": key.lower(), "label": key})
+    category.age_name = key.lower()  # the fixture's AIS is labelled "AIS"; one spelling for every assertion below
+    category.definition = definition
+    if properties is not None:
+        category.property_definitions = properties
+    category.save()
+    return category
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_a_write_reports_one_drawing_per_category(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
+    table_projector,
 ) -> None:
-    """The `INFORMS` fallback: a ref that names another claim, not an instance.
+    """`drawings` lists the node once per (view, category) — that is what the
+    field promises, and now it can be more than one entry for one view."""
 
-    Structures justifying "these two cells are connected" inform the **relation**, so
-    `_attach_supporting_evidence` writes the INFORMS link against the edge's own ref.
-    That is the one endpoint whose table `kind` alone cannot decide, so
-    `_resolve_claim_endpoint` tries an instance and then a link — and this is the only
-    test that reaches the second try.
+    @sync_to_async
+    def declare() -> set[str]:
+        ais = _define(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"))))
+        excitatory = _define(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"))))
+        return {str(ais.pk), str(excitatory.pk)}
+
+    category_ids = await declare()
+
+    created = await api_schema.execute(CREATE_ENTITY, variable_values={"input": {"term": "AIS", "supportingEvidence": []}}, context_value=simple_api_context)
+    assert created.errors is None, f"GraphQL errors: {created.errors}"
+    drawings = created.data["assertEntityExists"]["drawings"]
+    assert {entry["category"]["id"] for entry in drawings} == category_ids
+    assert all(sorted(entry["node"]["drawnLabels"]) == ["ais", "excitatory"] for entry in drawings)
+
+    ref = created.data["assertEntityExists"]["instance"]["id"]
+    read = await api_schema.execute(ENTITY, variable_values={"id": ref, "graph": str(test_graph.pk)}, context_value=simple_api_context)
+    assert read.errors is None, f"GraphQL errors: {read.errors}"
+    entity = read.data["entity"]
+    assert entity["drawnLabels"] == ["ais", "excitatory"]
+    assert entity["label"] == "ais", "the first label, for a client that shows one"
+    assert set(entity["categoryIds"]) == category_ids
+    assert {c["key"] for c in entity["categories"]} == {"AIS", "Excitatory"}
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_create_entity(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+):
+    """Create an entity through the GraphQL createEntity mutation."""
+    entity_category = await test_graph.aget_entity_def("AIS")
+
+    mutation = """
+        mutation CreateEntity($input: AssertEntityExistsInput!) {
+            assertEntityExists(input: $input) { instance { id kind term { key } } }
+        }
     """
-    source = await writes.create_entity(api_schema, simple_api_context, "Cell")
-    target = await writes.create_entity(api_schema, simple_api_context, "Cell")
 
-    created = await api_schema.execute(
-        ASSERT_RELATION,
+    result = await api_schema.execute(
+        mutation,
         variable_values={
             "input": {
-                "term": "IS_CONNECTED_TO",
-                "sourceId": source,
-                "targetId": target,
-                "supportingEvidence": [{"identifier": "@mikro/roi", "object": "roi-informs-an-edge", "metrics": [{"key": "vector_length", "value": 7.0, "valueKind": "FLOAT"}]}],
+                "term": entity_category.key,
             }
         },
         context_value=simple_api_context,
     )
-    assert created.errors is None, f"GraphQL errors: {created.errors}"
-    relation_id = created.data["assertRelationExists"]["link"]["id"]
 
-    @sync_to_async
-    def informs_id() -> str:
-        from evidence import models as evidence_models
+    assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None, "No data returned from GraphQL execution"
+    data = result.data["assertEntityExists"]["instance"]
+    assert data["id"]
+    # The **word** is `term.key`; `kind` says what sort of individual it is. They used
+    # to be one field: `Entity.kind` returned the vertex label, which is the word as
+    # one view renames it, so a claim and a drawing answered the same question
+    # differently.
+    assert data["term"]["key"] == "AIS"
+    assert data["kind"] == "ENTITY"
 
-        link = evidence_models.Link.objects.for_organization(test_graph.organization).filter(kind=evidence_models.Link.Kind.INFORMS, target_ref=relation_id).first()
-        assert link is not None, "The supporting structure informs the relation, not either endpoint"
-        return str(link.pk)
 
-    read = await api_schema.execute(
-        """
-        query ReadInforms($id: ID!) {
-            link(id: $id) {
-                kind
-                source { ... on Structure { id identifier } }
-                target { ... on Link { id kind } ... on Instance { id } }
+ASSERT_ENTITY_WITH_DRAWINGS = """
+    mutation AssertEntityExists($input: AssertEntityExistsInput!) {
+        assertEntityExists(input: $input) {
+            assertion { id subject seq }
+            instance { id kind term { key } }
+            drawings {
+                graph { id name }
+                category { id key }
+                node { id label }
             }
         }
-        """,
-        variable_values={"id": await informs_id()},
+    }
+"""
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_a_claim_no_view_declares_is_recorded_and_undrawn(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+) -> None:
+    """The write succeeds, the assertion is real, and nothing draws it.
+
+    This is the case that used to raise — `create_entity` ended with
+    `ValueError("... no category in {age_name} admits it")` *after* the claim was
+    durably committed — and then, once it stopped raising, the case that returned
+    a stranger's category.
+    """
+    word = f"Unlikely{uuid.uuid4().hex[:8]}"
+
+    result = await api_schema.execute(
+        ASSERT_ENTITY_WITH_DRAWINGS,
+        variable_values={"input": {"term": word, "supportingEvidence": []}},
         context_value=simple_api_context,
     )
 
-    assert read.errors is None, f"GraphQL errors: {read.errors}"
-    informs = read.data["link"]
-    assert informs["kind"] == "INFORMS"
-    assert informs["source"]["identifier"] == "@mikro/roi", "The structure that justifies the claim"
-    assert informs["target"]["id"] == relation_id, "and the claim it justifies, which is a link rather than a node"
-    assert informs["target"]["kind"] == "RELATION"
+    assert result.errors is None, f"A claim under an undeclared word must succeed: {result.errors}"
+    payload = result.data["assertEntityExists"]
+
+    assert payload["instance"]["id"], "The claim has a durable identity whether or not any view draws it"
+    assert payload["instance"]["term"]["key"] == word, "And it names the word claimed, not a category's name"
+    assert payload["drawings"] == [], "No view declares the word, so no view draws it"
+
+    assert payload["assertion"]["id"], "The act itself is addressable"
+    assert payload["assertion"]["seq"] is not None, "including its position in the log"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_a_claim_two_views_declare_reports_both_drawings(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    second_graph: core_models.Graph,
+) -> None:
+    """Two views declaring one word both draw the claim, and the result says so.
+
+    The old return could only name one of them. Note the assertion is on the *set*
+    of graphs rather than on ordering: which view is reported first is not a fact
+    about the claim, and a test that pinned it would be pinning `order_by("pk")`.
+    """
+    from asgiref.sync import sync_to_async
+
+    @sync_to_async
+    def declared_word() -> str:
+        """A word both graphs declare a category for."""
+        for graph in (test_graph, second_graph):
+            assert core_models.EntityCategory.objects.filter(graph=graph, key="AIS").exists(), f"{graph.name} must declare AIS"
+        return "AIS"
+
+    word = await declared_word()
+
+    result = await api_schema.execute(
+        ASSERT_ENTITY_WITH_DRAWINGS,
+        variable_values={"input": {"term": word, "supportingEvidence": []}},
+        context_value=simple_api_context,
+    )
+
+    assert result.errors is None, f"GraphQL errors: {result.errors}"
+    payload = result.data["assertEntityExists"]
+
+    drawn_in = {drawing["graph"]["id"] for drawing in payload["drawings"]}
+    assert drawn_in == {str(test_graph.id), str(second_graph.id)}, f"Both views declaring the word must draw it, got {payload['drawings']}"
+
+    for drawing in payload["drawings"]:
+        assert drawing["category"]["key"] == word, "Each drawing reports the category *that view* drew it under"
+        assert drawing["node"]["id"] == payload["instance"]["id"], "and the same node, seen from that view"
+
+
+CREATE_ENTITY_FOR_PARTICIPATION = """
+    mutation CreateEntity($input: AssertEntityExistsInput!) {
+        assertEntityExists(input: $input) { instance { id } }
+    }
+"""
+
+
+CREATE_NATURAL_EVENT = """
+    mutation CreateNaturalEvent($input: AssertNaturalEventExistsInput!) {
+        assertNaturalEventExists(input: $input) { instance { id } }
+    }
+"""
+
+
+async def _cell(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph) -> str:
+    category = await core_models.EntityCategory.objects.filter(graph=graph, key="Cell").afirst()
+    assert category is not None
+    created = await api_schema.execute(
+        CREATE_ENTITY_FOR_PARTICIPATION,
+        variable_values={"input": {"term": category.key, "supportingEvidence": []}},
+        context_value=ctx,
+    )
+    assert created.errors is None, f"GraphQL errors: {created.errors}"
+    return created.data["assertEntityExists"]["instance"]["id"]
+
+
+async def _mitosis(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph, source: str, target: str) -> str:
+    category = await core_models.NaturalEventCategory.objects.filter(graph=graph, key="Mitosis").afirst()
+    assert category is not None, "The bio schema declares a Mitosis event with Cell in and out"
+    created = await api_schema.execute(
+        CREATE_NATURAL_EVENT,
+        variable_values={
+            "input": {
+                "term": category.key,
+                "inputs": [{"role": "a", "entityId": source}],
+                "outputs": [{"role": "b", "entityId": target}],
+                "supportingEvidence": [],
+            }
+        },
+        context_value=ctx,
+    )
+    assert created.errors is None, f"GraphQL errors: {created.errors}"
+    return created.data["assertNaturalEventExists"]["instance"]["id"]
+
+
+def _participations(table_projector, graph: core_models.Graph) -> list[tuple[str, str]]:
+    """Every projected participation edge, as (label, role).
+
+    Two queries rather than one `UNION ALL`: AGE rejects the union with "column
+    name 'label' specified more than once", and the point here is the edges, not
+    the query.
+    """
+    found: list[tuple[str, str]] = []
+    for label in ("WENT_THROUGH", "CAME_OUT_OF"):
+        found.extend((label, str(role)) for role in drawing.edge_property_values(graph, label, "role"))
+    return sorted(found)
+
+
+ASSERT_PARTICIPATION = """
+    mutation AssertParticipation($input: AssertParticipationInput!) {
+        assertParticipation(input: $input) { link { id } }
+    }
+"""
+
+
+ARCHIVE_PARTICIPATION = """
+    mutation ArchiveParticipation($input: RetractParticipationInput!) {
+        retractParticipation(input: $input) { link { id } }
+    }
+"""
+
+
+def _assertion_count(table_projector, graph: core_models.Graph, label: str) -> list[int]:
+    return sorted(int(count) for count in drawing.edge_property_values(graph, label, "__assertion_count"))
+
+
+ASSERT_PARTICIPATION = """
+    mutation AssertParticipation($input: AssertParticipationInput!) {
+        assertParticipation(input: $input) {
+            link { kind id }
+            drawings { graph { id } category { id } edge { __typename id } }
+        }
+    }
+"""
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+@pytest.mark.parametrize("is_input", [True, False], ids=["input", "output"])
+async def test_a_participation_reports_the_view_that_drew_it(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    table_projector,
+    is_input: bool,
+) -> None:
+    """Both sides of a participation must be findable, and this is the test that says so.
+
+    **The failure this exists to catch is silent.** Reading a drawing back asks
+    AGE for the edge, and the reader used to build that pattern itself, wrongly
+    in two ways at once:
+
+    - it matched `[r:{category.age_name}]`, but a participation's label is not the
+      category's `age_name` — it is `AGE_INPUT_EDGE` / `AGE_OUTPUT_EDGE` off the
+      *event's* category;
+    - it matched `(source)-[r]->(target)`, but `participation_key` stores the
+      entity as source and the event as target on **both** sides, while an output
+      participation is drawn event → entity.
+
+    Neither mistake raises. `MATCH` simply finds nothing, `drawings` comes back
+    empty, and empty is a legitimate answer everywhere else — so without
+    parametrising over both directions this would pass while output
+    participations were permanently invisible. `projector.edge_pattern_for` is
+    now the single source of the label and the direction, shared with the writer.
+    """
+    entity = await _cell(api_schema, simple_api_context, test_graph)
+    other = await _cell(api_schema, simple_api_context, test_graph)
+    event = await _mitosis(api_schema, simple_api_context, test_graph, other, other)
+
+    result = await api_schema.execute(
+        ASSERT_PARTICIPATION,
+        variable_values={"input": {"event": event, "entity": entity, "role": "extra", "isInput": is_input}},
+        context_value=simple_api_context,
+    )
+
+    assert result.errors is None, f"GraphQL errors: {result.errors}"
+    payload = result.data["assertParticipation"]
+
+    assert payload["link"]["id"], "The claim has an identity"
+
+    # `kind`, not just `id`. This used to be `__typename` over the drawing types,
+    # which is how the test could pass while every participation came back as a
+    # `Relation`: the label a participation edge carries is the *event category's*
+    # `age_name` ("Mitosis"), so nothing readable from the label could ever have said
+    # "participation". The claim states the side outright.
+    expected = "PARTICIPATES_AS_INPUT" if is_input else "PARTICIPATES_AS_OUTPUT"
+    assert payload["link"]["kind"] == expected, f"A participation names the side it claims, got {payload['link']['kind']}"
+
+    assert payload["drawings"], f"The graph draws this participation, so the result must say so (isInput={is_input})"
+    assert payload["drawings"][0]["graph"]["id"] == str(test_graph.id)
+    assert payload["drawings"][0]["category"]["id"], "and name the category it was drawn under"
+    # The *drawing* is still an `Edge` subtype — that is what a graph holds, and where
+    # `InputParticipation` / `OutputParticipation` belong. The claim beside it names the
+    # same side in the vocabulary of the log.
+    drawn_as = "InputParticipation" if is_input else "OutputParticipation"
+    assert payload["drawings"][0]["edge"]["__typename"] == drawn_as, "and the drawing agrees about what it drew"

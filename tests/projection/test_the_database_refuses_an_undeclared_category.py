@@ -13,12 +13,11 @@ trigger), edges going by the existing vertex cascade (the DETACH) — and a NULL
 """
 
 import uuid
-
 import pytest
 from django.db import IntegrityError, transaction
-
 from core import models as core_models
 from graph_engine import models as graph_engine_models
+from tests.support import drawing
 
 
 def _category(graph: core_models.Graph, key: str) -> core_models.Category:
@@ -99,3 +98,38 @@ def test_a_null_category_still_passes(test_graph, table_projector) -> None:
     # MATCH SIMPLE, so they survive until a reproject re-draws them.
     ref = str(uuid.uuid4())
     table_projector.draw_node(test_graph, ref, [("Cell", None)], "ENTITY", [ref])
+
+
+ENTITY = """
+    query Entity($id: ID!, $graph: ID!) {
+        entity(id: $id, graph: $graph) {
+            id
+            label
+            drawnLabels
+            categoryIds
+            categories { id key }
+            richProperties { key value }
+        }
+    }
+"""
+
+
+@pytest.mark.django_db(transaction=True)
+def test_deleting_one_category_keeps_the_vertex_under_the_other(test_graph, table_projector) -> None:
+    """The composite FK cascades the deleted category's *label*; the vertex
+    stays while another label holds it, and goes with its last one."""
+    from graph_engine import models as projection_models
+
+    ais = core_models.Category.objects.get(graph=test_graph, key="AIS")
+    soma = core_models.Category.objects.get(graph=test_graph, key="Soma")
+    ref = "00000000-0000-0000-0000-00000000a15e"
+    table_projector.draw_node(test_graph, ref, [(ais.age_name, ais.pk), (soma.age_name, soma.pk)], "ENTITY", [ref])
+    assert drawing.labels_of(test_graph, ref) == {ais.age_name, soma.age_name}
+
+    core_models.Category.objects.filter(pk=soma.pk).delete()
+    assert drawing.labels_of(test_graph, ref) == {ais.age_name}
+    assert projection_models.ProjectionVertex.objects.filter(graph=test_graph, ref=ref).exists()
+
+    core_models.Category.objects.filter(pk=ais.pk).delete()
+    assert not projection_models.ProjectionVertex.objects.filter(graph=test_graph, ref=ref).exists(), "no label left, no vertex"
+    assert not projection_models.ProjectionMember.objects.filter(graph=test_graph, ref=ref).exists()

@@ -13,16 +13,16 @@ indexed column, which is what makes it cheap enough to be routine.
 """
 
 from datetime import datetime, timedelta, timezone
-
 import pytest
 from authentikate.models import Organization
-
 from core import models as core_models
 from evidence import models as evidence_models
 from evidence import selector as selector_module
 from evidence import writer
 from graph_engine import input_models
 from tests.support import rules
+from core.enums import ValueKind
+
 
 MARCH_1 = datetime(2026, 3, 1, tzinfo=timezone.utc)
 MARCH_3 = datetime(2026, 3, 3, tzinfo=timezone.utc)
@@ -142,3 +142,120 @@ def test_no_rule_means_everything(organization: Organization, revised_measuremen
 def test_since_recovers_the_later_belief(organization: Organization, revised_measurement: core_models.Graph) -> None:
     """The lower bound `as_of` never had: "only what we have believed since March 3"."""
     assert [m.value for m in _metrics(organization, _rule(rules.since(MARCH_3)))] == [47.9], "the original March 1 claim is before the bound"
+
+
+LAST_YEAR = datetime(2025, 3, 1, 9, 0, tzinfo=timezone.utc)
+
+
+TODAY = datetime(2026, 8, 11, 9, 0, tzinfo=timezone.utc)
+
+
+YESTERDAY = datetime(2026, 8, 10, 9, 0, tzinfo=timezone.utc)
+
+
+def _structure(
+    organization: Organization,
+    category: evidence_models.StructureKind,
+    assertion: evidence_models.Assertion,
+    object_id: str = "roi-1",
+) -> evidence_models.Structure:
+    """A structure to hang measurements off."""
+    return evidence_models.Structure.objects.create_for_organization(
+        organization=organization,
+        kind=category,
+        identifier="@mikro/roi",
+        object=object_id,
+        assertion=assertion,
+    )
+
+
+def _metric(
+    organization: Organization,
+    structure: evidence_models.Structure,
+    category: evidence_models.MetricKind,
+    assertion: evidence_models.Assertion,
+    *,
+    value: float,
+    observed_at: datetime,
+    asserted_at: datetime,
+) -> evidence_models.Metric:
+    """One measurement, with both time axes set explicitly."""
+    return evidence_models.Metric.objects.create_for_organization(
+        organization=organization,
+        structure=structure,
+        kind=category,
+        key="vector_length",
+        value_kind=ValueKind.FLOAT.value,
+        value_num=value,
+        observed_at=observed_at,
+        asserted_at=asserted_at,
+        assertion=assertion,
+    )
+
+
+def test_as_of_selects_by_belief_time_not_observation_time(organization: Organization, roi_category_a: evidence_models.StructureKind, length_category: evidence_models.MetricKind, assertion: evidence_models.Assertion) -> None:
+    """The query `as_of` will be built on.
+
+    Two claims about the *same* observation, one correcting the other. Filtering
+    on `asserted_at` recovers what was believed at a chosen moment — which is
+    impossible if the two axes share a column.
+    """
+    structure = _structure(organization, roi_category_a, assertion)
+
+    _metric(
+        organization,
+        structure,
+        length_category,
+        assertion,
+        value=45.2,
+        observed_at=LAST_YEAR,
+        asserted_at=YESTERDAY,
+    )
+    _metric(
+        organization,
+        structure,
+        length_category,
+        assertion,
+        value=47.9,
+        observed_at=LAST_YEAR,
+        asserted_at=TODAY,
+    )
+
+    believed_yesterday = evidence_models.Metric.objects.for_organization(organization).filter(asserted_at__lte=YESTERDAY).order_by("-asserted_at")
+    believed_now = evidence_models.Metric.objects.for_organization(organization).order_by("-asserted_at")
+
+    assert believed_yesterday.count() == 1
+    assert believed_yesterday.first().value == 45.2
+    assert believed_now.first().value == 47.9
+
+
+def test_observation_window_selects_by_observed_at(organization: Organization, roi_category_a: evidence_models.StructureKind, length_category: evidence_models.MetricKind, assertion: evidence_models.Assertion) -> None:
+    """The other axis: 'measurements taken during last year's run'.
+
+    Both rows below were asserted at the same instant, so only `observed_at`
+    can separate them.
+    """
+    structure = _structure(organization, roi_category_a, assertion)
+
+    _metric(
+        organization,
+        structure,
+        length_category,
+        assertion,
+        value=1.0,
+        observed_at=LAST_YEAR,
+        asserted_at=TODAY,
+    )
+    _metric(
+        organization,
+        structure,
+        length_category,
+        assertion,
+        value=2.0,
+        observed_at=TODAY,
+        asserted_at=TODAY,
+    )
+
+    observed_last_year = evidence_models.Metric.objects.for_organization(organization).filter(observed_at__lt=datetime(2026, 1, 1, tzinfo=timezone.utc))
+
+    assert [m.value for m in observed_last_year] == [1.0]

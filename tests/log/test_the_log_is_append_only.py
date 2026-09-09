@@ -16,23 +16,15 @@ A grant-based guard would pass a test that asserted nothing.
 """
 
 from __future__ import annotations
-
-
 import pytest
 from django.db import connection, transaction
 from django.db.utils import IntegrityError
-
 from evidence import claims as claims_module
 from evidence import models as evidence_models
 from evidence import writer
 
-#: What the guard surfaces as. The trigger raises `restrict_violation`, which is
-#: SQLSTATE class 23 — integrity constraint violation — so Django maps it to
-#: `IntegrityError`. That is the right class: append-only *is* an integrity
-#: constraint, it just happens to be one Postgres has no declarative form for.
+
 REFUSED = IntegrityError
-
-
 @pytest.mark.django_db(transaction=True)
 def test_an_assertion_cannot_be_updated(organization) -> None:
     """The provenance record is immutable — including through `queryset.update()`.
@@ -48,8 +40,6 @@ def test_an_assertion_cannot_be_updated(organization) -> None:
 
     assertion.refresh_from_db()
     assert assertion.subject == "someone", "The row is unchanged, not merely reported as unchanged"
-
-
 @pytest.mark.django_db(transaction=True)
 def test_a_claim_cannot_be_deleted(organization, roi_kind) -> None:
     """Withdrawing a claim is another claim. Removing the record is not an option."""
@@ -63,8 +53,6 @@ def test_a_claim_cannot_be_deleted(organization, roi_kind) -> None:
         evidence_models.Standing.all_objects.filter(target_id=str(structure.pk)).delete()
 
     assert evidence_models.Standing.objects.for_organization(organization).filter(target_id=str(structure.pk)).count() == 1
-
-
 @pytest.mark.django_db(transaction=True)
 def test_every_log_table_refuses_a_rewrite(organization, roi_kind, length_category) -> None:
     """Not just the two most obvious ones.
@@ -103,8 +91,6 @@ def test_every_log_table_refuses_a_rewrite(organization, roi_kind, length_catego
     for table in ("evidence_assertion", "evidence_standing", "evidence_structure", "evidence_metric", "evidence_link", "evidence_instance"):
         with pytest.raises(REFUSED, match="append-only"), transaction.atomic(), connection.cursor() as cursor:
             cursor.execute(f"UPDATE {table} SET organization_id = organization_id")
-
-
 @pytest.mark.django_db(transaction=True)
 def test_projections_stay_mutable(organization, roi_kind) -> None:
     """`CurrentStanding` and `State` are folded from the log and must be rewritable.
@@ -126,8 +112,6 @@ def test_projections_stay_mutable(organization, roi_kind) -> None:
     # And it comes back from the log, which is the property that makes it a cache.
     claims_module.refold_current(organization)
     assert claims_module.current(organization, "structure", structure.pk) is False
-
-
 @pytest.mark.django_db(transaction=True)
 def test_the_escape_hatch_is_explicit_and_transaction_scoped(organization) -> None:
     """`redact` can destroy; nothing else inherits the permission.
@@ -146,8 +130,6 @@ def test_the_escape_hatch_is_explicit_and_transaction_scoped(organization) -> No
     survivor = writer.create_assertion(organization, subject="survivor", app_id="app")
     with pytest.raises(REFUSED), transaction.atomic():
         evidence_models.Assertion.all_objects.filter(pk=survivor.pk).delete()
-
-
 @pytest.mark.django_db(transaction=True)
 def test_concurring_claims_are_both_recorded(organization, roi_kind) -> None:
     """Two annotators retracting the same thing are two claims, not one.
@@ -170,52 +152,6 @@ def test_concurring_claims_are_both_recorded(organization, roi_kind) -> None:
     claims = evidence_models.Standing.objects.for_organization(organization).filter(target_id=str(structure.pk))
     assert claims.count() == 2
     assert sorted(claim.assertion.subject for claim in claims) == ["christian", "johannes"], "And who said so is answerable"
-
-
-@pytest.mark.django_db(transaction=True)
-def test_the_cache_agrees_with_the_fold(organization, roi_kind) -> None:
-    """`CurrentStanding` must say what `claims.stands_for` says.
-
-    Nothing asserted this while the cache lived on the log row, which is how the
-    two were free to drift — a queryset `.update(stands=False)` wrote no claim at
-    all, and no test would have noticed.
-    """
-    minting = writer.create_assertion(organization, subject="minter", app_id="app")
-    structures = [writer.ensure_structure(organization, kind=roi_kind, object=f"roi-agree-{index}", assertion=minting) for index in range(4)]
-
-    writer.retract(organization, structures[1], writer.create_assertion(organization, subject="a", app_id="app"))
-    writer.retract(organization, structures[2], writer.create_assertion(organization, subject="b", app_id="app"))
-    writer.attest(organization, structures[2], writer.create_assertion(organization, subject="c", app_id="app"))
-
-    ids = [str(structure.pk) for structure in structures]
-    folded = claims_module.stands_for(organization, "structure", ids)
-    cached = {target_id: claims_module.current(organization, "structure", target_id) for target_id in ids}
-
-    assert cached == folded, "The cache and the fold must be the same answer"
-    assert folded[ids[1]] is False
-    assert folded[ids[2]] is True, "Re-attesting after a retraction restores it — and both claims stay on the record"
-
-
-@pytest.mark.django_db(transaction=True)
-def test_a_rebuild_reproduces_the_cache(organization, roi_kind) -> None:
-    """Drop the projection, replay it, and nothing changes.
-
-    The honesty test for `CurrentStanding`, and the reason `rebuild` folds it before
-    it draws anything: every "which of these still count" narrowing reads it, so
-    replaying against an unproved cache would prove nothing.
-    """
-    minting = writer.create_assertion(organization, subject="minter", app_id="app")
-    structures = [writer.ensure_structure(organization, kind=roi_kind, object=f"roi-replay-{index}", assertion=minting) for index in range(3)]
-    writer.retract(organization, structures[0], writer.create_assertion(organization, subject="a", app_id="app"))
-
-    before = {str(row.target_id): row.stands for row in evidence_models.CurrentStanding.objects.for_organization(organization)}
-
-    claims_module.refold_current(organization)
-
-    after = {str(row.target_id): row.stands for row in evidence_models.CurrentStanding.objects.for_organization(organization)}
-    assert after == before, "A replay of the projection must reproduce it exactly"
-
-
 @pytest.mark.django_db(transaction=True)
 def test_the_migrations_escape_hatch_actually_rewrites_the_log(organization, roi_kind) -> None:
     """`0008`'s data migration rewrites a log table, and this is the only proof it can.
@@ -255,46 +191,3 @@ def test_the_migrations_escape_hatch_actually_rewrites_the_log(organization, roi
     # And it does not outlive the transaction it was set in — `SET LOCAL`, not `SET`.
     with pytest.raises(REFUSED), transaction.atomic(), connection.cursor() as cursor:
         cursor.execute("UPDATE evidence_standing SET target_type = 'structure'")
-
-
-@pytest.mark.django_db(transaction=True)
-def test_a_words_identity_cannot_be_rewritten(organization, roi_kind, length_category) -> None:
-    """RFC 0022: the identity columns every claim references are immutable in the
-    database, not by convention in one resolver."""
-    term = writer.ensure_term(organization, "ENTITY", "AIS")
-
-    with pytest.raises(REFUSED), transaction.atomic():
-        evidence_models.Term.all_objects.filter(pk=term.pk).update(key="Axon")
-    with pytest.raises(REFUSED), transaction.atomic():
-        evidence_models.Term.all_objects.filter(pk=term.pk).update(kind="RELATION")
-    with pytest.raises(REFUSED), transaction.atomic():
-        evidence_models.StructureKind.all_objects.filter(pk=roi_kind.pk).update(identifier="@mikro/image")
-    with pytest.raises(REFUSED), transaction.atomic():
-        evidence_models.MetricKind.all_objects.filter(pk=length_category.pk).update(value_kind="INT")
-
-    term.refresh_from_db()
-    assert (term.kind, term.key) == ("ENTITY", "AIS")
-
-
-@pytest.mark.django_db(transaction=True)
-def test_a_words_presentation_is_not_evidence(organization, roi_kind, length_category) -> None:
-    """How a word shows may change in place: no rule reads it, no claim references it."""
-    term = writer.ensure_term(organization, "ENTITY", "AIS")
-
-    evidence_models.Term.all_objects.filter(pk=term.pk).update(label="Axon initial segment", description="the AIS")
-    evidence_models.StructureKind.all_objects.filter(pk=roi_kind.pk).update(label="Region of interest")
-    evidence_models.MetricKind.all_objects.filter(pk=length_category.pk).update(label="Length")
-
-    term.refresh_from_db()
-    assert term.label == "Axon initial segment"
-
-
-@pytest.mark.django_db(transaction=True)
-def test_the_identity_guard_honours_the_redaction_hatch(organization) -> None:
-    term = writer.ensure_term(organization, "ENTITY", "Misspelt")
-    with transaction.atomic():
-        with connection.cursor() as cursor:
-            cursor.execute("SET LOCAL kraph.allow_log_rewrite = 'on'")
-        evidence_models.Term.all_objects.filter(pk=term.pk).update(key="Misspelled")
-    term.refresh_from_db()
-    assert term.key == "Misspelled"

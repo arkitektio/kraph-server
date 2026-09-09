@@ -127,15 +127,18 @@ async def graph_declaring(api_schema: Any, ctx: Any, word: str, *, name: str | N
     return await graph_with(api_schema, ctx, name or f"view-of-{word}", {"extensions": {"entities": [entity]}})
 
 
-def rebuild(graph: Any, table_projector: Any) -> core_models.Graph:
-    """Drop this view's drawing and derive it again from the log. Takes a `Graph` or its id."""
+def rebuild(graph: Any, table_projector: Any) -> dict[str, int]:
+    """Drop this view's drawing and derive it again from the log.
+
+    Takes a `Graph` or its id and returns what the replay drew, as the
+    controller reports it (`nodes`, `edges`, `claims`, `states`, …).
+    """
     if not isinstance(graph, core_models.Graph):
         graph = core_models.Graph.objects.get(pk=graph)
-    GraphController(projector=table_projector).rebuild_projection(graph)
-    return graph
+    return GraphController(projector=table_projector).rebuild_projection(graph)
 
 
-async def arebuild(graph: Any, table_projector: Any) -> core_models.Graph:
+async def arebuild(graph: Any, table_projector: Any) -> dict[str, int]:
     return await sync_to_async(rebuild)(graph, table_projector)
 
 

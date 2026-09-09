@@ -17,7 +17,7 @@ from evidence import models as evidence_models
 from evidence import writer
 from graph_engine import input_models as models
 from graph_engine.materialize import materialize
-from tests.support import claims, rules
+from tests.support import claims, graphs, rules
 
 DEC5 = datetime(2026, 12, 5, tzinfo=timezone.utc)
 
@@ -326,7 +326,6 @@ async def test_update_structure_relation_category_writes_the_rule(api_schema, si
 async def test_a_protocol_event_categorys_rules_govern_its_participations(api_schema, simple_api_context, table_projector, authenticated_context) -> None:
     from asgiref.sync import sync_to_async
 
-    from graph_engine.controller import GraphController
     from tests.support import drawing
 
     request = authenticated_context.request
@@ -365,7 +364,7 @@ async def test_a_protocol_event_categorys_rules_govern_its_participations(api_sc
         event = claims.mint(org, "Staining", "anyone", app_id="protocol-runner", kind="PROTOCOL_EVENT")
         claims.participate(org, "Staining", cell, event, "anyone", app_id="protocol-runner", role="subject", term_kind="PROTOCOL_EVENT")
         claims.participate(org, "Staining", other, event, "anyone", app_id="freehand", role="subject", term_kind="PROTOCOL_EVENT")
-        GraphController(projector=table_projector).rebuild_projection(graph)
+        graphs.rebuild(graph, table_projector)
         return drawing.edges_between(graph, cell, event), drawing.edges_between(graph, other, event)
 
     trusted, untrusted = await story()

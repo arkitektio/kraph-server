@@ -12,13 +12,14 @@ import pytest
 from asgiref.sync import sync_to_async
 from django.core.management import call_command
 from io import StringIO
-
 from core import models as core_models
 from evidence import models as evidence_models
 from graph_engine import models as projection_models
 from graph_engine import projector, watermark
 from graph_engine.controller import GraphController
 from tests.support import drawing, writes
+from tests.support.writes import ASSERT_SAME
+
 
 ENTITY_PROPERTIES = """
     query Entity($id: ID!, $graph: ID!) {
@@ -184,3 +185,36 @@ def test_incremental_refuses_a_single_graph(test_graph: core_models.Graph, table
 
     with pytest.raises(CommandError, match="organization"):
         call_command("reproject", incremental=True, graph=str(test_graph.pk), stdout=StringIO())
+
+
+def _roi(obj: str, length: float) -> list[dict]:
+    return [{"identifier": "ROI", "object": obj, "metrics": [{"key": "vector_length", "value": length, "valueKind": "FLOAT"}]}]
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_replay_folds_a_merge_the_write_path_could_not_draw(api_schema, simple_api_context, test_graph: core_models.Graph, table_projector, monkeypatch) -> None:
+    """The incremental path widens the touched set to the whole component."""
+    a = await writes.create_entity(api_schema, simple_api_context, "AIS", evidence=_roi("roi-a", 10.0))
+    b = await writes.create_entity(api_schema, simple_api_context, "AIS", evidence=_roi("roi-b", 30.0))
+
+    def _down(*args, **kwargs):
+        raise RuntimeError("projector down")
+
+    monkeypatch.setattr(projector, "reproject_refs", _down)
+    failed = await api_schema.execute(ASSERT_SAME, variable_values={"input": {"instances": [a, b]}}, context_value=simple_api_context)
+    assert failed.errors
+    monkeypatch.undo()
+
+    @sync_to_async
+    def replay():
+        assert drawing.vertex_count(test_graph, "AIS") == 2, "the failed draw left the two observations apart"
+        out = StringIO()
+        call_command("reproject", incremental=True, organization=test_graph.organization.slug, stdout=out)
+        return drawing.vertex_count(test_graph, "AIS"), drawing.members_of(test_graph, a), drawing.vertex_properties(test_graph, a).get("avg_length"), watermark.pending_count(test_graph.organization)
+
+    count, members, avg_length, pending = await replay()
+    assert count == 1
+    assert members == sorted([a, b])
+    assert avg_length == pytest.approx(20.0)
+    assert pending == 0

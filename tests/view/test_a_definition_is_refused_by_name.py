@@ -23,9 +23,12 @@ the same input. `materialize` checks a whole `GraphDefinitionInput`; the
 """
 
 import pytest
-
 from graph_engine import input_models as models
 from graph_engine.materialize import materialize
+from pydantic import ValidationError
+from core import models as core_models
+from tests.support.writes import CREATE_GRAPH
+
 
 RULE = models.DerivationRuleInput(source_node="ROI", key="centroid", aggregation=models.AggregationFunction.EUCLIDEAN_RANGE)
 
@@ -122,8 +125,6 @@ def test_events_keep_their_properties(table_projector, authenticated_context) ->
         name="event_property_graph",
     )
 
-    from core import models as core_models
-
     category = core_models.NaturalEventCategory.objects.get(graph=graph, key="Mitosis")
     assert [prop["key"] for prop in category.property_definitions] == ["cell_count"], "An event is a node; its properties materialize"
 
@@ -186,3 +187,40 @@ async def test_creating_a_relation_category_without_properties_works(api_schema,
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     assert result.data["createRelationCategory"]["id"]
+
+
+def test_validation_logic_works() -> None:
+    """
+    Ensures that calling the constructors with bad data still raises errors.
+    """
+    # 1. Test Missing Rollup Rule
+    with pytest.raises(ValueError, match="must have a 'rule' configuration"):
+        models.PropertyDefinitionInput(
+            key="test",
+            type=models.PropertyType.FLOAT,
+            derivation=models.DerivationType.ROLLUP,
+            rule=None,  # Missing!
+        )
+
+    # 2. Test Materialization Logic
+    # Pydantic V2 wraps nested validation errors in ValidationError
+    with pytest.raises((ValueError, ValidationError)):
+        models.PropertyDefinitionInput(
+            key="TEST_REL",
+            source="AIS",
+            target="Soma",
+        )  # type: ignore
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_create_graph_refuses_a_selector(api_schema, simple_api_context) -> None:
+    """`selector` is gone: trust lives in the definition now."""
+    made = await api_schema.execute(
+        CREATE_GRAPH,
+        variable_values={"input": {"name": "no-selectors", "definition": {"extensions": {"entities": [{"key": "X"}]}}, "selector": {"assertionFilter": {"subjects": ["peter"]}}}},
+        context_value=simple_api_context,
+    )
+    assert made.errors is not None, "a selector must be refused, not silently dropped"
+
+

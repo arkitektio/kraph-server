@@ -15,45 +15,31 @@ the vertex through any member.
 
 import pytest
 from asgiref.sync import sync_to_async
-from django.core.management import call_command
-from io import StringIO
-
 from core import models as core_models
-from evidence import models as evidence_models
-from graph_engine import projector, watermark
-from graph_engine.controller import GraphController
-from tests.support import claims, drawing, writes
+from tests.support import claims, drawing, graphs, writes
 from tests.support.graphs import BEFORE, example_graph as _example_graph
 from tests.support.writes import ASSERT_SAME, RETRACT_SAME, assert_entity as _assert_entity
+
 
 NODE = """
     query Node($id: ID!, $graph: ID!) {
         node(id: $id, graph: $graph) { id label members ... on Entity { properties } }
     }
 """
-
 NODES = """
     query Nodes($graph: ID!) {
         nodes(graph: $graph) { id members }
     }
 """
-
-
 async def _execute(api_schema, ctx, document: str, variables: dict) -> dict:
     result = await api_schema.execute(document, variable_values=variables, context_value=ctx)
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     return result.data
-
-
 async def _merge(api_schema, ctx, refs: list[str]) -> str:
     data = await _execute(api_schema, ctx, ASSERT_SAME, {"input": {"instances": refs}})
     return data["assertSameInstance"]["links"][0]["id"]
-
-
 def _roi(obj: str, length: float) -> list[dict]:
     return [{"identifier": "ROI", "object": obj, "metrics": [{"key": "vector_length", "value": length, "valueKind": "FLOAT"}]}]
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_two_observations_claimed_the_same_draw_one_vertex(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
@@ -79,8 +65,6 @@ async def test_two_observations_claimed_the_same_draw_one_vertex(api_schema, sim
     listed = (await _execute(api_schema, simple_api_context, NODES, {"graph": str(test_graph.pk)}))["nodes"]
     assert [row["id"] for row in listed] == [representative], "`nodes(graph:)` lists one row per individual"
     assert sorted(listed[0]["members"]) == sorted([a, b])
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_edges_to_any_member_land_on_the_one_vertex(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
@@ -105,8 +89,6 @@ async def test_edges_to_any_member_land_on_the_one_vertex(api_schema, simple_api
     assert total == 1
     assert to_a == to_b == 1, "the edge is reachable through either member"
     assert [p["__assertion_count"] for p in properties] == [2], "both claims support the one edge"
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_relation_between_two_members_is_a_self_edge(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
@@ -122,8 +104,6 @@ async def test_a_relation_between_two_members_is_a_self_edge(api_schema, simple_
 
     total, loop = await drawn()
     assert total == 1 and loop == 1
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_measurements_of_either_member_fold_into_the_individuals_properties(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
@@ -149,8 +129,6 @@ async def test_measurements_of_either_member_fold_into_the_individuals_propertie
 
     node = (await _execute(api_schema, simple_api_context, NODE, {"id": b, "graph": str(test_graph.pk)}))["node"]
     assert node["properties"]["avg_length"] == pytest.approx(20.0)
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_rule_bound_property_folds_over_every_member(api_schema, simple_api_context, table_projector) -> None:
@@ -167,14 +145,12 @@ async def test_a_rule_bound_property_folds_over_every_member(api_schema, simple_
         claims.measure(org, b, obj="roi-b", key="vector_length", value=30.0, subject="peter", app_id="segmenter-v3")
         claims.measure(org, b, obj="roi-c", key="vector_length", value=99.0, subject="peter", app_id="segmenter-v2")
         claims.same(org, a, b, "peter", asserted_at=BEFORE)
-        GraphController(projector=table_projector).rebuild_projection(graph)
+        graphs.rebuild(graph, table_projector)
         return drawing.vertex_count(graph, "AIS"), drawing.vertex_properties(graph, a).get("avg_length")
 
     count, avg_length = await build_and_read()
     assert count == 1
     assert avg_length == pytest.approx(20.0), "both members' segmenter-v3 measurements, and not the v2 one"
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_retracting_the_sameness_splits_the_vertex(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
@@ -216,36 +192,6 @@ async def test_retracting_the_sameness_splits_the_vertex(api_schema, simple_api_
 
     listed = (await _execute(api_schema, simple_api_context, NODES, {"graph": str(test_graph.pk)}))["nodes"]
     assert {row["id"] for row in listed} == {a, b, c}
-
-
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.asyncio
-async def test_a_sameness_the_category_does_not_trust_draws_two_vertices(api_schema, simple_api_context, table_projector) -> None:
-    """Sameness is the view's rule (RFC 0024): this view trusts Peter, so a stranger's merge changes nothing here."""
-    graph_id = await _example_graph(api_schema, simple_api_context, "individual-trust")
-
-    @sync_to_async
-    def build_and_read():
-        graph = core_models.Graph.objects.get(pk=graph_id)
-        # Sameness is the view's rule (RFC 0024): this view counts Peter's merges.
-        graph.sameness_rule = {"rules": [{"when": [{"field": "SUBJECT", "operator": "IS", "value": "peter"}]}]}
-        graph.save(update_fields=["sameness_rule"])
-        org = graph.organization
-        a = claims.mint(org, "AIS", "peter", asserted_at=BEFORE)
-        b = claims.mint(org, "AIS", "peter", asserted_at=BEFORE)
-        claims.same(org, a, b, "stranger", asserted_at=BEFORE)
-        controller = GraphController(projector=table_projector)
-        controller.rebuild_projection(graph)
-        ignored = drawing.vertex_count(graph, "AIS"), drawing.members_of(graph, a)
-        claims.same(org, a, b, "peter", asserted_at=BEFORE)
-        controller.rebuild_projection(graph)
-        return ignored, (drawing.vertex_count(graph, "AIS"), drawing.members_of(graph, a)), a, b
-
-    ignored, trusted, a, b = await build_and_read()
-    assert ignored == (2, [a]), "the stranger's claim is not one this view counts"
-    assert trusted == (1, sorted([a, b])), "Peter's is"
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_retracted_member_leaves_the_individual(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
@@ -266,92 +212,3 @@ async def test_a_retracted_member_leaves_the_individual(api_schema, simple_api_c
     assert count == 1
     assert lowest_drawn == 0
     assert representative == highest and members == [highest]
-
-
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.asyncio
-async def test_redrawing_a_merged_individual_converges(api_schema, simple_api_context, test_graph: core_models.Graph, table_projector) -> None:
-    """`reproject_refs` through any member, twice, leaves one vertex with all its members."""
-    a = await writes.create_entity(api_schema, simple_api_context, "AIS")
-    b = await writes.create_entity(api_schema, simple_api_context, "AIS")
-    await _merge(api_schema, simple_api_context, [a, b])
-
-    @sync_to_async
-    def redraw():
-        controller = GraphController(projector=table_projector)
-        projector.reproject_refs(controller, test_graph, [a])
-        projector.reproject_refs(controller, test_graph, [b])
-        projector.project_all(controller, test_graph)
-        return drawing.vertex_count(test_graph, "AIS"), drawing.members_of(test_graph, a)
-
-    assert await redraw() == (1, sorted([a, b]))
-
-
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.asyncio
-async def test_replay_folds_a_merge_the_write_path_could_not_draw(api_schema, simple_api_context, test_graph: core_models.Graph, table_projector, monkeypatch) -> None:
-    """The incremental path widens the touched set to the whole component."""
-    a = await writes.create_entity(api_schema, simple_api_context, "AIS", evidence=_roi("roi-a", 10.0))
-    b = await writes.create_entity(api_schema, simple_api_context, "AIS", evidence=_roi("roi-b", 30.0))
-
-    def _down(*args, **kwargs):
-        raise RuntimeError("projector down")
-
-    monkeypatch.setattr(projector, "reproject_refs", _down)
-    failed = await api_schema.execute(ASSERT_SAME, variable_values={"input": {"instances": [a, b]}}, context_value=simple_api_context)
-    assert failed.errors
-    monkeypatch.undo()
-
-    @sync_to_async
-    def replay():
-        assert drawing.vertex_count(test_graph, "AIS") == 2, "the failed draw left the two observations apart"
-        out = StringIO()
-        call_command("reproject", incremental=True, organization=test_graph.organization.slug, stdout=out)
-        return drawing.vertex_count(test_graph, "AIS"), drawing.members_of(test_graph, a), drawing.vertex_properties(test_graph, a).get("avg_length"), watermark.pending_count(test_graph.organization)
-
-    count, members, avg_length, pending = await replay()
-    assert count == 1
-    assert members == sorted([a, b])
-    assert avg_length == pytest.approx(20.0)
-    assert pending == 0
-
-
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.asyncio
-async def test_the_write_reports_the_individuals_drawing(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
-    """Asserting an entity `sameAs` an existing one returns the drawing of the individual, not of the observation alone."""
-    a = (await _assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"]
-    result = await api_schema.execute(
-        """
-        mutation AssertEntityExists($input: AssertEntityExistsInput!) {
-            assertEntityExists(input: $input) { instance { id } drawings { node { id members } } }
-        }
-        """,
-        variable_values={"input": {"term": "AIS", "supportingEvidence": [], "sameAs": [a]}},
-        context_value=simple_api_context,
-    )
-    assert result.errors is None, f"GraphQL errors: {result.errors}"
-    payload = result.data["assertEntityExists"]
-    b = payload["instance"]["id"]
-    (drawn,) = payload["drawings"]
-    assert drawn["node"]["id"] == min(a, b)
-    assert sorted(drawn["node"]["members"]) == sorted([a, b])
-
-
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.asyncio
-async def test_a_sameness_claim_survives_in_the_log_when_a_view_ignores_it(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
-    """The organization-grain cache still folds every standing claim; only the drawing is per view."""
-    from evidence import identity
-
-    a = await writes.create_entity(api_schema, simple_api_context, "AIS")
-    b = await writes.create_entity(api_schema, simple_api_context, "AIS")
-    await _merge(api_schema, simple_api_context, [a, b])
-
-    @sync_to_async
-    def cached():
-        links = evidence_models.Link.objects.for_organization(test_graph.organization).filter(kind=evidence_models.Link.Kind.SAME_AS).count()
-        return links, identity.component_refs(test_graph.organization, [a])[a]
-
-    links, component = await cached()
-    assert links == 1 and sorted(component) == sorted([a, b])

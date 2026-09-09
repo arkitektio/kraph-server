@@ -12,7 +12,6 @@ the admin, and anything written later.
 """
 
 import pytest
-from authentikate.models import Organization
 
 from core import models as core_models
 from graph_engine import schema_diff, versioning

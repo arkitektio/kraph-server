@@ -16,9 +16,8 @@ from pydantic import ValidationError
 
 from core import models as core_models
 from graph_engine import input_models as models
-from graph_engine.controller import GraphController
 from graph_engine.materialize import compute_definition_hash, materialize
-from tests.support import claims, drawing, rules as R
+from tests.support import claims, drawing, graphs, rules as R
 
 SUMMER_START = datetime(2026, 6, 1, tzinfo=timezone.utc)
 SUMMER_END = datetime(2026, 8, 31, tzinfo=timezone.utc)
@@ -52,7 +51,7 @@ def _graph(definition: models.GraphDefinitionInput, table_projector, authenticat
 
 
 def _fold(graph: core_models.Graph, table_projector, ref: str) -> dict:
-    GraphController(projector=table_projector).rebuild_projection(graph)
+    graphs.rebuild(graph, table_projector)
     return drawing.vertex_properties(graph, ref)
 
 

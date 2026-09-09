@@ -26,8 +26,13 @@ organization the request is not a member of, and asserts the caller cannot see i
 
 import pytest
 from authentikate.models import Membership, User
-
 from core import models as core_models
+import uuid
+import kante
+from asgiref.sync import sync_to_async
+from kante.context import HttpContext
+from graph_engine import input_models as models
+from graph_engine.materialize import materialize
 
 
 @pytest.fixture
@@ -149,3 +154,191 @@ async def test_saved_queries_do_not_list_another_tenants_row(api_schema, simple_
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     ids = [q["id"] for q in result.data["graphTableQueries"]]
     assert str(foreign.pk) not in ids, "`graphTableQueries` handed back a saved query from another organization"
+
+
+CREATE_STRUCTURE = """
+    mutation CreateStructure($input: AssertStructureExistsInput!) {
+        assertStructureExists(input: $input) { structure { id } }
+    }
+"""
+
+
+CREATE_ENTITY = """
+    mutation CreateEntity($input: AssertEntityExistsInput!) {
+        assertEntityExists(input: $input) { instance { id } }
+    }
+"""
+
+
+CREATE_STRUCTURE_RELATION = """
+    mutation CreateStructureRelation($input: AssertStructureRelationExistsInput!) {
+        assertStructureRelationExists(input: $input) {
+            link {
+                id
+                kind
+                sourceRef
+                targetRef
+                source { ... on Structure { id object } }
+                target { ... on Structure { id object } }
+            }
+        }
+    }
+"""
+
+
+ARCHIVE_STRUCTURE_RELATION = """
+    mutation ArchiveStructureRelation($input: RetractStructureRelationInput!) {
+        retractStructureRelation(input: $input) { link { id } }
+    }
+"""
+
+
+UPDATE_STRUCTURE_RELATION = """
+    mutation UpdateStructureRelation($input: SupersedeStructureRelationInput!) {
+        supersedeStructureRelation(input: $input) { link { id } }
+    }
+"""
+
+
+CREATE_MEASUREMENT = """
+    mutation CreateMeasurement($input: AssertMeasurementExistsInput!) {
+        assertMeasurementExists(input: $input) {
+            link {
+                id
+                kind
+                source { ... on Structure { id object } }
+                target { ... on Instance { id } }
+            }
+        }
+    }
+"""
+
+
+ENTITY_PROPERTIES = """
+    query Entity($id: ID!, $graph: ID!) {
+        node(id: $id, graph: $graph) {
+            ... on Entity { id properties }
+        }
+    }
+"""
+
+
+@pytest.fixture(scope="session")
+def edge_schema() -> models.GraphDefinitionInput:
+    """A schema that declares the two edge kinds the bio schema leaves out.
+
+    `MEASURES` runs from an ROI to an AIS, and AIS carries a MEAN rollup over
+    `vector_length` — so attaching a measurement has an observable consequence
+    and the INFORMS claim can be tested through its effect rather than by
+    inspecting rows.
+    """
+    return models.GraphDefinitionInput(
+        system_version="1.0.0",
+        extensions=models.GraphExtensionsInput(
+            entities=[
+                models.EntityDefinitionInput(
+                    key="AIS",
+                    property_definitions=[
+                        models.PropertyDefinitionInput(
+                            key="avg_length",
+                            type=models.PropertyType.FLOAT,
+                            index=True,
+                            derivation=models.DerivationType.ROLLUP,
+                            rule=models.DerivationRuleInput(source_node="ROI", key="vector_length", aggregation=models.AggregationFunction.MEAN),
+                        )
+                    ],
+                )
+            ],
+            structure_relations=[
+                models.StructureRelationDefinitionInput(
+                    key="CONTAINS",
+                    source=models.StructureDescriptorInput(identifiers=["ROI"]),
+                    target=models.StructureDescriptorInput(identifiers=["ROI"]),
+                )
+            ],
+            measurements=[
+                models.MeasurementDefinitionInput(
+                    key="MEASURES",
+                    source=models.StructureDescriptorInput(identifiers=["ROI"]),
+                    target=models.EntityDescriptorInput(keys=["AIS"]),
+                )
+            ],
+        ),
+    )
+
+
+@pytest.fixture(scope="function")
+def edge_graph(transactional_db, table_projector, edge_schema, authenticated_context) -> core_models.Graph:
+    request = authenticated_context.request
+    return materialize(
+        edge_schema,
+        table_projector,
+        user=request._user,
+        organization=request._organization,
+        membership=request.membership,
+        name="edge_graph",
+    )
+
+
+async def _structure(api_schema: kante.Schema, ctx: HttpContext, metrics: list[dict] | None = None) -> str:
+    created = await api_schema.execute(
+        CREATE_STRUCTURE,
+        variable_values={"input": {"identifier": "ROI", "object": f"roi_{uuid.uuid4().hex[:8]}", "metrics": metrics or []}},
+        context_value=ctx,
+    )
+    assert created.errors is None, f"GraphQL errors: {created.errors}"
+    return created.data["assertStructureExists"]["structure"]["id"]
+
+
+async def _ais(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph) -> str:
+    category = await core_models.EntityCategory.objects.filter(graph=graph, key="AIS").afirst()
+    assert category is not None
+    created = await api_schema.execute(
+        CREATE_ENTITY,
+        variable_values={"input": {"term": category.key, "supportingEvidence": []}},
+        context_value=ctx,
+    )
+    assert created.errors is None, f"GraphQL errors: {created.errors}"
+    return created.data["assertEntityExists"]["instance"]["id"]
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_resolving_an_edge_endpoint_checks_the_endpoint_s_own_tenant(
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+) -> None:
+    """Making `source`/`target` work must not open a way around tenancy.
+
+    Those fields were `raise NotImplementedError`, so implementing them meant
+    reaching structures and nodes by bare primary key. `get_structure_by_id`
+    takes `info` as an **optional** argument, and `_assert_can_access` returns
+    early when it is `None` — so a resolver that forgot to pass it would resolve
+    any tenant's structure through any edge id.
+
+    Driven at the helper rather than through GraphQL, because the guard under
+    test is the helper's, and a full round trip would need a second graph, a
+    second membership and a second schema just to reach it.
+    """
+    from authentikate.models import Organization
+
+    from api import types as api_types
+    from evidence import writer as evidence_writer
+
+    @sync_to_async
+    def foreign_structure() -> str:
+        other, _ = Organization.objects.get_or_create(slug="an-unrelated-tenant")
+        assertion = evidence_writer.create_assertion(other, subject="someone-else", app_id="elsewhere")
+        kind = evidence_writer.ensure_structure_kind(other, "@mikro/roi")
+        structure = evidence_writer.ensure_structure(other, kind=kind, object="not-yours", assertion=assertion)
+        return str(structure.pk)
+
+    ref = await foreign_structure()
+
+    class _Info:
+        """Just enough of `Info` for the guard, which reads `context.request.user`."""
+
+        context = simple_api_context
+
+    with pytest.raises(PermissionError):
+        await api_types._endpoint_structure(ref, _Info())

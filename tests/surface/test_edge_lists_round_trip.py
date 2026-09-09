@@ -23,32 +23,29 @@ once: the id *is* the claim id, and the answer is the claim rather than the draw
 """
 
 import uuid
-
 import kante
 import pytest
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
-
 from core import models as core_models
+from tests.support import writes
+
 
 ASSERT_STRUCTURE = """
     mutation AssertStructureExists($input: AssertStructureExistsInput!) {
         assertStructureExists(input: $input) { structure { id } }
     }
 """
-
 ASSERT_ENTITY = """
     mutation AssertEntityExists($input: AssertEntityExistsInput!) {
         assertEntityExists(input: $input) { instance { id } }
     }
 """
-
 ASSERT_RELATION = """
     mutation AssertRelationExists($input: AssertRelationExistsInput!) {
         assertRelationExists(input: $input) { link { id } }
     }
 """
-
 LIST_RELATIONS = """
     query Relations($category: ID!, $ids: [ID!]) {
         relations(relationCategoryId: $category, filters: {ids: $ids}) {
@@ -60,7 +57,6 @@ LIST_RELATIONS = """
         }
     }
 """
-
 GET_RELATION = """
     query Relation($id: ID!) {
         relation(id: $id) { __typename id }
@@ -212,3 +208,40 @@ async def test_a_property_filter_is_refused_rather_than_ignored(
     )
 
     assert result.errors, "A filter that cannot be honoured must not silently pass"
+
+
+RELATION_BY_ID = """
+    query Relation($id: ID!) {
+        relation(id: $id) { id }
+    }
+"""
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_an_edge_can_be_read_back_by_the_id_it_was_given(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+) -> None:
+    """The id `createRelation` hands out is the id `relation(id:)` accepts.
+
+    It was not. `RetrievedEdge.unique_id` returns the `Link` primary key for any
+    row-backed edge — every relation, measurement and structure relation — and the
+    resolver split that id on the first hyphen to recover a graph name and an
+    integer AGE edge id. On a uuid that produced
+    `invalid literal for int() with base 10: '2269-48bc-b049-53535f3be517'`, on the
+    very identity the mutation had just returned.
+
+    It was never fixable by parsing more carefully: an AGE edge carries no claim
+    id, because `project_edges` merges every assertion of one proposition onto one
+    edge. The claim's identity lives in Postgres, so the read has to go there.
+    """
+    source = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    target = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    relation_id = await writes.create_relation(api_schema, simple_api_context, "IS_CONNECTED_TO", source, target)
+
+    result = await api_schema.execute(RELATION_BY_ID, variable_values={"id": relation_id}, context_value=simple_api_context)
+
+    assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data["relation"]["id"] == relation_id, "The claim reads back as itself"

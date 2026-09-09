@@ -15,37 +15,33 @@ surface, after the mutation, and would fail on a no-op.
 """
 
 import uuid
-
 import kante
 import pytest
 from kante.context import HttpContext
-
 from core import models as core_models
+from asgiref.sync import sync_to_async
+from django.utils import timezone as django_timezone
+from tests.support import drawing, rules, writes
+from tests.support.graphs import graph_declaring as _graph_declaring
+
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {
         assertEntityExists(input: $input) { instance { id } }
     }
 """
-
 UPDATE_CATEGORY = """
     mutation UpdateEntityCategory($input: UpdateEntityCategoryInput!) {
         updateEntityCategory(input: $input) { id }
     }
 """
-
 ENTITY = """
     query Entity($id: ID!, $graph: ID!) {
         node(id: $id, graph: $graph) { ... on Entity { id properties } }
     }
 """
-
-#: The `avg_length` rule the `AIS` category ships with in `bio_graph_schema`.
 AVG_LENGTH = {"key": "avg_length", "valueKind": "FLOAT", "derivation": "ROLLUP", "rule": {"sourceNode": "ROI", "key": "vector_length", "aggregation": "MEAN"}}
-#: A second rule over the same metric, so a test that confuses the two sees
-#: different numbers rather than two absent keys.
 MAX_LENGTH = {"key": "max_length", "valueKind": "FLOAT", "derivation": "ROLLUP", "rule": {"sourceNode": "ROI", "key": "vector_length", "aggregation": "MAX"}}
-#: The `name` rule `AIS` also ships with, and the one the removal test drops.
 NAME = {"key": "name", "valueKind": "STRING", "derivation": "ROLLUP", "rule": {"sourceNode": "ToldYouSo", "key": "name", "aggregation": "LATEST"}}
 
 
@@ -241,3 +237,57 @@ async def test_relabelling_a_category_redraws_nothing(
     reloaded = await core_models.EntityCategory.objects.aget(pk=category.pk)
     assert reloaded.label == "Axon Initial Segment", "The relabelling itself must land"
     assert await sync_to_async(_rematerialize.rematerialize_if_moved)(reloaded, fingerprint) == 0, "An edit that touches no rule must redraw nothing"
+
+
+UPDATE_ENTITY_CATEGORY = """
+    mutation U($input: UpdateEntityCategoryInput!) {
+        updateEntityCategory(input: $input) { id definition { rules { when { field operator value } } } }
+    }
+"""
+
+
+RETRACT_ENTITY = """
+    mutation R($input: RetractEntityInput!) {
+        retractEntity(input: $input) { instance { id } }
+    }
+"""
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_updating_the_definition_reprojects_before_returning(api_schema: kante.Schema, simple_api_context: HttpContext, table_projector, backend_stack) -> None:
+    graph_id = await _graph_declaring(api_schema, simple_api_context, "UpCell")
+    entity_id = await writes.create_entity(api_schema, simple_api_context, "UpCell")
+    retract_cutoff = django_timezone.now()
+    retracted = await api_schema.execute(RETRACT_ENTITY, variable_values={"input": {"id": entity_id}}, context_value=simple_api_context)
+    assert retracted.errors is None
+
+    @sync_to_async
+    def drawn():
+        return drawing.refs_with_label(core_models.Graph.objects.get(pk=graph_id), "UpCell")
+
+    assert await drawn() == [], "a primitive category counts everyone, so the view drops the node"
+
+    @sync_to_async
+    def category_and_creator():
+        from evidence import models as evidence_models
+
+        graph = core_models.Graph.objects.get(pk=graph_id)
+        creator = evidence_models.Instance.objects.for_organization(graph.organization).get(pk=entity_id).assertion.subject
+        return str(core_models.EntityCategory.objects.get(graph_id=graph_id, key="UpCell").pk), creator
+
+    category_pk, creator = await category_and_creator()
+    # Trust the creator (so the classification stays admitted) plus somebody who
+    # said nothing — but not the anonymous retraction's subject? The retraction
+    # was made by the same request identity, so scope the clause to the creator
+    # with an as_of *before* the retraction instead: same effect, no guessing.
+    updated = await api_schema.execute(
+        UPDATE_ENTITY_CATEGORY,
+        variable_values={"input": {"id": category_pk, "definition": rules.definition(rules.rule(rules.word("UpCell"), rules.by("somebody-who-said-nothing", creator), rules.before(retract_cutoff)))}},
+        context_value=simple_api_context,
+    )
+    assert updated.errors is None, f"GraphQL errors: {updated.errors}"
+    read_back = updated.data["updateEntityCategory"]["definition"]["rules"][0]["when"]
+    assert {"field": "SUBJECT", "operator": "IN", "value": ["somebody-who-said-nothing", creator]} in read_back, f"the rule reads back: {read_back}"
+
+    assert await drawn() == [entity_id], "the mutation rebuilt the drawing under the new rule — the anonymous retraction no longer counts"

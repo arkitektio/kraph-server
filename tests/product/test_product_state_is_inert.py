@@ -28,15 +28,15 @@ import kante
 import pytest
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
-
 from core import models as core_models
+from core.models import Graph
+
 
 ARCHIVE_GRAPH = """
     mutation ArchiveGraph($input: ArchiveGraphInput!) {
         archiveGraph(input: $input) { id isArchived }
     }
 """
-
 UPDATE_GRAPH = """
     mutation UpdateGraph($input: UpdateGraphInput!) {
         updateGraph(input: $input) { id isArchived }
@@ -117,8 +117,6 @@ async def test_an_archived_graph_is_still_reachable_by_id(
     assert result.data["graph"]["isArchived"] is True
 
 
-#: The saved-query archive mutation, with the model it writes. There used to be
-#: nine, over kinds nothing could render; only the table kind remains.
 QUERY_ARCHIVERS = [
     ("archiveGraphTableQuery", "GraphTableQuery"),
 ]
@@ -170,3 +168,58 @@ async def test_archiving_a_saved_query_persists(
     assert result.data[mutation]["archived"] is True, f"{mutation} must report the state it just set"
 
     assert await archived(pk) is True, f"{mutation} must persist the flag, not set an attribute and drop it"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_deleting_an_image_does_not_delete_the_view(test_graph: Graph) -> None:
+    """`Graph.image` and `Category.image` cascaded *from* the media store: deleting
+    a picture deleted the view, its categories and its whole projection."""
+    from datalayer.models import MediaStore
+
+    store = MediaStore.objects.create(key="graph.png", bucket="media", kind="MEDIA")
+    test_graph.image = store
+    test_graph.save(update_fields=["image"])
+    category = test_graph.categories.first()
+    category.image = store
+    category.save(update_fields=["image"])
+
+    # A queryset delete: the model's `delete()` would also try the object store.
+    MediaStore.objects.filter(pk=store.pk).delete()
+
+    test_graph.refresh_from_db()
+    category.refresh_from_db()
+    assert test_graph.image is None and category.image is None
+
+
+UPDATE_GRAPH_VISUAL = """
+    mutation UpdateGraphVisual($input: UpdateGraphVisualInput!) {
+        updateGraphVisual(input: $input) { id }
+    }
+"""
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_moving_a_box_runs_no_ddl(api_schema, simple_api_context, test_graph, table_projector, monkeypatch) -> None:
+    """Layout is presentation. `updateGraphVisual` used to `save()` each category,
+    and the category-write signal then dropped and recreated the graph's whole
+    Postgres schema once per moved box."""
+    from asgiref.sync import sync_to_async
+
+    from graph_engine.projection import table as table_module
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("a layout change must not touch the namespace")
+
+    monkeypatch.setattr(table_module.TableProjector, "refresh_namespace", refuse)
+
+    category = await sync_to_async(core_models.Category.objects.get)(graph=test_graph, key="AIS")
+    result = await api_schema.execute(
+        UPDATE_GRAPH_VISUAL,
+        variable_values={"input": {"id": str(test_graph.pk), "nodePositions": [{"category": str(category.pk), "positionX": 3.0, "positionY": 4.0}]}},
+        context_value=simple_api_context,
+    )
+    assert result.errors is None, f"GraphQL errors: {result.errors}"
+
+    await sync_to_async(category.refresh_from_db)()
+    assert (category.position_x, category.position_y) == (3.0, 4.0)

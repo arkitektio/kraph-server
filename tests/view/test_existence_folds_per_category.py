@@ -21,54 +21,53 @@ Two things follow, and both are tested here rather than assumed:
 """
 
 import uuid
-
 import kante
 import pytest
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
-
 from core import models as core_models
 from evidence import claims as claims_module
 from evidence import models as evidence_models
-from graph_engine.controller import GraphController
-from tests.support import drawing, rules
+from tests.support import drawing, graphs, rules
+from tests.support import claims
+from tests.support.graphs import AFTER, BEFORE, example_graph as _example_graph, rebuild as _rebuild
+from django.utils import timezone as django_timezone
+from evidence import writer
+from tests.support import writes
+from tests.support.graphs import graph_declaring as _graph_declaring
+from evidence import selector as selector_module
+
 
 CREATE_ENTITY = """
     mutation CreateEntity($input: AssertEntityExistsInput!) {
         assertEntityExists(input: $input) { instance { id } }
     }
 """
-
 CREATE_NATURAL_EVENT = """
     mutation CreateNaturalEvent($input: AssertNaturalEventExistsInput!) {
         assertNaturalEventExists(input: $input) { instance { id } }
     }
 """
-
 CREATE_RELATION = """
     mutation CreateRelation($input: AssertRelationExistsInput!) {
         assertRelationExists(input: $input) { link { id } }
     }
 """
-
 RETRACT_ENTITY = """
     mutation RetractEntity($input: RetractEntityInput!) {
         retractEntity(input: $input) { instance { id } drawings { graph { id } } }
     }
 """
-
 ATTEST_ENTITY = """
     mutation AttestEntity($input: AttestEntityInput!) {
         attestEntity(input: $input) { instance { id } drawings { graph { id } } }
     }
 """
-
 RETRACT_NATURAL_EVENT = """
     mutation RetractNaturalEvent($input: RetractNaturalEventInput!) {
         retractNaturalEvent(input: $input) { instance { id } drawings { graph { id } } }
     }
 """
-
 ENTITY_PROPERTIES = """
     query Entity($id: ID!, $graph: ID!) {
         node(id: $id, graph: $graph) { ... on Entity { id properties } }
@@ -235,7 +234,7 @@ async def test_archiving_an_entity_removes_its_edges_but_keeps_the_claims(
     # drift: `rebuild` declines to draw the same edge, for the same reason.
     @sync_to_async
     def rebuild() -> dict:
-        return GraphController(projector=table_projector).rebuild_projection(test_graph)
+        return graphs.rebuild(test_graph, table_projector)
 
     result = await rebuild()
     assert result["edges"] == 0, "The replay must not draw an edge whose endpoint is not in the graph"
@@ -334,7 +333,7 @@ async def test_two_categories_can_disagree_about_whether_a_node_exists(
         category = core_models.EntityCategory.objects.get(graph=test_graph, key="Cell")
         category.definition = rules.definition(rules.rule(rules.word("Cell"), rules.before(cutoff)))
         category.save()
-        GraphController(projector=table_projector).rebuild_projection(test_graph)
+        graphs.rebuild(test_graph, table_projector)
         return _vertices(table_projector, test_graph, entity_id)
 
     assert await rebuild_frozen_before_the_retraction() == 1, "a category that does not count the retraction still holds the node"
@@ -387,7 +386,7 @@ async def test_a_word_two_graphs_declare_is_seen_by_both(
     # there is nothing for the two to drift apart about.
     @sync_to_async
     def rebuild_second() -> dict:
-        return GraphController(projector=table_projector).rebuild_projection(second_graph)
+        return graphs.rebuild(second_graph, table_projector)
 
     result = await rebuild_second()
     assert result["nodes"] >= 1, "A replay of the second view reconstructs the node from the shared claim"
@@ -428,7 +427,297 @@ async def test_a_clause_since_ignores_earlier_retractions(
         category = core_models.EntityCategory.objects.get(graph=test_graph, key="Cell")
         category.definition = rules.definition(rules.rule(rules.word("Cell"), rules.since(cutoff)))
         category.save()
-        GraphController(projector=table_projector).rebuild_projection(test_graph)
+        graphs.rebuild(test_graph, table_projector)
         return _vertices(table_projector, test_graph, entity_id)
 
     assert await story() == 1, "the retraction predates the window this category counts, so nothing says the node is absent"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_existence_folds_under_the_categorys_clauses(api_schema, simple_api_context, table_projector) -> None:
+    """A retraction counts only when a clause of the node's category covers it."""
+    graph_id = await _example_graph(api_schema, simple_api_context, "trust-existence")
+
+    @sync_to_async
+    def build_and_read():
+        graph = core_models.Graph.objects.get(pk=graph_id)
+        org = graph.organization
+        retracted = claims.mint(org, "AIS", "peter", asserted_at=BEFORE)
+        survives = claims.mint(org, "AIS", "peter", asserted_at=BEFORE)
+        # Peter retracting inside his clause's window counts; the same retraction
+        # asserted after Dec 5 is outside every clause and counts for nothing.
+        claims.retract_node(org, retracted, "peter", asserted_at=BEFORE)
+        claims.retract_node(org, survives, "peter", asserted_at=AFTER)
+        _rebuild(graph_id, table_projector)
+        return drawing.vertices_with_ref(graph, retracted), drawing.vertices_with_ref(graph, survives)
+
+    retracted_count, survives_count = await build_and_read()
+    assert retracted_count == 0, "a covered retraction removes the node from this view"
+    assert survives_count == 1, "a retraction no clause covers counts for nothing here"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_archiving_an_entity_removes_the_vertex_and_the_replay_agrees(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    table_projector,
+):
+    """A retracted entity is not in the graph, and a replay does not put it back.
+
+    The graph carries no lifecycle state. If the evidence says a node is not
+    there, it is not there — the same rule `_reproject_proposition` has always
+    applied to edges, which delete rather than linger behind a flag.
+
+    This used to assert the opposite: that the vertex survived stamped
+    `archived`. Nothing filtered that flag, so a retracted entity stayed listable
+    and remained a legal endpoint for new relations. And `rebuild` selected on
+    `Node.status`, which nothing ever wrote — so the two paths agreed only
+    because the cache was dead.
+
+    The last assertion is the one that justifies deleting from Apache AGE at all:
+    the `Node` row and its `Link` rows are untouched. Only the drawing goes.
+    """
+    from asgiref.sync import sync_to_async
+
+    from evidence import models as evidence_models
+
+    entity_category = await test_graph.aget_entity_def("AIS")
+
+    create_mutation = """
+        mutation CreateEntity($input: AssertEntityExistsInput!) {
+            assertEntityExists(input: $input) { instance { id kind term { key } } }
+        }
+    """
+
+    create_result = await api_schema.execute(
+        create_mutation,
+        variable_values={"input": {"term": entity_category.key}},
+        context_value=simple_api_context,
+    )
+
+    assert create_result.errors is None, f"GraphQL errors: {create_result.errors}"
+    entity_id = create_result.data["assertEntityExists"]["instance"]["id"]
+    assert create_result.data["assertEntityExists"]["instance"]["term"]["key"] == "AIS"
+
+    archive_mutation = """
+        mutation ArchiveEntity($input: RetractEntityInput!) {
+            retractEntity(input: $input) { instance { id } }
+        }
+    """
+
+    @sync_to_async
+    def vertex_count() -> int:
+        return drawing.vertices_with_ref(test_graph, entity_id)
+
+    assert await vertex_count() == 1, "The entity must be in the projection before it is retracted"
+
+    archive_result = await api_schema.execute(
+        archive_mutation,
+        variable_values={"input": {"id": entity_id}},
+        context_value=simple_api_context,
+    )
+    assert archive_result.errors is None, f"GraphQL errors: {archive_result.errors}"
+
+    assert await vertex_count() == 0, "A retracted entity leaves no vertex behind"
+
+    query = """
+        query GetInstance($id: ID!) {
+            instance(id: $id) { id drawnIn { graph { id } } }
+        }
+    """
+
+    # **Reading the claim is not an error.** The retraction removed the *drawing*;
+    # the claim is still in the log, which the assertions at the end of this test
+    # check. A graph is a view, so "no view draws this" is an empty `drawnIn` — a
+    # count, not a failed read — exactly as it is for a write under a word no view
+    # declares (`docs/rfcs/0003-undrawn-nodes.md`). The claim-grain reader is
+    # `instance(id:)`; `entity(id:, graph:)` is a view's answer and the view no
+    # longer holds this node, which the refusal below pins.
+    before = await api_schema.execute(query, variable_values={"id": entity_id}, context_value=simple_api_context)
+    assert before.errors is None, f"GraphQL errors: {before.errors}"
+    assert before.data["instance"]["id"] == entity_id, "The claim is readable: retraction took the drawing, not the node"
+    assert before.data["instance"]["drawnIn"] == [], "And no view draws it any more"
+
+    as_entity = await api_schema.execute(
+        "query GetEntity($id: ID!, $graph: ID!) { entity(id: $id, graph: $graph) { id } }",
+        variable_values={"id": entity_id, "graph": str(test_graph.id)},
+        context_value=simple_api_context,
+    )
+    assert as_entity.errors, "A view read is that view's answer, and this view no longer holds the node"
+
+    @sync_to_async
+    def rebuild() -> dict:
+        return graphs.rebuild(test_graph, table_projector)
+
+    result = await rebuild()
+    assert result["nodes"] == 0, "The replay must not recreate a node the evidence says is not there"
+    assert await vertex_count() == 0, "And must not leave one in AGE either"
+
+    after = await api_schema.execute(query, variable_values={"id": entity_id}, context_value=simple_api_context)
+    assert after.errors is None, f"GraphQL errors: {after.errors}"
+    assert after.data["instance"]["drawnIn"] == [], "A replay must not restore a retracted entity to any view"
+
+    # The justification for deleting from AGE at all: the evidence is untouched.
+    # Only the drawing went.
+    @sync_to_async
+    def evidence_survives() -> tuple[int, int, bool]:
+        nodes = evidence_models.Instance.objects.for_organization(test_graph.organization).filter(pk=entity_id)
+        links = evidence_models.Link.objects.for_organization(test_graph.organization).filter(source_ref=entity_id)
+        claims = evidence_models.Standing.objects.for_organization(test_graph.organization).filter(target_type="node", target_id=entity_id)
+        return nodes.count(), links.count(), claims.filter(stands=False).exists()
+
+    node_count, link_count, retracted = await evidence_survives()
+    assert node_count == 1, "The Node row survives — retraction is a claim, never a delete"
+    assert link_count >= 1, "And so does the classification claim that says what it is"
+    assert retracted, "With a claim on the record saying it no longer stands"
+
+
+UPDATE_ENTITY_CATEGORY = """
+    mutation U($input: UpdateEntityCategoryInput!) {
+        updateEntityCategory(input: $input) { id definition { rules { when { field operator value } } } }
+    }
+"""
+RETRACT_ENTITY_ID = """
+    mutation R($input: RetractEntityInput!) {
+        retractEntity(input: $input) { instance { id } }
+    }
+"""
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_a_category_scoped_at_creation_does_not_count_an_unlisted_retractor(api_schema: kante.Schema, simple_api_context: HttpContext, table_projector, backend_stack) -> None:
+    """The write path folds existence under the category's clauses — no rebuild needed."""
+    graph_id = await _graph_declaring(
+        api_schema,
+        simple_api_context,
+        "SelCell",
+        definition=rules.definition(rules.rule(rules.word("SelCell"), rules.by("annotator-this-view-trusts"))),
+    )
+
+    @sync_to_async
+    def story():
+        from evidence import models as evidence_models
+
+        graph = core_models.Graph.objects.get(pk=graph_id)
+        from tests.support import claims
+
+        entity_id = claims.mint(graph.organization, "SelCell", "annotator-this-view-trusts")
+        node = evidence_models.Instance.objects.for_organization(graph.organization).get(pk=entity_id)
+
+        writer.retract(graph.organization, node, writer.create_assertion(graph.organization, subject="stranger", app_id="pytest"))
+        graphs.rebuild(graph, table_projector)
+        after_stranger = drawing.refs_with_label(graph, "SelCell")
+
+        writer.retract(graph.organization, node, writer.create_assertion(graph.organization, subject="annotator-this-view-trusts", app_id="pytest"))
+        graphs.rebuild(graph, table_projector)
+        after_trusted = drawing.refs_with_label(graph, "SelCell")
+        return entity_id, after_stranger, after_trusted
+
+    entity_id, after_stranger, after_trusted = await story()
+    assert after_stranger == [entity_id], "the retractor is not somebody this category counts, so its node stands"
+    assert after_trusted == [], "the trusted annotator's own retraction takes it"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_an_as_of_clause_ignores_a_later_retraction(api_schema: kante.Schema, simple_api_context: HttpContext, table_projector, backend_stack) -> None:
+    graph_id = await _graph_declaring(api_schema, simple_api_context, "AsOfCell")
+    entity_id = await writes.create_entity(api_schema, simple_api_context, "AsOfCell")
+
+    @sync_to_async
+    def category_id():
+        return str(core_models.EntityCategory.objects.get(graph_id=graph_id, key="AsOfCell").pk)
+
+    updated = await api_schema.execute(
+        UPDATE_ENTITY_CATEGORY,
+        variable_values={"input": {"id": await category_id(), "definition": rules.definition(rules.rule(rules.word("AsOfCell"), rules.before(django_timezone.now())))}},
+        context_value=simple_api_context,
+    )
+    assert updated.errors is None, f"GraphQL errors: {updated.errors}"
+
+    retracted = await api_schema.execute(RETRACT_ENTITY_ID, variable_values={"input": {"id": entity_id}}, context_value=simple_api_context)
+    assert retracted.errors is None
+
+    @sync_to_async
+    def drawn():
+        return drawing.refs_with_label(core_models.Graph.objects.get(pk=graph_id), "AsOfCell")
+
+    assert await drawn() == [entity_id], "the category is frozen at as_of; a retraction asserted after it is not part of what it believes"
+
+
+JOHANNES = "johannes"
+
+
+CHRISTIAN = "christian"
+
+
+CREATE_ENTITY_WITH_DRAWINGS = """
+    mutation CreateEntity($input: AssertEntityExistsInput!) {
+        assertEntityExists(input: $input) {
+            instance { id }
+            drawings { category { id } node { id drawnLabels } }
+        }
+    }
+"""
+
+
+async def _an_ais(api_schema: kante.Schema, ctx: HttpContext) -> str:
+    created = await api_schema.execute(CREATE_ENTITY_WITH_DRAWINGS, variable_values={"input": {"term": "AIS", "supportingEvidence": []}}, context_value=ctx)
+    assert created.errors is None, f"GraphQL errors: {created.errors}"
+    return created.data["assertEntityExists"]["instance"]["id"]
+
+
+def _the_node(graph: core_models.Graph):
+    return evidence_models.Instance.objects.for_organization(graph.organization).filter(term__in=selector_module.term_ids_for(graph)).get()
+
+
+def _define(graph: core_models.Graph, key: str, definition: dict, properties: list[dict] | None = None) -> core_models.EntityCategory:
+    """A defined entity category over the word AIS, created or redefined."""
+    category, _ = core_models.EntityCategory.objects.get_or_create(graph=graph, key=key, defaults={"age_name": key.lower(), "label": key})
+    category.age_name = key.lower()  # the fixture's AIS is labelled "AIS"; one spelling for every assertion below
+    category.definition = definition
+    if properties is not None:
+        category.property_definitions = properties
+    category.save()
+    return category
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_existence_folds_per_category(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    table_projector,
+) -> None:
+    """Retracted by somebody one category counts and the other does not: the
+    node keeps only the label whose rule still says it exists. No label left,
+    no vertex."""
+
+    await _an_ais(api_schema, simple_api_context)
+
+    @sync_to_async
+    def christian_retracts() -> tuple[str, set[str]]:
+        node = _the_node(test_graph)
+        ais = _define(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"))))
+        _define(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"), rules.by(JOHANNES))))
+        claims.retract_classifications(test_graph, node.ref)
+        claims.classify(test_graph, node.ref, ais, JOHANNES)
+        claims.retract_node(test_graph.organization, node.ref, CHRISTIAN)
+        graphs.rebuild(test_graph, table_projector)
+        return str(node.ref), drawing.labels_of(test_graph, node.ref)
+
+    ref, labels = await christian_retracts()
+    assert labels == {"excitatory"}, "AIS counts Christian's retraction; Excitatory listens to Johannes only"
+
+    @sync_to_async
+    def johannes_retracts() -> int:
+        claims.retract_node(test_graph.organization, ref, JOHANNES)
+        graphs.rebuild(test_graph, table_projector)
+        return drawing.vertices_with_ref(test_graph, ref)
+
+    assert await johannes_retracts() == 0
