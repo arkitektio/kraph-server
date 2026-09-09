@@ -64,34 +64,25 @@ TERM_FIELD_DESCRIPTION = (
 )
 
 #: The world-time field every claim-making input carries (RFC 0015).
-OBSERVED_AT_FIELD_DESCRIPTION = (
-    "When the world was in this state — world time, the axis a scientist means by 'when'. "
-    "Distinct from when it is claimed, which the assertion records; left unset, the two are equal. "
-    "A point, not an interval: a duration is a metric."
-)
+OBSERVED_AT_FIELD_DESCRIPTION = "When the world was in this state — world time, the axis a scientist means by 'when'. Distinct from when it is claimed, which the assertion records; left unset, the two are equal. A point, not an interval: a duration is a metric."
 
 #: The world-time field every retract/attest input carries.
-STANDING_AT_FIELD_DESCRIPTION = (
-    "When this position took effect — world time. Left unset, the moment of the claim. "
-    "A rule bounding OBSERVED_AT on EXISTENCE reads this."
-)
+STANDING_AT_FIELD_DESCRIPTION = "When this position took effect — world time. Left unset, the moment of the claim. A rule bounding OBSERVED_AT on EXISTENCE reads this."
 
 #: The confidence field every claim-making and retract/attest input carries (RFC 0016).
-CONFIDENCE_FIELD_DESCRIPTION = (
-    "How sure you are, 0 to 1. Left unset, the claim carries no number — which is neither 1.0 nor 0.0: "
-    "a category rule with a CONFIDENCE condition admits only claims that carry one."
-)
+CONFIDENCE_FIELD_DESCRIPTION = "How sure you are, 0 to 1. Left unset, the claim carries no number — which is neither 1.0 nor 0.0: a category rule with a CONFIDENCE condition admits only claims that carry one."
 
 DERIVED_FROM_FIELD_DESCRIPTION = (
     "The claims this one came from — ids of instances, links, metrics or structures in your organization. "
     "Each is recorded as a DERIVED_FROM link under the same assertion as the claim itself, because "
-    "\"this, because of that\" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`."
+    '"this, because of that" is one act (RFC 0017). Read back as `derivedFrom`; the cited claim lists it under `derivations`.'
 )
 
 
 def _derived_from_field() -> Any:
     """The lineage field every claim-making input carries."""
     return Field(default_factory=list, description=DERIVED_FROM_FIELD_DESCRIPTION)
+
 
 #: Why a schema mutation offers to project history. Declaring a word widens a view,
 #: and the claims already made under that word are sitting in the evidence base
@@ -240,9 +231,6 @@ class DerivationRule(StrictModel):
 # =======================
 # TEXT MODELS
 # =======================
-
-
-
 
 
 class RenderGraphTableFilter(StrictModel):
@@ -574,22 +562,6 @@ class SemanticVersion(str):
         if not isinstance(v, str):
             raise TypeError("Semantic version must be a string")
         return validate_semver(v)
-
-
-class SchemaValidationError(StrictModel):
-    """A single validation error from schema validation."""
-
-    location: List[str] = Field(default_factory=list, description="Path to the error location (e.g., ['extensions', 'entities', 'Neuron', 'properties', 'soma_volume'])")
-    message: str = Field(..., description="Human-readable error message")
-    type: str = Field(default="validation_error", description="Error type (e.g., 'missing_field', 'invalid_type', 'reference_error')")
-
-
-class SchemaValidationResult(StrictModel):
-    """Result of validating a schema."""
-
-    is_valid: bool = Field(..., description="Whether the schema is valid")
-    errors: List[SchemaValidationError] = Field(default_factory=list, description="List of validation errors if any")
-    warnings: List[SchemaValidationError] = Field(default_factory=list, description="List of validation warnings (non-fatal issues)")
 
 
 class OntologyReferenceInput(StrictModel):
@@ -1309,26 +1281,8 @@ class StructureDescriptorInput(StrictModel):
     """Input for filtering entities when linking to a structure. This only contains relativ fields
     that can be used for filtering, not absolute references like 'id'."""
 
-    keys: Optional[List[str]] = Field(default=None, description="REMOVED — structure kinds have no key. Use `identifiers`.")
-    tags: Optional[List[str]] = Field(default=None, description="REMOVED — tags are gone, and a structure kind never had them. Use `identifiers`.")
-    ontology_terms: Optional[List[str]] = Field(default=None, description="REMOVED — structure kinds carry no ontology references. Use `identifiers`.")
     default_category_key: Optional[str] = Field(default=None, description="Default category to link to if no entities match the filters")
     identifiers: Optional[list[scalars.StructureIdentifier]] = Field(default=None, description="Structure identifiers to filter by (e.g. '@mikro/roi')")
-
-    @model_validator(mode="after")
-    def reject_unmatchable_filters(self) -> "StructureDescriptorInput":
-        """Refuse filters a structure kind cannot answer.
-
-        Structures became organization vocabulary, so a `StructureKind` has an
-        identifier and nothing else to match on — no key, no tags, no ontology
-        references. Accepting these fields and matching nothing would be the
-        silent-zero-result failure this codebase keeps having to remove, so say
-        so instead.
-        """
-        unusable = [name for name in ("keys", "tags", "ontology_terms") if getattr(self, name)]
-        if unusable:
-            raise ValueError(f"Structure descriptors can only filter by `identifiers`; {', '.join(unusable)} {'is' if len(unusable) == 1 else 'are'} not expressible against a structure kind, which has no key, tags or ontology references.")
-        return self
 
     def matches(self, entity: StructureCategoryProtocol) -> bool:
         """Whether a structure kind matches this descriptor."""
@@ -1435,7 +1389,6 @@ class UpdateProtocolEventCategoryInput(UpdateDefinitionInput):
             raise ValueError("Pass a new `definition` or `clearDefinition`, not both.")
         return self
 
-
     id: str = Field(..., description="The ID of the protocol event category to update")
 
 
@@ -1443,22 +1396,6 @@ class DeleteProtocolEventCategoryInput(StrictModel):
     """Input for deleting an existing event definition at the graph level."""
 
     id: str = Field(..., description="The ID of the event category to delete")
-
-
-class EvidenceRequirementInput(StrictModel):
-    """Input for evidence requirements on a materialized relation."""
-
-    key: str = Field(..., description="Property key expected on the evidence")
-    unit: str = Field(..., description="Unit of measurement")
-    description: Optional[str] = Field(None, description="Description")
-
-
-class MaterializationConfigInput(StrictModel):
-    """Input for relation materialization configuration."""
-
-    backing_link_type: str = Field(..., description="Internal label for the evidence node")
-    desired_evidence: List[EvidenceRequirementInput] = Field(default_factory=list, description="Expected measurements on the backing link")
-    properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Derived property definitions")
 
 
 class Cardinality(str, Enum):
@@ -1481,7 +1418,9 @@ class RelationDefinitionInput(EdgeDefinitionInput):
     """Input for a relation definition."""
 
     properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Derived property definitions")
-    definition: Optional[CategoryDefinitionInput] = Field(default=None, description="This relation category's complete rule (RFC 0009): which relation claims draw its edges — by word, annotator, app and window — and whose standings count for them. Omitted means primitive: any claim naming its word draws")
+    definition: Optional[CategoryDefinitionInput] = Field(
+        default=None, description="This relation category's complete rule (RFC 0009): which relation claims draw its edges — by word, annotator, app and window — and whose standings count for them. Omitted means primitive: any claim naming its word draws"
+    )
 
 
 class StructureRelationDefinitionInput(DefinitionInput):
@@ -1503,16 +1442,6 @@ class MeasurementDefinitionInput(EdgeDefinitionInput):
     target: EntityDescriptorInput = Field(..., description="Target entity type(s)")
     properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Derived property definitions")
     definition: Optional[CategoryDefinitionInput] = Field(default=None, description="This measurement category's complete rule (RFC 0012): which measurement claims count and whose standings fold. Omitted means primitive")
-
-
-class GraphTableQueryInput(StrictModel):
-    """A saved table query declared inside a graph definition's `extensions` — as a plan, like every saved query."""
-
-    key: str = Field(..., description="Unique key for this query within its graph")
-    name: Optional[str] = Field(default=None, description="Human-readable name (defaults to `key`)")
-    description: Optional[str] = Field(default=None, description="Description of this query")
-    plan: TableQueryPlanInput = Field(..., description="What the query means; compiled by each projection kind")
-    column_input: List[ColumnInput] = Field(default_factory=list, description="How the returned aliases are presented")
 
 
 class CreateGraphTableQueryInput(StrictModel):
@@ -1552,32 +1481,6 @@ class DeleteGraphTableQueryInput(StrictModel):
 
 class ArchiveGraphTableQueryInput(StrictModel):
     id: strawberry.ID = Field(..., description="The ID of the graph query to archive")
-
-
-class PlotInput(StrictModel):
-    key: str = Field(..., description="Unique key for this plot definition, used for referencing in the UI")
-    label: Optional[str] = Field(default=None, description="Human-readable label for this plot definition (defaults to 'key' if not provided)")
-    graph_table_query: str | None = Field(..., description="The key of the graph table query that provides the data for this plot")
-    node_table_query: str | None = Field(..., description="The key of the node table query that provides the data for this plot")
-    path_table_query: str | None = Field(..., description="The key of the path table query that provides the data for this plot")
-
-    @model_validator(mode="after")
-    def validate_query_keys(self):
-        """Validate that exactly one of graph_table_query, node_table_query, or path_table_query is provided."""
-        query_keys = [self.graph_table_query, self.node_table_query, self.path_table_query]
-        provided_keys = [key for key in query_keys if key is not None]
-        if len(provided_keys) == 0:
-            raise ValueError("At least one of graph_table_query, node_table_query, or path_table_query must be provided")
-        if len(provided_keys) > 1:
-            raise ValueError("Only one of graph_table_query, node_table_query, or path_table_query can be provided")
-        return self
-
-
-class ScatterPlotInput(PlotInput):
-    x_axis: str = Field(..., description="The column key to use for the x-axis")
-    y_axis: str = Field(..., description="The column key to use for the y-axis")
-    color_by: Optional[str] = Field(default=None, description="Optional column key to use for coloring the points")
-    size_by: Optional[str] = Field(default=None, description="Optional column key to use for sizing the points")
 
 
 class CreateRelationCategoryInput(EntityDefinitionInput):
@@ -1645,7 +1548,6 @@ class UpdateMeasurementCategoryInput(UpdateDefinitionInput):
             raise ValueError("Pass a new `definition` or `clearDefinition`, not both.")
         return self
 
-
     id: str = Field(..., description="The ID of the measurement category to update")
 
 
@@ -1681,7 +1583,6 @@ class UpdateStructureRelationCategoryInput(UpdateDefinitionInput):
             raise ValueError("Pass a new `definition` or `clearDefinition`, not both.")
         return self
 
-
     id: str = Field(..., description="The ID of the structure relation category to update")
 
 
@@ -1695,14 +1596,6 @@ class RestoreStructureRelationDefinitionInput(StrictModel):
     """Input for restoring an existing structure relation definition at the graph level."""
 
     id: str = Field(..., description="The ID of the relation category to restore")
-
-
-class PrefixInput(StrictModel):
-    """Input for a graph prefix definition."""
-
-    prefix: str = Field(..., description="The prefix string (e.g. 'OBI')")
-    uri: str = Field(..., description="The URI that the prefix maps to (e.g. 'http://purl.obolibrary.org/obo/OBI_')")
-    description: Optional[str] = Field(None, description="Description of this prefix")
 
 
 class RoleMappingInput(StrictModel):
@@ -2212,16 +2105,11 @@ class GraphExtensionsInput(StrictModel):
     dynamically from the structure identifier at write time.
     """
 
-    prefixes: List[PrefixInput] = Field(default_factory=list, description="Graph prefixes for namespacing")
     entities: List[EntityDefinitionInput] = Field(default_factory=list, description="Entity definitions")
     relations: List[RelationDefinitionInput] = Field(default_factory=list, description="Relation definitions")
     structure_relations: List[StructureRelationDefinitionInput] = Field(default_factory=list, description="Structure relation definitions")
     measurements: List[MeasurementDefinitionInput] = Field(default_factory=list, description="Measurement definitions")
     events: List[EventDefinitionInput] = Field(default_factory=list, description="Event definitions")
-
-    # insights
-    graph_table_queries: List[GraphTableQueryInput] = Field(default_factory=list, description="Graph table query definitions")
-    scatter_plots: List[ScatterPlotInput] = Field(default_factory=list, description="Scatter plot definitions")
 
 
 class GraphDefinitionInput(StrictModel):

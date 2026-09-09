@@ -86,14 +86,6 @@ class Graph(models.Model):
     drawn into one projection namespace.
     """
 
-    node_deletion_allowed = models.BooleanField(
-        default=True,
-        help_text="If node deletion is allowed in this graph",
-    )
-    edge_deletion_allowed = models.BooleanField(
-        default=True,
-        help_text="If edge deletion is allowed in this graph",
-    )
     membership = models.ForeignKey(Membership, on_delete=models.CASCADE, related_name="graphs")
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="graphs")
     user = models.ForeignKey(
@@ -167,10 +159,6 @@ class Graph(models.Model):
         """Async version of get_entity_def."""
         return await self.entity_categories.aget(key=key)
 
-    @classmethod
-    def get_active(cls, user):
-        return cls.objects.filter(user=user).first()
-
     @property
     def entity_categories(self):
         return EntityCategory.objects.filter(graph=self)
@@ -194,10 +182,6 @@ class Graph(models.Model):
     @property
     def natural_event_categories(self):
         return NaturalEventCategory.objects.filter(graph=self)
-
-    @property
-    def reagent_categories(self):
-        return ReagentCategory.objects.filter(graph=self)
 
     @property
     def node_categories(self):
@@ -241,23 +225,10 @@ class Graph(models.Model):
             return
         raise PermissionError(f"Changing graph '{self.name}' needs its owner or an organization admin — the schema is the view's contract, and tenancy alone does not grant rewriting it.")
 
-
-    @property
-    def allow_adding_entity_definitions(self) -> bool:
-        return True
-
-    @property
-    def allow_adding_relation_definitions(self) -> bool:
-        return True
-
-    @property
-    def allow_auto_adding_metrics(self) -> bool:
-        return True
-
     def validate_accessible(self, membership: Membership, scopes: list[str]):
         """Validate if the graph is accessible for a given membership and scopes."""
-        if self.membership.organization != membership.organization:
-            raise PermissionError("You do are not allowed to access this graph")
+        if self.organization_id != membership.organization_id:
+            raise PermissionError("You are not allowed to access this graph")
         # Here you can add additional scope checks if needed
         return True
 
@@ -316,12 +287,7 @@ class GraphSchema(models.Model):
         max_length=64,
         default="",
         db_index=True,
-        help_text=(
-            "Content hash of `definition`. This is the identity a projected node stamps as its "
-            "`__schema_version`, so a derived value can be told apart from one computed under an "
-            "older schema. Distinct from `NodeCategory.schema_hash`, which hashes one category's "
-            "properties rather than the whole graph definition."
-        ),
+        help_text=("Content hash of `definition`. This is the identity a projected node stamps as its `__schema_version`, so a derived value can be told apart from one computed under an older schema."),
     )
 
     class Meta:
@@ -525,18 +491,8 @@ class Category(KindDiscriminatedModel):
         help_text="The label of the node class",
         null=True,
     )
-    ports = models.JSONField(
-        help_text="The ports of the node class ssin the graph (if a node)",
-        default=list,
-        null=True,
-    )
 
     # --- shared by every node kind (the former NodeCategory) ---
-    schema_hash = models.CharField(
-        max_length=1000,
-        help_text="The schema hash representing the version of the schema this category was defined with",
-        default="",
-    )
     position_x = models.FloatField(
         help_text="The x position of the node class in the graph (if a node)",
         null=True,
@@ -566,23 +522,12 @@ class Category(KindDiscriminatedModel):
         help_text="Filters for the left side of the edge (e.g. which tags the left side should have)",
         null=True,
     )
-    reverse_label = models.CharField(
-        max_length=1000,
-        help_text="The reverse label of the edge class",
-        null=True,
-    )
-
     # --- kind-specific ---
     instance_kind = models.CharField(
         max_length=1000,
-        help_text="What an instance of this class represents (e.g. a LOT, an object, etc.). Entity and reagent categories only",
+        help_text="What an instance of this class represents (e.g. a LOT, an object, etc.). Entity categories only",
         null=True,
         blank=True,
-    )
-    reverse_description = models.CharField(
-        max_length=1000,
-        help_text="The description of category read in reverse. Relation and structure-relation categories only",
-        null=True,
     )
     source_entity_roles = models.JSONField(
         default=list,
@@ -594,22 +539,6 @@ class Category(KindDiscriminatedModel):
         null=True,
         help_text="The categories or expressions that an of this class can target to (target edges). Event categories only",
     )
-    source_reagent_roles = models.JSONField(
-        default=list,
-        null=True,
-        help_text="The reagent categories an event of this class can source from. Protocol event categories only",
-    )
-    target_reagent_roles = models.JSONField(
-        default=list,
-        null=True,
-        help_text="The reagent categories an event of this class can target. Protocol event categories only",
-    )
-    variable_definitions = models.JSONField(
-        default=list,
-        null=True,
-        help_text="The variables of a instance this protocol event will needs (properties on the node). Protocol event categories only",
-    )
-    plate_children = models.JSONField(null=True, blank=True, help_text="Event categories only")
 
     class Meta:
         default_related_name = "categories"
@@ -970,64 +899,6 @@ class EntityCategory(NodeCategory):
         proxy = True
 
 
-class ReagentCategory(NodeCategory):
-    objects = managers.ReagentCategoryManager()
-    """An Regation class is a class that describes a node in the graph which represent
-    a reagent in the graph that does not have a biological meaning in this graph (e.g. a
-    4% formaldehyde, a 10% DMSO, etc.).
-
-    On temporality:
-
-    Bioentity by design are meant to "immortal" and for the purpose of the graph should
-    not be considered to be deleted. Instead when there is no measurement or relation
-    pointing towards them in the active validation window, they are not considered for the
-    ongoing analysis. Imaging a cell that was image in one of your experiments and then
-    was not imaged in the next experiment. The cell still existed ONCE in time, but will not
-    be monitored in the next experiment, so will have no structure point to it.
-
-    If you of course create a timelapse of the cell, you will have multiple measurements
-    pointing to the same cell, so the cell will still exist in the graph in the next experiment.
-
-    They belong to these subgraphs:
-
-    The measurement path:
-    (b: $Metric) -[d: describes] -> (a: $Structure) -> [m: measures] -> (c: $Bioentity)
-
-    E.g. the intensity (metric) of the image (structure) that measures the cell (bioentity)
-
-    The relation path:
-    (a: $Bioentity) -[r: $RELATION] -> (b: $Bioentity)
-
-    E.g. A cell was related for the timestramp of the experiment to another cell
-
-    The natural event path:
-    (a: Structure) -> [d: determines] ->  (b: NaturalEvent)
-    (a: $Bioentity) -[r: underwent]-> (b: NaturalEvent) -> [d: created] -> (c: $Bioentity)
-
-    E.g. the cell (a bioentity) "budded" (the relation) another cell (another bioentity)) at the time of the valid relation (informed structure in metadata)
-
-    The protocol event path:
-    (a: $Bioentity) -[r: underwent]-> (b: ProtocolEvent) -> [d: created] -> (c: $Bioentity)
-
-    E.g. A cell was isolated from a cell culture and is now considered a new bioentity, that backlinks to
-    the parent through the protocols
-
-
-    """
-
-    KIND = enums.CategoryKindChoices.REAGENT
-    KINDS = (enums.CategoryKindChoices.REAGENT,)
-
-    def get_age_vertex_name(self):
-        return self.age_name
-
-    def get_age_type_name(self) -> str:
-        return "REAGENT"
-
-    class Meta:
-        proxy = True
-
-
 class MeasurementCategory(EdgeCategory):
     objects = managers.MeasurementCategoryManager()
     """A Measurement class is a class that describes an edge with a value"""
@@ -1179,7 +1050,6 @@ class StructureRelationCategory(EdgeCategory):
 #: Which proxy class owns each `kind`, for `Category.as_kind()`.
 CATEGORY_PROXIES: dict[str, type[Category]] = {
     enums.CategoryKindChoices.ENTITY: EntityCategory,
-    enums.CategoryKindChoices.REAGENT: ReagentCategory,
     enums.CategoryKindChoices.NATURAL_EVENT: NaturalEventCategory,
     enums.CategoryKindChoices.PROTOCOL_EVENT: ProtocolEventCategory,
     enums.CategoryKindChoices.MEASUREMENT: MeasurementCategory,
@@ -1318,6 +1188,3 @@ class ScatterPlot(models.Model):
         related_name="scatter_plots",
         help_text="The user that created the scatter plot",
     )
-
-
-# Needs to be here

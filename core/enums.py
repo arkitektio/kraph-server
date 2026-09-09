@@ -12,7 +12,6 @@ class CategoryKindChoices(TextChoices):
     """
 
     ENTITY = "ENTITY"
-    REAGENT = "REAGENT"
     NATURAL_EVENT = "NATURAL_EVENT"
     PROTOCOL_EVENT = "PROTOCOL_EVENT"
     MEASUREMENT = "MEASUREMENT"
@@ -23,7 +22,6 @@ class CategoryKindChoices(TextChoices):
 #: The category kinds that are nodes in the graph (the former `NodeCategory` subtree).
 NODE_CATEGORY_KINDS = (
     CategoryKindChoices.ENTITY,
-    CategoryKindChoices.REAGENT,
     CategoryKindChoices.NATURAL_EVENT,
     CategoryKindChoices.PROTOCOL_EVENT,
 )
@@ -49,44 +47,6 @@ class GraphQueryKindChoices(TextChoices):
     TABLE = "TABLE"
 
 
-class MetricKindChoices(TextChoices):
-    INT = "INT"
-    FLOAT = "FLOAT"
-    DATETIME = "DATETIME"
-    STRING = "STRING"
-    CATEGORY = "CATEGORY"
-    BOOLEAN = "BOOLEAN"
-    THREE_D_VECTOR = "THREE_D_VECTOR"
-    TWO_D_VECTOR = "TWO_D_VECTOR"
-    ONE_D_VECTOR = "ONE_D_VECTOR"
-    FOUR_D_VECTOR = "FOUR_D_VECTOR"
-    N_VECTOR = "N_VECTOR"
-
-
-class ProtocolStepKindChoices(TextChoices):
-    """Variety expresses the Type of Representation we are dealing with"""
-
-    PREPERATION = "PREP"
-    ADD_REAGENT = "ADD_REAGENT"
-    MEASUREMENT = "MEASUREMENT"
-    STORAGE = "STORAGE"
-    CUSTOM = "CUSTOM"
-    UNKNOWN = "UNKNOWN"
-
-
-@strawberry.enum
-class ProtocolStepKind(str, Enum):
-    """Variety expresses the Type of Representation we are dealing with"""
-
-    PREPERATION = "PREP"
-    ADD_REAGENT = "ADD_REAGENT"
-    MEASUREMENT = "MEASUREMENT"
-    ANALYSIS = "ANALYSIS"
-    STORAGE = "STORAGE"
-    CUSTOM = "CUSTOM"
-    UNKNOWN = "UNKNOWN"
-
-
 @strawberry.enum
 class TermKind(str, Enum):
     """What sort of thing one of the organization's words names.
@@ -102,7 +62,6 @@ class TermKind(str, Enum):
     """
 
     ENTITY = "ENTITY"
-    REAGENT = "REAGENT"
     NATURAL_EVENT = "NATURAL_EVENT"
     PROTOCOL_EVENT = "PROTOCOL_EVENT"
     MEASUREMENT = "MEASUREMENT"
@@ -114,11 +73,9 @@ class TermKind(str, Enum):
 #:
 #: The two vocabularies are deliberately separate — `Instance.Kind` is lowercase, has
 #: three members, and says what sort of row this is; `CategoryKindChoices` is
-#: uppercase, has seven, and says what sort of thing a word names. A write needs
+#: uppercase, has six, and says what sort of thing a word names. A write needs
 #: both, and `classify_nodes` needs to go from the row it was handed to the kind of
-#: word it may claim. Total over `Instance.Kind`, so there is no default to get wrong;
-#: `REAGENT` has no node kind and so cannot be reached from here, which matches the
-#: fact that nothing mints reagent instances.
+#: word it may claim. Total over `Instance.Kind`, so there is no default to get wrong.
 TERM_KIND_FOR_NODE_KIND: dict[str, str] = {
     "entity": CategoryKindChoices.ENTITY.value,
     "natural_event": CategoryKindChoices.NATURAL_EVENT.value,
@@ -135,9 +92,6 @@ class InstanceKind(str, Enum):
     **lowercase** values and is not exposed to GraphQL, while a GraphQL enum is
     conventionally uppercase. `test_instance_kinds_match_the_model` holds the two
     together.
-
-    Three members, and no `REAGENT`: nothing mints a reagent instance, which is why
-    `TERM_KIND_FOR_NODE_KIND` above cannot reach that word kind either.
     """
 
     ENTITY = "ENTITY"
@@ -180,21 +134,6 @@ class ValueKind(str, Enum):
     ONE_D_VECTOR = "ONE_D_VECTOR"
     FOUR_D_VECTOR = "FOUR_D_VECTOR"
     N_VECTOR = "N_VECTOR"
-
-
-@strawberry.enum
-@strawberry.enum
-class ChangeKind(str, Enum):
-    CREATE = "CREATE"
-    UPDATE = "UPDATE"
-    DELETE = "DELETE"
-    IMPORT = "IMPORT"
-
-
-@strawberry.enum
-class OrderDirection(str, Enum):
-    ASC = "ASC"
-    DESC = "DESC"
 
 
 @strawberry.enum(description="The kind of a comment descendant — how one node of the rich-text tree renders")

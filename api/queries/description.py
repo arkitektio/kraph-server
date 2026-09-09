@@ -1,9 +1,10 @@
 import strawberry
+
 """INFORMS claim query resolvers.
 
 `descriptions(graph:)` is gone. It matched ``(m:Metric)-[r]->(s:Structure)``, and
-`graph_engine/vocab.py` records that `Structure` and `Metric` are labels the
-*reader* looks for and the writer never produces — structures and metrics stopped
+`Structure` and `Metric` are labels the *reader* invents for rows that have no
+vertex — the writer never produces them, because structures and metrics stopped
 being vertices entirely. So it could only ever return empty, which is the same
 defect the `assertion`/`assertions` queries were deleted for.
 

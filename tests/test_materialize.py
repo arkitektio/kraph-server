@@ -137,20 +137,6 @@ def test_entity_category_has_property_definitions(transactional_db, table_projec
     assert "name" in prop_keys
 
 
-def test_entity_category_has_schema_hash(transactional_db, table_projector, bio_graph_schema, authenticated_context) -> None:
-    """Test that EntityCategory has a schema_hash computed from property definitions."""
-    graph = _materialize_with_context(
-        bio_graph_schema,
-        table_projector,
-        authenticated_context,
-        name="test_hash",
-    )
-
-    ais_cat = graph.get_entity_def("AIS")
-    assert ais_cat.schema_hash is not None
-    assert len(ais_cat.schema_hash) > 0
-
-
 def test_relation_category_has_source_target_definitions(transactional_db, table_projector, bio_graph_schema, authenticated_context) -> None:
     """Test that RelationCategory stores source/target definitions correctly."""
     graph = _materialize_with_context(

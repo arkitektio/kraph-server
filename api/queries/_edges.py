@@ -14,8 +14,8 @@ filter silently answered "no matches" to a list of ids the API had just issued.
 
 **And five of the six could not match anything at all.** `projector.create_vertex`
 labels a vertex with `category.age_name` and writes exactly ``{id, category_id}``;
-`graph_engine/vocab.py` records that `Structure`, `Metric` and `Assertion` are
-names the *reader* looks for and never names the writer produces. So:
+`Structure`, `Metric` and `Assertion` were names the *reader* looked for and
+never names the writer produced. So:
 
 - `descriptions` matched ``(m:Metric)-[r]->(s:Structure)`` — neither label exists;
 - the participation queries matched ``(:Entity)-[r]->(:NaturalEvent)`` — nor those;

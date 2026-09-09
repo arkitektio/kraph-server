@@ -221,9 +221,6 @@ class EntityDescriptor:
 class StructureDescriptor:
     """Descriptor for a structure, used as input for creating new graph queries."""
 
-    keys: Optional[List[str]] = kante.field(default=None, description="REMOVED — a structure kind has no key. Always null.")
-    tags: Optional[List[str]] = kante.field(default=None, description="REMOVED — tags are gone, and a structure kind never had them. Always null.")
-    ontology_terms: Optional[List[str]] = kante.field(default=None, description="Filter by ontology references on the structure (format: 'PREFIX:TERM_ID')")
     default_category_key: Optional[str] = kante.field(default=None, description="Default category to use for this structure if we aim to create a new one based on this descriptor")
 
 
@@ -1111,6 +1108,7 @@ class Node(Generic[V]):
 # answer has — two annotators may disagree about whether a thing exists, and each
 # graph's selector decides whose word it counts.
 
+
 def _explaining(categories: Sequence[Any], key: str) -> Any:
     """The first of a node's categories declaring `key`, else the first category (RFC 0019).
 
@@ -1494,11 +1492,6 @@ class Metric:
     @strawberry.field(description="The standing DERIVED_FROM citations that name this claim: what was concluded from it, one link each, oldest first (RFC 0017)")
     async def derivations(self) -> List["Link"]:
         return cast(List["Link"], await loaders.lineage_by_target_loader.load(self._value.unique_id))
-
-
-# ===========================================
-# REAGENT TYPE
-# ===========================================
 
 
 # ===========================================
@@ -3186,51 +3179,6 @@ class GraphTableRender:
 # `Structure`, the exact write-payload shape the `Asserted*` family replaced. It
 # was referenced by nothing and registered in no schema; `linkStructureToEntity`
 # returns `AssertedDescription`.
-
-
-# ===========================================
-# SCHEMA TYPES
-# ===========================================
-
-
-@strawberry.type(description="A validation error from schema validation")
-class SchemaValidationError:
-    """A single validation error."""
-
-    location: List[str] = strawberry.field(description="Path to the error (e.g., ['extensions', 'entities', 'Neuron'])")
-    message: str = strawberry.field(description="Human-readable error message")
-    type: str = strawberry.field(default="validation_error", description="Error type")
-
-
-@strawberry.type(description="Result of validating a schema")
-class SchemaValidationResult:
-    """Result of schema validation."""
-
-    is_valid: bool = strawberry.field(description="Whether the schema is valid")
-    errors: List[SchemaValidationError] = strawberry.field(description="List of validation errors")
-    warnings: List[SchemaValidationError] = strawberry.field(description="List of warnings (non-fatal)")
-
-
-@strawberry.type(description="A graph schema version")
-class GraphSchemaType:
-    """A versioned schema for a graph."""
-
-    id: int = strawberry.field(description="Database ID of this schema")
-    version: str = strawberry.field(description="Semantic version (e.g., '1.0.0')")
-    index: int = strawberry.field(description="Sequential index of this version")
-    is_active: bool = strawberry.field(description="Whether this is the active schema")
-    created_at: datetime = strawberry.field(description="When this schema was created")
-    description: Optional[str] = strawberry.field(default=None, description="Description of this version")
-    definition: AnyScalar = strawberry.field(description="The full schema definition as JSON")
-
-
-@strawberry.type(description="Result of setting a new schema")
-class SetSchemaResult:
-    """Result of setting a new schema version."""
-
-    schema: GraphSchemaType = strawberry.field(description="The created schema")
-    activated: bool = strawberry.field(description="Whether the schema was activated")
-    migration_required: bool = strawberry.field(default=False, description="Whether existing nodes may need migration")
 
 
 GraphStats, GraphStatsResolver = create_stats_type(

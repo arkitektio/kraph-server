@@ -47,10 +47,7 @@ NAMESPACE_MAX_ELEMENT_TABLES = 512
 _MAX_IDENTIFIER_BYTES = 63
 
 #: The category kinds that draw vertices and may anchor an edge endpoint.
-_ENTITY_LIKE_KINDS = (
-    core_enums.CategoryKindChoices.ENTITY,
-    core_enums.CategoryKindChoices.REAGENT,
-)
+_ENTITY_LIKE_KINDS = (core_enums.CategoryKindChoices.ENTITY,)
 
 #: The participation labels, per event kind — class constants on the proxies,
 #: not rows, so they are folded in here (`AGE_INPUT_EDGE` / `AGE_OUTPUT_EDGE`).

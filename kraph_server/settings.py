@@ -44,7 +44,6 @@ INSTALLED_APPS = [
     "django.contrib.postgres",
     "channels_redis",
     "datalayer",
-    "guardian",
     "simple_history",
     "strawberry",
     "strawberry_django",
@@ -53,7 +52,6 @@ INSTALLED_APPS = [
     "kante",
     "channels",
     "django_probes",
-    "taggit",
     "core",
     "graph_engine",
     "evidence",
@@ -138,10 +136,7 @@ TEMPLATES = [
     },
 ]
 
-AUTHENTICATION_BACKENDS = (
-    "django.contrib.auth.backends.ModelBackend",  # this is default
-    "guardian.backends.ObjectPermissionBackend",
-)
+AUTHENTICATION_BACKENDS = ("django.contrib.auth.backends.ModelBackend",)
 
 WSGI_APPLICATION = "kraph_server.wsgi.application"
 ASGI_APPLICATION = "kraph_server.asgi.application"
@@ -208,6 +203,3 @@ WHITENOISE_USE_FINDERS = True
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-
-
-INCREMENTER = "1"

@@ -116,7 +116,7 @@ class NodeCategoryOrder(CategoryOrder):
 
 @strawberry_django.order_type(models.Category)
 class EdgeCategoryOrder(CategoryOrder):
-    instance_kind: auto
+    pass
 
 
 @strawberry_django.order_type(models.Category)

@@ -111,15 +111,6 @@ def _provenance_claims(request: Any) -> dict[str, Any]:
 # queries read `evidence.Link` now; see `api/queries/_edges.py`.
 
 
-def _extract_props(raw_node: Any) -> Dict[str, Any]:
-    """Extract properties from an AGE node, handling both dict and nested formats."""
-    if isinstance(raw_node, dict):
-        if "properties" in raw_node:
-            return raw_node["properties"]
-        return raw_node
-    return {}
-
-
 class GraphController:
     """Controller for interacting with the graph database."""
 
@@ -1547,7 +1538,7 @@ class GraphController:
     ) -> results.Asserted:
         """Claim that several entities took part in one event, as one act."""
         if not participants:
-            return []
+            raise ValueError("assertParticipations needs at least one participant: an act that claims nothing is not recorded.")
 
         organization = self._resolve_instance(event_id, info).organization
         event_ref = self._node_ref(event_id, info, organization=organization)
@@ -1621,7 +1612,7 @@ class GraphController:
         `projector.resolve_categories`.
         """
         if not classifications:
-            return []
+            raise ValueError("classifyNodes needs at least one classification: an act that claims nothing is not recorded.")
 
         # `_resolve_instance` refuses a node outside this organization, which is what
         # keeps a batch within one tenant. The old body checked the same thing by
@@ -2493,7 +2484,7 @@ class GraphController:
         term: evidence_models.Term,
         payload: RelationInput,
         info: Info,
-    ) -> RetrievedEdge:
+    ) -> results.Asserted:
         """Assert that a relation holds between two structures.
 
         No projection. Structures stopped being AGE vertices in M1, so there is
@@ -2539,7 +2530,7 @@ class GraphController:
         term: evidence_models.Term,
         payload: RelationInput,
         info: Info,
-    ) -> RetrievedEdge:
+    ) -> results.Asserted:
         """Assert that a structure measures an entity, under an ontology term.
 
         The typed form of INFORMS: both say "this ROI is evidence for that cell",

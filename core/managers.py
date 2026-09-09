@@ -167,10 +167,7 @@ class EntityCategoryManager(NodeCategoryManager["core_models.EntityCategory"]):
         graph: "core_models.Graph",
         definition: input_models.EntityDefinitionInput,
     ) -> "core_models.EntityCategory":
-        from graph_engine.materialize import compute_properties_hash
-
         property_defs = [p.model_dump(mode="json") for p in definition.property_definitions] if definition.property_definitions else []
-        props_hash = compute_properties_hash(property_defs)
 
         category = await self.acreate_from_node_definition(
             graph=graph,
@@ -178,7 +175,6 @@ class EntityCategoryManager(NodeCategoryManager["core_models.EntityCategory"]):
             other_defaults={
                 "instance_kind": definition.instance_kind,
                 "property_definitions": property_defs,
-                "schema_hash": props_hash,
                 # The category's *meaning* (RFC 0007). Empty means primitive.
                 "definition": definition.definition.to_stored() if definition.definition else {},
             },
@@ -205,16 +201,12 @@ class EntityCategoryManager(NodeCategoryManager["core_models.EntityCategory"]):
         category: "core_models.EntityCategory",
         definition: input_models.EntityDefinitionInput,
     ) -> "core_models.EntityCategory":
-        from graph_engine.materialize import compute_properties_hash
-
         property_defs = [p.model_dump(mode="json") for p in definition.property_definitions] if definition.property_definitions else []
-        props_hash = compute_properties_hash(property_defs)
 
         category.label = definition.label or category.label
         category.description = definition.description or category.description
         category.instance_kind = definition.instance_kind or category.instance_kind
         category.property_definitions = property_defs or category.property_definitions
-        category.schema_hash = props_hash or category.schema_hash
 
         # The category's meaning (RFC 0007): a new predicate replaces the old one
         # whole; `clear_definition` resets to primitive; absent means unchanged.
@@ -242,10 +234,6 @@ class NaturalEventCategoryManager(NodeCategoryManager["core_models.NaturalEventC
 
 
 class ProtocolEventCategoryManager(NodeCategoryManager["core_models.ProtocolEventCategory"]):
-    pass
-
-
-class ReagentCategoryManager(NodeCategoryManager["core_models.ReagentCategory"]):
     pass
 
 

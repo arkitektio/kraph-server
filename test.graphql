@@ -2725,9 +2725,6 @@ input GraphDefinitionInput {
 
 """The categories a graph schema declares"""
 input GraphExtensionsInput {
-  """Graph prefixes for namespacing"""
-  prefixes: [PrefixInput!]! = []
-
   """Entity definitions"""
   entities: [EntityDefinitionInput!]! = []
 
@@ -2742,12 +2739,6 @@ input GraphExtensionsInput {
 
   """Event definitions"""
   events: [EventDefinitionInput!]! = []
-
-  """Graph table query definitions"""
-  graphTableQueries: [GraphTableQueryInput!]! = []
-
-  """Scatter plot definitions"""
-  scatterPlots: [ScatterPlotInput!]! = []
 }
 
 """Numeric/aggregatable fields of Graph"""
@@ -2935,24 +2926,6 @@ input GraphTableQueryFilter {
 
   """Only archived queries, or only live ones. Omitted shows both"""
   archived: Boolean
-}
-
-"""A saved table query declared inside a graph definition, as a plan"""
-input GraphTableQueryInput {
-  """Unique key for this query within its graph"""
-  key: String!
-
-  """Human-readable name (defaults to `key`)"""
-  name: String = null
-
-  """Description of this query"""
-  description: String = null
-
-  """What the query means; compiled by each projection kind"""
-  plan: TableQueryPlanInput!
-
-  """How the returned aliases are presented"""
-  columnInput: [ColumnInput!]! = []
 }
 
 input GraphTableQueryOrder @oneOf {
@@ -4647,16 +4620,6 @@ interface Plottable {
   scatterPlots: [ScatterPlot!]!
 }
 
-input PrefixInput {
-  """The prefix string (e.g. 'OBI')"""
-  prefix: String!
-
-  """
-  The URI that the prefix maps to (e.g. 'http://purl.obolibrary.org/obo/OBI_')
-  """
-  uri: String!
-}
-
 """
 Whether a view's drawing reflects the log, has never been drawn, or is mid-replay
 """
@@ -5358,7 +5321,6 @@ input RelationCategoryFilter {
 input RelationCategoryOrder @oneOf {
   label: Ordering
   id: Ordering
-  instanceKind: Ordering
 }
 
 type RelationCategoryStats {
@@ -5887,38 +5849,6 @@ input ScatterPlotFilter {
   search: String
 }
 
-"""A saved scatter plot over a plottable query"""
-input ScatterPlotInput {
-  """Unique key for this plot definition, used for referencing in the UI"""
-  key: String!
-
-  """
-  Human-readable label for this plot definition (defaults to 'key' if not provided)
-  """
-  label: String = null
-
-  """The key of the graph table query that provides the data for this plot"""
-  graphTableQuery: String
-
-  """The key of the node table query that provides the data for this plot"""
-  nodeTableQuery: String
-
-  """The key of the path table query that provides the data for this plot"""
-  pathTableQuery: String
-
-  """The column key to use for the x-axis"""
-  xAxis: String!
-
-  """The column key to use for the y-axis"""
-  yAxis: String!
-
-  """Optional column key to use for coloring the points"""
-  colorBy: String = null
-
-  """Optional column key to use for sizing the points"""
-  sizeBy: String = null
-}
-
 input ScatterPlotOrder @oneOf {
   name: Ordering
   id: Ordering
@@ -6039,19 +5969,6 @@ type Structure {
 
 """Input type for creating a new graph query"""
 type StructureDescriptor {
-  """REMOVED — structure kinds have no key. Use `identifiers`."""
-  keys: [String!]
-
-  """
-  REMOVED — tags are gone, and a structure kind never had them. Use `identifiers`.
-  """
-  tags: [String!]
-
-  """
-  REMOVED — structure kinds carry no ontology references. Use `identifiers`.
-  """
-  ontologyTerms: [String!]
-
   """Default category to link to if no entities match the filters"""
   defaultCategoryKey: String
 }
@@ -6060,19 +5977,6 @@ type StructureDescriptor {
 Input for creating a new structure relation definition in the graph schema
 """
 input StructureDescriptorInput {
-  """REMOVED — structure kinds have no key. Use `identifiers`."""
-  keys: [String!] = null
-
-  """
-  REMOVED — tags are gone, and a structure kind never had them. Use `identifiers`.
-  """
-  tags: [String!] = null
-
-  """
-  REMOVED — structure kinds carry no ontology references. Use `identifiers`.
-  """
-  ontologyTerms: [String!] = null
-
   """Default category to link to if no entities match the filters"""
   defaultCategoryKey: String = null
 
@@ -6333,7 +6237,6 @@ input StructureRelationCategoryFilter {
 input StructureRelationCategoryOrder @oneOf {
   label: Ordering
   id: Ordering
-  instanceKind: Ordering
 }
 
 type StructureRelationCategoryStats {
@@ -6562,7 +6465,6 @@ input TermFilter {
 
 enum TermKind {
   ENTITY
-  REAGENT
   NATURAL_EVENT
   PROTOCOL_EVENT
   MEASUREMENT

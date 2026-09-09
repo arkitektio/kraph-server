@@ -74,10 +74,7 @@ def snapshot_definition(graph: core_models.Graph) -> dict[str, Any]:
     # the snapshot: a trust edit is a schema change, versioned like one. (This
     # closes the RFC 0007 open item for the predicate; rule evidence filters
     # ride `property_definitions` and were always included.)
-    entities = [
-        {"key": category.key, "description": category.description, "property_definitions": _property_definitions(category), **({"definition": dict(category.definition)} if category.definition else {})}
-        for category in graph.entity_categories.order_by("key")
-    ]
+    entities = [{"key": category.key, "description": category.description, "property_definitions": _property_definitions(category), **({"definition": dict(category.definition)} if category.definition else {})} for category in graph.entity_categories.order_by("key")]
 
     relations = [
         {
@@ -254,7 +251,6 @@ def connect() -> None:
         models_module.StructureRelationCategory,
         models_module.NaturalEventCategory,
         models_module.ProtocolEventCategory,
-        models_module.ReagentCategory,
     ):
         post_save.connect(on_category_changed, sender=model, dispatch_uid=f"schema_version_{model.__name__}_save")
         post_delete.connect(on_category_changed, sender=model, dispatch_uid=f"schema_version_{model.__name__}_delete")

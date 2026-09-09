@@ -64,7 +64,7 @@ async def test_node_categories_interface_resolves_fragments(
     assert categories, "the bio graph schema defines node categories"
 
     typenames = {category["__typename"] for category in categories}
-    assert typenames <= {"EntityCategory", "ReagentCategory", "NaturalEventCategory", "ProtocolEventCategory"}
+    assert typenames <= {"EntityCategory", "NaturalEventCategory", "ProtocolEventCategory"}
     assert "EntityCategory" in typenames
 
     # No edge category may leak into a node-category field.
@@ -116,7 +116,7 @@ async def test_edge_categories_interface_resolves_fragments(
 
     typenames = {category["__typename"] for category in categories}
     assert typenames <= {"RelationCategory", "MeasurementCategory", "StructureRelationCategory"}
-    assert not typenames & {"EntityCategory", "ReagentCategory"}
+    assert not typenames & {"EntityCategory"}
 
 
 @pytest.mark.django_db(transaction=True)
@@ -170,6 +170,7 @@ async def test_graph_queries_interface_resolves_fragments(
 # `test_concrete_query_field_is_scoped_to_its_kind` used to sit here, contrasting a
 # table query with a nodes query under one interface. Only the table kind exists
 # now, so there is no second kind to be scoped against.
+
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio

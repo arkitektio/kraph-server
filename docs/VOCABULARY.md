@@ -106,7 +106,7 @@ Deleting any of it is free and takes no evidence with it. The `PROTECT` is on
 `Category` is **one concrete table** with a `kind` column. The old
 multi-table-inheritance class names survive as Django **proxies**:
 
-- node categories — `EntityCategory`, `NaturalEventCategory`, `ProtocolEventCategory`, `ReagentCategory`
+- node categories — `EntityCategory`, `NaturalEventCategory`, `ProtocolEventCategory`
 - edge categories — `RelationCategory`, `MeasurementCategory`, `StructureRelationCategory`
 
 > That proxying matters when writing queryset code: `EntityCategory.objects.all().model.__name__`
@@ -215,10 +215,6 @@ from a vertex **or** from an evidence row.
 | `RetrievedEdge` | **always** a row (`from_link`) | every edge the API builds is row-backed |
 | `RetrievedStructure`, `RetrievedMetric` | rows only | `RetrievedNode` subclasses, but their GraphQL types implement no interface |
 | `RetrievedVariable` | query renders | |
-
-> `RetrievedRelation`, `RetrievedInforms`, `RetrievedDescribes`, `RetrievedAsserts`,
-> `RetrievedReifiesAsSource` and `RetrievedEvent` are **constructed nowhere**.
-> They are leftovers from the design in which provenance was a drawn edge.
 
 ### Drawings
 

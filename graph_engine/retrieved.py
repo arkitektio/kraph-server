@@ -13,7 +13,7 @@ claim's uuid — is the only field that means anything in every case.
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Type, TypeVar, TYPE_CHECKING
 from datetime import datetime, timezone
-from graph_engine import vocab, scalars
+from graph_engine import scalars
 
 if TYPE_CHECKING:
     from graph_engine.controller import GraphController
@@ -732,44 +732,6 @@ class RetrievedEdge:
         return self.graph_name == other.graph_name and self.unique_id == other.unique_id
 
 
-# ==========================================
-# Specialized Retrieved Node Types, for type discrimination
-# ==========================================
-@dataclass
-class RetrievedRelation(RetrievedEdge):
-    """A retrieved Relation edge from the AGE graph."""
-
-    pass
-
-
-@dataclass
-class RetrievedInforms(RetrievedEdge):
-    """A retrieved Relation edge from the AGE graph."""
-
-    pass
-
-
-@dataclass
-class RetrievedDescribes(RetrievedEdge):
-    """A retrieved Metric edge from the AGE graph."""
-
-    pass
-
-
-@dataclass
-class RetrievedAsserts(RetrievedEdge):
-    """A retrieved Metric edge from the AGE graph."""
-
-    pass
-
-
-@dataclass
-class RetrievedReifiesAsSource(RetrievedEdge):
-    """A retrieved edge that reifies a structure as a source."""
-
-    pass
-
-
 # `RetrievedEntity` used to sit here, a `RetrievedNode` subclass adding one property:
 # `entity_id`, which returned `properties["id"]` — the same value `unique_id` returns,
 # under a name that says "entity" about a class also constructed for events. It
@@ -819,17 +781,10 @@ class RetrievedStructure(RetrievedNode):
             controller=controller,
             graph_name=graph_name,
             vertex_id=0,
-            label=vocab.Structure,
+            label="Structure",
             row_id=str(row.pk),
             properties=properties,
         )
-
-
-@dataclass
-class RetrievedEvent(RetrievedNode):
-    """A retrieved Event node from the AGE graph."""
-
-    pass
 
 
 @dataclass
@@ -915,7 +870,7 @@ class RetrievedMetric(RetrievedNode):
             controller=controller,
             graph_name=graph_name,
             vertex_id=0,
-            label=vocab.Metric,
+            label="Metric",
             row_id=str(row.pk),
             properties=properties,
         )
@@ -942,7 +897,6 @@ class RetrievedGraphTableRender:
     graph_id: int
     graph_query_id: int
     rows: List[Dict[str, Any]]
-
 
 
 # The nodes / path / pairs render shapes and `RetrievedNodePathRender` /

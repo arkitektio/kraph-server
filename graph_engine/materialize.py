@@ -387,7 +387,6 @@ def _materialize_categories(graph, definition: GraphDefinitionInput, user) -> No
     # Create NaturalEventCategories
     for event_def in definition.extensions.events:
         property_defs = [p.model_dump(mode="json") for p in event_def.properties]
-        props_hash = compute_properties_hash(property_defs)
 
         # Map inputs/outputs to source/target roles
         source_roles = [p.model_dump(mode="json") for p in event_def.inputs]
@@ -406,7 +405,6 @@ def _materialize_categories(graph, definition: GraphDefinitionInput, user) -> No
             label=event_def.key,
             description=getattr(event_def, "description", None) or "",
             property_definitions=property_defs,
-            schema_hash=props_hash,
             source_entity_roles=source_roles,
             target_entity_roles=target_roles,
         )

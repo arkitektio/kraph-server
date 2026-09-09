@@ -80,15 +80,15 @@ async def test_an_open_relation_between_any_pair_renders(api_schema, simple_api_
 
 
 # ---------------------------------------------------------------------------
-# The protocol lane: reagents and protocol events, added after materialize.
+# The protocol lane: protocol events, added after materialize.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db(transaction=True)
-def test_protocol_and_reagent_categories_land_in_the_namespace(lab_graph, table_projector) -> None:
-    # Both were created through the ORM *after* materialize — the labels being
-    # present is the category-write signal having refreshed the namespace.
-    assert namespaces.property_graph_labels(lab_graph.age_name) == {"Sample", "Slide", "PFA", "Fixation", "SUBJECTED_IN", "PRODUCED"}
+def test_protocol_event_categories_land_in_the_namespace(lab_graph, table_projector) -> None:
+    # Created through the ORM *after* materialize — the label being present is
+    # the category-write signal having refreshed the namespace.
+    assert namespaces.property_graph_labels(lab_graph.age_name) == {"Sample", "Slide", "Fixation", "SUBJECTED_IN", "PRODUCED"}
 
     spec = namespace_module.namespace_spec(lab_graph)
     sample, slide, fixation = (_cat(lab_graph, key).pk for key in ("Sample", "Slide", "Fixation"))
@@ -114,8 +114,7 @@ async def test_a_protocol_event_renders_as_two_hops(api_schema, simple_api_conte
     def match():
         return namespaces.graph_table(
             lab_graph,
-            'MATCH (s IS "Sample")-[i IS "SUBJECTED_IN"]->(f IS "Fixation")-[o IS "PRODUCED"]->(t IS "Slide") '
-            "COLUMNS (s.__ref AS sample, i.__eprops ->> 'role' AS in_role, o.__eprops ->> 'role' AS out_role, t.__ref AS slide)",
+            'MATCH (s IS "Sample")-[i IS "SUBJECTED_IN"]->(f IS "Fixation")-[o IS "PRODUCED"]->(t IS "Slide") COLUMNS (s.__ref AS sample, i.__eprops ->> \'role\' AS in_role, o.__eprops ->> \'role\' AS out_role, t.__ref AS slide)',
         )
 
     assert await match() == [(sample, "specimen", "mounted", slide)]

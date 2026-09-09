@@ -9,7 +9,6 @@ import strawberry
 from strawberry.scalars import JSON
 from datetime import datetime
 from typing import Optional, List
-from enum import Enum
 
 from core import enums
 from graph_engine import input_models
@@ -220,8 +219,6 @@ class DeleteEntityCategoryInput:
 class StructureDescriptorInput:
     """Input for creating a new structure relation definition in the graph schema."""
 
-    keys: List[str] | None = strawberry.field(default=None, description="REMOVED — a structure kind has no key. Use identifiers.")
-    tags: List[str] | None = strawberry.field(default=None, description="REMOVED — tags are gone, and a structure kind never had them. Use identifiers.")
     identifiers: List[str] | None = strawberry.field(default=None, description="The list of ontology terms associated with this entity descriptor")
 
     pass
@@ -689,33 +686,6 @@ class EntityDefinitionInput:
     """Definition of an entity type in the graph schema."""
 
 
-@pydantic.input(model=input_models.EvidenceRequirementInput, all_fields=True, description="Definition of an evidence requirement for relation materialization")
-class EvidenceRequirementInput:
-    """Evidence requirement for relation materialization."""
-
-    key: strawberry.auto
-    unit: strawberry.auto
-    description: strawberry.auto
-
-
-@pydantic.input(model=input_models.MaterializationConfigInput, all_fields=True, description="Configuration for relation materialization from evidence")
-class MaterializationConfigInput:
-    """Configuration for relation materialization from evidence."""
-
-    backing_link_type: strawberry.auto
-    desired_evidence: Optional[List[EvidenceRequirementInput]] = strawberry.field(default_factory=list)
-    properties: Optional[List[PropertyDefinitionInput]] = strawberry.field(default_factory=list)
-
-
-@strawberry.enum
-class CardinalityEnum(str, Enum):
-    """Cardinality options for relation definitions."""
-
-    ONE_TO_ONE = "1:1"
-    ONE_TO_MANY = "1:N"
-    MANY_TO_MANY = "N:N"
-
-
 @pydantic.input(model=input_models.RelationDefinitionInput, all_fields=True, description="Definition of a relation type in the graph schema")
 class RelationDefinitionInput:
     """Definition of a relation type in the graph schema."""
@@ -724,53 +694,6 @@ class RelationDefinitionInput:
 @pydantic.input(model=input_models.EventDefinitionInput, all_fields=True, description="Definition of an event type in the graph schema")
 class EventDefinitionInput:
     """Definition of an event type in the graph schema."""
-
-
-@pydantic.input(model=input_models.PrefixInput)
-class PrefixInput:
-    """Prefix definition for namespacing in the graph schema."""
-
-    prefix: strawberry.auto
-    uri: strawberry.auto
-
-
-# ==========================================
-# SCHEMA MANAGEMENT INPUT TYPES
-# ==========================================
-
-
-# ==========================================
-# FILTER INPUT TYPES
-# ==========================================
-
-
-@strawberry.input(description="Filter options for querying structures")
-class StructureFilterInput:
-    """Filter options for structure queries."""
-
-    identifier: Optional[str] = strawberry.field(default=None, description="Filter by structure identifier")
-    objects: Optional[List[str]] = strawberry.field(default=None, description="Filter by specific object IDs")
-
-
-@strawberry.input(description="Filter options for querying measurements")
-class MeasurementFilterInput:
-    """Filter options for measurement queries."""
-
-    key: Optional[str] = strawberry.field(default=None, description="Filter by measurement key")
-    keys: Optional[List[str]] = strawberry.field(default=None, description="Filter by multiple measurement keys")
-
-
-# ==========================================
-# PAGINATION INPUT TYPES
-# ==========================================
-
-
-@strawberry.input(description="Pagination options")
-class PaginationInput:
-    """Standard offset-based pagination."""
-
-    offset: Optional[int] = strawberry.field(default=0, description="Number of items to skip")
-    limit: Optional[int] = strawberry.field(default=100, description="Maximum number of items to return")
 
 
 @pydantic.input(model=input_models.ColumnInput, all_fields=True, description="Input for a graph table query column")
@@ -796,11 +719,6 @@ class ReturnStatementInput:
 
 @pydantic.input(model=input_models.TableQueryPlanInput, all_fields=True, description="What a saved table query means: matches, wheres, returns. Compiled per projection kind")
 class TableQueryPlanInput:
-    pass
-
-
-@pydantic.input(model=input_models.GraphTableQueryInput, all_fields=True, description="A saved table query declared inside a graph definition, as a plan")
-class GraphTableQueryInput:
     pass
 
 
@@ -833,11 +751,6 @@ class DeleteGraphTableQueryInput:
 @pydantic.input(model=input_models.ArchiveGraphTableQueryInput, all_fields=True, description="Input for archiving a graph table query")
 class ArchiveGraphTableQueryInput:
     id: strawberry.ID = strawberry.field(description="The ID of the graph table query to archive")
-
-
-@pydantic.input(model=input_models.ScatterPlotInput, all_fields=True, description="A saved scatter plot over a plottable query")
-class ScatterPlotInput:
-    pass
 
 
 @pydantic.input(model=input_models.MeasurementDefinitionInput, all_fields=True, description="Declares a measurement category in a graph schema")
@@ -878,4 +791,3 @@ class DeleteGraphInput:
 @pydantic.input(model=input_models.ArchiveGraphInput, all_fields=True, description="Input for archiving a graph")
 class ArchiveGraphInput:
     pass
-

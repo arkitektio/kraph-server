@@ -1,4 +1,5 @@
 import time
+
 # (Generator import removed with the AGE engine fixture)
 import pytest
 import boto3
@@ -372,7 +373,6 @@ def lab_graph_schema() -> models.GraphDefinitionInput:
 def lab_graph(transactional_db, table_projector, lab_graph_schema, authenticated_context) -> core_models.Graph:
     request = authenticated_context.request
     graph = materialize(lab_graph_schema, table_projector, user=request._user, organization=request._organization, membership=request.membership, name="lab")
-    core_models.ReagentCategory.objects.create(graph=graph, key="PFA", age_name="PFA", label="PFA")
     core_models.ProtocolEventCategory.objects.create(
         graph=graph,
         key="Fixation",
