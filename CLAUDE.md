@@ -56,6 +56,22 @@ forced graph state to leak across the session, and "passes alone, fails in the s
 signature. That whole class is gone.) Tests assert on drawings through `tests/support/drawing.py`, never
 by importing the projection models into production code paths.
 
+### The suite is laid out by the model
+
+`tests/README.md` is the map. One directory per layer of the model — `guards/` (no database),
+`log/` (A1–A4), `identity/` (A5/C3), `view/` (A6), `projection/` (A7/C2), `datum/` (C6),
+`surface/` (C4/C5), `product/` (C7) — one module per property, named as the sentence it
+holds. The rules that keep it that way: one `conftest.py`; a test module imports only
+`tests.support.*`; every GraphQL document is declared once (`support/writes.py` for
+mutations, `support/reads.py` for queries); `rebuild_projection` is called only in the
+projection layer's three replay modules and `support/graphs.py::rebuild`; names and
+docstrings use the model's vocabulary, property first, with the bug story in a trailing
+`History:` paragraph — `guards/test_vocabulary.py` fails on the retired words. The
+projection layer's centrepiece is `projection/test_rebuild_equals_the_write_path.py`: every
+kind of thing a view draws, drawn by the write path, then by a full rebuild and by
+`reproject --incremental`, compared whole. A new property goes in the module that states it;
+a new module goes in the layer whose axiom it holds.
+
 ### Local `manage.py` gotcha
 
 The checked-in `config.yaml` targets container hostnames (`db`, `redis`, `minio`,
