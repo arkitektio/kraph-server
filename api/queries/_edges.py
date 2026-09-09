@@ -78,9 +78,7 @@ def links_for_category(organization: Any, category: Any, kind: Any) -> Any:
     """
     if category.definition:
         return claims_module.standing(
-            evidence_models.Link.objects.for_organization(organization)
-            .filter(kind=kind, term__kind=str(category.kind))
-            .filter(selector_module.classification_filter(category.definition)),
+            evidence_models.Link.objects.for_organization(organization).filter(kind=kind, term__kind=str(category.kind)).filter(selector_module.classification_filter(category.definition)),
             "link",
             predicate=selector_module.trust_predicate(category.definition, kind="EXISTENCE"),
         ).select_related("assertion", "term")
@@ -104,25 +102,9 @@ def links_in_graph(graph: Any, kind: Any, *, ref_field: str) -> Any:
     """
     from graph_engine import projector as projector_module
 
-    base = (
-        evidence_models.Link.objects.for_organization(graph.organization)
-        .filter(kind=kind)
-        .filter(**{f"{ref_field}__in": selector_module.instance_refs_for(graph)})
-    )
+    base = evidence_models.Link.objects.for_organization(graph.organization).filter(kind=kind).filter(**{f"{ref_field}__in": selector_module.instance_refs_for(graph)})
 
-    by_term = projector_module.categories_by_term(graph)
-    surviving: set[Any] = set()
-    for term_id in set(base.values_list("term_id", flat=True)):
-        category = by_term.get(term_id)
-        if category is None:
-            continue
-        if category.definition:
-            claims = base.filter(selector_module.classification_filter(category.definition), term__kind=str(category.kind))
-            predicate = selector_module.trust_predicate(category.definition, kind="EXISTENCE")
-        else:
-            claims = base.filter(term_id=category.term_id)
-            predicate = None
-        surviving.update(claims_module.standing(claims, "link", predicate=predicate).values_list("pk", flat=True))
+    surviving = set(projector_module.admitting_categories(projector_module.categories_drawing(graph, kind), base))
 
     return evidence_models.Link.objects.for_organization(graph.organization).filter(pk__in=surviving).select_related("assertion", "term")
 

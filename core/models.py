@@ -551,6 +551,13 @@ class Category(KindDiscriminatedModel):
             # 0005_vertex_category_fk). That FK is the write-side enforcement of
             # "only declared categories end up in a graph" — RFC 0006.
             models.UniqueConstraint(fields=["graph", "id"], name="category_graph_and_id"),
+            # One category per declared word per view (RFC 0021). `(graph, key)`
+            # implies it today because a category's term is minted from its key,
+            # but the invariant deserves stating where the database enforces it:
+            # several categories for one word in one view arise only by
+            # *derivation* (a defined category's clauses naming the word), and
+            # those are resolved by admission, never by a term→category map.
+            models.UniqueConstraint(fields=["graph", "term"], condition=models.Q(term__isnull=False), name="one_category_per_word_per_view"),
         ]
 
     def save(self, *args, **kwargs):

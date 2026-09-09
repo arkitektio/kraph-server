@@ -761,76 +761,68 @@ def representatives_for(controller: Any, graph: core_models.Graph, refs: Iterabl
     return {ref: str(record["properties"]["id"]) for ref, record in records.items()}
 
 
-def categories_by_term(graph: core_models.Graph) -> dict[Any, Any]:
-    """This graph's categories, indexed by the organization term each declares.
+def _admitted_by(categories: Iterable[Any], base: Any) -> dict[Any, list[evidence_models.Link]]:
+    """Each category → the standing claims from `base` it admits, under its own rule.
 
-    The join between a claim and a view. A claim names a word; this says what —
-    if anything — *this* graph draws that word as. A term with no entry here is
-    one this view does not speak, which is a perfectly ordinary state and not an
-    error.
+    The one implementation of "which claims draw this category's edges" (RFC 0009):
+    a defined category admits the claims its classification filter matches and
+    folds their standings under its trust; a primitive category admits every
+    claim naming its word, standings organization grain. `active_relation_links`,
+    `active_participation_links`, `project_edges`, `project_participation`, the
+    correction paths and the API's edge lists all read through here, so none of
+    them can disagree about which claims exist.
     """
-    # `term_id__isnull=False` rather than trusting every creation path: a
-    # category with no term declares no word, so nothing can ever claim it — and
-    # keying a dict on `None` would quietly make one such category the answer for
-    # every unnamed link.
-    categories = list(core_models.Category.objects.filter(graph=graph, term_id__isnull=False))
-    by_term = {category.term_id: category for category in categories}
-
-    # The derived half (RFC 0009): a defined relation or event category may
-    # admit claims stated in *other* words (its clauses' `asserted_as`), and an
-    # edge drawn from such a claim still needs this view's label. Resolved by
-    # (key, kind of the defining category), declared categories winning; a word
-    # two definitions of the same kind both derive from is left unmapped. An
-    # edge is drawn under one label, unlike a node (RFC 0019 lifted that for
-    # nodes only): two edge categories deriving from one word would be two
-    # edges for one claim, which `proposition_key` keys by word and cannot hold.
-    from evidence import models as term_models
-    from evidence import selector as selector_module
-
-    derived_keys: dict[tuple[str, str], list[Any]] = {}
+    admitted: dict[Any, list[evidence_models.Link]] = {}
     for category in categories:
-        if not category.definition:
-            continue
-        for key in selector_module.asserted_as_keys(category.definition):
-            derived_keys.setdefault((key, str(category.kind)), []).append(category)
-
-    if derived_keys:
-        wanted = term_models.Term.objects.for_organization(graph.organization).filter(key__in={key for key, _ in derived_keys})
-        for term_id, key, kind in wanted.values_list("id", "key", "kind"):
-            if term_id in by_term:
-                continue
-            candidates = derived_keys.get((str(key), str(kind)), [])
-            if len(candidates) == 1:
-                by_term[term_id] = candidates[0]
-            elif len(candidates) > 1:
-                logger.warning("word %r (%s) is derived from by %d categories in graph #%s; claims naming it draw under none of them.", key, kind, len(candidates), graph.pk)
-
-    return by_term
-
-
-def active_relation_links(graph: core_models.Graph) -> list[evidence_models.Link]:
-    """Every live relation assertion this graph projects.
-
-    Scoped **per relation category** (RFC 0009): each category's `definition`
-    is its complete rule — which claims (by word, annotator, app, window) draw
-    its edges, and whose **standings** count for them, so a retraction by
-    somebody a category does not trust does not take its edge. A primitive
-    relation category draws any claim naming its word, standings organization
-    grain — the old behaviour. `__assertion_count` follows for free: it counts
-    the claims these querysets return.
-    """
-    base = evidence_models.Link.objects.for_organization(graph.organization).filter(kind=evidence_models.Link.Kind.RELATION)
-    links: dict[Any, evidence_models.Link] = {}
-    for category in core_models.RelationCategory.objects.filter(graph=graph, term_id__isnull=False):
         if category.definition:
             claims = base.filter(selector_module.classification_filter(category.definition), term__kind=str(category.kind))
             predicate = selector_module.trust_predicate(category.definition, kind="EXISTENCE")
         else:
             claims = base.filter(term_id=category.term_id)
             predicate = None
-        for link in claims_module.standing(claims, "link", predicate=predicate).select_related("term"):
-            links.setdefault(link.pk, link)
-    return list(links.values())
+        admitted[category] = list(claims_module.standing(claims, "link", predicate=predicate).select_related("term"))
+    return admitted
+
+
+def admitting_categories(categories: Iterable[Any], base: Any) -> dict[Any, tuple[evidence_models.Link, list[Any]]]:
+    """Link pk → `(link, every category admitting it)`, over `base`.
+
+    A claim is drawn under **every** category that admits it — edges included
+    (RFC 0021). Two defined relation categories deriving from one word each get
+    their edge; a claim no category admits is absent here, which is the ordinary
+    "this view does not speak that word" and not an error.
+    """
+    out: dict[Any, tuple[evidence_models.Link, list[Any]]] = {}
+    for category, links in _admitted_by(categories, base).items():
+        for link in links:
+            out.setdefault(link.pk, (link, []))[1].append(category)
+    return out
+
+
+def relation_categories(graph: core_models.Graph) -> list[Any]:
+    """This view's relation categories that declare a word."""
+    return list(core_models.RelationCategory.objects.filter(graph=graph, term_id__isnull=False))
+
+
+def event_categories(graph: core_models.Graph) -> list[Any]:
+    """This view's event categories that declare a word, both kinds."""
+    return list(core_models.NaturalEventCategory.objects.filter(graph=graph, term_id__isnull=False)) + list(core_models.ProtocolEventCategory.objects.filter(graph=graph, term_id__isnull=False))
+
+
+def categories_drawing(graph: core_models.Graph, kind: str) -> list[Any]:
+    """The categories of this view that can draw a link of `kind`."""
+    if kind == evidence_models.Link.Kind.RELATION:
+        return relation_categories(graph)
+    if kind in PARTICIPATION_KINDS:
+        return event_categories(graph)
+    return list(core_models.Category.objects.filter(graph=graph, term_id__isnull=False))
+
+
+def active_relation_links(graph: core_models.Graph) -> list[evidence_models.Link]:
+    """Every live relation claim this graph projects — admitted by at least one of
+    its relation categories, under that category's rule (RFC 0009)."""
+    base = evidence_models.Link.objects.for_organization(graph.organization).filter(kind=evidence_models.Link.Kind.RELATION)
+    return [link for link, _ in admitting_categories(relation_categories(graph), base).values()]
 
 
 def project_edges(
@@ -838,42 +830,49 @@ def project_edges(
     graph: core_models.Graph,
     links: Iterable[evidence_models.Link],
 ) -> int:
-    """Write relation edges into AGE from their evidence rows.
+    """Draw relation edges from their claims — under every category that admits each.
 
-    Shared by `create_relation` and `rebuild` so that the edge a fresh assertion
-    produces and the edge a replay produces cannot drift apart — the failure this
-    whole layer exists to prevent.
+    Shared by `create_relation`, the correction paths and `rebuild` so that the
+    edge a fresh assertion produces and the edge a replay produces cannot drift
+    apart — the failure this whole layer exists to prevent.
 
-    `MERGE` rather than `CREATE`, keyed on the proposition: replaying twice must
-    not double an edge, and a second assertion of the same relation must land on
-    the one already there.
+    An upsert keyed on `(source, target, label)`: replaying twice must not double
+    an edge, and a second assertion of the same relation must land on the one
+    already there. Endpoints are canonicalised to the individuals this view draws
+    (RFC 0018) before grouping, so claims naming different observations of one
+    cell fold into one edge with one summed `__assertion_count`. A relation
+    between two members of one individual is a self-edge — it is what the claims
+    say.
 
-    Endpoints are canonicalised to the individuals this view draws (RFC 0018)
-    before grouping, so claims naming different observations of one cell fold
-    into one edge with one summed `__assertion_count`. A relation between two
-    members of one individual is a self-edge — it is what the claims say.
+    One edge per admitting **category** (RFC 0021), not per word: two relation
+    categories that both derive from a claim's word each draw their own edge,
+    the way a node carries every admitting category's label. Which categories
+    admit a claim is asked of `admitting_categories`, never of a term→category
+    map — that map could only ever answer for one of them.
     """
-    projected = 0
-    by_term = categories_by_term(graph)
     links = list(links)
-    canon = representatives_for(controller, graph, [ref for link in links for ref in (link.source_ref, link.target_ref)])
-    grouped: dict[tuple[str, str, Any], list[evidence_models.Link]] = {}
+    if not links:
+        return 0
+
+    base = evidence_models.Link.objects.for_organization(graph.organization).filter(kind=evidence_models.Link.Kind.RELATION, pk__in=[link.pk for link in links])
+    admitted = admitting_categories(relation_categories(graph), base)
     for link in links:
-        grouped.setdefault(proposition_key(link, canon), []).append(link)
+        if link.pk not in admitted:
+            # Either the claim names no word this graph speaks, or every category
+            # that speaks it refuses this claim under its rule — so there is no
+            # label to draw it under, and an unlabelled edge is unreachable by
+            # every query the schema generates.
+            logger.warning("Relation link %s is admitted by no relation category of graph #%s; it cannot be projected here.", link.pk, graph.pk)
 
-    for (source_ref, target_ref, term_id), assertions in grouped.items():
-        category = by_term.get(term_id)
-        if category is None:
-            # Either the claim names no word at all, or this graph declares no
-            # category for the one it names — so there is no label to draw it
-            # under, and an unlabelled edge is unreachable by every query the
-            # schema generates.
-            logger.warning(
-                "Relation link %s names a term this graph has no category for; it cannot be projected here.",
-                assertions[0].pk,
-            )
-            continue
+    canon = representatives_for(controller, graph, [ref for link, _ in admitted.values() for ref in (link.source_ref, link.target_ref)])
+    grouped: dict[tuple[str, str, Any], tuple[Any, list[evidence_models.Link]]] = {}
+    for link, categories in admitted.values():
+        source_ref, target_ref, _ = proposition_key(link, canon)
+        for category in categories:
+            grouped.setdefault((source_ref, target_ref, category.pk), (category, []))[1].append(link)
 
+    projected = 0
+    for (source_ref, target_ref, _), (category, assertions) in grouped.items():
         # Converging on `(source, target, label)`; `__assertion_count` is the
         # edge-side analogue of `State.n` — how many live claims stand behind this
         # edge, one number that says whether a relation rests on one annotator or
@@ -1260,27 +1259,10 @@ def participation_key(link: evidence_models.Link, canon: Mapping[str, str] | Non
 
 
 def active_participation_links(graph: core_models.Graph) -> list[evidence_models.Link]:
-    """Every live participation claim this graph projects.
-
-    Scoped **per event category** (RFC 0009), for the same reason
-    :func:`active_relation_links` is: the event category's `definition` governs
-    which participation claims draw its edges and whose standings count for
-    them. The two lanes (this and `_reproject_participation`) share their
-    grouping keys and must not disagree about which claims exist.
-    """
+    """Every live participation claim this graph projects — admitted by at least
+    one of its event categories, under that category's rule (RFC 0009)."""
     base = evidence_models.Link.objects.for_organization(graph.organization).filter(kind__in=PARTICIPATION_KINDS)
-    event_categories = list(core_models.NaturalEventCategory.objects.filter(graph=graph, term_id__isnull=False)) + list(core_models.ProtocolEventCategory.objects.filter(graph=graph, term_id__isnull=False))
-    links: dict[Any, evidence_models.Link] = {}
-    for category in event_categories:
-        if category.definition:
-            claims = base.filter(selector_module.classification_filter(category.definition), term__kind=str(category.kind))
-            predicate = selector_module.trust_predicate(category.definition, kind="EXISTENCE")
-        else:
-            claims = base.filter(term_id=category.term_id)
-            predicate = None
-        for link in claims_module.standing(claims, "link", predicate=predicate).select_related("term"):
-            links.setdefault(link.pk, link)
-    return list(links.values())
+    return [link for link, _ in admitting_categories(event_categories(graph), base).values()]
 
 
 def project_participation(
@@ -1298,20 +1280,27 @@ def project_participation(
     `MATCH (e)-[:WENT_THROUGH]->(ev)` finds every input without the caller first
     enumerating the schema's role names.
     """
-    projected = 0
-    by_term = categories_by_term(graph)
     links = list(links)
-    canon = representatives_for(controller, graph, [ref for link in links for ref in (link.source_ref, link.target_ref)])
-    grouped: dict[tuple[str, str, str, Any], list[evidence_models.Link]] = {}
+    if not links:
+        return 0
+
+    # Which event categories admit each claim (RFC 0021). The label is a constant
+    # of the event *kind* (`AGE_INPUT_EDGE` / `AGE_OUTPUT_EDGE`), not of the
+    # category, so every category admitting a claim draws the same edge — the
+    # first names it, and the claims are grouped once per drawn edge.
+    base = evidence_models.Link.objects.for_organization(graph.organization).filter(kind__in=PARTICIPATION_KINDS, pk__in=[link.pk for link in links])
+    admitted = admitting_categories(event_categories(graph), base)
     for link in links:
-        grouped.setdefault(participation_key(link, canon), []).append(link)
+        if link.pk not in admitted:
+            logger.warning("Participation link %s is admitted by no event category of graph #%s; nothing says which edge label it projects to.", link.pk, graph.pk)
 
-    for (source_ref, target_ref, kind, role), claims in grouped.items():
-        category = by_term.get(claims[0].term_id)
-        if category is None:
-            logger.warning("Participation link %s names a term this graph has no category for; nothing says which edge label it projects to.", claims[0].pk)
-            continue
+    projected = 0
+    canon = representatives_for(controller, graph, [ref for link, _ in admitted.values() for ref in (link.source_ref, link.target_ref)])
+    grouped: dict[tuple[str, str, str, Any], tuple[Any, list[evidence_models.Link]]] = {}
+    for link, categories in admitted.values():
+        grouped.setdefault(participation_key(link, canon), (categories[0], []))[1].append(link)
 
+    for (source_ref, target_ref, kind, role), (category, claims) in grouped.items():
         # A foreign key hands back a base `Category`, which carries every field
         # and none of the kind-specific attributes — the edge labels live on the
         # event proxies.

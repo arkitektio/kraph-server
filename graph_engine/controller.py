@@ -1784,7 +1784,7 @@ class GraphController:
         single-claim paths — it rebuilds immediately.
         """
         if link.kind == evidence_models.Link.Kind.RELATION:
-            self._reproject_proposition_everywhere(organization, str(link.source_ref), str(link.target_ref), link.term_id)
+            self._reproject_proposition_everywhere(organization, str(link.source_ref), str(link.target_ref))
         elif link.kind in (evidence_models.Link.Kind.PARTICIPATES_AS_INPUT, evidence_models.Link.Kind.PARTICIPATES_AS_OUTPUT):
             self._reproject_participation_everywhere(organization, str(link.source_ref), str(link.target_ref), link.kind, link.role)
         elif link.kind == evidence_models.Link.Kind.CLASSIFIES:
@@ -1866,20 +1866,18 @@ class GraphController:
         kind: str,
         role: str | None,
     ) -> None:
-        """Bring one participation edge back in line with the claims behind it."""
+        """Bring one participation edge back in line with the claims behind it.
+
+        Under the event categories' trust, exactly as `active_participation_links`
+        — the two lanes must not disagree about which claims exist (RFC 0009), and
+        which categories admit a claim is asked of `admitting_categories` (RFC
+        0021). Over the whole individuals at both ends (RFC 0018): the edge stands
+        for every claim between any member of the entity's vertex and any member
+        of the event's, so a claim by another observation of the same cell keeps
+        it — and its `__assertion_count` — when this one is retracted.
+        """
         from graph_engine import projector
 
-        # Under the event category's trust, exactly as `active_participation_links`
-        # — the two lanes must not disagree about which claims exist (RFC 0009).
-        # The claims may name several words (a defined event category derives
-        # from more than one), so the fold is per claim-term's category.
-        from graph_engine import projector as projector_module
-
-        by_term = projector_module.categories_by_term(graph)
-        # Over the whole individuals at both ends (RFC 0018): the edge stands for
-        # every claim between any member of the entity's vertex and any member
-        # of the event's, so a claim by another observation of the same cell
-        # keeps it — and its `__assertion_count` — when this one is retracted.
         members = self._members_drawn_as(graph, claim_ref, event_ref)
         base = evidence_models.Link.objects.for_organization(organization).filter(
             kind=kind,
@@ -1887,50 +1885,22 @@ class GraphController:
             target_ref__in=members[event_ref],
             role=role,
         )
-        survivors = []
-        seen: set[Any] = set()
-        for term_id in set(base.values_list("term_id", flat=True)):
-            category = by_term.get(term_id)
-            if category is None:
-                continue
-            if category.definition:
-                claims = base.filter(selector_module.classification_filter(category.definition), term__kind=str(category.kind))
-                predicate = selector_module.trust_predicate(category.definition, kind="EXISTENCE")
-            else:
-                claims = base.filter(term_id=category.term_id)
-                predicate = None
-            for link in claims_module.standing(claims, "link", predicate=predicate).select_related("term"):
-                if link.pk not in seen:
-                    seen.add(link.pk)
-                    survivors.append(link)
+        categories = projector.event_categories(graph)
+        admitted = projector.admitting_categories(categories, base)
 
-        if survivors:
-            projector.project_participation(self, graph, survivors)
+        if admitted:
+            projector.project_participation(self, graph, [link for link, _ in admitted.values()])
             return
-
-        node = evidence_models.Instance.objects.for_organization(organization).filter(id=event_ref).first()
-        if node is None:
-            return
-
-        # This graph's category for the event's term — the edge label is a
-        # property of the view, even though which two labels it picks between is
-        # a property of the kind.
-        category = projector.categories_by_term(graph).get(node.term_id)
-        if category is None:
-            return
-
-        category = category.as_kind()
-        is_input = kind == evidence_models.Link.Kind.PARTICIPATES_AS_INPUT
-        label = category.AGE_INPUT_EDGE if is_input else category.AGE_OUTPUT_EDGE
-        entity_uuid = str(claim_ref)
-        event_uuid = str(event_ref)
-        left, right = (entity_uuid, event_uuid) if is_input else (event_uuid, entity_uuid)
 
         # Nothing claims this participation any more, so the edge states nothing.
         # It goes rather than lingering behind a flag: `rebuild` would not
         # recreate it, and a projection that disagrees with a replay is the
-        # failure this layer exists to prevent.
-        self.projector.erase_edge(graph, left, right, str(label), {"role": role})
+        # failure this layer exists to prevent. The label is a constant of the
+        # event kind, so erase under each kind's label this view declares.
+        is_input = kind == evidence_models.Link.Kind.PARTICIPATES_AS_INPUT
+        left, right = (str(claim_ref), str(event_ref)) if is_input else (str(event_ref), str(claim_ref))
+        for label in {str(category.as_kind().AGE_INPUT_EDGE if is_input else category.as_kind().AGE_OUTPUT_EDGE) for category in categories}:
+            self.projector.erase_edge(graph, left, right, label, {"role": role})
 
     def _members_drawn_as(self, graph: models.Graph, *refs: str) -> dict[str, list[str]]:
         """Each ref → every member of the individual this view holds it in (RFC 0018).
@@ -2048,11 +2018,10 @@ class GraphController:
         organization: Any,
         source_ref: str,
         target_ref: str,
-        term_id: Any,
     ) -> None:
-        """Correct this proposition's edge in every view that draws it."""
+        """Correct the edges between two individuals in every view that draws either."""
         for graph in self._graphs_for_endpoints(organization, source_ref, target_ref):
-            self._reproject_proposition(graph, organization, source_ref, target_ref, term_id)
+            self._reproject_proposition(graph, organization, source_ref, target_ref)
 
     def _reproject_participation_everywhere(
         self,
@@ -2319,29 +2288,32 @@ class GraphController:
         return tuple(drawings)
 
     def drawings_for_edge(self, link: evidence_models.Link) -> tuple[results.EdgeDrawing, ...]:
-        """Every view that draws this link, as it draws it.
+        """Every view that draws this link, as it draws it — once per admitting category.
 
         Empty is a common and correct answer, with three ordinary causes: no view
-        declares the claim's word, an endpoint is missing from the projection, or
-        the link is of a kind that has **no AGE edge at all** — measurements and
-        structure relations, per `docs/LOG.md`. For those two the emptiness is
-        structural rather than circumstantial.
+        admits the claim, an endpoint is missing from the projection, or the link
+        is of a kind that has no drawn edge at all — measurements and structure
+        relations, per `docs/LOG.md`. For those two the emptiness is structural
+        rather than circumstantial.
         """
         from graph_engine import projector
 
         drawings: list[results.EdgeDrawing] = []
         for graph in projector.graphs_for_refs(link.organization, [str(link.source_ref), str(link.target_ref)]):
-            drawn = self.drawn_edge(graph, link)
-            if drawn is None:
-                continue
-
-            category = projector.categories_by_term(graph).get(link.term_id)
-            if category is None:  # pragma: no cover - `drawn_edge` already returned None in this case
-                continue
-
-            drawings.append(results.EdgeDrawing(graph=graph, category=category, edge=drawn))
+            for category in self._categories_admitting(graph, link):
+                drawn = self.drawn_edge(graph, link, category)
+                if drawn is not None:
+                    drawings.append(results.EdgeDrawing(graph=graph, category=category, edge=drawn))
 
         return tuple(drawings)
+
+    def _categories_admitting(self, graph: models.Graph, link: evidence_models.Link) -> list[models.Category]:
+        """The categories of this view that admit one link, under their rules (RFC 0021)."""
+        from graph_engine import projector
+
+        base = evidence_models.Link.objects.for_organization(graph.organization).filter(pk=link.pk)
+        admitted = projector.admitting_categories(projector.categories_drawing(graph, str(link.kind)), base)
+        return admitted[link.pk][1] if link.pk in admitted else []
 
     def _category_for_term(self, term_id: Any, graph: models.Graph | None = None) -> models.Category | None:
         """How a graph draws a word — its category for that term.
@@ -2448,7 +2420,7 @@ class GraphController:
         # new claim re-`MERGE`d every edge in the graph and N sequential calls
         # cost O(N x graph). The survivors of *this* proposition are what the
         # assertion count needs, and nothing else moved.
-        self._reproject_proposition_everywhere(organization, source_ref, target_ref, term.pk)
+        self._reproject_proposition_everywhere(organization, source_ref, target_ref)
 
         # The payload comes from the `Link` row, not from one graph's projection:
         # the edge is drawn in every view declaring the word, so there is no
@@ -2641,7 +2613,7 @@ class GraphController:
             writer.retract(organization, link, assertion, at=at, confidence=confidence)
 
         source_ref, target_ref, term_id = projector.proposition_key(link)
-        self._reproject_proposition_everywhere(organization, source_ref, target_ref, term_id)
+        self._reproject_proposition_everywhere(organization, source_ref, target_ref)
         # Read back, not assumed gone: the edge survives wherever another live
         # assertion still states the same proposition.
         self._settle(assertion)
@@ -2682,7 +2654,7 @@ class GraphController:
             writer.attest(organization, link, assertion, at=at, confidence=confidence)
 
         source_ref, target_ref, term_id = projector.proposition_key(link)
-        self._reproject_proposition_everywhere(organization, source_ref, target_ref, term_id)
+        self._reproject_proposition_everywhere(organization, source_ref, target_ref)
         self._settle(assertion)
         return results.Asserted.of(assertion, link, self.drawings_for_edge(link))
 
@@ -2743,60 +2715,40 @@ class GraphController:
         organization: Any,
         source_ref: str,
         target_ref: str,
-        term_id: Any,
     ) -> None:
-        """Bring one edge in AGE back in line with the assertions behind it.
+        """Bring the edges between two individuals back in line with the claims behind them.
 
         Relations only. Structure relations and measurements have no projected
         edge to correct, so there is nothing here for them to do.
+
+        Per relation category (RFC 0009, RFC 0021): each category's rule says
+        which claims between the two individuals it admits and whose standings
+        count, so a retraction by somebody a category ignores leaves its edge
+        standing here — the write path agrees with the next rebuild, which reads
+        the same predicates through `active_relation_links`. A category no claim
+        holds up any more loses its edge: it states nothing, and `rebuild` would
+        not draw it. Over the whole individuals at both ends (RFC 0018): a claim
+        between two other observations of the same two cells still holds an
+        edge up.
         """
         from graph_engine import projector
 
-        # Survivors under the *relation category's* trust (RFC 0009): the claim
-        # scope and the standing fold both take the category's clauses, so a
-        # retraction by somebody that category ignores leaves its edge standing
-        # here — the write path agrees with the next rebuild, which reads the
-        # same predicates through `active_relation_links`.
-        from graph_engine import projector as projector_module
-
-        category_for_term = projector_module.categories_by_term(graph).get(term_id)
-        # Over the whole individuals at both ends (RFC 0018) — see
-        # `_reproject_participation`: a claim between two other observations of
-        # the same two cells still holds the edge up.
         members = self._members_drawn_as(graph, source_ref, target_ref)
         base = evidence_models.Link.objects.for_organization(organization).filter(
             kind=evidence_models.Link.Kind.RELATION,
             source_ref__in=members[str(source_ref)],
             target_ref__in=members[str(target_ref)],
-            term_id=term_id,
         )
-        if category_for_term is None:
-            survivors = []
-        elif category_for_term.definition:
-            survivors = list(
-                claims_module.standing(
-                    base.filter(selector_module.classification_filter(category_for_term.definition), term__kind=str(category_for_term.kind)),
-                    "link",
-                    predicate=selector_module.trust_predicate(category_for_term.definition, kind="EXISTENCE"),
-                ).select_related("term")
-            )
-        else:
-            survivors = list(claims_module.standing(base, "link").select_related("term"))
+        categories = projector.relation_categories(graph)
+        admitted = projector.admitting_categories(categories, base)
+        held_up = {category.pk for _, admitting in admitted.values() for category in admitting}
 
-        if survivors:
-            projector.project_edges(self, graph, survivors)
-            return
+        for category in categories:
+            if category.pk not in held_up:
+                self.projector.erase_edge(graph, str(source_ref), str(target_ref), category.age_name)
 
-        # This graph's label for the word, which is what the edge was drawn under.
-        category = projector.categories_by_term(graph).get(term_id)
-        if category is None:
-            return
-
-        # No live claim left, so the edge states nothing. It goes, rather than
-        # lingering with a lifecycle flag: `rebuild` would not recreate it, and a
-        # projection that disagrees with a replay is the failure this layer is
-        # supposed to make impossible.
-        self.projector.erase_edge(graph, str(source_ref), str(target_ref), category.age_name)
+        if admitted:
+            projector.project_edges(self, graph, [link for link, _ in admitted.values()])
 
     # ===================================================================
     # Relation Query Methods
@@ -2841,13 +2793,14 @@ class GraphController:
         self._assert_can_access(link.organization, info)
         return RetrievedEdge.from_link(self, link, category=self._category_for_term(link.term_id))
 
-    def drawn_edge(self, graph: models.Graph, link: evidence_models.Link) -> Optional[RetrievedEdge]:
-        """This link as the graph actually draws it, or `None` if it does not.
+    def drawn_edge(self, graph: models.Graph, link: evidence_models.Link, category: models.Category | None = None) -> Optional[RetrievedEdge]:
+        """This link as the graph draws it under `category`, or `None` if it does not.
 
-        The edge half of "where does this claim materialize". `None` is an
-        ordinary answer with three ordinary causes: the view declares no category
-        for the claim's word, one of the endpoints is not in this projection, or
-        the link is of a kind that has no AGE edge at all (measurements and
+        Without a category, the first admitting one — for a caller that wants
+        *a* drawing; `drawings_for_edge` asks once per admitting category. `None`
+        is an ordinary answer with three ordinary causes: no category of this
+        view admits the claim, one of the endpoints is not in this projection,
+        or the link is of a kind that has no drawn edge at all (measurements and
         structure relations — see `docs/LOG.md`).
 
         Reads the projection rather than deriving the answer from what the write
@@ -2856,9 +2809,11 @@ class GraphController:
         """
         from graph_engine import projector
 
-        category = projector.categories_by_term(graph).get(link.term_id)
         if category is None:
-            return None
+            admitting = self._categories_admitting(graph, link)
+            if not admitting:
+                return None
+            category = admitting[0]
 
         # Label and direction from the shared helper — `project_participation`
         # draws an output participation event → entity while `participation_key`

@@ -283,7 +283,10 @@ The load-bearing facts:
   carries `labels` (sorted) with `label` the first; `NodeDrawing` stays one per (view, category),
   so a write's `drawings` lists a node once per category. API: `Node.drawnLabels`,
   `Entity.categoryIds`/`categories` (no `categoryId`/`category`). Two nodes may union (RFC 0018)
-  when a category they *share* trusts the sameness. Edges are still drawn under one label.
+  when a category they *share* trusts the sameness. **Edges too (RFC 0021)**: a relation claim is
+  drawn once per admitting relation category (`projector.admitting_categories`, the one
+  implementation of "which claims draw this category's edges"); there is no term→category map,
+  because one could only answer for one of them. `(graph, term)` is unique on `Category`.
 - **`State` is organization grain**, and nothing folds under a graph-level scope — `merge`,
   `recompute` and `refold_state` all count every live metric. Which metrics a *property* counts
   is applied on read by `metric_scope(category.definition, rule)` in `projector._scoped_state`:

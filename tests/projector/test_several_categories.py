@@ -316,3 +316,83 @@ def test_deleting_one_category_keeps_the_vertex_under_the_other(test_graph, tabl
     core_models.Category.objects.filter(pk=ais.pk).delete()
     assert not projection_models.ProjectionVertex.objects.filter(graph=test_graph, ref=ref).exists(), "no label left, no vertex"
     assert not projection_models.ProjectionMember.objects.filter(graph=test_graph, ref=ref).exists()
+
+
+RELATE = """
+    mutation Relate($input: AssertRelationExistsInput!) {
+        assertRelationExists(input: $input) { link { id } drawings { category { id } } }
+    }
+"""
+
+RETRACT_RELATION = """
+    mutation Retract($input: RetractRelationInput!) {
+        retractRelation(input: $input) { assertion { id } }
+    }
+"""
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_an_edge_two_relation_categories_admit_is_drawn_under_both(api_schema, simple_api_context, test_graph, table_projector) -> None:
+    """The edge-side twin of RFC 0019 (RFC 0021).
+
+    Two defined relation categories both derive from the word `touches`. The old
+    term→category map found two candidates, warned, and mapped the word to
+    nothing — so a claim both categories admitted was drawn under neither.
+    """
+    from evidence import writer
+    from tests import rules, writes
+
+    @sync_to_async
+    def declare() -> None:
+        for key, label in (("curated_touch", "CURATED"), ("loose_touch", "LOOSE")):
+            core_models.RelationCategory.objects.create(
+                graph=test_graph,
+                key=key,
+                age_name=label,
+                label=key,
+                term=writer.ensure_term(test_graph.organization, "RELATION", key),
+                source_definition={},
+                target_definition={},
+                definition=rules.definition(rules.rule(rules.word("touches"))),
+            )
+
+    await declare()
+    a = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    b = await writes.create_entity(api_schema, simple_api_context, "Cell")
+
+    result = await api_schema.execute(RELATE, variable_values={"input": {"term": "touches", "sourceId": a, "targetId": b, "supportingEvidence": []}}, context_value=simple_api_context)
+    assert result.errors is None, f"GraphQL errors: {result.errors}"
+    link_id = result.data["assertRelationExists"]["link"]["id"]
+    assert len(result.data["assertRelationExists"]["drawings"]) == 2, "one drawing per admitting category"
+
+    @sync_to_async
+    def drawn() -> tuple[int, int]:
+        return drawing.edges_between(test_graph, a, b, "CURATED"), drawing.edges_between(test_graph, a, b, "LOOSE")
+
+    assert await drawn() == (1, 1)
+
+    @sync_to_async
+    def rebuilt() -> tuple[int, int]:
+        GraphController(projector=table_projector).rebuild_projection(test_graph)
+        return drawing.edges_between(test_graph, a, b, "CURATED"), drawing.edges_between(test_graph, a, b, "LOOSE")
+
+    assert await rebuilt() == (1, 1), "a rebuild draws the same two edges"
+
+    retracted = await api_schema.execute(RETRACT_RELATION, variable_values={"input": {"id": link_id}}, context_value=simple_api_context)
+    assert retracted.errors is None, f"GraphQL errors: {retracted.errors}"
+    assert await drawn() == (0, 0), "no claim holds either edge up"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_view_has_one_category_per_declared_word(test_graph) -> None:
+    """`(graph, term)` is unique on `Category` (RFC 0021): the invariant the deleted
+    term→category map silently assumed is one the database states."""
+    from django.db import IntegrityError, transaction
+
+    from evidence import writer
+
+    term = writer.ensure_term(test_graph.organization, "ENTITY", "Cell")
+    with pytest.raises(IntegrityError):
+        with transaction.atomic():
+            core_models.EntityCategory.objects.create(graph=test_graph, key="Cell2", age_name="Cell2", label="Cell2", term=term)
