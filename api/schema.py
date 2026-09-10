@@ -145,6 +145,11 @@ class Query:
         queries.render_graph_table, description="Render a saved table query. Answers from the **drawing**: a page of the view's property graph as of its cursor, filtered, ordered and paged there — the one read with no log path. `Graph.projection { lag }` says how far behind the log it is"
     )
 
+    render_table_plan = kante.django_field(
+        queries.render_table_plan,
+        description="Render a table plan **without saving it** — the plan a client is still writing, against one view. Same compile path as `renderGraphTable`: answers from the drawing, labels resolved against the view's namespace, filtered, ordered and paged there. Nothing is written; the plan comes back as compiled",
+    )
+
     scatter_plots: list[types.ScatterPlot] = kante.django_field(description="Show all saved scatter plots")
     scatter_plot: types.ScatterPlot = kante.django_field(description="Show a single saved scatter plot by ID")
 

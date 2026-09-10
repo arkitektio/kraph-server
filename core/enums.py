@@ -150,3 +150,26 @@ class DescendantKind(str, Enum):
     LEAF = "LEAF"
     MENTION = "MENTION"
     PARAGRAPH = "PARAGRAPH"
+
+
+@strawberry.enum
+class DrawnEdgeKind(str, Enum):
+    """The kinds of link a view draws as an edge — the only ones `Node.edges` can list.
+
+    Measurements, descriptions (INFORMS), structure relations, classifications,
+    sameness and lineage are claims with no drawn edge (`docs/LOG.md`); the
+    organization-grain `connections` lists those.
+    """
+
+    RELATION = "RELATION"
+    PARTICIPATES_AS_INPUT = "PARTICIPATES_AS_INPUT"
+    PARTICIPATES_AS_OUTPUT = "PARTICIPATES_AS_OUTPUT"
+
+
+@strawberry.enum
+class EdgeDirection(str, Enum):
+    """Which end of a drawn edge the node is — the drawn arrow, as `GRAPH_TABLE` patterns see it."""
+
+    IN = "IN"
+    OUT = "OUT"
+    BOTH = "BOTH"

@@ -42,7 +42,7 @@ from typing import Any
 
 from django.db import connection
 
-from graph_engine.projection.protocol import LIST_OPERATORS, DrawnEdge, ListDrawnSpec
+from graph_engine.projection.protocol import LIST_OPERATORS, DrawnEdge, IncidentEdge, IncidentEdgesSpec, ListDrawnSpec
 
 _KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -309,6 +309,34 @@ class TableProjector:
         records = {vertex_id: self._record(vertex.pk, str(vertex.ref), vertex.kind, vertex.properties, labels_by_vertex.get(vertex_id, ()), members_by_vertex.get(vertex_id, ())) for vertex_id, vertex in vertices.items()}
         return {str(member.ref): records[member.vertex_id] for member in held}
 
+    def drawn_edges_incident(self, graph: Any, refs: Iterable[str], spec: IncidentEdgesSpec) -> dict[str, list[IncidentEdge]]:
+        from django.db.models import Q
+
+        if spec.direction not in ("IN", "OUT", "BOTH"):
+            raise ValueError(f"direction must be IN, OUT or BOTH, not {spec.direction!r}")
+        asked = [str(ref) for ref in refs]
+        if not asked:
+            return {}
+        held = {str(member.ref): int(member.vertex_id) for member in self._models.ProjectionMember.objects.filter(graph=graph, ref__in=asked)}
+        vertex_ids = set(held.values())
+        if not vertex_ids:
+            return {}
+
+        rows = self._models.ProjectionEdge.objects.filter(graph=graph).filter(Q(source_id__in=vertex_ids) | Q(target_id__in=vertex_ids))
+        if spec.labels:
+            rows = rows.filter(label__in=[str(label) for label in spec.labels])
+        rows = rows.select_related("source", "target").order_by("id")
+
+        by_vertex: dict[int, list[IncidentEdge]] = {}
+        for row in rows:
+            edge = IncidentEdge(edge_id=int(row.pk), label=str(row.label), source_id=int(row.source_id), target_id=int(row.target_id), source_ref=str(row.source.ref), target_ref=str(row.target.ref), properties=dict(row.properties or {}))
+            if spec.direction in ("OUT", "BOTH") and row.source_id in vertex_ids:
+                by_vertex.setdefault(int(row.source_id), []).append(edge)
+            # A self-edge is listed once, on the OUT side above.
+            if spec.direction in ("IN", "BOTH") and row.target_id in vertex_ids and row.source_id != row.target_id:
+                by_vertex.setdefault(int(row.target_id), []).append(edge)
+        return {ref: by_vertex.get(vertex_id, [])[: spec.limit] for ref, vertex_id in held.items()}
+
     def drawn_edge(self, graph: Any, source_ref: str, target_ref: str, label: str) -> DrawnEdge | None:
         source, target = self._endpoints(graph, source_ref, target_ref)
         if source is None or target is None:
@@ -350,9 +378,19 @@ class TableProjector:
 
         return [self._record(pk, ref, kind, self._as_dict(properties), zip(labels or (), category_pks or ()), members or ()) for pk, ref, kind, properties, labels, category_pks, members in rows]
 
+    #: How long one rendered table may run. A plan is a k-way join over the
+    #: namespace and any member may now render one unsaved (`renderTablePlan`),
+    #: so the database, not the client, bounds the cost.
+    RENDER_STATEMENT_TIMEOUT_MS = 30_000
+
     def render_table(self, graph: Any, plan: Any, *, filters: Any = None, order: Any = None, pagination: Any = None) -> list[Any]:
+        from django.db import transaction
+
         sql, params = compile_table_plan_sql(self, plan, graph=graph, filters=filters, order=order, pagination=pagination)
-        with connection.cursor() as cursor:
+        # `SET LOCAL` needs a transaction to be local to; autocommit is the norm
+        # elsewhere in this module, so this read opens one of its own.
+        with transaction.atomic(), connection.cursor() as cursor:
+            cursor.execute("SET LOCAL statement_timeout = %s", [int(self.RENDER_STATEMENT_TIMEOUT_MS)])
             cursor.execute(sql, params)
             columns = [col[0] for col in cursor.description]
             # Every returned expression is jsonb, and Django configures the

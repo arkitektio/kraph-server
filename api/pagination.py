@@ -115,3 +115,11 @@ class GraphPaginationInput:
 
     limit: Optional[int] = kante.field(default=100, description="Maximum number of items to return")
     offset: Optional[int] = kante.field(default=0, description="Number of items to skip before starting to collect the result set")
+
+
+@kante.pydantic_input(input_models.RelationPagination, all_fields=True, description="Pagination options for a node's drawn edges and neighbours")
+class TraversalPaginationInput:
+    """Pagination for `Node.edges` and `Node.neighbors` — the same `limit`/`offset` shape as the claim lists."""
+
+    limit: Optional[int] = kante.field(default=100, description="Maximum number of items to return")
+    offset: Optional[int] = kante.field(default=0, description="Number of items to skip before starting to collect the result set")

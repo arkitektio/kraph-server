@@ -2910,6 +2910,39 @@ class GraphController:
         edge.right_id = drawn.right_id
         return edge
 
+    def render_table_plan(
+        self,
+        graph: models.Graph,
+        plan: Any,
+        *,
+        filters: input_models.RenderGraphTableFilter | None = None,
+        order: input_models.RenderGraphTableOrder | None = None,
+        pagination: input_models.RenderGraphTablePagination | None = None,
+        info: Info | None = None,
+        column_keys: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Render one plan against one view — saved or not — and return its rows.
+
+        The body of `render_graph_table_query`, without the row: `renderTablePlan`
+        hands a plan straight from the client, validated by `query_ir.plan_from_input`
+        first. Answers from the drawing, through `Projector.render_table`, which is
+        the one place that speaks SQL and the one that bounds the cost.
+        """
+        self._ensure_query_access(graph, info)
+        result_rows = self.projector.render_table(graph, plan, filters=filters, order=order, pagination=pagination)
+
+        row_dicts: list[dict[str, Any]] = []
+        keys = list(column_keys or [])
+        for row in result_rows:
+            if isinstance(row, dict):
+                row_dicts.append(row)
+                continue
+            if isinstance(row, (list, tuple)):
+                row_dicts.append({(keys[index] if index < len(keys) else f"col_{index}"): value for index, value in enumerate(row)})
+                continue
+            row_dicts.append({"value": row})
+        return row_dicts
+
     def render_graph_table_query(
         self, graph_query: models.GraphTableQuery, filters: input_models.RenderGraphTableFilter | None = None, pagination: input_models.RenderGraphTablePagination | None = None, order: input_models.RenderGraphTableOrder | None = None, info: Info | None = None
     ) -> RetrievedGraphTableRender:
@@ -2927,27 +2960,11 @@ class GraphController:
         """
         from graph_engine.query_ir import TableQueryPlan
 
-        self._ensure_query_access(graph_query.graph, info)
-
         plan = TableQueryPlan.from_stored(graph_query.plan)
         if plan is None:
             raise ValueError(f"Saved query #{graph_query.pk} is a legacy raw-Cypher row and no projection kind executes Cypher; rebuild it through the builder (see `manage.py list_legacy_queries`).")
-        result_rows = self.projector.render_table(graph_query.graph, plan, filters=filters, order=order, pagination=pagination)
-
-        row_dicts: list[dict[str, Any]] = []
         column_keys = [column.get("key") for column in (graph_query.columns or []) if isinstance(column, dict) and column.get("key")]
-
-        for row in result_rows:
-            if isinstance(row, dict):
-                row_dicts.append(row)
-                continue
-
-            if isinstance(row, (list, tuple)):
-                mapped = {(column_keys[index] if index < len(column_keys) else f"col_{index}"): value for index, value in enumerate(row)}
-                row_dicts.append(mapped)
-                continue
-
-            row_dicts.append({"value": row})
+        row_dicts = self.render_table_plan(graph_query.graph, plan, filters=filters, order=order, pagination=pagination, info=info, column_keys=column_keys)
 
         return RetrievedGraphTableRender(
             graph_name=str(graph_query.graph.age_name),

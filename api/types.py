@@ -19,6 +19,7 @@ from enum import Enum
 from typing import Annotated, Any, Generic, Optional, List, Sequence, Type, TypeVar, Union, cast
 from datetime import datetime
 from api import loaders, order, pagination, filters
+from api import pagination as pagination_module
 from datalayer.types import MediaStore
 from graph_engine.scalars import AnyScalar, UnixMilliseconds, StructureIdentifier
 from graph_engine.retrieved import RetrievedMetric, RetrievedNode, RetrievedEdge, RetrievedStructure, _as_datetime
@@ -1087,6 +1088,81 @@ class Node(Generic[V]):
     async def drawn_in(self, info: kante.Info) -> List["NodeDrawing"]:
         drawings = await _drawings_for_ref(self._value.unique_id, info)
         return [NodeDrawing(_value=drawing) for drawing in drawings]
+
+    def _traversal(self, kinds, direction, categories):
+        """The view and the spec for `edges` / `neighbors`, with the client's categories checked against it."""
+        from graph_engine import traversal
+
+        graph_id = self._value.graph_id
+        if graph_id is None:
+            raise ValueError("A Node is always read through a view; this reading has none — a claim-grain read is an Instance")
+        graph = models.Graph.objects.get(pk=graph_id)
+        wanted = tuple(str(pk) for pk in (categories or []))
+        if wanted:
+            known = {str(pk) for pk in models.Category.objects.filter(graph=graph, pk__in=wanted).values_list("pk", flat=True)}
+            unknown = [pk for pk in wanted if pk not in known]
+            if unknown:
+                raise ValueError(f"Graph '{graph.name}' (#{graph.pk}) has no category {', '.join(unknown)}; `categories` names this view's relation and event categories")
+        spec = traversal.TraversalSpec(
+            kinds=tuple(str(kind.value) for kind in kinds) if kinds else traversal.DRAWN_KINDS,
+            direction=str(direction.value) if direction is not None else "BOTH",
+            category_ids=wanted,
+        )
+        return graph, spec
+
+    @kante.django_field(
+        description="The edges this **view draws** to or from this node's vertex — view grain, one vertex per individual (RFC 0018), as of `asOfSeq`. Only the drawn kinds: relations and participations. `direction` is the drawn arrow: OUT lists relations this node is the source of and its input participations, IN the relations targeting it and its output participations. A relation between two members of this individual is a self-edge, listed once. Each edge is the claim behind the drawing, reported once even where several categories draw it (`Link.drawings` lists them all). Empty for a node the view admits but has not drawn. `connections` is the organization-grain answer"
+    )
+    async def edges(
+        self,
+        info: kante.Info,
+        kinds: Optional[List[enums.DrawnEdgeKind]] = None,
+        direction: enums.EdgeDirection = enums.EdgeDirection.BOTH,
+        categories: Optional[List[strawberry.ID]] = None,
+        pagination: Optional[pagination_module.TraversalPaginationInput] = None,
+    ) -> List["Edge"]:
+        from graph_engine import traversal
+
+        if self._value.is_row_backed:
+            return []
+
+        def work():
+            graph, spec = self._traversal(kinds, direction, categories)
+            edges = traversal.incident_edges(get_controller(), graph, [self._value], spec)[self._value.unique_id]
+            offset, limit = pagination_module.window(pagination)
+            return edges[offset : offset + limit]
+
+        return [cast(Edge, cast_edge_to_graphql_type(edge)) for edge in await sync_to_async(work)()]
+
+    @kante.django_field(
+        description="The other end of each edge this view draws to or from this node — as `Node`s in the **same view**, one per individual, self excluded. Takes the same arguments as `edges`. From the drawing alone: whoever is at the other end of a drawn edge is a drawn individual of this view"
+    )
+    async def neighbors(
+        self,
+        info: kante.Info,
+        kinds: Optional[List[enums.DrawnEdgeKind]] = None,
+        direction: enums.EdgeDirection = enums.EdgeDirection.BOTH,
+        categories: Optional[List[strawberry.ID]] = None,
+        pagination: Optional[pagination_module.TraversalPaginationInput] = None,
+    ) -> List["Node"]:
+        from api.queries import _nodes
+        from graph_engine import traversal
+
+        if self._value.is_row_backed:
+            return []
+
+        def work():
+            graph, spec = self._traversal(kinds, direction, categories)
+            controller = get_controller()
+            refs = traversal.neighbor_refs(controller, graph, [self._value], spec)[self._value.unique_id]
+            offset, limit = pagination_module.window(pagination)
+            page = refs[offset : offset + limit]
+            if not page:
+                return []
+            rows = {str(row.pk): row for row in evidence_models.Instance.objects.for_organization(graph.organization).filter(id__in=page).select_related("term")}
+            return _nodes.retrieved_in(controller, graph, [rows[ref] for ref in page if ref in rows])
+
+        return [cast(Node, cast_node_to_graphql_type(node)) for node in await sync_to_async(work)()]
 
     @classmethod
     def to_subtype(cls, value: RetrievedNode) -> "Node":
@@ -3235,6 +3311,23 @@ class GraphTableRender:
         return await loaders.graph_table_query_by_id_loader.load(self._value.graph_query_id)
 
     @strawberry.field(description="Rows of the rendered table")
+    def rows(self) -> List[AnyScalar]:
+        return self._value.rows
+
+
+@strawberry.type(description="A plan rendered against one view without being saved: the view, the plan as compiled, the rows")
+class TablePlanRender:
+    _value: strawberry.Private[retrieved.RetrievedTablePlanRender]
+
+    @strawberry.field(description="The view the plan was rendered against")
+    async def graph(self) -> Graph:
+        return await loaders.graph_by_id_loader.load(self._value.graph_id)
+
+    @strawberry.field(description="The plan exactly as it was compiled — what `createGraphTableQuery` would save")
+    def plan(self) -> TableQueryPlan:
+        return TableQueryPlan.from_pydantic(self._value.plan)
+
+    @strawberry.field(description="Rows of the rendered table, one dict per row keyed by the returned aliases")
     def rows(self) -> List[AnyScalar]:
         return self._value.rows
 

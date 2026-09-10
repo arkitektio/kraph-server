@@ -42,6 +42,31 @@ class DrawnEdge:
     right_id: int
 
 
+@dataclass(frozen=True)
+class IncidentEdgesSpec:
+    """Which drawn edges touching a vertex to list — as data, compiled by the kind."""
+
+    #: Edge labels to keep; empty means every label.
+    labels: tuple[str, ...] = ()
+    #: "OUT" (the vertex is the source), "IN" (the target) or "BOTH".
+    direction: str = "BOTH"
+    #: Hard cap per asked ref; the API pages below it.
+    limit: int = 1000
+
+
+@dataclass(frozen=True)
+class IncidentEdge:
+    """One drawn edge touching an asked vertex. Ids opaque; refs are the endpoints' representatives."""
+
+    edge_id: int
+    label: str
+    source_id: int
+    target_id: int
+    source_ref: str
+    target_ref: str
+    properties: Mapping[str, Any]
+
+
 #: The comparisons a drawing-scoped list may ask for. The canonical spellings —
 #: the controller normalizes its API's aliases (``EQ``, ``=``, …) before a spec
 #: is built, so an implementation compiles exactly these and refuses the rest.
@@ -185,6 +210,14 @@ class Projector(Protocol):
         the key it sits under. `labels` is every label the vertex is drawn
         under, sorted; `label` is the first of them, for a reader that shows
         one (RFC 0019).
+        """
+        ...
+
+    def drawn_edges_incident(self, graph: Any, refs: Iterable[str], spec: IncidentEdgesSpec) -> dict[str, list[IncidentEdge]]:
+        """Every drawn edge touching the vertex holding each ref, keyed by the ref **asked for**.
+
+        Any member addresses its vertex (RFC 0018). A self-edge appears once. A
+        ref the view has not drawn is absent from the answer.
         """
         ...
 

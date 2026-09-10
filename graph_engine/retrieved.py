@@ -922,6 +922,15 @@ class RetrievedGraphTableRender:
     rows: List[Dict[str, Any]]
 
 
+@dataclass
+class RetrievedTablePlanRender:
+    """An unsaved plan rendered against one view: the view, the plan as compiled, the rows."""
+
+    graph_id: int
+    plan: Any
+    rows: List[Dict[str, Any]]
+
+
 # The nodes / path / pairs render shapes and `RetrievedNodePathRender` /
 # `RetrievedNodeTableRender` used to follow. They had no producer: only the table
 # kind has ever had an execution path, and the saved-query contract is a plan now.

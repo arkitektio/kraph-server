@@ -54,6 +54,30 @@ class TableQueryPlan(BaseModel):
         return self.model_dump(mode="json")
 
 
+def plan_from_input(plan_input: Any, columns: Any, projector: Any = None) -> TableQueryPlan:
+    """A validated plan from a client's input, with the columns folded in.
+
+    Validated once, against nothing, so a plan that cannot be compiled is
+    refused at save time — or, for an unsaved render, before anything runs.
+    Through the bound projector unless one is passed: the projection kind is
+    the seam, and validation is part of it. Lives here rather than in the
+    mutations package because the ad-hoc read (`renderTablePlan`) needs it too,
+    and a query must not import from mutations.
+    """
+    plan = TableQueryPlan(
+        matches=list(plan_input.matches or []),
+        wheres=list(plan_input.wheres or []),
+        returns=list(plan_input.returns or []),
+        columns=list(columns or []),
+    )
+    if projector is None:
+        from graph_engine.projection.context import current_or_default
+
+        projector = current_or_default()
+    projector.validate_plan(plan)
+    return plan
+
+
 def sanitize_identifier(value: str, fallback: str) -> str:
     """A Cypher/SQL-safe identifier derived from a user-supplied name, or `fallback`."""
     sanitized = re.sub(r"[^A-Za-z0-9_]", "_", str(value))

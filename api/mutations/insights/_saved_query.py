@@ -14,25 +14,13 @@ from typing import Any
 from kante.types import Info
 
 from api.mutations._scoped import accessible_graph, scoped
+from graph_engine import query_ir
 from graph_engine.query_ir import TableQueryPlan
 
 
 def plan_from_input(plan_input: Any, columns: Any) -> TableQueryPlan:
-    """A validated plan from the mutation's input, with the columns folded in."""
-    plan = TableQueryPlan(
-        matches=list(plan_input.matches or []),
-        wheres=list(plan_input.wheres or []),
-        returns=list(plan_input.returns or []),
-        columns=list(columns or []),
-    )
-    # Validate once, against nothing, so a plan that cannot be compiled is
-    # refused at save time rather than at the first render. Through the bound
-    # projector, not a hand-made TableProjector: the projection kind is the
-    # seam, and save-time validation is part of it.
-    from graph_engine.projection.context import current_or_default
-
-    current_or_default().validate_plan(plan)
-    return plan
+    """A validated plan from the mutation's input — `graph_engine.query_ir.plan_from_input`, kept under its old name here."""
+    return query_ir.plan_from_input(plan_input, columns)
 
 
 def plan_from_builder_args(builder_args: Any, columns: Any) -> TableQueryPlan:
