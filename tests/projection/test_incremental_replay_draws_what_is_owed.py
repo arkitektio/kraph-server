@@ -38,7 +38,7 @@ async def test_replay_draws_a_node_the_write_path_could_not(api_schema, simple_a
         variable_values={"input": {"term": "AIS", "supportingEvidence": [{"identifier": "ROI", "object": "roi-replay", "metrics": [{"key": "vector_length", "value": 30.0, "valueKind": "FLOAT"}]}]}},
         context_value=simple_api_context,
     )
-    assert failed.errors
+    assert failed.errors is None, "a failed drawing is a pending act, not a failed mutation"
     monkeypatch.undo()
 
     @sync_to_async
@@ -73,7 +73,7 @@ async def test_replay_removes_a_node_whose_retraction_was_not_drawn(api_schema, 
 
     monkeypatch.setattr(projector, "unproject", _down)
     retracted = await api_schema.execute("mutation($id: ID!) { retractEntity(input: {id: $id}) { assertion { id } } }", variable_values={"id": entity_id}, context_value=simple_api_context)
-    assert retracted.errors
+    assert retracted.errors is None, "a failed drawing is a pending act, not a failed mutation"
     monkeypatch.undo()
 
     @sync_to_async
@@ -99,7 +99,7 @@ async def test_replay_draws_an_edge_whose_write_did_not_reach_age(api_schema, si
         variable_values={"input": {"term": "IS_CONNECTED_TO", "sourceId": a, "targetId": b, "supportingEvidence": []}},
         context_value=simple_api_context,
     )
-    assert failed.errors
+    assert failed.errors is None, "a failed drawing is a pending act, not a failed mutation"
     monkeypatch.undo()
 
     @sync_to_async
@@ -123,13 +123,13 @@ async def test_replay_equals_a_full_rebuild(api_schema, simple_api_context, test
     monkeypatch.setattr(projector, "project", _down)
     # A second entity, a relation, and a new metric on the first — none drawn.
     b_result = await api_schema.execute(writes.ASSERT_ENTITY_EXISTS, variable_values={"input": {"term": "AIS", "supportingEvidence": []}}, context_value=simple_api_context)
-    assert b_result.errors
+    assert b_result.errors is None, "a failed drawing is a pending act, not a failed mutation"
     more = await api_schema.execute(
         "mutation($input: AssertMetricValueInput!) { assertMetricValue(input: $input) { metric { id } } }",
         variable_values={"input": {"identifier": "ROI", "object": "roi-a", "key": "vector_length", "value": 30.0, "valueKind": "FLOAT"}},
         context_value=simple_api_context,
     )
-    assert more.errors
+    assert more.errors is None, "a failed drawing is a pending act, not a failed mutation"
     monkeypatch.undo()
 
     @sync_to_async
@@ -186,7 +186,7 @@ async def test_replay_folds_a_merge_the_write_path_could_not_draw(api_schema, si
 
     monkeypatch.setattr(projector, "reproject_refs", _down)
     failed = await api_schema.execute(ASSERT_SAME, variable_values={"input": {"instances": [a, b]}}, context_value=simple_api_context)
-    assert failed.errors
+    assert failed.errors is None, "a failed drawing is a pending act, not a failed mutation"
     monkeypatch.undo()
 
     @sync_to_async

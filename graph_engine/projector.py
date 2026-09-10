@@ -43,7 +43,7 @@ from evidence import selector as selector_module
 from evidence import state as state_module
 from evidence import writer as writer_module
 from graph_engine import aggregate
-from graph_engine import watermark
+from graph_engine import locks, watermark
 from graph_engine.input_models import DerivationType
 
 logger = logging.getLogger(__name__)
@@ -1623,55 +1623,58 @@ def rebuild(controller: Any, graph: core_models.Graph) -> dict[str, int]:
 
     organization = graph.organization
 
-    # Every cache the replay reads is refolded or checked **before** the replay
-    # reads it, or the rebuild would only prove the projection can be rebuilt from
-    # other caches. All organization-grain:
-    #
-    # - `CategoryAssertedTerm` — which words each definition derives from. It is
-    #   what `selector.term_ids_for` reads to decide membership, so a stale row
-    #   here silently changes which nodes the replay draws. Vocabulary-sized.
-    # - `InstanceIdentity` — the SAME_AS components. A retraction only flags a
-    #   component; the flagged ones are recomputed here.
-    # - `CurrentStanding` — what every "which of these still count" narrowing reads.
-    #
-    # Four, with the metrics' fold below.
-    asserted_terms.refold(organization)
-    identity_module.recompute_stale(organization)
-    claims_current = claims_module.refold_current(organization)
-    # - `State` — the folded metrics an unconstrained property reads
-    #   (`derive_properties` → `state_for_many`). This used to be refolded
-    #   *after* the replay, so a rebuild derived every plain property from the
-    #   cache it was about to rebuild: a metric whose `merge` never ran was
-    #   missing from the drawing until the *next* rebuild.
-    states = refold_state(organization)
+    # Under the organization's projection lock (`graph_engine/locks.py`): the
+    # runner's `replay` and this must not interleave on one organization.
+    with locks.organization_projection_lock(organization, wait=True):
+        # Every cache the replay reads is refolded or checked **before** the replay
+        # reads it, or the rebuild would only prove the projection can be rebuilt from
+        # other caches. All organization-grain:
+        #
+        # - `CategoryAssertedTerm` — which words each definition derives from. It is
+        #   what `selector.term_ids_for` reads to decide membership, so a stale row
+        #   here silently changes which nodes the replay draws. Vocabulary-sized.
+        # - `InstanceIdentity` — the SAME_AS components. A retraction only flags a
+        #   component; the flagged ones are recomputed here.
+        # - `CurrentStanding` — what every "which of these still count" narrowing reads.
+        #
+        # Four, with the metrics' fold below.
+        asserted_terms.refold(organization)
+        identity_module.recompute_stale(organization)
+        claims_current = claims_module.refold_current(organization)
+        # - `State` — the folded metrics an unconstrained property reads
+        #   (`derive_properties` → `state_for_many`). This used to be refolded
+        #   *after* the replay, so a rebuild derived every plain property from the
+        #   cache it was about to rebuild: a metric whose `merge` never ran was
+        #   missing from the drawing until the *next* rebuild.
+        states = refold_state(organization)
 
-    # The log position this replay is a picture of. Read before enumerating, so an
-    # assertion that commits while the replay runs is either in the picture or
-    # still in the outbox — never silently counted as applied.
-    head = watermark.max_seq(organization)
+        # The log position this replay is a picture of. Read before enumerating, so an
+        # assertion that commits while the replay runs is either in the picture or
+        # still in the outbox — never silently counted as applied.
+        head = watermark.max_seq(organization)
 
-    # Resolved once here purely to fail *before* the drop. A definition that
-    # admits nothing has to raise
-    # while the projection it would replace is still standing — the alternative is
-    # an empty namespace and an exception, with nothing left to fall back on.
-    # `project_all` resolves again after the drop; one redundant pass is the price
-    # of the guarantee, and rebuild is the expensive operation either way.
-    resolve_categories(graph, list(selector_module.instances_for(graph).select_related("term")))
+        # Resolved once here purely to fail *before* the drop. A definition that
+        # admits nothing has to raise
+        # while the projection it would replace is still standing — the alternative is
+        # an empty namespace and an exception, with nothing left to fall back on.
+        # `project_all` resolves again after the drop; one redundant pass is the price
+        # of the guarantee, and rebuild is the expensive operation either way.
+        resolve_categories(graph, list(selector_module.instances_for(graph).select_related("term")))
 
-    # Marked *before* the drop. A rebuild that dies between here and the end
-    # leaves an empty namespace; `REBUILDING` makes the cursor report everything
-    # as outstanding instead of "caught up" over nothing.
-    watermark.mark_rebuilding(graph)
+        # Marked *before* the drop. A rebuild that dies between here and the end
+        # leaves an empty namespace; `REBUILDING` makes the cursor report everything
+        # as outstanding instead of "caught up" over nothing.
+        watermark.mark_rebuilding(graph)
 
-    controller.projector.drop_namespace(graph)
-    controller.projector.refresh_namespace(graph)
+        controller.projector.drop_namespace(graph)
+        controller.projector.refresh_namespace(graph)
 
-    counts = project_all(controller, graph)
-    counts["claims"] = claims_current
-    counts["states"] = states
+        counts = project_all(controller, graph)
+        counts["claims"] = claims_current
+        counts["states"] = states
 
-    watermark.mark_consistent(graph, through_seq=head, schema_hash=watermark.active_schema_hash(graph), rebuilt=True)
-    return counts
+        watermark.mark_consistent(graph, through_seq=head, schema_hash=watermark.active_schema_hash(graph), rebuilt=True)
+        return counts
 
 
 def refold_state(organization: Any) -> int:
@@ -1879,7 +1882,7 @@ def converge(controller: Any, graph: core_models.Graph, refs: Iterable[str]) -> 
     return {"nodes": len(resolved), "individuals": len(components), "edges": edges, "participations": participations, "projected": projected, "erased": erased}
 
 
-def replay(controller: Any, organization: Any) -> dict[str, Any]:
+def replay(controller: Any, organization: Any, *, older_than: Any = None) -> dict[str, Any]:
     """Apply every outstanding assertion of the organization to every consistent graph.
 
     The incremental counterpart of :func:`rebuild`. Organization-scoped by
@@ -1895,10 +1898,18 @@ def replay(controller: Any, organization: Any) -> dict[str, Any]:
     one an older writer recorded before the act became a single transaction) is
     settled with nothing to draw.
     """
+    from django.utils import timezone
+
     from evidence import identity as identity_module
     from graph_engine import models as projection_models
 
-    pending = list(projection_models.PendingProjection.objects.filter(organization=organization).select_related("assertion"))
+    # `older_than` is the runner's grace: a row younger than that belongs to a
+    # request that may still be drawing, and is left for the next pass. Rows
+    # are still settled exactly as read.
+    outstanding = projection_models.PendingProjection.objects.filter(organization=organization)
+    if older_than is not None:
+        outstanding = outstanding.filter(created_at__lt=timezone.now() - older_than)
+    pending = list(outstanding.select_related("assertion"))
     pending_ids = [row.pk for row in pending]
     lowest = min((int(row.assertion.seq) for row in pending), default=None)
     head = watermark.max_seq(organization)

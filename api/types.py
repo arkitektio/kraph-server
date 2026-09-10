@@ -2838,6 +2838,13 @@ _DRAWINGS_DESCRIPTION = (
     "subject still draws the node."
 )
 
+_PENDING_DESCRIPTION = (
+    "True when the act was recorded and announced but its drawing did not finish. The claim is "
+    "durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and "
+    "`reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. "
+    "False is the ordinary case: the drawing completes within the request."
+)
+
 _CLAIM_DESCRIPTION = "What was claimed, as the log has it. Not a drawing of it: derived properties, a label and a category are one view's account and live on each entry in `drawings`. This is addressable whether or not any view draws it, which is the case a write has to answer for."
 
 _ASSERTION_DESCRIPTION = "The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart."
@@ -2857,6 +2864,10 @@ class AssertedEntity:
 
     _value: strawberry.Private[results.Asserted]
 
+    @strawberry.field(description=_PENDING_DESCRIPTION)
+    def pending(self) -> bool:
+        return self._value.pending
+
     @strawberry.field(description=_ASSERTION_DESCRIPTION)
     def assertion(self) -> Assertion:
         return cast(Assertion, self._value.assertion)
@@ -2874,6 +2885,10 @@ class AssertedEntity:
 class AssertedNaturalEvent:
     _value: strawberry.Private[results.Asserted]
 
+    @strawberry.field(description=_PENDING_DESCRIPTION)
+    def pending(self) -> bool:
+        return self._value.pending
+
     @strawberry.field(description=_ASSERTION_DESCRIPTION)
     def assertion(self) -> Assertion:
         return cast(Assertion, self._value.assertion)
@@ -2890,6 +2905,10 @@ class AssertedNaturalEvent:
 @strawberry.type(description="An assertion about a protocol event, and everywhere it is now drawn")
 class AssertedProtocolEvent:
     _value: strawberry.Private[results.Asserted]
+
+    @strawberry.field(description=_PENDING_DESCRIPTION)
+    def pending(self) -> bool:
+        return self._value.pending
 
     @strawberry.field(description=_ASSERTION_DESCRIPTION)
     def assertion(self) -> Assertion:
@@ -2923,6 +2942,10 @@ class AssertedInstances:
 
     _value: strawberry.Private[results.Asserted]
 
+    @strawberry.field(description=_PENDING_DESCRIPTION)
+    def pending(self) -> bool:
+        return self._value.pending
+
     @strawberry.field(description="The single claim covering the whole batch. One act by one actor is one assertion, which is why this is not a list")
     def assertion(self) -> Assertion:
         return cast(Assertion, self._value.assertion)
@@ -2939,6 +2962,10 @@ class AssertedInstances:
 @strawberry.type(description="An assertion about a relation, and everywhere that relation is now drawn")
 class AssertedRelation:
     _value: strawberry.Private[results.Asserted]
+
+    @strawberry.field(description=_PENDING_DESCRIPTION)
+    def pending(self) -> bool:
+        return self._value.pending
 
     @strawberry.field(description=_ASSERTION_DESCRIPTION)
     def assertion(self) -> Assertion:
@@ -2966,6 +2993,10 @@ class AssertedMeasurement:
 
     _value: strawberry.Private[results.Asserted]
 
+    @strawberry.field(description=_PENDING_DESCRIPTION)
+    def pending(self) -> bool:
+        return self._value.pending
+
     @strawberry.field(description=_ASSERTION_DESCRIPTION)
     def assertion(self) -> Assertion:
         return cast(Assertion, self._value.assertion)
@@ -2983,6 +3014,10 @@ class AssertedStructureRelation:
 
     _value: strawberry.Private[results.Asserted]
 
+    @strawberry.field(description=_PENDING_DESCRIPTION)
+    def pending(self) -> bool:
+        return self._value.pending
+
     @strawberry.field(description=_ASSERTION_DESCRIPTION)
     def assertion(self) -> Assertion:
         return cast(Assertion, self._value.assertion)
@@ -2998,6 +3033,10 @@ class AssertedParticipation:
     decides its type — `InputParticipation` or `OutputParticipation`."""
 
     _value: strawberry.Private[results.Asserted]
+
+    @strawberry.field(description=_PENDING_DESCRIPTION)
+    def pending(self) -> bool:
+        return self._value.pending
 
     @strawberry.field(description=_ASSERTION_DESCRIPTION)
     def assertion(self) -> Assertion:
@@ -3025,6 +3064,10 @@ class AssertedLinks:
 
     _value: strawberry.Private[results.Asserted]
 
+    @strawberry.field(description=_PENDING_DESCRIPTION)
+    def pending(self) -> bool:
+        return self._value.pending
+
     @strawberry.field(description="The single claim covering the whole batch")
     def assertion(self) -> Assertion:
         return cast(Assertion, self._value.assertion)
@@ -3050,6 +3093,10 @@ class AssertedDescription:
 
     _value: strawberry.Private[results.Asserted]
 
+    @strawberry.field(description=_PENDING_DESCRIPTION)
+    def pending(self) -> bool:
+        return self._value.pending
+
     @strawberry.field(description=_ASSERTION_DESCRIPTION)
     def assertion(self) -> Assertion:
         return cast(Assertion, self._value.assertion)
@@ -3070,6 +3117,10 @@ class AssertedSameness:
 
     _value: strawberry.Private[results.Asserted]
 
+    @strawberry.field(description=_PENDING_DESCRIPTION)
+    def pending(self) -> bool:
+        return self._value.pending
+
     @strawberry.field(description=_ASSERTION_DESCRIPTION)
     def assertion(self) -> Assertion:
         return cast(Assertion, self._value.assertion)
@@ -3085,6 +3136,10 @@ class AssertedDifference:
     — it changes which vertices a view draws, and every member is redrawn."""
 
     _value: strawberry.Private[results.Asserted]
+
+    @strawberry.field(description=_PENDING_DESCRIPTION)
+    def pending(self) -> bool:
+        return self._value.pending
 
     @strawberry.field(description=_ASSERTION_DESCRIPTION)
     def assertion(self) -> Assertion:
@@ -3106,6 +3161,10 @@ class AssertedStructure:
 
     _value: strawberry.Private[results.Asserted]
 
+    @strawberry.field(description=_PENDING_DESCRIPTION)
+    def pending(self) -> bool:
+        return self._value.pending
+
     @strawberry.field(description=_ASSERTION_DESCRIPTION)
     def assertion(self) -> Assertion:
         return cast(Assertion, self._value.assertion)
@@ -3124,6 +3183,10 @@ class AssertedComment:
 
     _value: strawberry.Private[results.Asserted]
 
+    @strawberry.field(description=_PENDING_DESCRIPTION)
+    def pending(self) -> bool:
+        return self._value.pending
+
     @strawberry.field(description=_ASSERTION_DESCRIPTION)
     def assertion(self) -> Assertion:
         return cast(Assertion, self._value.assertion)
@@ -3138,6 +3201,10 @@ class AssertedMetric:
     """No `drawings`, for the same reason `AssertedStructure` has none."""
 
     _value: strawberry.Private[results.Asserted]
+
+    @strawberry.field(description=_PENDING_DESCRIPTION)
+    def pending(self) -> bool:
+        return self._value.pending
 
     @strawberry.field(description=_ASSERTION_DESCRIPTION)
     def assertion(self) -> Assertion:

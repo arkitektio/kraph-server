@@ -535,6 +535,10 @@ Recorded so nobody has to rediscover them.
   the help text proposed after all — `evidence/log.py`, RFC 0020, which also
   records the one residual window (inside a single `INSERT`) and the stall a
   long-open writer causes.
+  A draw that fails after the commit is not a failed mutation: the payload says
+  `pending: true` and the runner (`run-worker.sh` → `reproject --incremental
+  --loop`, `graph_engine/runner.py`) applies the row under the organization's
+  projection lock, which `rebuild` shares.
 - **`Assertion.action_name` has no source.** `action_id` and `action_args` are
   populated from the Rekuest provenance token that `AuthentikateExtension` puts on
   the kante context, and `manage.py redact` writes all three. But no provenance

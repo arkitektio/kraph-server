@@ -1,7 +1,9 @@
+import contextlib
+import dataclasses
 import json
 import logging
 import re
-from typing import Iterable, Optional, Dict, Any, List
+from typing import Iterable, Iterator, Optional, Dict, Any, List
 
 from kante.types import Info
 from graph_engine import input_models
@@ -109,6 +111,13 @@ def _provenance_claims(request: Any) -> dict[str, Any]:
 # where the resulting comparison against `age_name` was always false and the
 # filter quietly answered "no matches" to ids the API had just issued. Those
 # queries read `evidence.Link` now; see `api/queries/_edges.py`.
+
+
+@dataclasses.dataclass
+class DrawOutcome:
+    """What `GraphController._draw_after` reports: did the drawing finish."""
+
+    failed: bool = False
 
 
 class GraphController:
@@ -225,11 +234,43 @@ class GraphController:
     def _settle(self, assertion: evidence_models.Assertion) -> None:
         """This assertion's synchronous projection finished everywhere it was owed.
 
-        Called by every write method immediately before it returns, i.e. after the
-        last projector call succeeded. An exception anywhere in the projection
-        skips it, and the outbox row stays — which is the point.
+        Called by `_draw_after` once the drawing succeeded, and directly only by
+        the writes that draw nothing (comments, structure relations). An exception
+        anywhere in the projection skips it, and the outbox row stays — which is
+        the point.
         """
         watermark.settle(assertion)
+
+    @contextlib.contextmanager
+    def _draw_after(self, assertion: evidence_models.Assertion) -> Iterator["DrawOutcome"]:
+        """The drawing that follows the act. Outside the act's transaction, always.
+
+        Every write commits its act — assertion, outbox row, claims — in one
+        `transaction.atomic()`, then draws into every view under this. The act
+        is durable and already announced by the time the body runs, so a failure
+        here is **not a failed mutation**: it is logged with the assertion, the
+        outbox row is left standing for `reproject --incremental` (the runner),
+        and the caller reports `pending=True` beside whatever *was* drawn. It
+        used to propagate — the client was told the write failed while the log
+        said otherwise and nothing recorded why.
+
+        Success settles the outbox row. Never enclose the `transaction.atomic()`
+        block in this: a claim that fails to write must fail the mutation.
+        `tests/guards/test_the_draw_follows_the_act.py` holds both orderings.
+        """
+        outcome = DrawOutcome()
+        try:
+            yield outcome
+        except Exception:  # noqa: BLE001 - the act committed; this is the boundary that says so
+            outcome.failed = True
+            logger.exception(
+                "assertion %s (organization %s, seq %s): the drawing failed after the act committed; the outbox row stands for `reproject --incremental`.",
+                assertion.pk,
+                assertion.organization_id,
+                assertion.seq,
+            )
+            return
+        self._settle(assertion)
 
     def _provenance_from_info(self, info: Info) -> ProvenanceContext:
         """Who is making this change, and under which run.
@@ -509,16 +550,14 @@ class GraphController:
         # `reproject_refs` is what `rebuild` uses per individual, so a fresh
         # entity and a replayed one cannot differ — and a `sameAs` in the input
         # redraws the individual it joined, not just the new observation.
-        from graph_engine import projector
-
-        node = evidence_models.Instance.objects.for_organization(organization).select_related("term").get(pk=claim_ref)
-        for target_graph in projector.graphs_for_refs(organization, [claim_ref]):
-            projector.reproject_refs(self, target_graph, [claim_ref])
+        with self._draw_after(assertion) as draw:
+            for target_graph in projector.graphs_for_refs(organization, [claim_ref]):
+                projector.reproject_refs(self, target_graph, [claim_ref])
 
         # Read back *after* every projection, not inside the loop: `drawings` is
-        # where the claim stands once the act is complete.
-        self._settle(assertion)
-        return results.Asserted.of(assertion, node, self.drawings_for_instance(node))
+        # where the claim stands once the act is complete — drawn or, if the
+        # drawing failed, `pending` and drawn wherever it got to.
+        return results.Asserted.of(assertion, node, self.drawings_for_instance(node), pending=draw.failed)
 
     # ===================================================================
     # Projection
@@ -651,28 +690,28 @@ class GraphController:
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             writer.retract(organization, node, assertion, at=at, confidence=confidence)
 
-        # The vertex goes **after** the claim commits, and the ordering is the
-        # point: a crash in between leaves the log saying "retracted" and a
-        # vertex still standing, which `reproject` fixes. The other way round
-        # would delete a vertex with no claim behind it, and the next replay
-        # would put it straight back.
-        #
-        # Through `reproject_refs`, not a blanket `unproject` — the same call
-        # `attest_node` makes, because the two are the same act with the
-        # opposite sign. A retraction is folded under each graph's own selector
-        # (`resolve_categories` -> `retracted_ids` -> the category's `trust_filter`), so a view
-        # that does not count this subject redraws the node and keeps it; the
-        # blanket erase made the write path disagree with the very next rebuild,
-        # exactly the divergence this layer exists to prevent.
-        for graph in projector.graphs_for_refs(organization, [node.ref]):
-            projector.reproject_refs(self, graph, [str(node.ref)])
+        with self._draw_after(assertion) as draw:
+            # The vertex goes **after** the claim commits, and the ordering is the
+            # point: a crash in between leaves the log saying "retracted" and a
+            # vertex still standing, which `reproject` fixes. The other way round
+            # would delete a vertex with no claim behind it, and the next replay
+            # would put it straight back.
+            #
+            # Through `reproject_refs`, not a blanket `unproject` — the same call
+            # `attest_node` makes, because the two are the same act with the
+            # opposite sign. A retraction is folded under each graph's own selector
+            # (`resolve_categories` -> `retracted_ids` -> the category's `trust_filter`), so a view
+            # that does not count this subject redraws the node and keeps it; the
+            # blanket erase made the write path disagree with the very next rebuild,
+            # exactly the divergence this layer exists to prevent.
+            for graph in projector.graphs_for_refs(organization, [node.ref]):
+                projector.reproject_refs(self, graph, [str(node.ref)])
 
         # Read back rather than assumed empty. A retraction is folded under each
         # graph's own selector, so a view that does not count this subject still
         # draws the node — see `results` and the `retract_node` note in
         # `docs/rfcs/0003-undrawn-nodes.md`.
-        self._settle(assertion)
-        return results.Asserted.of(assertion, node, self.drawings_for_instance(node))
+        return results.Asserted.of(assertion, node, self.drawings_for_instance(node), pending=draw.failed)
 
     def attest_node(self, node_id: Any, info: Info, *, at: datetime.datetime | None = None, confidence: float | None = None) -> results.Asserted:
         """Claim that a node exists.
@@ -691,11 +730,10 @@ class GraphController:
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             writer.attest(organization, node, assertion, at=at, confidence=confidence)
 
-        for graph in projector.graphs_for_refs(organization, [node.ref]):
-            projector.reproject_refs(self, graph, [str(node.ref)])
-
-        self._settle(assertion)
-        return results.Asserted.of(assertion, node, self.drawings_for_instance(node))
+        with self._draw_after(assertion) as draw:
+            for graph in projector.graphs_for_refs(organization, [node.ref]):
+                projector.reproject_refs(self, graph, [str(node.ref)])
+        return results.Asserted.of(assertion, node, self.drawings_for_instance(node), pending=draw.failed)
 
     # `retract_entity` is gone. It was `return self.retract_node(node_id, info)` and
     # nothing else — one name for one act, kept only so `api/mutations/entity.py`
@@ -825,13 +863,13 @@ class GraphController:
                 self._record_metric(organization, structure, metric, info=info, assertion=assertion)
             self._cite(organization, assertion, str(structure.pk), cited)
 
-        self.project_from_structures(organization, [structure.pk])
+        with self._draw_after(assertion) as draw:
+            self.project_from_structures(organization, [structure.pk])
         # No drawings, ever: a structure lives only in the relational evidence
         # base and has no AGE presence at all. The absence is structural, which
         # is why the GraphQL result type for structures omits the field rather
         # than always answering `[]`.
-        self._settle(assertion)
-        return results.Asserted.of(assertion, structure)
+        return results.Asserted.of(assertion, structure, pending=draw.failed)
 
     def record_metric(
         self,
@@ -860,9 +898,9 @@ class GraphController:
             )
             recorded = self._record_metric(organization, structure, metric, info=info, assertion=assertion)
 
-        self.project_from_structures(organization, [structure.pk])
-        self._settle(assertion)
-        return results.Asserted.of(assertion, recorded)
+        with self._draw_after(assertion) as draw:
+            self.project_from_structures(organization, [structure.pk])
+        return results.Asserted.of(assertion, recorded, pending=draw.failed)
 
     def _assert_can_access(self, organization: Any, info: Info | None) -> None:
         """Check the caller may act for this organization.
@@ -1003,10 +1041,10 @@ class GraphController:
             if result.moved:
                 state_module.refold(organization, informed, structure.kind)
 
-        if result.moved:
-            self.project_refs(organization, informed)
-        self._settle(assertion)
-        return results.Asserted.of(assertion, structure)
+        with self._draw_after(assertion) as draw:
+            if result.moved:
+                self.project_refs(organization, informed)
+        return results.Asserted.of(assertion, structure, pending=draw.failed)
 
     def record_metrics(
         self,
@@ -1035,9 +1073,9 @@ class GraphController:
             for metric in payload.metrics or []:
                 self._record_metric(organization, structure, metric, info=info, assertion=assertion)
 
-        self.project_from_structures(organization, [structure.pk])
-        self._settle(assertion)
-        return results.Asserted.of(assertion, structure)
+        with self._draw_after(assertion) as draw:
+            self.project_from_structures(organization, [structure.pk])
+        return results.Asserted.of(assertion, structure, pending=draw.failed)
 
     def comment_on_structure(
         self,
@@ -1237,20 +1275,21 @@ class GraphController:
 
         from graph_engine import projector
 
+        node = evidence_models.Instance.objects.for_organization(organization).select_related("term").get(pk=event_ref)
+
         # Every view that declares this event's word, for the reason
         # `create_entity` gives at length. `reproject_refs` draws the vertex and
         # the participation edges either side of it, from the claims — so the
         # event a fresh write produces and the one a replay produces are the same.
-        node = evidence_models.Instance.objects.for_organization(organization).select_related("term").get(pk=event_ref)
-        for target_graph in projector.graphs_for_refs(organization, [event_ref]):
-            projector.reproject_refs(self, target_graph, [event_ref])
+        with self._draw_after(assertion) as draw:
+            for target_graph in projector.graphs_for_refs(organization, [event_ref]):
+                projector.reproject_refs(self, target_graph, [event_ref])
 
         # Not an unguarded index into a Cypher result. This used to be
         # `engine.execute(graph, …)[0]["e"]`, which raised `IndexError` — not even
         # a message — whenever the graph the caller named did not draw the event.
         # The claim was already durable at that point.
-        self._settle(assertion)
-        return results.Asserted.of(assertion, node, self.drawings_for_instance(node))
+        return results.Asserted.of(assertion, node, self.drawings_for_instance(node), pending=draw.failed)
 
     def create_metric(
         self,
@@ -1276,13 +1315,12 @@ class GraphController:
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             metric = self._record_metric(organization, structure, input, info=info, assertion=assertion)
 
-        # Refresh every projection this structure is evidence for. Separate from
-        # the fold above because it is batched: a bulk ingest of a thousand
-        # metrics folds a thousand times (O(1) each) but projects once.
-        self.project_from_structures(organization, [structure.pk])
-
-        self._settle(assertion)
-        return results.Asserted.of(assertion, metric)
+        with self._draw_after(assertion) as draw:
+            # Refresh every projection this structure is evidence for. Separate from
+            # the fold above because it is batched: a bulk ingest of a thousand
+            # metrics folds a thousand times (O(1) each) but projects once.
+            self.project_from_structures(organization, [structure.pk])
+        return results.Asserted.of(assertion, metric, pending=draw.failed)
 
     def _resolve_metric(self, metric_id: str, info: Info | None = None) -> evidence_models.Metric:
         """Fetch a metric by evidence primary key, then authorize against its organization."""
@@ -1357,13 +1395,13 @@ class GraphController:
                 # recorded and only the fold is conditional.
                 state_module.retract(metric, instance_refs)
 
-        self.project_from_structures(organization, [metric.structure_id])
+        with self._draw_after(assertion) as draw:
+            self.project_from_structures(organization, [metric.structure_id])
         # The retracted metric itself, not its id. Returning a bare string forced
         # the resolver to read the row back to build a payload, which is how
         # `retract_metric` came to report a metric fetched *after* the retraction
         # under an assertion it had no handle on.
-        self._settle(assertion)
-        return results.Asserted.of(assertion, metric)
+        return results.Asserted.of(assertion, metric, pending=draw.failed)
 
     def update_metric(
         self,
@@ -1405,11 +1443,11 @@ class GraphController:
             # tied only by sharing this assertion's id (RFC 0017).
             replacement = self._record_metric(organization, structure, metric_input, info=info, assertion=assertion, also_derived_from=[str(metric.pk)])
 
-        self.project_from_structures(organization, [structure.pk])
+        with self._draw_after(assertion) as draw:
+            self.project_from_structures(organization, [structure.pk])
         # One assertion covers both halves — the retraction and the replacement
         # are one corrective act, which is why they share a transaction.
-        self._settle(assertion)
-        return results.Asserted.of(assertion, replacement)
+        return results.Asserted.of(assertion, replacement, pending=draw.failed)
 
     def assert_informs(
         self,
@@ -1459,17 +1497,17 @@ class GraphController:
             for metric in writer.active_metrics_for_structures(organization, [structure.pk]):
                 state_module.merge(metric, [claim_ref])
 
-        # Just this entity. The structure's other dependents saw no change in
-        # their statistics, so fanning out to them would re-derive values that
-        # cannot have moved.
-        self.project_refs(organization, [claim_ref])
+        with self._draw_after(assertion) as draw:
+            # Just this entity. The structure's other dependents saw no change in
+            # their statistics, so fanning out to them would re-derive values that
+            # cannot have moved.
+            self.project_refs(organization, [claim_ref])
         # The subject is the **link**, not the structure. This act does not create
         # a structure — it resolves one that already exists and records an INFORMS
         # claim about it — so reporting the structure named the one thing the write
         # did not produce, and left the claim it *did* produce unaddressable. That
         # claim is what `description(id:)` reads back.
-        self._settle(assertion)
-        return results.Asserted.of(assertion, link)
+        return results.Asserted.of(assertion, link, pending=draw.failed)
 
     # ===================================================================
     # Edges — relations, structure relations and measurements
@@ -1536,13 +1574,13 @@ class GraphController:
             )
             self._cite(organization, assertion, str(link.pk), cited)
 
-        # Every view that draws the event, not one of them. `_graph_for_ref` used
-        # to pick "an arbitrary one of the declarers" here, so a second view of the
-        # same event kept a participation edge nobody had retracted and nobody had
-        # drawn until its next rebuild.
-        self._reproject_participation_everywhere(organization, claim_ref, event_ref, kind, role)
-        self._settle(assertion)
-        return results.Asserted.of(assertion, link, self.drawings_for_edge(link))
+        with self._draw_after(assertion) as draw:
+            # Every view that draws the event, not one of them. `_graph_for_ref` used
+            # to pick "an arbitrary one of the declarers" here, so a second view of the
+            # same event kept a participation edge nobody had retracted and nobody had
+            # drawn until its next rebuild.
+            self._reproject_participation_everywhere(organization, claim_ref, event_ref, kind, role)
+        return results.Asserted.of(assertion, link, self.drawings_for_edge(link), pending=draw.failed)
 
     # ===================================================================
     # Batch claims
@@ -1609,18 +1647,19 @@ class GraphController:
                 self._cite(organization, assertion, str(link.pk), cited)
                 links.append(link)
 
-        for kind, role, claim_ref, _, _, _ in resolved:
-            self._reproject_participation_everywhere(organization, claim_ref, event_ref, kind, role)
+        with self._draw_after(assertion) as draw:
+            for kind, role, claim_ref, _, _, _ in resolved:
+                self._reproject_participation_everywhere(organization, claim_ref, event_ref, kind, role)
 
         # **One** result, not one per participant. The batch is a single act by a
         # single actor, which is exactly what one assertion means — returning a
         # list of results would have repeated that assertion N times and claimed
         # N acts had happened.
-        self._settle(assertion)
         return results.Asserted(
             assertion=assertion,
             subjects=tuple(links),
             drawings=tuple(drawing for link in links for drawing in self.drawings_for_edge(link)),
+            pending=draw.failed,
         )
 
     def classify_nodes(
@@ -1682,29 +1721,31 @@ class GraphController:
                 )
                 self._cite(organization, assertion, str(link.pk), cited)
 
-        graphs.update({graph.pk: graph for graph in projector.graphs_for_refs(organization, refs)})
+        with self._draw_after(assertion) as draw:
+            graphs.update({graph.pk: graph for graph in projector.graphs_for_refs(organization, refs)})
 
-        # A concurring claim moves nothing, and must cost nothing. Only a label
-        # set that actually changed needs a rebuild: a vertex is redrawn under
-        # what its categories now admit (RFC 0019), and `rebuild` is the
-        # operation that does that honestly.
-        after = self._resolved_labels(list(graphs.values()), refs)
-        for graph in graphs.values():
-            if before.get(graph.pk) != after.get(graph.pk):
-                self.rebuild_projection(graph)
-            else:
-                projector.project(self, graph, refs)
+            # A concurring claim moves nothing, and must cost nothing. Only a label
+            # set that actually changed needs a rebuild: a vertex is redrawn under
+            # what its categories now admit (RFC 0019), and `rebuild` is the
+            # operation that does that honestly.
+            after = self._resolved_labels(list(graphs.values()), refs)
+            for graph in graphs.values():
+                if before.get(graph.pk) != after.get(graph.pk):
+                    self.rebuild_projection(graph)
+                else:
+                    projector.project(self, graph, refs)
+
 
         # Drawings collected strictly **after** the rebuild loop above. A
         # classification can move a label, and moving one means dropping and
         # replaying the whole graph — so reading drawings any earlier would
         # report vertices that no longer exist.
         nodes = [node for _, _, node, _, _, _ in resolved]
-        self._settle(assertion)
         return results.Asserted(
             assertion=assertion,
             subjects=tuple(nodes),
             drawings=tuple(drawing for node in nodes for drawing in self.drawings_for_instance(node)),
+            pending=draw.failed,
         )
 
     def _resolved_labels(self, graphs: list[models.Graph], refs: list[str]) -> dict[Any, dict[str, tuple[str, ...]]]:
@@ -1789,25 +1830,26 @@ class GraphController:
                     writer.retract(organization, sibling, assertion, at=at, confidence=confidence)
                     links.append(sibling)
 
-        # Rebuilds are collected across the whole batch and run once each at the
-        # end. A retracted classification can move a label, and only `rebuild` moves
-        # one — but a rebuild drops and replays a whole graph and refolds the
-        # organization's state, so doing it per link would make M retractions across
-        # N views M×N of them. The edge branches are already targeted and stay inline.
-        pending_rebuilds: dict[Any, models.Graph] = {}
-        for link in links:
-            self._reproject_claim(organization, link, pending_rebuilds=pending_rebuilds)
+        with self._draw_after(assertion) as draw:
+            # Rebuilds are collected across the whole batch and run once each at the
+            # end. A retracted classification can move a label, and only `rebuild` moves
+            # one — but a rebuild drops and replays a whole graph and refolds the
+            # organization's state, so doing it per link would make M retractions across
+            # N views M×N of them. The edge branches are already targeted and stay inline.
+            pending_rebuilds: dict[Any, models.Graph] = {}
+            for link in links:
+                self._reproject_claim(organization, link, pending_rebuilds=pending_rebuilds)
 
-        for graph in pending_rebuilds.values():
-            self.rebuild_projection(graph)
+            for graph in pending_rebuilds.values():
+                self.rebuild_projection(graph)
 
         # After the deferred rebuilds, for the same reason `classify_nodes` reads
         # its drawings last: a rebuild drops and replays a whole graph.
-        self._settle(assertion)
         return results.Asserted(
             assertion=assertion,
             subjects=tuple(links),
             drawings=tuple(drawing for link in links for drawing in self.drawings_for_edge(link)),
+            pending=draw.failed,
         )
 
     def _reproject_claim(
@@ -1901,12 +1943,12 @@ class GraphController:
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             writer.retract(organization, link, assertion, at=at, confidence=confidence)
 
-        self._reproject_participation_everywhere(organization, str(link.source_ref), str(link.target_ref), link.kind, link.role)
+        with self._draw_after(assertion) as draw:
+            self._reproject_participation_everywhere(organization, str(link.source_ref), str(link.target_ref), link.kind, link.role)
         # Drawings read back, not assumed empty: the edge survives wherever
         # another live claim still states the same participation, which is the
         # point of keeping claims separate from the thing they agree on.
-        self._settle(assertion)
-        return results.Asserted.of(assertion, link, self.drawings_for_edge(link))
+        return results.Asserted.of(assertion, link, self.drawings_for_edge(link), pending=draw.failed)
 
     def _reproject_participation(
         self,
@@ -2164,17 +2206,17 @@ class GraphController:
             for link in links:
                 self._cite(organization, assertion, str(link.pk), cited)
 
-        # Every view drawing any member may now draw the component differently, so
-        # each member is reprojected — the same fan-out a classification does.
-        # `reproject_refs` widens to the members of the vertex each ref was drawn
-        # on, so a split reaches the individual it came out of.
-        self._reproject_instances(organization, refs)
-
-        self._settle(assertion)
+        with self._draw_after(assertion) as draw:
+            # Every view drawing any member may now draw the component differently, so
+            # each member is reprojected — the same fan-out a classification does.
+            # `reproject_refs` widens to the members of the vertex each ref was drawn
+            # on, so a split reaches the individual it came out of.
+            self._reproject_instances(organization, refs)
         return results.Asserted(
             assertion=assertion,
             subjects=tuple(links),
             drawings=(),
+            pending=draw.failed,
         )
 
     def assert_same_instance(
@@ -2239,13 +2281,12 @@ class GraphController:
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             writer.retract(organization, link, assertion, at=at, confidence=confidence)
 
-        # The rebuild and the reprojection are `_reproject_claim`'s SAME_AS /
-        # DIFFERENT_FROM branches, shared with `retractLinks` so a claim
-        # withdrawn in a batch and one withdrawn alone cannot diverge.
-        self._reproject_claim(organization, link)
-
-        self._settle(assertion)
-        return results.Asserted.of(assertion, link, ())
+        with self._draw_after(assertion) as draw:
+            # The rebuild and the reprojection are `_reproject_claim`'s SAME_AS /
+            # DIFFERENT_FROM branches, shared with `retractLinks` so a claim
+            # withdrawn in a batch and one withdrawn alone cannot diverge.
+            self._reproject_claim(organization, link)
+        return results.Asserted.of(assertion, link, (), pending=draw.failed)
 
     def retract_same_instance(self, claim_id: str, info: Info, *, at: datetime.datetime | None = None, confidence: float | None = None) -> results.Asserted:
         """Withdraw one sameness claim, and rebuild whatever it may have held together.
@@ -2448,20 +2489,20 @@ class GraphController:
             self._attach_supporting_evidence(organization, link, recorded_metrics, assertion)
             self._cite(organization, assertion, str(link.pk), cited)
 
-        # Only this proposition, not the whole graph. This used to pass
-        # `active_relation_links(graph)` — every live relation there is — so one
-        # new claim re-`MERGE`d every edge in the graph and N sequential calls
-        # cost O(N x graph). The survivors of *this* proposition are what the
-        # assertion count needs, and nothing else moved.
-        self._reproject_proposition_everywhere(organization, source_ref, target_ref)
+        with self._draw_after(assertion) as draw:
+            # Only this proposition, not the whole graph. This used to pass
+            # `active_relation_links(graph)` — every live relation there is — so one
+            # new claim re-`MERGE`d every edge in the graph and N sequential calls
+            # cost O(N x graph). The survivors of *this* proposition are what the
+            # assertion count needs, and nothing else moved.
+            self._reproject_proposition_everywhere(organization, source_ref, target_ref)
 
         # The payload comes from the `Link` row, not from one graph's projection:
         # the edge is drawn in every view declaring the word, so there is no
         # single projection to prefer — and `Edge.id` is the link's primary key
         # anyway, so nothing a client can select comes from the AGE edge. Which
         # views drew it is `drawings`, where each answer keeps its graph.
-        self._settle(assertion)
-        return results.Asserted.of(assertion, link, self.drawings_for_edge(link))
+        return results.Asserted.of(assertion, link, self.drawings_for_edge(link), pending=draw.failed)
 
     def _attach_supporting_evidence(
         self,
@@ -2589,12 +2630,12 @@ class GraphController:
             for metric in writer.active_metrics_for_structures(organization, [source.pk]):
                 state_module.merge(metric, [target_ref])
 
-        self.project_refs(organization, [target_ref])
+        with self._draw_after(assertion) as draw:
+            self.project_refs(organization, [target_ref])
         # No drawings: a measurement's source is a structure, and nothing projects
         # a MEASUREMENT link to an AGE edge. What it *does* move is the target
         # entity's derived properties, which is what `project_refs` above did.
-        self._settle(assertion)
-        return results.Asserted.of(assertion, link)
+        return results.Asserted.of(assertion, link, pending=draw.failed)
 
     def resolve_edge_link(self, edge_id: str, info: Info | None = None) -> evidence_models.Link:
         """Find the edge assertion a client named, and check it may be reached."""
@@ -2646,12 +2687,12 @@ class GraphController:
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             writer.retract(organization, link, assertion, at=at, confidence=confidence)
 
-        source_ref, target_ref, term_id = projector.proposition_key(link)
-        self._reproject_proposition_everywhere(organization, source_ref, target_ref)
+        with self._draw_after(assertion) as draw:
+            source_ref, target_ref, term_id = projector.proposition_key(link)
+            self._reproject_proposition_everywhere(organization, source_ref, target_ref)
         # Read back, not assumed gone: the edge survives wherever another live
         # assertion still states the same proposition.
-        self._settle(assertion)
-        return results.Asserted.of(assertion, link, self.drawings_for_edge(link))
+        return results.Asserted.of(assertion, link, self.drawings_for_edge(link), pending=draw.failed)
 
     def attest_link(
         self,
@@ -2688,11 +2729,11 @@ class GraphController:
                 writer.attest(organization, sibling, assertion, at=at, confidence=confidence)
                 affected.append(sibling)
 
-        for row in affected:
-            if row.kind not in (evidence_models.Link.Kind.SAME_AS, evidence_models.Link.Kind.DIFFERENT_FROM):
-                self._reproject_claim(organization, row)
-        self._settle(assertion)
-        return results.Asserted.of(assertion, link, self.drawings_for_edge(link))
+        with self._draw_after(assertion) as draw:
+            for row in affected:
+                if row.kind not in (evidence_models.Link.Kind.SAME_AS, evidence_models.Link.Kind.DIFFERENT_FROM):
+                    self._reproject_claim(organization, row)
+        return results.Asserted.of(assertion, link, self.drawings_for_edge(link), pending=draw.failed)
 
     def _sibling_informs(self, link: evidence_models.Link) -> evidence_models.Link | None:
         """The INFORMS row written beside a MEASUREMENT claim under the same act, if any."""
@@ -2739,9 +2780,9 @@ class GraphController:
                 # twice must not add the contribution twice.
                 state_module.merge(metric, instance_refs)
 
-        self.project_from_structures(organization, [metric.structure_id])
-        self._settle(assertion)
-        return results.Asserted.of(assertion, metric)
+        with self._draw_after(assertion) as draw:
+            self.project_from_structures(organization, [metric.structure_id])
+        return results.Asserted.of(assertion, metric, pending=draw.failed)
 
     def _reproject_proposition(
         self,

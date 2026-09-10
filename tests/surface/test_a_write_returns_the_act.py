@@ -26,6 +26,7 @@ ASSERT_ENTITY = """
     mutation AssertEntityExists($input: AssertEntityExistsInput!) {
         assertEntityExists(input: $input) {
             assertion { id seq subject }
+            pending
             instance {
                 id
                 kind
@@ -572,3 +573,46 @@ async def test_a_participation_reports_the_view_that_drew_it(
     # same side in the vocabulary of the log.
     drawn_as = "InputParticipation" if is_input else "OutputParticipation"
     assert payload["drawings"][0]["edge"]["__typename"] == drawn_as, "and the drawing agrees about what it drew"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_a_write_whose_drawing_fails_still_returns_the_act(api_schema, simple_api_context, test_graph: core_models.Graph, monkeypatch, caplog) -> None:
+    """A failed drawing is a pending act, not a failed mutation.
+
+    The act committed and was announced before the draw began, so the payload
+    is the act — `assertion`, `instance`, whatever `drawings` got made — with
+    `pending: true` saying the rest is owed. `Graph.projection` counts it, the
+    failure is in the log with the assertion id, and the next write is ordinary.
+
+    History: the draw ran bare after the commit. A projector error reached the
+    client as a failed mutation while the log, the outbox and the subscription
+    all said the act happened, and nothing recorded why.
+    """
+    import logging
+
+    from graph_engine import projector
+
+    def down(*args, **kwargs):
+        raise RuntimeError("projector down")
+
+    monkeypatch.setattr(projector, "reproject_refs", down)
+    with caplog.at_level(logging.ERROR, logger="graph_engine.controller"):
+        result = await api_schema.execute(ASSERT_ENTITY, variable_values={"input": {"term": "AIS"}}, context_value=simple_api_context)
+    assert result.errors is None, f"a durable act is not a failed mutation: {result.errors}"
+    payload = result.data["assertEntityExists"]
+    assert payload["assertion"]["id"] and payload["instance"]["id"]
+    assert payload["drawings"] == [], "nothing was drawn"
+    assert payload["pending"] is True
+    assert any(payload["assertion"]["id"] in record.getMessage() and "outbox row stands" in record.getMessage() for record in caplog.records), "the failure is logged against the act"
+
+    position = await api_schema.execute(reads.GRAPH_PROJECTION, variable_values={"id": str(test_graph.pk)}, context_value=simple_api_context)
+    assert position.errors is None, f"GraphQL errors: {position.errors}"
+    assert position.data["graph"]["projection"]["pending"] == 1
+    assert position.data["graph"]["projection"]["lag"] >= 1
+
+    monkeypatch.undo()
+    healthy = await api_schema.execute(ASSERT_ENTITY, variable_values={"input": {"term": "AIS"}}, context_value=simple_api_context)
+    assert healthy.errors is None, f"GraphQL errors: {healthy.errors}"
+    assert healthy.data["assertEntityExists"]["pending"] is False
+    assert healthy.data["assertEntityExists"]["drawings"], "the projector is back, so the drawing completes in the request"

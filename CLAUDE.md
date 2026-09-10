@@ -37,9 +37,18 @@ Notes:
   `strict = true` with no CI job running it — a standard nothing checked — and is gone along with
   the `mypy` dev dependency. basedpyright runs unscoped over the whole repo, advisory.
 - Serving: `run.sh` (daphne on :80, production) / `run-debug.sh` (`runserver` on :80). Both
-  `wait_for_database` → `migrate` first, under `set -euo pipefail`. They used to call `ensureadmin`
+  `wait_for_database` → `migrate` first, under `set -euo pipefail`; `run.sh` also runs
+  `validate_settings` and `check --deploy`. They used to call `ensureadmin`
   too — a command that is not installed — and without `set -e` that errored on every boot and
-  carried on serving.
+  carried on serving. **The second process is `run-worker.sh`**: `reproject --incremental --all
+  --loop`, the convergence runner (`graph_engine/runner.py`) that finishes any drawing a request
+  could not. The `Dockerfile`'s `CMD` is `run.sh`; the deployment compose overrides it per service.
+- `DEBUG`, `ALLOWED_HOSTS` and the proxy trust come from `config.yaml` (`django.debug`, `django.hosts`,
+  `django.use_x_forwarded_host`). They were literals (`DEBUG = True`) while the config keys were parsed and
+  read by nothing. Turning `DEBUG` off for the first time exposed a latent bug: the projection's signal
+  receivers in `graph_engine/apps.py` are closures, were connected weakly, and survived only because
+  Django's debug-mode receiver validation cached a strong reference — they are `weak=False` now, and
+  `tests/guards/test_the_projection_signals_survive_garbage_collection.py` holds it.
 
 ### Tests need Docker — always
 
@@ -246,10 +255,15 @@ The load-bearing facts:
   Corrections are additive: there is no `updateEntity` and no hard delete for instance data.
   Evidence is written **before** the projection, always: the act — assertion, outbox row, every
   claim — is **one transaction**, and the draw follows it *outside* that transaction, into every
-  view declaring the word. A failure after the commit leaves a durable act with an outstanding
-  outbox row, which `reproject --incremental` applies; `lag` is that outstanding count, zero in
-  steady state because the draw normally completes within the request. (It used to be two
-  evidence transactions on the ground that AGE could not join one; that gap is closed.)
+  view declaring the word — under `GraphController._draw_after`, which every write wraps its draw
+  in and which `tests/guards/test_the_draw_follows_the_act.py` holds outside the transaction. A
+  failure there is **not a failed mutation**: the act is durable and already announced, so it is
+  logged with the assertion id, the outbox row is left standing, and the payload reports
+  `pending: true` beside whatever was drawn (`Asserted*.pending`); the runner (`run-worker.sh`,
+  `graph_engine/runner.py`) applies it. `lag` is that outstanding count, zero in steady state
+  because the draw normally completes within the request. (It used to propagate as a mutation
+  error for a committed act; before that it was two evidence transactions on the ground that AGE
+  could not join one. Both gaps are closed.)
 - **The graph carries no lifecycle state**, and neither does the API. If the claims do not say a
   node exists, it has no vertex — not a vertex with a flag, and not a `lifecycle` field either. Retracting is a `Standing(stands=False)` and removes the drawing
   (`projector.unproject`; edges go by FK cascade — the `DETACH`); `attest*` writes `Standing(stands=True)` and redraws it. There is
@@ -392,10 +406,17 @@ The load-bearing facts:
   `min(min_pending_seq − 1, max_seq)`, 0 while `needs_backfill`/`rebuilding`) and is safe against
   both a late-committing lower seq and a commit-then-crash; never store a per-graph "applied
   through" and never sweep the outbox by seq. `Graph.projection { status projectedThroughSeq lag
-  pending schemaStale }` exposes it. `manage.py reproject --incremental --organization <slug>`
+  pending schemaStale }` exposes it, and `/ht` warns when a consistent view's lag exceeds
+  `projection.lag_threshold` (`graph_engine/health.py`). `manage.py reproject --incremental --organization <slug>`
   converges the touched refs of the outstanding assertions in every consistent graph and settles
-  exactly those rows; full `reproject --graph` marks `rebuilding` before the drop and refolds
-  `CategoryAssertedTerm` / flagged identity / `CurrentStanding` before reading them.
+  exactly those rows; `--loop` is the runner (`graph_engine/runner.py`: a pass per organization with
+  outstanding rows, `--grace` leaving rows a request may still be drawing, poison-pill backoff, never
+  an automatic rebuild). Both bulk paths — `replay` via the runner and `projector.rebuild` — hold the
+  organization's **session advisory lock** (`graph_engine/locks.py`, per organization because the
+  outbox and the refolds are org grain; session-level because the work is many autocommit
+  statements and one long transaction would stall the `changes()` horizon). Full `reproject --graph`
+  marks `rebuilding` before the drop and refolds `CategoryAssertedTerm` / flagged identity /
+  `CurrentStanding` before reading them.
   `rematerialize --stale` reads `Projection.schema_hash` (Postgres), not vertex stamps.
   `draw_node` is an upsert on the `(graph, ref)` unique constraint and `reproject_node` clears
   first, so every per-node draw converges.

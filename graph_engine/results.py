@@ -116,6 +116,12 @@ class Asserted:
     #: caller performed one.
     subjects: tuple[Any, ...]
     drawings: tuple[Drawing, ...] = ()
+    #: The act committed and was announced, but its drawing did not finish: the
+    #: outbox row stands and `reproject --incremental` (the runner) owes it.
+    #: `drawings` is still what was read back — possibly partial across views —
+    #: never what the write intended. False is the ordinary case: the draw
+    #: completes inside the request.
+    pending: bool = False
 
     @property
     def subject(self) -> Any:
@@ -130,6 +136,8 @@ class Asserted:
         assertion: evidence_models.Assertion,
         subject: Any,
         drawings: tuple[Drawing, ...] = (),
+        *,
+        pending: bool = False,
     ) -> "Asserted":
         """Build a result for a write with one subject."""
-        return cls(assertion=assertion, subjects=(subject,), drawings=drawings)
+        return cls(assertion=assertion, subjects=(subject,), drawings=drawings, pending=pending)

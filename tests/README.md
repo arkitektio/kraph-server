@@ -56,7 +56,10 @@ uv run pytest tests/projection/test_rebuild_equals_the_write_path.py   # the mat
 | Module | Holds |
 |---|---|
 | `test_every_module_imports` | every module in the project imports |
-| `test_the_schema_renders_and_splits_its_grain` | the SDL builds; claim types stay off the view interfaces (C4) |
+| `test_the_schema_renders_and_splits_its_grain` | the SDL builds and **is** `test.graphql`; claim types stay off the view interfaces (C4) |
+| `test_migrations_are_committed` | every model change has its migration (A1) |
+| `test_the_draw_follows_the_act` | every write draws after its transaction, under `_draw_after`, never inside it (A1, A7) |
+| `test_the_projection_signals_survive_garbage_collection` | the namespace and graph-delete receivers are held strongly (A7) |
 | `test_the_projector_is_a_protocol` | the projection seam is a named protocol; no other module names the drawing's tables (A7) |
 | `test_internal_keys_never_leak` | `__`-prefixed bookkeeping never reaches `properties` (C4) |
 | `test_config_validates` | `config.yaml` validates |
@@ -119,6 +122,7 @@ uv run pytest tests/projection/test_rebuild_equals_the_write_path.py   # the mat
 | `test_drawing_converges` | drawing twice leaves one vertex |
 | `test_incremental_replay_draws_what_is_owed` | the outbox says what is owed; the replay draws that and settles exactly it |
 | `test_the_cursor_is_derived_from_the_outbox` | the cursor is never stored; a failed draw holds it; evidence commits first |
+| `test_the_runner_converges_what_the_write_path_left` | a failed drawing is a pending act; the runner applies the outbox under the organization lock that `rebuild` shares (A7) |
 | `test_the_state_vector_is_a_monoid` | incremental folds equal a recompute over random sequences |
 | `test_derived_properties_are_materialized` | every derived value is on the vertex before a read |
 | `test_a_write_reaches_every_view_that_reads_it` | ingest fans out over every informed individual in every view |

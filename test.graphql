@@ -427,6 +427,11 @@ input AssertStructureRelationExistsInput {
 """An assertion about a comment — a remark recorded about a structure"""
 type AssertedComment {
   """
+  True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
+  """
+  pending: Boolean!
+
+  """
   The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
   """
   assertion: Assertion!
@@ -442,6 +447,11 @@ An assertion that a structure is evidence for a node. Drawings are always empty:
 """
 type AssertedDescription {
   """
+  True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
+  """
+  pending: Boolean!
+
+  """
   The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
   """
   assertion: Assertion!
@@ -454,6 +464,11 @@ type AssertedDescription {
 
 """What asserting that instances are distinct recorded (RFC 0019)"""
 type AssertedDifference {
+  """
+  True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
+  """
+  pending: Boolean!
+
   """
   The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
   """
@@ -469,6 +484,11 @@ type AssertedDifference {
 An assertion about an entity: the act, the claim it recorded, and everywhere that claim is now drawn
 """
 type AssertedEntity {
+  """
+  True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
+  """
+  pending: Boolean!
+
   """
   The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
   """
@@ -490,6 +510,11 @@ An assertion about several instances made as one act, and everywhere they are no
 """
 type AssertedInstances {
   """
+  True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
+  """
+  pending: Boolean!
+
+  """
   The single claim covering the whole batch. One act by one actor is one assertion, which is why this is not a list
   """
   assertion: Assertion!
@@ -507,6 +532,11 @@ type AssertedInstances {
 An assertion about several link claims made as one act, and everywhere they are now drawn
 """
 type AssertedLinks {
+  """
+  True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
+  """
+  pending: Boolean!
+
   """The single claim covering the whole batch"""
   assertion: Assertion!
 
@@ -522,6 +552,11 @@ type AssertedLinks {
 """An assertion about a measurement — a structure measuring a node"""
 type AssertedMeasurement {
   """
+  True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
+  """
+  pending: Boolean!
+
+  """
   The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
   """
   assertion: Assertion!
@@ -535,6 +570,11 @@ type AssertedMeasurement {
 """An assertion about a metric — a measured value about a structure"""
 type AssertedMetric {
   """
+  True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
+  """
+  pending: Boolean!
+
+  """
   The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
   """
   assertion: Assertion!
@@ -545,6 +585,11 @@ type AssertedMetric {
 
 """An assertion about a natural event, and everywhere it is now drawn"""
 type AssertedNaturalEvent {
+  """
+  True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
+  """
+  pending: Boolean!
+
   """
   The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
   """
@@ -564,6 +609,11 @@ type AssertedNaturalEvent {
 """An assertion about one participation, and everywhere it is now drawn"""
 type AssertedParticipation {
   """
+  True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
+  """
+  pending: Boolean!
+
+  """
   The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
   """
   assertion: Assertion!
@@ -581,6 +631,11 @@ type AssertedParticipation {
 
 """An assertion about a protocol event, and everywhere it is now drawn"""
 type AssertedProtocolEvent {
+  """
+  True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
+  """
+  pending: Boolean!
+
   """
   The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
   """
@@ -602,6 +657,11 @@ An assertion about a relation, and everywhere that relation is now drawn
 """
 type AssertedRelation {
   """
+  True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
+  """
+  pending: Boolean!
+
+  """
   The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
   """
   assertion: Assertion!
@@ -620,6 +680,11 @@ type AssertedRelation {
 """An assertion that instances are one thing, and the claims it recorded"""
 type AssertedSameness {
   """
+  True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
+  """
+  pending: Boolean!
+
+  """
   The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
   """
   assertion: Assertion!
@@ -633,6 +698,11 @@ type AssertedSameness {
 """An assertion about a structure — a pointer to an external datum"""
 type AssertedStructure {
   """
+  True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
+  """
+  pending: Boolean!
+
+  """
   The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
   """
   assertion: Assertion!
@@ -645,6 +715,11 @@ type AssertedStructure {
 An assertion about a structure relation — a claim between two external data
 """
 type AssertedStructureRelation {
+  """
+  True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
+  """
+  pending: Boolean!
+
   """
   The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
   """

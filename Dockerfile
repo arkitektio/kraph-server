@@ -23,3 +23,7 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /workspace
 COPY --from=builder /opt/venv /opt/venv
 COPY . .
+
+# The web process. The deployment compose overrides this per service:
+# `bash run-debug.sh` for development, `bash run-worker.sh` for the runner.
+CMD ["bash", "run.sh"]

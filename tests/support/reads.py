@@ -109,9 +109,36 @@ NODES_BY_SEQ = """
     query L($graph: ID!) { nodes(graph: $graph, ordering: [{seq: DESC}]) { id } }
 """
 
+GRAPH_PROJECTION = """
+    query($id: ID!) {
+        graph(id: $id) {
+            id
+            projection { kind status projectedThroughSeq lag pending schemaStale derivedThroughSeq derivedAt rebuiltAt }
+        }
+    }
+"""
+
+NODES_PAGED = """
+    query Nodes($graph: ID!, $pagination: NodePaginationInput) {
+        nodes(graph: $graph, pagination: $pagination) { id }
+    }
+"""
+
 TERMS = """
     query Terms($filters: TermFilter) {
         terms(filters: $filters) { id kind key label description purl }
+    }
+"""
+
+STRUCTURE_KINDS = """
+    query StructureKinds($filters: StructureKindFilter) {
+        structureKinds(filters: $filters) { id identifier label }
+    }
+"""
+
+METRIC_KINDS = """
+    query MetricKinds($filters: MetricKindFilter) {
+        metricKinds(filters: $filters) { id key valueKind structureKind { identifier } }
     }
 """
 

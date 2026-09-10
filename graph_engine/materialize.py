@@ -292,7 +292,10 @@ def _materialize_atomically(definition, projector, user, organization, membershi
         from graph_engine import projector as projector_module
         from graph_engine.controller import GraphController
 
-        counts = projector_module.project_all(GraphController(projector=projector), graph)
+        from graph_engine import locks
+
+        with locks.organization_projection_lock(organization, wait=True):
+            counts = projector_module.project_all(GraphController(projector=projector), graph)
         # `unclassified` too: a backfill that drew nothing and one whose every
         # candidate was refused by a definition are indistinguishable from the
         # `Graph` row this returns, and the second is the one worth knowing about.

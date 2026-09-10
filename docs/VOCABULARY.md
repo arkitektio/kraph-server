@@ -172,7 +172,7 @@ kind — a per-view table — implements `Projector` and is chosen in `api/schem
 | Word | Means | Where |
 |---|---|---|
 | `Projection` | One view's drawing and its standing relative to the log: `status` (`consistent` / `needs_backfill` / `rebuilding`), `schema_hash` it was last fully derived under, `derived_at`, `rebuilt_at`, `kind` | `graph_engine.models.Projection` |
-| `PendingProjection` | The **outbox**: an assertion whose synchronous projection has not finished. Written in the evidence transaction; deleted **by id only** by the write that drew it or by an org-wide replay that applied it | `graph_engine.models.PendingProjection` |
+| `PendingProjection` | The **outbox**: an assertion whose synchronous projection has not finished. Written in the evidence transaction; deleted **by id only** by the write that drew it or by an org-wide replay that applied it. A write whose draw fails reports `pending: true` and leaves the row; the runner (`graph_engine/runner.py`) is what applies it | `graph_engine.models.PendingProjection` |
 | *cursor* (`projectedThroughSeq`) | `min(min_pending_seq − 1, max_seq)` for a consistent graph, 0 otherwise. **Derived, never stored.** Every committed assertion at or below it is drawn | `graph_engine/watermark.py` |
 | *lag* | `max_seq − cursor` | `watermark.position` |
 | *handle* | `Graph.age_name` — random (`g` + 32 hex), internal. Since RFC 0006 it names the graph's *namespace* schema — a name for output only. Never an address: `graph:` is a primary key | `core.models.new_projection_handle` |

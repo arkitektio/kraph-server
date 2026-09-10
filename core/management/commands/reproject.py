@@ -1,4 +1,4 @@
-"""Rebuild a graph's Apache AGE projection from the evidence base.
+"""Rebuild a graph's projection from the evidence base, or converge what the outbox owes.
 
 The operational form of the architecture's central claim. If this command cannot
 reproduce a graph, the evidence is not the source of truth and the projection is
@@ -19,7 +19,14 @@ Two modes:
   those rows. Organization-scoped because an outbox row is, and because a
   classification can widen membership in any view. `--dry-run` prints where each
   graph's cursor stands and how much work is owed. See `graph_engine/watermark.py`.
+  `--loop` turns it into the **runner**: the same pass every `--interval`
+  seconds, under the organization's projection lock, until SIGTERM. This is
+  what `run-worker.sh` starts; see `graph_engine/runner.py`.
 """
+
+import datetime
+import signal
+import threading
 
 from django.core.management.base import BaseCommand, CommandError
 
@@ -35,7 +42,7 @@ from graph_engine.controller import GraphController
 class Command(BaseCommand):
     """Drop and replay one graph, or every graph."""
 
-    help = "Rebuild a graph's AGE projection from the relational evidence base."
+    help = "Rebuild a graph's projection from the evidence base, or apply what the outbox owes (--incremental, --loop)."
 
     def add_arguments(self, parser) -> None:
         """Declare the command's arguments."""
@@ -48,12 +55,18 @@ class Command(BaseCommand):
             action="store_true",
             help="Report what would be done — and, with --incremental, where every cursor stands — without touching the projection.",
         )
+        parser.add_argument("--loop", action="store_true", help="With --incremental: keep applying the outbox every --interval seconds until SIGTERM. The runner.")
+        parser.add_argument("--interval", type=float, default=None, help="Seconds between passes in --loop mode (default 30).")
+        parser.add_argument("--grace", type=float, default=None, help="Leave outbox rows younger than this many seconds for the next pass (default 0; 30 in --loop mode) — the request that wrote them may still be drawing.")
 
     def handle(self, *args, **options) -> None:
         """Rebuild the selected graphs, or replay what is owed."""
         if options["incremental"]:
             return self._incremental(options)
 
+        for flag in ("loop", "interval", "grace"):
+            if options.get(flag) not in (None, False):
+                raise CommandError(f"--{flag} goes with --incremental: only the outbox is applied repeatedly; a full rebuild is a deliberate, one-off act.")
         if options["organization"]:
             raise CommandError("--organization goes with --incremental. A full rebuild names a graph with --graph, or --all.")
         if not options["graph"] and not options["all"]:
@@ -93,7 +106,16 @@ class Command(BaseCommand):
 
         controller = GraphController(projector=current_or_default())
 
-        from graph_engine import projector
+        from graph_engine import projector, runner
+
+        if options["loop"]:
+            if options["dry_run"]:
+                raise CommandError("--loop applies the outbox; --dry-run only reports it. Pick one.")
+            return self._loop(controller, options)
+        if options["interval"] is not None:
+            raise CommandError("--interval goes with --loop.")
+
+        grace = datetime.timedelta(seconds=float(options["grace"])) if options["grace"] else None
 
         for organization in organizations:
             graphs = list(models.Graph.objects.filter(organization=organization).order_by("id"))
@@ -110,12 +132,41 @@ class Command(BaseCommand):
                     self.stdout.write(f"  would redraw {len(refs)} ref(s) from seq {lowest} in every consistent graph")
                 continue
 
-            result = projector.replay(controller, organization)
+            # Through the runner, so the manual command and the loop share one
+            # policy: the organization's projection lock, waited for here.
+            [done] = runner.run_once(controller, [organization], wait_for_lock=True, older_than=grace)
+            if done.idle:
+                self.stdout.write("  nothing owed")
+                continue
+            result = done.report or {"graphs": [], "skipped": [], "settled": 0, "refs": 0}
             for entry in result["graphs"]:
                 self.stdout.write(self.style.SUCCESS(f"  {_graphs.describe(entry['graph'])}: {entry['nodes']} node(s) redrawn, {entry['erased']} erased, {entry['edges']} edge(s), {entry['participations']} participation(s), {entry['projected']} projected; cursor at {watermark.position(entry['graph']).cursor}"))
             for entry in result["skipped"]:
                 self.stdout.write(self.style.WARNING(f"  {_graphs.describe(entry['graph'])}: skipped, {entry['status']} — run a full `reproject --graph {entry['graph'].pk}`"))
             self.stdout.write(self.style.SUCCESS(f"  {result['settled']} assertion(s) settled over {result['refs']} ref(s)"))
+
+    def _loop(self, controller, options) -> None:
+        """The runner: `run_forever` until SIGTERM/SIGINT, then exit 0 after the current pass."""
+        from graph_engine import runner
+
+        interval = float(options["interval"]) if options["interval"] is not None else 30.0
+        grace = datetime.timedelta(seconds=float(options["grace"]) if options["grace"] is not None else 30.0)
+        if options["organization"]:
+            self.stdout.write(self.style.WARNING("--loop watches every organization; --organization is ignored in loop mode."))
+
+        stop = threading.Event()
+
+        def on_signal(signum, frame) -> None:
+            self.stdout.write(f"received {signal.Signals(signum).name}; stopping after the current pass")
+            stop.set()
+
+        if threading.current_thread() is threading.main_thread():
+            signal.signal(signal.SIGTERM, on_signal)
+            signal.signal(signal.SIGINT, on_signal)
+
+        self.stdout.write(f"runner: applying the outbox every {interval:g}s (grace {grace.total_seconds():g}s)")
+        state = runner.run_forever(controller, interval=interval, stop=stop, older_than=grace)
+        self.stdout.write(f"runner stopped after {state.passes} pass(es), {state.failures} failure(s)")
 
     def _standing(self, graph: models.Graph) -> str:
         position = watermark.position(graph)

@@ -1,8 +1,8 @@
 """The projection cursor is derived from the outbox, never stored (A7).
 
 A write that finishes drawing deletes its outbox row; a write whose projection
-raises leaves it, and the cursor of every view in the organization drops below
-it; a rebuild that dies after the drop leaves the view `REBUILDING` and honest
+raises reports `pending`, leaves it, and the cursor of every view in the
+organization drops below it; a rebuild that dies after the drop leaves the view `REBUILDING` and honest
 about it. `Graph.projection` reports all of it.
 """
 
@@ -14,7 +14,7 @@ from evidence import models as evidence_models
 from graph_engine import models as projection_models
 from graph_engine import projector, watermark
 from graph_engine.controller import GraphController
-from tests.support import writes
+from tests.support import reads, writes
 
 
 def test_cursor_is_a_pure_function_of_three_numbers() -> None:
@@ -58,7 +58,8 @@ async def test_a_projection_failure_leaves_the_row_and_holds_every_cursor(api_sc
         variable_values={"input": {"term": "AIS", "supportingEvidence": []}},
         context_value=simple_api_context,
     )
-    assert failed.errors, "the projector raised, so the mutation reports it"
+    assert failed.errors is None, "the act committed and was announced; a failed drawing is not a failed mutation"
+    assert failed.data["assertEntityExists"]["pending"] is True, "the payload says the drawing is owed"
 
     @sync_to_async
     def inspect():
@@ -170,23 +171,13 @@ def test_an_outbox_row_is_written_with_the_assertion_and_cleared_by_id(test_grap
     assert projection_models.PendingProjection.objects.filter(pk=other.pk).exists(), "settling one row never touches another, whatever their seqs"
 
 
-PROJECTION = """
-    query($id: ID!) {
-        graph(id: $id) {
-            id
-            projection { kind status projectedThroughSeq lag pending schemaStale derivedThroughSeq derivedAt rebuiltAt }
-        }
-    }
-"""
-
-
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_projection_reports_caught_up_after_a_write(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
     written = await api_schema.execute(writes.ASSERT_ENTITY_EXISTS, variable_values={"input": {"term": "AIS", "supportingEvidence": []}}, context_value=simple_api_context)
     assert written.errors is None, f"GraphQL errors: {written.errors}"
 
-    result = await api_schema.execute(PROJECTION, variable_values={"id": str(test_graph.pk)}, context_value=simple_api_context)
+    result = await api_schema.execute(reads.GRAPH_PROJECTION, variable_values={"id": str(test_graph.pk)}, context_value=simple_api_context)
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     projection = result.data["graph"]["projection"]
     assert projection["kind"] == "table"
@@ -195,3 +186,35 @@ async def test_projection_reports_caught_up_after_a_write(api_schema, simple_api
     assert projection["pending"] == 0
     assert projection["projectedThroughSeq"] > 0
     assert projection["schemaStale"] is False
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_the_health_check_reports_lag_from_the_outbox(api_schema, simple_api_context, test_graph: core_models.Graph, monkeypatch, settings) -> None:
+    """`/ht` warns from the same outbox the cursor is derived from — no second ledger.
+
+    Non-critical: a lagging drawing is degraded, not down, so the probe stays green
+    and carries the warning. Threshold 0 so one outstanding act is enough.
+    """
+    from graph_engine.health import ProjectionLagHealthCheck
+
+    settings.PROJECTION_LAG_THRESHOLD = 0
+
+    def caught_up():
+        check = ProjectionLagHealthCheck()
+        check.run_check()
+        return check.errors
+
+    assert await sync_to_async(caught_up)() == [], "nothing pending, nothing to warn about"
+
+    def down(*args, **kwargs):
+        raise RuntimeError("projector down")
+
+    monkeypatch.setattr(projector, "reproject_refs", down)
+    await api_schema.execute(writes.ASSERT_ENTITY_EXISTS, variable_values={"input": {"term": "AIS", "supportingEvidence": []}}, context_value=simple_api_context)
+
+    errors = await sync_to_async(caught_up)()
+    assert len(errors) == 1, "one warning line for the views behind the log"
+    assert "behind the log" in str(errors[0])
+    assert test_graph.name in str(errors[0])
+    assert ProjectionLagHealthCheck.critical_service is False

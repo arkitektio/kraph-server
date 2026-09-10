@@ -107,3 +107,21 @@ def test_it_redraws_and_says_how_much(test_graph: core_models.Graph, table_proje
     output = out.getvalue()
     assert f"redrawing {test_graph.name} (#{test_graph.pk}).AIS" in output
     assert "vertices redrawn" in output
+
+
+@pytest.mark.django_db(transaction=True)
+def test_the_runner_flags_go_with_incremental(table_projector) -> None:
+    """`--loop` applies the outbox repeatedly; a full rebuild is a one-off act and refuses it."""
+    with pytest.raises(CommandError, match="--loop goes with --incremental"):
+        call_command("reproject", all=True, loop=True, stdout=StringIO())
+    with pytest.raises(CommandError, match="--interval goes with --loop"):
+        call_command("reproject", incremental=True, all=True, interval=5, stdout=StringIO())
+    with pytest.raises(CommandError, match="Pick one"):
+        call_command("reproject", incremental=True, all=True, loop=True, dry_run=True, stdout=StringIO())
+
+
+@pytest.mark.django_db(transaction=True)
+def test_the_manual_incremental_pass_reports_an_idle_organization(test_graph: core_models.Graph, table_projector) -> None:
+    out = StringIO()
+    call_command("reproject", incremental=True, organization=test_graph.organization.slug, stdout=out)
+    assert "nothing owed" in out.getvalue()

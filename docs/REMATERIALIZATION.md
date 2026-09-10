@@ -111,9 +111,10 @@ erasing anything — the members of every vertex holding a touched ref, and the
 view-scoped sameness closure of the touched refs — so a merge or a split redraws
 both individuals concerned and nothing outside them moves.
 
-This service has no job queue to hand it to. `channels-redis` is present, but for
-subscriptions; introducing a worker is a deployment change, not a code change. So
-the limit is **accepted and stated** rather than hidden, on three grounds:
+This service has no job queue to hand it to. It has a **runner** now — `run-worker.sh`,
+`reproject --incremental --loop` — but that runner applies the outbox (the drawings
+individual writes owe), not a category's stale vertices, which no outbox row records.
+So the limit is **accepted and stated** rather than hidden, on three grounds:
 
 - it is no worse than what already ships — `backfill_category` runs `rebuild`
   over an entire graph inside `create_*_category`;

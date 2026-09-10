@@ -20,7 +20,7 @@ from kante.context import HttpContext
 # the id so their eighteen call sites did not have to change.
 ASSERT_ENTITY_EXISTS = """
     mutation AssertEntityExists($input: AssertEntityExistsInput!) {
-        assertEntityExists(input: $input) { instance { id } }
+        assertEntityExists(input: $input) { instance { id } pending }
     }
 """
 
@@ -62,6 +62,7 @@ ASSERT_SAME = """
     mutation AssertSameInstance($input: AssertSameInstanceInput!) {
         assertSameInstance(input: $input) {
             assertion { id }
+            pending
             links { kind id source { ... on Instance { id } } target { ... on Instance { id } } }
         }
     }
