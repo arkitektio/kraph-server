@@ -3756,15 +3756,16 @@ enum MetricKindField {
 }
 
 input MetricKindFilter {
-  """Filter by list of IDs"""
-  ids: [ID!] = null
-
-  """Search label and key"""
-  search: String = null
   AND: MetricKindFilter
   OR: MetricKindFilter
   NOT: MetricKindFilter
   DISTINCT: Boolean
+
+  """Filter by list of IDs"""
+  ids: [ID!]
+
+  """Search label and key"""
+  search: String
 
   """Filter by the kind of value this measurement carries"""
   valueKind: ValueKind
@@ -6217,15 +6218,16 @@ enum StructureKindField {
 }
 
 input StructureKindFilter {
-  """Filter by list of IDs"""
-  ids: [ID!] = null
-
-  """Search label and identifier"""
-  search: String = null
   AND: StructureKindFilter
   OR: StructureKindFilter
   NOT: StructureKindFilter
   DISTINCT: Boolean
+
+  """Filter by list of IDs"""
+  ids: [ID!]
+
+  """Search label and identifier"""
+  search: String
 
   """Filter by structure identifiers"""
   identifiers: [String!]
@@ -6705,15 +6707,16 @@ type Term @key(fields: "id", resolvable: true) {
 }
 
 input TermFilter {
-  """Filter by list of IDs"""
-  ids: [ID!] = null
-
-  """Search key, label and description"""
-  search: String = null
   AND: TermFilter
   OR: TermFilter
   NOT: TermFilter
   DISTINCT: Boolean
+
+  """Filter by list of IDs"""
+  ids: [ID!]
+
+  """Search key, label and description"""
+  search: String
 
   """Filter by what sort of thing the word names"""
   kinds: [TermKind!]

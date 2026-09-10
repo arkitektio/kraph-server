@@ -994,7 +994,9 @@ class Datalayer:
         """
         conf = self.get_bucket_config("media")
         ttl = self._session_duration(expires_in)
-        # TODO: FIX ORGANIZATION SCOPED MEDIA GRANTS
+        # Bucket-wide, read-only. Per-organization scoping is not expressible while
+        # stores are keyed by an opaque uuid with no organization prefix — see
+        # `_build_general_read_policy`; the fix is a key-layout change, not a policy.
         access_key, secret_key, session_token = (
             self._issue_temporary_user_access_credentials(
                 "media", organization_id, user_id, ttl

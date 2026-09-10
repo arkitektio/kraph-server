@@ -41,6 +41,7 @@ from django.db.models import Q
 
 from evidence import models as evidence_models
 from graph_engine import projector
+from graph_engine import input_models
 from graph_engine.retrieved import RetrievedNode
 
 #: Filters that only ever meant something against a drawn vertex's properties.
@@ -120,8 +121,7 @@ def narrow(rows: Any, filter_model: Any, ordering_models: Iterable[Any], paginat
     if not order_by:
         order_by = ["-assertion__seq", "-id"]
 
-    offset = int(getattr(pagination_model, "offset", 0) or 0)
-    limit = int(getattr(pagination_model, "limit", 100) or 100)
+    offset, limit = input_models.clamp_window(getattr(pagination_model, "offset", None), getattr(pagination_model, "limit", None))
     return list(rows.order_by(*order_by)[offset : offset + limit])
 
 

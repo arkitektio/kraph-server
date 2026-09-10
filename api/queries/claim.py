@@ -70,7 +70,4 @@ def standings(
     if id is not None:
         rows = rows.filter(target_id=str(id))
     rows = strawberry_django.filters.apply(filters, rows, info)
-    model = pagination.to_pydantic() if pagination else None
-    offset = int(getattr(model, "offset", 0) or 0)
-    limit = int(getattr(model, "limit", 100) or 100)
-    return list(rows[offset : offset + limit])  # type: ignore[arg-type]
+    return api_pagination.slice_window(rows, pagination)  # type: ignore[arg-type]

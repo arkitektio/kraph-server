@@ -25,11 +25,8 @@ from evidence import models as evidence_models
 
 
 def _page(queryset, page: Optional[pagination.LogPaginationInput]) -> list:
-    """The offset/limit window, defaulting to the first hundred — `kinds._page` for the log."""
-    model = page.to_pydantic() if page else None
-    offset = int(getattr(model, "offset", 0) or 0)
-    limit = int(getattr(model, "limit", 100) or 100)
-    return list(queryset[offset : offset + limit])
+    """The offset/limit window — first hundred by default, clamped at `pagination.MAX_LIMIT`."""
+    return pagination.slice_window(queryset, page)
 
 
 def _scoped(info: Info):
@@ -67,7 +64,7 @@ def changes(info: Info, after_seq: int, limit: int = 100) -> types.Changes:
     consumer that stores `nextSeq` misses nothing.
     """
     scoped = _scoped(info)
-    limit = max(1, min(int(limit), 1000))
+    limit = max(1, min(int(limit), pagination.MAX_LIMIT))
     rows = list(log.before_every_open_transaction(scoped.filter(seq__gt=int(after_seq)).order_by("seq"))[:limit])
     next_seq = int(rows[-1].seq) if rows else int(after_seq)
     return types.Changes(assertions=rows, next_seq=next_seq, horizon=log.horizon(scoped))  # type: ignore[arg-type]

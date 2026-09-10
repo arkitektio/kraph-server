@@ -4,7 +4,7 @@ from typing import List
 import strawberry
 from kante.types import Info
 
-from api import types, context
+from api import types, context, pagination
 
 
 def metric(
@@ -72,7 +72,9 @@ def metrics(
     controller = context.get_controller()
     controller._assert_can_access(kind.organization, info)
 
-    return [types.Metric(_value=RetrievedMetric.from_row(controller, row)) for row in writer.standing_metrics_for_kind(kind)]
+    # No pagination argument (see above), but not unbounded either: the same
+    # ceiling every paged list has.
+    return [types.Metric(_value=RetrievedMetric.from_row(controller, row)) for row in list(writer.standing_metrics_for_kind(kind))[: pagination.MAX_LIMIT]]
 
 
 def metrics_for_structure(

@@ -9,7 +9,8 @@ AUTHENTIKATE = {**AUTHENTIKATE, "allow_static_tokens_in_production": True, "stat
 # grant that cannot be scoped now refuses rather than quietly returning this service's permanent
 # key. Tests that exercise a grant care about its *shape*, not its credentials.
 DATALAYER = {"media": {"path": "/tmp/datalayer_test", "jwt_key": "testkey"}, "allow_unscoped_fallback": True}
-DATALAYER_URL = "http://testserver/datalayer"
+# The compose stack's redis (tests/integration/docker-compose.yaml); `/ht` pings it.
+REDIS_URL = "redis://localhost:6666/0"
 # The subscription tests listen through a stub consumer on the process-local layer;
 # production uses channels_redis (settings.py), which the test stack does not need.
 CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}

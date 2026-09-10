@@ -496,6 +496,10 @@ class GraphController:
             # What this claim came from, under the same act (RFC 0017).
             self._cite(organization, assertion, claim_ref, cited)
 
+        from graph_engine import projector
+
+        node = evidence_models.Instance.objects.for_organization(organization).select_related("term").get(pk=claim_ref)
+
         # And only now the projection — into **every** view that declares the word
         # this entity was claimed under. Two graphs that both declare "AIS" both
         # contain it, so drawing it in one would leave the other disagreeing with
@@ -1070,6 +1074,7 @@ class GraphController:
                 parent=parent,
             )
 
+        # Nothing to draw, so nothing that can fail after the act: settle directly.
         self._settle(assertion)
         return results.Asserted.of(assertion, comment)
 
@@ -1087,6 +1092,7 @@ class GraphController:
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             writer.retract(organization, comment, assertion, at=at, confidence=confidence)
 
+        # Nothing to draw, so nothing that can fail after the act: settle directly.
         self._settle(assertion)
         return results.Asserted.of(assertion, comment)
 
@@ -1099,6 +1105,7 @@ class GraphController:
             assertion = self._create_assertion(organization, self._provenance_from_info(info))
             writer.attest(organization, comment, assertion, at=at, confidence=confidence)
 
+        # Nothing to draw, so nothing that can fail after the act: settle directly.
         self._settle(assertion)
         return results.Asserted.of(assertion, comment)
 
@@ -2536,6 +2543,7 @@ class GraphController:
         # No drawings, and none possible: both endpoints are structures, which are
         # Postgres rows with no vertex, so `graphs_for_refs` returns nothing and
         # there is no edge to draw between them.
+        # Nothing to draw, so nothing that can fail after the act: settle directly.
         self._settle(assertion)
         return results.Asserted.of(assertion, link)
 
@@ -3082,8 +3090,8 @@ class GraphController:
             label=label,
             predicates=self._entity_predicates(filters, indexed_keys=indexed_keys),
             order=self._entity_order(ordering, indexed_keys=indexed_keys),
-            offset=pagination.offset if pagination and pagination.offset is not None else 0,
-            limit=pagination.limit if pagination and pagination.limit is not None else 200,
+            offset=input_models.clamp_window(getattr(pagination, "offset", None), getattr(pagination, "limit", None))[0],
+            limit=input_models.clamp_window(getattr(pagination, "offset", None), getattr(pagination, "limit", None))[1],
         )
         records = self.projector.list_drawn(category.graph, spec)
 
@@ -3100,8 +3108,7 @@ class GraphController:
         queryset = self._apply_structure_filters(queryset, filters)
         queryset = queryset.order_by(*self._structure_ordering(ordering))
 
-        offset = pagination.offset if pagination and pagination.offset is not None else 0
-        limit = pagination.limit if pagination and pagination.limit is not None else 200
+        offset, limit = input_models.clamp_window(getattr(pagination, "offset", None), getattr(pagination, "limit", None))
 
         return [RetrievedStructure.from_row(self, row) for row in queryset[offset : offset + limit]]
 

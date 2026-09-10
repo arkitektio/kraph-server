@@ -11,7 +11,7 @@ from kante.types import Info
 
 from api import context, inputs, types
 from evidence import models as evidence_models
-from ._guards import delete_or_explain
+from ._guards import delete_or_explain, refuse_bad_color
 
 
 def _resolve(info: Info, kind_id: str) -> evidence_models.StructureKind:
@@ -34,8 +34,7 @@ def update_structure_kind(info: Info, input: inputs.UpdateStructureKindInput) ->
     model = input.to_pydantic()
     kind = _resolve(info, str(model.id))
 
-    if model.color:
-        assert len(model.color) in (3, 4), "Color must be a list of 3 or 4 values RGBA"
+    refuse_bad_color(model.color)
 
     kind.label = model.label or kind.label
     kind.description = model.description or kind.description

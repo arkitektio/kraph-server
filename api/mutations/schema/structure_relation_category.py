@@ -7,7 +7,7 @@ from api import inputs, types
 from core import enums, models
 from evidence import writer
 from datalayer import models as dl_models
-from ._guards import delete_or_explain, refuse_edge_properties
+from ._guards import delete_or_explain, refuse_bad_color, refuse_edge_properties
 from .._scoped import accessible_graph, schema_graph, schema_scoped, scoped
 
 
@@ -23,8 +23,7 @@ def create_structure_relation_category(
     # `validate_derivation_rules` — see `refuse_edge_properties`.
     refuse_edge_properties(model.key, model.properties)
 
-    if model.color:
-        assert len(model.color) == 3 or len(model.color) == 4, "Color must be a list of 3 or 4 values RGBA"
+    refuse_bad_color(model.color)
 
     media_store = None
     if model.image:
@@ -82,8 +81,7 @@ def update_structure_relation_category(info: Info, input: inputs.UpdateStructure
 
     item = schema_scoped(info, models.StructureRelationCategory, model.id, what="structure relation category")
 
-    if model.color:
-        assert len(model.color) == 3 or len(model.color) == 4, "Color must be a list of 3 or 4 values RGBA"
+    refuse_bad_color(model.color)
 
     if model.image:
         media_store = dl_models.MediaStore.objects.get(

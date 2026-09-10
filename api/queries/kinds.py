@@ -22,12 +22,9 @@ from api import context, filters, pagination, types
 from evidence import models as evidence_models
 
 
-def _page(queryset: Any, page: pagination.StructurePaginationInput | None) -> list[Any]:
-    """Apply the offset/limit window, defaulting to the first hundred."""
-    model = page.to_pydantic() if page else None
-    offset = int(getattr(model, "offset", 0) or 0)
-    limit = int(getattr(model, "limit", 100) or 100)
-    return list(queryset[offset : offset + limit])
+def _page(queryset: Any, page: pagination.VocabularyPaginationInput | None) -> list[Any]:
+    """The offset/limit window — first hundred by default, clamped at `pagination.MAX_LIMIT`."""
+    return pagination.slice_window(queryset, page)
 
 
 def terms(

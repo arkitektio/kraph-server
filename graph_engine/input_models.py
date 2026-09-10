@@ -13,6 +13,20 @@ from evidence.comments import DescendantNode
 from graph_engine import scalars
 from core import enums
 
+#: The list window every read shares: first hundred by default, never more than a
+#: thousand per page. `api/pagination.py` re-exports these; the controller clamps
+#: with them too, so an engine-level list cannot exceed what the API promises.
+DEFAULT_LIMIT = 100
+MAX_LIMIT = 1000
+
+
+def clamp_window(offset: int | None, limit: int | None, *, default: int = DEFAULT_LIMIT, maximum: int = MAX_LIMIT) -> tuple[int, int]:
+    """`(offset, limit)` clamped to `offset >= 0`, `1 <= limit <= maximum`."""
+    off = max(0, int(offset or 0))
+    lim = int(limit if limit is not None else default)
+    return off, max(1, min(lim, maximum))
+
+
 
 class StrictModel(BaseModel):
     """Base for every input model here: a key that is not a field is an error.

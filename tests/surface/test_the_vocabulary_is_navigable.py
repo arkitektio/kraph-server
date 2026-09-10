@@ -168,3 +168,78 @@ async def test_terms_can_be_filtered_by_kind_and_by_whether_a_graph_speaks_them(
     keys = {row["key"] for row in undeclared.data["terms"]}
     assert key in keys, "A word no graph declares is still the organization's"
     assert "AIS" not in keys, "And one every graph declares is not in that list"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_a_word_is_findable_by_id_and_by_text(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+) -> None:
+    """`ids` and `search` narrow the vocabulary; `search` reads key, label and description.
+
+    History: the three vocabulary filters declared `ids` and `search` as bare
+    fields with no resolver, so strawberry_django applied them as `Q(ids=…)` /
+    `Q(search=…)` against models with no such column, and every use raised
+    `FieldError`. No test passed either argument.
+    """
+    stamp = uuid.uuid4().hex[:6]
+    wanted = await api_schema.execute(writes.CREATE_TERM, variable_values={"input": {"kind": "ENTITY", "key": f"Wanted_{stamp}", "label": f"Axon initial segment {stamp}", "description": "where spikes begin"}}, context_value=simple_api_context)
+    assert wanted.errors is None, f"GraphQL errors: {wanted.errors}"
+    other = await api_schema.execute(writes.CREATE_TERM, variable_values={"input": {"kind": "ENTITY", "key": f"Other_{stamp}", "label": "Dendrite", "description": "receives"}}, context_value=simple_api_context)
+    assert other.errors is None, f"GraphQL errors: {other.errors}"
+    wanted_id = wanted.data["createTerm"]["id"]
+
+    by_id = await api_schema.execute(reads.TERMS, variable_values={"filters": {"ids": [wanted_id]}}, context_value=simple_api_context)
+    assert by_id.errors is None, f"GraphQL errors: {by_id.errors}"
+    assert [row["id"] for row in by_id.data["terms"]] == [wanted_id]
+
+    by_label = await api_schema.execute(reads.TERMS, variable_values={"filters": {"search": f"initial segment {stamp}"}}, context_value=simple_api_context)
+    assert by_label.errors is None, f"GraphQL errors: {by_label.errors}"
+    assert [row["id"] for row in by_label.data["terms"]] == [wanted_id]
+
+    by_description = await api_schema.execute(reads.TERMS, variable_values={"filters": {"search": "spikes begin"}}, context_value=simple_api_context)
+    assert by_description.errors is None, f"GraphQL errors: {by_description.errors}"
+    assert wanted_id in {row["id"] for row in by_description.data["terms"]}
+    assert other.data["createTerm"]["id"] not in {row["id"] for row in by_description.data["terms"]}
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_a_kind_is_findable_by_id_and_by_text(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+) -> None:
+    """The same two filters on `structureKinds` and `metricKinds` — the kinds are vocabulary too."""
+    from core.enums import ValueKind
+    from evidence import writer
+
+    @sync_to_async
+    def seed() -> tuple[str, str]:
+        organization = test_graph.organization
+        roi = writer.ensure_structure_kind(organization, "@mikro/roi")
+        roi.label = "Region of interest"
+        roi.save()
+        writer.ensure_structure_kind(organization, "@mikro/image")
+        length = writer.ensure_metric_kind(organization, roi, "vector_length", ValueKind.FLOAT)
+        return str(roi.pk), str(length.pk)
+
+    roi_id, length_id = await seed()
+
+    kinds = await api_schema.execute(reads.STRUCTURE_KINDS, variable_values={"filters": {"search": "region of"}}, context_value=simple_api_context)
+    assert kinds.errors is None, f"GraphQL errors: {kinds.errors}"
+    assert [row["id"] for row in kinds.data["structureKinds"]] == [roi_id]
+
+    kinds = await api_schema.execute(reads.STRUCTURE_KINDS, variable_values={"filters": {"ids": [roi_id]}}, context_value=simple_api_context)
+    assert kinds.errors is None, f"GraphQL errors: {kinds.errors}"
+    assert [row["identifier"] for row in kinds.data["structureKinds"]] == ["@mikro/roi"]
+
+    metrics = await api_schema.execute(reads.METRIC_KINDS, variable_values={"filters": {"search": "vector_len"}}, context_value=simple_api_context)
+    assert metrics.errors is None, f"GraphQL errors: {metrics.errors}"
+    assert [row["id"] for row in metrics.data["metricKinds"]] == [length_id]
+
+    metrics = await api_schema.execute(reads.METRIC_KINDS, variable_values={"filters": {"ids": [length_id]}}, context_value=simple_api_context)
+    assert metrics.errors is None, f"GraphQL errors: {metrics.errors}"
+    assert [row["key"] for row in metrics.data["metricKinds"]] == ["vector_length"]

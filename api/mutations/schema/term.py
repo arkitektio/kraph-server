@@ -24,7 +24,7 @@ from kante.types import Info
 from api import context, inputs, types
 from datalayer import models as datalayer_models
 from evidence import models as evidence_models
-from ._guards import delete_or_explain
+from ._guards import delete_or_explain, refuse_bad_color
 
 
 def _resolve(info: Info, term_id: str) -> evidence_models.Term:
@@ -53,8 +53,7 @@ def create_term(info: Info, input: inputs.CreateTermInput) -> types.Term:
     model = input.to_pydantic()
     organization = context.get_active_organization(info)
 
-    if model.color:
-        assert len(model.color) in (3, 4), "Color must be a list of 3 or 4 values RGBA"
+    refuse_bad_color(model.color)
 
     term = writer.ensure_term(organization, model.kind, model.key)
 
@@ -81,8 +80,7 @@ def update_term(info: Info, input: inputs.UpdateTermInput) -> types.Term:
     model = input.to_pydantic()
     term = _resolve(info, str(model.id))
 
-    if model.color:
-        assert len(model.color) in (3, 4), "Color must be a list of 3 or 4 values RGBA"
+    refuse_bad_color(model.color)
 
     term.label = model.label or term.label
     term.description = model.description or term.description

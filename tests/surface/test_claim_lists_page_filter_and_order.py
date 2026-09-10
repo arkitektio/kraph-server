@@ -184,3 +184,26 @@ async def test_claim_lists_order_by_the_logs_own_order(api_schema, simple_api_co
     assert read.errors is None, f"GraphQL errors: {read.errors}"
     ids = [row["id"] for row in read.data["nodes"]]
     assert ids.index(second) < ids.index(first), "the later act comes first under seq DESC"
+
+
+def test_the_page_window_is_clamped() -> None:
+    """A `limit` above the ceiling is the ceiling; a missing one is the default; never an error.
+
+    History: every list but `changes` accepted `limit: 10000000` as written.
+    """
+    from api import pagination
+
+    assert pagination.window(None) == (0, pagination.DEFAULT_LIMIT)
+    assert pagination.window(type("P", (), {"offset": 20, "limit": 5000})()) == (20, pagination.MAX_LIMIT)
+    assert pagination.window(type("P", (), {"offset": -3, "limit": 0})()) == (0, pagination.DEFAULT_LIMIT)
+    assert pagination.MAX_LIMIT == 1000
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_a_limit_above_the_ceiling_is_not_an_error(api_schema, simple_api_context, test_graph) -> None:
+    await writes.create_entity(api_schema, simple_api_context, "AIS")
+
+    result = await api_schema.execute(reads.NODES_PAGED, variable_values={"graph": str(test_graph.id), "pagination": {"limit": 5000, "offset": 0}}, context_value=simple_api_context)
+    assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert 1 <= len(result.data["nodes"]) <= 1000

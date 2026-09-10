@@ -37,6 +37,7 @@ from typing import Any, Iterable
 
 from evidence import claims as claims_module
 from evidence import models as evidence_models
+from graph_engine import input_models
 from evidence import selector as selector_module
 
 #: Filters that only ever meant something against an Apache AGE edge's properties.
@@ -137,8 +138,7 @@ def narrow(links: Any, filter_model: Any, ordering_models: Iterable[Any], pagina
     if not order_by:
         order_by = ["-assertion__seq", "-id"]
 
-    offset = int(getattr(pagination_model, "offset", 0) or 0)
-    limit = int(getattr(pagination_model, "limit", 100) or 100)
+    offset, limit = input_models.clamp_window(getattr(pagination_model, "offset", None), getattr(pagination_model, "limit", None))
     return list(links.order_by(*order_by)[offset : offset + limit])
 
 

@@ -536,7 +536,6 @@ class Mutation:
 
 def create_schema(
     max_depth: int = 10,
-    debug: bool = False,
     projector: Optional[Projector] = None,
 ) -> kante.Schema:
     """Build the served GraphQL schema.
@@ -550,7 +549,6 @@ def create_schema(
 
     Args:
         max_depth: Maximum query depth (default 10)
-        debug: Enable debug mode
         projector: The projection kind every operation draws through. One per process.
 
     Returns:
@@ -662,14 +660,8 @@ def get_schema_sdl() -> str:
     return str(schema)
 
 
-def print_schema() -> None:
-    """Print the schema SDL to stdout."""
-    print(get_schema_sdl())
-
-
 schema = create_schema(
     max_depth=10,
-    debug=True,
     # The one place the projection kind is chosen. A second kind would be a
     # second `Projector` here — and a registry keyed by `Projection.kind` once
     # two exist.

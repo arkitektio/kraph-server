@@ -1,6 +1,32 @@
-from typing import Optional
+from typing import Any, Optional
+
 import kante
+
 from graph_engine import input_models
+
+#: Every list defaults to the first hundred and is clamped at a thousand — the
+#: same ceiling `changes(afterSeq:)` has always had. `limit` used to be unbounded
+#: everywhere else, so `limit: 10000000` was accepted as written.
+DEFAULT_LIMIT = input_models.DEFAULT_LIMIT
+MAX_LIMIT = input_models.MAX_LIMIT
+
+
+def window(page: Any, *, default: int = DEFAULT_LIMIT, maximum: int = MAX_LIMIT) -> tuple[int, int]:
+    """`(offset, limit)` from a pagination input, its pydantic model, or None.
+
+    Clamped: `offset >= 0`, `1 <= limit <= maximum`. A client asking for more than
+    the ceiling gets the ceiling, not an error — a page is a page.
+    """
+    model = page.to_pydantic() if hasattr(page, "to_pydantic") else page
+    offset = max(0, int(getattr(model, "offset", 0) or 0))
+    limit = int(getattr(model, "limit", default) or default)
+    return offset, max(1, min(limit, maximum))
+
+
+def slice_window(queryset: Any, page: Any) -> list:
+    """`window` applied to a queryset (or any sliceable)."""
+    offset, limit = window(page)
+    return list(queryset[offset : offset + limit])
 
 
 @kante.pydantic_input(input_models.EntityPagination, all_fields=True, description="Pagination options for querying entities")

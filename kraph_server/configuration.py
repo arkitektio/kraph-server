@@ -92,6 +92,16 @@ class DatalayerSettings(BaseModel):
     bigfile: Optional[DatalayerBucket] = Field(default=None, description="Bucket for large binary files.")
 
 
+class ProjectionSettings(BaseModel):
+    """How the projection's health is judged."""
+
+    lag_threshold: int = Field(
+        default=1000,
+        ge=0,
+        description="The `/ht` health check warns when a consistent view is more than this many assertions behind its organization's log.",
+    )
+
+
 class Settings(BaseSettings):
     """Top-level, validated configuration for the kraph service."""
 
@@ -102,6 +112,7 @@ class Settings(BaseSettings):
     redis: RedisSettings = Field(description="Redis connection.")
     authentikate: AuthentikateSettings = Field(description="Token-verification config (authentikate).")
     datalayer: DatalayerSettings = Field(description="S3 storage connection and buckets.")
+    projection: ProjectionSettings = Field(default_factory=ProjectionSettings, description="Projection health thresholds.")
 
     @classmethod
     def settings_customise_sources(

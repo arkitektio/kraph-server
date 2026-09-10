@@ -196,3 +196,21 @@ async def test_moving_a_box_runs_no_ddl(api_schema, simple_api_context, test_gra
 
     await sync_to_async(category.refresh_from_db)()
     assert (category.position_x, category.position_y) == (3.0, 4.0)
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_a_malformed_colour_is_refused_with_a_message(api_schema, simple_api_context, test_graph) -> None:
+    """A colour is three or four integers in [0, 255]; anything else is refused by name, not by `assert`.
+
+    History: fifteen `assert len(color) in (3, 4)` sites — stripped under `python -O`,
+    and an `AssertionError` where the client needed a sentence.
+    """
+    import uuid
+
+    refused = await api_schema.execute(writes.CREATE_TERM, variable_values={"input": {"kind": "ENTITY", "key": f"Colour_{uuid.uuid4().hex[:6]}", "color": [1, 2]}}, context_value=simple_api_context)
+    assert refused.errors, "two values is neither RGB nor RGBA"
+    assert "RGB" in str(refused.errors[0])
+
+    accepted = await api_schema.execute(writes.CREATE_TERM, variable_values={"input": {"kind": "ENTITY", "key": f"Colour_{uuid.uuid4().hex[:6]}", "color": [10, 20, 30, 40]}}, context_value=simple_api_context)
+    assert accepted.errors is None, f"GraphQL errors: {accepted.errors}"

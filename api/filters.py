@@ -171,6 +171,20 @@ class EntityCategoryFilter(CategoryFilter):
         return Q(**{f"{prefix}key__in": value.keys})
 
 
+def _text_search(prefix: str, value: str, *columns: str) -> Q:
+    """Substring match over several columns — `icontains`, not `__search`.
+
+    Postgres full-text search stems, and a vocabulary is made of short
+    identifiers (`AIS`, `@mikro/roi`, `vector_length`) that stemming mangles.
+    The node lists use the same operator over `Term.key`/`label` for the same
+    reason (`api/queries/_nodes.py`).
+    """
+    q = Q()
+    for column in columns:
+        q |= Q(**{f"{prefix}{column}__icontains": value})
+    return q
+
+
 @kante.filter_type(evidence_models.MetricKind)
 class MetricKindFilter:
     """Filter options for metric kind queries.
@@ -181,8 +195,16 @@ class MetricKindFilter:
     resolver's job.
     """
 
-    ids: Optional[List[strawberry.ID]] = kante.filter_field(default=None, description="Filter by list of IDs")
-    search: Optional[str] = kante.filter_field(default=None, description="Search label and key")
+    # Methods, not bare fields: a `filter_field` with no resolver is applied by
+    # strawberry_django as `Q(<name>=value)`, and neither `ids` nor `search` is a
+    # column — every use raised `FieldError`. The log filters below say the same.
+    @kante.filter_field(description="Filter by list of IDs")
+    def ids(self, info: kante.Info, value: List[strawberry.ID], prefix: str) -> Q:
+        return Q(**{f"{prefix}id__in": [str(v) for v in value]})
+
+    @kante.filter_field(description="Search label and key")
+    def search(self, info: kante.Info, value: str, prefix: str) -> Q:
+        return _text_search(prefix, value, "key", "label", "description")
 
     @kante.filter_field(description="Filter by the kind of value this measurement carries")
     def value_kind(self, info: kante.Info, value: enums.ValueKind, prefix: str) -> Q:
@@ -231,8 +253,13 @@ class TermFilter:
     the tenant fence is the resolver's, not the client's.
     """
 
-    ids: Optional[List[strawberry.ID]] = kante.filter_field(default=None, description="Filter by list of IDs")
-    search: Optional[str] = kante.filter_field(default=None, description="Search key, label and description")
+    @kante.filter_field(description="Filter by list of IDs")
+    def ids(self, info: kante.Info, value: List[strawberry.ID], prefix: str) -> Q:
+        return Q(**{f"{prefix}id__in": [str(v) for v in value]})
+
+    @kante.filter_field(description="Search key, label and description")
+    def search(self, info: kante.Info, value: str, prefix: str) -> Q:
+        return _text_search(prefix, value, "key", "label", "description")
 
     @kante.filter_field(description="Filter by what sort of thing the word names")
     def kinds(self, info: kante.Info, value: List[enums.TermKind], prefix: str) -> Q:
@@ -351,8 +378,13 @@ class StandingFilter:
 class StructureKindFilter:
     """Filter options for structure kind queries. Standalone — see `MetricKindFilter`."""
 
-    ids: Optional[List[strawberry.ID]] = kante.filter_field(default=None, description="Filter by list of IDs")
-    search: Optional[str] = kante.filter_field(default=None, description="Search label and identifier")
+    @kante.filter_field(description="Filter by list of IDs")
+    def ids(self, info: kante.Info, value: List[strawberry.ID], prefix: str) -> Q:
+        return Q(**{f"{prefix}id__in": [str(v) for v in value]})
+
+    @kante.filter_field(description="Search label and identifier")
+    def search(self, info: kante.Info, value: str, prefix: str) -> Q:
+        return _text_search(prefix, value, "identifier", "label", "description")
 
     @kante.filter_field(description="Filter by structure identifiers")
     def identifiers(self, info: kante.Info, value: List[str], prefix: str) -> Q:

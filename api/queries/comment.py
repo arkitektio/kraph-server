@@ -11,7 +11,7 @@ from typing import List
 import strawberry
 from kante.types import Info
 
-from api import context, types
+from api import context, types, pagination
 from evidence import models as evidence_models
 
 
@@ -34,7 +34,7 @@ def comments_for(info: Info, identifier: str, object: strawberry.ID) -> List[typ
     structure = evidence_models.Structure.objects.for_organization(organization).filter(identifier=identifier, object=str(object)).first()
     if structure is None:
         return []
-    return list(evidence_models.Comment.objects.for_organization(organization).filter(structure=structure).select_related("assertion").order_by("-created_at"))  # type: ignore[arg-type]
+    return list(evidence_models.Comment.objects.for_organization(organization).filter(structure=structure).select_related("assertion").order_by("-created_at")[: pagination.MAX_LIMIT])  # type: ignore[arg-type]
 
 
 def my_mentions(info: Info) -> List[types.Comment]:
@@ -46,4 +46,4 @@ def my_mentions(info: Info) -> List[types.Comment]:
     """
     organization = context.get_active_organization(info)
     subject = str(info.context.request.user.id)
-    return list(evidence_models.Comment.objects.for_organization(organization).filter(mentions__contains=[subject]).select_related("assertion").order_by("-created_at"))  # type: ignore[arg-type]
+    return list(evidence_models.Comment.objects.for_organization(organization).filter(mentions__contains=[subject]).select_related("assertion").order_by("-created_at")[: pagination.MAX_LIMIT])  # type: ignore[arg-type]

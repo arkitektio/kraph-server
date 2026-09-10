@@ -57,3 +57,17 @@ def refuse_edge_properties(key: str, property_definitions) -> None:
     problems = edge_property_problems(key, property_definitions)
     if problems:
         raise ValueError("Cannot create this category:\n  - " + "\n  - ".join(problems))
+
+
+def refuse_bad_color(color) -> None:
+    """Refuse a colour that is not RGB or RGBA. No-op for None or empty.
+
+    Three or four integers in [0, 255]. It was `assert len(color) in (3, 4)` at
+    fifteen sites — stripped under `python -O`, and an `AssertionError` rather
+    than a refusal a client can read.
+    """
+    if not color:
+        return
+    values = list(color)
+    if len(values) not in (3, 4) or any(not isinstance(c, int) or isinstance(c, bool) or not 0 <= c <= 255 for c in values):
+        raise ValueError(f"Color must be three or four integers in [0, 255] (RGB or RGBA), got {values!r}")

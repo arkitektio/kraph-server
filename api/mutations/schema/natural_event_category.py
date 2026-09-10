@@ -7,7 +7,7 @@ from api import context, inputs, types
 from core import enums, models
 from datalayer import models as dl_models
 from evidence import writer
-from ._guards import delete_or_explain
+from ._guards import delete_or_explain, refuse_bad_color
 from .._scoped import accessible_graph, schema_graph, schema_scoped, scoped
 from ._rematerialize import fingerprint, rematerialize_if_moved
 
@@ -20,8 +20,7 @@ def create_natural_event_category(
 
     model = input.to_pydantic()  # Validate input with Pydantic models
 
-    if model.color:
-        assert len(model.color) == 3 or len(model.color) == 4, "Color must be a list of 3 or 4 values RGBA"
+    refuse_bad_color(model.color)
 
     media_store = None
     if model.image:
@@ -88,8 +87,7 @@ def update_natural_event_category(info: Info, input: inputs.UpdateNaturalEventCa
     model = input.to_pydantic()  # Validate input with Pydantic models
 
     item = schema_scoped(info, models.NaturalEventCategory, model.id, what="natural event category")
-    if model.color:
-        assert len(model.color) == 3 or len(model.color) == 4, "Color must be a list of 3 or 4 values RGBA"
+    refuse_bad_color(model.color)
 
     if model.image:
         media_store = dl_models.MediaStore.objects.get(

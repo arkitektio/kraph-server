@@ -7,7 +7,7 @@ from api import context, inputs, types
 from core import enums, models
 from datalayer import models as dl_models
 from evidence import writer
-from ._guards import delete_or_explain, refuse_edge_properties
+from ._guards import delete_or_explain, refuse_bad_color, refuse_edge_properties
 from .._scoped import accessible_graph, schema_graph, schema_scoped, scoped
 
 
@@ -30,8 +30,7 @@ def create_relation_category(
     # call — no test reaches this mutation, which is how it stayed that way.
     refuse_edge_properties(model.key, model.property_definitions)
 
-    if model.color:
-        assert len(model.color) == 3 or len(model.color) == 4, "Color must be a list of 3 or 4 values RGBA"
+    refuse_bad_color(model.color)
 
     media_store = None
     if model.image:
@@ -91,8 +90,7 @@ def update_relation_category(info: Info, input: inputs.UpdateRelationCategoryInp
 
     item = schema_scoped(info, models.RelationCategory, model.id, what="relation category")
 
-    if model.color:
-        assert len(model.color) == 3 or len(model.color) == 4, "Color must be a list of 3 or 4 values RGBA"
+    refuse_bad_color(model.color)
 
     if model.image:
         media_store = dl_models.MediaStore.objects.get(

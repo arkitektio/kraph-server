@@ -24,6 +24,7 @@ from core.models import Graph
 import uuid
 import kante
 from core import models as core_models
+from tests.support import reads
 
 
 @pytest.fixture
@@ -295,18 +296,6 @@ def test_the_term_names_its_value_kind(
     assert "FLOAT" in str(as_float)
 
 
-STRUCTURE_KINDS = """
-    query StructureKinds {
-        structureKinds { id identifier label }
-    }
-"""
-METRIC_KINDS = """
-    query MetricKinds {
-        metricKinds { id key valueKind structureKind { identifier } }
-    }
-"""
-
-
 @sync_to_async
 def _seed(organization: Organization) -> None:
     roi = writer.ensure_structure_kind(organization, "@mikro/roi")
@@ -333,7 +322,7 @@ async def test_structure_kinds_lists_the_organizations_vocabulary(test_graph: Gr
     """Both kinds, with no graph named anywhere in the query."""
     await _seed(test_graph.organization)
 
-    result = await schema.execute(STRUCTURE_KINDS, context_value=authenticated_context)
+    result = await schema.execute(reads.STRUCTURE_KINDS, context_value=authenticated_context)
 
     assert result.errors is None, result.errors
     identifiers: Set[str] = {item["identifier"] for item in result.data["structureKinds"]}
@@ -346,7 +335,7 @@ async def test_metric_kinds_name_the_structure_they_describe(test_graph: Graph, 
     """A measurement term is meaningless without the thing it measures."""
     await _seed(test_graph.organization)
 
-    result = await schema.execute(METRIC_KINDS, context_value=authenticated_context)
+    result = await schema.execute(reads.METRIC_KINDS, context_value=authenticated_context)
 
     assert result.errors is None, result.errors
     kinds = {item["key"]: item for item in result.data["metricKinds"]}
@@ -367,7 +356,7 @@ async def test_another_organizations_kinds_are_not_returned(test_graph: Graph, a
     await _seed(test_graph.organization)
     await _seed_other_organization()
 
-    result = await schema.execute(STRUCTURE_KINDS, context_value=authenticated_context)
+    result = await schema.execute(reads.STRUCTURE_KINDS, context_value=authenticated_context)
 
     assert result.errors is None, result.errors
     identifiers: Set[str] = {item["identifier"] for item in result.data["structureKinds"]}

@@ -31,5 +31,13 @@ jobs:
       - name: Install the project
         run: uv sync --all-extras --dev
 
+      # Fails in seconds, before the docker stack comes up. The guard test
+      # `tests/guards/test_migrations_are_committed.py` holds the same property
+      # inside the suite; this step is the early exit.
+      - name: Every model change has its migration
+        run: uv run python manage.py makemigrations --check --dry-run
+        env:
+          DJANGO_SETTINGS_MODULE: kraph_server.settings_test
+
       - name: Run tests
         run: uv run pytest

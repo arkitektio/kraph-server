@@ -5,16 +5,32 @@ type always resolves; `Structure` and `Metric` implement neither interface,
 because they are claim rows with no drawing. No database required.
 """
 
+import pathlib
 import typing
 
 from api import types
 from api.schema import schema
+
+SNAPSHOT = pathlib.Path(__file__).resolve().parents[2] / "test.graphql"
 
 
 def test_print_schema():
     sdl = str(schema)
     print(sdl)  # visible with `pytest -s`
     assert sdl.strip(), "Schema SDL should not be empty"
+
+
+def test_the_committed_sdl_is_the_live_schema():
+    """`test.graphql` is the schema, not a hand dump.
+
+    It is the one artifact that shows a breaking change whole, so a schema change
+    that does not regenerate it is a schema change nobody read.
+
+    History: the file was "a hand-dumped SDL snapshot, not asserted by any test",
+    regenerated from memory after some changes and not others.
+    """
+    assert SNAPSHOT.exists(), "test.graphql is missing; regenerate with `uv run python manage.py print_schema > test.graphql`"
+    assert SNAPSHOT.read_text().strip() == str(schema).strip(), "test.graphql is stale; regenerate with `uv run python manage.py print_schema > test.graphql` and read the diff"
 
 
 def test_every_castable_subtype_is_registered_in_the_schema():

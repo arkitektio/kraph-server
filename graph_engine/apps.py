@@ -15,10 +15,14 @@ class GraphEngineConfig(AppConfig):
         mutates a category without emitting a schema version" true of every path,
         including the managers and the admin.
         """
+        from health_check.plugins import plugin_dir
+
         from graph_engine import versioning
+        from graph_engine.health import ProjectionLagHealthCheck
 
         versioning.connect()
         connect_projection_lifecycle()
+        plugin_dir.register(ProjectionLagHealthCheck)
 
 
 #: Graphs whose deletion is in flight. Django's collector deletes the categories
@@ -83,8 +87,17 @@ def connect_projection_lifecycle() -> None:
         _deleting_graphs.discard(int(instance.pk))
         _drop(instance)
 
-    pre_delete.connect(on_graph_deleting, sender=core_models.Graph, dispatch_uid="projection_namespace_drop")
-    post_delete.connect(on_graph_deleted, sender=core_models.Graph, dispatch_uid="projection_namespace_drop_final")
+    # `weak=False` on every connection here, and it is load-bearing. These
+    # receivers are closures: nothing but the signal refers to them once this
+    # function returns, and Django holds receivers by weak reference by default —
+    # so they were garbage-collected and the signals silently stopped firing.
+    # They survived only while `DEBUG = True`, because Django's debug-mode
+    # receiver validation (`func_accepts_kwargs`) goes through an `lru_cache`
+    # that happened to keep a strong reference. The first honest `DEBUG = False`
+    # exposed it: category writes stopped refreshing the namespace and deleting
+    # a graph tripped the schema-version FK. `tests/guards/test_the_projection_signals_survive_garbage_collection.py`.
+    pre_delete.connect(on_graph_deleting, sender=core_models.Graph, weak=False, dispatch_uid="projection_namespace_drop")
+    post_delete.connect(on_graph_deleted, sender=core_models.Graph, weak=False, dispatch_uid="projection_namespace_drop_final")
 
     def on_category_changed(sender, instance, **kwargs) -> None:
         from graph_engine import versioning
@@ -108,5 +121,5 @@ def connect_projection_lifecycle() -> None:
         *core_models.CATEGORY_PROXIES.values(),
     }
     for model in category_classes:
-        post_save.connect(on_category_changed, sender=model, dispatch_uid=f"projection_namespace_{model.__name__}_save")
-        post_delete.connect(on_category_changed, sender=model, dispatch_uid=f"projection_namespace_{model.__name__}_delete")
+        post_save.connect(on_category_changed, sender=model, weak=False, dispatch_uid=f"projection_namespace_{model.__name__}_save")
+        post_delete.connect(on_category_changed, sender=model, weak=False, dispatch_uid=f"projection_namespace_{model.__name__}_delete")
