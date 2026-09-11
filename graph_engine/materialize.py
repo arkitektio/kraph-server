@@ -314,109 +314,55 @@ def _materialize_categories(graph, definition: GraphDefinitionInput, user) -> No
     Each category declares one of the organization's terms, minted here if this is
     the first graph to use the word. That is the join the evidence log names: a
     claim says "AIS", and every view with a category for "AIS" can read it.
+
+    Every kind goes through the same manager the single-category mutations use, so
+    a category means the same thing however it was declared. It did not always:
+    this function used to hand-roll `objects.create(...)` for relations, structure
+    relations, measurements and events, which is how the mutation path came to
+    store event roles that this path stored and a rule that this path stored and
+    the mutation path dropped. Two creators for one row is two answers to what the
+    row is.
     """
-    from core import enums as core_enums
-    from evidence import writer as evidence_writer
-
-    organization = graph.organization
-
-    def term_for(kind, key):
-        return evidence_writer.ensure_term(organization, kind, key)
-
-    # Create EntityCategories
     for entity_def in definition.extensions.entities:
         models.EntityCategory.objects.create_from_entity_definition(
             graph=graph,
             definition=entity_def,
         )
 
-    # Create RelationCategories
     for relation_def in definition.extensions.relations:
-        source_def = relation_def.source.model_dump(mode="json")
-        target_def = relation_def.target.model_dump(mode="json")
-
-        # Get properties from materialization config if present
-        property_defs = []
-
-        models.RelationCategory.objects.create(
+        models.RelationCategory.objects.create_from_relation_definition(
             graph=graph,
-            term=term_for(core_enums.CategoryKindChoices.RELATION, relation_def.key),
-            age_name=relation_def.key.upper(),
-            key=relation_def.key,
-            label=relation_def.key,
-            description=getattr(relation_def, "description", None) or "",
-            source_definition=source_def,
-            target_definition=target_def,
-            property_definitions=[p.model_dump(mode="json") for p in relation_def.properties],
-            # The category's complete rule (RFC 0009). Empty means primitive.
-            definition=relation_def.definition.to_stored() if relation_def.definition else {},
+            definition=relation_def,
         )
 
-    # Create StructureRelationCategories
-    #
     # `extensions.structure_relations` and `extensions.measurements` were parsed
     # and then dropped on the floor: a schema could declare either one and no
     # category was ever created, so `createStructureRelation` and
     # `createMeasurement` had no term to name and the fields were decoration.
     for structure_relation_def in definition.extensions.structure_relations:
-        models.StructureRelationCategory.objects.create(
+        models.StructureRelationCategory.objects.create_from_structure_relation_definition(
             graph=graph,
-            term=term_for(core_enums.CategoryKindChoices.STRUCTURE_RELATION, structure_relation_def.key),
-            age_name=structure_relation_def.key.upper(),
-            key=structure_relation_def.key,
-            label=structure_relation_def.key,
-            description=getattr(structure_relation_def, "description", None) or "",
-            source_definition=structure_relation_def.source.model_dump(mode="json"),
-            target_definition=structure_relation_def.target.model_dump(mode="json"),
-            property_definitions=[p.model_dump(mode="json") for p in structure_relation_def.properties],
-            definition=structure_relation_def.definition.to_stored() if structure_relation_def.definition else {},
+            definition=structure_relation_def,
         )
 
-    # Create MeasurementCategories
     for measurement_def in definition.extensions.measurements:
-        models.MeasurementCategory.objects.create(
+        models.MeasurementCategory.objects.create_from_measurement_definition(
             graph=graph,
-            term=term_for(core_enums.CategoryKindChoices.MEASUREMENT, measurement_def.key),
-            age_name=measurement_def.key.upper(),
-            key=measurement_def.key,
-            label=measurement_def.key,
-            description=getattr(measurement_def, "description", None) or "",
-            source_definition=measurement_def.source.model_dump(mode="json"),
-            target_definition=measurement_def.target.model_dump(mode="json"),
-            property_definitions=[p.model_dump(mode="json") for p in measurement_def.properties],
-            definition=measurement_def.definition.to_stored() if measurement_def.definition else {},
+            definition=measurement_def,
         )
 
-    # Create the event categories — natural for INTRINSIC, protocol for EXTRINSIC.
+    # Natural for INTRINSIC, protocol for EXTRINSIC. Which proxy a schema-level
+    # event becomes is this walker's decision — the per-kind mutations each know
+    # their own proxy already — and everything below that line is the manager's.
     # `kind` used to be read by nothing here: every event became a natural event
     # category, and a schema declaring a protocol step materialized the wrong
     # kind, which `snapshot_definition` then could not see.
     for event_def in definition.extensions.events:
-        property_defs = [p.model_dump(mode="json") for p in event_def.properties]
-
-        # Map inputs/outputs to source/target roles
-        source_roles = [p.model_dump(mode="json") for p in event_def.inputs]
-        target_roles = [p.model_dump(mode="json") for p in event_def.outputs]
-
         extrinsic = event_def.kind == EventKind.EXTRINSIC
         event_model = models.ProtocolEventCategory if extrinsic else models.NaturalEventCategory
-        event_kind = core_enums.CategoryKindChoices.PROTOCOL_EVENT if extrinsic else core_enums.CategoryKindChoices.NATURAL_EVENT
-
-        event_model.objects.create(
+        event_model.objects.create_from_event_definition(
             graph=graph,
-            term=term_for(event_kind, event_def.key),
-            age_name=event_def.key,
-            definition=event_def.definition.to_stored() if event_def.definition else {},
-            # Set like every other category kind. Events were the one kind that
-            # left `key` null, so `filter(key=...)` — how the rest of the codebase
-            # finds a category — could never find an event, and
-            # `snapshot_definition` emitted events whose key was None.
-            key=event_def.key,
-            label=event_def.key,
-            description=getattr(event_def, "description", None) or "",
-            property_definitions=property_defs,
-            source_entity_roles=source_roles,
-            target_entity_roles=target_roles,
+            definition=event_def,
         )
 
     # The initial schema version. `activate()` is the only path that sets

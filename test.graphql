@@ -424,8 +424,23 @@ input AssertStructureRelationExistsInput {
   term: String!
 }
 
+"""
+What every write returns: the act it recorded, and whether the drawing that follows it finished. What was claimed is named by each implementing type, because the word for it differs — an `instance`, a `link`, a `structure`, a `metric`, a `comment`, or a list of them — and a claim is not a drawing of itself.
+"""
+interface Asserted {
+  """
+  True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
+  """
+  pending: Boolean!
+
+  """
+  The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart.
+  """
+  assertion: Assertion!
+}
+
 """An assertion about a comment — a remark recorded about a structure"""
-type AssertedComment {
+type AssertedComment implements Asserted {
   """
   True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
   """
@@ -445,7 +460,7 @@ type AssertedComment {
 """
 An assertion that a structure is evidence for a node. Drawings are always empty: an INFORMS claim has no AGE edge
 """
-type AssertedDescription {
+type AssertedDescription implements Asserted {
   """
   True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
   """
@@ -463,7 +478,7 @@ type AssertedDescription {
 }
 
 """What asserting that instances are distinct recorded (RFC 0019)"""
-type AssertedDifference {
+type AssertedDifference implements Asserted {
   """
   True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
   """
@@ -483,7 +498,7 @@ type AssertedDifference {
 """
 An assertion about an entity: the act, the claim it recorded, and everywhere that claim is now drawn
 """
-type AssertedEntity {
+type AssertedEntity implements Asserted {
   """
   True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
   """
@@ -508,7 +523,7 @@ type AssertedEntity {
 """
 An assertion about several instances made as one act, and everywhere they are now drawn
 """
-type AssertedInstances {
+type AssertedInstances implements Asserted {
   """
   True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
   """
@@ -531,7 +546,7 @@ type AssertedInstances {
 """
 An assertion about several link claims made as one act, and everywhere they are now drawn
 """
-type AssertedLinks {
+type AssertedLinks implements Asserted {
   """
   True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
   """
@@ -550,7 +565,7 @@ type AssertedLinks {
 }
 
 """An assertion about a measurement — a structure measuring a node"""
-type AssertedMeasurement {
+type AssertedMeasurement implements Asserted {
   """
   True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
   """
@@ -568,7 +583,7 @@ type AssertedMeasurement {
 }
 
 """An assertion about a metric — a measured value about a structure"""
-type AssertedMetric {
+type AssertedMetric implements Asserted {
   """
   True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
   """
@@ -584,7 +599,7 @@ type AssertedMetric {
 }
 
 """An assertion about a natural event, and everywhere it is now drawn"""
-type AssertedNaturalEvent {
+type AssertedNaturalEvent implements Asserted {
   """
   True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
   """
@@ -607,7 +622,7 @@ type AssertedNaturalEvent {
 }
 
 """An assertion about one participation, and everywhere it is now drawn"""
-type AssertedParticipation {
+type AssertedParticipation implements Asserted {
   """
   True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
   """
@@ -630,7 +645,7 @@ type AssertedParticipation {
 }
 
 """An assertion about a protocol event, and everywhere it is now drawn"""
-type AssertedProtocolEvent {
+type AssertedProtocolEvent implements Asserted {
   """
   True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
   """
@@ -655,7 +670,7 @@ type AssertedProtocolEvent {
 """
 An assertion about a relation, and everywhere that relation is now drawn
 """
-type AssertedRelation {
+type AssertedRelation implements Asserted {
   """
   True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
   """
@@ -678,7 +693,7 @@ type AssertedRelation {
 }
 
 """An assertion that instances are one thing, and the claims it recorded"""
-type AssertedSameness {
+type AssertedSameness implements Asserted {
   """
   True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
   """
@@ -696,7 +711,7 @@ type AssertedSameness {
 }
 
 """An assertion about a structure — a pointer to an external datum"""
-type AssertedStructure {
+type AssertedStructure implements Asserted {
   """
   True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
   """
@@ -714,7 +729,7 @@ type AssertedStructure {
 """
 An assertion about a structure relation — a claim between two external data
 """
-type AssertedStructureRelation {
+type AssertedStructureRelation implements Asserted {
   """
   True when the act was recorded and announced but its drawing did not finish. The claim is durable; the drawing is owed, `Graph.projection { pending lag }` counts it, and `reproject --incremental` (the runner) applies it. `drawings` lists what was drawn so far. False is the ordinary case: the drawing completes within the request.
   """

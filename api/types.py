@@ -2923,16 +2923,31 @@ _CLAIM_DESCRIPTION = "What was claimed, as the log has it. Not a drawing of it: 
 _ASSERTION_DESCRIPTION = "The claim this call recorded. Not the subject's original assertion — for an attestation or a retraction those are different acts, possibly years apart."
 
 
-@strawberry.type(description="An assertion about an entity: the act, the claim it recorded, and everywhere that claim is now drawn")
-class AssertedEntity:
-    """Three fields, and none of them a drawing of the thing claimed.
+@strawberry.interface(
+    description=(
+        "What every write returns: the act it recorded, and whether the drawing that follows it finished. "
+        "What was claimed is named by each implementing type, because the word for it differs — an `instance`, "
+        "a `link`, a `structure`, a `metric`, a `comment`, or a list of them — and a claim is not a drawing of itself."
+    )
+)
+class Asserted:
+    """The two questions every write payload answers the same way.
 
-    `instance` used to be `entity: Entity!` — a graph-shaped type standing for a
-    claim that may be in no graph at all. Two of its fields could not answer for
-    that case (`schemaVersion` is non-null with no value to give, `richProperties`
-    asserted on a category that does not exist), six more were empty by
-    construction, and `drawnIn` said what `drawings` already says. The claim is an
-    `Instance`; how a view holds it is a `NodeDrawing`.
+    A write returns three kinds of thing: the act (`assertion`), what the act
+    recorded, and where it landed. Only the middle one varies — by name and by
+    type — so only the middle one is spelled out per payload.
+
+    This began as fifteen classes with no base, in which `pending` was written out
+    fifteen times identically and `assertion` thirteen times identically. Three of
+    them were byte-identical below the class line. The `description=` strings had
+    already been lifted to the constants above; the method bodies had not, so the
+    shape was shared in documentation and duplicated in code.
+
+    Both fields are declared here and therefore render first on every implementor,
+    which is the order all fifteen already had. A type that wants its own wording
+    for `assertion` overrides it and keeps this position — `AssertedInstances` and
+    `AssertedLinks` do, because for a batch the interesting fact is that one act
+    covers the whole of it.
     """
 
     _value: strawberry.Private[results.Asserted]
@@ -2945,6 +2960,19 @@ class AssertedEntity:
     def assertion(self) -> Assertion:
         return cast(Assertion, self._value.assertion)
 
+
+@strawberry.type(description="An assertion about an entity: the act, the claim it recorded, and everywhere that claim is now drawn")
+class AssertedEntity(Asserted):
+    """Three fields, and none of them a drawing of the thing claimed.
+
+    `instance` used to be `entity: Entity!` — a graph-shaped type standing for a
+    claim that may be in no graph at all. Two of its fields could not answer for
+    that case (`schemaVersion` is non-null with no value to give, `richProperties`
+    asserted on a category that does not exist), six more were empty by
+    construction, and `drawnIn` said what `drawings` already says. The claim is an
+    `Instance`; how a view holds it is a `NodeDrawing`.
+    """
+
     @strawberry.field(description=_CLAIM_DESCRIPTION)
     def instance(self) -> Instance:
         return cast(Instance, self._value.subject)
@@ -2955,17 +2983,7 @@ class AssertedEntity:
 
 
 @strawberry.type(description="An assertion about a natural event, and everywhere it is now drawn")
-class AssertedNaturalEvent:
-    _value: strawberry.Private[results.Asserted]
-
-    @strawberry.field(description=_PENDING_DESCRIPTION)
-    def pending(self) -> bool:
-        return self._value.pending
-
-    @strawberry.field(description=_ASSERTION_DESCRIPTION)
-    def assertion(self) -> Assertion:
-        return cast(Assertion, self._value.assertion)
-
+class AssertedNaturalEvent(Asserted):
     @strawberry.field(description=_CLAIM_DESCRIPTION)
     def instance(self) -> Instance:
         return cast(Instance, self._value.subject)
@@ -2976,17 +2994,7 @@ class AssertedNaturalEvent:
 
 
 @strawberry.type(description="An assertion about a protocol event, and everywhere it is now drawn")
-class AssertedProtocolEvent:
-    _value: strawberry.Private[results.Asserted]
-
-    @strawberry.field(description=_PENDING_DESCRIPTION)
-    def pending(self) -> bool:
-        return self._value.pending
-
-    @strawberry.field(description=_ASSERTION_DESCRIPTION)
-    def assertion(self) -> Assertion:
-        return cast(Assertion, self._value.assertion)
-
+class AssertedProtocolEvent(Asserted):
     @strawberry.field(description=_CLAIM_DESCRIPTION)
     def instance(self) -> Instance:
         return cast(Instance, self._value.subject)
@@ -2997,7 +3005,7 @@ class AssertedProtocolEvent:
 
 
 @strawberry.type(description="An assertion about several instances made as one act, and everywhere they are now drawn")
-class AssertedInstances:
+class AssertedInstances(Asserted):
     """A batch, and one type covers it.
 
     It needed a polymorphic `[Node!]!` while the payload was drawing-shaped, because
@@ -3013,12 +3021,6 @@ class AssertedInstances:
     `AssertedRelation`, …) were already right; this was the batch form's leftover.
     """
 
-    _value: strawberry.Private[results.Asserted]
-
-    @strawberry.field(description=_PENDING_DESCRIPTION)
-    def pending(self) -> bool:
-        return self._value.pending
-
     @strawberry.field(description="The single claim covering the whole batch. One act by one actor is one assertion, which is why this is not a list")
     def assertion(self) -> Assertion:
         return cast(Assertion, self._value.assertion)
@@ -3033,17 +3035,7 @@ class AssertedInstances:
 
 
 @strawberry.type(description="An assertion about a relation, and everywhere that relation is now drawn")
-class AssertedRelation:
-    _value: strawberry.Private[results.Asserted]
-
-    @strawberry.field(description=_PENDING_DESCRIPTION)
-    def pending(self) -> bool:
-        return self._value.pending
-
-    @strawberry.field(description=_ASSERTION_DESCRIPTION)
-    def assertion(self) -> Assertion:
-        return cast(Assertion, self._value.assertion)
-
+class AssertedRelation(Asserted):
     @strawberry.field(description=_CLAIM_DESCRIPTION)
     def link(self) -> Link:
         return cast(Link, self._value.subject)
@@ -3054,7 +3046,7 @@ class AssertedRelation:
 
 
 @strawberry.type(description="An assertion about a measurement — a structure measuring a node")
-class AssertedMeasurement:
+class AssertedMeasurement(Asserted):
     """No `drawings`, and the absence is structural, exactly as on `AssertedStructure`.
 
     Nothing projects a measurement to an AGE edge, so the list could only ever be
@@ -3064,36 +3056,16 @@ class AssertedMeasurement:
     one with the reasoning attached.
     """
 
-    _value: strawberry.Private[results.Asserted]
-
-    @strawberry.field(description=_PENDING_DESCRIPTION)
-    def pending(self) -> bool:
-        return self._value.pending
-
-    @strawberry.field(description=_ASSERTION_DESCRIPTION)
-    def assertion(self) -> Assertion:
-        return cast(Assertion, self._value.assertion)
-
     @strawberry.field(description=_CLAIM_DESCRIPTION)
     def link(self) -> Link:
         return cast(Link, self._value.subject)
 
 
 @strawberry.type(description="An assertion about a structure relation — a claim between two external data")
-class AssertedStructureRelation:
+class AssertedStructureRelation(Asserted):
     """No `drawings`: both endpoints are structures, which have no vertex for an
     edge to run between. Omitted rather than always-empty — see
     `AssertedMeasurement`."""
-
-    _value: strawberry.Private[results.Asserted]
-
-    @strawberry.field(description=_PENDING_DESCRIPTION)
-    def pending(self) -> bool:
-        return self._value.pending
-
-    @strawberry.field(description=_ASSERTION_DESCRIPTION)
-    def assertion(self) -> Assertion:
-        return cast(Assertion, self._value.assertion)
 
     @strawberry.field(description=_CLAIM_DESCRIPTION)
     def link(self) -> Link:
@@ -3101,19 +3073,9 @@ class AssertedStructureRelation:
 
 
 @strawberry.type(description="An assertion about one participation, and everywhere it is now drawn")
-class AssertedParticipation:
+class AssertedParticipation(Asserted):
     """Polymorphic in the payload, because which side of the event a claim is about
     decides its type — `InputParticipation` or `OutputParticipation`."""
-
-    _value: strawberry.Private[results.Asserted]
-
-    @strawberry.field(description=_PENDING_DESCRIPTION)
-    def pending(self) -> bool:
-        return self._value.pending
-
-    @strawberry.field(description=_ASSERTION_DESCRIPTION)
-    def assertion(self) -> Assertion:
-        return cast(Assertion, self._value.assertion)
 
     @strawberry.field(description=_CLAIM_DESCRIPTION)
     def link(self) -> Link:
@@ -3125,7 +3087,7 @@ class AssertedParticipation:
 
 
 @strawberry.type(description="An assertion about several link claims made as one act, and everywhere they are now drawn")
-class AssertedLinks:
+class AssertedLinks(Asserted):
     """A batch of link claims — `retractLinks` takes classifications, relations,
     participations and INFORMS links alike, and each one reports its own `kind`.
 
@@ -3134,12 +3096,6 @@ class AssertedLinks:
     was the sharpest case: its own description says it takes "`Link` ids", and it
     returned a payload named for the drawing.
     """
-
-    _value: strawberry.Private[results.Asserted]
-
-    @strawberry.field(description=_PENDING_DESCRIPTION)
-    def pending(self) -> bool:
-        return self._value.pending
 
     @strawberry.field(description="The single claim covering the whole batch")
     def assertion(self) -> Assertion:
@@ -3155,7 +3111,7 @@ class AssertedLinks:
 
 
 @strawberry.type(description="An assertion that a structure is evidence for a node. Drawings are always empty: an INFORMS claim has no AGE edge")
-class AssertedDescription:
+class AssertedDescription(Asserted):
     """The payload for `linkStructureToEntity`, which used to return `AssertedStructure`.
 
     The act records an `INFORMS` `Link` about a structure that already exists — it
@@ -3164,23 +3120,13 @@ class AssertedDescription:
     what `description(id:)` reads back as a `Description`.
     """
 
-    _value: strawberry.Private[results.Asserted]
-
-    @strawberry.field(description=_PENDING_DESCRIPTION)
-    def pending(self) -> bool:
-        return self._value.pending
-
-    @strawberry.field(description=_ASSERTION_DESCRIPTION)
-    def assertion(self) -> Assertion:
-        return cast(Assertion, self._value.assertion)
-
     @strawberry.field(description=_CLAIM_DESCRIPTION)
     def link(self) -> Link:
         return cast(Link, self._value.subject)
 
 
 @strawberry.type(description="An assertion that instances are one thing, and the claims it recorded")
-class AssertedSameness:
+class AssertedSameness(Asserted):
     """No `drawings`, and structurally so: nothing projects a sameness claim.
 
     What it changes is which nodes a *component* contains, and that shows up in
@@ -3188,35 +3134,15 @@ class AssertedSameness:
     all rather than reporting a drawing here.
     """
 
-    _value: strawberry.Private[results.Asserted]
-
-    @strawberry.field(description=_PENDING_DESCRIPTION)
-    def pending(self) -> bool:
-        return self._value.pending
-
-    @strawberry.field(description=_ASSERTION_DESCRIPTION)
-    def assertion(self) -> Assertion:
-        return cast(Assertion, self._value.assertion)
-
     @strawberry.field(description="The sameness claims this act recorded. Asserting that three instances are one records every pair among them, under one assertion")
     def links(self) -> List[Link]:
         return [cast(Link, subject) for subject in self._value.subjects]
 
 
 @strawberry.type(description="What asserting that instances are distinct recorded (RFC 0019)")
-class AssertedDifference:
+class AssertedDifference(Asserted):
     """Like `AssertedSameness`: no `drawings`, because a difference draws nothing
     — it changes which vertices a view draws, and every member is redrawn."""
-
-    _value: strawberry.Private[results.Asserted]
-
-    @strawberry.field(description=_PENDING_DESCRIPTION)
-    def pending(self) -> bool:
-        return self._value.pending
-
-    @strawberry.field(description=_ASSERTION_DESCRIPTION)
-    def assertion(self) -> Assertion:
-        return cast(Assertion, self._value.assertion)
 
     @strawberry.field(description="The difference claims this act recorded — every pair among the named instances, because difference is not transitive")
     def links(self) -> List[Link]:
@@ -3224,23 +3150,13 @@ class AssertedDifference:
 
 
 @strawberry.type(description="An assertion about a structure — a pointer to an external datum")
-class AssertedStructure:
+class AssertedStructure(Asserted):
     """No `drawings`, and the absence is structural rather than circumstantial.
 
     A structure lives only in the relational evidence base and has no Apache AGE
     presence at all, so no view can ever draw one. An always-empty list would
     imply it might not be.
     """
-
-    _value: strawberry.Private[results.Asserted]
-
-    @strawberry.field(description=_PENDING_DESCRIPTION)
-    def pending(self) -> bool:
-        return self._value.pending
-
-    @strawberry.field(description=_ASSERTION_DESCRIPTION)
-    def assertion(self) -> Assertion:
-        return cast(Assertion, self._value.assertion)
 
     @strawberry.field(description="The structure this act was about")
     def structure(self) -> "Structure":
@@ -3250,19 +3166,9 @@ class AssertedStructure:
 
 
 @strawberry.type(description="An assertion about a comment — a remark recorded about a structure")
-class AssertedComment:
+class AssertedComment(Asserted):
     """No `drawings`, for the same reason `AssertedStructure` has none: a
     structure has no AGE presence, so neither does its discussion."""
-
-    _value: strawberry.Private[results.Asserted]
-
-    @strawberry.field(description=_PENDING_DESCRIPTION)
-    def pending(self) -> bool:
-        return self._value.pending
-
-    @strawberry.field(description=_ASSERTION_DESCRIPTION)
-    def assertion(self) -> Assertion:
-        return cast(Assertion, self._value.assertion)
 
     @strawberry.field(description="The remark this act was about — recorded it, withdrew it, or reopened it; the assertion says which")
     def comment(self) -> Comment:
@@ -3270,18 +3176,8 @@ class AssertedComment:
 
 
 @strawberry.type(description="An assertion about a metric — a measured value about a structure")
-class AssertedMetric:
+class AssertedMetric(Asserted):
     """No `drawings`, for the same reason `AssertedStructure` has none."""
-
-    _value: strawberry.Private[results.Asserted]
-
-    @strawberry.field(description=_PENDING_DESCRIPTION)
-    def pending(self) -> bool:
-        return self._value.pending
-
-    @strawberry.field(description=_ASSERTION_DESCRIPTION)
-    def assertion(self) -> Assertion:
-        return cast(Assertion, self._value.assertion)
 
     @strawberry.field(description="The metric this act was about")
     def metric(self) -> "Metric":

@@ -83,3 +83,27 @@ def test_the_grain_split_is_visible_in_the_sdl():
     for block, name in ((node_block, "Node"), (edge_block, "Edge")):
         assert "id: ID!" in block, f"{name}.id must be the same ID scalar the claim types use"
         assert "id: String!" not in block, f"{name} must not hand the uuid out as a String"
+
+
+def test_every_write_payload_implements_the_asserted_interface():
+    """A write payload is reachable by name, and says so in the schema.
+
+    `Asserted` carries the two questions every write answers the same way —
+    `pending` and `assertion` — so a client can select them across any write
+    result. The fifteen payload types are named concretely by their mutations'
+    return annotations, so unlike the `Edge` and `Node` subtypes above none of
+    them needs listing in `create_schema(types=[...])`; this asserts that the
+    reachability actually holds rather than assuming it, because a type reachable
+    only through an interface fails at **runtime** and never at build.
+
+    It also holds the interface itself honest: a payload class that stops
+    inheriting `Asserted` still builds, still serves, and quietly drops two fields
+    from its contract.
+    """
+    sdl = str(schema)
+
+    implementors = [name for name in dir(types) if name.startswith("Asserted") and isinstance(getattr(types, name), type) and issubclass(getattr(types, name), types.Asserted) and getattr(types, name) is not types.Asserted]
+    assert len(implementors) == 15, f"expected the fifteen write payloads, found {sorted(implementors)}"
+
+    for name in implementors:
+        assert f"type {name} implements Asserted " in sdl, f"{name} subclasses Asserted but the schema does not say so"

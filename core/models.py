@@ -1034,6 +1034,8 @@ class RelationCategory(EdgeCategory):
 class StructureRelationCategory(EdgeCategory):
     """A Relation class is a class that describes a relation between two entities without a value"""
 
+    objects: managers.StructureRelationCategoryManager = managers.StructureRelationCategoryManager()
+
     KIND = enums.CategoryKindChoices.STRUCTURE_RELATION
     KINDS = (enums.CategoryKindChoices.STRUCTURE_RELATION,)
 

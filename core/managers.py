@@ -83,11 +83,43 @@ class CategoryManager(KindedManager["core_models.Category"], Generic[T]):
             return image.id
         return image
 
+    def _apply_pin(self, category: "core_models.Category", user, pin: Optional[bool]) -> None:
+        """Add or remove this user's pin. `None` means the caller said nothing about it.
+
+        Pinning is per-user and lives on a many-to-many, so it cannot ride in
+        `defaults` with the rest of a category's fields — which is why it was a
+        five-line block hand-copied into nine resolvers. Three states, and the
+        third is the one the copies kept getting right by accident: absent is not
+        the same as `False`.
+        """
+        if pin is None:
+            return
+        if pin:
+            category.pinned_by.add(user)
+        else:
+            category.pinned_by.remove(user)
+
     async def _apply_ontology_references(
         self,
         category: "core_models.Category",
         references: Optional[Iterable[input_models.OntologyReferenceInput]],
     ) -> None:
+        """Record the ontology terms this category was declared against.
+
+        The reference set is replaced **whole**: a category declaration is a
+        statement of what the category is, so a declaration that omits a reference
+        is saying it no longer carries one. The ontology itself is upserted by
+        prefix rather than refused when unknown, because nothing else in the API
+        can create a `GraphOntology` — refusing an unknown prefix would make the
+        field unusable.
+
+        Both of those are *choices*, not preserved behaviour. Four of the six
+        category mutations carried their own copy of this loop written against
+        `GraphOntology.prefix` and `OntologyReference.graph_id` / `category_key`,
+        none of which are fields — so that copy raised `FieldError` on every
+        non-empty reference list and had never run. See
+        `tests/view/test_a_category_names_the_ontologies_it_references.py`.
+        """
         if references is None:
             return
         from core import models as core_models
@@ -228,11 +260,57 @@ class EntityCategoryManager(NodeCategoryManager["core_models.EntityCategory"]):
         return category
 
 
-class NaturalEventCategoryManager(NodeCategoryManager["core_models.NaturalEventCategory"]):
+class EventCategoryManager(NodeCategoryManager[T], Generic[T]):
+    """Shared creator for both event kinds.
+
+    Natural and protocol events differ in what they *are* — one arises in the
+    system, the other is applied from outside — and in nothing about how a
+    category for one is written. They had a manager each, both `pass`, so
+    `create_natural_event_category` and `create_protocol_event_category` each
+    hand-rolled an `update_or_create` instead; the two modules then drifted, and
+    the natural one lost `definition` entirely. `materialize` had a third copy.
+    This is the one place an event category is written.
+    """
+
+    async def acreate_from_event_definition(
+        self,
+        graph: "core_models.Graph",
+        definition: input_models.EventDefinitionInput,
+    ) -> T:
+        return await self.acreate_from_node_definition(
+            graph=graph,
+            definition=definition,
+            other_defaults={
+                "property_definitions": [prop.model_dump(mode="json") for prop in definition.properties],
+                # The category's complete rule (RFC 0009). Empty means primitive.
+                # Absent from `create_natural_event_category`'s hand-written
+                # defaults, so a natural event category declared with a rule
+                # stored none and folded as primitive ever after.
+                "definition": definition.definition.to_stored() if definition.definition else {},
+                # Who may take part, and under which role name. An **empty list
+                # admits everything** (`namespace._role_endpoints`), so dropping
+                # these did not lose a label — it silently widened every event
+                # category created through the API to every entity-like category
+                # in the view, while the same category created by `materialize`
+                # carried the declared roles.
+                "source_entity_roles": [role.model_dump(mode="json") for role in definition.inputs],
+                "target_entity_roles": [role.model_dump(mode="json") for role in definition.outputs],
+            },
+        )
+
+    def create_from_event_definition(
+        self,
+        graph: "core_models.Graph",
+        definition: input_models.EventDefinitionInput,
+    ) -> T:
+        return async_to_sync(self.acreate_from_event_definition)(graph, definition)
+
+
+class NaturalEventCategoryManager(EventCategoryManager["core_models.NaturalEventCategory"]):
     pass
 
 
-class ProtocolEventCategoryManager(NodeCategoryManager["core_models.ProtocolEventCategory"]):
+class ProtocolEventCategoryManager(EventCategoryManager["core_models.ProtocolEventCategory"]):
     pass
 
 
@@ -256,14 +334,31 @@ class EdgeCategoryManager(CategoryManager[T], Generic[T]):
             "label": label or definition.key,
             "description": definition.description,
             "age_name": resolved_age_name,
-            "source_definition": definition.source.model_dump(mode="json"),
-            "target_definition": definition.target.model_dump(mode="json"),
             # The category's complete rule (RFC 0012). Empty means primitive.
             "definition": definition.definition.to_stored() if getattr(definition, "definition", None) else {},
             # See `NodeCategoryManager._term_for` — the same reasoning for edges.
             "term": await sync_to_async(self._term_for)(graph, definition.key),
             **(other_defaults or {}),
         }
+
+        # Endpoints are written only when the definition carries them, and that
+        # conditionality is load-bearing rather than defensive.
+        #
+        # `CreateRelationCategoryInput` extends the *entity* shape, so it has no
+        # `source`/`target` at all — reading them unconditionally is why this
+        # method could not be called from `create_relation_category`. And this is
+        # an `update_or_create` on `(graph, key)`: writing the keys unconditionally
+        # would overwrite a `materialize`-created relation category's endpoints
+        # with `{}` on the next `createRelationCategory` naming the same word —
+        # and those two columns are what `namespace.py` expands into the graph's
+        # edge element tables. Held by
+        # `tests/view/test_editing_a_relation_category_keeps_its_endpoints.py`.
+        source = getattr(definition, "source", None)
+        if source is not None:
+            defaults["source_definition"] = source.model_dump(mode="json")
+        target = getattr(definition, "target", None)
+        if target is not None:
+            defaults["target_definition"] = target.model_dump(mode="json")
 
         if property_definitions is not None:
             defaults["property_definitions"] = [prop.model_dump(mode="json") for prop in property_definitions]
@@ -301,9 +396,23 @@ class EdgeCategoryManager(CategoryManager[T], Generic[T]):
         return async_to_sync(self.acreate_from_edge_definition)(graph, definition, other_defaults)
 
 
-class RelationCategoryManager(EdgeCategoryManager["core_models.RelationCategory"]):
-    pass
+class StructureRelationCategoryManager(EdgeCategoryManager["core_models.StructureRelationCategory"]):
+    async def acreate_from_structure_relation_definition(
+        self,
+        graph: "core_models.Graph",
+        definition: input_models.StructureRelationDefinitionInput,
+    ) -> "core_models.StructureRelationCategory":
+        return await super().acreate_from_edge_definition(graph=graph, definition=definition)
 
+    def create_from_structure_relation_definition(
+        self,
+        graph: "core_models.Graph",
+        definition: input_models.StructureRelationDefinitionInput,
+    ) -> "core_models.StructureRelationCategory":
+        return async_to_sync(self.acreate_from_structure_relation_definition)(graph, definition)
+
+
+class RelationCategoryManager(EdgeCategoryManager["core_models.RelationCategory"]):
     async def acreate_from_relation_definition(
         self,
         graph: "core_models.Graph",
@@ -325,8 +434,6 @@ class RelationCategoryManager(EdgeCategoryManager["core_models.RelationCategory"
 
 
 class MeasurementCategoryManager(EdgeCategoryManager["core_models.MeasurementCategory"]):
-    pass
-
     async def acreate_from_measurement_definition(
         self,
         graph: "core_models.Graph",

@@ -158,7 +158,7 @@ renames that fixed that are in `evidence/migrations/0008_instance_and_standing.p
 | `Node` / `Edge` | API | the interfaces. `Node` = one `Instance` row typed by kind (exactly `Instance.Kind`); `Edge` = one `Link` row typed by kind (exactly `Link.Kind`). `Edge` does **not** mean "drawable" — several link kinds are never projected | GraphQL only |
 | `Entity` | API | an instance that is **not an event** | `Instance.Kind.ENTITY`, GraphQL `Entity` |
 | `Structure` / `Metric` | API | claim shapes implementing **neither** interface — they are rows of *different tables*, not instances | GraphQL only |
-| `Asserted*` | API | what a **write returns**: the assertion it made, the claim, and the drawings | GraphQL `AssertedEntity`, `AssertedInstances`, … |
+| `Asserted*` | API | what a **write returns**: the assertion it made, the claim, and the drawings. All fifteen implement the `Asserted` **interface**, which carries the two answers that never vary (`pending`, `assertion`); only what was claimed is named per type, because the word for it differs | GraphQL `AssertedEntity`, `AssertedInstances`, … |
 | `Standing` (GraphQL) | API | one position on a claim: `stands`, when, and whose | `api/types.py::Standing` |
 
 Three consequences worth stating, because each was a bug before the words were separated:
@@ -465,6 +465,27 @@ The load-bearing facts:
   (plan null, raw Cypher stored) no longer renders at all — `manage.py list_legacy_queries` names
   any so they can be rebuilt through the builder. Only the table kind exists; the node/edge
   families and the nodes/pairs/path kinds had no execution path and are gone.
+- **A category is written in exactly one place**, and that place takes no request:
+  `core/managers.py`. `EntityCategoryManager.create_from_entity_definition`,
+  `EventCategoryManager.create_from_event_definition` and the three edge equivalents own the
+  `defaults` dict, the term minting (`_term_for`), the store id (`_resolve_store_id`), the
+  ontology references and the pin. `api/mutations/schema/_category.py` is the other half — the
+  part that genuinely needs a caller: RBAC (`_scoped.schema_graph`/`schema_scoped`), whose pin
+  it is, the backfill, and what the write owes the projection (`rematerialize_if_moved` for node
+  categories, `rebuild_projection` for a rule change on a category that draws). The six
+  `api/mutations/schema/*_category.py` modules are five lines per resolver over those two, and
+  `natural_event_category.py` and `protocol_event_category.py` are identical once the kind name
+  is normalised — deliberately, and asserted by
+  `tests/view/test_a_category_declares_its_rule_on_creation.py`. **`materialize` uses the same
+  managers.** It did not, and the cost was three defects that only a second creation path can
+  have: `createNaturalEventCategory` dropped `definition` on the floor while its twin stored it;
+  both event mutations discarded `inputs`/`outputs`, and since `namespace._role_endpoints` reads
+  an empty role list as admitting *everything*, every event category declared through the API
+  silently fanned its participation views over every entity-like category; and four modules
+  carried an ontology-reference loop written against `GraphOntology.prefix` and
+  `OntologyReference.graph_id`/`category_key`, none of which are fields, so it raised
+  `FieldError` on every non-empty list and had never once run. If you add a category kind, add a
+  manager method and a five-line module — never a second `objects.create(...)`.
 - `graph_engine/materialize.py` is the bridge schema → Django categories + projection namespace +
   `Projection` row (hashed for versioning); `aggregate.py` is the pure fold over `State` for
   derived properties (`rollup.py` is gone); saved queries live in `api/mutations/insights/` and

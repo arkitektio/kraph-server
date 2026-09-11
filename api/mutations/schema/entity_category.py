@@ -1,82 +1,74 @@
+"""Declaring, changing and removing an entity category — a view's rule for a word
+naming a thing rather than an event.
+
+The one category family whose *update* is not the all-optional patch shape: an
+entity category's update carries `property_definitions` and `instance_kind`, so it
+passes its manager method to `._category.update_category` as the patch rather than
+taking the default. Everything else is shared.
+"""
+
 from typing import cast
 
 import strawberry
 from kante.types import Info
 
-from api import context, inputs, types
+from api import inputs, types
 from core import models
-from ._guards import delete_or_explain
-from .._scoped import schema_graph, schema_scoped
-from ._rematerialize import fingerprint, rematerialize_if_moved
+from ._category import create_category, delete_category, update_category
+
+
+def _patch_entity(item, model, manager) -> bool:
+    """An entity category's patch is its manager's, because it writes more.
+
+    The manager saves, so this reports `True` and `update_category` does not save
+    again — a second `Category.save()` would refresh the graph's namespace a
+    second time.
+    """
+    manager.update_from_entity_definition(item, model)
+    return True
 
 
 def create_entity_category(
     info: Info,
     input: inputs.CreateEntityCategoryInput,
 ) -> types.EntityCategory:
-    """GraphQL mutation wrapper for creating entity categories."""
-
-    model = input.to_pydantic()  # Validate input with Pydantic models
-
-    graph = schema_graph(info, model.graph)
-
-    # An upsert, so this may well be an edit to a category that already draws
-    # vertices — the manager does not report which. See `_rematerialize`.
-    existing = models.EntityCategory.objects.filter(graph=graph, key=model.key).first()
-    before = fingerprint(existing) if existing else None
-
-    ent = models.EntityCategory.objects.create_from_entity_definition(
-        graph,
-        definition=model,
+    """Declare an entity category in a view."""
+    model = input.to_pydantic()
+    category = create_category(
+        info,
+        model,
+        models.EntityCategory,
+        models.EntityCategory.objects.create_from_entity_definition,
+        node=True,
     )
-
-    if model.backfill:
-        context.get_controller().backfill_category(ent)
-
-    if before is not None:
-        # After the backfill, not instead of it. A backfill widens *membership*
-        # and re-derives through `SET`; only this path `REMOVE`s the keys a
-        # dropped property left behind.
-        rematerialize_if_moved(ent, before)
-
-    return cast(types.EntityCategory, ent)
+    return cast(types.EntityCategory, category)
 
 
 def update_entity_category(info: Info, input: inputs.UpdateEntityCategoryInput) -> types.EntityCategory:
-    """GraphQL mutation wrapper for updating entity categories."""
-    model = input.to_pydantic()  # Validate input with Pydantic models
-
-    item = schema_scoped(info, models.EntityCategory, model.id, what="entity category")
-
-    # Before the write: nothing versions `property_definitions` or `definition`,
-    # so the old ones are unrecoverable one line later. See `_rematerialize`.
-    before = fingerprint(item)
-    meaning_before = dict(item.definition or {})
-
-    models.EntityCategory.objects.update_from_entity_definition(item, model)
-
-    if dict(item.definition or {}) != meaning_before:
-        # A definition change moves *membership* — nodes enter, leave, or move
-        # between labels — and only a rebuild moves a label honestly (the same
-        # reasoning as `backfill_category` for defined categories). It also
-        # redraws every derived property, so the rematerialize below would be
-        # redundant work on top. Synchronous and O(graph): the accepted limit,
-        # per `_rematerialize`'s module docstring.
-        context.get_controller().rebuild_projection(item.graph)
-    else:
-        # Synchronous, and unbounded in the size of the graph — see
-        # `_rematerialize`'s module docstring for why that is the accepted limit
-        # and what to run when it bites.
-        rematerialize_if_moved(item, before)
-
-    return item
+    """Change an entity category's label, colour, image, pin, properties or rule."""
+    model = input.to_pydantic()
+    item = update_category(
+        info,
+        model,
+        models.EntityCategory,
+        what="entity category",
+        node=True,
+        rebuild_on_rule_change=True,
+        patch=_patch_entity,
+    )
+    return cast(types.EntityCategory, item)
 
 
 def delete_entity_category(
     info: Info,
     input: inputs.DeleteEntityCategoryInput,
 ) -> strawberry.ID:
-    model = input.to_pydantic()  # Validate input with Pydantic models
-    item = schema_scoped(info, models.EntityCategory, model.id, what="entity category")
-    delete_or_explain(item, what=f"entity category '{item.key}'", instead="Archive the entities first, or leave the category in place — an unused category costs nothing.")
-    return model.id
+    """Remove an entity category, if no evidence still names it."""
+    model = input.to_pydantic()
+    return delete_category(
+        info,
+        model,
+        models.EntityCategory,
+        what="entity category",
+        instead="Archive the entities first, or leave the category in place — an unused category costs nothing.",
+    )
