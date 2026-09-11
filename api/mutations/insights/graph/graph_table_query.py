@@ -3,10 +3,9 @@ from typing import cast
 from kante.types import Info
 
 import strawberry
-from api import inputs, types, context
+from api import inputs, types
 from api.mutations._scoped import scoped
 from api.mutations.insights._saved_query import create_saved_query, update_saved_query
-from graph_engine import scalars
 from core import models
 
 

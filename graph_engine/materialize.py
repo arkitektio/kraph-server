@@ -9,8 +9,7 @@ instances from the schema definition.
 import hashlib
 import json
 import logging
-from typing import Any, Optional
-from pydantic import BaseModel, Field
+from typing import Optional
 
 from .input_models import DerivationType, EventKind, GraphDefinitionInput
 from .projection import Projector
@@ -211,7 +210,6 @@ def materialize(
     # cannot be computed.
     validate_derivation_rules(definition)
 
-    from django.db import transaction
 
     # Compute schema hash for versioning
     schema_hash = compute_definition_hash(definition)

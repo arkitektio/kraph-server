@@ -43,7 +43,6 @@ from dataclasses import dataclass
 
 from authentikate.models import Organization
 from core.models import Graph
-from django.db import transaction
 from django.db.models import Max, Min
 from django.utils import timezone
 

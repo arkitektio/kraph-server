@@ -2,7 +2,7 @@ from enum import Enum
 from collections.abc import Mapping
 from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 from pydantic.fields import FieldInfo
-from typing import List, Dict, Optional, Any, Literal, Protocol, Union
+from typing import List, Dict, Optional, Any, Protocol
 
 from evidence.values import JSONValue
 from datetime import datetime, timezone
@@ -11,7 +11,6 @@ import re
 import strawberry
 from strawberry_django import Ordering
 
-from datalayer.scalars import MediaLike
 from evidence.comments import DescendantNode
 from graph_engine import scalars
 from core import enums

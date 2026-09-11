@@ -224,7 +224,7 @@ async def test_search_finds_a_claim_the_projection_has_not_drawn(
     found drawn vertices would be the refused behaviour wearing a new name.
     """
     cell_id = await writes.create_entity(api_schema, simple_api_context, "Cell")
-    category = await test_graph.aget_entity_def("Cell")
+    await test_graph.aget_entity_def("Cell")
 
     @sync_to_async
     def undraw() -> int:

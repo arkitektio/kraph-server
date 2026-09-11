@@ -492,9 +492,9 @@ async def test_a_claim_two_views_declare_reports_both_drawings(
     drawn_in = {drawing["graph"]["id"] for drawing in payload["drawings"]}
     assert drawn_in == {str(test_graph.id), str(second_graph.id)}, f"Both views declaring the word must draw it, got {payload['drawings']}"
 
-    for drawing in payload["drawings"]:
-        assert drawing["category"]["key"] == word, "Each drawing reports the category *that view* drew it under"
-        assert drawing["node"]["id"] == payload["instance"]["id"], "and the same node, seen from that view"
+    for drawn in payload["drawings"]:
+        assert drawn["category"]["key"] == word, "Each drawing reports the category *that view* drew it under"
+        assert drawn["node"]["id"] == payload["instance"]["id"], "and the same node, seen from that view"
 
 
 CREATE_ENTITY_FOR_PARTICIPATION = """

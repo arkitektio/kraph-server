@@ -19,7 +19,7 @@ import pytest
 from asgiref.sync import sync_to_async
 from django.db import connection
 from core import models as core_models
-from graph_engine import locks, models as projection_models, projector, runner, watermark
+from graph_engine import locks, projector, runner, watermark
 from graph_engine.controller import GraphController
 from tests.support import drawing, graphs, sessions, writes
 

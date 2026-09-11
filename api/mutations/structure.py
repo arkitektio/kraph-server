@@ -7,7 +7,6 @@ only in the relational evidence base. Nothing projects one into Apache AGE, so
 absence is a permanent property of the model rather than a per-call answer.
 """
 
-from typing import cast
 
 from kante.types import Info
 

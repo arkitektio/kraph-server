@@ -15,7 +15,6 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Literal, Optional, Type, TypeVar, TYPE_CHECKING
 from datetime import datetime, timezone
 from evidence.values import JSONValue
-from graph_engine import scalars
 
 if TYPE_CHECKING:
     from evidence.models import Link, Metric, Structure

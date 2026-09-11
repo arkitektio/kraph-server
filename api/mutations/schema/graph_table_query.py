@@ -14,7 +14,6 @@ from kante.types import Info
 from api import context, inputs, types
 from api.mutations.insights._saved_query import plan_from_builder_args
 from core import models
-from graph_engine import input_models
 
 
 def create_graph_table_query_through_builder(

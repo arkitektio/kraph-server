@@ -42,7 +42,7 @@ if TYPE_CHECKING:
     # it from failing at runtime, so it only ever surfaced under a type checker
     # or `typing.get_type_hints`. A real import here, not a runtime one: the
     # write path deliberately does not depend on the ontology layer.
-    from core import models as core_models
+    pass
 
 # Which typed column each ValueKind writes into. The inverse of
 # `Metric.VALUE_COLUMN_FOR_KIND`, kept here because writing is where coercion

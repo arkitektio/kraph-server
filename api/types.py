@@ -10,7 +10,6 @@ This module follows the pattern from core/types.py where:
 3. Fields access the private _value for their data
 """
 
-import uuid
 
 import strawberry
 from strawberry.scalars import JSON
@@ -21,10 +20,9 @@ from datetime import datetime
 from api import loaders, order, pagination, filters
 from api import pagination as pagination_module
 from datalayer.types import MediaStore
-from graph_engine.scalars import AnyScalar, UnixMilliseconds, StructureIdentifier
+from graph_engine.scalars import AnyScalar, StructureIdentifier
 from graph_engine.retrieved import RetrievedMetric, RetrievedNode, RetrievedEdge, RetrievedStructure, _as_datetime
 from api.context import get_active_organization, get_controller
-from django.db.models import Q
 from graph_engine import input_models
 import kante
 from core import models
@@ -32,8 +30,7 @@ from evidence import claims as claims_module
 from evidence import models as evidence_models
 from evidence import panel
 from evidence.values import JSONValue
-from graph_engine import query_ir, results, retrieved, scalars
-from api import filters
+from graph_engine import query_ir, results, retrieved
 from core import enums
 from stats.gen import create_stats_type
 

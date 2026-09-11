@@ -6,7 +6,6 @@ from asgiref.sync import sync_to_async, async_to_sync
 from django.db import models
 
 from datalayer import models as datalayer_models
-from core import enums
 from graph_engine import input_models
 
 if TYPE_CHECKING:

@@ -69,7 +69,7 @@ async def test_two_annotators_can_disagree_without_forking_the_entity(
     created a new one — a second opinion produced a second entity.
     """
 
-    entity_id = await writes.create_entity(api_schema, simple_api_context, "AIS")
+    _entity_id = await writes.create_entity(api_schema, simple_api_context, "AIS")
 
     @sync_to_async
     def disagree() -> tuple[int, int]:

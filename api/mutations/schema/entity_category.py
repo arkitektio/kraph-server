@@ -5,9 +5,8 @@ from kante.types import Info
 
 from api import context, inputs, types
 from core import models
-from datalayer import models as datalayer_models
 from ._guards import delete_or_explain
-from .._scoped import accessible_graph, schema_graph, schema_scoped, scoped
+from .._scoped import schema_graph, schema_scoped
 from ._rematerialize import fingerprint, rematerialize_if_moved
 
 

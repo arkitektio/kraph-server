@@ -8,7 +8,7 @@ from core import enums, models
 from evidence import writer
 from datalayer import models as dl_models
 from ._guards import delete_or_explain, refuse_bad_color, refuse_edge_properties
-from .._scoped import accessible_graph, schema_graph, schema_scoped, scoped
+from .._scoped import schema_graph, schema_scoped
 
 
 def create_structure_relation_category(

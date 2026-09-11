@@ -8,7 +8,7 @@ with a ``ValidationError`` if they are not supplied via config or environment.
 """
 
 import os
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_settings import (

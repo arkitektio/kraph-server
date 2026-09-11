@@ -1,5 +1,4 @@
 from typing import NewType
-from datalayer import models
 import strawberry
 
 

@@ -3,7 +3,6 @@ import logging
 import uuid
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Optional, TypeVar, cast
-from urllib.parse import urlparse, parse_qs
 
 import boto3
 from botocore.config import Config

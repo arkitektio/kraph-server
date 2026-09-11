@@ -1,21 +1,25 @@
 import random
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from django.db import models
 from django.contrib.auth import get_user_model
 from kante import Info
 from core import enums
 from core import managers
 from koherent.fields import ProvenanceField
-from django_choices_field import TextChoicesField
 from datalayer import models as datalayer_models
 from authentikate.models import Organization, Membership
 from django.db.models import Q, QuerySet
-from kante.context import Membership as KanteMembership
-from graph_engine import input_models
 # Create your models here.
 
 from graph_engine.input_models import EntityDescriptorInput, StructureDescriptorInput
+
+if TYPE_CHECKING:
+    # Only ever an annotation here. The descriptor methods below are typed
+    # against it, and `_matching_structure_kinds` imports it inside its body
+    # to keep `core` from reading `evidence` at import time -- so the name was
+    # undefined at every one of those annotations (ruff F821).
+    from evidence.models import StructureKind
 
 
 class KindDiscriminatedModel(models.Model):

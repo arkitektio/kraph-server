@@ -17,10 +17,7 @@ from graph_engine.projection import Projector, TableProjector
 
 
 import strawberry
-from typing import List
-from kante.types import Info
 
-from api.types import Entity, Structure, Metric, Assertion
 
 from api import queries, types, mutations
 from api.subscriptions import Subscription

@@ -22,13 +22,33 @@ jobs:
       - name: Install the project
         run: uv sync --all-extras --dev
 
-      # Advisory for now: these steps report issues without failing the build so
-      # PRs aren't blocked while existing lint/format debt is burned down. Remove
-      # `continue-on-error` (or set it to false) to make them required checks.
+      # REQUIRED. The selected set is in `[tool.ruff.lint]` and is green on a
+      # clean tree, so a failure here means this branch introduced something --
+      # not that it inherited a backlog. Both steps below were
+      # `continue-on-error: true` while that backlog existed; the families still
+      # carrying one are reported by the advisory step instead of being silently
+      # folded into a check nobody can act on.
       - name: Ruff check
         run: uv run ruff check .
-        continue-on-error: true
 
-      - name: Ruff format check
+      # Advisory: the unburned families (~3.7k findings), printed as counts so
+      # the number is visible and can be driven down one family at a time. When
+      # a family reaches zero, move it into `select` in `pyproject.toml` and it
+      # becomes part of the required check above.
+      #
+      # `FA` and `UP006`/`UP007`/`UP045` are absent on purpose, here as well as
+      # in `select`: they rewrite annotations that Strawberry and pydantic read
+      # at *runtime*, and `from __future__ import annotations` stops the schema
+      # from building at all.
+      - name: Ruff backlog (advisory)
+        run: >
+          uv run ruff check .
+          --select ANN,D1,I,B,SIM,TRY,RET,C4,PT,PERF,RUF,N,PGH,S,UP
+          --ignore UP006,UP007,UP045
+          --statistics --exit-zero
+
+      # Advisory: `line-length = 300` means a format sweep would rewrite a large
+      # share of the repo in one commit. Run it deliberately, not as a gate.
+      - name: Ruff format check (advisory)
         run: uv run ruff format --check .
         continue-on-error: true

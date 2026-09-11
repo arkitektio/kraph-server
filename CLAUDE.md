@@ -23,7 +23,7 @@ uv run pytest                       # full suite
 uv run pytest tests/view/test_the_definition_document_is_the_views_meaning.py::test_name   # single test
 uv run pytest --cov --cov-branch    # coverage (CI: coverage.yaml)
 
-uv run ruff check .                 # lint      (CI: advisory, continue-on-error)
+uv run ruff check .                 # lint      (CI: REQUIRED — must stay green)
 uv run ruff format --check .        # format    (CI: advisory)
 uv run basedpyright                 # typecheck (CI: advisory)
 
@@ -31,8 +31,27 @@ python manage.py validate_settings  # load+validate config, print it with secret
 ```
 
 Notes:
-- Ruff is not declared in `[dependency-groups] dev` — it resolves transitively today. If it ever
-  disappears, use `uvx ruff`.
+- **`uv run ruff check .` is a required check, and it passes.** The selected set is in
+  `[tool.ruff.lint]` and every family in it names a defect rather than a preference: `E9`
+  (does not parse), `F` (pyflakes), `PLE` (raises at runtime), `ASYNC` (blocking work in an
+  `async def`, on a server that is ASGI end to end), `DTZ` (naive datetimes, when the log's
+  whole order is time), `LOG`, `T10` (a stray `breakpoint()`), `ISC` (a forgotten comma in a
+  list is a silent string join, and this repo builds SQL and rule documents in lists). So a
+  red Lint job means *this branch* broke something; it is not a backlog to scroll past.
+  Those settings used to sit at the top level of `[tool.ruff]`, where ruff has deprecated
+  them — every run printed a warning and one release from now they would have been dropped in
+  silence, leaving the repo linted by whatever the defaults were. Same shape as the
+  `[tool.mypy]` block below.
+- **The rest is an advisory backlog**, ~4.9k findings across `ANN`/`D1`/`I`/`B`/`SIM`/`UP`/…,
+  printed as counts by `lint.yaml`'s second step. Burn a family to zero, then move it into
+  `select` — that is the only way into the required check.
+- **Never select `FA`, `UP006`, `UP007` or `UP045`.** They rewrite annotations that Strawberry
+  and pydantic read at *runtime* (a pydantic field's annotation **is** its validator), and
+  `from __future__ import annotations` stops the schema building at all. They are excluded
+  from the advisory lane too, so nobody burns them down by accident.
+- `core-backup-do-not-delete/` is excluded from linting (`extend-exclude`), as it is from every
+  search: it carried 1,488 of the 5,221 findings the old config reported, none of them ever
+  going to be fixed.
 - **basedpyright is the only type checker.** `[tool.mypy]` used to sit in `pyproject.toml` set to
   `strict = true` with no CI job running it — a standard nothing checked — and is gone along with
   the `mypy` dev dependency. basedpyright runs unscoped over the whole repo, advisory.

@@ -1,8 +1,6 @@
 import contextlib
 import dataclasses
-import json
 import logging
-import re
 from typing import Iterable, Iterator, Optional, Dict, Any, List
 
 from kante.context import HttpContext
@@ -12,9 +10,6 @@ from strawberry_django import Ordering
 from evidence.values import JSONValue
 from graph_engine import input_models
 from graph_engine import query_ir
-from graph_engine.input_models import (
-    GraphDefinitionInput,
-)
 import uuid
 import datetime
 
@@ -36,7 +31,6 @@ from graph_engine import watermark
 from authentikate.models import Membership, Organization
 from core import enums, models
 from graph_engine import input_models as inputs
-from graph_engine import scalars
 from django.db import transaction
 from evidence import models as evidence_models
 from evidence import claims as claims_module
@@ -1258,7 +1252,7 @@ class GraphController:
             # role vertex every event in the graph then shared, and discarded the
             # role name — so entity-to-event participation did not exist in AGE at
             # all, and there was nothing for `rebuild` to replay.
-            participation_links = [
+            _participation_links = [
                 writer.create_link(
                     organization,
                     kind=link_kind,

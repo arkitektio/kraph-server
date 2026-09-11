@@ -1,6 +1,5 @@
 from kante.types import Info
 from graph_engine.input_models import ProvenanceContext
-from graph_engine import input_models
 from api.extensions.projection import current_projector
 from graph_engine.controller import GraphController
 from core import models

@@ -6,9 +6,8 @@ from kante.types import Info
 from api import inputs, types
 from core import models
 from datalayer import models as dl_models
-from graph_engine import input_models, materialize
 from ._guards import delete_or_explain, refuse_bad_color, refuse_edge_properties
-from .._scoped import accessible_graph, schema_graph, schema_scoped, scoped
+from .._scoped import schema_graph, schema_scoped
 
 
 def create_measurement_category(
