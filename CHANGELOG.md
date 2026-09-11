@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v1.0.0-rc.20 (2026-09-11)
+
+### Bug Fixes
+
+- Better protocols
+  ([`07dee4e`](https://github.com/arkitektio/kraph-server/commit/07dee4ee1d79b721008fbb5f0786626c64d31515))
+
+
 ## v1.0.0-rc.19 (2026-09-11)
 
 
