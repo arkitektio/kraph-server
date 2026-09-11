@@ -371,12 +371,18 @@ The load-bearing facts:
   organization-scoped.
 - **The projection seam** is `graph_engine/projection/protocol.py::Projector` — the writer half
   (`draw_node`, `draw_edge`, `write_properties`, `erase_nodes`, namespaces) and the reader half
-  (`drawn_nodes`, `drawn_edge`, `list_drawn`, `render_table`), phrased in refs/labels/dicts and
-  structured specs, no query language (`list_drawn` takes a `ListDrawnSpec`, not clause strings).
+  (`drawn_nodes`, `drawn_edge`, `list_drawn`, `render_table`), phrased in refs, labels, structured
+  specs and **dataclasses**, no query language (`list_drawn` takes a `ListDrawnSpec`, not clause
+  strings, and hands back `DrawnNode`s, not `dict[str, Any]`). Every method names `core.models.Graph`
+  and `query_ir.TableQueryPlan` under `TYPE_CHECKING`, so the seam stays free of Django and of the
+  query compiler at runtime while still saying what it takes.
   `projection/table.py::TableProjector` is the Postgres-table implementation and the **only**
   module that reads or writes `ProjectionVertex`/`ProjectionEdge` — and the only one that speaks
   namespace DDL (`CREATE PROPERTY GRAPH`, `GRAPH_TABLE`, `CREATE/DROP SCHEMA`);
-  `graph_engine/projector.py` decides *what* to draw and calls `controller.projector.*`;
+  `graph_engine/projector.py` decides *what* to draw and calls `controller.projector.*` — through
+  `projector.DrawingHost`, a one-member protocol, because the projector's whole dependency on the
+  controller is that one attribute, and saying so is what makes "this module knows nothing about
+  how" checkable rather than asserted;
   `graph_engine/namespace.py` decides what a namespace *declares* (pure spec, no SQL);
   `GraphController` holds a projector and runs no query.
   `tests/guards/test_the_projector_is_a_protocol.py` enforces all of it, including repo-wide scans that
@@ -453,12 +459,62 @@ The load-bearing facts:
   vendored Arkitekt port/widget type system — is gone: nothing imported it and it was in no
   `INSTALLED_APPS`, so the only thing keeping it alive was a test that smoke-imported every package.
 
+### Types, and where `Any` is still right
+
+`Any` is not a type; it is a request not to be checked. Two aliases replace almost every use of it,
+and both live in `evidence/values.py` — a module that imports nothing but `uuid`, because the
+projection seam needs them and may not import Django:
+
+- **`JSONValue`** — what a claim's stored value can be. A `Metric.value` is a number *or* a string
+  *or* a flag, and every fold has to decide which; that obligation is what `Any` hid.
+- **`Ref`** — a claim's primary key as callers hold it: the uuid, or its text. Both are in the wild
+  because `Link.source_ref` is a CharField (one column addresses four tables) while every claim's
+  own `pk` is a uuid.
+
+`evidence.models.Claim` is the third: the union `Instance | Link | Structure | Metric | Comment` —
+the prose word *claim* as a type, and what `Asserted.subjects` holds. `Standing` is deliberately not
+a member; a position on a claim is not itself one.
+
+**Where a dict was a record, it is a dataclass now.** `Projector.drawn_nodes`/`list_drawn` return
+`DrawnNode` (`projection/protocol.py`); `project_all`/`rebuild`/`converge` return
+`reports.DrawCounts` and `replay` a `reports.ReplayReport` — those were `dict[str, int]` with three
+different key sets and a `dict[str, Any]` whose `graphs` entries mixed a `Graph` row with five
+integers. `counts.get("unclassified")` in the controller was that uncertainty written down.
+
+**Where the code duck-types, it is a protocol now**, not `Any`: `projector.DrawingHost` (the one
+attribute this module needs of the controller), `selector.PropertyRule`/`Storable` (a derived
+property's own metric rule, reaching `evidence` from two different layers), `input_models`'
+`ClaimFilterModel`/`ClaimOrderModel`/`PageModel` (the four node and five edge input families
+declare the same fields under different names), `query_ir.PlanShape`, `pagination.Page`,
+`_scoped.GraphOwned`. `input_models.EntityCategoryProtocol` and `StructureCategoryProtocol` were
+already named protocols and were **not** ones — the module opened `from asyncio import Protocol`,
+so they were subclasses of asyncio's transport base and matched nothing structurally.
+
+`Any` survives in exactly one place and on purpose: the five `value: Any` **pydantic fields**
+(`PropertyMatch`, `MetricInput`, `ClaimConditionInput`, `WhereClauseInput`,
+`RenderGraphTableFilter`). A pydantic field annotation is the validator, and what those fields
+legitimately hold is a JSON scalar *or* a list *or* a datetime — `BEFORE`/`SINCE` take one. The
+real narrowing is in the `model_validator`s, per (field, operator) pair. `scalars.AnyScalar`, a
+`NewType` over `str`, already tried the other way and refused every number.
+
+The managers are generic: `OrganizationScopedManager[Instance]` and `KindedManager[Row]`, so
+`for_organization(...)` hands back a `QuerySet[Instance]` instead of the `QuerySet[Any]` that made
+every read of evidence untyped from its first line.
+
+**basedpyright is advisory and its unscoped count is not the target.** Replacing `Any` with real
+types *surfaces* mismatches that were silenced before — unguarded indexing into a JSON value,
+mostly — so `reportArgumentType` and friends go up while `reportExplicitAny` collapses. That is the
+pass working, not regressing.
+
 ### Repo hygiene
 
 - **Exclude `core-backup-do-not-delete/` from every search** — it is a legacy snapshot of `core/`
   and will double every grep hit.
-- `test.graphql` at the repo root is a hand-dumped SDL snapshot, **not** asserted by any test.
-  `tests/guards/test_the_schema_renders_and_splits_its_grain.py` checks the schema builds *and* that every member of `NodeSubtype` /
+- `test.graphql` at the repo root is the SDL, and **is** asserted —
+  `test_the_committed_sdl_is_the_live_schema` compares it to `str(schema)`, so a schema change that
+  does not regenerate it (`uv run python manage.py print_schema > test.graphql`) fails. (This line
+  used to say the opposite; the test's own `History:` paragraph records the change.)
+  `tests/guards/test_the_schema_renders_and_splits_its_grain.py` also checks the schema builds *and* that every member of `NodeSubtype` /
   `EdgeSubtype` is registered — a type the cast can produce but `create_schema(types=[...])` does
   not list fails at **runtime** ("Abstract type 'Edge' was resolved to a type that does not exist
   inside the schema"), never at build. Regenerate the snapshot after a schema change and read the

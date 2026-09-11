@@ -39,14 +39,25 @@ what lets a replay land where the original write did.
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
-from typing import Any, Iterable
+from collections.abc import Iterable, Mapping, Sequence
+from typing import TYPE_CHECKING
 
+from authentikate.models import Organization
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, QuerySet
 
 from evidence import claims as claims_module
 from evidence import models as evidence_models
+
+if TYPE_CHECKING:
+    # `core` reads `evidence` at runtime (a category joins a term), so the
+    # dependency only points this way for the type checker.
+    from core.models import Category, Graph
+
+#: A sameness or difference claim, as every fold here takes them.
+IdentityLink = evidence_models.Link
+#: What one node resolved to in a view: `projector.resolve_categories`' answer.
+type Resolved = Mapping[str, Sequence[Category]]
 
 #: What a component is folded from. Kept as a name rather than inlined so the
 #: fold, the rebuild and the consistency test cannot drift apart about it.
@@ -54,10 +65,10 @@ SAME_AS = evidence_models.Link.Kind.SAME_AS
 #: What subtracts from it.
 DIFFERENT_FROM = evidence_models.Link.Kind.DIFFERENT_FROM
 #: Both, in the order a fold reads them: everything the identity fold is about.
-IDENTITY_KINDS: tuple[Any, ...] = (SAME_AS, DIFFERENT_FROM)
+IDENTITY_KINDS: tuple[evidence_models.Link.Kind, ...] = (SAME_AS, DIFFERENT_FROM)
 
 
-def _standing_identity(organization: Any, kinds: Sequence[Any] = IDENTITY_KINDS) -> Any:
+def _standing_identity(organization: Organization, kinds: Sequence[evidence_models.Link.Kind] = IDENTITY_KINDS) -> QuerySet[IdentityLink]:
     """Every sameness and difference claim that still stands in this organization."""
     return claims_module.standing(
         evidence_models.Link.objects.for_organization(organization).filter(kind__in=list(kinds)),
@@ -65,16 +76,16 @@ def _standing_identity(organization: Any, kinds: Sequence[Any] = IDENTITY_KINDS)
     )
 
 
-def _pair(link: Any) -> frozenset[str]:
+def _pair(link: IdentityLink) -> frozenset[str]:
     return frozenset((str(link.source_ref), str(link.target_ref)))
 
 
-def vetoed_pairs(links: Iterable[Any]) -> set[frozenset[str]]:
+def vetoed_pairs(links: Iterable[IdentityLink]) -> set[frozenset[str]]:
     """The unordered endpoint pairs the `DIFFERENT_FROM` claims among `links` name."""
     return {_pair(link) for link in links if link.kind == DIFFERENT_FROM}
 
 
-def admitted_sameness(links: Iterable[Any]) -> list[Any]:
+def admitted_sameness(links: Iterable[IdentityLink]) -> list[IdentityLink]:
     """The `SAME_AS` claims among `links` that no `DIFFERENT_FROM` among them
     vetoes — the one place the veto rule is written. `links` must already be
     the standing, trusted set for whatever scope is folding."""
@@ -83,7 +94,7 @@ def admitted_sameness(links: Iterable[Any]) -> list[Any]:
     return [link for link in links if link.kind == SAME_AS and _pair(link) not in vetoed]
 
 
-def _adjacency(links: Iterable[Any]) -> dict[str, set[str]]:
+def _adjacency(links: Iterable[IdentityLink]) -> dict[str, set[str]]:
     """Symmetric adjacency over the admitted sameness among `links`."""
     adjacency: dict[str, set[str]] = defaultdict(set)
     for link in admitted_sameness(links):
@@ -93,14 +104,14 @@ def _adjacency(links: Iterable[Any]) -> dict[str, set[str]]:
     return adjacency
 
 
-def standing_adjacency(organization: Any) -> dict[str, set[str]]:
+def standing_adjacency(organization: Organization) -> dict[str, set[str]]:
     """The organization's whole sameness graph, vetoes applied — what
     :func:`refold` writes and what `manage.py rebuild_identity --check`
     compares the cache against. One query."""
     return _adjacency(_standing_identity(organization).only("id", "kind", "source_ref", "target_ref"))
 
 
-def canonical_for(organization: Any, node_ref: str) -> str:
+def canonical_for(organization: Organization, node_ref: str) -> str:
     """The representative of this node's component.
 
     Returns the node itself when nothing has been merged with it — a component of
@@ -110,7 +121,7 @@ def canonical_for(organization: Any, node_ref: str) -> str:
     return canonical_for_many(organization, [node_ref])[str(node_ref)]
 
 
-def canonical_for_many(organization: Any, node_refs: Iterable[str]) -> dict[str, str]:
+def canonical_for_many(organization: Organization, node_refs: Iterable[str]) -> dict[str, str]:
     """Representatives for many nodes at once. One query.
 
     Batched because the panel asks about a page of structures, and asking per
@@ -123,7 +134,7 @@ def canonical_for_many(organization: Any, node_refs: Iterable[str]) -> dict[str,
     return {ref: found.get(ref, ref) for ref in refs}
 
 
-def component_refs(organization: Any, node_refs: Iterable[str]) -> dict[str, list[str]]:
+def component_refs(organization: Organization, node_refs: Iterable[str]) -> dict[str, list[str]]:
     """Every node in the component of each given node, keyed by the node asked about.
 
     Two queries regardless of how many nodes are asked about: one to find the
@@ -143,7 +154,7 @@ def component_refs(organization: Any, node_refs: Iterable[str]) -> dict[str, lis
     return {ref: sorted(members.get(canonical[ref], [ref])) for ref in refs}
 
 
-def _trusted_in_view(graph: Any, links: list[Any], resolved: Mapping[str, Sequence[Any]]) -> list[Any]:
+def _trusted_in_view(graph: Graph, links: list[IdentityLink], resolved: Resolved) -> list[IdentityLink]:
     """The identity claims among `links` a view counts, given which endpoints it admits.
 
     RFC 0024: identity is the **view's**. A claim counts when both endpoints are
@@ -174,7 +185,7 @@ def _trusted_in_view(graph: Any, links: list[Any], resolved: Mapping[str, Sequen
             predicate=selector_module.trust_predicate(rule, kind="SAMENESS"),
         )
     )
-def view_identity_links(graph: Any, refs: Iterable[str], kinds: Sequence[Any] = IDENTITY_KINDS) -> list[Any]:
+def view_identity_links(graph: Graph, refs: Iterable[str], kinds: Sequence[evidence_models.Link.Kind] = IDENTITY_KINDS) -> list[IdentityLink]:
     """The sameness and difference claims a view counts that touch these refs
     — one hop, both ends admitted and trusted under the view's rule
     (:func:`_trusted_in_view`).
@@ -197,19 +208,19 @@ def view_identity_links(graph: Any, refs: Iterable[str], kinds: Sequence[Any] = 
     return _trusted_in_view(graph, links, resolved)
 
 
-def view_sameness_links(graph: Any, refs: Iterable[str]) -> list[Any]:
+def view_sameness_links(graph: Graph, refs: Iterable[str]) -> list[IdentityLink]:
     """The `SAME_AS` claims a view counts that touch these refs — vetoed ones
     included, because a claim the fold outweighs is still a claim somebody made
     and may want to retract."""
     return view_identity_links(graph, refs, kinds=(SAME_AS,))
 
 
-def view_difference_links(graph: Any, refs: Iterable[str]) -> list[Any]:
+def view_difference_links(graph: Graph, refs: Iterable[str]) -> list[IdentityLink]:
     """The `DIFFERENT_FROM` claims a view counts that touch these refs."""
     return view_identity_links(graph, refs, kinds=(DIFFERENT_FROM,))
 
 
-def component_refs_for_view(graph: Any, node_refs: Iterable[str]) -> dict[str, list[str]]:
+def component_refs_for_view(graph: Graph, node_refs: Iterable[str]) -> dict[str, list[str]]:
     """One view's components: sameness folded under the view's rule (RFC 0024).
 
     The frontier loop `recompute` uses, but each hop keeps only the claims
@@ -237,7 +248,7 @@ def component_refs_for_view(graph: Any, node_refs: Iterable[str]) -> dict[str, l
     return {ref: sorted(_reachable(ref, adjacency)) for ref in refs}
 
 
-def view_components(graph: Any, resolved: Mapping[str, Sequence[Any]]) -> dict[str, list[str]]:
+def view_components(graph: Graph, resolved: Resolved) -> dict[str, list[str]]:
     """The individuals a view draws among these already-resolved nodes (RFC 0018).
 
     `resolved` maps a ref to the categories it resolved to in this view
@@ -282,7 +293,7 @@ def view_components(graph: Any, resolved: Mapping[str, Sequence[Any]]) -> dict[s
 
 
 @transaction.atomic
-def merge(organization: Any, left_ref: str, right_ref: str) -> str:
+def merge(organization: Organization, left_ref: str, right_ref: str) -> str:
     """Union the components of two nodes. Returns the surviving representative.
 
     Idempotent: a second claim that two already-merged nodes are the same adds
@@ -308,12 +319,12 @@ def merge(organization: Any, left_ref: str, right_ref: str) -> str:
     return canonical
 
 
-def component_members(organization: Any, canonical_ref: str) -> list[str]:
+def component_members(organization: Organization, canonical_ref: str) -> list[str]:
     """Every node currently recorded under this representative."""
     return [str(instance_id) for instance_id in evidence_models.InstanceIdentity.objects.for_organization(organization).filter(canonical_id=str(canonical_ref)).values_list("instance_id", flat=True)]
 
 
-def _write_component(organization: Any, members: set[str], canonical: str) -> None:
+def _write_component(organization: Organization, members: set[str], canonical: str) -> None:
     """Point every member at one representative, replacing whatever was there.
 
     Deletes first rather than updating in place: a union can absorb rows that
@@ -341,7 +352,7 @@ def _write_component(organization: Any, members: set[str], canonical: str) -> No
 
 
 @transaction.atomic
-def retract(organization: Any, link: evidence_models.Link) -> None:
+def retract(organization: Organization, link: evidence_models.Link) -> None:
     """Flag the component a withdrawn sameness claim may have split.
 
     Union-find cannot un-union, so this does not try. It marks, and
@@ -358,7 +369,7 @@ def retract(organization: Any, link: evidence_models.Link) -> None:
 
 
 @transaction.atomic
-def separate(organization: Any, left_ref: str, right_ref: str) -> list[str]:
+def separate(organization: Organization, left_ref: str, right_ref: str) -> list[str]:
     """Apply a newly written `DIFFERENT_FROM` to the cache (RFC 0019).
 
     The mirror of :func:`merge` with :func:`retract`'s shape: a veto can only
@@ -377,7 +388,7 @@ def separate(organization: Any, left_ref: str, right_ref: str) -> list[str]:
 
 
 @transaction.atomic
-def recompute(organization: Any, canonical_ref: str) -> list[str]:
+def recompute(organization: Organization, canonical_ref: str) -> list[str]:
     """Rebuild one component from the sameness claims that still stand,
     less the ones a standing difference vetoes.
 
@@ -435,7 +446,7 @@ def _reachable(start: str, adjacency: dict[str, set[str]]) -> set[str]:
     return component
 
 
-def recompute_stale(organization: Any, limit: int | None = None) -> int:
+def recompute_stale(organization: Organization, limit: int | None = None) -> int:
     """Rebuild every component a retraction left flagged. Returns how many were rebuilt."""
     stale = evidence_models.InstanceIdentity.objects.for_organization(organization).filter(needs_recompute=True).values_list("canonical_id", flat=True).distinct()
     canonicals = [str(canonical) for canonical in stale]
@@ -447,7 +458,7 @@ def recompute_stale(organization: Any, limit: int | None = None) -> int:
     return len(canonicals)
 
 
-def refold(organization: Any) -> int:
+def refold(organization: Organization) -> int:
     """Rebuild every component in the organization from scratch. Returns how many exist.
 
     The honesty test, and what `manage.py rebuild_identity` runs. If this

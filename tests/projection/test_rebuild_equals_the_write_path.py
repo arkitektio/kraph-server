@@ -108,8 +108,8 @@ async def test_reproject_reproduces_the_projection(
         return controller.rebuild_projection(test_graph)
 
     result = await rebuild()
-    assert result["nodes"] >= 1
-    assert result["projected"] >= 1
+    assert result.nodes >= 1
+    assert result.projected >= 1
 
     after = await api_schema.execute(reads.NODE_PROPERTIES, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
     assert after.errors is None, f"GraphQL errors: {after.errors}"
@@ -147,9 +147,9 @@ async def test_rebuild_survives_the_namespace_being_destroyed(
 
     result = await drop_then_rebuild()
 
-    assert result["nodes"] == 1, "The entity must be reconstructed from evidence.Node"
-    assert result["states"] == 2, "Both metrics must be refolded from evidence.Metric"
-    assert result["projected"] == 1
+    assert result.nodes == 1, "The entity must be reconstructed from evidence.Node"
+    assert result.states == 2, "Both metrics must be refolded from evidence.Metric"
+    assert result.projected == 1
 
 
 @pytest.mark.django_db(transaction=True)
@@ -183,7 +183,7 @@ async def test_instance_refs_survive_a_rebuild(
     # raising is the assertion.
     for ref in refs:
         uuid.UUID(ref)
-    assert result["projected"] == 1
+    assert result.projected == 1
 
     after = await api_schema.execute(reads.NODE_PROPERTIES, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
     assert after.errors is None, f"GraphQL errors: {after.errors}"
@@ -498,8 +498,8 @@ async def test_relation_survives_a_rebuild(
 
     result = await drop_then_rebuild()
 
-    assert result["nodes"] == 2
-    assert result["edges"] == 1, "The relation must be reconstructed from evidence.Link alone"
+    assert result.nodes == 2
+    assert result.edges == 1, "The relation must be reconstructed from evidence.Link alone"
 
     @sync_to_async
     def edges_after() -> int:
@@ -544,7 +544,7 @@ async def test_retracting_the_last_claim_removes_the_edge_and_the_replay_agrees(
         return controller.rebuild_projection(test_graph)
 
     result = await rebuild()
-    assert result["edges"] == 0, "The replay must not resurrect a retracted relation"
+    assert result.edges == 0, "The replay must not resurrect a retracted relation"
 
     @sync_to_async
     def after_rebuild() -> int:
@@ -579,7 +579,7 @@ async def test_participation_survives_a_rebuild(
         return controller.rebuild_projection(test_graph)
 
     result = await drop_then_rebuild()
-    assert result["participations"] == 2, "Both participations must be reconstructed from evidence.Link alone"
+    assert result.participations == 2, "Both participations must be reconstructed from evidence.Link alone"
 
     @sync_to_async
     def edges() -> list[tuple[str, str]]:

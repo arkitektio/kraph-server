@@ -36,9 +36,13 @@ so staleness of that kind is a separate axis: `schema_stale`, compared against
 
 from __future__ import annotations
 
+import datetime
+import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable
 
+from authentikate.models import Organization
+from core.models import Graph
 from django.db import transaction
 from django.db.models import Max, Min
 from django.utils import timezone
@@ -47,7 +51,7 @@ from evidence import models as evidence_models
 from graph_engine import models as projection_models
 
 
-def projection_for(graph: Any) -> projection_models.Projection:
+def projection_for(graph: Graph) -> projection_models.Projection:
     """The bookkeeping row for a graph, created on first sight.
 
     `get_or_create` rather than a signal, so a `Graph` row made straight through
@@ -58,19 +62,19 @@ def projection_for(graph: Any) -> projection_models.Projection:
     return row
 
 
-def max_seq(organization: Any) -> int:
+def max_seq(organization: Organization) -> int:
     """The highest assertion seq the organization has committed; 0 when none."""
     value = evidence_models.Assertion.objects.for_organization(organization).aggregate(value=Max("seq"))["value"]
     return int(value or 0)
 
 
-def min_pending_seq(organization: Any) -> int | None:
+def min_pending_seq(organization: Organization) -> int | None:
     """The lowest outstanding assertion seq, or None when nothing is pending."""
     value = projection_models.PendingProjection.objects.filter(organization=organization).aggregate(value=Min("assertion__seq"))["value"]
     return int(value) if value is not None else None
 
 
-def pending_count(organization: Any) -> int:
+def pending_count(organization: Organization) -> int:
     """How many assertions nobody has finished drawing."""
     return projection_models.PendingProjection.objects.filter(organization=organization).count()
 
@@ -87,8 +91,8 @@ class Position:
     derived_through_seq: int
     schema_hash: str | None
     schema_stale: bool
-    derived_at: Any
-    rebuilt_at: Any
+    derived_at: datetime.datetime | None
+    rebuilt_at: datetime.datetime | None
 
 
 def cursor_from(status: str, organization_max_seq: int, organization_min_pending: int | None) -> int:
@@ -100,7 +104,7 @@ def cursor_from(status: str, organization_max_seq: int, organization_min_pending
     return min(organization_min_pending - 1, organization_max_seq)
 
 
-def schema_stale(graph: Any, row: projection_models.Projection | None = None) -> bool:
+def schema_stale(graph: Graph, row: projection_models.Projection | None = None) -> bool:
     """Were this graph's vertices last derived under a schema that is no longer the active one?
 
     A graph with no active schema is never stale: there is no version to be
@@ -116,7 +120,7 @@ def schema_stale(graph: Any, row: projection_models.Projection | None = None) ->
     return row.schema_hash != active.hash
 
 
-def position(graph: Any) -> Position:
+def position(graph: Graph) -> Position:
     """Everything `Graph.projection` reports, computed once."""
     row = projection_for(graph)
     organization = graph.organization
@@ -137,12 +141,12 @@ def position(graph: Any) -> Position:
     )
 
 
-def positions(graphs: Iterable[Any]) -> dict[Any, Position]:
+def positions(graphs: Iterable[Graph]) -> dict[int, Position]:
     """`position` for many graphs, with the per-organization numbers computed once each."""
     graphs = list(graphs)
     rows = {row.graph_id: row for row in projection_models.Projection.objects.filter(graph__in=graphs)}
-    by_org: dict[Any, tuple[int, int | None, int]] = {}
-    out: dict[Any, Position] = {}
+    by_org: dict[int, tuple[int, int | None, int]] = {}
+    out: dict[int, Position] = {}
     for graph in graphs:
         row = rows.get(graph.pk) or projection_for(graph)
         org_key = graph.organization_id
@@ -183,7 +187,7 @@ def settle(assertion: evidence_models.Assertion) -> None:
     projection_models.PendingProjection.objects.filter(pk=assertion.pk).delete()
 
 
-def settle_many(assertion_ids: Iterable[Any]) -> int:
+def settle_many(assertion_ids: Iterable[uuid.UUID]) -> int:
     """Clear exactly these outbox rows — the ones an incremental replay read and applied."""
     ids = list(assertion_ids)
     if not ids:
@@ -192,7 +196,7 @@ def settle_many(assertion_ids: Iterable[Any]) -> int:
     return int(deleted)
 
 
-def mark_rebuilding(graph: Any) -> projection_models.Projection:
+def mark_rebuilding(graph: Graph) -> projection_models.Projection:
     """The namespace is about to be dropped; until the replay finishes, everything is outstanding."""
     row = projection_for(graph)
     row.status = projection_models.Projection.Status.REBUILDING
@@ -200,7 +204,7 @@ def mark_rebuilding(graph: Any) -> projection_models.Projection:
     return row
 
 
-def mark_consistent(graph: Any, *, through_seq: int, schema_hash: str | None, rebuilt: bool = False) -> projection_models.Projection:
+def mark_consistent(graph: Graph, *, through_seq: int, schema_hash: str | None, rebuilt: bool = False) -> projection_models.Projection:
     """A bulk operation finished: the drawing reflects the log up to `through_seq` under `schema_hash`."""
     row = projection_for(graph)
     row.status = projection_models.Projection.Status.CONSISTENT
@@ -216,19 +220,19 @@ def mark_consistent(graph: Any, *, through_seq: int, schema_hash: str | None, re
     return row
 
 
-def mark_derived(graph: Any) -> None:
+def mark_derived(graph: Graph) -> None:
     """`projector.project` wrote properties here just now. One UPDATE per call, not per node."""
     projection_models.Projection.objects.filter(graph=graph).update(derived_at=timezone.now())
 
 
-def record_schema_hash(graph: Any, schema_hash: str | None) -> None:
+def record_schema_hash(graph: Graph, schema_hash: str | None) -> None:
     """Every node category of this graph has been redrawn under `schema_hash`."""
     row = projection_for(graph)
     row.schema_hash = schema_hash
     row.save(update_fields=["schema_hash"])
 
 
-def active_schema_hash(graph: Any) -> str | None:
+def active_schema_hash(graph: Graph) -> str | None:
     """The hash a drawing made right now would be derived under."""
     from core import models as core_models
 

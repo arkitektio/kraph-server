@@ -33,12 +33,20 @@ or not a view happens to project the edge.
 
 from __future__ import annotations
 
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import TYPE_CHECKING
+
+from authentikate.models import Organization
+from django.db.models import QuerySet
 
 from evidence import claims as claims_module
 from evidence import models as evidence_models
 from graph_engine import input_models
+from graph_engine.input_models import ClaimFilterModel, ClaimOrderModel, PageModel
 from evidence import selector as selector_module
+
+if TYPE_CHECKING:
+    from core.models import Category, Graph
 
 #: Filters that only ever meant something against an Apache AGE edge's properties.
 #: A claim has none: `project_edges` writes `category_id` and `__assertion_count`
@@ -47,14 +55,14 @@ from evidence import selector as selector_module
 _VERTEX_ONLY_FILTERS = ("has_property", "search", "matches")
 
 
-def refuse_vertex_filters(filter_model: Any) -> None:
+def refuse_vertex_filters(filter_model: ClaimFilterModel) -> None:
     """Reject filters that only applied to a projected edge's properties."""
     offending = [name for name in _VERTEX_ONLY_FILTERS if getattr(filter_model, name, None)]
     if offending:
         raise ValueError(f"{', '.join(offending)} filtered on properties of a projected edge. Edges are read from the evidence log now, and a claim carries no such properties — filter on `ids`, or read the endpoints' properties instead.")
 
 
-def links_of_kind(organization: Any, kind: Any) -> Any:
+def links_of_kind(organization: Organization, kind: evidence_models.Link.Kind) -> QuerySet[evidence_models.Link]:
     """Every standing claim of one kind in the organization."""
     return claims_module.standing(
         evidence_models.Link.objects.for_organization(organization).filter(kind=kind),
@@ -62,7 +70,7 @@ def links_of_kind(organization: Any, kind: Any) -> Any:
     ).select_related("assertion", "term")
 
 
-def links_for_category(organization: Any, category: Any, kind: Any) -> Any:
+def links_for_category(organization: Organization, category: Category, kind: evidence_models.Link.Kind) -> QuerySet[evidence_models.Link]:
     """Standing claims of one kind, under the category's rule.
 
     A primitive category lists every claim naming its word, standings
@@ -86,7 +94,7 @@ def links_for_category(organization: Any, category: Any, kind: Any) -> Any:
     return links_of_kind(organization, kind).filter(term_id=category.term_id)
 
 
-def links_in_graph(graph: Any, kind: Any, *, ref_field: str) -> Any:
+def links_in_graph(graph: Graph, kind: evidence_models.Link.Kind, *, ref_field: str) -> QuerySet[evidence_models.Link]:
     """Standing claims of one kind touching a node this graph contains, folded
     under each claim's category rule.
 
@@ -110,7 +118,7 @@ def links_in_graph(graph: Any, kind: Any, *, ref_field: str) -> Any:
     return evidence_models.Link.objects.for_organization(graph.organization).filter(pk__in=surviving).select_related("assertion", "term")
 
 
-def narrow(links: Any, filter_model: Any, ordering_models: Iterable[Any], pagination_model: Any) -> list[Any]:
+def narrow(links: QuerySet[evidence_models.Link], filter_model: ClaimFilterModel, ordering_models: Iterable[ClaimOrderModel], pagination_model: PageModel | None) -> list[evidence_models.Link]:
     """Apply the ids filter, the ordering and the page. Returns rows.
 
     Ordering is over the log's own columns. `created_at` is when the row was
@@ -142,5 +150,5 @@ def narrow(links: Any, filter_model: Any, ordering_models: Iterable[Any], pagina
     return list(links.order_by(*order_by)[offset : offset + limit])
 
 
-def _direction(column: str, value: Any) -> str:
+def _direction(column: str, value: object) -> str:
     return f"-{column}" if str(value).upper().endswith("DESC") else column

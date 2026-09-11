@@ -32,10 +32,13 @@ it is documented rather than papered over.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING
 
-from django.db.models import BooleanField, Max
+from django.db.models import BooleanField, Max, QuerySet
 from django.db.models.expressions import RawSQL
+
+if TYPE_CHECKING:
+    from evidence import models as evidence_models
 
 #: `age(xid)` counts transactions back from the current counter, so an older
 #: transaction has a *larger* age; comparing ages is how xids are ordered across
@@ -44,7 +47,7 @@ from django.db.models.expressions import RawSQL
 _PRECEDES_EVERY_OPEN_TRANSACTION = 'age("evidence_assertion"."xmin") > age(pg_snapshot_xmin(pg_current_snapshot())::xid)'
 
 
-def before_every_open_transaction(queryset: Any) -> Any:
+def before_every_open_transaction(queryset: QuerySet[evidence_models.Assertion]) -> QuerySet[evidence_models.Assertion]:
     """Narrow an ``Assertion`` queryset to rows no open transaction can precede.
 
     The predicate reads the row's ``xmin`` system column, so it applies only to a
@@ -55,7 +58,7 @@ def before_every_open_transaction(queryset: Any) -> Any:
     return queryset.filter(RawSQL(_PRECEDES_EVERY_OPEN_TRANSACTION, (), output_field=BooleanField()))
 
 
-def horizon(queryset: Any) -> int:
+def horizon(queryset: QuerySet[evidence_models.Assertion]) -> int:
     """The highest seq the gate admits in ``queryset``, or 0 when it admits none.
 
     Every assertion at or below it that will ever be visible already is; one above

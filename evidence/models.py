@@ -50,7 +50,6 @@ two provenance systems over the same rows would eventually disagree.
 from __future__ import annotations
 
 import uuid
-from typing import Any
 
 from authentikate.models import Organization
 from datalayer import models as datalayer_models
@@ -58,6 +57,11 @@ from django.db import models
 
 from core.enums import ValueKind
 from evidence.managers import OrganizationScopedManager
+
+# Re-exported so the rest of `evidence` can say `evidence_models.JSONValue`
+# without a second import; they are defined in `evidence.values`, which imports
+# no Django, because the projection seam needs them too and may not import this.
+from evidence.values import JSONValue, Ref  # noqa: F401
 
 
 #: The kinds of claim a :class:`Standing` can be about — one per table that holds
@@ -155,7 +159,7 @@ class Assertion(models.Model):
         help_text="When we durably stored the claim. Never equal to asserted_at by definition, and only ever used for debugging ingest, not for answering questions.",
     )
 
-    objects = OrganizationScopedManager()
+    objects = OrganizationScopedManager["Assertion"]()
     all_objects = models.Manager()
 
     class Meta:
@@ -176,7 +180,7 @@ class Assertion(models.Model):
         return f"Assertion by {self.subject} via {self.app_id} at {self.asserted_at}"
 
 
-def _default_observed_at(claim: Any) -> None:
+def _default_observed_at(claim: "Instance | Link | Metric") -> None:
     """Fill a claim's ``observed_at`` from its assertion when the claimant gave none.
 
     Called from :meth:`Instance.save` and :meth:`Link.save` — the column is NOT
@@ -193,12 +197,12 @@ def _default_observed_at(claim: Any) -> None:
 CONFIDENCE_HELP_TEXT = "How sure the claimant was, 0 to 1. Null means they gave no number — which is not 1.0 and not 0.0: a `CONFIDENCE` rule admits only claims that carry one (RFC 0016)."
 
 
-def _confidence_field() -> Any:
+def _confidence_field() -> models.FloatField:
     """The same nullable unit-interval float on every claim table (RFC 0016)."""
     return models.FloatField(null=True, blank=True, help_text=CONFIDENCE_HELP_TEXT)
 
 
-def _confidence_constraint(table: str) -> Any:
+def _confidence_constraint(table: str) -> models.CheckConstraint:
     """The database refuses a confidence outside [0, 1]. The input layer refuses
     it first; this is for every writer that is not the API."""
     return models.CheckConstraint(
@@ -272,7 +276,7 @@ class Term(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
-    objects = OrganizationScopedManager()
+    objects = OrganizationScopedManager["Term"]()
     all_objects = models.Manager()
 
     class Meta:
@@ -330,7 +334,7 @@ class StructureKind(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
-    objects = OrganizationScopedManager()
+    objects = OrganizationScopedManager["StructureKind"]()
     all_objects = models.Manager()
 
     class Meta:
@@ -400,7 +404,7 @@ class MetricKind(models.Model):
     color = models.JSONField(max_length=1000, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
-    objects = OrganizationScopedManager()
+    objects = OrganizationScopedManager["MetricKind"]()
     all_objects = models.Manager()
 
     class Meta:
@@ -486,7 +490,7 @@ class Structure(models.Model):
     #: cost, and :func:`evidence.claims.standing` is how a queryset narrows by it.
     created_at = models.DateTimeField(auto_now_add=True)
 
-    objects = OrganizationScopedManager()
+    objects = OrganizationScopedManager["Structure"]()
     all_objects = models.Manager()
 
     class Meta:
@@ -506,7 +510,7 @@ class Structure(models.Model):
     def __str__(self) -> str:
         return f"{self.identifier}:{self.object}"
 
-    def save(self, *args: Any, **kwargs: Any) -> None:
+    def save(self, *args: object, **kwargs: object) -> None:
         _default_observed_at(self)
         super().save(*args, **kwargs)
 
@@ -604,7 +608,7 @@ class Metric(models.Model):
     #: cost, and :func:`evidence.claims.standing` is how a queryset narrows by it.
     created_at = models.DateTimeField(auto_now_add=True)
 
-    objects = OrganizationScopedManager()
+    objects = OrganizationScopedManager["Metric"]()
     all_objects = models.Manager()
 
     class Meta:
@@ -641,7 +645,7 @@ class Metric(models.Model):
     }
 
     @property
-    def value(self) -> Any:
+    def value(self) -> JSONValue:
         """The metric's value, read from whichever column its kind selects.
 
         INT shares ``value_num`` with FLOAT so that numeric aggregation stays a
@@ -773,7 +777,7 @@ class Link(models.Model):
     #: cost, and :func:`evidence.claims.standing` is how a queryset narrows by it.
     created_at = models.DateTimeField(auto_now_add=True)
 
-    objects = OrganizationScopedManager()
+    objects = OrganizationScopedManager["Link"]()
     all_objects = models.Manager()
 
     class Meta:
@@ -785,7 +789,7 @@ class Link(models.Model):
         ]
         constraints = [_confidence_constraint("link")]
 
-    def save(self, *args: Any, **kwargs: Any) -> None:
+    def save(self, *args: object, **kwargs: object) -> None:
         _default_observed_at(self)
         super().save(*args, **kwargs)
 
@@ -865,7 +869,7 @@ class Comment(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
-    objects = OrganizationScopedManager()
+    objects = OrganizationScopedManager["Comment"]()
     all_objects = models.Manager()
 
     class Meta:
@@ -949,7 +953,7 @@ class Standing(models.Model):
         related_name="standings",
     )
 
-    objects = OrganizationScopedManager()
+    objects = OrganizationScopedManager["Standing"]()
     all_objects = models.Manager()
 
     class Meta:
@@ -1024,7 +1028,7 @@ class CurrentStanding(models.Model):
         help_text="The standing this answer was folded from — the claim that won. CASCADE because this row is a projection of that one: if it goes, so does the answer derived from it.",
     )
 
-    objects = OrganizationScopedManager()
+    objects = OrganizationScopedManager["CurrentStanding"]()
     all_objects = models.Manager()
 
     class Meta:
@@ -1160,7 +1164,7 @@ class State(models.Model):
     )
     updated_at = models.DateTimeField(auto_now=True)
 
-    objects = OrganizationScopedManager()
+    objects = OrganizationScopedManager["State"]()
     all_objects = models.Manager()
 
     class Meta:
@@ -1250,7 +1254,7 @@ class Instance(models.Model):
     # it, so the filter was a no-op and the two paths agreed only by accident.
     created_at = models.DateTimeField(auto_now_add=True)
 
-    objects = OrganizationScopedManager()
+    objects = OrganizationScopedManager["Instance"]()
     all_objects = models.Manager()
 
     class Meta:
@@ -1264,7 +1268,7 @@ class Instance(models.Model):
         ]
         constraints = [_confidence_constraint("instance")]
 
-    def save(self, *args: Any, **kwargs: Any) -> None:
+    def save(self, *args: object, **kwargs: object) -> None:
         _default_observed_at(self)
         super().save(*args, **kwargs)
 
@@ -1334,7 +1338,7 @@ class InstanceIdentity(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
-    objects = OrganizationScopedManager()
+    objects = OrganizationScopedManager["InstanceIdentity"]()
     all_objects = models.Manager()
 
     class Meta:
@@ -1348,3 +1352,19 @@ class InstanceIdentity(models.Model):
 
     def __str__(self) -> str:
         return f"{self.instance_id} ~ {self.canonical_id}"
+
+
+#: A **recorded statement** — the prose word `claim` in the vocabulary, as a
+#: type. These five tables are what an `Assertion` can be an act of recording,
+#: and therefore what a write's `Asserted.subjects` holds.
+#:
+#: A union rather than a protocol, because that is what it is: the five rows
+#: share `organization`, `assertion` and a uuid primary key, and nothing else —
+#: a `Link` has endpoints a `Metric` has not, an `Instance` a `kind` a `Comment`
+#: has not. `Any` at those sites said "one of some set I will not name"; naming
+#: the set is what lets `api/types.py`'s `cast(Instance, …)` narrowings be
+#: checked rather than believed.
+#:
+#: `Standing` is deliberately **not** a member: a position on a claim is not
+#: itself a claim, which is the distinction `retractLinks` was renamed for.
+type Claim = Instance | Link | Structure | Metric | Comment

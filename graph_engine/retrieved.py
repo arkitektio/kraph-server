@@ -10,13 +10,20 @@ point: a claim no view draws still has to be answerable, so `from_row` /
 claim's uuid — is the only field that means anything in every case.
 """
 
+import builtins
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, Optional, Type, TypeVar, TYPE_CHECKING
+from typing import Dict, List, Literal, Optional, Type, TypeVar, TYPE_CHECKING
 from datetime import datetime, timezone
+from evidence.values import JSONValue
 from graph_engine import scalars
 
 if TYPE_CHECKING:
+    from evidence.models import Link, Metric, Structure
+    from evidence.models import Instance as InstanceRow
+    from core.models import Category
     from graph_engine.controller import GraphController
+    from graph_engine.projection.protocol import DrawnNode
+    from graph_engine.query_ir import TableQueryPlan
 
 
 # Reserved property keys that should not be exposed as user properties.
@@ -48,7 +55,7 @@ RESERVED_PROPERTY_KEYS = frozenset(
 INTERNAL_PROPERTY_PREFIX = "__"
 
 
-def _as_datetime(value: Any) -> Optional[datetime]:
+def _as_datetime(value: JSONValue) -> Optional[datetime]:
     """Read a validity bound out of a node property.
 
     Handles both spellings because both are in the wild: the projector writes ISO
@@ -132,7 +139,7 @@ class RetrievedVariable:
     """A single property/variable from a node."""
 
     key: str
-    value: Any
+    value: JSONValue
 
     def __hash__(self) -> int:
         """A hash"""
@@ -164,7 +171,7 @@ class RetrievedNode:
     vertex_id: int
     label: str
     """The first of `labels`, for a reader that shows one — or the word itself when undrawn."""
-    properties: Dict[str, Any] = field(default_factory=dict)
+    properties: Dict[str, JSONValue] = field(default_factory=dict)
     row_id: Optional[str] = None
     """Primary key when this node is backed by a relational evidence row.
 
@@ -270,7 +277,7 @@ class RetrievedNode:
     # is reassigned by every reproject. `unique_id` is the identity.
 
     @classmethod
-    def from_row(cls: Type[T], controller: "GraphController", row: Any, graph_name: str = "") -> T:
+    def from_row(cls: Type[T], controller: "GraphController", row: "InstanceRow", graph_name: str = "") -> T:
         """Adapt an `evidence.models.Node` row to the node-shaped API surface.
 
         The claim as **the log has it**, with no view's opinion mixed in. It
@@ -440,12 +447,12 @@ class RetrievedNode:
 
     # === Property Access Methods ===
 
-    def get_property(self, key: str, default: Any = None) -> Any:
+    def get_property(self, key: str, default: JSONValue = None) -> JSONValue:
         """Get a single property value by key."""
         return self.cleaned_properties.get(key, default)
 
     @property
-    def cleaned_properties(self) -> Dict[str, Any]:
+    def cleaned_properties(self) -> Dict[str, JSONValue]:
         """
         Get properties with reserved keys filtered out.
         These are the user-facing properties.
@@ -464,28 +471,37 @@ class RetrievedNode:
         """
         return hash((self.graph_name, self.unique_id))
 
-    def __eq__(self, other: Any) -> bool:
-        """Equality on the view and the claim — see `__hash__`."""
+    def __eq__(self, other: builtins.object) -> bool:
+        """Equality on the view and the claim — see `__hash__`.
+
+        `builtins.object`, spelled out: this class has an `object` property —
+        the external datum a structure names — which shadows the builtin
+        inside the class body, so the bare name would annotate the parameter
+        with a `property` object.
+        """
         if not isinstance(other, RetrievedNode):
             return False
         return self.graph_name == other.graph_name and self.unique_id == other.unique_id
 
     @classmethod
-    def from_node(cls: Type[T], controller: "GraphController", node: Dict[str, Any], graph_name: str = "default_graph") -> T:
-        """Build one from a drawn record — `{id, label, properties, members}` as `Projector.drawn_nodes` returns it."""
-        properties = node.get("properties", {})
-        members = tuple(str(member) for member in node.get("members", ()))
-        labels = tuple(str(label) for label in node.get("labels", ()))
+    def from_node(cls: Type[T], controller: "GraphController", node: "DrawnNode", graph_name: str = "default_graph") -> T:
+        """Build one from a drawn record, as `Projector.drawn_nodes` returns it.
+
+        The record used to be a `dict[str, Any]`, and four of these five fields
+        were read through `.get(...)` with a fallback for a record an older
+        projector had drawn without them. `DrawnNode` is built in exactly one
+        place — `TableProjector._record` — and always carries all five, so the
+        fallbacks described a record that cannot arrive; the one that stays is
+        `label`, which is legitimately empty for a vertex drawn under no label.
+        """
         return cls(
             controller=controller,
             graph_name=graph_name,
-            vertex_id=node.get("id", 0),
-            label=node.get("label") or (labels[0] if labels else "Unknown"),
-            labels=labels or ((str(node["label"]),) if node.get("label") else ()),
-            properties=properties,
-            # A record without members came from an older projector; the vertex
-            # then stood for exactly the instance its `id` names.
-            members=members or ((str(properties["id"]),) if "id" in properties else ()),
+            vertex_id=node.id,
+            label=node.label or (node.labels[0] if node.labels else "Unknown"),
+            labels=node.labels,
+            properties=dict(node.properties),
+            members=node.members,
         )
 
 
@@ -511,7 +527,7 @@ class RetrievedEdge:
     label: str
     left_id: int
     right_id: int
-    properties: Dict[str, Any] = field(default_factory=dict)
+    properties: Dict[str, JSONValue] = field(default_factory=dict)
 
     #: Set when this edge came from an `evidence.Link` row. Mirrors
     #: `RetrievedNode.row_id`: an edge is a claim first and a projection second,
@@ -572,9 +588,9 @@ class RetrievedEdge:
     def from_link(
         cls,
         controller: "GraphController",
-        link: Any,
+        link: "Link",
         graph_name: str = "",
-        category: Any = None,
+        category: "Category | None" = None,
     ) -> "RetrievedEdge":
         """Adapt an `evidence.models.Link` row to the edge-shaped API surface.
 
@@ -681,7 +697,7 @@ class RetrievedEdge:
         return self.properties.get("key")
 
     @property
-    def value(self) -> Any:
+    def value(self) -> JSONValue:
         """The measurement value."""
         return self.properties.get("value")
 
@@ -727,12 +743,12 @@ class RetrievedEdge:
 
     # === Property Access Methods ===
 
-    def get_property(self, key: str, default: Any = None) -> Any:
+    def get_property(self, key: str, default: JSONValue = None) -> JSONValue:
         """Get a single property value by key."""
         return self.cleaned_properties.get(key, default)
 
     @property
-    def cleaned_properties(self) -> Dict[str, Any]:
+    def cleaned_properties(self) -> Dict[str, JSONValue]:
         """
         Get properties with reserved keys filtered out.
         These are the user-facing properties.
@@ -746,7 +762,7 @@ class RetrievedEdge:
         `from_link` leaves at 0 for every row-backed edge (see `RetrievedNode.__hash__`)."""
         return hash((self.graph_name, self.unique_id))
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: builtins.object) -> bool:
         """Equality on the view and the claim — see `__hash__`."""
         if not isinstance(other, RetrievedEdge):
             return False
@@ -774,7 +790,7 @@ class RetrievedStructure(RetrievedNode):
     """
 
     @classmethod
-    def from_row(cls, controller: "GraphController", row: Any, graph_name: str = "", stands: Optional[bool] = None) -> "RetrievedStructure":
+    def from_row(cls, controller: "GraphController", row: "Structure", graph_name: str = "", stands: Optional[bool] = None) -> "RetrievedStructure":
         """Adapt an `evidence.models.Structure` row to the node-shaped API surface.
 
         ``stands`` is passed in rather than looked up. It used to be read off a
@@ -790,7 +806,7 @@ class RetrievedStructure(RetrievedNode):
         working; whether a structure still stands is a claims question, answered
         by `evidence.claims`.
         """
-        properties: Dict[str, Any] = {
+        properties: Dict[str, JSONValue] = {
             "identifier": row.identifier,
             "object": row.object,
             "category_id": str(row.kind_id),
@@ -848,7 +864,7 @@ class RetrievedMetric(RetrievedNode):
     """A metric, read from the relational evidence base."""
 
     @property
-    def value(self) -> Any:
+    def value(self) -> JSONValue:
         """The metric value."""
         return self.properties.get("value")
 
@@ -863,13 +879,13 @@ class RetrievedMetric(RetrievedNode):
         return self.properties.get("__asserted_at")
 
     @classmethod
-    def from_row(cls, controller: "GraphController", row: Any, graph_name: str = "", stands: Optional[bool] = None) -> "RetrievedMetric":
+    def from_row(cls, controller: "GraphController", row: "Metric", graph_name: str = "", stands: Optional[bool] = None) -> "RetrievedMetric":
         """Adapt an `evidence.models.Metric` row to the node-shaped API surface.
 
         ``stands`` is accepted and ignored, for the same reason it is on
         `RetrievedStructure.from_row`.
         """
-        properties: Dict[str, Any] = {
+        properties: Dict[str, JSONValue] = {
             "key": row.key,
             "value": row.value,
             "category_id": str(row.kind_id),
@@ -919,7 +935,7 @@ class RetrievedGraphTableRender:
     graph_name: str
     graph_id: int
     graph_query_id: int
-    rows: List[Dict[str, Any]]
+    rows: List[Dict[str, JSONValue]]
 
 
 @dataclass
@@ -927,8 +943,8 @@ class RetrievedTablePlanRender:
     """An unsaved plan rendered against one view: the view, the plan as compiled, the rows."""
 
     graph_id: int
-    plan: Any
-    rows: List[Dict[str, Any]]
+    plan: "TableQueryPlan"
+    rows: List[Dict[str, JSONValue]]
 
 
 # The nodes / path / pairs render shapes and `RetrievedNodePathRender` /

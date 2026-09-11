@@ -23,7 +23,17 @@ The distinction that matters, and the reason this module exists:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING
+
+from evidence.values import JSONValue
+
+if TYPE_CHECKING:
+    from core.models import GraphSchema
+
+#: One graph definition document, as `GraphSchema.definition` stores it.
+type Definition = dict[str, JSONValue]
+#: One property definition inside it.
+type PropertyDefinition = dict[str, JSONValue]
 
 # The keys of a property definition that change *what is computed*, as opposed to
 # how it is displayed or aggregated.
@@ -40,8 +50,8 @@ class PropertyChange:
     category_key: str
     property_key: str
     kind: str  # "added" | "removed" | "source_changed" | "aggregation_changed" | "cosmetic"
-    before: dict[str, Any] | None = None
-    after: dict[str, Any] | None = None
+    before: PropertyDefinition | None = None
+    after: PropertyDefinition | None = None
 
     @property
     def needs_reprojection(self) -> bool:
@@ -78,10 +88,10 @@ class SchemaDiff:
         return bool(self.changes)
 
 
-def _properties_by_category(definition: dict[str, Any]) -> dict[str, dict[str, dict[str, Any]]]:
+def _properties_by_category(definition: Definition) -> dict[str, dict[str, PropertyDefinition]]:
     """Index a definition as {category_key: {property_key: property_definition}}."""
     extensions = definition.get("extensions") or {}
-    indexed: dict[str, dict[str, dict[str, Any]]] = {}
+    indexed: dict[str, dict[str, PropertyDefinition]] = {}
 
     for section, property_field in (("entities", "property_definitions"), ("relations", "properties"), ("events", "properties")):
         for item in extensions.get(section) or []:
@@ -96,7 +106,7 @@ def _properties_by_category(definition: dict[str, Any]) -> dict[str, dict[str, d
     return indexed
 
 
-def _classify(before: dict[str, Any], after: dict[str, Any]) -> str:
+def _classify(before: PropertyDefinition, after: PropertyDefinition) -> str:
     """What kind of change this is, in order of increasing cost."""
     before_rule = before.get("rule") or {}
     after_rule = after.get("rule") or {}
@@ -110,7 +120,7 @@ def _classify(before: dict[str, Any], after: dict[str, Any]) -> str:
     return "cosmetic"
 
 
-def diff(before: dict[str, Any], after: dict[str, Any]) -> SchemaDiff:
+def diff(before: Definition, after: Definition) -> SchemaDiff:
     """Compare two graph definitions and report what work the change implies.
 
     Both arguments are the JSON form stored on `GraphSchema.definition`.
@@ -138,12 +148,12 @@ def diff(before: dict[str, Any], after: dict[str, Any]) -> SchemaDiff:
     return SchemaDiff(changes=changes)
 
 
-def diff_schemas(before_schema: Any, after_schema: Any) -> SchemaDiff:
+def diff_schemas(before_schema: GraphSchema, after_schema: GraphSchema) -> SchemaDiff:
     """Compare two `GraphSchema` rows."""
     return diff(before_schema.definition or {}, after_schema.definition or {})
 
 
-def json_patch(before: dict[str, Any], after: dict[str, Any]) -> list[dict[str, Any]]:
+def json_patch(before: Definition, after: Definition) -> list[dict[str, JSONValue]]:
     """The raw RFC-6902 patch between two definitions.
 
     Useful for showing a human what changed. The structured `diff` above is what

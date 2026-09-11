@@ -13,10 +13,11 @@ recording its assertion was never part of the log and announces nothing.
 
 from __future__ import annotations
 
-from typing import Any
-
+from authentikate.models import Organization
 from kante.channel import build_channel
 from pydantic import BaseModel
+
+from evidence import models as evidence_models
 
 
 class AssertionRecorded(BaseModel):
@@ -30,7 +31,7 @@ class AssertionRecorded(BaseModel):
 assertion_channel = build_channel(AssertionRecorded, name="assertion")
 
 
-def room(organization: Any) -> str:
+def room(organization: Organization | int) -> str:
     """The organization's room for this channel — the one definition, used by both sides.
 
     Not `assertion_channel.org_group`: kante spells that ``assertion:org:<id>``,
@@ -42,7 +43,7 @@ def room(organization: Any) -> str:
     return f"assertion.org.{int(organization_id)}"
 
 
-def announce(assertion: Any) -> None:
+def announce(assertion: evidence_models.Assertion) -> None:
     """Broadcast ``assertion`` to its organization's room once its transaction commits."""
     message = AssertionRecorded(id=str(assertion.id), seq=int(assertion.seq), organization=int(assertion.organization_id))
     assertion_channel.broadcast_on_commit(message, groups=[room(assertion.organization_id)])

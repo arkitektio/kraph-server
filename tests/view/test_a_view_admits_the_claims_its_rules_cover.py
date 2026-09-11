@@ -123,8 +123,8 @@ async def test_a_definition_narrows_what_the_graph_contains(
 
     result = await define_and_rebuild()
 
-    assert result["nodes"] == 1, "Only Johannes's AIS is admitted"
-    assert result["unclassified"] == 1, "And the one that is not must be reported, not silently dropped"
+    assert result.nodes == 1, "Only Johannes's AIS is admitted"
+    assert result.unclassified == 1, "And the one that is not must be reported, not silently dropped"
 
     @sync_to_async
     def counts() -> dict[str, int]:
@@ -244,8 +244,8 @@ async def test_definitions_can_partition_one_term_by_annotator(
         return graphs.rebuild(test_graph, table_projector)
 
     result = await partition()
-    assert result["nodes"] == 2, "Both nodes are admitted, each by a different definition"
-    assert result["unclassified"] == 0
+    assert result.nodes == 2, "Both nodes are admitted, each by a different definition"
+    assert result.unclassified == 0
 
     @sync_to_async
     def counts() -> dict[str, int]:
@@ -300,8 +300,8 @@ async def test_a_node_matching_two_definitions_is_drawn_under_both(
 
     result = await both_claim_it()
 
-    assert result["nodes"] == 1, "A node two definitions admit is drawn — once"
-    assert result["unclassified"] == 0
+    assert result.nodes == 1, "A node two definitions admit is drawn — once"
+    assert result.unclassified == 0
 
     @sync_to_async
     def counts() -> dict[str, int]:
@@ -334,8 +334,8 @@ async def test_a_primitive_category_behaves_exactly_as_before(
 
     result, counts = await rebuild()
 
-    assert result["nodes"] == 1
-    assert result["unclassified"] == 0, "Nothing is dropped when nothing is defined"
+    assert result.nodes == 1
+    assert result.unclassified == 0, "Nothing is dropped when nothing is defined"
     assert counts["AIS"] == 1
 
 
@@ -405,8 +405,8 @@ async def test_a_category_can_derive_from_several_words_the_graph_never_declares
         return graphs.rebuild(test_graph, table_projector)
 
     result = await regroup()
-    assert result["nodes"] == 2, "Both nodes are admitted by the one definition, from words the graph never declares"
-    assert result["unclassified"] == 0
+    assert result.nodes == 2, "Both nodes are admitted by the one definition, from words the graph never declares"
+    assert result.unclassified == 0
 
     @sync_to_async
     def counts() -> dict[str, int]:

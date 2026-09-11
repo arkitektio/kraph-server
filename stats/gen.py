@@ -7,6 +7,8 @@ import strawberry
 import strawberry_django
 from strawberry.types import Info
 from django.db.models import Avg, Count, Max, Min, Model, QuerySet, Sum
+
+from evidence.values import JSONValue
 from django.db.models.functions import (
     TruncDay,
     TruncHour,
@@ -42,21 +44,21 @@ class Granularity(str, Enum):
 
 # ---------- Resolver Spec ----------
 # (Resolver Function, Return Type, Description)
-ResolverSpec = Dict[str, Tuple[Callable[[QuerySet, str], Any], Type, str]]
+ResolverSpec = Dict[str, Tuple[Callable[[QuerySet[Model], str], object], Type, str]]
 
 
 def create_stats_type(
     model: Type[Model],
     *,
-    scope: Callable[[Info], "QuerySet[Any]"],
+    scope: Callable[[Info], "QuerySet[Model]"],
     allowed_fields: Dict[str, str],  # GraphQL Enum Name -> Model Field Name
     allowed_datetime_fields: Optional[Dict[str, str]] = None,
-    filters: Optional[Type[Any]] = None,
+    filters: Optional[type] = None,
     resolvers: Optional[ResolverSpec] = None,
     type_name: Optional[str] = None,
     enum_name: Optional[str] = None,
     dt_enum_name: Optional[str] = None,
-) -> Tuple[Type[Any], Callable[..., Any]]:
+) -> Tuple[type, Callable[..., object]]:
     """
     Build a Strawberry GraphQL Stats type for a Django `model`.
 
@@ -121,13 +123,13 @@ def create_stats_type(
     class StatsType:
         _qs: strawberry.Private[QuerySet]
         # Cache structure: { 'field_name': { 'avg': 10, 'sum': 20... } }
-        _cache: strawberry.Private[Dict[str, Dict[str, Any]]]
+        _cache: strawberry.Private[Dict[str, Dict[str, JSONValue]]]
 
         def __init__(self, qs: QuerySet):
             self._qs = qs
             self._cache = {}
 
-        def _get_field_stats(self, field_enum: Any) -> Dict[str, Any]:
+        def _get_field_stats(self, field_enum: object) -> Dict[str, JSONValue]:
             model_field = _get_model_field(field_enum)
 
             if model_field in self._cache:

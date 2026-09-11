@@ -168,7 +168,7 @@ async def test_retracting_an_entity_removes_its_edges_but_keeps_the_claims(
         return graphs.rebuild(test_graph, table_projector)
 
     result = await rebuild()
-    assert result["edges"] == 0, "The replay must not draw an edge whose endpoint is not in the graph"
+    assert result.edges == 0, "The replay must not draw an edge whose endpoint is not in the graph"
     assert await edges() == 0
 
 
@@ -320,7 +320,7 @@ async def test_a_word_two_graphs_declare_is_seen_by_both(
         return graphs.rebuild(second_graph, table_projector)
 
     result = await rebuild_second()
-    assert result["nodes"] >= 1, "A replay of the second view reconstructs the node from the shared claim"
+    assert result.nodes >= 1, "A replay of the second view reconstructs the node from the shared claim"
     assert (await vertices())[1] == 1
 
 
@@ -484,7 +484,7 @@ async def test_retracting_an_entity_removes_the_vertex_and_the_replay_agrees(
         return graphs.rebuild(test_graph, table_projector)
 
     result = await rebuild()
-    assert result["nodes"] == 0, "The replay must not recreate a node the evidence says is not there"
+    assert result.nodes == 0, "The replay must not recreate a node the evidence says is not there"
     assert await vertex_count() == 0, "And must not leave one drawn either"
 
     after = await api_schema.execute(query, variable_values={"id": entity_id}, context_value=simple_api_context)

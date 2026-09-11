@@ -15,6 +15,7 @@ from evidence import identity as identity_module
 from evidence import models as evidence_models
 from evidence import writer
 from graph_engine.controller import GraphController
+from graph_engine.reports import DrawCounts
 from tests.support import rules
 from tests.support.writes import CREATE_GRAPH, execute
 
@@ -128,7 +129,7 @@ async def graph_declaring(api_schema: Any, ctx: Any, word: str, *, name: str | N
     return await graph_with(api_schema, ctx, name or f"view-of-{word}", {"extensions": {"entities": [entity]}})
 
 
-def rebuild(graph: Any, table_projector: Any) -> dict[str, int]:
+def rebuild(graph: Any, table_projector: Any) -> DrawCounts:
     """Drop this view's drawing and derive it again from the log.
 
     Takes a `Graph` or its id and returns what the replay drew, as the
@@ -139,7 +140,7 @@ def rebuild(graph: Any, table_projector: Any) -> dict[str, int]:
     return GraphController(projector=table_projector).rebuild_projection(graph)
 
 
-async def arebuild(graph: Any, table_projector: Any) -> dict[str, int]:
+async def arebuild(graph: Any, table_projector: Any) -> DrawCounts:
     return await sync_to_async(rebuild)(graph, table_projector)
 
 

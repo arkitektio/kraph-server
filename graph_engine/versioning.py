@@ -19,7 +19,14 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import TYPE_CHECKING
+
+from django.contrib.auth.models import AbstractBaseUser
+from evidence.values import JSONValue
+
+if TYPE_CHECKING:
+    from kante.types import Info
 
 from django.db import transaction
 
@@ -54,12 +61,12 @@ def is_suspended() -> bool:
     return _suspended.get()
 
 
-def _property_definitions(category: Any) -> list[dict[str, Any]]:
+def _property_definitions(category: core_models.Category) -> list[dict[str, JSONValue]]:
     """A category's property definitions in their stored JSON form."""
     return list(category.property_definitions or [])
 
 
-def snapshot_definition(graph: core_models.Graph) -> dict[str, Any]:
+def snapshot_definition(graph: core_models.Graph) -> dict[str, JSONValue]:
     """Rebuild the graph definition from its current categories.
 
     The inverse of `materialize()`: where that turns a definition into rows, this
@@ -147,7 +154,7 @@ def snapshot_definition(graph: core_models.Graph) -> dict[str, Any]:
 def emit_schema_version(
     graph: core_models.Graph,
     description: str | None = None,
-    user: Any = None,
+    user: AbstractBaseUser | None = None,
 ) -> core_models.GraphSchema | None:
     """Record a new schema version if the ontology actually changed.
 
@@ -178,12 +185,12 @@ def emit_schema_version(
     return schema
 
 
-def graph_of(category: Any) -> core_models.Graph:
+def graph_of(category: core_models.Category) -> core_models.Graph:
     """The graph a category belongs to, for mutations that only hold the category."""
     return category.graph
 
 
-def record_change(category_or_graph: Any, description: str, info: Any = None) -> core_models.GraphSchema | None:
+def record_change(category_or_graph: core_models.Category | core_models.Graph, description: str, info: "Info | None" = None) -> core_models.GraphSchema | None:
     """Convenience wrapper used by the category mutations.
 
     Accepts a category or a graph so call sites stay one line, which matters when
@@ -196,7 +203,7 @@ def record_change(category_or_graph: Any, description: str, info: Any = None) ->
     return emit_schema_version(graph, description=description, user=user)
 
 
-def on_category_changed(sender: Any, instance: Any, **kwargs: Any) -> None:
+def on_category_changed(sender: type[core_models.Category], instance: core_models.Category, **kwargs: object) -> None:
     """Signal handler: a category was saved or deleted.
 
     Deliberately tolerant. A failure to record a version must not roll back the

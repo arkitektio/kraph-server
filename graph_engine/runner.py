@@ -26,13 +26,16 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import timedelta
-from typing import Any, Iterable
 
+from authentikate.models import Organization
 from django.db import connections
 
 from graph_engine import locks, watermark
+from graph_engine.projector import DrawingHost
+from graph_engine.reports import ReplayReport
 
 logger = logging.getLogger(__name__)
 
@@ -41,23 +44,24 @@ logger = logging.getLogger(__name__)
 class Pass:
     """What one pass did for one organization."""
 
-    organization: Any
+    organization: Organization
     #: Nothing was owed, so nothing was done — the lock was not even taken.
     idle: bool = False
     #: Another session holds the organization's projection lock (a rebuild, or
     #: another runner); this pass left the organization alone.
     locked_elsewhere: bool = False
     #: `projector.replay`'s report, when a replay ran.
-    report: dict[str, Any] | None = None
+    report: ReplayReport | None = None
 
     @property
     def settled(self) -> int:
-        return int(self.report["settled"]) if self.report else 0
+        """Outbox rows this pass cleared; zero when it did not run."""
+        return self.report.settled if self.report else 0
 
 
 def run_once(
-    controller: Any,
-    organizations: Iterable[Any] | None = None,
+    controller: DrawingHost,
+    organizations: Iterable[Organization] | None = None,
     *,
     wait_for_lock: bool = False,
     older_than: timedelta | None = None,
@@ -69,7 +73,6 @@ def run_once(
     now. `wait_for_lock=True` is the manual command's choice (queue behind a
     rebuild); the loop tries once and moves on.
     """
-    from authentikate.models import Organization
     from graph_engine import projector
 
     if organizations is None:
@@ -91,19 +94,19 @@ def run_once(
     return passes
 
 
-def _log(organization: Any, report: dict[str, Any]) -> None:
-    if report["pending"] == 0:
+def _log(organization: Organization, report: ReplayReport) -> None:
+    if report.pending == 0:
         logger.info("%s: nothing old enough to apply yet", organization.slug)
         return
     logger.info(
         "%s: %d assertion(s) settled over %d ref(s) in %d graph(s)",
         organization.slug,
-        report["settled"],
-        report["refs"],
-        len(report["graphs"]),
+        report.settled,
+        report.refs,
+        len(report.graphs),
     )
-    for entry in report["skipped"]:
-        logger.warning("%s: graph #%s %r skipped, %s — needs a full `reproject --graph %s`", organization.slug, entry["graph"].pk, entry["graph"].name, entry["status"], entry["graph"].pk)
+    for entry in report.skipped:
+        logger.warning("%s: graph #%s %r skipped, %s — needs a full `reproject --graph %s`", organization.slug, entry.graph.pk, entry.graph.name, entry.status, entry.graph.pk)
 
 
 @dataclass
@@ -112,12 +115,13 @@ class Loop:
 
     passes: int = 0
     failures: int = 0
-    #: Organizations whose last pass raised, with the number of consecutive failures.
-    backoff: dict[Any, int] = field(default_factory=dict)
+    #: Organizations whose last pass raised, keyed by primary key, with the
+    #: number of consecutive failures.
+    backoff: dict[int, int] = field(default_factory=dict)
 
 
 def run_forever(
-    controller: Any,
+    controller: DrawingHost,
     *,
     interval: float,
     stop: threading.Event,
@@ -132,8 +136,6 @@ def run_forever(
     failing are skipped for a growing number of passes (`Loop.backoff`), so one
     poison-pill row does not turn every pass into the same traceback.
     """
-    from authentikate.models import Organization
-
     state = Loop()
     while not stop.is_set() and (max_iterations is None or state.passes < max_iterations):
         state.passes += 1

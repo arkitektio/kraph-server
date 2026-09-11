@@ -15,8 +15,9 @@ so that aggregation could never have run at all.
 from __future__ import annotations
 
 import math
-from typing import Any, Protocol
+from typing import Protocol
 
+from evidence.values import JSONValue
 from graph_engine.input_models import AggregationFunction, DerivationRuleInput
 
 
@@ -31,11 +32,11 @@ class StateVector(Protocol):
     sum: float | None
     min: float | None
     max: float | None
-    first_value: Any
-    last_value: Any
+    first_value: JSONValue
+    last_value: JSONValue
 
 
-def _as_point(value: Any) -> list[float]:
+def _as_point(value: JSONValue) -> list[float]:
     """Coerce a stored value into a point for distance maths."""
     if isinstance(value, dict):
         # Points used to be written as {x, y, z} objects.
@@ -86,7 +87,7 @@ AGGREGATIONS = {
 }
 
 
-def apply(aggregation: AggregationFunction, state: StateVector | None) -> Any:
+def apply(aggregation: AggregationFunction, state: StateVector | None) -> JSONValue:
     """Read one aggregation out of a state vector.
 
     ``None`` for a missing row means "no evidence", which every aggregation

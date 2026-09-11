@@ -479,7 +479,7 @@ async def test_retracting_the_last_participation_claim_removes_the_edge(
         return result, drawing.participations(test_graph)
 
     result, edges = await rebuild()
-    assert result["participations"] == 1, "A replay must not resurrect a retracted participation"
+    assert result.participations == 1, "A replay must not resurrect a retracted participation"
     assert edges == [("CAME_OUT_OF", "b")]
 
 

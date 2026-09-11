@@ -31,15 +31,22 @@ what the alternative costs.
 
 from __future__ import annotations
 
+import uuid
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import TYPE_CHECKING
 
+from authentikate.models import Organization
 from django.db.models import Count, Max, Q
 
 from evidence import claims as claims_module
 from evidence import identity as identity_module
 from evidence import models as evidence_models
+
+if TYPE_CHECKING:
+    # For the type checker only: `core` reads `evidence` at runtime, never back.
+    from core.models import Graph
 
 #: What "connected to" means. Enumerated positively rather than as an exclusion
 #: of `CLASSIFIES`, `SAME_AS`, `DIFFERENT_FROM` and `DERIVED_FROM` — those are
@@ -74,9 +81,9 @@ class Label:
     """
 
     node_ref: str
-    term_id: Any
+    term_id: uuid.UUID
     assertion_count: int
-    latest_assertion_id: Any
+    latest_assertion_id: uuid.UUID | None
 
 
 # Labels and connections are **organization grain** (RFC 0009): they answer
@@ -85,7 +92,7 @@ class Label:
 # the claim-grain reads (no graph) keep the organization's cached answer.
 
 
-def components_for(organization: Any, refs: Iterable[str], graph: Any = None) -> dict[str, list[str]]:
+def components_for(organization: Organization, refs: Iterable[str], graph: Graph | None = None) -> dict[str, list[str]]:
     """The component each ref belongs to. Two queries for the whole page — or,
     with a view in scope, the per-category walk (RFC 0011)."""
     if graph is not None:
@@ -104,7 +111,7 @@ def _touching(refs: Iterable[str]) -> Q:
     return Q(source_ref__in=wanted) | Q(target_ref__in=wanted)
 
 
-def labels_for(organization: Any, refs: Iterable[str]) -> dict[str, list[Label]]:
+def labels_for(organization: Organization, refs: Iterable[str]) -> dict[str, list[Label]]:
     """What anyone has called each of these nodes, grouped by node.
 
     Two queries for the whole page, however many nodes it holds: the grouped
@@ -147,7 +154,7 @@ def labels_for(organization: Any, refs: Iterable[str]) -> dict[str, list[Label]]
     # `seq` identifies the assertion but is not its primary key, so the winning
     # ids come back in a second lookup rather than a correlated subquery. One
     # query for the whole page either way.
-    by_seq: dict[int, Any] = {}
+    by_seq: dict[int, uuid.UUID] = {}
     seqs = [row["latest_seq"] for row in rows if row["latest_seq"] is not None]
     if seqs:
         by_seq = {int(seq): assertion_id for seq, assertion_id in evidence_models.Assertion.objects.for_organization(organization).filter(seq__in=seqs).values_list("seq", "id")}
@@ -165,7 +172,7 @@ def labels_for(organization: Any, refs: Iterable[str]) -> dict[str, list[Label]]
     return dict(grouped)
 
 
-def sameness_for(organization: Any, refs: Iterable[str], graph: Any = None) -> dict[str, list[Any]]:
+def sameness_for(organization: Organization, refs: Iterable[str], graph: Graph | None = None) -> dict[str, list[evidence_models.Link]]:
     """The standing sameness claims touching each ref. One query — or, with a
     view in scope, the claims its categories admit (RFC 0011).
 
@@ -178,13 +185,13 @@ def sameness_for(organization: Any, refs: Iterable[str], graph: Any = None) -> d
     return _identity_for(organization, refs, graph, kind=evidence_models.Link.Kind.SAME_AS)
 
 
-def difference_for(organization: Any, refs: Iterable[str], graph: Any = None) -> dict[str, list[Any]]:
+def difference_for(organization: Organization, refs: Iterable[str], graph: Graph | None = None) -> dict[str, list[evidence_models.Link]]:
     """The standing `DIFFERENT_FROM` claims touching each ref (RFC 0019), under
     the same scope rule as :func:`sameness_for`."""
     return _identity_for(organization, refs, graph, kind=evidence_models.Link.Kind.DIFFERENT_FROM)
 
 
-def _identity_for(organization: Any, refs: Iterable[str], graph: Any, *, kind: Any) -> dict[str, list[Any]]:
+def _identity_for(organization: Organization, refs: Iterable[str], graph: Graph | None, *, kind: evidence_models.Link.Kind) -> dict[str, list[evidence_models.Link]]:
     wanted = [str(ref) for ref in refs]
     if not wanted:
         return {}
@@ -200,7 +207,7 @@ def _identity_for(organization: Any, refs: Iterable[str], graph: Any, *, kind: A
     return _group_by_endpoint(links, wanted)
 
 
-def connections_for(organization: Any, refs: Iterable[str]) -> dict[str, list[Any]]:
+def connections_for(organization: Organization, refs: Iterable[str]) -> dict[str, list[evidence_models.Link]]:
     """Every standing claim connecting these refs to something else. One query.
 
     Relations, participations and INFORMS alike — they are all `Link` rows, and
@@ -224,7 +231,7 @@ def connections_for(organization: Any, refs: Iterable[str]) -> dict[str, list[An
     return _group_by_endpoint(links, wanted)
 
 
-def informed_nodes(structure_refs: Iterable[str]) -> list[list[Any]]:
+def informed_nodes(structure_refs: Iterable[str]) -> list[list[evidence_models.Instance]]:
     """The nodes each structure is evidence for. Two queries for the whole page.
 
     Batched rather than resolved per structure, and that is what makes the rest of
@@ -278,18 +285,18 @@ class Known:
     node_ref: str
     component: list[str]
     labels: list[Label]
-    sameness: list[Any]
+    sameness: list[evidence_models.Link]
     #: The standing `DIFFERENT_FROM` claims touching any member (RFC 0019).
-    differences: list[Any]
+    differences: list[evidence_models.Link]
     #: The subset of `differences` with **both** ends inside the component: a
     #: difference the fold could not honour, because the two are still joined
     #: through a third instance. Nothing here is resolved automatically; the
     #: list exists so a person can retract one of the claims that disagree.
-    conflicts: list[Any]
-    connections: list[Any]
+    conflicts: list[evidence_models.Link]
+    connections: list[evidence_models.Link]
 
 
-def known_about(refs: Iterable[str], graph: Any = None) -> list[Known]:
+def known_about(refs: Iterable[str], graph: Graph | None = None) -> list[Known]:
     """The whole panel, for a page of nodes, in a constant number of queries.
 
     Batched as one function rather than four loaders because all four questions
@@ -310,8 +317,8 @@ def known_about(refs: Iterable[str], graph: Any = None) -> list[Known]:
     if not wanted:
         return []
 
-    by_organization: dict[Any, list[str]] = defaultdict(list)
-    organizations: dict[Any, Any] = {}
+    by_organization: dict[int, list[str]] = defaultdict(list)
+    organizations: dict[int, Organization] = {}
     for node in evidence_models.Instance.all_objects.filter(pk__in=wanted).select_related("organization"):
         by_organization[node.organization_id].append(str(node.pk))
         organizations[node.organization_id] = node.organization
@@ -347,21 +354,21 @@ def known_about(refs: Iterable[str], graph: Any = None) -> list[Known]:
     return [known.get(ref, Known(node_ref=ref, component=[ref], labels=[], sameness=[], differences=[], conflicts=[], connections=[])) for ref in wanted]
 
 
-def _distinct_links(grouped: dict[str, list[Any]], members: Iterable[str]) -> list[Any]:
+def _distinct_links(grouped: dict[str, list[evidence_models.Link]], members: Iterable[str]) -> list[evidence_models.Link]:
     """The links touching any member of one component, each listed once.
 
     De-duplicated here and not in :func:`_group_by_endpoint`: a claim with both
     ends inside the *same* component is one fact about that component, so
     reporting it twice would double-count exactly the relations a merge creates.
     """
-    seen: dict[Any, Any] = {}
+    seen: dict[uuid.UUID, evidence_models.Link] = {}
     for member in members:
         for link in grouped.get(member, ()):
             seen.setdefault(link.pk, link)
     return list(seen.values())
 
 
-def _group_by_endpoint(links: Any, wanted: list[str]) -> dict[str, list[Any]]:
+def _group_by_endpoint(links: Iterable[evidence_models.Link], wanted: list[str]) -> dict[str, list[evidence_models.Link]]:
     """Index links by whichever of their ends the caller asked about.
 
     A claim with *both* ends in the page appears under both, which is correct: it
@@ -369,7 +376,7 @@ def _group_by_endpoint(links: Any, wanted: list[str]) -> dict[str, list[Any]]:
     on what else happened to be on the page.
     """
     asked = set(wanted)
-    grouped: dict[str, list[Any]] = defaultdict(list)
+    grouped: dict[str, list[evidence_models.Link]] = defaultdict(list)
     for link in links:
         for ref in (str(link.source_ref), str(link.target_ref)):
             if ref in asked:

@@ -27,14 +27,21 @@ admission helpers of `graph_engine.projector`, never to the projection tables.
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import TYPE_CHECKING
 
 from django.db.models import Q
 
 from evidence import models as evidence_models
+from evidence.models import Link
+from evidence.values import JSONValue
 from graph_engine.projection import IncidentEdge, IncidentEdgesSpec
 from graph_engine.retrieved import RetrievedEdge, RetrievedNode
+
+if TYPE_CHECKING:
+    from core.models import Category, Graph
+    from graph_engine.projector import DrawingHost
 
 RELATION = str(evidence_models.Link.Kind.RELATION)
 INPUT = str(evidence_models.Link.Kind.PARTICIPATES_AS_INPUT)
@@ -59,7 +66,7 @@ class TraversalSpec:
             raise ValueError(f"direction must be IN, OUT or BOTH, not {self.direction!r}")
 
 
-def _categories(graph: Any, spec: TraversalSpec) -> tuple[list[Any], list[Any]]:
+def _categories(graph: Graph, spec: TraversalSpec) -> tuple[list[Category], list[Category]]:
     """The view's relation categories and event categories the spec allows."""
     from graph_engine import projector
 
@@ -72,7 +79,7 @@ def _categories(graph: Any, spec: TraversalSpec) -> tuple[list[Any], list[Any]]:
     return relations, events
 
 
-def _labels(relations: Iterable[Any], events: Iterable[Any], spec: TraversalSpec) -> tuple[str, ...]:
+def _labels(relations: Iterable[Category], events: Iterable[Category], spec: TraversalSpec) -> tuple[str, ...]:
     labels: list[str] = [str(category.age_name) for category in relations]
     for category in events:
         kinded = category.as_kind()
@@ -83,7 +90,7 @@ def _labels(relations: Iterable[Any], events: Iterable[Any], spec: TraversalSpec
     return tuple(dict.fromkeys(labels))
 
 
-def drawn_incident(controller: Any, graph: Any, nodes: Iterable[RetrievedNode], spec: TraversalSpec) -> dict[str, list[IncidentEdge]]:
+def drawn_incident(controller: DrawingHost, graph: Graph, nodes: Iterable[RetrievedNode], spec: TraversalSpec) -> dict[str, list[IncidentEdge]]:
     """The drawn edges touching each node's vertex, keyed by the node's id. Undrawn nodes answer `[]`."""
     nodes = list(nodes)
     reps = [node.unique_id for node in nodes if not node.is_row_backed]
@@ -95,7 +102,7 @@ def drawn_incident(controller: Any, graph: Any, nodes: Iterable[RetrievedNode], 
     return {node.unique_id: list(drawn.get(node.unique_id, [])) for node in nodes}
 
 
-def incident_edges(controller: Any, graph: Any, nodes: Iterable[RetrievedNode], spec: TraversalSpec) -> dict[str, list[RetrievedEdge]]:
+def incident_edges(controller: DrawingHost, graph: Graph, nodes: Iterable[RetrievedNode], spec: TraversalSpec) -> dict[str, list[RetrievedEdge]]:
     """The claims behind the edges the view draws to or from each node, keyed by the node's id.
 
     Each list is ordered like every claim list: newest act first, then id.
@@ -117,14 +124,14 @@ def incident_edges(controller: Any, graph: Any, nodes: Iterable[RetrievedNode], 
     organization = graph.organization
 
     # (source rep, target rep, label[, role]) → the drawn edge, for the whole asked set.
-    index: dict[tuple[Any, ...], IncidentEdge] = {}
+    index: dict[tuple[str | JSONValue, ...], IncidentEdge] = {}
     for edges in drawn.values():
         for edge in edges:
             index[(edge.source_ref, edge.target_ref, edge.label, edge.properties.get("role"))] = edge
             index[(edge.source_ref, edge.target_ref, edge.label)] = edge
     rep_of_node = {node.unique_id: node for node in nodes}
 
-    def attach(link: Any, edge: IncidentEdge, category: Any) -> None:
+    def attach(link: Link, edge: IncidentEdge, category: Category) -> None:
         retrieved = RetrievedEdge.from_link(controller, link, graph_name=graph.age_name, category=category)
         retrieved = dataclasses.replace(retrieved, edge_id=edge.edge_id, left_id=edge.source_id, right_id=edge.target_id)
         for rep in (edge.source_ref, edge.target_ref):
@@ -165,7 +172,7 @@ def incident_edges(controller: Any, graph: Any, nodes: Iterable[RetrievedNode], 
     return out
 
 
-def neighbor_refs(controller: Any, graph: Any, nodes: Iterable[RetrievedNode], spec: TraversalSpec) -> dict[str, list[str]]:
+def neighbor_refs(controller: DrawingHost, graph: Graph, nodes: Iterable[RetrievedNode], spec: TraversalSpec) -> dict[str, list[str]]:
     """The other end of each drawn edge, as representatives — deduplicated, self excluded — keyed by the node's id.
 
     From the drawing alone: whoever is at the other end of a drawn edge is a

@@ -9,21 +9,23 @@ being used, so `models.GraphTableQuery.objects.create(...)` writes `kind="TABLE"
 by itself.
 """
 
-from typing import Any
+from collections.abc import Sequence
 
 from kante.types import Info
 
 from api.mutations._scoped import accessible_graph, scoped
+from core import models as core_models
 from graph_engine import query_ir
-from graph_engine.query_ir import TableQueryPlan
+from graph_engine.input_models import BuilderArgsInput, ColumnInput, CreateGraphTableQueryInput, UpdateGraphTableQueryInput
+from graph_engine.query_ir import PlanShape, TableQueryPlan
 
 
-def plan_from_input(plan_input: Any, columns: Any) -> TableQueryPlan:
+def plan_from_input(plan_input: PlanShape, columns: Sequence[ColumnInput] | None) -> TableQueryPlan:
     """A validated plan from the mutation's input — `graph_engine.query_ir.plan_from_input`, kept under its old name here."""
     return query_ir.plan_from_input(plan_input, columns)
 
 
-def plan_from_builder_args(builder_args: Any, columns: Any) -> TableQueryPlan:
+def plan_from_builder_args(builder_args: BuilderArgsInput, columns: Sequence[ColumnInput] | None) -> TableQueryPlan:
     """The builder's spelling (`match_paths` / `where_clauses` / `return_statements`) as a plan."""
 
     class _Shim:
@@ -34,7 +36,7 @@ def plan_from_builder_args(builder_args: Any, columns: Any) -> TableQueryPlan:
     return plan_from_input(_Shim, columns)
 
 
-def create_saved_query(info: Info, model: Any, django_model: Any, what: str) -> Any:
+def create_saved_query[Row: core_models.GraphQuery](info: Info, model: CreateGraphTableQueryInput, django_model: type[Row], what: str) -> Row:
     """Save a new table query against the graph it names.
 
     `accessible_graph` before anything is written: the graph id arrives from the
@@ -56,7 +58,7 @@ def create_saved_query(info: Info, model: Any, django_model: Any, what: str) -> 
     )
 
 
-def update_saved_query(info: Info, model: Any, django_model: Any, what: str) -> Any:
+def update_saved_query[Row: core_models.GraphQuery](info: Info, model: UpdateGraphTableQueryInput, django_model: type[Row], what: str) -> Row:
     """Change a saved query the caller is allowed to reach. Patches only what was sent."""
     item = scoped(info, django_model, model.id, what=what)
 

@@ -16,7 +16,7 @@ import strawberry
 from strawberry.scalars import JSON
 from asgiref.sync import sync_to_async
 from enum import Enum
-from typing import Annotated, Any, Generic, Optional, List, Sequence, Type, TypeVar, Union, cast
+from typing import Annotated, Optional, List, Sequence, Type, TypeVar, Union, cast
 from datetime import datetime
 from api import loaders, order, pagination, filters
 from api import pagination as pagination_module
@@ -30,6 +30,8 @@ import kante
 from core import models
 from evidence import claims as claims_module
 from evidence import models as evidence_models
+from evidence import panel
+from evidence.values import JSONValue
 from graph_engine import query_ir, results, retrieved, scalars
 from api import filters
 from core import enums
@@ -262,7 +264,7 @@ class EventRole:
     """Definition of a role in an event category."""
 
 
-def _event_roles(stored: Any) -> List[EventRole]:
+def _event_roles(stored: Sequence[dict[str, JSONValue]] | None) -> List[EventRole]:
     """Read declared event roles out of the JSON column that holds them.
 
     `source_entity_roles` / `target_entity_roles` are hand-written JSON on the
@@ -803,7 +805,7 @@ class RichProperty:
         """
         return self._entity.get_property(self._key)
 
-    def _statistic(self, statistic: str) -> Any:
+    def _statistic(self, statistic: str) -> JSONValue:
         """One materialized statistic about this property. See `projector._property_statistics`."""
         from graph_engine import projector
 
@@ -844,7 +846,7 @@ class RichProperty:
         "derived from ROI #555, asserted by AI_Model_X on Jan 15th".
         """
         rows = await self._contributing_metrics()
-        seen: dict[str, Any] = {}
+        seen: dict[str, evidence_models.Assertion] = {}
         for metric in rows:
             seen.setdefault(str(metric.assertion_id), metric.assertion)
         # The rows themselves. These used to be wrapped in
@@ -867,12 +869,12 @@ class RichProperty:
 
     # --- internals ---
 
-    def _rule(self) -> Any:
+    def _rule(self) -> input_models.DerivationRuleInput | None:
         definition = self._category.property_map.get(self._key)
         return getattr(definition, "rule", None) if definition else None
 
     @sync_to_async
-    def _contributing_metrics(self) -> list:
+    def _contributing_metrics(self) -> list[evidence_models.Metric]:
         """Every active metric folded into this property's value."""
         from evidence import models as evidence_models
         from graph_engine import projector
@@ -920,7 +922,7 @@ class RichProperty:
         )
 
 
-def _structure_kind_for(graph: Any, rule: Any) -> Any:
+def _structure_kind_for(graph: models.Graph, rule: input_models.DerivationRuleInput | None) -> Optional[evidence_models.StructureKind]:
     """Resolve a derivation rule's source to one of the organization's structure kinds."""
     if rule is None or not getattr(rule, "source_node", None):
         return None
@@ -932,7 +934,6 @@ def _structure_kind_for(graph: Any, rule: Any) -> Any:
 # ===========================================
 
 T = TypeVar("T", bound="Node")
-V = TypeVar("V", bound=RetrievedNode)
 
 
 @strawberry.interface(description="A domain event drawn in a graph — something that happened to the sample, never an entry of the assertion log")
@@ -955,13 +956,13 @@ class Event:
 
 
 @strawberry.interface(description="Base interface for all graph nodes")
-class Node(Generic[V]):
+class Node:
     """
     Base interface that all graph nodes implement.
     Uses strawberry.Private to hold the underlying RetrievedNode data.
     """
 
-    _value: strawberry.Private[V]
+    _value: strawberry.Private[RetrievedNode]
 
     def __hash__(self):
         return hash(self._value)
@@ -1170,7 +1171,7 @@ class Node(Generic[V]):
         return cast_node_to_graphql_type(value)
 
     @classmethod
-    def from_specific(cls: Type[T], subtype: V) -> T:
+    def from_specific(cls: Type[T], subtype: RetrievedNode) -> T:
         """Factory method to convert a Node subtype back to the base Node interface."""
         return cls(_value=subtype)
 
@@ -1197,7 +1198,7 @@ class Node(Generic[V]):
 # graph's selector decides whose word it counts.
 
 
-def _explaining(categories: Sequence[Any], key: str) -> Any:
+def _explaining(categories: Sequence[models.Category], key: str) -> models.Category:
     """The first of a node's categories declaring `key`, else the first category (RFC 0019).
 
     Any declaring category explains the key the same way: the projector refuses
@@ -1215,7 +1216,7 @@ def _explaining(categories: Sequence[Any], key: str) -> Any:
 
 
 @strawberry.type(description="An entity in the knowledge graph with derived properties")
-class Entity(Node[RetrievedNode]):
+class Entity(Node):
     """
     An entity represents a domain object (e.g. AIS, Cell, Soma) with properties
     derived from supporting evidence structures.
@@ -1269,7 +1270,7 @@ class Entity(Node[RetrievedNode]):
         # indexed properties live on the node now, so iterating those would hide
         # every derived-on-read property — exactly the ones this type exists to
         # explain.
-        explained: dict[str, Any] = {}
+        explained: dict[str, models.Category] = {}
         for category in categories:
             for key in category.property_map:
                 explained.setdefault(key, category)
@@ -1438,7 +1439,7 @@ class Structure:
 
 
 @strawberry.type(description="A natural event in the knowledge graph")
-class NaturalEvent(Node[RetrievedNode], Event):
+class NaturalEvent(Node, Event):
     """
     A natural event represents a biological/natural occurrence (e.g. Mitosis)
     with properties derived from supporting evidence.
@@ -1586,7 +1587,7 @@ class Metric:
 
 
 @strawberry.type(description="A protocol event in the graph")
-class ProtocolEvent(Node[RetrievedNode], Event):
+class ProtocolEvent(Node, Event):
     """
     A protocol event represents a step in an experimental protocol.
     """
@@ -1637,11 +1638,10 @@ class ProtocolEvent(Node[RetrievedNode], Event):
 # BASE EDGE INTERFACE
 # ===========================================
 T = TypeVar("T", bound="Edge")
-V = TypeVar("V", bound=RetrievedEdge)
 
 
 @strawberry.interface(description="A claim relating two things — one `evidence.Link` row, typed by its kind. Not a drawing: several kinds are never projected to an AGE edge at all")
-class Edge(Generic[V]):
+class Edge:
     """Base interface that every link claim implements.
 
     Its description used to read "Base interface for all graph edges", and the
@@ -1665,7 +1665,7 @@ class Edge(Generic[V]):
     Uses strawberry.Private to hold the underlying RetrievedEdge data.
     """
 
-    _value: strawberry.Private[V]
+    _value: strawberry.Private[retrieved.RetrievedEdge]
 
     def __hash__(self):
         return hash(self._value)
@@ -1719,7 +1719,7 @@ class Edge(Generic[V]):
         return cast_edge_to_graphql_type(value)
 
     @classmethod
-    def from_specific(cls: Type[T], subtype: V) -> T:
+    def from_specific(cls: Type[T], subtype: retrieved.RetrievedEdge) -> T:
         """Factory method to convert an Edge subtype back to the base Edge interface."""
         return cls(_value=subtype)
 
@@ -1743,7 +1743,7 @@ class Edge(Generic[V]):
 
 
 @strawberry.type(description="A relation edge between two entities")
-class Relation(Edge[retrieved.RetrievedEdge]):
+class Relation(Edge):
     """
     A relation is an edge between two entities that establishes a
     non-measurement relationship (e.g., parent-child, part-of).
@@ -2263,7 +2263,7 @@ def _endpoint_tables(link: evidence_models.Link) -> tuple[str, str]:
     return _ENDPOINT_TABLES.get(str(link.kind), ("instance", "instance"))
 
 
-async def _resolve_claim_endpoint(table: str, ref: str) -> Optional[Any]:
+async def _resolve_claim_endpoint(table: str, ref: str) -> Optional["ClaimEndpoint"]:
     """Load one end of a link out of the table its kind names.
 
     Through the per-pk loaders, so selecting both ends of a page of claims costs one
@@ -2283,7 +2283,7 @@ async def _resolve_claim_endpoint(table: str, ref: str) -> Optional[Any]:
     return await loaders.instance_by_id_loader.load(ref)
 
 
-async def _resolve_any_claim(ref: str) -> Optional[Any]:
+async def _resolve_any_claim(ref: str) -> Optional["ClaimEndpoint"]:
     """A ref that may name any claim row: instance, link, metric or structure.
 
     The four id namespaces are disjoint uuid4 keys, so at most one probe answers;
@@ -2305,7 +2305,7 @@ async def _resolve_any_claim(ref: str) -> Optional[Any]:
     return None
 
 
-async def _resolve_informs_target(ref: str, info: kante.Info) -> Any:
+async def _resolve_informs_target(ref: str, info: kante.Info) -> "InformsTarget":
     """What an `INFORMS` claim points at: a node if the ref names one, else a claim.
 
     The drawing-typed counterpart of `_resolve_claim_endpoint`'s
@@ -2766,7 +2766,7 @@ def cast_edge_to_graphql_type(edge: RetrievedEdge) -> EdgeSubtype:
 # ===========================================
 
 
-async def _endpoint_instance(ref: Optional[str], info: kante.Info) -> Any:
+async def _endpoint_instance(ref: Optional[str], info: kante.Info) -> evidence_models.Instance:
     """The individual an edge points at, **as the log has it** — an `Instance` (RFC 0025).
 
     An edge reached through the API may have been read in a view or as a bare
@@ -2805,7 +2805,7 @@ class Label:
     provenance asks the node's `connections` or the log.
     """
 
-    _value: strawberry.Private[Any]
+    _value: strawberry.Private[panel.Label]
 
     @strawberry.field(description="Which instance in the component was called this. Every observation mints its own, so a component's labels may name different ones")
     def node_id(self) -> strawberry.ID:

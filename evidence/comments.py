@@ -19,7 +19,9 @@ Two deliberate departures from lok:
 
 from __future__ import annotations
 
-from typing import Any, List, Optional
+from typing import List, Optional
+
+from evidence.values import JSONValue
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -54,7 +56,7 @@ DescendantNode.model_rebuild()
 _VALID_KINDS = frozenset({"LEAF", "MENTION", "PARAGRAPH"})
 
 
-def validate_descendants(raw: List[dict[str, Any]]) -> List[dict[str, Any]]:
+def validate_descendants(raw: List[dict[str, JSONValue]]) -> List[dict[str, JSONValue]]:
     """Validate a raw descendant tree and return it in stored form.
 
     Raises ``ValueError`` on an unknown kind or an unknown key, because a stored
@@ -75,11 +77,11 @@ def validate_descendants(raw: List[dict[str, Any]]) -> List[dict[str, Any]]:
     return [node.model_dump(exclude_none=True) for node in nodes]
 
 
-def extract_mentions(descendants: List[dict[str, Any]]) -> List[str]:
+def extract_mentions(descendants: List[dict[str, JSONValue]]) -> List[str]:
     """Every subject the tree mentions, in first-mention order, deduplicated."""
     seen: dict[str, None] = {}
 
-    def walk(node: dict[str, Any]) -> None:
+    def walk(node: dict[str, JSONValue]) -> None:
         if node.get("kind") == "MENTION" and node.get("user"):
             seen.setdefault(str(node["user"]), None)
         for child in node.get("children") or []:
@@ -90,7 +92,7 @@ def extract_mentions(descendants: List[dict[str, Any]]) -> List[str]:
     return list(seen)
 
 
-def plain_text(descendants: List[dict[str, Any]]) -> str:
+def plain_text(descendants: List[dict[str, JSONValue]]) -> str:
     """The leaves of the tree, flattened to searchable text.
 
     Paragraphs separate their contents with newlines and mentions render as
@@ -98,7 +100,7 @@ def plain_text(descendants: List[dict[str, Any]]) -> str:
     substitute for rendering the tree.
     """
 
-    def walk(node: dict[str, Any]) -> str:
+    def walk(node: dict[str, JSONValue]) -> str:
         kind = node.get("kind")
         if kind == "LEAF":
             return node.get("text") or ""

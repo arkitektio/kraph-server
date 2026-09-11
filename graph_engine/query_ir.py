@@ -21,11 +21,16 @@ raw Cypher before plans existed; nothing renders it any more.
 from __future__ import annotations
 
 import re
-from typing import Any, Optional
+from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING, Optional, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from evidence.values import JSONValue
 from graph_engine.input_models import ColumnInput, MatchPathInput, ReturnStatementInput, WhereClauseInput, WhereOperator
+
+if TYPE_CHECKING:
+    from graph_engine.projection.protocol import Projector
 
 PLAN_VERSION = 1
 
@@ -44,17 +49,31 @@ class TableQueryPlan(BaseModel):
     columns: list[ColumnInput] = Field(default_factory=list, description="How the returned aliases are presented")
 
     @classmethod
-    def from_stored(cls, value: Any) -> Optional["TableQueryPlan"]:
+    def from_stored(cls, value: Mapping[str, JSONValue] | None) -> Optional["TableQueryPlan"]:
         """The plan a row carries, or None for a legacy row that stores only Cypher."""
         if not value:
             return None
         return cls.model_validate(value)
 
-    def to_stored(self) -> dict[str, Any]:
+    def to_stored(self) -> dict[str, JSONValue]:
         return self.model_dump(mode="json")
 
 
-def plan_from_input(plan_input: Any, columns: Any, projector: Any = None) -> TableQueryPlan:
+class PlanShape(Protocol):
+    """The three lists a plan is built from, whatever spells them.
+
+    Three shapes reach :func:`plan_from_input` — the saved-query input, the
+    unsaved `renderTablePlan` input, and the builder's shim, which renames
+    `match_paths`/`where_clauses`/`return_statements` onto these. A protocol
+    says what they must agree on; `Any` said only that they need not.
+    """
+
+    matches: Sequence[MatchPathInput] | None
+    wheres: Sequence[WhereClauseInput] | None
+    returns: Sequence[ReturnStatementInput] | None
+
+
+def plan_from_input(plan_input: PlanShape, columns: Sequence[ColumnInput] | None, projector: "Projector | None" = None) -> TableQueryPlan:
     """A validated plan from a client's input, with the columns folded in.
 
     Validated once, against nothing, so a plan that cannot be compiled is

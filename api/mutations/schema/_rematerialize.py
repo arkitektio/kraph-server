@@ -26,9 +26,12 @@ short version, because it decides how the code below reads:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING
 
 from api import context
+
+if TYPE_CHECKING:
+    from core import models as core_models
 
 
 @dataclass(frozen=True)
@@ -62,7 +65,7 @@ class Fingerprint:
     projection_current: bool = True
 
 
-def fingerprint(category: Any) -> Fingerprint:
+def fingerprint(category: core_models.Category) -> Fingerprint:
     """What a category's properties look like right now."""
     from graph_engine import projector, watermark
     from graph_engine.materialize import compute_properties_hash
@@ -74,7 +77,7 @@ def fingerprint(category: Any) -> Fingerprint:
     )
 
 
-def rematerialize_if_moved(category: Any, before: Fingerprint) -> int:
+def rematerialize_if_moved(category: core_models.Category, before: Fingerprint) -> int:
     """Redraw the category's vertices if its properties changed. Returns how many.
 
     Cheap when nothing moved — an equal hash returns without touching AGE, which

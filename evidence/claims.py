@@ -23,22 +23,27 @@ assigned by the database, one value per assertion, and cannot tie.
 
 from __future__ import annotations
 
-from typing import Any, Iterable
+import uuid
+from collections.abc import Iterable
 
-from django.db.models import Q
+from authentikate.models import Organization
+from django.db.models import Model, Q, QuerySet
 
 from evidence import models as evidence_models
+
+#: A claim's primary key as callers hold it: the uuid, or its text.
+Ref = str | uuid.UUID
 
 #: Newest first. Both keys, always — see the module docstring.
 _LATEST = ("-at", "-assertion__seq")
 
 
 def standings_about(
-    organization: Any,
+    organization: Organization,
     target_type: str,
     target_ids: Iterable[str],
     predicate: Q | None = None,
-) -> Any:
+) -> QuerySet[evidence_models.Standing]:
     """Every standing recorded about these claims, newest first, narrowed by the predicate."""
     queryset = evidence_models.Standing.objects.for_organization(organization).filter(
         target_type=target_type,
@@ -50,7 +55,7 @@ def standings_about(
 
 
 def stands(
-    organization: Any,
+    organization: Organization,
     target_type: str,
     target_id: str,
     predicate: Q | None = None,
@@ -65,7 +70,7 @@ def stands(
 
 
 def stands_for(
-    organization: Any,
+    organization: Organization,
     target_type: str,
     target_ids: Iterable[str],
     predicate: Q | None = None,
@@ -95,7 +100,7 @@ def stands_for(
 
 
 def retracted_ids(
-    organization: Any,
+    organization: Organization,
     target_type: str,
     target_ids: Iterable[str],
     predicate: Q | None = None,
@@ -124,7 +129,7 @@ def retracted_ids(
 CACHED_TARGETS = ("node", "structure", "metric", "link", "comment")
 
 
-def standing(queryset: Any, target_type: str, predicate: Q | None = None) -> Any:
+def standing[Claim: Model](queryset: QuerySet[Claim], target_type: str, predicate: Q | None = None) -> QuerySet[Claim]:
     """Narrow a queryset of log rows to the ones that currently stand.
 
     The replacement for `.filter(stands=True)`, which used to read a boolean on
@@ -161,7 +166,7 @@ def standing(queryset: Any, target_type: str, predicate: Q | None = None) -> Any
     return queryset.annotate(_view_stands=Subquery(latest)).filter(Q(_view_stands=True) | Q(_view_stands__isnull=True))
 
 
-def current(organization: Any, target_type: str, target_id: Any) -> bool:
+def current(organization: Organization, target_type: str, target_id: Ref) -> bool:
     """The cached answer for one target. Organization-wide, unscoped by any view."""
     from evidence import models as evidence_models
 
@@ -169,7 +174,7 @@ def current(organization: Any, target_type: str, target_id: Any) -> bool:
     return True if row is None else row.stands
 
 
-def record_current(organization: Any, target_type: str, target_id: Any, standing: Any) -> bool:
+def record_current(organization: Organization, target_type: str, target_id: Ref, standing: evidence_models.Standing) -> bool:
     """Point the cached answer at this standing, and say whether it moved.
 
     **The return value is the transition, and callers depend on it.**
@@ -212,7 +217,7 @@ def record_current(organization: Any, target_type: str, target_id: Any, standing
     return moved
 
 
-def refold_current(organization: Any) -> int:
+def refold_current(organization: Organization) -> int:
     """Rebuild every cached answer from the claim log. Returns rows written.
 
     The honesty test for this projection: drop it, replay it, and the graph must

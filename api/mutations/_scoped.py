@@ -25,14 +25,31 @@ requester's membership. Instance data is organization-scoped instead — a claim
 belongs to the tenant, not to whichever view drew it — and keeps its own path.
 """
 
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Protocol, TypeVar
 
 from api import context
+
+if TYPE_CHECKING:
+    from core.models import Graph
+    from django.db.models import Model
+    from kante.types import Info
 
 T = TypeVar("T")
 
 
-def graph_of(item: Any) -> Any:
+class GraphOwned(Protocol):
+    """A row that belongs to a view, however it reaches one.
+
+    Categories and saved queries carry `graph`; a `ScatterPlot` reaches one
+    through its `graph_query`. Both spellings are optional here because
+    :func:`graph_of` walks whichever is present — which is exactly the
+    duck-typing `Any` used to leave unstated.
+    """
+
+    graph: "Graph | None"
+
+
+def graph_of(item: GraphOwned) -> "Graph | None":
     """The graph a row belongs to, however it is reached.
 
     Categories and saved queries carry `graph` directly. A `ScatterPlot`
@@ -91,7 +108,7 @@ def accessible_graph(info, pk):
     return graph
 
 
-def schema_scoped(info: Any, model: Any, identifier: Any, *, what: str) -> Any:
+def schema_scoped[Row: Model](info: "Info", model: type[Row], identifier: str | int, *, what: str) -> Row:
     """`scoped`, plus the definition-editing RBAC (RFC 0013).
 
     For the mutations that change what a graph's words mean. Tenancy first
@@ -102,7 +119,7 @@ def schema_scoped(info: Any, model: Any, identifier: Any, *, what: str) -> Any:
     return item
 
 
-def schema_graph(info: Any, identifier: Any) -> Any:
+def schema_graph(info: "Info", identifier: str | int) -> "Graph":
     """`accessible_graph`, plus the definition-editing RBAC (RFC 0013)."""
     graph = accessible_graph(info, identifier)
     graph.validate_definition_editable(info)

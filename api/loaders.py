@@ -22,21 +22,30 @@ erroring the query.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable, Iterable
 from contextvars import ContextVar
-from typing import Any, Callable, Iterable
 
+from django.db.models import Model, QuerySet
 from strawberry.dataloader import DataLoader
 from strawberry.extensions import SchemaExtension
 
 from core import models
 from evidence import models as evidence_models
+from evidence import panel
 
 PKType = int | str
 
-_loaders: ContextVar[dict[str, DataLoader] | None] = ContextVar("api_loaders", default=None)
+#: What a grouped loader's spec may do to its queryset before grouping — apply
+#: the standing anti-join, an ordering, a `select_related`. One alias rather than
+#: `Any` at four sites, and deliberately not more precise than that: the specs
+#: table holds narrowers for six different row types, and a table of
+#: heterogeneous callables cannot be given one exact element type.
+type Narrow = Callable[[QuerySet[Model]], QuerySet[Model]]
+
+_loaders: ContextVar[dict[str, DataLoader[PKType, object]] | None] = ContextVar("api_loaders", default=None)
 
 
-def _batch_by_pk(model: type, field: str = "id") -> Callable[[list[PKType]], Any]:
+def _batch_by_pk[Row: Model](model: type[Row], field: str = "id") -> Callable[[list[PKType]], Awaitable[list[Row | None]]]:
     """A load function that fetches every requested row in one query.
 
     Returns results in the order asked for, with `None` where a row is missing —
@@ -46,11 +55,11 @@ def _batch_by_pk(model: type, field: str = "id") -> Callable[[list[PKType]], Any
 
     manager = getattr(model, "all_objects", None) or model.objects
 
-    async def load(keys: list[PKType]) -> list[Any]:
+    async def load(keys: list[PKType]) -> list[Row | None]:
         # `all_objects` where the model has one: evidence models raise on an
         # unscoped `objects`, and a loader is keyed by primary key, which is
         # already globally unique. Authorization happens at the resolver.
-        found = {}
+        found: dict[str, Row] = {}
         async for instance in manager.filter(**{f"{field}__in": list(keys)}):
             found[str(getattr(instance, field))] = instance
         return [found.get(str(key)) for key in keys]
@@ -58,7 +67,7 @@ def _batch_by_pk(model: type, field: str = "id") -> Callable[[list[PKType]], Any
     return load
 
 
-def _batch_grouped_by(model: type, field: str, narrow: Callable[[Any], Any] | None = None) -> Callable[[list[PKType]], Any]:
+def _batch_grouped_by[Row: Model](model: type[Row], field: str, narrow: Narrow | None = None) -> Callable[[list[PKType]], Awaitable[list[list[Row]]]]:
     """A load function for a **one-to-many** relation: every row per key, in one query.
 
     The sibling `_batch_by_pk` cannot do this and fails silently if asked to:
@@ -78,12 +87,12 @@ def _batch_grouped_by(model: type, field: str, narrow: Callable[[Any], Any] | No
 
     manager = getattr(model, "all_objects", None) or model.objects
 
-    async def load(keys: list[PKType]) -> list[Any]:
+    async def load(keys: list[PKType]) -> list[list[Row]]:
         queryset = manager.filter(**{f"{field}__in": list(keys)})
         if narrow is not None:
             queryset = narrow(queryset)
 
-        grouped: dict[str, list[Any]] = {}
+        grouped: dict[str, list[Row]] = {}
         async for instance in queryset:
             grouped.setdefault(str(getattr(instance, field)), []).append(instance)
         return [grouped.get(str(key), []) for key in keys]
@@ -91,14 +100,14 @@ def _batch_grouped_by(model: type, field: str, narrow: Callable[[Any], Any] | No
     return load
 
 
-def _standing_metrics(queryset: Any) -> Any:
+def _standing_metrics(queryset: QuerySet[Model]) -> QuerySet[Model]:
     """Narrow a metric queryset to the measurements that still stand."""
     from evidence import claims as claims_module
 
     return claims_module.standing(queryset, "metric").order_by("observed_at")
 
 
-_LOADER_SPECS: dict[str, tuple[type, str]] = {
+_LOADER_SPECS: dict[str, tuple[type[Model], str]] = {
     "entity_category": (models.EntityCategory, "id"),
     "structure_kind": (evidence_models.StructureKind, "id"),
     "natural_event_category": (models.NaturalEventCategory, "id"),
@@ -122,7 +131,7 @@ _LOADER_SPECS: dict[str, tuple[type, str]] = {
 }
 
 
-def _newest_standings(queryset: Any) -> Any:
+def _newest_standings(queryset: QuerySet[Model]) -> QuerySet[Model]:
     """Every position on a claim, newest first.
 
     Ordered by `(at, assertion.seq)` — the fold's own order, from
@@ -133,7 +142,7 @@ def _newest_standings(queryset: Any) -> Any:
     return queryset.select_related("assertion").order_by("-at", "-assertion__seq")
 
 
-def _standing_lineage(queryset: Any) -> Any:
+def _standing_lineage(queryset: QuerySet[Model]) -> QuerySet[Model]:
     """Narrow a link queryset to the DERIVED_FROM citations that still stand (RFC 0017).
 
     Lineage is organization grain — no view folds it, so `CurrentStanding` is the
@@ -145,7 +154,7 @@ def _standing_lineage(queryset: Any) -> Any:
     return claims_module.standing(queryset.filter(kind=evidence_models.Link.Kind.DERIVED_FROM), "link").select_related("assertion").order_by("assertion__seq")
 
 
-def _by_pk(queryset: Any) -> Any:
+def _by_pk(queryset: QuerySet[Model]) -> QuerySet[Model]:
     """A stable order for rows that have none of their own."""
     return queryset.order_by("pk")
 
@@ -154,7 +163,7 @@ def _by_pk(queryset: Any) -> Any:
 #: table because they need `_batch_grouped_by`, not `_batch_by_pk` — see that
 #: function for why asking the wrong one is a silent data-loss bug rather than an
 #: error.
-_GROUPED_LOADER_SPECS: dict[str, tuple[type, str, Any]] = {
+_GROUPED_LOADER_SPECS: dict[str, tuple[type[Model], str, Narrow]] = {
     "metrics_by_structure": (evidence_models.Metric, "structure_id", _standing_metrics),
     # Keyed on `target_id` alone, without `target_type`. The ids are uuid4 primary
     # keys of five different tables, so one cannot collide with another — and the
@@ -184,7 +193,7 @@ _GROUPED_LOADER_SPECS: dict[str, tuple[type, str, Any]] = {
 }
 
 
-def _batch_known_about_nodes() -> Callable[[list[PKType]], Any]:
+def _batch_known_about_nodes() -> Callable[[list[PKType]], Awaitable[list[panel.Known]]]:
     """The panel: everything the log says about each node, over its component.
 
     One load function for four fields rather than four loaders, because all four
@@ -203,19 +212,18 @@ def _batch_known_about_nodes() -> Callable[[list[PKType]], Any]:
 
     from asgiref.sync import sync_to_async
 
-    async def load(keys: list[PKType]) -> list[Any]:
+    async def load(keys: list[PKType]) -> list[panel.Known]:
         from core import models as core_models
-        from evidence import panel
 
         normalized = [(int(key[0]) if key[0] is not None else None, str(key[1])) for key in keys]  # type: ignore[index]
 
-        def work() -> dict[tuple[Any, str], Any]:
-            refs_by_graph: dict[Any, list[str]] = defaultdict(list)
+        def work() -> dict[tuple[int | None, str], panel.Known]:
+            refs_by_graph: dict[int | None, list[str]] = defaultdict(list)
             for graph_id, ref in normalized:
                 if ref not in refs_by_graph[graph_id]:
                     refs_by_graph[graph_id].append(ref)
             graphs = {graph.pk: graph for graph in core_models.Graph.objects.filter(pk__in=[graph_id for graph_id in refs_by_graph if graph_id is not None])}
-            answers: dict[tuple[Any, str], Any] = {}
+            answers: dict[tuple[int | None, str], panel.Known] = {}
             for graph_id, refs in refs_by_graph.items():
                 for ref, known in zip(refs, panel.known_about(refs, graph=graphs.get(graph_id))):
                     answers[(graph_id, ref)] = known
@@ -227,7 +235,7 @@ def _batch_known_about_nodes() -> Callable[[list[PKType]], Any]:
     return load
 
 
-def _batch_informed_nodes() -> Callable[[list[PKType]], Any]:
+def _batch_informed_nodes() -> Callable[[list[PKType]], Awaitable[list[list[evidence_models.Instance]]]]:
     """The nodes each structure is evidence for.
 
     Batched even though the underlying read is simple, because it is the hop the
@@ -237,9 +245,7 @@ def _batch_informed_nodes() -> Callable[[list[PKType]], Any]:
     """
     from asgiref.sync import sync_to_async
 
-    async def load(keys: list[PKType]) -> list[Any]:
-        from evidence import panel
-
+    async def load(keys: list[PKType]) -> list[list[evidence_models.Instance]]:
         return await sync_to_async(panel.informed_nodes)([str(key) for key in keys])
 
     return load
@@ -251,7 +257,7 @@ def _batch_informed_nodes() -> Callable[[list[PKType]], Any]:
 #: Neither of these authorizes: they are keyed on the primary key of a row the
 #: resolver has already resolved and checked, exactly as `_batch_by_pk` is. A
 #: tenant check here would be a second, weaker copy of one that already happened.
-_CUSTOM_LOADER_FACTORIES: dict[str, Callable[[], Callable[[list[PKType]], Any]]] = {
+_CUSTOM_LOADER_FACTORIES: dict[str, Callable[[], Callable[[list[PKType]], Awaitable[list[object]]]]] = {
     "known_about_node": _batch_known_about_nodes,
     "informed_nodes_by_structure": _batch_informed_nodes,
 }
@@ -298,11 +304,17 @@ class _LoaderProxy:
             return DataLoader(load_fn=_batch_by_pk(model, field))
         return active[self._name]
 
-    def load(self, key: PKType) -> Any:
-        """Load one key, returning None if it does not exist."""
+    def load(self, key: PKType) -> Awaitable[object]:
+        """Load one key, returning None if it does not exist.
+
+        `object`, not `Any`: one proxy class stands for twenty loaders of
+        twenty row types, so it genuinely does not know which it returns — and
+        `object` makes the caller's `cast(...)` the narrowing it already is,
+        where `Any` made it decoration.
+        """
         return self._current().load(key)
 
-    def load_many(self, keys: Iterable[PKType]) -> Any:
+    def load_many(self, keys: Iterable[PKType]) -> Awaitable[list[object]]:
         """Load several keys in one batch."""
         return self._current().load_many(list(keys))
 

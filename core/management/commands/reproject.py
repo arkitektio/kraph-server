@@ -87,7 +87,7 @@ class Command(BaseCommand):
             result = controller.rebuild_projection(graph)
             # `states` is the organization-wide refold count, not this graph's —
             # `refold_state` is organization grain — and it is labelled as such.
-            self.stdout.write(self.style.SUCCESS(f"  {result['nodes']} nodes, {result['projected']} entities projected, {result['states']} metrics refolded organization-wide; cursor at {watermark.position(graph).cursor}"))
+            self.stdout.write(self.style.SUCCESS(f"  {result.nodes} nodes, {result.projected} entities projected, {result.states} metrics refolded organization-wide; cursor at {watermark.position(graph).cursor}"))
 
     def _incremental(self, options) -> None:
         """Apply the outbox to every consistent graph of each selected organization."""
@@ -138,12 +138,18 @@ class Command(BaseCommand):
             if done.idle:
                 self.stdout.write("  nothing owed")
                 continue
-            result = done.report or {"graphs": [], "skipped": [], "settled": 0, "refs": 0}
-            for entry in result["graphs"]:
-                self.stdout.write(self.style.SUCCESS(f"  {_graphs.describe(entry['graph'])}: {entry['nodes']} node(s) redrawn, {entry['erased']} erased, {entry['edges']} edge(s), {entry['participations']} participation(s), {entry['projected']} projected; cursor at {watermark.position(entry['graph']).cursor}"))
-            for entry in result["skipped"]:
-                self.stdout.write(self.style.WARNING(f"  {_graphs.describe(entry['graph'])}: skipped, {entry['status']} — run a full `reproject --graph {entry['graph'].pk}`"))
-            self.stdout.write(self.style.SUCCESS(f"  {result['settled']} assertion(s) settled over {result['refs']} ref(s)"))
+            if done.locked_elsewhere:
+                self.stdout.write(self.style.WARNING("  another session holds this organization's projection lock; nothing was applied"))
+                continue
+            result = done.report
+            if result is None:
+                continue
+            for entry in result.graphs:
+                counts = entry.counts
+                self.stdout.write(self.style.SUCCESS(f"  {_graphs.describe(entry.graph)}: {counts.nodes} node(s) redrawn, {counts.erased} erased, {counts.edges} edge(s), {counts.participations} participation(s), {counts.projected} projected; cursor at {watermark.position(entry.graph).cursor}"))
+            for entry in result.skipped:
+                self.stdout.write(self.style.WARNING(f"  {_graphs.describe(entry.graph)}: skipped, {entry.status} — run a full `reproject --graph {entry.graph.pk}`"))
+            self.stdout.write(self.style.SUCCESS(f"  {result.settled} assertion(s) settled over {result.refs} ref(s)"))
 
     def _loop(self, controller, options) -> None:
         """The runner: `run_forever` until SIGTERM/SIGINT, then exit 0 after the current pass."""

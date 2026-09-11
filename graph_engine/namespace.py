@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from evidence.values import JSONValue
 
 from core import enums as core_enums
 from core import models as core_models
@@ -123,7 +123,7 @@ def _guard_label(label: str, *, category: core_models.Category | None = None) ->
     return label
 
 
-def _descriptor(value: Any) -> EntityDescriptorInput:
+def _descriptor(value: dict[str, JSONValue] | None) -> EntityDescriptorInput:
     if not value:
         return EntityDescriptorInput()
     return EntityDescriptorInput(**value)
@@ -133,7 +133,7 @@ def _matched(descriptor: EntityDescriptorInput, candidates: Sequence[core_models
     return [candidate for candidate in candidates if descriptor.matches(candidate)]
 
 
-def _role_endpoints(roles: Any, candidates: Sequence[core_models.Category]) -> list[core_models.Category]:
+def _role_endpoints(roles: Sequence[dict[str, JSONValue]] | None, candidates: Sequence[core_models.Category]) -> list[core_models.Category]:
     """The entity-like categories a role list admits; an absent or empty list admits all.
 
     A role's descriptor narrows the endpoint the same way a relation's does; the
@@ -149,7 +149,7 @@ def _role_endpoints(roles: Any, candidates: Sequence[core_models.Category]) -> l
     return list(admitted.values())
 
 
-def namespace_spec(graph: Any) -> NamespaceSpec:
+def namespace_spec(graph: core_models.Graph) -> NamespaceSpec:
     """Derive the namespace one graph's categories declare.
 
     Reads `core.Category` rows only — never the drawing — so the spec is a pure
@@ -254,7 +254,7 @@ def namespace_spec(graph: Any) -> NamespaceSpec:
     )
 
 
-def declared_labels(graph: Any) -> tuple[frozenset[str], frozenset[str]]:
+def declared_labels(graph: core_models.Graph) -> tuple[frozenset[str], frozenset[str]]:
     """The (vertex labels, edge labels) one graph's namespace declares.
 
     What the query compiler resolves a plan's label strings against: a label in

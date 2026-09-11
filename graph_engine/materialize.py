@@ -302,9 +302,9 @@ def _materialize_atomically(definition, projector, user, organization, membershi
         logger.info(
             "graph #%s: backfilled %s node(s) and %s edge(s) from existing evidence; %s admitted by no category.",
             graph.pk,
-            counts["nodes"],
-            counts["edges"],
-            counts["unclassified"],
+            counts.nodes,
+            counts.edges,
+            counts.unclassified,
         )
 
     return graph

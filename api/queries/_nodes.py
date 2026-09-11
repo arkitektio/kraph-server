@@ -35,14 +35,20 @@ drawn is still found by it. That is the property that makes it safe to answer.
 
 from __future__ import annotations
 
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
-from django.db.models import Q
+from django.db.models import Q, QuerySet
 
 from evidence import models as evidence_models
 from graph_engine import projector
 from graph_engine import input_models
+from graph_engine.input_models import ClaimFilterModel, ClaimOrderModel, PageModel
 from graph_engine.retrieved import RetrievedNode
+
+if TYPE_CHECKING:
+    from core.models import Category, Graph
+    from graph_engine.controller import GraphController
 
 #: Filters that only ever meant something against a drawn vertex's properties.
 #: `search` was here too, when it meant full-text over those properties. It reads
@@ -50,7 +56,7 @@ from graph_engine.retrieved import RetrievedNode
 _DRAWING_ONLY_FILTERS = ("has_property", "matches")
 
 
-def refuse_drawing_filters(filter_model: Any, ordering_models: Iterable[Any] = ()) -> None:
+def refuse_drawing_filters(filter_model: ClaimFilterModel, ordering_models: Iterable[ClaimOrderModel] = ()) -> None:
     """Reject filters and orderings that only apply to a view's drawing."""
     offending = [name for name in _DRAWING_ONLY_FILTERS if getattr(filter_model, name, None)]
     if any(getattr(order_model, "property", None) for order_model in ordering_models):
@@ -59,7 +65,7 @@ def refuse_drawing_filters(filter_model: Any, ordering_models: Iterable[Any] = (
         raise ValueError(f"{', '.join(offending)} asks about properties of a projected vertex. Nodes are listed from the evidence log now, and a claim carries no derived properties — a node that no view has drawn has none at all. Filter on `ids`, or ask the drawing through a graph-scoped query.")
 
 
-def rows_for_category(category: Any) -> Any:
+def rows_for_category(category: Category) -> QuerySet[evidence_models.Instance]:
     """Every node this category draws, as `Instance` rows.
 
     Membership is `projector.refs_admitted_by` — the claims' answer — so this is
@@ -73,7 +79,7 @@ def rows_for_category(category: Any) -> Any:
     return evidence_models.Instance.objects.for_organization(graph.organization).filter(id__in=refs).select_related("term")
 
 
-def rows_in_graph(graph: Any) -> Any:
+def rows_in_graph(graph: Graph) -> QuerySet[evidence_models.Instance]:
     """Every individual this graph holds, as the `Instance` rows of their representatives.
 
     One row per individual, not per observation (RFC 0018): the refs are
@@ -86,7 +92,7 @@ def rows_in_graph(graph: Any) -> Any:
     return evidence_models.Instance.objects.for_organization(graph.organization).filter(id__in=refs).select_related("term")
 
 
-def narrow(rows: Any, filter_model: Any, ordering_models: Iterable[Any], pagination_model: Any) -> list[Any]:
+def narrow(rows: QuerySet[evidence_models.Instance], filter_model: ClaimFilterModel, ordering_models: Iterable[ClaimOrderModel], pagination_model: PageModel | None) -> list[evidence_models.Instance]:
     """Apply the ids and search filters, the ordering and the page. Returns rows.
 
     Filtering and ordering are both over the log's own columns. `created_at` is when
@@ -125,7 +131,7 @@ def narrow(rows: Any, filter_model: Any, ordering_models: Iterable[Any], paginat
     return list(rows.order_by(*order_by)[offset : offset + limit])
 
 
-def one_in_graph(controller: Any, graph: Any, instance: Any) -> RetrievedNode:
+def one_in_graph(controller: GraphController, graph: Graph, instance: evidence_models.Instance) -> RetrievedNode:
     """One node, as the named view holds it — the singular form of `rows_in_graph`.
 
     Refuses a node the view's rule does not admit, so `node(id:, graph:)` succeeds
@@ -144,7 +150,7 @@ def one_in_graph(controller: Any, graph: Any, instance: Any) -> RetrievedNode:
     return retrieved_in(controller, graph, [row])[0]
 
 
-def retrieved_in(controller: Any, graph: Any, rows: list[Any]) -> list[RetrievedNode]:
+def retrieved_in(controller: GraphController, graph: Graph, rows: list[evidence_models.Instance]) -> list[RetrievedNode]:
     """The nodes as this view holds them, falling back to the log where it holds none.
 
     One Cypher round-trip for the page, not one per node. A row with no vertex comes
@@ -170,5 +176,5 @@ def retrieved_in(controller: Any, graph: Any, rows: list[Any]) -> list[Retrieved
     return nodes
 
 
-def _direction(column: str, value: Any) -> str:
+def _direction(column: str, value: object) -> str:
     return f"-{column}" if str(value).upper().endswith("DESC") else column

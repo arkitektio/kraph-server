@@ -12,7 +12,9 @@ no-op `metrics(metricKindId:)` was stripped of, recorded in
 order), so the honest signature offers the two that are implemented.
 """
 
-from typing import Any, List
+from typing import List
+
+from django.db.models import Model, QuerySet
 
 import strawberry
 import strawberry_django
@@ -22,7 +24,7 @@ from api import context, filters, pagination, types
 from evidence import models as evidence_models
 
 
-def _page(queryset: Any, page: pagination.VocabularyPaginationInput | None) -> list[Any]:
+def _page[Row: Model](queryset: QuerySet[Row], page: pagination.VocabularyPaginationInput | None) -> list[Row]:
     """The offset/limit window — first hundred by default, clamped at `pagination.MAX_LIMIT`."""
     return pagination.slice_window(queryset, page)
 

@@ -23,15 +23,18 @@ from __future__ import annotations
 
 import datetime
 import uuid
-from typing import TYPE_CHECKING, Any, Iterable, NamedTuple
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, NamedTuple
 
 from authentikate.models import Organization
 from django.db import transaction
+from django.db.models import QuerySet
 from django.utils import timezone
 
 from core.enums import ValueKind
 from evidence import claims as claims_module
 from evidence import models as evidence_models
+from evidence.values import JSONValue, Ref
 
 if TYPE_CHECKING:
     # `create_link` annotates `category: core_models.Category`, which named a
@@ -76,7 +79,7 @@ _PROPERTY_TYPE_TO_VALUE_KIND: dict[str, str] = {
 #: and `45.2` under one key from becoming an INT term and a FLOAT one.
 
 
-def value_columns(value: Any, value_kind: str, key: str = "?") -> dict[str, Any]:
+def value_columns(value: JSONValue, value_kind: str, key: str = "?") -> dict[str, JSONValue]:
     """Map a value onto the single typed column its kind designates.
 
     Raises rather than silently dropping the value, because a metric that
@@ -107,7 +110,7 @@ def value_columns(value: Any, value_kind: str, key: str = "?") -> dict[str, Any]
         raise ValueError(f"'{key}' is declared {value_kind}, but {value!r} is not a {value_kind} value ({error}). Declare the kind that matches what you are recording.") from error
 
 
-def _as_datetime(value: Any, default: datetime.datetime) -> datetime.datetime:
+def _as_datetime(value: JSONValue | datetime.datetime, default: datetime.datetime) -> datetime.datetime:
     """Accept the ms-epoch ints the GraphQL surface still speaks."""
     if value is None:
         return default
@@ -133,7 +136,7 @@ def ensure_structure_kind(organization: Organization, identifier: str) -> eviden
     return kind
 
 
-def ensure_term(organization: Organization, kind: Any, key: str) -> evidence_models.Term:
+def ensure_term(organization: Organization, kind: evidence_models.Instance.Kind | str, key: str) -> evidence_models.Term:
     """Get or create the organization's word for a kind of thing.
 
     Always allowed, for the same reason :func:`ensure_structure_kind` is: refusing
@@ -153,7 +156,7 @@ def ensure_term(organization: Organization, kind: Any, key: str) -> evidence_mod
     return term
 
 
-def canonical_value_kind(value_kind: Any) -> str | None:
+def canonical_value_kind(value_kind: ValueKind | str | None) -> str | None:
     """The canonical spelling of a value kind, or None if nothing was declared.
 
     Accepts a `ValueKind`, its string value, or the lowercase `PropertyType`
@@ -172,7 +175,7 @@ def ensure_metric_kind(
     organization: Organization,
     structure_kind: evidence_models.StructureKind,
     key: str,
-    value_kind: Any,
+    value_kind: ValueKind | str,
 ) -> evidence_models.MetricKind:
     """Get or create the organization's term for a kind of measurement.
 
@@ -211,7 +214,7 @@ def create_assertion(
     app_id: str,
     action_id: str | None = None,
     action_name: str | None = None,
-    action_args: dict[str, Any] | None = None,
+    action_args: dict[str, JSONValue] | None = None,
     asserted_at: datetime.datetime | None = None,
 ) -> evidence_models.Assertion:
     """Record who is claiming something, and when they claim it."""
@@ -260,12 +263,12 @@ def record_metric(
     kind: evidence_models.MetricKind,
     *,
     key: str,
-    value: Any,
+    value: JSONValue,
     assertion: evidence_models.Assertion,
     unit: str | None = None,
     confidence: float | None = None,
     confidence_type: str | None = None,
-    observed_at: Any = None,
+    observed_at: JSONValue | datetime.datetime = None,
 ) -> evidence_models.Metric:
     """Append a measurement.
 
@@ -303,7 +306,7 @@ def record_comment(
     organization: Organization,
     structure: evidence_models.Structure,
     *,
-    descendants: list[dict[str, Any]],
+    descendants: list[dict[str, JSONValue]],
     assertion: evidence_models.Assertion,
     parent: evidence_models.Comment | None = None,
 ) -> evidence_models.Comment:
@@ -386,7 +389,7 @@ def create_instance(
     happened. Left ``None``, the row takes the assertion's time on save.
     ``confidence`` is stored as given, null when not (RFC 0016).
     """
-    fields: dict[str, Any] = {"kind": kind, "term": term, "assertion": assertion, "observed_at": observed_at, "confidence": confidence}
+    fields: dict[str, object] = {"kind": kind, "term": term, "assertion": assertion, "observed_at": observed_at, "confidence": confidence}
     if id is not None:
         fields["id"] = id
     return evidence_models.Instance.objects.create_for_organization(organization=organization, **fields)
@@ -451,7 +454,7 @@ def record_standing_for_ref(
 @transaction.atomic
 def record_standing(
     organization: Organization,
-    target: Any,
+    target: evidence_models.Claim,
     *,
     stands: bool,
     assertion: evidence_models.Assertion,
@@ -507,7 +510,7 @@ def record_standing(
 
 def retract(
     organization: Organization,
-    target: Any,
+    target: evidence_models.Claim,
     assertion: evidence_models.Assertion,
     at: datetime.datetime | None = None,
     confidence: float | None = None,
@@ -518,7 +521,7 @@ def retract(
 
 def attest(
     organization: Organization,
-    target: Any,
+    target: evidence_models.Claim,
     assertion: evidence_models.Assertion,
     at: datetime.datetime | None = None,
     confidence: float | None = None,
@@ -527,7 +530,7 @@ def attest(
     return record_standing(organization, target, stands=True, assertion=assertion, at=at, confidence=confidence)
 
 
-def standing_metrics_for_kind(kind: evidence_models.MetricKind) -> Any:
+def standing_metrics_for_kind(kind: evidence_models.MetricKind) -> QuerySet[evidence_models.Metric]:
     """Every un-retracted metric recorded under one metric kind.
 
     Sibling of :func:`active_metrics_for_structures` — same standing filter, a
@@ -544,8 +547,8 @@ def standing_metrics_for_kind(kind: evidence_models.MetricKind) -> Any:
 
 def active_metrics_for_structures(
     organization: Organization,
-    structure_ids: Iterable[Any],
-) -> Any:
+    structure_ids: Iterable[Ref],
+) -> QuerySet[evidence_models.Metric]:
     """Every un-retracted metric describing the given structures.
 
     The read path the projector will fold over in M3, and the SQL replacement

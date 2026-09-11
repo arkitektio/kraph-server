@@ -15,6 +15,7 @@ from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 from core import models as core_models
 from graph_engine import projector as projector_module
+from graph_engine import reports
 from tests.support import claims, drawing, graphs, reads, rules, writes
 
 
@@ -50,8 +51,8 @@ async def test_a_node_two_categories_admit_is_drawn_once_under_both(
         return str(node.ref), graphs.rebuild(test_graph, table_projector)
 
     ref, result = await both_admit_it()
-    assert result["nodes"] == 1, "The node is drawn — a second admitting category is not an ambiguity"
-    assert result["unclassified"] == 0
+    assert result.nodes == 1, "The node is drawn — a second admitting category is not an ambiguity"
+    assert result.unclassified == 0
 
     @sync_to_async
     def drawn() -> tuple[int, set[str], int, int]:
@@ -152,18 +153,18 @@ async def test_a_key_two_categories_define_differently_is_refused_naming_both(
         return result, skipped
 
     result, skipped = await conflict()
-    assert result["nodes"] == 0 and result["unclassified"] == 1
+    assert result.nodes == 0 and result.unclassified == 1
     (reason,) = skipped.values()
     assert "avg_length" in reason and "AIS" in reason and "Excitatory" in reason
 
     @sync_to_async
-    def agree() -> dict:
+    def agree() -> reports.DrawCounts:
         # The same rule on both is not a conflict: there is one answer.
         graphs.define_entity(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"))), properties=[_rollup("avg_length", "MEAN")])
         graphs.define_entity(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"))), properties=[_rollup("avg_length", "MEAN")])
         return graphs.rebuild(test_graph, table_projector)
 
-    assert (await agree())["nodes"] == 1
+    assert (await agree()).nodes == 1
 RELATE = """
     mutation Relate($input: AssertRelationExistsInput!) {
         assertRelationExists(input: $input) { link { id } drawings { category { id } } }

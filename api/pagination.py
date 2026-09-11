@@ -1,8 +1,21 @@
-from typing import Any, Optional
+from typing import Optional, Protocol
 
 import kante
+from django.db.models import Model, QuerySet
 
 from graph_engine import input_models
+
+
+class Page(Protocol):
+    """Anything that can say where a page starts and how long it is.
+
+    Both spellings reach here — the strawberry input (which carries
+    `to_pydantic`) and the pydantic model itself — so this names the two fields
+    they share rather than either concrete class.
+    """
+
+    offset: Optional[int]
+    limit: Optional[int]
 
 #: Every list defaults to the first hundred and is clamped at a thousand — the
 #: same ceiling `changes(afterSeq:)` has always had. `limit` used to be unbounded
@@ -11,7 +24,7 @@ DEFAULT_LIMIT = input_models.DEFAULT_LIMIT
 MAX_LIMIT = input_models.MAX_LIMIT
 
 
-def window(page: Any, *, default: int = DEFAULT_LIMIT, maximum: int = MAX_LIMIT) -> tuple[int, int]:
+def window(page: Page | None, *, default: int = DEFAULT_LIMIT, maximum: int = MAX_LIMIT) -> tuple[int, int]:
     """`(offset, limit)` from a pagination input, its pydantic model, or None.
 
     Clamped: `offset >= 0`, `1 <= limit <= maximum`. A client asking for more than
@@ -23,7 +36,7 @@ def window(page: Any, *, default: int = DEFAULT_LIMIT, maximum: int = MAX_LIMIT)
     return offset, max(1, min(limit, maximum))
 
 
-def slice_window(queryset: Any, page: Any) -> list:
+def slice_window[Row: Model](queryset: QuerySet[Row], page: Page | None) -> list[Row]:
     """`window` applied to a queryset (or any sliceable)."""
     offset, limit = window(page)
     return list(queryset[offset : offset + limit])

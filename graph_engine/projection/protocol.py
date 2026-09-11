@@ -29,8 +29,18 @@ BY clause, a SKIP/LIMIT string, built by the controller); it takes a
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
-from typing import Any, Protocol, runtime_checkable
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
+
+from evidence.values import JSONValue
+
+if TYPE_CHECKING:
+    # Annotations only, and deliberately so: this module is the seam a second
+    # projection kind implements, so it must name the schema's rows and the
+    # plan's shape without importing Django or the query compiler at runtime.
+    from core.models import Graph
+    from graph_engine.input_models import RenderGraphTableFilter, RenderGraphTableOrder, RenderGraphTablePagination
+    from graph_engine.query_ir import TableQueryPlan
 
 
 @dataclass(frozen=True)
@@ -64,7 +74,7 @@ class IncidentEdge:
     target_id: int
     source_ref: str
     target_ref: str
-    properties: Mapping[str, Any]
+    properties: Mapping[str, JSONValue]
 
 
 #: The comparisons a drawing-scoped list may ask for. The canonical spellings —
@@ -88,7 +98,33 @@ class PropertyPredicate:
 
     key: str
     operator: str = "EQUALS"
-    value: Any = None
+    value: JSONValue = None
+
+
+@dataclass(frozen=True)
+class DrawnNode:
+    """One vertex as a view has drawn it — the reader half's unit.
+
+    Was `dict[str, Any]`, which made the record's own contract unreadable: the
+    keys were documented in three prose docstrings, `RetrievedNode.from_node`
+    guessed at four of them with `.get(...)` fallbacks, and a caller could not
+    tell `properties["id"]` — the individual's representative, which is real
+    identity and may differ from the key the record sits under — from `id`, the
+    drawing's opaque vertex id, which a reproject reassigns.
+
+    `labels` is every label the vertex is drawn under, sorted; `label` is the
+    first, for a reader that shows one (RFC 0019). `members` is every instance
+    the vertex stands for (RFC 0018), `properties["id"]` the representative
+    among them.
+    """
+
+    #: The drawing's own vertex id. Opaque, reassigned by every reproject,
+    #: never identity — that is `properties["id"]`.
+    id: int
+    label: str
+    labels: tuple[str, ...] = ()
+    properties: Mapping[str, JSONValue] = field(default_factory=dict)
+    members: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -126,7 +162,7 @@ class Projector(Protocol):
 
     # ------------------------------------------------------------------ namespace
 
-    def refresh_namespace(self, graph: Any) -> None:
+    def refresh_namespace(self, graph: Graph) -> None:
         """(Re)derive the place this graph's drawing is queried from, from the view's categories.
 
         Idempotent and re-runnable: the namespace is a **derived artifact**,
@@ -136,17 +172,17 @@ class Projector(Protocol):
         """
         ...
 
-    def drop_namespace(self, graph: Any) -> None:
+    def drop_namespace(self, graph: Graph) -> None:
         """Destroy the drawing, its namespace, and everything in them. The evidence is untouched by construction."""
         ...
 
-    def validate_plan(self, plan: Any) -> None:
+    def validate_plan(self, plan: TableQueryPlan) -> None:
         """Refuse a structurally invalid saved-query plan — the save-time check, no view in scope."""
         ...
 
     # ------------------------------------------------------------------ writer: nodes
 
-    def draw_node(self, graph: Any, ref: str, categories: Sequence[tuple[str, Any]], kind: str, members: Iterable[str]) -> None:
+    def draw_node(self, graph: Graph, ref: str, categories: Sequence[tuple[str, int]], kind: str, members: Iterable[str]) -> None:
         """Draw (or re-draw) one node under every `(label, category_id)` in `categories`, carrying `{id, category_ids, type}`, standing for `members`.
 
         `ref` is the individual's representative and `members` every instance
@@ -161,7 +197,7 @@ class Projector(Protocol):
         """
         ...
 
-    def write_properties(self, graph: Any, ref: str, values: Mapping[str, Any]) -> bool:
+    def write_properties(self, graph: Graph, ref: str, values: Mapping[str, JSONValue]) -> bool:
         """Set derived properties on the drawn node holding `ref`. Returns whether the node was there to write onto.
 
         A `None` value **removes** the key: a derived property whose evidence no
@@ -170,17 +206,17 @@ class Projector(Protocol):
         """
         ...
 
-    def clear_properties(self, graph: Any, label: str, refs: Iterable[str], keys: Iterable[str]) -> None:
+    def clear_properties(self, graph: Graph, label: str, refs: Iterable[str], keys: Iterable[str]) -> None:
         """Remove these property keys from these drawn nodes, where drawn under `label`. The sweep before a redraw."""
         ...
 
-    def erase_nodes(self, graph: Any, refs: Iterable[str]) -> int:
+    def erase_nodes(self, graph: Graph, refs: Iterable[str]) -> int:
         """Remove every node holding any of these refs as a member, and every edge touching it. Returns how many nodes were there."""
         ...
 
     # ------------------------------------------------------------------ writer: edges
 
-    def draw_edge(self, graph: Any, source_ref: str, target_ref: str, label: str, properties: Mapping[str, Any]) -> bool:
+    def draw_edge(self, graph: Graph, source_ref: str, target_ref: str, label: str, properties: Mapping[str, JSONValue]) -> bool:
         """Draw (or re-draw) one edge source → target under `label`, setting `properties`.
 
         Either endpoint may be any member of its individual; the edge lands on
@@ -190,7 +226,7 @@ class Projector(Protocol):
         """
         ...
 
-    def erase_edge(self, graph: Any, source_ref: str, target_ref: str, label: str, match: Mapping[str, Any] | None = None) -> None:
+    def erase_edge(self, graph: Graph, source_ref: str, target_ref: str, label: str, match: Mapping[str, JSONValue] | None = None) -> None:
         """Remove the edge source → target under `label` whose properties match `match` (if given)."""
         ...
 
@@ -202,8 +238,8 @@ class Projector(Protocol):
 
     # ------------------------------------------------------------------ reader
 
-    def drawn_nodes(self, graph: Any, refs: Iterable[str]) -> dict[str, dict[str, Any]]:
-        """The drawn records for these refs, keyed by the ref **asked for** — `{id, label, labels, properties, members}` each; a missing key means undrawn.
+    def drawn_nodes(self, graph: Graph, refs: Iterable[str]) -> dict[str, DrawnNode]:
+        """The drawn records for these refs, keyed by the ref **asked for**; a missing key means undrawn.
 
         Several asked refs may share one record: members of one individual. The
         record's `properties["id"]` is the representative, which may differ from
@@ -213,7 +249,7 @@ class Projector(Protocol):
         """
         ...
 
-    def drawn_edges_incident(self, graph: Any, refs: Iterable[str], spec: IncidentEdgesSpec) -> dict[str, list[IncidentEdge]]:
+    def drawn_edges_incident(self, graph: Graph, refs: Iterable[str], spec: IncidentEdgesSpec) -> dict[str, list[IncidentEdge]]:
         """Every drawn edge touching the vertex holding each ref, keyed by the ref **asked for**.
 
         Any member addresses its vertex (RFC 0018). A self-edge appears once. A
@@ -221,14 +257,14 @@ class Projector(Protocol):
         """
         ...
 
-    def drawn_edge(self, graph: Any, source_ref: str, target_ref: str, label: str) -> DrawnEdge | None:
+    def drawn_edge(self, graph: Graph, source_ref: str, target_ref: str, label: str) -> DrawnEdge | None:
         """The ids of the edge source → target under `label`, or None if this view does not draw it."""
         ...
 
-    def list_drawn(self, graph: Any, spec: ListDrawnSpec) -> list[dict[str, Any]]:
+    def list_drawn(self, graph: Graph, spec: ListDrawnSpec) -> list[DrawnNode]:
         """The drawn records matching `spec` — the drawing-scoped list, compiled by the kind."""
         ...
 
-    def render_table(self, graph: Any, plan: Any, *, filters: Any = None, order: Any = None, pagination: Any = None) -> list[Any]:
+    def render_table(self, graph: Graph, plan: TableQueryPlan, *, filters: RenderGraphTableFilter | None = None, order: RenderGraphTableOrder | None = None, pagination: RenderGraphTablePagination | None = None) -> list[dict[str, JSONValue]]:
         """Compile a `TableQueryPlan` for this projection kind, run it, and hand back its rows."""
         ...

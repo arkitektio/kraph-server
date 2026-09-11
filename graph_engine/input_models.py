@@ -1,7 +1,10 @@
-from asyncio import Protocol
 from enum import Enum
+from collections.abc import Mapping
 from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
-from typing import List, Dict, Optional, Any, Literal, Union
+from pydantic.fields import FieldInfo
+from typing import List, Dict, Optional, Any, Literal, Protocol, Union
+
+from evidence.values import JSONValue
 from datetime import datetime, timezone
 import re
 
@@ -26,6 +29,19 @@ def clamp_window(offset: int | None, limit: int | None, *, default: int = DEFAUL
     lim = int(limit if limit is not None else default)
     return off, max(1, min(lim, maximum))
 
+
+
+# On the five `value: Any` fields below (`PropertyMatch`, `MetricInput`,
+# `ClaimConditionInput`, `WhereClauseInput`, `RenderGraphTableFilter`): `Any` is
+# the annotation on purpose, and it is the one place in this codebase where it is.
+# A pydantic field annotation is not documentation, it is the **validator** — and
+# what these fields legitimately hold is a JSON scalar *or* a list *or* a
+# datetime (`BEFORE`/`SINCE` take one), which is to say "whatever the operator
+# this sits beside makes sense of". `JSONValue` would refuse the datetime;
+# `scalars.AnyScalar`, a `NewType` over `str`, already did refuse every number —
+# see `graph_engine/scalars.py`. The narrowing that is real happens in the
+# `model_validator`s below, per (field, operator) pair, which is where it can be
+# stated correctly. Everything *else* in this module says what it means.
 
 
 class StrictModel(BaseModel):
@@ -93,7 +109,7 @@ DERIVED_FROM_FIELD_DESCRIPTION = (
 )
 
 
-def _derived_from_field() -> Any:
+def _derived_from_field() -> FieldInfo:
     """The lineage field every claim-making input carries."""
     return Field(default_factory=list, description=DERIVED_FROM_FIELD_DESCRIPTION)
 
@@ -290,6 +306,56 @@ class EntityPagination(StrictModel):
     limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
 
 
+# The four node families below — Entity, Node, NaturalEvent, ProtocolEvent —
+# and the five edge ones declare the *same* filter, order and page fields under
+# different names, because each is a separate GraphQL input type. The readers in
+# `api/queries/_nodes.py` and `_edges.py` take any of them, which is why they
+# annotated `filter_model: Any` and reached for every field through
+# `getattr(..., None)`.
+#
+# These three protocols say what those readers actually require. Structural, so
+# no input model has to inherit anything, and checked, so a family that grows a
+# field the readers do not know about — or loses one they do — stops being a
+# silent `getattr` miss.
+
+
+class ClaimFilterModel(Protocol):
+    """What every node and edge list filter offers a reader.
+
+    `has_property`, `search` and `matches` are declared here even though the
+    claim-grain readers **refuse** most of them: refusing a field is reading it,
+    and `refuse_drawing_filters` cannot check for a field the type says is not
+    there. `search` is answered for nodes and refused for edges — see those
+    modules for why the asymmetry is real.
+    """
+
+    ids: Optional[List[str]]
+    has_property: Optional[str]
+    search: Optional[str]
+    matches: Optional[List["PropertyMatch"]]
+
+
+class ClaimOrderModel(Protocol):
+    """The log's own columns, which are the only ones a claim list may order by.
+
+    `EntityOrder` additionally carries `property`, for the drawing-scoped list
+    that is not on the GraphQL surface; the readers reach for that one through
+    `getattr` precisely because it is not part of this contract.
+    """
+
+    created_at: Optional[Ordering]
+    seq: Optional[Ordering]
+    observed_at: Optional[Ordering]
+    id: Optional[Ordering]
+
+
+class PageModel(Protocol):
+    """One page of a list. `clamp_window` is what turns it into a slice."""
+
+    offset: Optional[int]
+    limit: Optional[int]
+
+
 class NodeFilters(StrictModel):
     graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
     category: Optional[str] = Field(default=None, description="Filter by node kind/type")
@@ -471,7 +537,7 @@ class RelationOrder(StrictModel):
     id: Optional[Ordering] = Field(default=None, description="Order by relation ID")
 
 
-def parse_observed_at(value: Any) -> Optional[datetime]:
+def parse_observed_at(value: JSONValue | datetime) -> Optional[datetime]:
     """Accept an ISO string, a datetime, or a unix-ms int as a world time.
 
     Tolerant on the way in because clients used to send unix milliseconds
@@ -527,11 +593,11 @@ class MetricInput(StrictModel):
 
     @field_validator("observed_at", mode="before")
     @classmethod
-    def _parse_observed_at(cls, value: Any) -> Optional[datetime]:
+    def _parse_observed_at(cls, value: JSONValue | datetime) -> Optional[datetime]:
         return parse_observed_at(value)
 
 
-def create_max_confidence_metric(key: str, value: Any, unit: Optional[str] = None, observed_at: Any = None) -> MetricInput:
+def create_max_confidence_metric(key: str, value: JSONValue, unit: Optional[str] = None, observed_at: JSONValue | datetime = None) -> MetricInput:
     """Helper to create a measurement with max confidence"""
     return MetricInput(key=key, value=value, confidence=1.0, confidence_type="max", unit=unit, observed_at=observed_at)
 
@@ -588,7 +654,7 @@ class SemanticVersion(str):
         yield cls.validate
 
     @classmethod
-    def validate(cls, v: Any) -> str:
+    def validate(cls, v: object) -> str:
         if not isinstance(v, str):
             raise TypeError("Semantic version must be a string")
         return validate_semver(v)
@@ -634,7 +700,7 @@ class ClaimKind(str, Enum):
 _CLAIM_KIND_VALUES = frozenset(kind.value for kind in ClaimKind)
 
 
-def rule_covers(stored_rule: Any, kind: str) -> bool:
+def rule_covers(stored_rule: Mapping[str, object] | None, kind: str) -> bool:
     """Whether one stored rule applies when folding claims of `kind`.
 
     **The one coverage implementation** — the write-time validator and the
@@ -744,7 +810,7 @@ class ClaimConditionInput(StrictModel):
                 raise ValueError(f"{self.field.value} {self.operator.value} needs a non-empty list of strings, got {self.value!r}.")
         return self
 
-    def to_stored(self) -> Dict[str, Any]:
+    def to_stored(self) -> Dict[str, JSONValue]:
         value = self.value.isoformat() if isinstance(self.value, datetime) else self.value
         return {"field": self.field.value, "operator": self.operator.value, "value": value}
 
@@ -754,7 +820,7 @@ class ClaimConditionGroupInput(StrictModel):
 
     when: List[ClaimConditionInput] = Field(..., min_length=1, description="All of these must hold for the exception to apply")
 
-    def to_stored(self) -> Dict[str, Any]:
+    def to_stored(self) -> Dict[str, JSONValue]:
         return {"when": [condition.to_stored() for condition in self.when]}
 
 
@@ -772,8 +838,8 @@ class ClaimRuleInput(StrictModel):
                     raise ValueError("KIND belongs in `when` — to exclude a kind from a rule, use KIND NOT_IN there, not an exception group.")
         return self
 
-    def to_stored(self) -> Dict[str, Any]:
-        stored: Dict[str, Any] = {"when": [condition.to_stored() for condition in self.when]}
+    def to_stored(self) -> Dict[str, JSONValue]:
+        stored: Dict[str, JSONValue] = {"when": [condition.to_stored() for condition in self.when]}
         if self.unless:
             stored["unless"] = [group.to_stored() for group in self.unless]
         return stored
@@ -799,7 +865,7 @@ class MetricEvidenceInput(StrictModel):
                         raise ValueError(f"rules[{index}]: a metric row has no KIND to test — evidence conditions take SUBJECT, APP, ACTION, KEY, ASSERTED_AT, OBSERVED_AT or CONFIDENCE.")
         return self
 
-    def to_stored(self) -> Dict[str, Any]:
+    def to_stored(self) -> Dict[str, JSONValue]:
         return {"rules": [rule.to_stored() for rule in self.rules]}
 
 
@@ -822,12 +888,12 @@ class SamenessRuleInput(StrictModel):
                         raise ValueError(f"rules[{index}]: a sameness rule takes SUBJECT, APP, ACTION, ASSERTED_AT, OBSERVED_AT or CONFIDENCE — not {condition.field.value}.")
         return self
 
-    def to_stored(self) -> Dict[str, Any]:
+    def to_stored(self) -> Dict[str, JSONValue]:
         """The exact JSON `Graph.sameness_rule` stores; `{}` for everyone."""
         return {"rules": [rule.to_stored() for rule in self.rules]} if self.rules else {}
 
     @classmethod
-    def from_stored(cls, stored: Any) -> Optional["SamenessRuleInput"]:
+    def from_stored(cls, stored: Mapping[str, JSONValue] | None) -> Optional["SamenessRuleInput"]:
         if not isinstance(stored, dict) or not isinstance(stored.get("rules"), list) or not stored["rules"]:
             return None
         try:
@@ -1131,12 +1197,12 @@ class CategoryDefinitionInput(StrictModel):
                         raise ValueError(f"rules[{index}]: a claim has no metric key — {condition.field.value} belongs in `when` of a MEASUREMENT-only rule, or in a property's `rule.evidence`.")
         return self
 
-    def to_stored(self) -> Dict[str, Any]:
+    def to_stored(self) -> Dict[str, JSONValue]:
         """The exact JSON `Category.definition` stores."""
         return {"rules": [rule.to_stored() for rule in self.rules]}
 
     @classmethod
-    def from_stored(cls, stored: Any) -> Optional["CategoryDefinitionInput"]:
+    def from_stored(cls, stored: Mapping[str, JSONValue] | None) -> Optional["CategoryDefinitionInput"]:
         """The stored JSON as a model, tolerantly: non-dict garbage and shapes
         this cannot spell read back as None (primitive), never as an error —
         this is the read side. The old clause shape is NOT read: RFC 0010 was a

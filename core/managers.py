@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Generic, Iterable, Optional, TYPE_CHECKING, TypeVar
+from typing import Generic, Iterable, Optional, TYPE_CHECKING, TypeVar
 
 from asgiref.sync import sync_to_async, async_to_sync
 from django.db import models
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 T = TypeVar("T", bound="core_models.Category")
 
 
-class KindedManager(models.Manager):
+class KindedManager[Row: models.Model](models.Manager):
     """Manager for a proxy model that owns a subset of its table's ``kind`` values.
 
     Multi-table inheritance used to do this work: each subclass had its own table, so
@@ -26,12 +26,12 @@ class KindedManager(models.Manager):
     ``KINDS`` (the concrete base) is left alone and sees every row.
     """
 
-    def get_queryset(self) -> models.QuerySet[Any]:
+    def get_queryset(self) -> models.QuerySet[Row]:
         queryset = super().get_queryset()
         kinds = getattr(self.model, "KINDS", None)
         return queryset.filter(kind__in=kinds) if kinds else queryset
 
-    def _stamped(self, values: dict[str, Any]) -> dict[str, Any]:
+    def _stamped(self, values: dict[str, object]) -> dict[str, object]:
         """Add this proxy's ``kind`` unless the caller set one explicitly.
 
         Belt and braces, not the primary mechanism: `acreate` goes through the
@@ -45,17 +45,17 @@ class KindedManager(models.Manager):
             values.setdefault("kind", kind)
         return values
 
-    def create(self, **kwargs: Any) -> Any:
+    def create(self, **kwargs: object) -> Row:
         return super().create(**self._stamped(kwargs))
 
-    def get_or_create(self, defaults: Optional[dict[str, Any]] = None, **kwargs: Any) -> Any:
+    def get_or_create(self, defaults: Optional[dict[str, object]] = None, **kwargs: object) -> tuple[Row, bool]:
         return super().get_or_create(defaults=self._stamped(dict(defaults or {})), **kwargs)
 
-    def update_or_create(self, defaults: Optional[dict[str, Any]] = None, **kwargs: Any) -> Any:
+    def update_or_create(self, defaults: Optional[dict[str, object]] = None, **kwargs: object) -> tuple[Row, bool]:
         return super().update_or_create(defaults=self._stamped(dict(defaults or {})), **kwargs)
 
 
-class CategoryManager(KindedManager, Generic[T]):
+class CategoryManager(KindedManager["core_models.Category"], Generic[T]):
     """Base manager for all category types, providing common functionality for creating/updating categories from definitions."""
 
     def key_to_age_name(self, key: str) -> str:

@@ -26,12 +26,21 @@ fixed once.
 
 from __future__ import annotations
 
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
+from authentikate.models import Organization
 from django.db import transaction
 
+if TYPE_CHECKING:
+    # Imported inside every function body at runtime — this module is loaded
+    # while `core.models` is still being defined — so the names are here for the
+    # type checker alone.
+    from core.models import Category, CategoryAssertedTerm, Graph
+    from evidence.selector import Definition
 
-def keys_in(definition: Any) -> list[str]:
+
+def keys_in(definition: Definition | None) -> list[str]:
     """The words a definition derives from, deduplicated and in order.
 
     Deduplicated because ``(category, key)`` is unique and a hand-written
@@ -43,13 +52,13 @@ def keys_in(definition: Any) -> list[str]:
     return list(dict.fromkeys(selector.asserted_as_keys(definition)))
 
 
-def keys_for(category: Any) -> list[str]:
+def keys_for(category: Category) -> list[str]:
     """The words this category's definition derives from."""
     return keys_in(category.definition)
 
 
 @transaction.atomic
-def sync_category(category: Any) -> int:
+def sync_category(category: Category) -> int:
     """Bring one category's rows in line with its definition. Returns how many it has.
 
     Called from the signal handler, so it has to tolerate a half-built row: a
@@ -88,7 +97,7 @@ def sync_category(category: Any) -> int:
     return len(keys)
 
 
-def forget_category(category: Any) -> None:
+def forget_category(category: Category) -> None:
     """Drop a deleted category's rows.
 
     A separate entry point from :func:`sync_category` even though the body is the
@@ -103,7 +112,7 @@ def forget_category(category: Any) -> None:
     core_models.CategoryAssertedTerm.objects.filter(category_id=category.pk).delete()
 
 
-def graph_ids_by_key(organization: Any, keys: Iterable[str] | None = None) -> dict[str, list[Any]]:
+def graph_ids_by_key(organization: Organization, keys: Iterable[str] | None = None) -> dict[str, list[int]]:
     """Which graphs derive from each word — the read this table exists for.
 
     ``keys`` narrows it to an indexed seek on ``(organization, key)``, which is
@@ -121,20 +130,20 @@ def graph_ids_by_key(organization: Any, keys: Iterable[str] | None = None) -> di
             return {}
         rows = rows.filter(key__in=keys)
 
-    by_key: dict[str, list[Any]] = {}
+    by_key: dict[str, list[int]] = {}
     for key, graph_id in rows.values_list("key", "graph_id").distinct():
         by_key.setdefault(str(key), []).append(graph_id)
     return by_key
 
 
-def keys_for_graph(graph: Any) -> set[str]:
+def keys_for_graph(graph: Graph) -> set[str]:
     """Every word this graph's categories derive from. One indexed lookup."""
     from core import models as core_models
 
     return {str(key) for key in core_models.CategoryAssertedTerm.objects.filter(graph=graph).values_list("key", flat=True)}
 
 
-def keys_and_kinds_for_graph(graph: Any) -> set[tuple[str, str]]:
+def keys_and_kinds_for_graph(graph: Graph) -> set[tuple[str, str]]:
     """Every `(word, kind)` this graph's categories derive from — the kind being the deriving category's.
 
     A `Term` is identified by kind as well as key, and a definition belongs to a
@@ -146,7 +155,7 @@ def keys_and_kinds_for_graph(graph: Any) -> set[tuple[str, str]]:
     return {(str(key), str(kind)) for key, kind in core_models.CategoryAssertedTerm.objects.filter(graph=graph).values_list("key", "category__kind")}
 
 
-def expected(organization: Any) -> set[tuple[Any, str]]:
+def expected(organization: Organization) -> set[tuple[int, str]]:
     """The ``(category_id, key)`` pairs the definitions imply, computed without writing.
 
     What `--check` compares the stored rows against, and what :func:`refold`
@@ -154,14 +163,14 @@ def expected(organization: Any) -> set[tuple[Any, str]]:
     """
     from core import models as core_models
 
-    pairs: set[tuple[Any, str]] = set()
+    pairs: set[tuple[int, str]] = set()
     for category_id, definition in core_models.Category.objects.filter(graph__organization=organization).values_list("id", "definition"):
         for key in keys_in(definition):
             pairs.add((category_id, key))
     return pairs
 
 
-def stored(organization: Any) -> set[tuple[Any, str]]:
+def stored(organization: Organization) -> set[tuple[int, str]]:
     """The ``(category_id, key)`` pairs currently in the table."""
     from core import models as core_models
 
@@ -169,7 +178,7 @@ def stored(organization: Any) -> set[tuple[Any, str]]:
 
 
 @transaction.atomic
-def refold(organization: Any) -> int:
+def refold(organization: Organization) -> int:
     """Rebuild every row in the organization from the definitions. Returns rows written.
 
     Deletes by organization rather than by category so that rows orphaned by a
@@ -185,7 +194,7 @@ def refold(organization: Any) -> int:
     # `graph__organization` — so taking it from the argument would let a rebuild
     # rewrite a disagreement between those two rather than resolve it, and
     # `--check` would report drift it could not explain.
-    rows: list[Any] = []
+    rows: list[CategoryAssertedTerm] = []
     for category_id, graph_id, organization_id, definition in core_models.Category.objects.filter(graph__organization=organization).values_list("id", "graph_id", "graph__organization_id", "definition"):
         rows.extend(
             core_models.CategoryAssertedTerm(
@@ -201,7 +210,7 @@ def refold(organization: Any) -> int:
     return len(rows)
 
 
-def on_category_saved(sender: Any, instance: Any, **kwargs: Any) -> None:
+def on_category_saved(sender: type[Category], instance: Category, **kwargs: object) -> None:
     """Signal handler: a category was saved.
 
     Deliberately tolerant, for the same reason `versioning.on_category_changed`
@@ -217,7 +226,7 @@ def on_category_saved(sender: Any, instance: Any, **kwargs: Any) -> None:
         logging.getLogger(__name__).warning("Could not index asserted terms for category %s: %s", instance.pk, error)
 
 
-def on_category_deleted(sender: Any, instance: Any, **kwargs: Any) -> None:
+def on_category_deleted(sender: type[Category], instance: Category, **kwargs: object) -> None:
     """Signal handler: a category was deleted.
 
     The cascade from `CategoryAssertedTerm.category` already removes the rows when

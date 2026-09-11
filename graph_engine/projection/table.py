@@ -38,11 +38,21 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Any
+from typing import TYPE_CHECKING
 
 from django.db import connection
 
-from graph_engine.projection.protocol import LIST_OPERATORS, DrawnEdge, IncidentEdge, IncidentEdgesSpec, ListDrawnSpec
+from evidence.values import JSONValue
+from graph_engine.projection.protocol import LIST_OPERATORS, DrawnEdge, DrawnNode, IncidentEdge, IncidentEdgesSpec, ListDrawnSpec, PropertyPredicate
+
+if TYPE_CHECKING:
+    # Annotations only: `api/schema.py` builds a projector at import time, before
+    # the app registry is ready, which is why `self._models` is lazy as well.
+    from core.models import Graph
+    from graph_engine.input_models import RenderGraphTableFilter, RenderGraphTableOrder, RenderGraphTablePagination
+    from graph_engine.models import ProjectionVertex
+    from graph_engine.namespace import NamespaceSpec
+    from graph_engine.query_ir import TableQueryPlan
 
 _KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -78,7 +88,7 @@ def _quote_literal(value: str) -> str:
 _VIRTUAL_KEYS = ("id", "category_ids", "type")
 
 
-def _like_pattern(value: Any, *, prefix: str = "", suffix: str = "") -> str:
+def _like_pattern(value: JSONValue, *, prefix: str = "", suffix: str = "") -> str:
     """A LIKE pattern matching `value` literally, with optional wildcard ends."""
     escaped = str(value).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     return f"{prefix}{escaped}{suffix}"
@@ -113,7 +123,7 @@ class TableProjector:
 
     # ------------------------------------------------------------------ namespace
 
-    def refresh_namespace(self, graph: Any) -> None:
+    def refresh_namespace(self, graph: Graph) -> None:
         """(Re)derive this graph's queryable namespace from its categories.
 
         One Postgres schema named by the graph's handle (`Graph.age_name`),
@@ -138,7 +148,7 @@ class TableProjector:
             for statement in statements:
                 cursor.execute(statement)
 
-    def drop_namespace(self, graph: Any) -> None:
+    def drop_namespace(self, graph: Graph) -> None:
         # The schema first: it holds the property graph and views, whose
         # dependency tracking would otherwise refuse nothing here — but a
         # dropped graph must leave neither rows nor DDL behind, and no FK
@@ -148,7 +158,7 @@ class TableProjector:
         self._models.ProjectionEdge.objects.filter(graph=graph).delete()
         self._models.ProjectionVertex.objects.filter(graph=graph).delete()
 
-    def validate_plan(self, plan: Any) -> None:
+    def validate_plan(self, plan: TableQueryPlan) -> None:
         """Refuse a structurally invalid plan at save time.
 
         Compiles without a graph — full parse, alias and key validation, but no
@@ -159,12 +169,12 @@ class TableProjector:
 
     # ------------------------------------------------------------------ writer: nodes
 
-    def _vertex_for_member(self, graph: Any, ref: str) -> Any | None:
+    def _vertex_for_member(self, graph: Graph, ref: str) -> ProjectionVertex | None:
         """The vertex holding `ref` as a member, or None. Any member addresses the vertex (RFC 0018)."""
         member = self._models.ProjectionMember.objects.filter(graph=graph, ref=str(ref)).select_related("vertex").first()
         return member.vertex if member is not None else None
 
-    def draw_node(self, graph: Any, ref: str, categories: Sequence[tuple[str, Any]], kind: str, members: Iterable[str]) -> None:
+    def draw_node(self, graph: Graph, ref: str, categories: Sequence[tuple[str, int]], kind: str, members: Iterable[str]) -> None:
         # Upsert on (graph, ref) — the unique constraint is the convergence the
         # protocol promises. Derived properties survive a redraw, exactly as the
         # Cypher `MERGE … SET` left them; a label move without a prior
@@ -194,7 +204,7 @@ class TableProjector:
         held = {str(row) for row in self._models.ProjectionMember.objects.filter(vertex=vertex).values_list("ref", flat=True)}
         self._models.ProjectionMember.objects.bulk_create([self._models.ProjectionMember(graph=graph, vertex=vertex, ref=member) for member in members if member not in held])
 
-    def write_properties(self, graph: Any, ref: str, values: Mapping[str, Any]) -> bool:
+    def write_properties(self, graph: Graph, ref: str, values: Mapping[str, JSONValue]) -> bool:
         if not values:
             return True
         row = self._vertex_for_member(graph, ref)
@@ -210,7 +220,7 @@ class TableProjector:
         row.save(update_fields=["properties"])
         return True
 
-    def clear_properties(self, graph: Any, label: str, refs: Iterable[str], keys: Iterable[str]) -> None:
+    def clear_properties(self, graph: Graph, label: str, refs: Iterable[str], keys: Iterable[str]) -> None:
         owned = sorted({self.validate_key(key) for key in keys})
         refs = [str(ref) for ref in refs]
         if not owned or not refs:
@@ -221,7 +231,7 @@ class TableProjector:
                 row.properties.pop(key, None)
         self._models.ProjectionVertex.objects.bulk_update(rows, ["properties"])
 
-    def erase_nodes(self, graph: Any, refs: Iterable[str]) -> int:
+    def erase_nodes(self, graph: Graph, refs: Iterable[str]) -> int:
         refs = [str(ref) for ref in refs]
         if not refs:
             return 0
@@ -240,12 +250,12 @@ class TableProjector:
 
     # ------------------------------------------------------------------ writer: edges
 
-    def _endpoints(self, graph: Any, source_ref: str, target_ref: str) -> tuple[Any | None, Any | None]:
+    def _endpoints(self, graph: Graph, source_ref: str, target_ref: str) -> tuple[ProjectionVertex | None, ProjectionVertex | None]:
         """The vertices holding the two refs as members — either may be None."""
         held = {str(member.ref): member.vertex for member in self._models.ProjectionMember.objects.filter(graph=graph, ref__in=[str(source_ref), str(target_ref)]).select_related("vertex")}
         return held.get(str(source_ref)), held.get(str(target_ref))
 
-    def draw_edge(self, graph: Any, source_ref: str, target_ref: str, label: str, properties: Mapping[str, Any]) -> bool:
+    def draw_edge(self, graph: Graph, source_ref: str, target_ref: str, label: str, properties: Mapping[str, JSONValue]) -> bool:
         source, target = self._endpoints(graph, source_ref, target_ref)
         if source is None or target is None:
             # An undrawn endpoint means nothing was written — the caller decides
@@ -258,7 +268,7 @@ class TableProjector:
             edge.save(update_fields=["properties"])
         return True
 
-    def erase_edge(self, graph: Any, source_ref: str, target_ref: str, label: str, match: Mapping[str, Any] | None = None) -> None:
+    def erase_edge(self, graph: Graph, source_ref: str, target_ref: str, label: str, match: Mapping[str, JSONValue] | None = None) -> None:
         source, target = self._endpoints(graph, source_ref, target_ref)
         if source is None or target is None:
             return
@@ -279,22 +289,28 @@ class TableProjector:
     # ------------------------------------------------------------------ reader
 
     @staticmethod
-    def _record(pk: int, ref: str, kind: str, properties: dict[str, Any], labels: Iterable[tuple[str, Any]], members: Iterable[str]) -> dict[str, Any]:
-        """A drawn record in the shape readers have always seen — `{id, label, properties}` — plus `labels` and `members`.
+    def _record(pk: int, ref: str, kind: str, properties: dict[str, JSONValue] | None, labels: Iterable[tuple[str, int]], members: Iterable[str]) -> DrawnNode:
+        """One drawn vertex as a :class:`DrawnNode` — **the only place one is built**.
 
         `labels` is every (label, category pk) the vertex is drawn under; the
         record's `label` is the first label sorted, `properties["category_ids"]`
         the pks sorted (RFC 0019).
         """
         pairs = sorted((str(label), category_pk) for label, category_pk in labels)
-        properties = dict(properties or {})
-        properties["id"] = str(ref)
-        properties["category_ids"] = sorted((category_pk for _, category_pk in pairs if category_pk is not None))
-        properties["type"] = kind
+        values: dict[str, JSONValue] = dict(properties or {})
+        values["id"] = str(ref)
+        values["category_ids"] = sorted(category_pk for _, category_pk in pairs if category_pk is not None)
+        values["type"] = kind
         names = tuple(label for label, _ in pairs)
-        return {"id": int(pk), "label": names[0] if names else "", "labels": names, "properties": properties, "members": tuple(sorted(str(member) for member in members))}
+        return DrawnNode(
+            id=int(pk),
+            label=names[0] if names else "",
+            labels=names,
+            properties=values,
+            members=tuple(sorted(str(member) for member in members)),
+        )
 
-    def drawn_nodes(self, graph: Any, refs: Iterable[str]) -> dict[str, dict[str, Any]]:
+    def drawn_nodes(self, graph: Graph, refs: Iterable[str]) -> dict[str, DrawnNode]:
         refs = [str(ref) for ref in refs]
         if not refs:
             return {}
@@ -303,13 +319,13 @@ class TableProjector:
         members_by_vertex: dict[int, list[str]] = {}
         for vertex_id, ref in self._models.ProjectionMember.objects.filter(vertex_id__in=list(vertices)).values_list("vertex_id", "ref"):
             members_by_vertex.setdefault(vertex_id, []).append(str(ref))
-        labels_by_vertex: dict[int, list[tuple[str, Any]]] = {}
+        labels_by_vertex: dict[int, list[tuple[str, int]]] = {}
         for vertex_id, label, category_pk in self._models.ProjectionLabel.objects.filter(vertex_id__in=list(vertices)).values_list("vertex_id", "label", "category_pk"):
             labels_by_vertex.setdefault(vertex_id, []).append((label, category_pk))
         records = {vertex_id: self._record(vertex.pk, str(vertex.ref), vertex.kind, vertex.properties, labels_by_vertex.get(vertex_id, ()), members_by_vertex.get(vertex_id, ())) for vertex_id, vertex in vertices.items()}
         return {str(member.ref): records[member.vertex_id] for member in held}
 
-    def drawn_edges_incident(self, graph: Any, refs: Iterable[str], spec: IncidentEdgesSpec) -> dict[str, list[IncidentEdge]]:
+    def drawn_edges_incident(self, graph: Graph, refs: Iterable[str], spec: IncidentEdgesSpec) -> dict[str, list[IncidentEdge]]:
         from django.db.models import Q
 
         if spec.direction not in ("IN", "OUT", "BOTH"):
@@ -337,7 +353,7 @@ class TableProjector:
                 by_vertex.setdefault(int(row.target_id), []).append(edge)
         return {ref: by_vertex.get(vertex_id, [])[: spec.limit] for ref, vertex_id in held.items()}
 
-    def drawn_edge(self, graph: Any, source_ref: str, target_ref: str, label: str) -> DrawnEdge | None:
+    def drawn_edge(self, graph: Graph, source_ref: str, target_ref: str, label: str) -> DrawnEdge | None:
         source, target = self._endpoints(graph, source_ref, target_ref)
         if source is None or target is None:
             return None
@@ -346,8 +362,8 @@ class TableProjector:
             return None
         return DrawnEdge(edge_id=int(row.pk), left_id=int(row.source_id), right_id=int(row.target_id))
 
-    def list_drawn(self, graph: Any, spec: ListDrawnSpec) -> list[dict[str, Any]]:
-        params: dict[str, Any] = {"graph_pk": graph.pk, "label": str(spec.label)}
+    def list_drawn(self, graph: Graph, spec: ListDrawnSpec) -> list[DrawnNode]:
+        params: dict[str, object] = {"graph_pk": graph.pk, "label": str(spec.label)}
         clauses = ["v.graph_id = %(graph_pk)s", f"EXISTS (SELECT 1 FROM {self._label_table()} l WHERE l.vertex_id = v.id AND l.label = %(label)s)"]
 
         for index, predicate in enumerate(spec.predicates):
@@ -383,7 +399,7 @@ class TableProjector:
     #: so the database, not the client, bounds the cost.
     RENDER_STATEMENT_TIMEOUT_MS = 30_000
 
-    def render_table(self, graph: Any, plan: Any, *, filters: Any = None, order: Any = None, pagination: Any = None) -> list[Any]:
+    def render_table(self, graph: Graph, plan: TableQueryPlan, *, filters: RenderGraphTableFilter | None = None, order: RenderGraphTableOrder | None = None, pagination: RenderGraphTablePagination | None = None) -> list[dict[str, JSONValue]]:
         from django.db import transaction
 
         sql, params = compile_table_plan_sql(self, plan, graph=graph, filters=filters, order=order, pagination=pagination)
@@ -401,7 +417,7 @@ class TableProjector:
     # ------------------------------------------------------------------ compiling
 
     @staticmethod
-    def _as_dict(value: Any) -> dict[str, Any]:
+    def _as_dict(value: object) -> dict[str, JSONValue]:
         """A jsonb column as a dict, whether the driver parsed it or not."""
         if isinstance(value, dict):
             return dict(value)
@@ -411,7 +427,7 @@ class TableProjector:
         return {}
 
     @staticmethod
-    def _from_jsonb(value: Any) -> Any:
+    def _from_jsonb(value: object) -> JSONValue:
         """A jsonb result cell as a Python value.
 
         JSON text under the identity loader; already-parsed values (a driver
@@ -428,7 +444,7 @@ class TableProjector:
         """The vertex's category pks as a sorted jsonb array — the label rows (RFC 0019)."""
         return f"(SELECT COALESCE(jsonb_agg(l.category_pk ORDER BY l.category_pk), '[]'::jsonb) FROM {self._label_table()} l WHERE l.vertex_id = {var}.id AND l.category_pk IS NOT NULL)"
 
-    def _prop_jsonb(self, var: str, key: str, params: dict[str, Any], slot: str) -> str:
+    def _prop_jsonb(self, var: str, key: str, params: dict[str, object], slot: str) -> str:
         """The jsonb expression for a record property — column-backed for the identity trio."""
         key = self.validate_key(key)
         if key == "id":
@@ -440,7 +456,7 @@ class TableProjector:
         params[f"k_{slot}"] = key
         return f"({var}.properties -> %(k_{slot})s)"
 
-    def _prop_text(self, var: str, key: str, params: dict[str, Any], slot: str) -> str:
+    def _prop_text(self, var: str, key: str, params: dict[str, object], slot: str) -> str:
         """The text expression for a record property, unwrapped (no jsonb quotes)."""
         key = self.validate_key(key)
         if key == "id":
@@ -452,7 +468,7 @@ class TableProjector:
         params[f"k_{slot}"] = key
         return f"({var}.properties ->> %(k_{slot})s)"
 
-    def _predicate_sql(self, var: str, predicate: Any, params: dict[str, Any], slot: str) -> str:
+    def _predicate_sql(self, var: str, predicate: PropertyPredicate, params: dict[str, object], slot: str) -> str:
         """One `PropertyPredicate` as parameterized SQL over vertex alias `var`."""
         operator = str(getattr(predicate.operator, "value", predicate.operator)).upper()
         if operator not in LIST_OPERATORS:
@@ -480,7 +496,7 @@ class TableProjector:
         return self._compare_sql(self._prop_jsonb(var, key, params, slot), self._prop_text(var, key, params, f"{slot}t"), operator, predicate.value, params, slot)
 
     @staticmethod
-    def _compare_sql(jsonb_expr: str, text_expr: str, operator: str, value: Any, params: dict[str, Any], slot: str) -> str:
+    def _compare_sql(jsonb_expr: str, text_expr: str, operator: str, value: JSONValue, params: dict[str, object], slot: str) -> str:
         """One comparison, jsonb-typed for ordering operators and text for the string ones."""
         placeholder = f"%(v_{slot})s"
         if operator in {"EQUALS", "NOT_EQUALS", "GREATER_THAN", "LESS_THAN", "GREATER_OR_EQUAL", "LESS_OR_EQUAL"}:
@@ -514,7 +530,7 @@ _VERTEX_ELEMENT_PROPERTIES = "id AS __vid, ref::text AS __ref, label AS __label,
 _EDGE_ELEMENT_PROPERTIES = "id AS __eid, properties AS __eprops"
 
 
-def compile_namespace_ddl(projector: TableProjector, spec: Any) -> list[str]:
+def compile_namespace_ddl(projector: TableProjector, spec: NamespaceSpec) -> list[str]:
     """The DDL statements that build one graph's namespace from its spec.
 
     `CREATE SCHEMA`, one `CREATE VIEW` per element table, one
@@ -597,7 +613,7 @@ def compile_namespace_ddl(projector: TableProjector, spec: Any) -> list[str]:
 _NODE_COLUMN_SUFFIXES = ("__vid", "__ref", "__label", "__category_id", "__kind", "__props")
 
 
-def compile_table_plan_sql(projector: TableProjector, plan: Any, *, graph: Any = None, filters: Any = None, order: Any = None, pagination: Any = None) -> tuple[str, dict[str, Any]]:
+def compile_table_plan_sql(projector: TableProjector, plan: TableQueryPlan, *, graph: Graph | None = None, filters: RenderGraphTableFilter | None = None, order: RenderGraphTableOrder | None = None, pagination: RenderGraphTablePagination | None = None) -> tuple[str, dict[str, object]]:
     """Compile a `TableQueryPlan` (plus a render-time filter/order/page) to SQL.
 
     The execution path is the graph's **namespace**: each match path becomes one
@@ -632,7 +648,7 @@ def compile_table_plan_sql(projector: TableProjector, plan: Any, *, graph: Any =
     """
     from graph_engine.query_ir import is_identifier, sanitize_identifier
 
-    params: dict[str, Any] = {}
+    params: dict[str, object] = {}
     matches = list(getattr(plan, "matches", []) or [])
     if not matches:
         raise ValueError("A table query plan needs at least one match path")
@@ -727,7 +743,7 @@ def compile_table_plan_sql(projector: TableProjector, plan: Any, *, graph: Any =
         params[f"k_{slot}"] = key
         return f"({column(var, '__props')} ->> %(k_{slot})s)"
 
-    def resolve(path_key: str, node: Any, what: str) -> str:
+    def resolve(path_key: str, node: str | None, what: str) -> str:
         var = None
         if node is not None:
             var = path_nodes.get(path_key, {}).get(str(node))

@@ -2168,6 +2168,12 @@ type Difference implements Edge {
   target: Instance!
 }
 
+enum DrawnEdgeKind {
+  RELATION
+  PARTICIPATES_AS_INPUT
+  PARTICIPATES_AS_OUTPUT
+}
+
 """
 A claim relating two things — one `evidence.Link` row, typed by its kind. Not a drawing: several kinds are never projected to an AGE edge at all
 """
@@ -2217,6 +2223,12 @@ interface EdgeCategory {
 
   """Color as RGBA list (0-255)"""
   color: [Int!]
+}
+
+enum EdgeDirection {
+  IN
+  OUT
+  BOTH
 }
 
 """One view that draws a claimed edge, and how it draws it"""
@@ -2304,6 +2316,16 @@ type Entity implements Node {
   Every view that actually draws this thing, and the category it draws it under. Read back from each projection, so a graph that declares the word but whose definition refuses the node is not listed
   """
   drawnIn: [NodeDrawing!]!
+
+  """
+  The edges this **view draws** to or from this node's vertex — view grain, one vertex per individual (RFC 0018), as of `asOfSeq`. Only the drawn kinds: relations and participations. `direction` is the drawn arrow: OUT lists relations this node is the source of and its input participations, IN the relations targeting it and its output participations. A relation between two members of this individual is a self-edge, listed once. Each edge is the claim behind the drawing, reported once even where several categories draw it (`Link.drawings` lists them all). Empty for a node the view admits but has not drawn. `connections` is the organization-grain answer
+  """
+  edges(kinds: [DrawnEdgeKind!] = null, direction: EdgeDirection! = BOTH, categories: [ID!] = null, pagination: TraversalPaginationInput = null): [Edge!]!
+
+  """
+  The other end of each edge this view draws to or from this node — as `Node`s in the **same view**, one per individual, self excluded. Takes the same arguments as `edges`. From the drawing alone: whoever is at the other end of a drawn edge is a drawn individual of this view
+  """
+  neighbors(kinds: [DrawnEdgeKind!] = null, direction: EdgeDirection! = BOTH, categories: [ID!] = null, pagination: TraversalPaginationInput = null): [Node!]!
 
   """
   The ids of every category the view this was read through draws it under (RFC 0019). Empty when no view does
@@ -4269,6 +4291,16 @@ type NaturalEvent implements Node & Event {
   drawnIn: [NodeDrawing!]!
 
   """
+  The edges this **view draws** to or from this node's vertex — view grain, one vertex per individual (RFC 0018), as of `asOfSeq`. Only the drawn kinds: relations and participations. `direction` is the drawn arrow: OUT lists relations this node is the source of and its input participations, IN the relations targeting it and its output participations. A relation between two members of this individual is a self-edge, listed once. Each edge is the claim behind the drawing, reported once even where several categories draw it (`Link.drawings` lists them all). Empty for a node the view admits but has not drawn. `connections` is the organization-grain answer
+  """
+  edges(kinds: [DrawnEdgeKind!] = null, direction: EdgeDirection! = BOTH, categories: [ID!] = null, pagination: TraversalPaginationInput = null): [Edge!]!
+
+  """
+  The other end of each edge this view draws to or from this node — as `Node`s in the **same view**, one per individual, self excluded. Takes the same arguments as `edges`. From the drawing alone: whoever is at the other end of a drawn edge is a drawn individual of this view
+  """
+  neighbors(kinds: [DrawnEdgeKind!] = null, direction: EdgeDirection! = BOTH, categories: [ID!] = null, pagination: TraversalPaginationInput = null): [Node!]!
+
+  """
   The event's word — what the claim says happened, as the organization's term key (e.g. 'Mitosis'). The claim's, never a view's label
   """
   word: String!
@@ -4527,6 +4559,16 @@ interface Node {
   Every view that actually draws this thing, and the category it draws it under. Read back from each projection, so a graph that declares the word but whose definition refuses the node is not listed
   """
   drawnIn: [NodeDrawing!]!
+
+  """
+  The edges this **view draws** to or from this node's vertex — view grain, one vertex per individual (RFC 0018), as of `asOfSeq`. Only the drawn kinds: relations and participations. `direction` is the drawn arrow: OUT lists relations this node is the source of and its input participations, IN the relations targeting it and its output participations. A relation between two members of this individual is a self-edge, listed once. Each edge is the claim behind the drawing, reported once even where several categories draw it (`Link.drawings` lists them all). Empty for a node the view admits but has not drawn. `connections` is the organization-grain answer
+  """
+  edges(kinds: [DrawnEdgeKind!] = null, direction: EdgeDirection! = BOTH, categories: [ID!] = null, pagination: TraversalPaginationInput = null): [Edge!]!
+
+  """
+  The other end of each edge this view draws to or from this node — as `Node`s in the **same view**, one per individual, self excluded. Takes the same arguments as `edges`. From the drawing alone: whoever is at the other end of a drawn edge is a drawn individual of this view
+  """
+  neighbors(kinds: [DrawnEdgeKind!] = null, direction: EdgeDirection! = BOTH, categories: [ID!] = null, pagination: TraversalPaginationInput = null): [Node!]!
 }
 
 """Base interface for graph schemas"""
@@ -4943,6 +4985,16 @@ type ProtocolEvent implements Node & Event {
   Every view that actually draws this thing, and the category it draws it under. Read back from each projection, so a graph that declares the word but whose definition refuses the node is not listed
   """
   drawnIn: [NodeDrawing!]!
+
+  """
+  The edges this **view draws** to or from this node's vertex — view grain, one vertex per individual (RFC 0018), as of `asOfSeq`. Only the drawn kinds: relations and participations. `direction` is the drawn arrow: OUT lists relations this node is the source of and its input participations, IN the relations targeting it and its output participations. A relation between two members of this individual is a self-edge, listed once. Each edge is the claim behind the drawing, reported once even where several categories draw it (`Link.drawings` lists them all). Empty for a node the view admits but has not drawn. `connections` is the organization-grain answer
+  """
+  edges(kinds: [DrawnEdgeKind!] = null, direction: EdgeDirection! = BOTH, categories: [ID!] = null, pagination: TraversalPaginationInput = null): [Edge!]!
+
+  """
+  The other end of each edge this view draws to or from this node — as `Node`s in the **same view**, one per individual, self excluded. Takes the same arguments as `edges`. From the drawing alone: whoever is at the other end of a drawn edge is a drawn individual of this view
+  """
+  neighbors(kinds: [DrawnEdgeKind!] = null, direction: EdgeDirection! = BOTH, categories: [ID!] = null, pagination: TraversalPaginationInput = null): [Node!]!
 
   """
   The event's word — what the claim says happened, as the organization's term key (e.g. 'Mitosis'). The claim's, never a view's label
@@ -5387,6 +5439,11 @@ type Query {
   Render a saved table query. Answers from the **drawing**: a page of the view's property graph as of its cursor, filtered, ordered and paged there — the one read with no log path. `Graph.projection { lag }` says how far behind the log it is
   """
   renderGraphTable(query: ID!, filters: RenderGraphTableFilter = null, pagination: RenderGraphTablePagination = null, order: RenderGraphTableOrder = null): GraphTableRender
+
+  """
+  Render a table plan **without saving it** — the plan a client is still writing, against one view. Same compile path as `renderGraphTable`: answers from the drawing, labels resolved against the view's namespace, filtered, ordered and paged there. Nothing is written; the plan comes back as compiled
+  """
+  renderTablePlan(graph: ID!, plan: TableQueryPlanInput!, filters: RenderGraphTableFilter = null, pagination: RenderGraphTablePagination = null, order: RenderGraphTableOrder = null): TablePlanRender!
 }
 
 """Input for recording measurements against a datum already on the record"""
@@ -6707,6 +6764,24 @@ input SupersedeStructureRelationInput {
 }
 
 """
+A plan rendered against one view without being saved: the view, the plan as compiled, the rows
+"""
+type TablePlanRender {
+  """The view the plan was rendered against"""
+  graph: Graph!
+
+  """
+  The plan exactly as it was compiled — what `createGraphTableQuery` would save
+  """
+  plan: TableQueryPlan!
+
+  """
+  Rows of the rendered table, one dict per row keyed by the returned aliases
+  """
+  rows: [AnyScalar!]!
+}
+
+"""
 What a saved table query means — matches, wheres, returns, columns — independent of the projection kind that compiles it. The contract a client reads back and rewrites; `query` is its compiled form
 """
 type TableQueryPlan {
@@ -6810,6 +6885,15 @@ enum TermKind {
   MEASUREMENT
   RELATION
   STRUCTURE_RELATION
+}
+
+"""Pagination options for a node's drawn edges and neighbours"""
+input TraversalPaginationInput {
+  """Number of items to skip"""
+  offset: Int = 0
+
+  """Maximum number of items to return"""
+  limit: Int = 100
 }
 
 """Input for updating an existing entity definition in the graph schema"""

@@ -23,8 +23,9 @@ locked caller does not deadlock on itself.
 from __future__ import annotations
 
 import contextlib
-from typing import Any, Iterator
+from collections.abc import Iterator
 
+from authentikate.models import Organization
 from django.db import connection
 
 #: The int4 namespace every kraph advisory lock is keyed under, so a lock this
@@ -33,12 +34,12 @@ from django.db import connection
 LOCK_NAMESPACE = 0x6B7261
 
 
-def _key(organization: Any) -> int:
+def _key(organization: Organization | int) -> int:
     return int(getattr(organization, "id", organization))
 
 
 @contextlib.contextmanager
-def organization_projection_lock(organization: Any, *, wait: bool) -> Iterator[bool]:
+def organization_projection_lock(organization: Organization, *, wait: bool) -> Iterator[bool]:
     """Hold the organization's projection lock for the block.
 
     `wait=True` blocks until it is free and always yields True. `wait=False`
@@ -62,7 +63,7 @@ def organization_projection_lock(organization: Any, *, wait: bool) -> Iterator[b
                 cursor.execute("SELECT pg_advisory_unlock(%s, %s)", [LOCK_NAMESPACE, key])
 
 
-def is_locked(organization: Any) -> bool:
+def is_locked(organization: Organization) -> bool:
     """Whether any session holds the organization's projection lock right now."""
     with connection.cursor() as cursor:
         cursor.execute(

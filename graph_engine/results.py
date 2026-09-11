@@ -46,7 +46,7 @@ correct for free when that is fixed, instead of having to be fixed twice.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Union
+from typing import Union
 
 from core import models as core_models
 from evidence import models as evidence_models
@@ -114,7 +114,12 @@ class Asserted:
     #: `assert_participations`' own docstring says "one assertion covers the
     #: batch". Returning a list of results would have implied N acts where the
     #: caller performed one.
-    subjects: tuple[Any, ...]
+    #:
+    #: `evidence_models.Claim` is the five tables an assertion can record into,
+    #: named rather than left as `Any`: the API narrows each payload to one of
+    #: them (`cast(Instance, …)`, `cast(Link, …)`), and a union is what makes
+    #: those casts checkable.
+    subjects: tuple[evidence_models.Claim, ...]
     drawings: tuple[Drawing, ...] = ()
     #: The act committed and was announced, but its drawing did not finish: the
     #: outbox row stands and `reproject --incremental` (the runner) owes it.
@@ -124,7 +129,7 @@ class Asserted:
     pending: bool = False
 
     @property
-    def subject(self) -> Any:
+    def subject(self) -> evidence_models.Claim:
         """The single subject, for the writes that have exactly one."""
         if len(self.subjects) != 1:
             raise ValueError(f"This assertion has {len(self.subjects)} subjects; use `subjects`.")
@@ -134,7 +139,7 @@ class Asserted:
     def of(
         cls,
         assertion: evidence_models.Assertion,
-        subject: Any,
+        subject: evidence_models.Claim,
         drawings: tuple[Drawing, ...] = (),
         *,
         pending: bool = False,

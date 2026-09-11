@@ -17,16 +17,18 @@ operation.
 from __future__ import annotations
 
 import uuid
-from typing import Any, Iterable
+from collections.abc import Iterable
 
+from authentikate.models import Organization
 from django.db import transaction
-from django.db.models import Max, Min, Sum
+from django.db.models import Max, Min, QuerySet, Sum
 
 from evidence import claims as claims_module
 from evidence import models as evidence_models
+from evidence.models import JSONValue
 
 
-def _numeric(value: Any) -> float | None:
+def _numeric(value: JSONValue) -> float | None:
     """The numeric view of a value, or None when it has none.
 
     Strings and booleans still participate in COUNT and LATEST, so a metric that
@@ -131,7 +133,7 @@ def retract(
     return touched
 
 
-def fold(metrics: Any, into: evidence_models.State) -> evidence_models.State:
+def fold(metrics: QuerySet[evidence_models.Metric], into: evidence_models.State) -> evidence_models.State:
     """Fold a set of metrics into a state vector, in place. Does not save.
 
     The batch counterpart of :func:`merge`, and the one place the statistics are
@@ -225,7 +227,7 @@ def _structures_informing(state: evidence_models.State) -> list[uuid.UUID]:
     )
 
 
-def refold(organization: Any, claim_refs: Iterable[str], source_kind: Any) -> int:
+def refold(organization: Organization, claim_refs: Iterable[str], source_kind: evidence_models.StructureKind) -> int:
     """Recompute every row of these individuals fed by one kind of datum.
 
     The correction a datum's standing needs (RFC 0023): when a structure is
@@ -241,7 +243,7 @@ def refold(organization: Any, claim_refs: Iterable[str], source_kind: Any) -> in
     return count
 
 
-def recompute_stale(organization: Any, limit: int | None = None) -> int:
+def recompute_stale(organization: Organization, limit: int | None = None) -> int:
     """Rebuild every row a retraction left stale. Returns how many were fixed."""
     stale = evidence_models.State.objects.for_organization(organization).filter(needs_recompute=True)
     if limit is not None:
@@ -255,9 +257,9 @@ def recompute_stale(organization: Any, limit: int | None = None) -> int:
 
 
 def state_for(
-    organization: Any,
+    organization: Organization,
     claim_ref: str,
-    source_kind: Any,
+    source_kind: evidence_models.StructureKind,
     key: str,
     value_kinds: Iterable[str],
 ) -> evidence_models.State | None:
@@ -283,9 +285,9 @@ def state_for(
 
 
 def state_for_many(
-    organization: Any,
+    organization: Organization,
     claim_refs: Iterable[str],
-    source_kind: Any,
+    source_kind: evidence_models.StructureKind,
     key: str,
     value_kinds: Iterable[str],
 ) -> evidence_models.State | None:
