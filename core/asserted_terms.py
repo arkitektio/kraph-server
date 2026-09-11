@@ -31,6 +31,8 @@ from typing import TYPE_CHECKING
 
 from authentikate.models import Organization
 from django.db import transaction
+from core import models as core_models
+import logging
 
 if TYPE_CHECKING:
     # Imported inside every function body at runtime — this module is loaded
@@ -65,7 +67,6 @@ def sync_category(category: Category) -> int:
     category saved before its graph is assigned has nothing to attribute the words
     to, and skipping is correct — the save that assigns the graph will fire again.
     """
-    from core import models as core_models
 
     if category.pk is None or category.graph_id is None:
         return 0
@@ -105,7 +106,6 @@ def forget_category(category: Category) -> None:
     which no longer exists — calling the sync would read its definition and write
     rows for a category that is gone.
     """
-    from core import models as core_models
 
     if category.pk is None:
         return
@@ -121,7 +121,6 @@ def graph_ids_by_key(organization: Organization, keys: Iterable[str] | None = No
     needs, which is inherently a scan — but of two narrow columns rather than of
     every ``definition`` blob in the ontology.
     """
-    from core import models as core_models
 
     rows = core_models.CategoryAssertedTerm.objects.filter(organization=organization)
     if keys is not None:
@@ -138,7 +137,6 @@ def graph_ids_by_key(organization: Organization, keys: Iterable[str] | None = No
 
 def keys_for_graph(graph: Graph) -> set[str]:
     """Every word this graph's categories derive from. One indexed lookup."""
-    from core import models as core_models
 
     return {str(key) for key in core_models.CategoryAssertedTerm.objects.filter(graph=graph).values_list("key", flat=True)}
 
@@ -150,7 +148,6 @@ def keys_and_kinds_for_graph(graph: Graph) -> set[tuple[str, str]]:
     category of one kind, so this is the join `evidence.selector.term_ids_for`
     needs; the key alone admitted words of the wrong kind.
     """
-    from core import models as core_models
 
     return {(str(key), str(kind)) for key, kind in core_models.CategoryAssertedTerm.objects.filter(graph=graph).values_list("key", "category__kind")}
 
@@ -161,7 +158,6 @@ def expected(organization: Organization) -> set[tuple[int, str]]:
     What `--check` compares the stored rows against, and what :func:`refold`
     writes. One function so the two cannot disagree about what "correct" is.
     """
-    from core import models as core_models
 
     pairs: set[tuple[int, str]] = set()
     for category_id, definition in core_models.Category.objects.filter(graph__organization=organization).values_list("id", "definition"):
@@ -172,7 +168,6 @@ def expected(organization: Organization) -> set[tuple[int, str]]:
 
 def stored(organization: Organization) -> set[tuple[int, str]]:
     """The ``(category_id, key)`` pairs currently in the table."""
-    from core import models as core_models
 
     return {(category_id, str(key)) for category_id, key in core_models.CategoryAssertedTerm.objects.filter(organization=organization).values_list("category_id", "key")}
 
@@ -185,7 +180,6 @@ def refold(organization: Organization) -> int:
     graph that changed hands, or written by a version of this code that keyed them
     differently, do not survive a rebuild.
     """
-    from core import models as core_models
 
     core_models.CategoryAssertedTerm.objects.filter(organization=organization).delete()
 
@@ -221,7 +215,6 @@ def on_category_saved(sender: type[Category], instance: Category, **kwargs: obje
     try:
         sync_category(instance)
     except Exception as error:  # noqa: BLE001 - see docstring
-        import logging
 
         logging.getLogger(__name__).warning("Could not index asserted terms for category %s: %s", instance.pk, error)
 
@@ -237,6 +230,5 @@ def on_category_deleted(sender: type[Category], instance: Category, **kwargs: ob
     try:
         forget_category(instance)
     except Exception as error:  # noqa: BLE001 - see docstring
-        import logging
 
         logging.getLogger(__name__).warning("Could not drop asserted terms for category %s: %s", instance.pk, error)

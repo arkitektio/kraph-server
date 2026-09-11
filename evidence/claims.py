@@ -30,6 +30,9 @@ from authentikate.models import Organization
 from django.db.models import Model, Q, QuerySet
 
 from evidence import models as evidence_models
+from django.db.models import CharField, OuterRef, Subquery
+from django.db.models.functions import Cast
+from django.db import transaction
 
 #: A claim's primary key as callers hold it: the uuid, or its text.
 Ref = str | uuid.UUID
@@ -149,10 +152,6 @@ def standing[Claim: Model](queryset: QuerySet[Claim], target_type: str, predicat
     `selector.trust_predicate(definition, kind=…)` in every caller; passing the
     empty `Q()` explicitly is the caller's bug — hand in ``None`` and take the cache.
     """
-    from django.db.models import CharField, OuterRef, Subquery
-    from django.db.models.functions import Cast
-
-    from evidence import models as evidence_models
 
     if predicate is None:
         retracted = evidence_models.CurrentStanding.all_objects.filter(target_type=target_type, stands=False).values("target_id")
@@ -168,7 +167,6 @@ def standing[Claim: Model](queryset: QuerySet[Claim], target_type: str, predicat
 
 def current(organization: Organization, target_type: str, target_id: Ref) -> bool:
     """The cached answer for one target. Organization-wide, unscoped by any view."""
-    from evidence import models as evidence_models
 
     row = evidence_models.CurrentStanding.objects.for_organization(organization).filter(target_type=target_type, target_id=str(target_id)).first()
     return True if row is None else row.stands
@@ -187,7 +185,6 @@ def record_current(organization: Organization, target_type: str, target_id: Ref,
     Every claim kind is cached (RFC 0024): the row is the trust-everyone
     answer, and a view that trusts fewer folds the log itself.
     """
-    from evidence import models as evidence_models
 
     if target_type not in CACHED_TARGETS:
         return False
@@ -227,9 +224,6 @@ def refold_current(organization: Organization) -> int:
     Organization-wide, like `refold_state` and for the same reason — the answer it
     caches is organization-grain, so there is no per-graph slice of it to rebuild.
     """
-    from django.db import transaction
-
-    from evidence import models as evidence_models
 
     with transaction.atomic():
         evidence_models.CurrentStanding.objects.for_organization(organization).delete()

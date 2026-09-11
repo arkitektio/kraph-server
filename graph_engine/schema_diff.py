@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from evidence.values import JSONValue
+import jsonpatch
 
 if TYPE_CHECKING:
     from core.models import GraphSchema
@@ -161,6 +162,5 @@ def json_patch(before: Definition, after: Definition) -> list[dict[str, JSONValu
     not what that means — a replaced `aggregation` and a replaced `source_node`
     are the same shape of operation and wildly different in cost.
     """
-    import jsonpatch
 
     return list(jsonpatch.make_patch(before, after))

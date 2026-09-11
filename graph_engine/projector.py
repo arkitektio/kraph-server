@@ -52,6 +52,10 @@ from graph_engine import locks, watermark
 from graph_engine.input_models import DerivationRuleInput, DerivationType, PropertyDefinitionInput
 from graph_engine.projection.protocol import Projector
 from graph_engine.reports import DrawCounts, GraphReplay, ReplayReport, SkippedGraph
+from evidence import identity as identity_module
+from django.db.models import Max, Min
+from django.db import transaction
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -170,7 +174,6 @@ def graphs_for_refs(organization: Organization, refs: Iterable[str]) -> dict[int
     of a graph that has since been deleted. Both are expected — evidence
     outlives the projections built from it.
     """
-    from core import models as core_models
 
     by_graph_id: dict[int, list[str]] = {}
     for node_ref, graph_id in selector_module.graph_ids_for_instance_ids(organization, refs):
@@ -220,14 +223,11 @@ def _structure_ids_informing(graph: core_models.Graph, claim_ref: str | Iterable
     a failure means a link was written with the wrong kind, which is worth
     hearing about rather than skipping.
     """
-    import uuid as uuid_module
-
     refs = selector_module.informs_links_for(graph, definition=definition).filter(target_ref__in=_refs(claim_ref)).values_list("source_ref", flat=True).distinct()
-    structure_ids = [uuid_module.UUID(str(ref)) for ref in refs]
+    structure_ids = [uuid.UUID(str(ref)) for ref in refs]
     if not structure_ids:
         return []
     # Datums that stand (RFC 0023): a retracted structure informs nothing.
-    from evidence import claims as claims_module
 
     return list(claims_module.standing(evidence_models.Structure.objects.for_organization(graph.organization).filter(pk__in=structure_ids), "structure").values_list("pk", flat=True))
 
@@ -255,7 +255,6 @@ def _priority_scoped_value(
     applies only when the rule names no priorities at all. Falling through would
     make the priority advisory, which is not what "priority" means.
     """
-    from evidence import models as evidence_models
 
     rule = prop.rule
     by_tool = prop.derivation == DerivationType.LATEST_ASSERTION_TOOL
@@ -593,9 +592,6 @@ def _observation_window(graph: core_models.Graph, claim_ref: str | Iterable[str]
     a node is valid over the period the world was actually looked at, regardless
     of when somebody got round to saying so.
     """
-    from django.db.models import Max, Min
-
-    from evidence import models as evidence_models
 
     structure_ids = _structure_ids_informing(graph, claim_ref, category.definition)
     if not structure_ids:
@@ -1012,8 +1008,6 @@ def resolve_categories(graph: core_models.Graph, nodes: list[evidence_models.Ins
       the node is refused with a reason naming the key and both categories.
       Identical definitions under identical rules are fine.
     """
-    from evidence import claims as claims_module
-    from evidence import selector as selector_module
 
     # This graph's categories, indexed by the organization term each declares.
     # That index is the whole join: a claim names a word, and this is where the
@@ -1178,7 +1172,6 @@ def representatives_admitted_by(category: core_models.Category) -> set[str]:
     (RFC 0019). The representative is the individual's, whichever of its
     categories the caller asked through.
     """
-    from evidence import identity as identity_module
 
     admitted = refs_admitted_by(category)
     components = identity_module.component_refs_for_view(category.graph, sorted(admitted))
@@ -1215,7 +1208,6 @@ def representatives_in_graph(graph: core_models.Graph) -> set[str]:
     `nodes(graph:)` lists one row per individual. Same cost caveat as
     `refs_in_graph`: the whole view is resolved to answer for a page.
     """
-    from evidence import identity as identity_module
 
     nodes = list(selector_module.instances_for(graph).select_related("term"))
     resolved, _ = resolve_categories(graph, nodes)
@@ -1231,7 +1223,6 @@ def representative_in_graph(graph: core_models.Graph, ref: str) -> str:
     Asked of the claims, not the drawing, so `node(id: <member>)` answers the
     same whether or not the projection has caught up.
     """
-    from evidence import identity as identity_module
 
     members = identity_module.component_refs_for_view(graph, [str(ref)]).get(str(ref)) or [str(ref)]
     return min(str(member) for member in members)
@@ -1449,7 +1440,6 @@ def draw_components(controller: DrawingHost, graph: core_models.Graph, nodes: It
     categories (RFC 0019). Nodes `resolve_categories` skipped are not in
     `resolved`, so they are drawn nowhere and bridge nothing.
     """
-    from evidence import identity as identity_module
 
     by_ref = {str(node.ref): node for node in nodes}
     components = identity_module.view_components(graph, resolved)
@@ -1645,7 +1635,6 @@ def rebuild(controller: DrawingHost, graph: core_models.Graph) -> DrawCounts:
     to know they are.
     """
     from core import asserted_terms
-    from evidence import identity as identity_module
 
     organization = graph.organization
 
@@ -1740,7 +1729,6 @@ def refold_state(organization: Organization) -> int:
     per-graph operation into a tenant-wide outage at exactly the moment something
     is already going wrong.
     """
-    from django.db import transaction
 
     with transaction.atomic():
         evidence_models.State.objects.for_organization(organization).delete()
@@ -1808,7 +1796,6 @@ def touched_refs(organization: Organization, assertion_ids: Iterable[uuid.UUID],
     without leaving an outbox row. A ref that names no `Instance` (an INFORMS onto
     a link, say) is harmless: it resolves to no node and is never drawn.
     """
-    from evidence import identity as identity_module
 
     ids = list(assertion_ids)
     if not ids and since_seq is None:
@@ -1883,7 +1870,6 @@ def converge(controller: DrawingHost, graph: core_models.Graph, refs: Iterable[s
     Postgres and read nothing from a neighbour, and an edge to a neighbour is
     redrawn from the claims because it touches the set.
     """
-    from evidence import identity as identity_module
 
     touched = {str(ref) for ref in refs}
     if not touched:
@@ -1923,9 +1909,7 @@ def replay(controller: DrawingHost, organization: Organization, *, older_than: d
     one an older writer recorded before the act became a single transaction) is
     settled with nothing to draw.
     """
-    from django.utils import timezone
 
-    from evidence import identity as identity_module
     from graph_engine import models as projection_models
 
     # `older_than` is the runner's grace: a row younger than that belongs to a

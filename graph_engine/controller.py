@@ -27,6 +27,7 @@ from graph_engine.retrieved import (
     RetrievedStructure,
 )
 from graph_engine import reports, results, retrieved
+from graph_engine import projector
 from graph_engine import watermark
 from authentikate.models import Membership, Organization
 from core import enums, models
@@ -536,7 +537,6 @@ class GraphController:
             # What this claim came from, under the same act (RFC 0017).
             self._cite(organization, assertion, claim_ref, cited)
 
-        from graph_engine import projector
 
         node = evidence_models.Instance.objects.for_organization(organization).select_related("term").get(pk=claim_ref)
 
@@ -569,7 +569,6 @@ class GraphController:
         bulk ingest emits one dirty set and one projection pass, where the
         previous scheme re-derived once per metric.
         """
-        from graph_engine import projector
 
         return projector.project(self, graph, instance_refs)
 
@@ -582,7 +581,6 @@ class GraphController:
         graph has been deleted, and evidence outlives the projections built from
         it by design.
         """
-        from graph_engine import projector
 
         projected = 0
         for graph, refs in projector.graphs_for_refs(organization, instance_refs).items():
@@ -596,13 +594,11 @@ class GraphController:
         reach every projection that reads it — refreshing only the graph the
         caller happened to name is what left second projections stale.
         """
-        from graph_engine import projector
 
         return self.project_refs(organization, projector.refs_informed_by(organization, structure_ids))
 
     def rebuild_projection(self, graph: models.Graph) -> reports.DrawCounts:
         """Drop this graph's AGE namespace and replay it from evidence."""
-        from graph_engine import projector
 
         return projector.rebuild(self, graph)
 
@@ -629,7 +625,6 @@ class GraphController:
         the mutation's result — which returns the category row, not a report — so
         the number that distinguishes them has to be somewhere.
         """
-        from graph_engine import projector
 
         if selector_module.asserted_as_keys(category.definition):
             counts = self.rebuild_projection(category.graph)
@@ -661,7 +656,6 @@ class GraphController:
         definition is gone — nothing versions it (see the audit's Tier 2), so the
         snapshot has to be taken before the write.
         """
-        from graph_engine import projector
 
         return projector.rematerialize_category(self, category.graph, category, retired_keys=retired_keys)
 
@@ -677,7 +671,6 @@ class GraphController:
         to it and no longer reads the projection to find out what it is
         retracting.
         """
-        from graph_engine import projector
 
         node = self._resolve_instance(node_id, info)
         organization = node.organization
@@ -720,7 +713,6 @@ class GraphController:
         saying it is not — and the two can stand side by side, with each graph's
         selector deciding which it counts.
         """
-        from graph_engine import projector
 
         node = self._resolve_instance(node_id, info)
         organization = node.organization
@@ -1001,7 +993,6 @@ class GraphController:
         # spans every graph in the organization that has an entity this structure
         # informs — writing the derived values onto those graphs is a separate,
         # batched step.
-        from graph_engine import projector
 
         state_module.merge(metric, projector.refs_informed_by(organization, [structure.pk]))
         return metric
@@ -1025,7 +1016,6 @@ class GraphController:
         return self._restand_structure(structure_id, info, stands=False, at=at, confidence=confidence)
 
     def _restand_structure(self, structure_id: str, info: Info, *, stands: bool, at: datetime.datetime | None, confidence: float | None) -> results.Asserted:
-        from graph_engine import projector
 
         structure = self._resolve_structure(structure_id, info)
         organization = structure.organization
@@ -1272,7 +1262,6 @@ class GraphController:
 
             self._cite(organization, assertion, event_ref, cited)
 
-        from graph_engine import projector
 
         node = evidence_models.Instance.objects.for_organization(organization).select_related("term").get(pk=event_ref)
 
@@ -1374,7 +1363,6 @@ class GraphController:
         metric = self._resolve_metric(metric_id, info)
         organization = metric.organization
 
-        from graph_engine import projector
 
         instance_refs = projector.refs_informed_by(organization, [metric.structure_id])
 
@@ -1428,7 +1416,6 @@ class GraphController:
             derived_from=payload.derived_from,
         )
 
-        from graph_engine import projector
 
         instance_refs = projector.refs_informed_by(organization, [structure.pk])
 
@@ -1699,7 +1686,6 @@ class GraphController:
         # view that did not hold the node at all — classifying can *widen* the set
         # of views a node appears in, and the new view needs drawing as much as the
         # old ones need correcting.
-        from graph_engine import projector
 
         refs = [ref for _, ref, _, _, _, _ in resolved]
         graphs = {graph.pk: graph for graph in projector.graphs_for_refs(organization, refs)}
@@ -1754,7 +1740,6 @@ class GraphController:
         longer something the caller named — they are computed, and the same ref has
         to be asked of every view that might hold it.
         """
-        from graph_engine import projector
 
         labels: dict[Any, dict[str, tuple[str, ...]]] = {}
         for graph in graphs:
@@ -1877,7 +1862,6 @@ class GraphController:
         elif link.kind == evidence_models.Link.Kind.CLASSIFIES:
             # A retracted classification can move a label, and only `rebuild`
             # can move one — in each view that had drawn the node.
-            from graph_engine import projector
 
             for graph in projector.graphs_for_refs(organization, [str(link.source_ref)]):
                 if pending_rebuilds is None:
@@ -1968,7 +1952,6 @@ class GraphController:
         of the event's, so a claim by another observation of the same cell keeps
         it — and its `__assertion_count` — when this one is retracted.
         """
-        from graph_engine import projector
 
         members = self._members_drawn_as(graph, claim_ref, event_ref)
         base = evidence_models.Link.objects.for_organization(organization).filter(
@@ -2011,7 +1994,6 @@ class GraphController:
         converged first, so the edge pass that follows attaches to the vertex the
         rule describes rather than to a stale one.
         """
-        from graph_engine import projector
 
         wanted = [str(ref) for ref in refs]
         members = identity_module.component_refs_for_view(graph, wanted)
@@ -2095,7 +2077,6 @@ class GraphController:
         A graph holding only one endpoint is included and costs nothing: the
         projection's `MATCH (s) … MATCH (t)` finds no pair and merges no edge.
         """
-        from graph_engine import projector
 
         # One call over every ref, not one per ref. `graphs_for_refs` runs an
         # organization-wide `Category` scan to build the term→graphs map, and
@@ -2303,7 +2284,6 @@ class GraphController:
 
     def _reproject_instances(self, organization: Organization, refs: list[str]) -> None:
         """Redraw these nodes in every view that holds them."""
-        from graph_engine import projector
 
         # Once per graph with the whole set, not once per node: after a sameness
         # claim the refs are members of one individual, and `reproject_refs`
@@ -2338,7 +2318,6 @@ class GraphController:
         view that draws the node under several categories (RFC 0019) is several
         entries, one per category, all naming the one vertex.
         """
-        from graph_engine import projector
 
         drawings: list[results.NodeDrawing] = []
         for graph in projector.graphs_for_refs(node.organization, [node.ref]):
@@ -2389,7 +2368,6 @@ class GraphController:
         relations, per `docs/LOG.md`. For those two the emptiness is structural
         rather than circumstantial.
         """
-        from graph_engine import projector
 
         drawings: list[results.EdgeDrawing] = []
         for graph in projector.graphs_for_refs(link.organization, [str(link.source_ref), str(link.target_ref)]):
@@ -2402,7 +2380,6 @@ class GraphController:
 
     def _categories_admitting(self, graph: models.Graph, link: evidence_models.Link) -> list[models.Category]:
         """The categories of this view that admit one link, under their rules (RFC 0021)."""
-        from graph_engine import projector
 
         base = evidence_models.Link.objects.for_organization(graph.organization).filter(pk=link.pk)
         admitted = projector.admitting_categories(projector.categories_drawing(graph, str(link.kind)), base)
@@ -2677,7 +2654,6 @@ class GraphController:
         of those views, and correcting one while leaving the rest is how a
         projection comes to hold an edge no standing claim supports.
         """
-        from graph_engine import projector
 
         link = self.resolve_edge_link(relation_id, info)
         organization = link.organization
@@ -2764,7 +2740,6 @@ class GraphController:
         Refolds the state the metric feeds, because a metric coming back changes
         every derived value that dropped it.
         """
-        from graph_engine import projector
 
         metric = self._resolve_metric(metric_id, info)
         organization = metric.organization
@@ -2805,7 +2780,6 @@ class GraphController:
         between two other observations of the same two cells still holds an
         edge up.
         """
-        from graph_engine import projector
 
         members = self._members_drawn_as(graph, source_ref, target_ref)
         base = evidence_models.Link.objects.for_organization(organization).filter(
@@ -2884,7 +2858,6 @@ class GraphController:
         path *intended*, which is what makes it stay correct as the write path is
         corrected.
         """
-        from graph_engine import projector
 
         if category is None:
             admitting = self._categories_admitting(graph, link)
@@ -2957,9 +2930,7 @@ class GraphController:
         executes it. Rebuild the row through the builder (`manage.py
         list_legacy_queries` names any that exist).
         """
-        from graph_engine.query_ir import TableQueryPlan
-
-        plan = TableQueryPlan.from_stored(graph_query.plan)
+        plan = query_ir.TableQueryPlan.from_stored(graph_query.plan)
         if plan is None:
             raise ValueError(f"Saved query #{graph_query.pk} is a legacy raw-Cypher row and no projection kind executes Cypher; rebuild it through the builder (see `manage.py list_legacy_queries`).")
         column_keys = [column.get("key") for column in (graph_query.columns or []) if isinstance(column, dict) and column.get("key")]
@@ -2988,12 +2959,10 @@ class GraphController:
         derivation rule is not written by anything — `projector.is_derived` stays
         the one definition of what the projection produces.
         """
-        from graph_engine.projector import is_derived
-
         # `id` is the one property written directly, by `create_entity` itself,
         # so it is on the node whether or not the schema declares it.
         keys = {"id"}
-        keys |= {prop.key for prop in (category.defined_properties or []) if is_derived(prop)}
+        keys |= {prop.key for prop in (category.defined_properties or []) if projector.is_derived(prop)}
         return keys
 
     def _assert_indexed(self, key: str, indexed_keys: set[str] | None) -> str:

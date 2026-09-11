@@ -44,6 +44,8 @@ from django.db import connection
 
 from evidence.values import JSONValue
 from graph_engine.projection.protocol import LIST_OPERATORS, DrawnEdge, DrawnNode, IncidentEdge, IncidentEdgesSpec, ListDrawnSpec, PropertyPredicate
+from django.db.models import Q
+from django.db import transaction
 
 if TYPE_CHECKING:
     # Annotations only: `api/schema.py` builds a projector at import time, before
@@ -326,7 +328,6 @@ class TableProjector:
         return {str(member.ref): records[member.vertex_id] for member in held}
 
     def drawn_edges_incident(self, graph: Graph, refs: Iterable[str], spec: IncidentEdgesSpec) -> dict[str, list[IncidentEdge]]:
-        from django.db.models import Q
 
         if spec.direction not in ("IN", "OUT", "BOTH"):
             raise ValueError(f"direction must be IN, OUT or BOTH, not {spec.direction!r}")
@@ -400,7 +401,6 @@ class TableProjector:
     RENDER_STATEMENT_TIMEOUT_MS = 30_000
 
     def render_table(self, graph: Graph, plan: TableQueryPlan, *, filters: RenderGraphTableFilter | None = None, order: RenderGraphTableOrder | None = None, pagination: RenderGraphTablePagination | None = None) -> list[dict[str, JSONValue]]:
-        from django.db import transaction
 
         sql, params = compile_table_plan_sql(self, plan, graph=graph, filters=filters, order=order, pagination=pagination)
         # `SET LOCAL` needs a transaction to be local to; autocommit is the norm

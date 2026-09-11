@@ -32,6 +32,7 @@ from django.db import transaction
 
 from core import models as core_models
 from graph_engine.materialize import compute_definition_hash
+import logging
 
 # Versioning is driven by a signal rather than by call sites, so that "no code
 # path mutates a category without emitting a schema" is true of *every* path —
@@ -226,7 +227,6 @@ def on_category_changed(sender: type[core_models.Category], instance: core_model
     try:
         emit_schema_version(graph, description=f"{sender.__name__} changed")
     except Exception as error:  # noqa: BLE001 - see docstring
-        import logging
 
         logging.getLogger(__name__).warning("Could not record a schema version for graph %s: %s", graph.pk, error)
 

@@ -32,6 +32,8 @@ from strawberry.extensions import SchemaExtension
 from core import models
 from evidence import models as evidence_models
 from evidence import panel
+from collections import defaultdict
+from asgiref.sync import sync_to_async
 
 PKType = int | str
 
@@ -208,9 +210,7 @@ def _batch_known_about_nodes() -> Callable[[list[PKType]], Awaitable[list[panel.
     read — gets the trust-everyone fold for everything. The view is named by
     primary key; the projection handle is never an address (RFC 0006).
     """
-    from collections import defaultdict
 
-    from asgiref.sync import sync_to_async
 
     async def load(keys: list[PKType]) -> list[panel.Known]:
         from core import models as core_models
@@ -243,7 +243,6 @@ def _batch_informed_nodes() -> Callable[[list[PKType]], Awaitable[list[list[evid
     so resolving this per structure would put every downstream loader in a batch
     of one.
     """
-    from asgiref.sync import sync_to_async
 
     async def load(keys: list[PKType]) -> list[list[evidence_models.Instance]]:
         return await sync_to_async(panel.informed_nodes)([str(key) for key in keys])

@@ -1,4 +1,5 @@
 from django.apps import AppConfig
+import logging
 
 
 class GraphEngineConfig(AppConfig):
@@ -62,7 +63,6 @@ def connect_projection_lifecycle() -> None:
     aside; the graph's post_delete drops once more, so a rebuild that slipped
     in anyway cannot orphan a schema.
     """
-    import logging
 
     from django.db.models.signals import post_delete, post_save, pre_delete
 

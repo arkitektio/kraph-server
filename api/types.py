@@ -873,7 +873,6 @@ class RichProperty:
     @sync_to_async
     def _contributing_metrics(self) -> list[evidence_models.Metric]:
         """Every active metric folded into this property's value."""
-        from evidence import models as evidence_models
         from graph_engine import projector
 
         from evidence import selector as selector_module
@@ -2834,7 +2833,6 @@ def _drawings_for_ref(ref: str, info: kante.Info) -> List[results.NodeDrawing]:
     which is what "drawn in" means. Shipping the cheap answer would over-report
     exactly the case defined categories exist for.
     """
-    from evidence import models as evidence_models
 
     controller = get_controller()
     node = evidence_models.Instance.all_objects.filter(pk=str(ref)).first()
