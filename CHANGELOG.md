@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v1.0.0-rc.21 (2026-09-11)
+
+### Bug Fixes
+
+- Loaders<
+  ([`437c159`](https://github.com/arkitektio/kraph-server/commit/437c15964b4607ec79f6ac853758f508cdf09189))
+
+
 ## v1.0.0-rc.20 (2026-09-11)
 
 ### Bug Fixes
