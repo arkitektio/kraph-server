@@ -1,6 +1,9 @@
 # CHANGELOG
 
 
+## v1.0.0-rc.19 (2026-09-11)
+
+
 ## v1.0.0-rc.18 (2026-09-11)
 
 ### Bug Fixes
@@ -21,6 +24,9 @@ Found by the rebuild-equals-write matrix (`tests/projection/test_rebuild_equals_
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 
 Claude-Session: https://claude.ai/code/session_01FdDoEXLCnzfkEkzheHgx4m
+
+- Linting
+  ([`a0669b2`](https://github.com/arkitektio/kraph-server/commit/a0669b296bd9eba3b6917265235a0e4a44ad7329))
 
 - Production settings come from the config, and the defects that exposed
   ([`dc54550`](https://github.com/arkitektio/kraph-server/commit/dc545502d3798132824439eff039b14ecfdb7cee))
