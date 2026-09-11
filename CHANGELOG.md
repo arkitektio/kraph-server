@@ -1,6 +1,320 @@
 # CHANGELOG
 
 
+## v1.0.0-rc.18 (2026-09-11)
+
+### Bug Fixes
+
+- A rebuild folds no metric through a retracted datum
+  ([`1b75b1b`](https://github.com/arkitektio/kraph-server/commit/1b75b1b0f5f4edeab08de6d2db88dfd946c49d3e))
+
+`refold_state` — the organization-wide state fold a rebuild runs before the replay — filtered each
+  metric's own standing and nothing else, so a metric recorded against a structure that was later
+  retracted fed every derived property again after `reproject`. The write path had it right:
+  retracting a structure refolds through `state.refold` → `_structures_informing`, which counts only
+  datums that stand (RFC 0023). The two folds now agree: the rebuild restricts the metrics to those
+  whose structure stands.
+
+Found by the rebuild-equals-write matrix (`tests/projection/test_rebuild_equals_the_write_path.py`,
+  row `retracted_datum`), which lands in the following test commit.
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+
+Claude-Session: https://claude.ai/code/session_01FdDoEXLCnzfkEkzheHgx4m
+
+- Production settings come from the config, and the defects that exposed
+  ([`dc54550`](https://github.com/arkitektio/kraph-server/commit/dc545502d3798132824439eff039b14ecfdb7cee))
+
+`DEBUG`, `ALLOWED_HOSTS` and the proxy trust were literals (`DEBUG = True`, `ALLOWED_HOSTS = ["*"]`)
+  while `configuration.py` parsed `django.debug`, `django.hosts` and `django.use_x_forwarded_host`
+  and nothing read them. They are read now; `run.sh` runs `validate_settings` and `check --deploy`;
+  the TLS/HSTS checks are silenced with the reason (the proxy terminates TLS); `wsgi.py` no longer
+  names `mikro_server`; the dead `CORS_ALLOW_ALL_ORIGINS`, `DATALAYER_URL` and commented S3 lines
+  are gone.
+
+Turning `DEBUG` off for the first time exposed a latent bug: the projection's signal receivers in
+  `graph_engine/apps.py` are closures, were connected weakly, and survived only because Django's
+  debug-mode receiver validation goes through an `lru_cache` that kept a strong reference. Category
+  writes stopped refreshing the namespace and deleting a graph tripped the schema-version FK. They
+  are `weak=False` now and a guard holds it after a forced collection.
+
+Also in this change: - the three vocabulary filters declared `ids` and `search` as bare fields with
+  no resolver, so strawberry_django applied them as `Q(ids=…)` and every use raised `FieldError`;
+  they are `Q` methods now, with tests - every list clamps its page to 1000
+  (`api/pagination.py::window`, the engine's `clamp_window`); the unpaginated metric and comment
+  lists get the same ceiling - `makemigrations --check` had been failing on a help-text-only drift
+  of `Assertion.seq`; the migration is committed, a guard and a CI step refuse the next one - `/ht`
+  pings redis and warns on projection lag (`graph_engine/health.py`, `projection.lag_threshold`) -
+  colour is refused by name (`refuse_bad_color`), not by fifteen `assert`s stripped under `-O` -
+  `manage.py print_schema [--check]` regenerates `test.graphql`, and a guard asserts the snapshot is
+  the schema - the datalayer's media-grant TODO points at the documented limitation
+  (`_build_general_read_policy`) instead of promising a fix - `create_schema(debug=…)` never read
+  its argument; removed
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+
+Claude-Session: https://claude.ai/code/session_015PfRNTtPSkdVn8NQvpRvBc
+
+- Protocol events are part of the schema, and a view's presentation is inert
+  ([`76f19ee`](https://github.com/arkitektio/kraph-server/commit/76f19eefed53f6ed5eeff08e2226631d2fcefa0e))
+
+- `snapshot_definition` enumerated natural events only and `materialize` ignored
+  `EventDefinitionInput.kind`, so a protocol event category changed the view's function and no
+  version, and no `schemaStale`, said so. Both event kinds round-trip now, and the version signal
+  listens on every class a category can be saved through (the namespace and asserted-term signals
+  always did). A shared `deleting_graphs` registry keeps the version handler out of a graph's own
+  delete. - `Graph.image` / `Category.image` cascaded *from* the media store: deleting a picture
+  deleted the view and its whole projection. SET_NULL, like the evidence-side twins (core/0022). -
+  `updateGraphVisual` saved each category and the category signal dropped and recreated the graph's
+  Postgres schema once per moved box. Layout is presentation; the write bypasses the signals. -
+  `deleteStructureKind` / `deleteMetricKind` were described as removing the evidence recorded under
+  them; the FK is PROTECT and the code refuses. - `InstanceIdentity.__str__` read a field migration
+  0008 renamed, and raised.
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+
+Claude-Session: https://claude.ai/code/session_01FdDoEXLCnzfkEkzheHgx4m
+
+- Table_plans
+  ([`8f6d237`](https://github.com/arkitektio/kraph-server/commit/8f6d2378bf1d17d926f4140c30e8720ea3dc4c95))
+
+- The act is one transaction, and corrections fold survivors under the rule
+  ([`061c7b8`](https://github.com/arkitektio/kraph-server/commit/061c7b8154388a23c20923da65eaf2f402c67930))
+
+`create_entity` and `create_event` recorded the assertion (with its outbox row and its broadcast) in
+  one transaction and the claims in a second, on the ground that the AGE engine could not join a
+  Django transaction. That engine is gone; the gap was where a crash left an act that said nothing,
+  which `replay` settled silently and `assertionRecorded` had already announced. The act is one
+  transaction now. The draw stays outside it, deliberately: the outbox row is what makes a failed
+  draw recoverable, and CLAUDE.md claimed the draw shared the assertion's transaction — it never
+  did.
+
+`_members_drawn_as` asked the drawing which members a ref stood for, with "only itself" as the
+  fallback, so a retraction arriving while the cache was cold filtered its survivors over a
+  different individual than the next rebuild would. It asks the rule
+  (`identity.component_refs_for_view`) now and converges the individual first when the drawing
+  disagrees.
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+
+Claude-Session: https://claude.ai/code/session_01FdDoEXLCnzfkEkzheHgx4m
+
+- Types
+  ([`b256e6b`](https://github.com/arkitektio/kraph-server/commit/b256e6bd487fd74690a2381ef2ef7c42cdbff3dd))
+
+### Documentation
+
+- The model from first principles, and the prose that still cited retired machinery
+  ([`f937bef`](https://github.com/arkitektio/kraph-server/commit/f937befe143fc9eb9bb0e855a1bcba9f41f29aaf))
+
+CLAUDE.md points at RFCs 0021–0025 as the model; the CurrentStanding row and the trust paragraph say
+  what the fold is now; LOG.md and VOCABULARY.md describe the two surfaces; evidence/models.py,
+  evidence/claims.py, graph_engine/projector.py, graph_engine/retrieved.py and the rematerialize
+  command stop citing the graph selector, the conflict policy, claim_filter, vertex schema stamps
+  and Apache AGE as current.
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+
+Claude-Session: https://claude.ai/code/session_01FdDoEXLCnzfkEkzheHgx4m
+
+- The test suite's map
+  ([`9fd648b`](https://github.com/arkitektio/kraph-server/commit/9fd648bbeed37f319a6b96cae7cd316f7afb99e0))
+
+Step 5 of the test refactor. `tests/README.md` is the map of the suite as it now stands: the axioms,
+  the layers, every module with the property it holds, the rules the suite keeps, what
+  `tests/support` offers, the old→new table for every module that moved whole (the split-and-merge
+  commit lists the rest), and the two columns the model leaves open (`Link.role`, `Comment`'s
+  columns). `CLAUDE.md`'s test section points at it and states the rules in one paragraph.
+
+The `tests/instance/` finding is recorded in the README: `.gitignore` line 69 (`instance/`) hid that
+  directory from git and CI, so its seven modules were never run there; they are tracked now, inside
+  their targets.
+
+Timing, `--durations=20` before Step 0 and after Step 4:
+
+before 883 passed in 181 s; slowest calls ~1 s; docker bring-up ~7 s after 921 passed in 184 s
+  (--durations=20 in one run of the suite); slowest calls ~1 s (the three subscription tests in
+  `log/test_an_act_is_one_transaction`); the 9.5 s teardown and 7.4 s setup are the docker stack and
+  the session database, not tests
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+
+Claude-Session: https://claude.ai/code/session_01FdDoEXLCnzfkEkzheHgx4m
+
+### Features
+
+- A claim is drawn under every category that admits it, edges included (RFC 0021)
+  ([`5581ed4`](https://github.com/arkitektio/kraph-server/commit/5581ed46b5b4bf59502d4b44855d528f08fd8007))
+
+The projector resolved an edge's category through a term→category map built last-writer-wins. A
+  declared word had one category by construction, but two defined relation categories deriving from
+  the same word were two candidates — and the map answered with neither, so a claim both admitted
+  was drawn under none. The correction paths erased under one category's label while their own
+  survivor loops iterated several, and folded survivors by the retracted claim's word alone.
+
+Admission replaces the map: `projector._admitted_by` is the one implementation of "which claims draw
+  this category's edges", and `admitting_categories` answers link → every category admitting it.
+  `project_edges` draws once per admitting relation category (the edge-side twin of RFC 0019);
+  `project_participation` groups once per drawn edge; `_reproject_proposition` /
+  `_reproject_participation` recompute admission for every category between the two individuals;
+  `drawn_edge` / `drawings_for_edge` / `links_in_graph` read through the same function.
+  `categories_by_term` is deleted, and `(graph, term)` is unique on `Category` (core/0023) — the
+  invariant the map silently assumed.
+
+BREAKING CHANGE: a relation claim admitted by two relation categories of one view now has two edges
+  there, one per label, and a write's `drawings` lists both.
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+
+Claude-Session: https://claude.ai/code/session_01FdDoEXLCnzfkEkzheHgx4m
+
+- A failed draw is a pending act, and a runner converges the outbox
+  ([`289e74c`](https://github.com/arkitektio/kraph-server/commit/289e74cb38fdff8f3d9f1561b3de71325cfe3618))
+
+Every write commits its act — assertion, outbox row, claims — in one transaction and draws
+  afterwards. That draw ran bare: a projector error reached the client as a failed mutation while
+  the log, the outbox and the subscription all said the act happened, and nothing recorded why. It
+  runs under `GraphController._draw_after` now: a failure is logged with the assertion id, the
+  outbox row is left standing, and the payload reports `pending: true` on every `Asserted*` type
+  beside whatever was drawn. An AST guard holds the block outside the transaction and every draw
+  inside it.
+
+Nothing applied that outbox unattended. `reproject --incremental --loop` is the runner
+  (`graph_engine/runner.py`): a pass per organization with outstanding rows, `--grace` leaving rows
+  a request may still be drawing, poison-pill backoff, never an automatic rebuild. `run-worker.sh`
+  starts it; the `Dockerfile` gains a `CMD`. Both bulk paths — `replay` via the runner and
+  `projector.rebuild` — hold the organization's session advisory lock (`graph_engine/locks.py`), so
+  a runner pass and a rebuild never interleave.
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+
+Claude-Session: https://claude.ai/code/session_015PfRNTtPSkdVn8NQvpRvBc
+
+- A structure is an individual with an external identity (RFC 0023)
+  ([`8f55679`](https://github.com/arkitektio/kraph-server/commit/8f556790f1a99ba3b1d02248c05ae2ef10b98ea0))
+
+A structure was minted by get_or_create and the second claimant's assertion dropped — the shape of a
+  vocabulary row — while the API offered assertStructureExists / retractStructure / attestStructure
+  as if it were a claim, and retract_structure wrote a standing nothing downstream read: the metrics
+  of a retracted datum kept feeding every derived value it informed, and State.recompute read
+  INFORMS links unfolded.
+
+It is an individual whose identity is given externally: one row per (identifier, object); an
+  explicit second existence claim is recorded as an agreeing standing under its act; observed_at and
+  confidence like every claim (evidence/0017); the folds honour its standing — retracting or
+  attesting a datum refolds every State row it feeds (state.refold) and redraws the nodes it
+  informs, and a retracted INFORMS link refolds before it redraws. A measurement's sibling INFORMS
+  row is retracted and attested with it under the same act. A derived property whose evidence went
+  away is cleared from the drawing rather than kept at its last number (a None value removes the key
+  in write_properties).
+
+BREAKING CHANGE: updateStructure → recordMetrics, linkStructureToEntity → assertInforms;
+  ensureStructure (identical to assertStructureExists) is gone; Structure gains observedAt and
+  confidence.
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+
+Claude-Session: https://claude.ai/code/session_01FdDoEXLCnzfkEkzheHgx4m
+
+- A word's identity is immutable in the database (RFC 0022)
+  ([`e9e5594`](https://github.com/arkitektio/kraph-server/commit/e9e5594b7eb3a4cbf4530e9d2d13bd1183d381c7))
+
+`Term`, `StructureKind` and `MetricKind` are the only evidence rows written in place, and the only
+  guard on the identity columns every claim references was a docstring on `updateTerm`. Evidence
+  migration 0016 attaches a `BEFORE UPDATE OF <identity columns>` trigger to the three tables, in
+  the shape of 0005's log guard and honouring the same redaction hatch; it compares values rather
+  than the SET list, because Django's save() rewrites every column. Presentation — label,
+  description, colour, image — is not evidence and stays editable in place, unlogged.
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+
+Claude-Session: https://claude.ai/code/session_01FdDoEXLCnzfkEkzheHgx4m
+
+- Identity is the view's (RFC 0024)
+  ([`5f78f46`](https://github.com/arkitektio/kraph-server/commit/5f78f46217ca05b9a800a28b76afc66c15585b15))
+
+Sameness was folded per category — a claim counted only when both endpoints shared a category and
+  that category's KIND SAMENESS trust admitted it — so one view could hold an instance in one
+  individual under Cell and another under StemCell: two answers to how many things are here. A view
+  is one function of the log and gives one.
+
+Graph.sameness_rule (core/0024; samenessRule on createGraph/updateGraph, read back on Graph) decides
+  whose SAME_AS / DIFFERENT_FROM claims the view counts, across every category it draws;
+  identity._trusted_in_view folds under it for any two nodes the view admits. A category definition
+  may not name KIND SAMENESS (the migration strips it from stored definitions). A rule change is
+  versioned and rebuilds the view. CurrentStanding is total over claim kinds, instances included:
+  the trust-everyone fold has an answer for a node like for any claim.
+
+Deferred, recorded in the RFC: relocating the three organization-grain folds out of evidence/ under
+  a named default view.
+
+BREAKING CHANGE: KIND SAMENESS is refused in category definitions; Graph gains samenessRule.
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+
+Claude-Session: https://claude.ai/code/session_01FdDoEXLCnzfkEkzheHgx4m
+
+- Two surfaces — the log and the view (RFC 0025)
+  ([`ec8f132`](https://github.com/arkitektio/kraph-server/commit/ec8f132c89cf668acf8fbeff98772955aa7c769b))
+
+Node mixed claim grain (term, standings, sameAs) with view grain (properties, schemaVersion,
+  drawnLabels, members, categoryIds) and said neither which was which nor as of what; every edge
+  endpoint was a Node built with no view, whose view half read as 'drawn nowhere'; categoryIds came
+  from the vertex stamp, so a cache miss read as 'no category'; edge singulars borrowed the
+  lowest-pk category of any view; claim lists ordered by arrival time.
+
+A Node is one view's drawing and is only ever built inside a view: it names its graph, the position
+  it is as of (asOfSeq, the view's cursor), and the claim beneath it, and answers its categories
+  from the view's rule (RetrievedNode.rule_category_ids; the stamp stays as drawn_category_ids for
+  the projection's own warning). Every edge endpoint, Structure.informs and Description.target
+  resolve to the claim — Instance. An edge reached without a view has no category;
+  _category_for_term is deleted. The panel loader is keyed by the view's pk, never its handle. Claim
+  lists order by seq (default), observedAt, createdAt, id. updateRelation and
+  updateStructureRelation are supersede*. Every root field says its grain; the projection prose no
+  longer names AGE; the product surface is sectioned as not the model.
+
+BREAKING CHANGE: Node gains graph, asOfSeq, claim; schemaVersion, lastDerived, Entity.kind and
+  Event.kind are gone (Event.word is the claim's term); edge endpoints, Structure.informs and
+  InformsTarget are Instance; updateRelation → supersedeRelation, updateStructureRelation →
+  supersedeStructureRelation; GraphProjection.kind reads 'table'.
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+
+Claude-Session: https://claude.ai/code/session_01FdDoEXLCnzfkEkzheHgx4m
+
+### Refactoring
+
+- Dead schema, columns, enums and inputs die
+  ([`da28d3d`](https://github.com/arkitektio/kraph-server/commit/da28d3dcc4c4462f08ce523fa59f5f71b3d1938f))
+
+Nothing here was read by anything, and each name taught the wrong model: `ChangeKind`
+  (CREATE/UPDATE/DELETE), `Graph.node_deletion_allowed` (a permission for an operation the log
+  forbids), `Category.schema_hash` (written on every save, read nowhere), the `REAGENT` kind (no
+  type could draw one, no write could claim one), six `Retrieved*` classes constructed nowhere, the
+  pre-evidence `MaterializationConfigInput` / `EvidenceRequirementInput` vocabulary, the
+  `setSchema`-era result types, `GraphExtensionsInput.prefixes/graphTableQueries/scatterPlots`
+  (accepted and dropped), `StructureDescriptor.keys/tags` ("REMOVED — always null"),
+  `EdgeCategoryOrder.instanceKind` (a node-only field on edge orders), `graph_engine/vocab.py`,
+  `guardian` and `taggit` (installed, unused).
+
+`assertParticipations`/`classifyNodes` refuse an empty batch like `retractLinks` does instead of
+  returning a list from a method typed `Asserted`; `create_structure_relation`/`create_measurement`
+  are typed for what they return. Migration core/0021 drops the columns and refuses to run while a
+  REAGENT category or term exists.
+
+BREAKING CHANGE: `TermKind.REAGENT`, `ReagentCategory`, `PrefixInput`, `GraphTableQueryInput`,
+  `ScatterPlotInput` and the three `GraphExtensionsInput` fields are gone from the SDL.
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+
+Claude-Session: https://claude.ai/code/session_01FdDoEXLCnzfkEkzheHgx4m
+
+### Breaking Changes
+
+- `termkind.reagent`, `ReagentCategory`, `PrefixInput`, `GraphTableQueryInput`, `ScatterPlotInput`
+  and the three `GraphExtensionsInput` fields are gone from the SDL.
+
+
 ## v1.0.0-rc.17 (2026-09-07)
 
 ### Features
