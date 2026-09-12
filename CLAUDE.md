@@ -1,0 +1,564 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+Kraph is the knowledge-graph service of the Arkitekt framework: a Django + Strawberry GraphQL
+server on top of plain PostgreSQL **19** (SQL/PGQ). The graph is a **projection**: an append-only
+evidence log (`evidence/`) is the source of truth, and each view's drawing lives in two ordinary
+Postgres tables (`graph_engine.models.ProjectionVertex` / `ProjectionEdge`). Apache AGE and
+Cypher are gone — see `docs/rfcs/0005-retire-the-cypher-projection.md` for why and what must not
+regress. Each graph additionally has a **namespace**: a per-graph Postgres schema (named by
+`Graph.age_name`) holding per-category views and one SQL/PGQ property graph, *derived from the
+categories* by `refresh_namespace` and enforced write-side by a composite FK — see
+`docs/rfcs/0006-the-namespace-is-a-derived-artifact.md`.
+
+## Commands
+
+Dependency management is `uv` (see `uv.lock`); everything runs through `uv run`.
+
+```bash
+uv sync --all-extras --dev          # install (what CI does)
+
+uv run pytest                       # full suite
+uv run pytest tests/view/test_the_definition_document_is_the_views_meaning.py::test_name   # single test
+uv run pytest --cov --cov-branch    # coverage (CI: coverage.yaml)
+
+uv run ruff check .                 # lint      (CI: REQUIRED — must stay green)
+uv run ruff format --check .        # format    (CI: advisory)
+uv run basedpyright                 # typecheck (CI: advisory)
+
+python manage.py validate_settings  # load+validate config, print it with secrets redacted
+```
+
+Notes:
+- **`uv run ruff check .` is a required check, and it passes.** The selected set is in
+  `[tool.ruff.lint]` and every family in it names a defect rather than a preference: `E9`
+  (does not parse), `F` (pyflakes), `PLE` (raises at runtime), `ASYNC` (blocking work in an
+  `async def`, on a server that is ASGI end to end), `DTZ` (naive datetimes, when the log's
+  whole order is time), `LOG`, `T10` (a stray `breakpoint()`), `ISC` (a forgotten comma in a
+  list is a silent string join, and this repo builds SQL and rule documents in lists). So a
+  red Lint job means *this branch* broke something; it is not a backlog to scroll past.
+  Those settings used to sit at the top level of `[tool.ruff]`, where ruff has deprecated
+  them — every run printed a warning and one release from now they would have been dropped in
+  silence, leaving the repo linted by whatever the defaults were. Same shape as the
+  `[tool.mypy]` block below.
+- **The rest is an advisory backlog**, ~4.9k findings across `ANN`/`D1`/`I`/`B`/`SIM`/`UP`/…,
+  printed as counts by `lint.yaml`'s second step. Burn a family to zero, then move it into
+  `select` — that is the only way into the required check.
+- **Never select `FA`, `UP006`, `UP007` or `UP045`.** They rewrite annotations that Strawberry
+  and pydantic read at *runtime* (a pydantic field's annotation **is** its validator), and
+  `from __future__ import annotations` stops the schema building at all. They are excluded
+  from the advisory lane too, so nobody burns them down by accident.
+- `core-backup-do-not-delete/` is excluded from linting (`extend-exclude`), as it is from every
+  search: it carried 1,488 of the 5,221 findings the old config reported, none of them ever
+  going to be fixed.
+- **basedpyright is the only type checker.** `[tool.mypy]` used to sit in `pyproject.toml` set to
+  `strict = true` with no CI job running it — a standard nothing checked — and is gone along with
+  the `mypy` dev dependency. basedpyright runs unscoped over the whole repo, advisory.
+- Serving: `run.sh` (daphne on :80, production) / `run-debug.sh` (`runserver` on :80). Both
+  `wait_for_database` → `migrate` first, under `set -euo pipefail`; `run.sh` also runs
+  `validate_settings` and `check --deploy`. They used to call `ensureadmin`
+  too — a command that is not installed — and without `set -e` that errored on every boot and
+  carried on serving. **The second process is `run-worker.sh`**: `reproject --incremental --all
+  --loop`, the convergence runner (`graph_engine/runner.py`) that finishes any drawing a request
+  could not. The `Dockerfile`'s `CMD` is `run.sh`; the deployment compose overrides it per service.
+- `DEBUG`, `ALLOWED_HOSTS` and the proxy trust come from `config.yaml` (`django.debug`, `django.hosts`,
+  `django.use_x_forwarded_host`). They were literals (`DEBUG = True`) while the config keys were parsed and
+  read by nothing. Turning `DEBUG` off for the first time exposed a latent bug: the projection's signal
+  receivers in `graph_engine/apps.py` are closures, were connected weakly, and survived only because
+  Django's debug-mode receiver validation cached a strong reference — they are `weak=False` now, and
+  `tests/guards/test_the_projection_signals_survive_garbage_collection.py` holds it.
+
+### Tests need Docker — always
+
+`tests/conftest.py::backend_stack` is session-scoped and uses `dokker` to `down()` then `up()`
+`tests/integration/docker-compose.yaml` (Postgres on **5555**, redis on **6666**, seaweedfs on
+**18888**). Those ports must be free. `kraph_server/settings_test.py` hardcodes
+`localhost:5555 / test / test`, so that compose file is the only supported test database — even a
+single test pays the full stack bring-up. Settings module is wired in `pyproject.toml`, so plain
+`uv run pytest` is correct.
+
+The drawing lives in the projection tables of the same test database, so `transactional_db`
+flushes it between tests — real isolation. (Under AGE this was impossible: a type-cache bug
+forced graph state to leak across the session, and "passes alone, fails in the suite" was the
+signature. That whole class is gone.) Tests assert on drawings through `tests/support/drawing.py`, never
+by importing the projection models into production code paths.
+
+### The suite is laid out by the model
+
+`tests/README.md` is the map. One directory per layer of the model — `guards/` (no database),
+`log/` (A1–A4), `identity/` (A5/C3), `view/` (A6), `projection/` (A7/C2), `datum/` (C6),
+`surface/` (C4/C5), `product/` (C7) — one module per property, named as the sentence it
+holds. The rules that keep it that way: one `conftest.py`; a test module imports only
+`tests.support.*`; every GraphQL document is declared once (`support/writes.py` for
+mutations, `support/reads.py` for queries); `rebuild_projection` is called only in the
+projection layer's three replay modules and `support/graphs.py::rebuild`; names and
+docstrings use the model's vocabulary, property first, with the bug story in a trailing
+`History:` paragraph — `guards/test_vocabulary.py` fails on the retired words. The
+projection layer's centrepiece is `projection/test_rebuild_equals_the_write_path.py`: every
+kind of thing a view draws, drawn by the write path, then by a full rebuild and by
+`reproject --incremental`, compared whole. A new property goes in the module that states it;
+a new module goes in the layer whose axiom it holds.
+
+### Local `manage.py` gotcha
+
+The checked-in `config.yaml` targets container hostnames (`db`, `redis`, `minio`,
+`seaweed-filer`) because this checkout is a deployment mount. To run `manage.py` from the host,
+point `ARKITEKT_CONFIG_FILE` at a config with host-reachable values. Config precedence and every
+key are documented in [`CONFIG.md`](CONFIG.md); the schema itself is
+`kraph_server/configuration.py` (pydantic-settings, `__` env-var nesting, missing secrets fail
+startup hard).
+
+## Architecture
+
+Full write-up: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — historical; the reasoning that
+got here, superseded where `LOG.md` and the RFCs say otherwise. **The model, from first
+principles, is [`docs/rfcs/0021`–`0025`](docs/rfcs/README.md)**: an act is one transaction; every
+fold is a fold under some view; identity is the view's; a datum is an individual with an external
+identity; a `Node` is one view's drawing and an `Instance` is the claim. What the append-only log actually records,
+and which operation writes which claim: [`docs/LOG.md`](docs/LOG.md). Domain rationale for the
+evidence/provenance model: [`docs/BIOLOGIST.md`](docs/BIOLOGIST.md). When a category's
+properties change and every vertex it draws goes stale — what redraws them, in-request versus
+`manage.py rematerialize`: [`docs/REMATERIALIZATION.md`](docs/REMATERIALIZATION.md).
+
+How a category's rules decide which evidence counts — the reference for
+`Category.definition` and `rule.evidence`: [`docs/RULES.md`](docs/RULES.md). One full schema walked
+through, and the ordering that matters — claims name words and know no graph; a graph is a view
+that draws what its categories admit: [`docs/EXAMPLE.md`](docs/EXAMPLE.md).
+
+Design questions live in [`docs/rfcs/`](docs/rfcs/README.md). Check the **status line** before
+acting on one. While it is open, the RFC proposes no code change and a defect it names is
+deliberately left in the code, because it is the subject being decided — don't "fix" one as
+drive-by work. A status of **Implemented** means the opposite: it shipped, its findings are
+fixed, and the text is the record of why. RFC 0003 is implemented.
+
+### The vocabulary
+
+**Full reference, sorted by layer: [`docs/VOCABULARY.md`](docs/VOCABULARY.md).** It is the one to
+read when you need to know whether a word names something the organization *recorded*, something
+one view *declared* about it, or something a projection *computed* — three layers with different
+rules about who may change them and what happens when they disagree.
+
+The short version. Each of the first three words used to carry two or more meanings, and the
+renames that fixed that are in `evidence/migrations/0008_instance_and_standing.py`.
+
+| Word | Layer | Means | Lives in |
+|---|---|---|---|
+| `Assertion` | evidence | the **act** — who claimed it, with what tool, when. Carries `seq`, the log's total order | `evidence.Assertion` |
+| *claim* | evidence | any **recorded statement**: an `Instance`, a `Link`, a `Metric`, a `Structure`, a `Comment`. A prose word, not a table | — |
+| `Instance` | evidence | a claimed **individual** — `entity`, `natural_event` or `protocol_event`. Every observation mints its own | `evidence.Instance` |
+| `Link` | evidence | a claim **relating two things**. Ten kinds — see `Link.Kind`. `DIFFERENT_FROM` is negative sameness, vetoing the direct `SAME_AS` between its ends in every fold (RFC 0019). `DERIVED_FROM` is lineage between claims of any shape, written under the citing claim's own assertion, never drawn (RFC 0017) | `evidence.Link` |
+| `Standing` | evidence | somebody's **position** on whether a claim still holds (`stands=True/False`) | `evidence.Standing` |
+| `CurrentStanding` | evidence (cache) | the folded answer under the trust-everyone view — total over claim kinds, instances included (RFC 0024). A view's answer for a node is still its category's rule | `evidence.CurrentStanding` |
+| `Term` | evidence | a **word** the organization uses. What a claim names | `evidence.Term` |
+| `Graph` | schema | a **view** over the organization's claims. No selector (RFC 0009): whose claims count is each *category's* rule | `core.Graph` |
+| `Category` | schema | one **view's rule** for a word: `age_name`, `definition`, layout. `Category.term` is the join to evidence | `core.Category` |
+| vertex / edge (drawn) | projection | what a view **draws**. Entirely rebuildable by `manage.py reproject`; never a source of truth | `graph_engine.models.ProjectionVertex` / `ProjectionEdge` |
+| drawing | projection | how one view **draws** a claim: a vertex or an edge, and the category it drew it under | `graph_engine.results.NodeDrawing` / `EdgeDrawing` |
+| `Node` / `Edge` | API | the interfaces. `Node` = one `Instance` row typed by kind (exactly `Instance.Kind`); `Edge` = one `Link` row typed by kind (exactly `Link.Kind`). `Edge` does **not** mean "drawable" — several link kinds are never projected | GraphQL only |
+| `Entity` | API | an instance that is **not an event** | `Instance.Kind.ENTITY`, GraphQL `Entity` |
+| `Structure` / `Metric` | API | claim shapes implementing **neither** interface — they are rows of *different tables*, not instances | GraphQL only |
+| `Asserted*` | API | what a **write returns**: the assertion it made, the claim, and the drawings. All fifteen implement the `Asserted` **interface**, which carries the two answers that never vary (`pending`, `assertion`); only what was claimed is named per type, because the word for it differs | GraphQL `AssertedEntity`, `AssertedInstances`, … |
+| `Standing` (GraphQL) | API | one position on a claim: `stands`, when, and whose | `api/types.py::Standing` |
+
+Three consequences worth stating, because each was a bug before the words were separated:
+
+- **`Node` is graph-facing only.** `evidence.Instance` is narrower (no structures, no metrics) and
+  a drawn vertex is narrower still. A `RetrievedNode` spans all of it, so its vertex-only fields are
+  named for what they are: `vertex_id` (reassigned by every reproject — `unique_id` is the identity)
+  and, on edges, `edge_id`.
+- **"Entity" never means "any node".** It used to, in ~108 identifiers — `project(entity_refs=…)`,
+  `RetrievedEntity`, `selector.entity_refs_informed_by`. Those are `instance_refs`, `RetrievedNode`
+  and `instance_refs_informed_by` now.
+- **A `Standing` is not a claim, and `retractLinks` takes `Link` ids.** It was `retractClaims`,
+  which named neither the table it reads nor the one a retraction writes.
+
+The load-bearing facts:
+
+- **Two layers.** Django rows in `core/models.py` ending in `*Category` are the *schema/ontology*
+  (what node and edge kinds a `Graph` allows). Instance data is **also** Django rows now — the
+  `evidence` app is the source of truth, and the projection tables hold a droppable drawing of it.
+  (This used to say instance data is never a Django row; that inverted when the evidence base
+  landed. Apache AGE held the drawing until RFC 0005 retired it.)
+- **The log names a word, not a category.** `Category` is graph-native — created from the schema
+  definition, holding `age_name`, `definition`, derivation rules and layout — and stays so. But
+  `Instance.term` and `Link.term` point at organization-scoped `evidence.Term`, so a `CLASSIFIES` claim
+  can be read by every view declaring the same word. `Category.term` is the join. Deleting a
+  category or a graph is therefore free and takes no evidence with it; the `PROTECT` is on `Term`.
+- **So does the write API.** Instance mutations take `term: "AIS"` — a `Term.key`, resolved against
+  the request's organization — and no graph, no category id. Authorization is
+  `context.assert_can_access_organization`. `graph` remains on *reads* (`nodes(graph:)`) and on
+  schema mutations (`createEntityCategory(graph:)`), because a read is view-scoped and a category
+  belongs to one view. `createGraph` and the category-creation mutations take `backfill` to project
+  the history a newly declared word already admits.
+- **And so does the read API, now.** Every id in the schema is a **bare uuid** — `Node.id` and
+  `Edge.id` and nothing else. `graphId`, `globalId`, `localId`, `Node.pinned` and the
+  `GlobalID`/`LocalID`/`StructureGlobalID` scalars are gone: each named a drawn vertex that a
+  reproject reassigns or (for `globalId`) a vertex property nothing has ever written, so it
+  *raised*. **`Node.graph` is back, and non-null (RFC 0025)**: a `Node` is one view's drawing and
+  is only ever built inside a view, with `asOfSeq` (the view's cursor) and `claim` (the
+  `Instance` beneath it); a reading with no view is an `Instance`, never a `Node`. The composite `{graph}:{vertex_id}` parsers
+  went with them. **Edge list queries read `evidence.Link`**, not Cypher
+  (`api/queries/_edges.py`) — five of the six matched labels the projector never writes and could
+  only return empty, and all six handed out ids their own singular fetchers could not accept.
+  **Node list queries read `evidence.Instance`** the same way (`api/queries/_nodes.py`), and membership
+  comes from `projector.refs_admitted_by` / `refs_in_graph`, which route through
+  `resolve_categories` — the view's *rule*, not the state of its cache, so a node a category admits
+  is listed whether or not the projection has caught up. The drawing supplies the derived properties
+  where there is one, and `has_property`/`search`/`matches` and property ordering are **refused**
+  rather than silently narrowing a claim list by what happens to be cached; the drawing-scoped
+  query with the indexed-key guard is `GraphController.list_entities_for_category`, which no
+  GraphQL field is built on. **The singular node fetchers name their view too**:
+  `node(id:, graph:)` and the typed forms go through `api/queries/_nodes.py::one_in_graph`, the
+  same membership-then-drawing path as `nodes(graph:)`, so the singular and plural reads are
+  answer-equivalent — admitted-but-undrawn returns `RetrievedNode.from_row` (the shape a write
+  returns before anything is drawn, no derived properties, categories from the rule), and a node the view does not admit is
+  refused, with `instance(id:)` as the claim-grain reader. They used to take no graph and answer
+  from `drawings[0]`, an arbitrary view (`projected_instance`, deleted with its caller
+  `get_node`). Anything that reads a drawn record should be checked against
+  `Projector.draw_node` (`graph_engine/projection/table.py`), which stores exactly the identity
+  trio `{id, category_ids, type}` beside the derived properties and labels it with the
+  `age_name` of **every** category that admits it — one `graph_engine.models.ProjectionLabel` row
+  per (vertex, category), RFC 0019.
+- **What a node *is* comes from the claim, never from the label.** `Instance.kind` is the fact;
+  `draw_node` writes it onto the vertex as `type`, and `RetrievedNode.node_type` reads that and
+  nothing else. There is no label-to-kind map any more — a vertex is labelled `category.age_name`
+  ("Cell", "Mitosis"), which is one view's rename of a word, so `VocabNodeTypeMap` matched none of
+  its five fixed words and defaulted every drawn node to `"ENTITY"`: `node(id:)` and every write's
+  `drawings { node }` reported a protocol event as an `Entity`. A vertex with no `type` is one an
+  older projector drew — `manage.py reproject`, not a fallback guess. **The same defect had a second
+  home**, and it was not a label map: `Structure.informs`, `Description.target`, `Measurement.target`
+  and the relation/sameness/participation endpoints each wrapped an unfiltered `Instance` fetch in a
+  hardcoded `Entity(...)`, so an event reached through any of them was reported as an entity. They
+  all return the **claim** now — `Instance`, through `_endpoint_instance` (RFC 0025): an edge
+  carries no view a `Node` could be drawn in, and `Instance.drawnIn` says which views do. If you add
+  an endpoint resolver, return the claim — never build a `Node` without a view.
+- **A write is named for the act and returns where the claim landed.** `assertEntityExists`, not
+  `createEntity`; `retract*`, not `archive*` — and the controller agrees now, where six of its nine
+  methods were still spelled `archive_*` while the API called them `retract`. Each returns the
+  `Assertion` it recorded, the claim,
+  and **`drawings`** — every view that draws that claim afterwards, empty when none does. So "no
+  view declares this word" is a count rather than a null, and a claim several views draw reports all
+  of them instead of the lowest-id one. There is no `lifecycle` field anywhere — a node in a graph
+  is one the evidence says exists, so a flag beside it could only agree with its own presence. See
+  `graph_engine/results.py`.
+- **The claim a write returns is an `Instance` or a `Link`, never an `Entity` or a `Relation`.**
+  Those are *drawing* types — label, category, derived properties, schema version — and a write's
+  result may be drawn nowhere, which is the ordinary outcome of naming a word no view declares. Two
+  of `Entity`'s fields could not answer for that case: `schemaVersion` was `String!` over a value
+  only a projection supplies (gone since RFC 0025 — `asOfSeq` is the view's cursor), and
+  `richProperties` opened with `assert category_id is not None` (now `[]`). So the payload
+  carries no category and no label: a claim names a **word** (`term`), and what a view makes of that
+  word lives in its drawing. **There is no folded `stands` on either**: the trust-everyone fold
+  (`CurrentStanding`, total since RFC 0024) is one view's answer, and a node's category decides
+  whose claims count in *its* view (RFC 0009) — so the positions are reported as `standings`
+  (newest first, empty meaning nobody disputed it) and the per-view answer is `drawings`. `Instance` and `Link` are also
+  readable by id (`instance(id:)`, `link(id:)`), and `Link.source`/`target` resolve through the
+  `ClaimEndpoint` union by dispatching on `kind` — never by inspecting a ref, since every ref is a
+  bare uuid addressing one of four tables (`api/types.py::_ENDPOINT_TABLES`).
+  **The log is readable as a log (RFC 0020)**: `assertions(filters:, pagination:)` newest first,
+  `assertion(id:)` with `actionArgs` and six typed lists of what the act recorded (grouped loaders
+  keyed `assertion_id`, not narrowed by standing), `standings(id: optional, filters:)` with
+  `Standing.target: StandingTarget` (its own union — `Comment` in, `Term` out), and
+  `changes(afterSeq:, limit:) { assertions nextSeq horizon }`, the feed: ascending and **cut at the
+  committed horizon** — `evidence/log.py::before_every_open_transaction`, a raw predicate over the
+  row's `xmin` against `pg_snapshot_xmin(pg_current_snapshot())`, because `seq` is assigned at
+  insert and a bare `seq > cursor` skips a late-committing act. Only `changes` is gated; a
+  long-open writer stalls the feed for everyone and `horizon` shows it; the residual window is
+  inside one `INSERT` and is documented, not closed — don't add `pg_current_xact_id()` or an
+  advisory lock. `Subscription.assertionRecorded` (`api/subscriptions/`, `evidence/channel.py`)
+  is `broadcast_on_commit` from `_create_assertion`; the room is `channel.room(org)` on both
+  sides, **not** kante's `org_group`, which spells a colon the channel layer refuses.
+- **All graph writes go through `GraphController`** (`graph_engine/controller.py`), which records
+  an `Assertion` — a Postgres row, never a drawn vertex — and draws through the projector.
+  Corrections are additive: there is no `updateEntity` and no hard delete for instance data.
+  Evidence is written **before** the projection, always: the act — assertion, outbox row, every
+  claim — is **one transaction**, and the draw follows it *outside* that transaction, into every
+  view declaring the word — under `GraphController._draw_after`, which every write wraps its draw
+  in and which `tests/guards/test_the_draw_follows_the_act.py` holds outside the transaction. A
+  failure there is **not a failed mutation**: the act is durable and already announced, so it is
+  logged with the assertion id, the outbox row is left standing, and the payload reports
+  `pending: true` beside whatever was drawn (`Asserted*.pending`); the runner (`run-worker.sh`,
+  `graph_engine/runner.py`) applies it. `lag` is that outstanding count, zero in steady state
+  because the draw normally completes within the request. (It used to propagate as a mutation
+  error for a committed act; before that it was two evidence transactions on the ground that AGE
+  could not join one. Both gaps are closed.)
+- **The graph carries no lifecycle state**, and neither does the API. If the claims do not say a
+  node exists, it has no vertex — not a vertex with a flag, and not a `lifecycle` field either. Retracting is a `Standing(stands=False)` and removes the drawing
+  (`projector.unproject`; edges go by FK cascade — the `DETACH`); `attest*` writes `Standing(stands=True)` and redraws it. There is
+  no "unarchive": existence is evidence, and two people may disagree about it, with each node's
+  *category clauses* deciding whose word counts (RFC 0009: `resolve_categories` resolves the
+  category first, then folds retraction under its `trust_filter`).
+- **Identity is a bare uuid.** `Node.id` *is* the identity — no `{age_name}:` prefix, and never the
+  drawing's vertex id (a `ProjectionVertex` pk), which is reassigned by every reproject. GraphQL node ids are that uuid.
+  Graph membership is decided in exactly two functions, `evidence.selector.instances_for` and
+  `graph_ids_for_instance_ids` — and the two agree: both count the words a graph's categories declare
+  **and** the words their definitions derive from. Since writes name terms, the second one is the
+  only thing deciding where a write lands, so a write path that fans out over graphs goes through
+  `projector.graphs_for_refs` and never `_graph_for_ref`, which returns an arbitrary declarer.
+  The derived half of that rule — the words a `definition.asserted_as` names, across its `any_of`
+  clauses (a definition is a **union of clauses**, each binding its own words/annotators/time
+  bounds — RFC 0007; `since` is the `asserted_at` lower bound beside `as_of`), which is a string
+  inside JSON and so un-joinable — is normalized into `core.CategoryAssertedTerm`, maintained by a
+  signal in `versioning.connect()` that deliberately does **not** share `is_suspended()`
+  (`materialize` runs suspended, and that is when the index matters most). It stores the **key**,
+  not a `Term` FK: a definition routinely names a word nobody has minted yet. Rebuild and verify
+  with `manage.py rebuild_asserted_terms [--check]`.
+- **Every observation mints its own instance, and sameness is a claim.** "This is an AIS" writes a
+  *fresh* `Instance`; "this is AIS 6" additionally writes `Link.Kind.SAME_AS`, under the **same**
+  assertion, because it is one act. `evidence/identity.py` folds those claims into components
+  (`InstanceIdentity`, organization grain, lowest uuid as representative, only merged nodes get a row).
+  Retraction cannot un-union, so it flags and `recompute` rebuilds; `manage.py rebuild_identity
+  --check` is the backstop. Everything the panel reports — `evidence/panel.py`, surfaced as
+  `Entity.labels/sameAs/connections/component` and `Structure.metrics/informs` — is unioned over the
+  **component**, never over one instance. **A view draws one vertex per individual (RFC 0018)**:
+  one per *view-scoped* component — `identity.view_components`, the `SAME_AS` claims the members'
+  category trusts — with the members listed on `graph_engine.models.ProjectionMember`, the vertex
+  ref the lowest member uuid, derived properties folded over every member (`state_for_many` →
+  `combine`), and edges to any member landing on the one vertex (`__assertion_count` sums; a
+  relation between members is a self-edge). `Node.id` is that representative, `node(id: <any
+  member>, graph:)` answers with the individual, `Node.members` lists it, `nodes(graph:)` lists one
+  row per individual (`representatives_in_graph`). Every redraw is `projector.converge`, which
+  widens the touched set to whole individuals (`reproject_refs`, not a per-node call). The org-grain
+  *cache* is what the panel reads; a view's `members` and the panel's `component` may disagree.
+  **Sameness has a negative (RFC 0019)**: `Link.Kind.DIFFERENT_FROM`, one claim per pair
+  (`assertDifferentInstance`), read under the same `SAMENESS` rule. Every fold — view, org cache,
+  `merge`, `rebuild_identity --check` — goes through `identity.admitted_sameness`, which drops the
+  *direct* `SAME_AS` between a vetoed pair and nothing else; a pair still joined through a third
+  instance stays merged and is reported as `Node.conflicts`/`Instance.conflicts`. Never resolve a
+  conflict by guessing which other claim to drop.
+- **A node is drawn under every category that admits it (RFC 0019).** `resolve_categories` answers
+  `dict[ref, list[Category]]`: the union of defined categories whose rule admits the node and
+  primitive categories of the words its standing classifications name (its own `Instance.term`
+  only when nothing classifies it). Existence folds **per category**; properties are the union;
+  the one refusal left is `projector.property_conflicts` — a key two of the node's categories
+  define differently (`PropertyDefinitionInput` or category `definition` differ). `draw_node`
+  takes `categories: [(label, category_id), …]`, `write_properties` takes no label, a drawn record
+  carries `labels` (sorted) with `label` the first; `NodeDrawing` stays one per (view, category),
+  so a write's `drawings` lists a node once per category. API: `Node.drawnLabels`,
+  `Entity.categoryIds`/`categories` (no `categoryId`/`category`). Two nodes may union (RFC 0018)
+  when a category they *share* trusts the sameness. **Edges too (RFC 0021)**: a relation claim is
+  drawn once per admitting relation category (`projector.admitting_categories`, the one
+  implementation of "which claims draw this category's edges"); there is no term→category map,
+  because one could only answer for one of them. `(graph, term)` is unique on `Category`.
+- **`State` is organization grain**, and nothing folds under a graph-level scope — `merge`,
+  `recompute` and `refold_state` all count every live metric. Which metrics a *property* counts
+  is applied on read by `metric_scope(category.definition, rule)` in `projector._scoped_state`:
+  the property's own `rule.evidence` when present (replacement, not intersection — measurement
+  producers and classification annotators are different populations), else the owning category's
+  clauses, else everything. **Trust is the category's rule (RFC 0009)**: there is no
+  `Graph.selector` — a category's `definition` clauses govern its classification, its nodes'
+  existence standings, its edges' claims *and* standings (relations per `RelationCategory`,
+  participations per event category, both lanes reading `projector.admitting_categories` — RFC
+  0021), and INFORMS routing. The panel's `labels`/`connections` are the trust-everyone fold;
+  sameness is the view's (`identity.component_refs_for_view`, RFC 0024). `evidence/selector.py` is
+  still the single home: `classification_filter` (whole rule, WORD included),
+  `trust_filter`/`trust_predicate` (who-and-when, WORD skipped), `rule_metric_filter`,
+  `metric_scope`; `_rules` is the only walker of the stored shape. **The shape is a rule
+  system (RFC 0010)**: `{rules: [{when: [(field, operator, value), …], unless: [{when: […]}]}]}`
+  — rules = any, when = all, unless subtracts; fields WORD/SUBJECT/APP/ACTION/KIND/ASSERTED_AT/
+  OBSERVED_AT/CONFIDENCE (+ KEY in `rule.evidence` and in MEASUREMENT-only rules — RFC 0014;
+  `rule.evidence` is the same rule list minus WORD/KIND, `MetricEvidenceInput`), operators
+  IS/IN/NOT_IN/BEFORE/SINCE/AT_LEAST/BELOW; a rule covering CLASSIFICATION names its WORD(s).
+  **Confidence is a property of any claim (RFC 0016)**: `confidence` (float in [0, 1], nullable,
+  check-constrained) on `Instance`/`Link`/`Standing` beside `Metric`'s; `CONFIDENCE AT_LEAST`/
+  `BELOW` compile to a bound on the claim's own column with **no isnull branch** — a claim nobody
+  scored satisfies neither, in `when` or `unless`, so silence is never admitted by a bound and never
+  subtracted by one. `confidence_type` stays metric-only. **Every claim has
+  a time of observation (RFC 0015)**: `observed_at` on `Instance`/`Link`/`Metric` (was
+  `measured_at`, metric-only), defaulting to the assertion's `asserted_at` so it is never null;
+  `Standing.at` is the same axis for positions. `OBSERVED_AT` is legal on every kind; the
+  selector routes it through `observed_at_column` (`"at"` over `Standing` querysets —
+  `trust_predicate`, the standing halves of `metric_scope`, the projector's EXISTENCE fold). Every
+  instance/link/metric input takes `observedAt`, every `retract*`/`attest*` input takes `at`;
+  `MetricInput.timestamp` is gone. `core` migration 0020 rewrote stored `MEASURED_AT`; an unknown
+  field compiles to *nothing*, so a rename without it would silently widen every bounded property. **KIND (RFC
+  0011)** scopes a rule to what a claim *says* — CLASSIFICATION/EXISTENCE/SAMENESS/EVIDENCE/
+  MEASUREMENT; a rule covers every kind its KIND conditions do not exclude (`rule_covers`, the
+  one coverage implementation), `trust_filter(kind=…)` is a required keyword at every call site,
+  an uncovered kind counts **nothing**. **Sameness is the view's rule (RFC 0024)**:
+  `Graph.sameness_rule` (`samenessRule` on `createGraph`/`updateGraph`, a rule list minus
+  WORD/KIND/KEY, empty = everyone) decides whose `SAME_AS`/`DIFFERENT_FROM` count, across every
+  category the view draws; a category definition may not name `KIND SAMENESS`. Changing the rule
+  versions the view and rebuilds it. The org-grain identity cache is the trust-everyone answer.
+  `CurrentStanding` is total over claim kinds, instances included. Tests build the shape via
+  `tests/support/rules.py`.
+- **Schema changes are RBAC (RFC 0013).** `Graph.rules` (per-action allow/deny) is gone; every
+  category create/update/delete goes through `schema_graph`/`schema_scoped`
+  (`api/mutations/_scoped.py`) → `Graph.validate_definition_editable`: owner, organization admin
+  (`Membership.roles` contains "admin"), or superuser. Reads and instance writes stay
+  organization-scoped.
+- **The projection seam** is `graph_engine/projection/protocol.py::Projector` — the writer half
+  (`draw_node`, `draw_edge`, `write_properties`, `erase_nodes`, namespaces) and the reader half
+  (`drawn_nodes`, `drawn_edge`, `list_drawn`, `render_table`), phrased in refs, labels, structured
+  specs and **dataclasses**, no query language (`list_drawn` takes a `ListDrawnSpec`, not clause
+  strings, and hands back `DrawnNode`s, not `dict[str, Any]`). Every method names `core.models.Graph`
+  and `query_ir.TableQueryPlan` under `TYPE_CHECKING`, so the seam stays free of Django and of the
+  query compiler at runtime while still saying what it takes.
+  `projection/table.py::TableProjector` is the Postgres-table implementation and the **only**
+  module that reads or writes `ProjectionVertex`/`ProjectionEdge` — and the only one that speaks
+  namespace DDL (`CREATE PROPERTY GRAPH`, `GRAPH_TABLE`, `CREATE/DROP SCHEMA`);
+  `graph_engine/projector.py` decides *what* to draw and calls `controller.projector.*` — through
+  `projector.DrawingHost`, a one-member protocol, because the projector's whole dependency on the
+  controller is that one attribute, and saying so is what makes "this module knows nothing about
+  how" checkable rather than asserted;
+  `graph_engine/namespace.py` decides what a namespace *declares* (pure spec, no SQL);
+  `GraphController` holds a projector and runs no query.
+  `tests/guards/test_the_projector_is_a_protocol.py` enforces all of it, including repo-wide scans that
+  no other production module names the projection tables or the DDL. There is no engine layer any
+  more — `CypherEngine`, `AgeEngine` and the mock went with Apache AGE (RFC 0005).
+- **The namespace is a derived artifact** (RFC 0006). `Projector.refresh_namespace(graph)`
+  drops and recreates the per-graph schema wholesale from `core.Category` rows: one view per node
+  category, one per (edge label × admitted endpoint pair — descriptors expanded by
+  `graph_engine/namespace.py`, open descriptors over every entity-like category, capped loudly),
+  one property graph with per-category labels (`MATCH (a IS "Cell")` dispatches). Category writes
+  refresh it via signals in `graph_engine/apps.py` **in the same transaction** (DDL is
+  transactional — no second staleness ledger; the signal is `is_suspended()`-gated because
+  `materialize` refreshes once itself, after its categories exist). Out-of-band repair:
+  `manage.py refresh_namespaces`. Write-side, a raw composite FK
+  `ProjectionLabel(graph, category_pk) → Category(graph, id) ON DELETE CASCADE`
+  (graph_engine migration 0005, relocated to the label table by 0009; the edge, member and label
+  FKs are DB-level CASCADE for the same reason) makes the database refuse a vertex drawn under a
+  category its graph does not declare. A category delete cascades its label rows, and the
+  `projectionlabel_last_label_deletes_vertex` trigger takes a vertex whose last label went. Measurement and
+  structure-relation categories draw nothing and appear nowhere; an edge drawn outside the
+  declared endpoint pairs exists in the base tables but not in the property graph — the namespace
+  is the schema's shape, not a mirror.
+- **Projection bookkeeping** — `graph_engine/models.py`: a `Projection` row per view (status,
+  `schema_hash`, `derived_at`, `rebuilt_at`) and `PendingProjection`, an outbox row written in the
+  evidence transaction by `_create_assertion` and deleted by id once the write's projection
+  finished (`_settle`). The cursor is **derived** (`graph_engine/watermark.py`:
+  `min(min_pending_seq − 1, max_seq)`, 0 while `needs_backfill`/`rebuilding`) and is safe against
+  both a late-committing lower seq and a commit-then-crash; never store a per-graph "applied
+  through" and never sweep the outbox by seq. `Graph.projection { status projectedThroughSeq lag
+  pending schemaStale }` exposes it, and `/ht` warns when a consistent view's lag exceeds
+  `projection.lag_threshold` (`graph_engine/health.py`). `manage.py reproject --incremental --organization <slug>`
+  converges the touched refs of the outstanding assertions in every consistent graph and settles
+  exactly those rows; `--loop` is the runner (`graph_engine/runner.py`: a pass per organization with
+  outstanding rows, `--grace` leaving rows a request may still be drawing, poison-pill backoff, never
+  an automatic rebuild). Both bulk paths — `replay` via the runner and `projector.rebuild` — hold the
+  organization's **session advisory lock** (`graph_engine/locks.py`, per organization because the
+  outbox and the refolds are org grain; session-level because the work is many autocommit
+  statements and one long transaction would stall the `changes()` horizon). Full `reproject --graph`
+  marks `rebuilding` before the drop and refolds `CategoryAssertedTerm` / flagged identity /
+  `CurrentStanding` before reading them.
+  `rematerialize --stale` reads `Projection.schema_hash` (Postgres), not vertex stamps.
+  `draw_node` is an upsert on the `(graph, ref)` unique constraint and `reproject_node` clears
+  first, so every per-node draw converges.
+- **The graph's projection handle is internal.** `Graph.age_name` is random (`g` + 32 hex,
+  `core.models.new_projection_handle`), never accepted as input, and never an address: `graph:`
+  arguments are **primary keys**, scoped to the caller's organization. Since RFC 0006 the handle
+  names something real again — the per-graph Postgres schema the namespace lives in — but as a
+  name for *output* only. A deleted `Graph` takes its rows by FK cascade, and its **DDL** by the
+  `pre_delete`/`post_delete` signals in `graph_engine/apps.py` (no cascade reaches DDL; the
+  category-cascade ordering there is subtle — read the docstring before touching it).
+- **Saved queries are plans.** `GraphQuery.plan` (`graph_engine/query_ir.py::TableQueryPlan`) is the
+  contract — `createGraphTableQuery(input: {plan: …})`, read back as `plan`, compiled per projection
+  kind by `Projector.render_table`. `compile_table_plan_sql` emits **one `GRAPH_TABLE` per match
+  path** against the graph's property graph (PG 19 refuses comma-joined patterns; paths share no
+  variables, so CROSS JOIN for required and `LEFT JOIN (…) ON TRUE` for optional reproduce
+  MATCH/OPTIONAL MATCH), every client value a parameter — labels are the one identifier
+  exception, resolved against `namespace.declared_labels(graph)` with unknown labels refused by
+  name; save-time validation is `Projector.validate_plan` (structural, no graph, nothing
+  executed); render filters name a returned alias, applied outside the
+  compiled body. The `query: CypherLiteral` read-back field is gone with Cypher; a **legacy** row
+  (plan null, raw Cypher stored) no longer renders at all — `manage.py list_legacy_queries` names
+  any so they can be rebuilt through the builder. Only the table kind exists; the node/edge
+  families and the nodes/pairs/path kinds had no execution path and are gone.
+- **A category is written in exactly one place**, and that place takes no request:
+  `core/managers.py`. `EntityCategoryManager.create_from_entity_definition`,
+  `EventCategoryManager.create_from_event_definition` and the three edge equivalents own the
+  `defaults` dict, the term minting (`_term_for`), the store id (`_resolve_store_id`), the
+  ontology references and the pin. `api/mutations/schema/_category.py` is the other half — the
+  part that genuinely needs a caller: RBAC (`_scoped.schema_graph`/`schema_scoped`), whose pin
+  it is, the backfill, and what the write owes the projection (`rematerialize_if_moved` for node
+  categories, `rebuild_projection` for a rule change on a category that draws). The six
+  `api/mutations/schema/*_category.py` modules are five lines per resolver over those two, and
+  `natural_event_category.py` and `protocol_event_category.py` are identical once the kind name
+  is normalised — deliberately, and asserted by
+  `tests/view/test_a_category_declares_its_rule_on_creation.py`. **`materialize` uses the same
+  managers.** It did not, and the cost was three defects that only a second creation path can
+  have: `createNaturalEventCategory` dropped `definition` on the floor while its twin stored it;
+  both event mutations discarded `inputs`/`outputs`, and since `namespace._role_endpoints` reads
+  an empty role list as admitting *everything*, every event category declared through the API
+  silently fanned its participation views over every entity-like category; and four modules
+  carried an ontology-reference loop written against `GraphOntology.prefix` and
+  `OntologyReference.graph_id`/`category_key`, none of which are fields, so it raised
+  `FieldError` on every non-empty list and had never once run. If you add a category kind, add a
+  manager method and a five-line module — never a second `objects.create(...)`.
+- `graph_engine/materialize.py` is the bridge schema → Django categories + projection namespace +
+  `Projection` row (hashed for versioning); `aggregate.py` is the pure fold over `State` for
+  derived properties (`rollup.py` is gone); saved queries live in `api/mutations/insights/` and
+  `api/queries/insights/` (there is no `insights/` package and no Jinja).
+- **GraphQL** (`api/`) is Strawberry wrapped by in-house **kante**. Auth is a *Strawberry schema
+  extension* (`authentikate.strawberry.extension`), not Django middleware, and
+  `api/extensions/projection.py::ProjectionExtension` binds the projector per-operation through
+  `graph_engine/projection/context.py::current_projector`. Serving is the kante router in `asgi.py` (`/graphql` + SDL at `/schema`);
+  `urls.py` only carries `admin/` and the `/ht` health check.
+- `datalayer/` is the S3/object-store abstraction (presigned upload grants). `rekuest_core/` — a
+  vendored Arkitekt port/widget type system — is gone: nothing imported it and it was in no
+  `INSTALLED_APPS`, so the only thing keeping it alive was a test that smoke-imported every package.
+
+### Types, and where `Any` is still right
+
+`Any` is not a type; it is a request not to be checked. Two aliases replace almost every use of it,
+and both live in `evidence/values.py` — a module that imports nothing but `uuid`, because the
+projection seam needs them and may not import Django:
+
+- **`JSONValue`** — what a claim's stored value can be. A `Metric.value` is a number *or* a string
+  *or* a flag, and every fold has to decide which; that obligation is what `Any` hid.
+- **`Ref`** — a claim's primary key as callers hold it: the uuid, or its text. Both are in the wild
+  because `Link.source_ref` is a CharField (one column addresses four tables) while every claim's
+  own `pk` is a uuid.
+
+`evidence.models.Claim` is the third: the union `Instance | Link | Structure | Metric | Comment` —
+the prose word *claim* as a type, and what `Asserted.subjects` holds. `Standing` is deliberately not
+a member; a position on a claim is not itself one.
+
+**Where a dict was a record, it is a dataclass now.** `Projector.drawn_nodes`/`list_drawn` return
+`DrawnNode` (`projection/protocol.py`); `project_all`/`rebuild`/`converge` return
+`reports.DrawCounts` and `replay` a `reports.ReplayReport` — those were `dict[str, int]` with three
+different key sets and a `dict[str, Any]` whose `graphs` entries mixed a `Graph` row with five
+integers. `counts.get("unclassified")` in the controller was that uncertainty written down.
+
+**Where the code duck-types, it is a protocol now**, not `Any`: `projector.DrawingHost` (the one
+attribute this module needs of the controller), `selector.PropertyRule`/`Storable` (a derived
+property's own metric rule, reaching `evidence` from two different layers), `input_models`'
+`ClaimFilterModel`/`ClaimOrderModel`/`PageModel` (the four node and five edge input families
+declare the same fields under different names), `query_ir.PlanShape`, `pagination.Page`,
+`_scoped.GraphOwned`. `input_models.EntityCategoryProtocol` and `StructureCategoryProtocol` were
+already named protocols and were **not** ones — the module opened `from asyncio import Protocol`,
+so they were subclasses of asyncio's transport base and matched nothing structurally.
+
+`Any` survives in exactly one place and on purpose: the five `value: Any` **pydantic fields**
+(`PropertyMatch`, `MetricInput`, `ClaimConditionInput`, `WhereClauseInput`,
+`RenderGraphTableFilter`). A pydantic field annotation is the validator, and what those fields
+legitimately hold is a JSON scalar *or* a list *or* a datetime — `BEFORE`/`SINCE` take one. The
+real narrowing is in the `model_validator`s, per (field, operator) pair. `scalars.AnyScalar`, a
+`NewType` over `str`, already tried the other way and refused every number.
+
+The managers are generic: `OrganizationScopedManager[Instance]` and `KindedManager[Row]`, so
+`for_organization(...)` hands back a `QuerySet[Instance]` instead of the `QuerySet[Any]` that made
+every read of evidence untyped from its first line.
+
+**basedpyright is advisory and its unscoped count is not the target.** Replacing `Any` with real
+types *surfaces* mismatches that were silenced before — unguarded indexing into a JSON value,
+mostly — so `reportArgumentType` and friends go up while `reportExplicitAny` collapses. That is the
+pass working, not regressing.
+
+### Repo hygiene
+
+- **Exclude `core-backup-do-not-delete/` from every search** — it is a legacy snapshot of `core/`
+  and will double every grep hit.
+- `test.graphql` at the repo root is the SDL, and **is** asserted —
+  `test_the_committed_sdl_is_the_live_schema` compares it to `str(schema)`, so a schema change that
+  does not regenerate it (`uv run python manage.py print_schema > test.graphql`) fails. (This line
+  used to say the opposite; the test's own `History:` paragraph records the change.)
+  `tests/guards/test_the_schema_renders_and_splits_its_grain.py` also checks the schema builds *and* that every member of `NodeSubtype` /
+  `EdgeSubtype` is registered — a type the cast can produce but `create_schema(types=[...])` does
+  not list fails at **runtime** ("Abstract type 'Edge' was resolved to a type that does not exist
+  inside the schema"), never at build. Regenerate the snapshot after a schema change and read the
+  diff; it is the only artifact that shows a breaking change whole.
+- Releases are `python-semantic-release` off conventional commits: `main` → stable, `next` →
+  `-rc.N` prereleases, `N.x` → maintenance. Commit messages drive version bumps, so use
+  `feat:`/`fix:`/`chore:` deliberately.

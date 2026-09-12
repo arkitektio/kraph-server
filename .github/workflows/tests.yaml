@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main, next]
+  pull_request:
+    branches: [main, next]
+
+jobs:
+  test_suit:
+    name: Tests (py${{ matrix.python-version }})
+    # Ubuntu only: the suite spins up a docker-compose stack (postgres + redis)
+    # itself via dokker (see tests/conftest.py::backend_stack). Docker is
+    # preinstalled on ubuntu runners but not on macOS/Windows, so those legs
+    # cannot run. Add more OS/versions here once they gain Docker support.
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv and set the python version
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "latest"
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install the project
+        run: uv sync --all-extras --dev
+
+      # Fails in seconds, before the docker stack comes up. The guard test
+      # `tests/guards/test_migrations_are_committed.py` holds the same property
+      # inside the suite; this step is the early exit.
+      - name: Every model change has its migration
+        run: uv run python manage.py makemigrations --check --dry-run
+        env:
+          DJANGO_SETTINGS_MODULE: kraph_server.settings_test
+
+      - name: Run tests
+        run: uv run pytest

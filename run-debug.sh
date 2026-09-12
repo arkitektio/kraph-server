@@ -1,16 +1,16 @@
 #!/bin/bash
+# Abort on the first failing step. Without this the boot ran `ensureadmin` — a
+# management command that is not installed — on every start, printed the error,
+# and carried on to serve traffic. A boot script that continues past a failed
+# migration is a boot script that cannot tell you the deploy is broken.
+set -euo pipefail
+
 echo "=> Waiting for DB to be online"
-uv run python manage.py wait_for_database -s 2
+python manage.py wait_for_database -s 2
 
 echo "=> Performing database migrations..."
-uv run python manage.py migrate
-
-echo "=> Ensuring Superusers..."
-uv run python manage.py ensureadmin
-
-echo "=> Collecting Static.."
-uv run python manage.py collectstatic --noinput
+python manage.py migrate
 
 # Start the first process
 echo "=> Starting Server"
-uv run python manage.py runserver 0.0.0.0:80
+python manage.py runserver 0.0.0.0:80

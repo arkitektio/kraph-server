@@ -1,0 +1,462 @@
+from datetime import datetime
+from enum import Enum
+from typing import List, Optional
+import strawberry
+from core import models, enums
+from evidence import models as evidence_models
+from django.db.models import Q
+import kante
+from graph_engine import input_models
+from api import inputs
+
+
+@kante.pydantic_input(input_models.PropertyMatch, all_fields=True, description="A property match condition for filtering structures")
+class PropertyMatch:
+    """The condition to match for a specific property when filtering structures."""
+
+
+# `EntityPaginationInput` and `NodePaginationInput` used to be declared here as
+# well as in `api/pagination.py`, over the same two pydantic models — empty bodies
+# with `all_fields=True` here, explicit `limit`/`offset` there. Nothing imported
+# these copies; every resolver takes `pagination.EntityPaginationInput`. Two
+# declarations of one input in a module whose own header is about pruning dead
+# filter surface.
+#
+# The node and edge filters below used to advertise `hasProperty`, `search` and
+# `matches` — questions about a drawn vertex's derived properties — and every node
+# and edge resolver refused all three at runtime
+# (`_nodes.refuse_drawing_filters`, `_edges.refuse_vertex_filters`), so a
+# schema-driven client saw three valid arguments that were guaranteed errors. The
+# schema says what the resolvers answer now.
+#
+# `search` came back on the four **node** filters, with a narrower meaning that is
+# answerable: a substring of the claim's own word (`Term.key` / `Term.label`),
+# which is a column of the log rather than a property of a drawing. It therefore
+# finds a node the view admits but has not drawn — the property the whole
+# evidence-grain read is for. `hasProperty` and `matches` did not come back, and
+# are still refused: those genuinely only exist on a vertex.
+#
+# The **edge** filters still carry `ids` alone. `Link.term` would make the same
+# argument work there, but no caller needs it and `_edges.refuse_vertex_filters`
+# is untouched. `StructureFilter` keeps all three because `structures` genuinely
+# honors them, over `Metric` rows — and note its `search` means something else
+# again, the structure's `object`.
+
+
+@kante.pydantic_input(input_models.EntityFilters, description="Filter options for querying entities")
+class EntityFilter:
+    """Filter options for entity queries."""
+
+    ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific entity IDs")
+    search: Optional[str] = kante.field(default=None, description="Substring match on the claim's term key or label — the word the organization uses for it. A column of the log, not a derived property: a node this view admits but has not drawn yet is still found")
+
+
+@kante.pydantic_input(input_models.NodeFilters, description="Filter options for querying nodes")
+class NodeFilters:
+    """Filter options for node queries."""
+
+    ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific node IDs")
+    search: Optional[str] = kante.field(default=None, description="Substring match on the claim's term key or label — the word the organization uses for it. A column of the log, not a derived property: a node this view admits but has not drawn yet is still found")
+
+
+@kante.pydantic_input(input_models.StructureFilters, description="Filter options for querying structures")
+class StructureFilter:
+    """Filter options for structure queries."""
+
+    ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific structure IDs")
+    has_property: Optional[str] = kante.field(default=None, description="Filter structures that have a specific property")
+    search: Optional[str] = kante.field(default=None, description="Substring match on the structure's `object` — the external datum it points at. Not its properties: `hasProperty` and `matches` are the ones that go over metrics")
+    matches: Optional[List[PropertyMatch]] = kante.field(default=None, description="Filter structures that match specific property conditions")
+
+
+# `MetricFilter` used to sit here — four fields, referenced by no root field:
+# `metrics(metricKindId:)` removed its filter arguments with the note recorded in
+# `api/queries/metric.py`, and nothing else ever took one.
+
+
+@kante.pydantic_input(input_models.NaturalEventFilters, description="Filter options for querying natural events")
+class NaturalEventFilter:
+    """Filter options for natural event queries."""
+
+    ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific natural event IDs")
+    search: Optional[str] = kante.field(default=None, description="Substring match on the claim's term key or label — the word the organization uses for it. A column of the log, not a derived property: a node this view admits but has not drawn yet is still found")
+
+
+@kante.pydantic_input(input_models.ProtocolEventFilters, description="Filter options for querying protocol events")
+class ProtocolEventFilter:
+    """Filter options for protocol event queries."""
+
+    ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific protocol event IDs")
+    search: Optional[str] = kante.field(default=None, description="Substring match on the claim's term key or label — the word the organization uses for it. A column of the log, not a derived property: a node this view admits but has not drawn yet is still found")
+
+
+@kante.pydantic_input(input_models.MeasurementFilters, description="Filter options for querying measurements")
+class MeasurementFilter:
+    """Filter options for measurement queries."""
+
+    ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific measurement IDs")
+
+
+@kante.pydantic_input(input_models.StructureRelationFilters, description="Filter options for querying structure relations")
+class StructureRelationFilter:
+    """Filter options for structure relation queries."""
+
+    ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific structure relation IDs")
+
+
+@kante.pydantic_input(input_models.RelationFilters, description="Filter options for querying relations")
+class RelationFilter:
+    """Filter options for relation queries."""
+
+    ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific relation IDs")
+
+
+@kante.filter_type(models.Graph)
+class GraphFilter:
+    id: strawberry.auto
+    name: strawberry.auto
+    description: strawberry.auto
+
+    @kante.filter_field(description="Filter by list of IDs")
+    def pinned(self, info: kante.Info, value: bool, prefix: str) -> Q:
+        return Q(**{f"{prefix}pinned_by": info.context.request.user})
+
+    @kante.filter_field(description="Filter by list of IDs")
+    def ids(self, value: list[strawberry.ID], prefix: str) -> Q:
+        return Q(**{f"{prefix}id__in": value})
+
+    @kante.filter_field(description="Filter by list of IDs")
+    def search(self, value: str, prefix: str) -> Q:
+        return Q(**{f"{prefix}name__search": value}) | Q(**{f"{prefix}description__search": value})
+
+    @kante.filter_field(description="Only archived graphs, or only live ones. Omitted shows both")
+    def is_archived(self, value: bool, prefix: str) -> Q:
+        """The read half of archiving.
+
+        Opt-in rather than excluded by default, matching `pinned` and every other
+        filter here. A default exclusion would also hide an archived graph from
+        the by-id field, and nothing else could bring it back — the only way to
+        unarchive is `updateGraph(archived: false)`, which needs the client to be
+        able to find it first.
+        """
+        return Q(**{f"{prefix}is_archived": value})
+
+
+@kante.filter_type(models.Category)
+class CategoryFilter:
+    graph: GraphFilter | None
+    id: strawberry.auto
+    label: strawberry.auto
+
+    @kante.filter_field(description="Filter by list of IDs")
+    def ids(self, value: list[strawberry.ID], prefix: str) -> Q:
+        return Q(**{f"{prefix}id__in": value})
+
+    @kante.filter_field(description="Filter by list of IDs")
+    def pinned(self, info: kante.Info, value: bool, prefix: str) -> Q:
+        return Q(**{f"{prefix}pinned_by": info.context.request.user})
+
+    @kante.filter_field(description="Filter by list of IDs")
+    def search(self, value: str, prefix: str) -> Q:
+        return Q(**{f"{prefix}label__search": value})
+
+
+@kante.filter_type(models.Category)
+class EntityCategoryFilter(CategoryFilter):
+    pass
+
+    @kante.filter_field(description="Filter by list of IDs")
+    def matches_descriptor(self, info: kante.Info, value: inputs.EntityDescriptorInput, prefix: str) -> Q:
+        """Filter entity categories by whether they match a specific identifier pattern."""
+        return Q(**{f"{prefix}key__in": value.keys})
+
+
+def _text_search(prefix: str, value: str, *columns: str) -> Q:
+    """Substring match over several columns — `icontains`, not `__search`.
+
+    Postgres full-text search stems, and a vocabulary is made of short
+    identifiers (`AIS`, `@mikro/roi`, `vector_length`) that stemming mangles.
+    The node lists use the same operator over `Term.key`/`label` for the same
+    reason (`api/queries/_nodes.py`).
+    """
+    q = Q()
+    for column in columns:
+        q |= Q(**{f"{prefix}{column}__icontains": value})
+    return q
+
+
+@kante.filter_type(evidence_models.MetricKind)
+class MetricKindFilter:
+    """Filter options for metric kind queries.
+
+    Standalone, deliberately not a `CategoryFilter`: subclassing would re-introduce
+    `graph` and `pinned`, neither of which a kind has, and `graph` in particular
+    was the only tenant fence the old root fields had. Scoping is now the
+    resolver's job.
+    """
+
+    # Methods, not bare fields: a `filter_field` with no resolver is applied by
+    # strawberry_django as `Q(<name>=value)`, and neither `ids` nor `search` is a
+    # column — every use raised `FieldError`. The log filters below say the same.
+    @kante.filter_field(description="Filter by list of IDs")
+    def ids(self, info: kante.Info, value: List[strawberry.ID], prefix: str) -> Q:
+        return Q(**{f"{prefix}id__in": [str(v) for v in value]})
+
+    @kante.filter_field(description="Search label and key")
+    def search(self, info: kante.Info, value: str, prefix: str) -> Q:
+        return _text_search(prefix, value, "key", "label", "description")
+
+    @kante.filter_field(description="Filter by the kind of value this measurement carries")
+    def value_kind(self, info: kante.Info, value: enums.ValueKind, prefix: str) -> Q:
+        """Filter metric kinds by the kind of value they represent."""
+        return Q(**{f"{prefix}value_kind": value})
+
+    @kante.filter_field(description="Filter by the structure kind this describes")
+    def structure_kind(self, info: kante.Info, value: strawberry.ID, prefix: str) -> Q:
+        """Filter metric kinds by the structure kind they describe."""
+        return Q(**{f"{prefix}structure_kind_id": value})
+
+
+@kante.filter_type(models.Category)
+class RelationCategoryFilter(CategoryFilter):
+    pass
+
+
+@kante.filter_type(models.Category)
+class MeasurementCategoryFilter(CategoryFilter):
+    @kante.filter_field(description="Filter by the structure identifier this measurement's source selects")
+    def source_identifier(self, info: kante.Info, value: str, prefix: str) -> Q:
+        """Filter measurement categories by the structure identifier they measure.
+
+        This used to read `source__identifier`, a field a measurement category has
+        never had, so the filter raised `FieldError` on every use. The source is a
+        `StructureDescriptorInput` stored as JSON, so match its `identifiers` list.
+        """
+        return Q(**{f"{prefix}source_definition__identifiers__contains": [value]})
+
+
+@kante.filter_type(models.Category)
+class NaturalEventCategoryFilter(CategoryFilter):
+    pass
+
+
+@kante.filter_type(models.Category)
+class ProtocolEventCategoryFilter(CategoryFilter):
+    pass
+
+
+@kante.filter_type(evidence_models.Term)
+class TermFilter:
+    """Filter options for the organization's vocabulary.
+
+    Standalone, like `StructureKindFilter`: a term has no graph to filter on, so
+    the tenant fence is the resolver's, not the client's.
+    """
+
+    @kante.filter_field(description="Filter by list of IDs")
+    def ids(self, info: kante.Info, value: List[strawberry.ID], prefix: str) -> Q:
+        return Q(**{f"{prefix}id__in": [str(v) for v in value]})
+
+    @kante.filter_field(description="Search key, label and description")
+    def search(self, info: kante.Info, value: str, prefix: str) -> Q:
+        return _text_search(prefix, value, "key", "label", "description")
+
+    @kante.filter_field(description="Filter by what sort of thing the word names")
+    def kinds(self, info: kante.Info, value: List[enums.TermKind], prefix: str) -> Q:
+        """Narrow to terms of these kinds."""
+        return Q(**{f"{prefix}kind__in": [str(kind.value) for kind in value]})
+
+    @kante.filter_field(description="Filter by the words themselves")
+    def keys(self, info: kante.Info, value: List[str], prefix: str) -> Q:
+        """Narrow to these exact words."""
+        return Q(**{f"{prefix}key__in": value})
+
+    @kante.filter_field(description="Filter to terms at least one graph declares a category for")
+    def declared(self, info: kante.Info, value: bool, prefix: str) -> Q:
+        """Whether any view speaks this word.
+
+        A term with no category is not an error — it is a word somebody described
+        before wiring a graph to it, or one whose last view was deleted.
+        """
+        return Q(**{f"{prefix}categories__isnull": not value})
+
+
+# ---------------------------------------------------------------------------
+# The log (RFC 0020)
+#
+# Every field below is an explicit `filter_field` *method* returning a `Q`. A plain
+# annotated field on a `filter_type` compiles to `Q(<name>=value)` — `ids` would
+# become `Q(ids=[...])` against a model with no such column — so nothing here
+# relies on the name-to-lookup default.
+# ---------------------------------------------------------------------------
+
+
+@kante.filter_type(evidence_models.Assertion)
+class AssertionFilter:
+    """Who claimed, with what, and when — the columns of the provenance row.
+
+    Standalone like `TermFilter`: the log is organization grain, and the tenant
+    fence is the resolver's. There is no filter on *what* was claimed; that is
+    what the six lists on `Assertion` answer, per act.
+    """
+
+    @kante.filter_field(description="Filter by assertion ids")
+    def ids(self, info: kante.Info, value: List[strawberry.ID], prefix: str) -> Q:
+        return Q(**{f"{prefix}id__in": [str(id) for id in value]})
+
+    @kante.filter_field(description="Who made the claims — user ids, or the identities of automated agents")
+    def subjects(self, info: kante.Info, value: List[str], prefix: str) -> Q:
+        return Q(**{f"{prefix}subject__in": value})
+
+    @kante.filter_field(description="Which applications made them")
+    def app_ids(self, info: kante.Info, value: List[str], prefix: str) -> Q:
+        return Q(**{f"{prefix}app_id__in": value})
+
+    @kante.filter_field(description="Which actions within those applications")
+    def action_ids(self, info: kante.Info, value: List[str], prefix: str) -> Q:
+        return Q(**{f"{prefix}action_id__in": value})
+
+    @kante.filter_field(description="Claims made at or after this moment — belief time, the axis `as_of` reads")
+    def asserted_since(self, info: kante.Info, value: datetime, prefix: str) -> Q:
+        return Q(**{f"{prefix}asserted_at__gte": value})
+
+    @kante.filter_field(description="Claims made strictly before this moment")
+    def asserted_before(self, info: kante.Info, value: datetime, prefix: str) -> Q:
+        return Q(**{f"{prefix}asserted_at__lt": value})
+
+    @kante.filter_field(description="Only positions in the log strictly after this seq. For reading forward, prefer `changes(afterSeq:)`, which also withholds what may still be committing")
+    def seq_after(self, info: kante.Info, value: int, prefix: str) -> Q:
+        return Q(**{f"{prefix}seq__gt": int(value)})
+
+
+@strawberry.enum(description="Which table a standing's target lives in")
+class StandingTargetType(str, Enum):
+    """The API spelling of `Standing.target_type`. `INSTANCE` is stored as `'node'`."""
+
+    INSTANCE = "INSTANCE"
+    LINK = "LINK"
+    STRUCTURE = "STRUCTURE"
+    METRIC = "METRIC"
+    COMMENT = "COMMENT"
+
+
+#: API name → stored `Standing.target_type`. The one asymmetry is `INSTANCE`,
+#: which the writer spells `'node'`.
+STANDING_TARGET_TYPES: dict[str, str] = {"INSTANCE": "node", "LINK": "link", "STRUCTURE": "structure", "METRIC": "metric", "COMMENT": "comment"}
+
+
+@kante.filter_type(evidence_models.Standing)
+class StandingFilter:
+    """Positions by who took them, on what kind of claim, and when."""
+
+    @kante.filter_field(description="Who took the position")
+    def subjects(self, info: kante.Info, value: List[str], prefix: str) -> Q:
+        return Q(**{f"{prefix}assertion__subject__in": value})
+
+    @kante.filter_field(description="With which application")
+    def app_ids(self, info: kante.Info, value: List[str], prefix: str) -> Q:
+        return Q(**{f"{prefix}assertion__app_id__in": value})
+
+    @kante.filter_field(description="What kind of claim the position is about")
+    def target_type(self, info: kante.Info, value: StandingTargetType, prefix: str) -> Q:
+        return Q(**{f"{prefix}target_type": STANDING_TARGET_TYPES[str(value.value)]})
+
+    @kante.filter_field(description="Positions that took effect at or after this moment — `Standing.at`, world time")
+    def since(self, info: kante.Info, value: datetime, prefix: str) -> Q:
+        return Q(**{f"{prefix}at__gte": value})
+
+    @kante.filter_field(description="Positions that took effect strictly before this moment")
+    def until(self, info: kante.Info, value: datetime, prefix: str) -> Q:
+        return Q(**{f"{prefix}at__lt": value})
+
+    @kante.filter_field(description="Only attestations (true) or only retractions (false)")
+    def stands(self, info: kante.Info, value: bool, prefix: str) -> Q:
+        return Q(**{f"{prefix}stands": bool(value)})
+
+
+@kante.filter_type(evidence_models.StructureKind)
+class StructureKindFilter:
+    """Filter options for structure kind queries. Standalone — see `MetricKindFilter`."""
+
+    @kante.filter_field(description="Filter by list of IDs")
+    def ids(self, info: kante.Info, value: List[strawberry.ID], prefix: str) -> Q:
+        return Q(**{f"{prefix}id__in": [str(v) for v in value]})
+
+    @kante.filter_field(description="Search label and identifier")
+    def search(self, info: kante.Info, value: str, prefix: str) -> Q:
+        return _text_search(prefix, value, "identifier", "label", "description")
+
+    @kante.filter_field(description="Filter by structure identifiers")
+    def identifiers(self, info: kante.Info, value: List[str], prefix: str) -> Q:
+        """Filter structure kinds by identifier."""
+        return Q(**{f"{prefix}identifier__in": value})
+
+    @kante.filter_field(description="Filter by whether the kind matches a descriptor")
+    def matches_descriptor(self, info: kante.Info, value: inputs.StructureDescriptorInput, prefix: str) -> Q:
+        """Filter structure kinds by identifier pattern."""
+        return Q(**{f"{prefix}identifier__in": value.identifiers})
+
+
+@kante.filter_type(models.Category)
+class StructureRelationCategoryFilter(CategoryFilter):
+    pass
+
+
+@kante.pydantic_input(input_models.RelationFilters, description="Filter options for querying participation claims")
+class ParticipationFilter:
+    """Filter options for participation queries.
+
+    Its own type, and it was `RelationFilter`. `inputParticipations` and
+    `outputParticipations` list `PARTICIPATES_AS_*` links — a claim that a node
+    took part in an event, which is not a relation — so a client reading the
+    schema was told to reach for the relation vocabulary to filter something else.
+    Backed by the same pydantic model, because the narrowing this actually does
+    (`_edges.narrow`) reads `ids` and nothing else on any of them.
+    """
+
+    ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific participation IDs")
+
+
+@kante.filter_type(models.GraphQuery)
+class GraphQueryFilter:
+    pass
+
+    @kante.filter_field(description="Filter by list of IDs")
+    def ids(self, value: list[strawberry.ID], prefix: str) -> Q:
+        return Q(**{f"{prefix}id__in": value})
+
+    @kante.filter_field(description="Full-text search over label and description")
+    def search(self, value: str, prefix: str) -> Q:
+        return Q(**{f"{prefix}label__search": value}) | Q(**{f"{prefix}description__search": value})
+
+    @kante.filter_field(description="Only archived queries, or only live ones. Omitted shows both")
+    def archived(self, value: bool, prefix: str) -> Q:
+        """Opt-in, for the same reason as `GraphFilter.is_archived`."""
+        return Q(**{f"{prefix}archived": value})
+
+
+@kante.filter_type(models.GraphQuery)
+class GraphTableQueryFilter(GraphQueryFilter):
+    """Adds nothing to `GraphQueryFilter`; the subclass exists to name the field's type.
+
+    It used to re-declare `search` verbatim — the same two-`Q` body the parent
+    already defines — as did its three siblings. The parallel `NodeQuery` and
+    `EdgeQuery` families just `pass`, which is what showed the four overrides were
+    copy-paste rather than intent.
+    """
+
+    pass
+
+
+@kante.filter_type(models.ScatterPlot)
+class ScatterPlotFilter:
+    id: strawberry.auto
+    name: strawberry.auto
+
+    @kante.filter_field(description="Filter by list of IDs")
+    def ids(self, value: list[strawberry.ID], prefix: str) -> Q:
+        return Q(**{f"{prefix}id__in": value})
+
+    @kante.filter_field(description="Full-text search over label and description")
+    def search(self, value: str, prefix: str) -> Q:
+        return Q(**{f"{prefix}name__search": value}) | Q(**{f"{prefix}description__search": value})

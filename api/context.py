@@ -1,0 +1,157 @@
+from kante.types import Info
+from graph_engine.input_models import ProvenanceContext
+from api.extensions.projection import current_projector
+from graph_engine.controller import GraphController
+from core import models
+
+
+def get_provenance_from_context(info: Info) -> ProvenanceContext:
+    """
+    Extract provenance context from the authenticated request.
+
+    Returns:
+        Dict with subject (user ID) and app_id (client ID)
+    """
+    request = info.context.request
+
+    user = getattr(request, "user", None)
+    client = getattr(request, "client", None)
+
+    if not user:
+        raise ValueError("No authenticated user found in context")
+
+    return ProvenanceContext(
+        subject=str(user.id),
+        app_id=str(client.id) if client else "unknown",
+    )
+
+
+def get_active_organization(info: Info):
+    """The organization this request is acting for.
+
+    Evidence is organization-scoped, so structures, metrics and assertions are
+    reached through the request's active organization rather than through a
+    graph. Their IDs are bare primary keys with no graph component, so there is
+    no graph to extract one from — which is the point: a structure belongs to the
+    tenant, not to whichever projection happened to create it.
+    """
+    request = info.context.request
+
+    organization = getattr(request, "organization", None) or getattr(request, "_organization", None)
+    if organization is None:
+        membership = getattr(request, "membership", None)
+        organization = getattr(membership, "organization", None)
+
+    if organization is None:
+        raise ValueError("No active organization on the request; cannot resolve evidence scope.")
+
+    return organization
+
+
+def assert_can_access_organization(info: Info, organization) -> None:
+    """Check the caller may act for this organization.
+
+    Kinds are identified by a globally unique primary key, so the client never
+    names a tenant — which means authorization comes from the row rather than
+    from the request. Same shape as `GraphController._assert_can_access`.
+    """
+    from authentikate.models import Membership
+
+    user = getattr(info.context.request, "user", None)
+    if user is None:
+        raise PermissionError("Cannot access organization vocabulary without an authenticated user")
+
+    if not Membership.objects.filter(user=user, organization=organization, blocked=False).exists():
+        raise PermissionError("You are not allowed to access this organization's vocabulary")
+
+
+def get_controller() -> GraphController:
+    """
+    Get a default GraphController without a specific graph context.
+
+    This can be used for operations that don't require a specific graph,
+    such as listing available graphs or creating a new graph.
+
+    Returns:
+        GraphController with no specific graph context
+    """
+    # Outside an operation nothing is bound, and the controller is built over a
+    # projector that fails on first use — never earlier. Resolvers called directly
+    # (tests do) must still reach their tenancy checks before anything draws.
+    return GraphController(projector=current_projector.get())
+
+
+def _get_request_scopes(info: Info) -> list[str]:
+    request = info.context.request
+
+    extension_scopes = request._extensions.get("scopes") if hasattr(request, "_extensions") else None
+    if isinstance(extension_scopes, list):
+        return [str(scope) for scope in extension_scopes]
+    if isinstance(extension_scopes, str):
+        return [scope for scope in extension_scopes.split(" ") if scope]
+
+    token = request._extensions.get("token") if hasattr(request, "_extensions") else None
+    token_scopes = getattr(token, "scopes", None)
+    if isinstance(token_scopes, list):
+        return [str(scope) for scope in token_scopes]
+    if isinstance(token_scopes, str):
+        return [scope for scope in token_scopes.split(" ") if scope]
+
+    return []
+
+
+def validate_graph_access(info: Info, graph: models.Graph) -> models.Graph:
+    """Validate that the graph is accessible based on the request's membership and scopes.
+
+    This used to resolve a membership and then return the graph unconditionally,
+    so access control was a no-op at the API layer — every caller could reach
+    every graph. It went unnoticed because the test identity never matched the
+    organization owning the graph either, so nothing would have caught a
+    regression here.
+
+    Now that evidence is shared across projections within an organization,
+    "which graph may I touch" is the boundary that decides what a caller can
+    reach, so it has to actually decide something.
+    """
+    request = info.context.request
+
+    membership = getattr(request, "membership", None)
+    if membership is None and hasattr(request, "_extensions"):
+        membership = request._extensions.get("membership")
+
+    if membership is None:
+        raise PermissionError("No membership on the request; cannot access this graph.")
+
+    graph.validate_accessible(membership, _get_request_scopes(info))
+    return graph
+
+
+def get_accessible_graph(
+    info: Info,
+    identifier: str,
+) -> models.Graph:
+    """Resolve a `graph:` argument to the graph it names, then authorize it.
+
+    The argument is the graph's **primary key**, and nothing else. It used to be
+    read two ways — all digits as a pk, anything else as the graph's `age_name` —
+    which made a projection detail (the Apache AGE namespace) the public address
+    of a view, let a client reach a graph by a string the pk branch could never
+    see, and resolved the name branch *unscoped*, leaning on `validate_graph_access`
+    to refuse afterwards. The handle is random and internal now
+    (`core.models.new_projection_handle`), so the name branch is gone and the
+    lookup is scoped to the caller's organization before anything else happens:
+    resolving another tenant's row first and refusing it second is a weaker shape
+    than never seeing it.
+    """
+    identifier_str = str(identifier)
+    if not identifier_str.isdigit():
+        raise ValueError(f"`graph:` names a graph by its id; {identifier_str!r} is not one. A graph's projection handle is internal and does not address it.")
+
+    organization = get_active_organization(info)
+    graph = models.Graph.objects.filter(id=int(identifier_str), organization=organization).first()
+
+    if graph is None:
+        raise ValueError(f"Graph not found for identifier {identifier}")
+
+    graph = validate_graph_access(info, graph)
+    return graph

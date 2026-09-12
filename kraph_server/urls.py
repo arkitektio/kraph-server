@@ -1,5 +1,5 @@
 """
-URL configuration for mikro_server project.
+URL configuration for the kraph service.
 
 The `urlpatterns` list routes URLs to views. For more information please see:
     https://docs.djangoproject.com/en/4.2/topics/http/urls/
@@ -16,17 +16,12 @@ Including another URLconf
 """
 
 from django.contrib import admin
-from django.urls import path, include
-from strawberry.django.views import AsyncGraphQLView
 from kante.path import dynamicpath
 
-from kraph_server.schema import schema
 from health_check.views import MainView
 from django.views.decorators.csrf import csrf_exempt
 
-url = "s"
-
 urlpatterns = [
     dynamicpath("admin/", admin.site.urls),
-    dynamicpath("ht",  csrf_exempt(MainView.as_view()), name="health_check"),
+    dynamicpath("ht", csrf_exempt(MainView.as_view()), name="health_check"),
 ]

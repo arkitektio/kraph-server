@@ -1,110 +1,106 @@
 import random
 import uuid
+from typing import TYPE_CHECKING, Any
 from django.db import models
 from django.contrib.auth import get_user_model
-from django.forms import FileField
-from taggit.managers import TaggableManager
+from kante import Info
 from core import enums
-from koherent.fields import ProvenanceField, HistoricForeignKey
-import koherent.signals
-from django_choices_field import TextChoicesField
-from core.fields import S3Field
-from core.datalayer import Datalayer
-
+from core import managers
+from koherent.fields import ProvenanceField
+from datalayer import models as datalayer_models
+from authentikate.models import Organization, Membership
+from django.db.models import Q, QuerySet
 # Create your models here.
-import boto3
-import json
-from django.conf import settings
+
+from graph_engine.input_models import EntityDescriptorInput, StructureDescriptorInput
+
+if TYPE_CHECKING:
+    # Only ever an annotation here. The descriptor methods below are typed
+    # against it, and `_matching_structure_kinds` imports it inside its body
+    # to keep `core` from reading `evidence` at import time -- so the name was
+    # undefined at every one of those annotations (ruff F821).
+    from evidence.models import StructureKind
 
 
-class S3Store(models.Model):
-    path = S3Field(
-        null=True, blank=True, help_text="The stodre of the image", unique=True
-    )
-    key = models.CharField(max_length=1000)
-    bucket = models.CharField(max_length=1000)
-    populated = models.BooleanField(default=False)
+class KindDiscriminatedModel(models.Model):
+    """Concrete-table base for what used to be a multi-table inheritance root.
+
+    Every former subclass is now a proxy over one table and a ``kind`` column is the
+    only thing separating them. `KIND` is the value a proxy's rows carry -- stamped on
+    save so that `Leaf(...).save()` and `Leaf.objects.create(...)` agree without every
+    call site having to pass it. `KINDS` is the set a proxy can *read*, which is how the
+    intermediate proxies (`NodeCategory`, `EdgeCategory`) cover several leaves at once.
+    Both are None on the concrete base itself, which therefore sees every row.
+    """
+
+    KIND: "str | None" = None
+    KINDS: "tuple[str, ...] | None" = None
+
+    class Meta:
+        abstract = True
+
+    def save(self, *args, **kwargs):
+        if not self.kind:
+            kind = type(self).KIND
+            if kind is not None:
+                self.kind = kind
+        return super().save(*args, **kwargs)
 
 
-class BigFileStore(S3Store):
-    pass
+def _matching_structure_kinds(organization, descriptor) -> "QuerySet":
+    """Structure kinds in an organization that a descriptor selects.
 
-    def fill_info(self) -> None:
-        pass
+    Only `identifiers` survives the move to organization vocabulary. A
+    `StructureKind` has no `key`, no tag many-to-many and no ontology references,
+    so `keys` / `tags` / `ontology_terms` cannot be matched — and rather than
+    quietly selecting nothing, `StructureDescriptorInput` now rejects them at
+    validation. See `graph_engine.input_models.StructureDescriptorInput`.
+    """
+    from evidence.models import StructureKind
 
-    def get_presigned_url(
-        self,
-        info,
-        datalayer: Datalayer,
-        host: str | None = None,
-    ) -> str:
-        s3 = datalayer.s3
-        url = s3.generate_presigned_url(
-            ClientMethod="get_object",
-            Params={
-                "Bucket": self.bucket,
-                "Key": self.key,
-            },
-            ExpiresIn=3600,
-        )
-        return url.replace(settings.AWS_S3_ENDPOINT_URL, host or "")
+    kinds = StructureKind.objects.for_organization(organization)
+    if descriptor.identifiers:
+        kinds = kinds.filter(identifier__in=descriptor.identifiers)
+    return kinds.distinct()
 
 
-class MediaStore(S3Store):
+def new_projection_handle() -> str:
+    """A fresh, opaque handle for a graph's Apache AGE namespace.
 
-    def get_presigned_url(
-        self, info, datalayer: Datalayer, host: str | None = None
-    ) -> str:
-        s3 = datalayer.s3
-        url: str = s3.generate_presigned_url(
-            ClientMethod="get_object",
-            Params={
-                "Bucket": self.bucket,
-                "Key": self.key,
-            },
-            ExpiresIn=3600,
-        )
-        return url.replace(settings.AWS_S3_ENDPOINT_URL, host or "")
+    Random on purpose. The handle used to be derived from the graph's name and the
+    organization's slug, which made it three things it should never have been:
+    an identifier clients passed back as `graph:` (so a projection detail was the
+    public address of a view), a value built from user input that was interpolated
+    unescaped into `cypher('…')` and `create_graph('…')` (the only defence was an
+    `isalnum()` filter in a different module), and a check-then-create that could
+    still collide across organizations because the dedupe was per-organization
+    while the column is globally unique.
 
-    def fill_info(self) -> None:
-        pass
-
-    def put_file(self, datalayer: Datalayer, file: FileField):
-        s3 = datalayer.s3
-        s3.upload_fileobj(file, self.bucket, self.key)
-        self.save()
-
-
-class Experiment(models.Model):
-    name = models.CharField(max_length=1000, help_text="The name of the experiment")
-    description = models.CharField(
-        max_length=1000,
-        help_text="The description of the experiment",
-        null=True,
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-
+    `g` + 32 hex digits: a leading letter keeps it a legal identifier whether
+    quoted or not, `[a-z0-9]` keeps it safe to interpolate, and 33 bytes sits
+    well under the 63-byte ceiling of the Postgres `name` column AGE stores graph
+    names in. Nothing resolves a graph by it — `graph:` is a primary key.
+    """
+    return f"g{uuid.uuid4().hex}"
 
 
 class Graph(models.Model):
-    """An EntityGroup is a collection of Entities.
-
-    It is used to group Entities together, for example all groups that
-    are part of a specific sample, or all entities that are part of a specific
-    experiment. Within an entity group, entities are unique according
-    to their name.
-
+    """A view over the organization's evidence: categories saying what its
+    words mean — and, since RFC 0009, whose claims count for each of them —
+    drawn into one projection namespace.
     """
 
+    membership = models.ForeignKey(Membership, on_delete=models.CASCADE, related_name="graphs")
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="graphs")
     user = models.ForeignKey(
         get_user_model(),
         on_delete=models.CASCADE,
-        related_name="entity_groups",
-        help_text="The user that this entity group belongs to",
+        related_name="graphs",
+        help_text="The user that this graph belongs to",
     )
-    store = models.ForeignKey(
-        MediaStore,
-        on_delete=models.CASCADE,
+    image = models.ForeignKey(
+        datalayer_models.MediaStore,
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
         help_text="The store of the image if associated with the category",
@@ -116,33 +112,69 @@ class Graph(models.Model):
         help_text="The description of the entity group",
         null=True,
     )
-    experiment = models.ForeignKey(
-        Experiment,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="graphs",
-        help_text="The experiment this entity group belongs to (if its part of an experiment)",
-    )
     provenance = ProvenanceField()
     age_name = models.CharField(
-        max_length=1000,
-        help_text="The name of the graph class in the age graph",
+        max_length=63,
         unique=True,
+        editable=False,
+        default=new_projection_handle,
+        help_text=(
+            "Internal handle naming this graph's namespace: the per-graph Postgres schema "
+            "holding its views and SQL/PGQ property graph, derived from the categories by "
+            "`refresh_namespace` (RFC 0006). Random, assigned at creation, a name for "
+            "*output* only — never accepted as input: a graph is addressed by its primary "
+            "key. See `new_projection_handle`."
+        ),
     )
     pinned_by = models.ManyToManyField(
         get_user_model(),
         related_name="pinned_graphs",
         help_text="The users that have this query active",
     )
+    # `rules` (per-action allow/deny lists) are gone (RFC 0013). Changing a
+    # graph's definition is plain RBAC: the owner, an organization admin, or a
+    # superuser — see `validate_definition_editable`.
+    # `selector` is gone (RFC 0009): a graph has no claim scope of its own.
+    # What counts as evidence is each category's `definition` — the complete
+    # rule for its word — and each derived property's `rule.evidence`. The one
+    # rule a view holds itself is the one that cannot be a category's:
+    sameness_rule = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=(
+            "Whose SAME_AS / DIFFERENT_FROM claims this view counts — a rule list in the "
+            "shape of a category definition minus WORD, KIND and KEY (RFC 0024). Empty "
+            "means everyone. Identity is a property of the view, not of a category: within "
+            "one view there is exactly one answer to how many things are here, and two "
+            "nodes the view admits are one individual when a trusted claim says so, "
+            "whatever categories each is drawn under."
+        ),
+    )
+    is_archived = models.BooleanField(
+        default=False,
+        help_text=(
+            "Whether this graph has been put away. Archiving is the sanctioned "
+            "alternative to deleting — `delete_graph`'s own refusal points at it — "
+            "because deleting a graph destroys every rule for reading the evidence "
+            "while the evidence itself survives. "
+            "This field did not exist until now: `archive_graph` set the attribute on "
+            "the Python object and called `save()`, which persisted nothing and told "
+            "the caller it had worked. Nothing read it back either, since no GraphQL "
+            "type exposed it, so a client could write the value and never observe that "
+            "it had not taken. "
+            "It is a container flag, not evidence: it says nothing about the world, "
+            "only about what this user wants to see, so it is ordinary mutable Django "
+            "state and carries no assertion."
+        ),
+    )
 
-    @classmethod
-    def get_active(cls, user):
-        return cls.objects.filter(user=user).first()
+    def get_entity_def(self, key: str) -> "EntityCategory":
+        """Get the entity definition for a specific label from the active schema."""
+        return self.entity_categories.get(key=key)
 
-    @property
-    def structure_categories(self):
-        return StructureCategory.objects.filter(graph=self)
+    async def aget_entity_def(self, key: str) -> "EntityCategory":
+        """Async version of get_entity_def."""
+        return await self.entity_categories.aget(key=key)
 
     @property
     def entity_categories(self):
@@ -153,25 +185,179 @@ class Graph(models.Model):
         return RelationCategory.objects.filter(graph=self)
 
     @property
+    def structure_relation_categories(self):
+        return StructureRelationCategory.objects.filter(graph=self)
+
+    @property
     def measurement_categories(self):
         return MeasurementCategory.objects.filter(graph=self)
-    
-    @property
-    def metric_categories(self):
-        return MetricCategory.objects.filter(graph=self)
-    
+
     @property
     def protocol_event_categories(self):
         return ProtocolEventCategory.objects.filter(graph=self)
-    
+
     @property
     def natural_event_categories(self):
         return NaturalEventCategory.objects.filter(graph=self)
-    
-    @property
-    def reagent_categories(self):
-        return ReagentCategory.objects.filter(graph=self)
 
+    @property
+    def node_categories(self):
+        return NodeCategory.objects.filter(graph=self)
+
+    @property
+    def edge_categories(self):
+        return EdgeCategory.objects.filter(graph=self)
+
+    @property
+    def active_schema(self) -> "GraphSchema | None":
+        """Get the currently active schema for this graph, if any."""
+        return self.schemas.filter(is_active=True).first()
+
+    @property
+    def definition(self):
+        """Get the GraphDefinitionModel from the active schema."""
+        from graph_engine.input_models import GraphDefinitionModel
+
+        schema = self.active_schema
+        if schema:
+            return GraphDefinitionModel.model_validate(schema.definition)
+        return None
+
+    def validate_definition_editable(self, info: Info | Any) -> None:
+        """Refuse a schema change from anyone but the owner, an admin, or a superuser.
+
+        This replaced the per-action `rules` lists (RFC 0013). Tenancy
+        (`validate_accessible`) still governs reading and instance writes; this
+        guard is only for the mutations that change what the graph's words
+        mean — creating, updating or deleting categories.
+        """
+        request = info.context.request
+        user = getattr(request, "user", None)
+        if getattr(user, "is_superuser", False):
+            return
+        if user is not None and self.user_id == getattr(user, "id", None):
+            return
+        membership = getattr(request, "membership", None)
+        if membership is not None and getattr(membership, "organization_id", None) == self.organization_id and "admin" in list(getattr(membership, "roles", None) or []):
+            return
+        raise PermissionError(f"Changing graph '{self.name}' needs its owner or an organization admin — the schema is the view's contract, and tenancy alone does not grant rewriting it.")
+
+    def validate_accessible(self, membership: Membership, scopes: list[str]):
+        """Validate if the graph is accessible for a given membership and scopes."""
+        if self.organization_id != membership.organization_id:
+            raise PermissionError("You are not allowed to access this graph")
+        # Here you can add additional scope checks if needed
+        return True
+
+
+class GraphSchema(models.Model):
+    """
+    A versioned schema definition for a graph.
+
+    Schemas are immutable once created. Each graph has one active schema
+    at a time, and schemas have increasing indices for version tracking.
+    """
+
+    graph = models.ForeignKey(
+        Graph,
+        on_delete=models.CASCADE,
+        related_name="schemas",
+        help_text="The graph this schema belongs to",
+    )
+
+    version = models.CharField(
+        max_length=100,
+        help_text="Semantic version of this schema (e.g., '1.0.0')",
+    )
+
+    index = models.PositiveIntegerField(
+        help_text="Sequential index of this schema version (auto-incremented)",
+    )
+
+    definition = models.JSONField(
+        help_text="The full GraphDefinitionModel as JSON",
+    )
+
+    is_active = models.BooleanField(
+        default=False,
+        help_text="Whether this is the currently active schema for the graph",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    created_by = models.ForeignKey(
+        get_user_model(),
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_schemas",
+        help_text="User who created this schema",
+    )
+
+    description = models.TextField(
+        null=True,
+        blank=True,
+        help_text="Description of changes in this schema version",
+    )
+
+    hash = models.CharField(
+        max_length=64,
+        default="",
+        db_index=True,
+        help_text=("Content hash of `definition`. This is the identity a projected node stamps as its `__schema_version`, so a derived value can be told apart from one computed under an older schema."),
+    )
+
+    class Meta:
+        # `index` is the sequence; `version` is the *semantic* version of the
+        # schema format. Many revisions legitimately share one semantic version —
+        # every edit to a 1.0.1 schema is still 1.0.1 — so uniqueness belongs on
+        # the index alone. `(graph, version)` was harmless only while there was
+        # exactly one schema per graph, and blocks per-change versioning outright.
+        unique_together = [("graph", "index")]
+        ordering = ["-index"]
+        constraints = [
+            # One active schema per graph, enforced by the database rather than by
+            # convention. `activate()` deactivating siblings is not enough on its
+            # own: two concurrent activations would each see the other as
+            # inactive, and a graph with two active schemas has no answer to
+            # "which version derived this value".
+            models.UniqueConstraint(
+                fields=["graph"],
+                condition=Q(is_active=True),
+                name="one_active_schema_per_graph",
+            )
+        ]
+
+    def __str__(self) -> str:
+        active_marker = " (active)" if self.is_active else ""
+        return f"{self.graph.name} v{self.version}{active_marker}"
+
+    def save(self, *args, **kwargs) -> None:
+        """Assign the next index and content hash before saving."""
+        if self.index is None:
+            last_schema = GraphSchema.objects.filter(graph=self.graph).order_by("-index").first()
+            self.index = (last_schema.index + 1) if last_schema else 1
+        if not self.hash and self.definition:
+            from graph_engine.materialize import compute_definition_hash
+
+            self.hash = compute_definition_hash(self.definition)
+        super().save(*args, **kwargs)
+
+    def activate(self) -> None:
+        """Make this the graph's active schema.
+
+        The only supported way to set `is_active`. Deactivating siblings first is
+        required by the partial unique constraint above — writing `is_active=True`
+        directly on a second schema is a database error, which is the point.
+        """
+        GraphSchema.objects.filter(graph=self.graph).exclude(pk=self.pk).update(is_active=False)
+        self.is_active = True
+        self.save(update_fields=["is_active"])
+
+    @classmethod
+    def active_for(cls, graph: "Graph") -> "GraphSchema | None":
+        """The graph's current schema, or None if it has never been materialized."""
+        return cls.objects.filter(graph=graph, is_active=True).first()
 
 
 def random_color():
@@ -179,110 +365,100 @@ def random_color():
     return tuple(random.choice(levels) for _ in range(3))
 
 
+class GraphOntology(models.Model):
+    """An ontology reference for the graph schema."""
 
-
-class GraphSequence(models.Model):
-    """A node index for a category"""
     graph = models.ForeignKey(
-        Graph,
+        "Graph",
         on_delete=models.CASCADE,
-        related_name="graph_sequences",
-        help_text="The graph this sequence belongs to",
+        related_name="ontologies",
+        help_text="The graph this ontology belongs to",
     )
-    index = models.CharField(
+    name = models.CharField(
         max_length=1000,
-        help_text="The index name that was created",
+        help_text="The name of the ontology",
     )
-    label = models.CharField(
-        max_length=1000,
-        help_text="The label of the sequence",
-        null=True,
+    url = models.CharField(
+        max_length=2000,
+        help_text="The URL of the ontology",
     )
     description = models.CharField(
-        max_length=1000,
-        help_text="The description of the sequence",
+        max_length=2000,
+        help_text="The description of the ontology",
         null=True,
     )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    min_value = models.IntegerField(
-        default=0
-    )
-    start_value = models.IntegerField(
-        default=0
-    )
-    max_value = models.IntegerField(
-        null=True,
-        blank=True,
-        help_text="The maximum value of the sequence (can be null if not set)",
-    )
-    cycle = models.BooleanField(
-        default=False,
-        help_text="If the sequence is circular (e.g. 1,2,3,4,5,1,2,3,4,5)",
-    )
-    step_size = models.IntegerField(
-        default=1,
-        help_text="The step size of the sequence (e.g. 1,2,3,4,5,6)",
-    )
-    
+
     class Meta:
-        unique_together = ("graph", "index")
-        default_related_name = "graph_sequences"
-        
-    @property
-    def ps_name(self):
-        return f"{self.graph.age_name}{self.index}"
-    
+        unique_together = ("graph", "name")
+        default_related_name = "graph_ontologies"
 
 
-
-
-class CategoryTag(models.Model):
-    """A tag for a category"""
-
-    value = models.CharField(
-        max_length=1000,
-        unique=True,
-        help_text="The value of the tag",
+class OntologyReference(models.Model):
+    category = models.ForeignKey(
+        "Category",
+        on_delete=models.CASCADE,
+        related_name="ontology_references",
     )
-    description = models.CharField(
+    name = models.CharField(
         max_length=1000,
-        help_text="The description of the tag",
-        null=True,
+        help_text="The name of the ontology reference",
     )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    ontology = models.ForeignKey(
+        GraphOntology,
+        on_delete=models.CASCADE,
+        related_name="references",
+    )
 
 
-class Category(models.Model):
+class Category(KindDiscriminatedModel):
+    """Every node and edge kind a graph allows, in one table.
+
+    Categories were a multi-table inheritance chain (``Category`` -> ``NodeCategory`` ->
+    ``EntityCategory`` and so on). They are now one concrete table whose ``kind`` column
+    says which of the old classes a row is; the old class names survive as proxies, so
+    ``EntityCategory.objects`` and ``isinstance`` checks against a proxy-fetched row keep
+    working. Fields that only one kind uses are nullable and simply unset on the others.
+    """
+
+    objects = managers.CategoryManager()
+    kind = models.CharField(
+        max_length=1000,
+        choices=enums.CategoryKindChoices.choices,
+        help_text="Which kind of category this is, and therefore which of the kind-specific fields below are meaningful",
+    )
     graph = models.ForeignKey(
         "Graph",
         on_delete=models.CASCADE,
     )
-    sequence = models.ForeignKey(
-        GraphSequence,
-        on_delete=models.CASCADE,
+    term = models.ForeignKey(
+        "evidence.Term",
+        on_delete=models.PROTECT,
         related_name="categories",
         null=True,
         blank=True,
-        help_text="The index of this category (new entities will be created with this index)",
+        help_text=(
+            "The organization's word this category declares. **This row is what the term means "
+            "*here*** — its label in Apache AGE, its `definition`, its derivation rules and its "
+            "layout are all properties of this graph. The term is the part every view shares, and "
+            "the part the evidence log names, so one annotator's claim can be read by a graph that "
+            "did not make it. `PROTECT` because a word that has been used has to outlive the views "
+            "that used it; deleting *this* row is free, and only drops the term from this graph."
+        ),
     )
-    store = models.ForeignKey(
-        MediaStore,
-        on_delete=models.CASCADE,
+    image = models.ForeignKey(
+        datalayer_models.MediaStore,
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
         help_text="The store of the image if associated with the category",
     )
-    color = models.JSONField(
-        max_length=1000,
-        help_text="The color of  node class in the graph (if a node)",
-        default=random_color,
-        null=True,
-    )
     age_name = models.CharField(
         max_length=1000,
         help_text="The name of the graph class in the age graph",
+    )
+    key = models.CharField(
+        max_length=1000,
+        help_text="The entity key that the node relates to (e.g. a cell line, a cell type, etc.)",
     )
     description = models.CharField(
         max_length=1000,
@@ -294,10 +470,27 @@ class Category(models.Model):
         help_text="The PURL (Persistent Uniform Resource Locator)",
         null=True,
     )
-    tags = models.ManyToManyField(
-        CategoryTag,
-        help_text="The tags of the category",
+    definition = models.JSONField(
+        default=dict,
         blank=True,
+        help_text=(
+            "What this category *means in this graph*, as a predicate over classification claims. "
+            "Empty means primitive: membership is whatever was asserted, which is the default and "
+            "the old behaviour. Non-empty makes it a defined category — necessary and sufficient "
+            "conditions, evaluated at projection time, so 'AIS' can mean 'asserted AIS by Johannes "
+            "before August' in one graph and something else in another without touching a single "
+            "piece of evidence. "
+            "A definition is a **union of clauses** (RFC 0007): {any_of: [{asserted_as, "
+            "assertion_filter: {subjects, app_ids, action_names}, as_of, since}, ...]} — each "
+            "clause binds its own words, annotators and time bounds, so 'Cell' can mean 'what "
+            "Peter called Cell, and what Karl called StemCell after Dec 5'. The flat form (the "
+            "same keys at top level) is still accepted and means one clause; `since` is the "
+            "asserted_at lower bound `as_of` never had. `asserted_as` takes several words and "
+            "means *any of* within its clause — a category derives from many words while `term` "
+            "is the single one it asserts as. Naming a word this graph declares no category for "
+            "is fine and is the interesting case; `evidence.selector.term_ids_for` widens "
+            "membership to cover it. Canonical shape docs: `evidence.selector.classification_filter`."
+        ),
     )
     color = models.JSONField(
         max_length=1000,
@@ -310,21 +503,13 @@ class Category(models.Model):
         related_name="pinned_categories",
         help_text="The users that have this query active",
     )
+    label = models.CharField(
+        max_length=1000,
+        help_text="The label of the node class",
+        null=True,
+    )
 
-    class Meta:
-        default_related_name = "categories"
-        unique_together = ("graph", "age_name")
-
-
-class NodeCategory(Category):
-    """A Node class is a class that describes a node in the graph which represent
-    a bioentity (e.g. a cell, a tissue, etc.). Node classes are the most basic building
-    block of the graph and represent physical objects that can be measured
-    by structures, related to other entities by relations and subjected to specific
-    protocol steps.
-
-    """
-
+    # --- shared by every node kind (the former NodeCategory) ---
     position_x = models.FloatField(
         help_text="The x position of the node class in the graph (if a node)",
         null=True,
@@ -341,67 +526,240 @@ class NodeCategory(Category):
         help_text="The width of the  node class in the graph (if a node)",
         null=True,
     )
+    property_definitions = models.JSONField(default=list, help_text="The property definitions of this")
 
-    def get_age_vertex_name(self):
-        raise NotImplementedError("Not implemented needs to be implemented")
-
-    def get_age_type_name(self):
-        raise NotImplementedError("Not implemented needs to be implemented")
-
-
-class EdgeCategory(Category):
+    # --- shared by every edge kind (the former EdgeCategory) ---
     source_definition = models.JSONField(
         default=dict,
-        help_text="Filters for the right side of the metric (e.g. which tags the right side should have)",
+        help_text="Filters for the right side of the edge (e.g. which tags the right side should have)",
         null=True,
     )
     target_definition = models.JSONField(
         default=dict,
-        help_text="Filters for the left side of the metric (e.g. which tags the left side should have)",
+        help_text="Filters for the left side of the edge (e.g. which tags the left side should have)",
         null=True,
     )
-    
-    
-
-    def get_age_edge_name(self):
-        raise NotImplementedError("Not implemented needs to be implemented")
-
-    def get_age_type_name(self):
-        raise NotImplementedError("Not implemented needs to be implemented")
-
-
-class StructureCategory(NodeCategory):
-    """A Structure class is a class represents a datapoint in your graph and
-    will relate metrics (like Intensity, Area, etc.) to it and then in turn
-    relate temporally to a bioentity. It therefore is one element in the
-
-    (b: Metric) -[d: describes] -> (a: Structure) -> [m: measures] -> (c: Bioentity) path.
-
-    Structure are just datapoints in the graph and should be considered inspectable links
-    to the data that was analysed, e.g. the image that was taken, metrics hold the actual
-    information about that image (e.g. the cell count in the image, the maximum intensity and
-    so forth).
-
-    """
-
-    identifier = models.CharField(
+    # --- kind-specific ---
+    instance_kind = models.CharField(
         max_length=1000,
-        help_text="The structure identifier that the node relates to",
+        help_text="What an instance of this class represents (e.g. a LOT, an object, etc.). Entity categories only",
         null=True,
         blank=True,
     )
-
-    def get_age_vertex_name(self):
-        return "Structure"
-
-    def get_age_type_name(self):
-        return self.identifier
+    source_entity_roles = models.JSONField(
+        default=list,
+        null=True,
+        help_text="The categories or expressions that an event of this class can source from (source edges). Event categories only",
+    )
+    target_entity_roles = models.JSONField(
+        default=list,
+        null=True,
+        help_text="The categories or expressions that an of this class can target to (target edges). Event categories only",
+    )
 
     class Meta:
-        default_related_name = "structure_categories"
+        default_related_name = "categories"
+        unique_together = ("graph", "age_name"), ("graph", "key")
+        constraints = [
+            # (graph, id) is trivially unique, but Postgres requires the exact
+            # column set to exist as a unique index before it can be the target
+            # of the composite foreign key that ties a drawn vertex to a
+            # category *of its own graph* (graph_engine migration
+            # 0005_vertex_category_fk). That FK is the write-side enforcement of
+            # "only declared categories end up in a graph" — RFC 0006.
+            models.UniqueConstraint(fields=["graph", "id"], name="category_graph_and_id"),
+            # One category per declared word per view (RFC 0021). `(graph, key)`
+            # implies it today because a category's term is minted from its key,
+            # but the invariant deserves stating where the database enforces it:
+            # several categories for one word in one view arise only by
+            # *derivation* (a defined category's clauses naming the word), and
+            # those are resolved by admission, never by a term→category map.
+            models.UniqueConstraint(fields=["graph", "term"], condition=models.Q(term__isnull=False), name="one_category_per_word_per_view"),
+        ]
+
+    def save(self, *args, **kwargs):
+        """Stamp the kind, then make sure this category declares a word.
+
+        Minting the term here rather than at each call site makes it an invariant
+        of the row instead of a convention: a category always declares something,
+        because a category that declared nothing could never be claimed against
+        and would be a silent hole in every projection built from it.
+
+        Idempotent — `ensure_term` is a `get_or_create` on
+        `(organization, kind, key)`, so two graphs declaring the same word reach
+        the same term, which is exactly what lets them read each other's claims.
+        """
+        super().save(*args, **kwargs)
+
+        if self.term_id is None and self.key and self.graph_id:
+            from evidence import writer as evidence_writer
+
+            self.term = evidence_writer.ensure_term(self.graph.organization, self.kind, self.key)
+            super().save(update_fields=["term"])
+
+    def as_kind(self) -> "Category":
+        """Return this row re-cast to the proxy class for its `kind`.
+
+        A foreign key to `Category` hands back a base instance, which carries every field
+        but none of the kind-specific methods -- `get_age_vertex_name`, `matches_source`
+        and friends live on the proxies. This is the explicit replacement for what
+        django-polymorphic used to do implicitly on every read.
+        """
+        proxy = CATEGORY_PROXIES.get(self.kind)
+        if proxy is None or isinstance(self, proxy):
+            return self
+
+        recast = proxy()
+        # Copy, don't alias: sharing one `__dict__` would make a write through either
+        # object silently mutate the other. `_state` rides along in the dict.
+        recast.__dict__ = self.__dict__.copy()
+        return recast
+
+    @property
+    def defined_properties(self):
+        from graph_engine.input_models import PropertyDefinitionInput
+
+        return [PropertyDefinitionInput(**p) for p in self.property_definitions] if self.property_definitions else []
+
+    @property
+    def property_map(self):
+        return {prodf.key: prodf for prodf in self.defined_properties}
+
+    @classmethod
+    def key_to_age_name(cls, key: str) -> str:
+        """Convert an entity key to a valid AGE name by replacing invalid characters."""
+        return "".join(e for e in key if e.isalnum()).lower()
+
+    def relevant_queries(self):
+        return GraphQuery.objects.filter(graph=self.graph, relevant_for=self.pk)
+
+
+class CategoryAssertedTerm(models.Model):
+    """The joinable half of :attr:`Category.definition` — which words a category derives from.
+
+    A graph sees a word two ways: it **declares** one (:attr:`Category.term`, an
+    ordinary foreign key) or it **derives** from one, by naming it in
+    ``definition.asserted_as``. The first is already a join. The second is a
+    string inside JSON, and nothing can join against it — so
+    `selector._graph_ids_by_term`, which every instance write goes through, read
+    every category in the organization, pulled every ``definition`` blob out of
+    the database and looped in Python. That is a full scan of the ontology per
+    write, and a second one per page of subjects on the read side.
+
+    This is that half, normalized. Only that half: putting the declared terms in
+    here as well would duplicate a foreign key that already works and create a
+    second answer that can drift from it.
+
+    **The word is stored as a key, not as a `Term` foreign key**, and both reasons
+    matter. A definition may name a word the organization has never minted — terms
+    appear lazily, when somebody first claims one — so an FK would have no row to
+    point at and the graph would stop deriving from a word until the first claim
+    arrived. And `asserted_as` names a word without naming its *kind*, while
+    `Term`'s identity is ``(organization, kind, key)``; resolving to an id would
+    have to pick a kind, narrowing a rule that deliberately does not.
+
+    Lives in `core` because it names a graph. `evidence/models.py` may not: no
+    evidence row names a projection, which is what lets a claim outlive every view
+    built from it.
+
+    Maintained by a signal in `graph_engine.versioning.connect`, alongside the
+    schema-version handler — but **not gated on `versioning.is_suspended()`**.
+    That gate exists so `materialize()` emits one schema version instead of
+    dozens; sharing it here would leave a freshly materialized graph deriving from
+    nothing at all. `manage.py rebuild_asserted_terms` is the out-of-band rebuild,
+    with a `--check` that reports disagreement without writing.
+    """
+
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name="category_asserted_terms",
+        help_text="Denormalized from the graph, so the organization-wide map is one indexed scan rather than a join.",
+    )
+    graph = models.ForeignKey(
+        Graph,
+        on_delete=models.CASCADE,
+        related_name="asserted_terms",
+        help_text="Denormalized from the category: the read is 'which graphs derive from this word', and without it the seek becomes a join.",
+    )
+    category = models.ForeignKey(
+        Category,
+        on_delete=models.CASCADE,
+        related_name="asserted_terms",
+        help_text="The category whose definition names this word. Rows are rewritten wholesale when it changes, because a definition can stop naming a word as easily as start.",
+    )
+    key = models.CharField(
+        max_length=1000,
+        help_text="The word, exactly as `definition.asserted_as` spells it.",
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["category", "key"], name="unique_asserted_term_per_category"),
+        ]
+        indexes = [
+            # The panel's read: which graphs derive from these words.
+            models.Index(fields=["organization", "key"]),
+            # The whole-organization map `_graph_ids_by_term` builds.
+            models.Index(fields=["organization", "graph"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.graph_id} derives from {self.key}"
+
+
+class NodeCategory(Category):
+    objects = managers.NodeCategoryManager()
+    """A Node class is a class that describes a node in the graph which represent
+    a bioentity (e.g. a cell, a tissue, etc.). Node classes are the most basic building
+    block of the graph and represent physical objects that can be measured
+    by structures, related to other entities by relations and subjected to specific
+    protocol steps.
+
+    """
+
+    KINDS = enums.NODE_CATEGORY_KINDS
+
+    class Meta:
+        proxy = True
+
+    def get_age_vertex_name(self):
+        raise NotImplementedError("Not implemented needs to be implemented")
+
+    def get_age_type_name(self):
+        raise NotImplementedError("Not implemented needs to be implemented")
+
+    @classmethod
+    def key_to_age_name(cls, key: str) -> str:
+        """Convert an entity key to a valid AGE name by replacing invalid characters."""
+        return "".join(e for e in key if e.isalnum()).lower()
+
+
+class EdgeCategory(Category):
+    objects = managers.EdgeCategoryManager()
+    """An Edge class is a class that describes an edge in the graph which represents a relationship between two nodes."""
+
+    KINDS = enums.EDGE_CATEGORY_KINDS
+
+    class Meta:
+        proxy = True
+
+    def get_age_edge_name(self) -> str:
+        """Should return the name of the edge in the age graph"""
+        raise NotImplementedError("Not implemented needs to be implemented")
+
+    def get_age_type_name(self) -> str:
+        """Should return the type name of the edge in the age graph"""
+        raise NotImplementedError("Not implemented needs to be implemented")
+
+    @classmethod
+    def key_to_age_name(cls, key: str) -> str:
+        """Convert an entity key to a valid AGE name by replacing invalid characters."""
+        return "".join(e for e in key if e.isalnum()).upper()
 
 
 class NaturalEventCategory(NodeCategory):
+    objects: managers.NaturalEventCategoryManager = managers.NaturalEventCategoryManager()
     """A natural event class is a class that describes a natural event that happened
     to some bioenties (e.g. a cell division, a cell death, etc.). Natural events are
     used to describe the natural events that happen to a bioentity and are not
@@ -417,19 +775,8 @@ class NaturalEventCategory(NodeCategory):
 
     """
 
-    source_entity_roles = models.JSONField(
-        default=list,
-        help_text="The categories or expressions that an event of this class can source from (source edges)",
-    )
-    target_entity_roles = models.JSONField(
-        default=list,
-        help_text="The categories or expressions that an of this class can target to (target edges)",
-    )
-    label = models.CharField(
-        max_length=1000,
-        help_text="The label of the natural event class",
-    )
-    plate_children = models.JSONField(null=True, blank=True)
+    KIND = enums.CategoryKindChoices.NATURAL_EVENT
+    KINDS = (enums.CategoryKindChoices.NATURAL_EVENT,)
 
     def get_inrole_vertex_name(self, role):
         return role
@@ -437,25 +784,37 @@ class NaturalEventCategory(NodeCategory):
     def get_outrole_vertex_name(self, role):
         return role
 
-    def get_age_vertex_name(self):
-        return "NaturalEvent"
-
-    def get_age_type_name(self):
+    def get_age_vertex_name(self) -> str:
         return self.age_name
+
+    def get_age_type_name(self) -> str:
+        return "NATURAL_EVENT"
+
+    #: The edge labels a participation projects to. Constant per event kind, with
+    #: the role carried as a property on the edge rather than folded into the
+    #: label: `MATCH (e)-[:WENT_THROUGH]->(ev)` has to be able to find every input
+    #: without the caller first enumerating the schema's role names.
+    #:
+    #: These were methods taking a `role` argument and returning a constant, so
+    #: the role never reached the graph at all and every event in a graph shared
+    #: two labels with nothing to tell participations apart.
+    AGE_INPUT_EDGE = "WENT_THROUGH"
+    AGE_OUTPUT_EDGE = "CAME_OUT_OF"
 
     @property
     def collected_in_role_vertex_name(self):
-        return ["UNDERWENT"]  # TODO This needs to be implemented but currently not used
+        return [self.AGE_INPUT_EDGE]
 
     @property
     def collected_out_role_vertex_name(self):
-        return ["CREATED"]  # TODO This needs to be implemented but currently not used
+        return [self.AGE_OUTPUT_EDGE]
 
     class Meta:
-        default_related_name = "natural_event_categories"
+        proxy = True
 
 
 class ProtocolEventCategory(NodeCategory):
+    objects: managers.ProtocolEventCategoryManager = managers.ProtocolEventCategoryManager()
     """A protocol event class is a node that describes a protocol event that some
     entities were subjected to using, creating or altering them.
 
@@ -469,31 +828,8 @@ class ProtocolEventCategory(NodeCategory):
         (b: FourPercentFormaldayhyde) -> [r: SUBJECTED_IN {quantity: 50µm }] -> (f: FixationEvent)
     """
 
-    source_entity_roles = models.JSONField(
-        default=list,
-        help_text="The categories or expressions that an event of this class can source from (source edges)",
-    )
-    target_entity_roles = models.JSONField(
-        default=list,
-        help_text="The categories or expressions that an of this class can target to (target edges)",
-    )
-    source_reagent_roles = models.JSONField(
-        default=list,
-        help_text="The categories or expressions that an event of this class can source from (source edges)",
-    )
-    target_reagent_roles = models.JSONField(
-        default=list,
-        help_text="The categories or expressions that an of this class can target to (target edges)",
-    )
-    variable_definitions = models.JSONField(
-        default=list,
-        help_text="The variables of a instance this protocol event will needs (properties on the node)",
-    )
-    plate_children = models.JSONField(null=True, blank=True)
-    label = models.CharField(
-        max_length=1000,
-        help_text="The label of the natural event class",
-    )
+    KIND = enums.CategoryKindChoices.PROTOCOL_EVENT
+    KINDS = (enums.CategoryKindChoices.PROTOCOL_EVENT,)
 
     def get_inrole_vertex_name(self, role):
         return role
@@ -502,24 +838,33 @@ class ProtocolEventCategory(NodeCategory):
         return role
 
     def get_age_vertex_name(self):
-        return "ProtocolEvent"
-
-    def get_age_type_name(self):
         return self.age_name
+
+    def get_age_type_name(self) -> str:
+        return "PROTOCOL_EVENT"
+
+    #: A protocol event acts *on* its inputs rather than being something they went
+    #: through, so it takes the labels this class's own examples already use.
+    #: These did not exist at all, which is why `create_protocol_event` raised
+    #: `AttributeError` on any event with an input role — after the vertex, the
+    #: node row, the assertion and the state merges had already committed.
+    AGE_INPUT_EDGE = "SUBJECTED_IN"
+    AGE_OUTPUT_EDGE = "PRODUCED"
 
     @property
     def collected_in_role_vertex_name(self):
-        return ["UNDERWENT"]  # TODO This needs to be implemented but currently not used
+        return [self.AGE_INPUT_EDGE]
 
     @property
     def collected_out_role_vertex_name(self):
-        return ["CREATED"]  # TODO This needs to be implemented but currently not used
+        return [self.AGE_OUTPUT_EDGE]
 
     class Meta:
-        default_related_name = "protocol_event_categories"
+        proxy = True
 
 
 class EntityCategory(NodeCategory):
+    objects: managers.EntityCategoryManager = managers.EntityCategoryManager()
     """An Entity class is a class that describes a node in the graph which represent
     a bioentity (e.g. a cell, a tissue, etc.). Entitys are the most basic building
     block of the graph and represent physical objects that can be measured
@@ -565,196 +910,222 @@ class EntityCategory(NodeCategory):
 
     """
 
-    instance_kind = models.CharField(
-        max_length=1000,
-        help_text="What an instance of this class represents (e.g. a LOT, an object, etc.)",
-        null=True,
-        blank=True,
-    )
-    label = models.CharField(
-        max_length=1000,
-        help_text="The label of the entity class",
-    )
+    KIND = enums.CategoryKindChoices.ENTITY
+    KINDS = (enums.CategoryKindChoices.ENTITY,)
 
     def get_age_vertex_name(self):
-        return "Entity"
-
-    def get_age_type_name(self):
         return self.age_name
 
-    class Meta:
-        default_related_name = "entity_categories"
-
-
-class ReagentCategory(NodeCategory):
-    """An Regation class is a class that describes a node in the graph which represent
-    a reagent in the graph that does not have a biological meaning in this graph (e.g. a
-    4% formaldehyde, a 10% DMSO, etc.).
-
-    On temporality:
-
-    Bioentity by design are meant to "immortal" and for the purpose of the graph should
-    not be considered to be deleted. Instead when there is no measurement or relation
-    pointing towards them in the active validation window, they are not considered for the
-    ongoing analysis. Imaging a cell that was image in one of your experiments and then
-    was not imaged in the next experiment. The cell still existed ONCE in time, but will not
-    be monitored in the next experiment, so will have no structure point to it.
-
-    If you of course create a timelapse of the cell, you will have multiple measurements
-    pointing to the same cell, so the cell will still exist in the graph in the next experiment.
-
-    They belong to these subgraphs:
-
-    The measurement path:
-    (b: $Metric) -[d: describes] -> (a: $Structure) -> [m: measures] -> (c: $Bioentity)
-
-    E.g. the intensity (metric) of the image (structure) that measures the cell (bioentity)
-
-    The relation path:
-    (a: $Bioentity) -[r: $RELATION] -> (b: $Bioentity)
-
-    E.g. A cell was related for the timestramp of the experiment to another cell
-
-    The natural event path:
-    (a: Structure) -> [d: determines] ->  (b: NaturalEvent)
-    (a: $Bioentity) -[r: underwent]-> (b: NaturalEvent) -> [d: created] -> (c: $Bioentity)
-
-    E.g. the cell (a bioentity) "budded" (the relation) another cell (another bioentity)) at the time of the valid relation (informed structure in metadata)
-
-    The protocol event path:
-    (a: $Bioentity) -[r: underwent]-> (b: ProtocolEvent) -> [d: created] -> (c: $Bioentity)
-
-    E.g. A cell was isolated from a cell culture and is now considered a new bioentity, that backlinks to
-    the parent through the protocols
-
-
-    """
-
-    instance_kind = models.CharField(
-        max_length=1000,
-        help_text="What an instance of this class represents (e.g. a LOT, an object, etc.)",
-        null=True,
-        blank=True,
-    )
-    label = models.CharField(
-        max_length=1000,
-        help_text="The label of the entity class",
-    )
-
-    def get_age_vertex_name(self):
-        return "Reagent"
-
-    def get_age_type_name(self):
-        return self.age_name
+    def get_age_type_name(self) -> str:
+        return "ENTITY"
 
     class Meta:
-        default_related_name = "reagent_categories"
-
-
-class MetricCategory(NodeCategory):
-    """A Metric class is an analticay statement that describes a structure.
-
-    Metric classes are used to describe a kind of  metric that described a certain measurment
-    (e.g. intensity, area, etc.) and will always be attached to a structure that in turn
-    measures a bioentity. It therefore is one element in the
-
-    (b: Metric) -[d: describes] -> (a: Structure) -> [m: measures] -> (c: Bioentity) path.
-
-    Kraph will always enfore that metrics are linked to a structure category first
-    and disallow liking them directly to a bioentity. This is to ensure that the graph
-    is temporally consistent (e.g. multiple same structures can measure the same bioentity at the different times)
-
-    While this may no seem obvious at first clance, it is important to understand that
-    the graph is not a static representation of your world but a dynamic representation
-    of the world that is constantly changing.
-
-    """
-
-    metric_kind = TextChoicesField(
-        choices_enum=enums.MeasurementKindChoices,
-        help_text="The data type (if a metric)",
-        null=True,
-        blank=True,
-    )
-    label = models.CharField(
-        max_length=1000,
-        help_text="The label of the entity class",
-    )
-    structure_definition = models.JSONField(
-        default=dict,
-        help_text="Filters for the right side of the metric (e.g. which tags the right side should have)",
-        null=True,
-    )
-
-    def get_age_vertex_name(self):
-        return "Metric"
-
-    def get_age_type_name(self):
-        return self.age_name
-
-    class Meta:
-        default_related_name = "metric_categories"
+        proxy = True
 
 
 class MeasurementCategory(EdgeCategory):
+    objects = managers.MeasurementCategoryManager()
     """A Measurement class is a class that describes an edge with a value"""
 
-    metric_kind = TextChoicesField(
-        choices_enum=enums.MeasurementKindChoices,
-        help_text="The data type (if a metric)",
-        null=True,
-        blank=True,
-    )
-    label = models.CharField(
-        max_length=1000,
-        help_text="The label of the entity class",
-    )
-    
+    KIND = enums.CategoryKindChoices.MEASUREMENT
+    KINDS = (enums.CategoryKindChoices.MEASUREMENT,)
 
     def get_age_edge_name(self):
-        return "Measurement"
-
-    def get_age_type_name(self):
         return self.age_name
 
+    def get_age_type_name(self) -> str:
+        return "MEASUREMENT"
+
+    @property
+    def source_definition_model(self) -> StructureDescriptorInput:
+        return StructureDescriptorInput(**self.source_definition)
+
+    @property
+    def target_definition_model(self) -> EntityDescriptorInput:
+        return EntityDescriptorInput(**self.target_definition)
+
+    def matches_source(self, entity: "StructureKind") -> bool:
+        """Check if an entity matches the source definition of this edge category."""
+        return self.source_definition_model.matches(entity)
+
+    def matches_target(self, entity: "EntityCategory") -> bool:
+        """Check if an entity matches the target definition of this edge category."""
+        return self.target_definition_model.matches(entity)
+
+    def get_matching_source_structures(self) -> QuerySet["StructureKind"]:
+        """Structure kinds this edge category's source definition selects."""
+        return _matching_structure_kinds(self.graph.organization, self.source_definition_model)
+
+    def get_matching_target_entities(self) -> QuerySet["EntityCategory"]:
+        """Get all entities in the graph that match the target definition of this edge category."""
+        kwargs = {}
+        if self.target_definition_model.keys:
+            kwargs["key__in"] = self.target_definition_model.keys
+        if self.target_definition_model.ontology_terms:
+            kwargs["ontology_references__name__in"] = self.target_definition_model.ontology_terms
+
+        return self.graph.entity_categories.filter(**kwargs).distinct()
+
     class Meta:
-        default_related_name = "measurement_categories"
-        
-        
+        proxy = True
 
 
 class RelationCategory(EdgeCategory):
     """A Relation class is a class that describes a relation between two entities without a value"""
 
-    label = models.CharField(
-        max_length=1000,
-        help_text="How this step acts in the protocol (e.g. as which reagent)",
-        null=True,
-    )
+    objects: managers.RelationCategoryManager = managers.RelationCategoryManager()
+
+    KIND = enums.CategoryKindChoices.RELATION
+    KINDS = (enums.CategoryKindChoices.RELATION,)
+
+    @property
+    def source_definition_model(self) -> EntityDescriptorInput:
+        return EntityDescriptorInput(**self.source_definition)
+
+    @property
+    def target_definition_model(self) -> EntityDescriptorInput:
+        return EntityDescriptorInput(**self.target_definition)
+
+    def matches_source(self, entity: "EntityCategory") -> bool:
+        """Check if an entity matches the source definition of this edge category."""
+        return self.source_definition_model.matches(entity)
+
+    def matches_target(self, entity: "EntityCategory") -> bool:
+        """Check if an entity matches the target definition of this edge category."""
+        return self.target_definition_model.matches(entity)
+
+    def get_matching_source_entities(self) -> QuerySet["EntityCategory"]:
+        """Get all entities in the graph that match the source definition of this edge category."""
+        """Get all entities in the graph that match the target definition of this edge category."""
+        kwargs = {}
+        if self.source_definition_model.keys:
+            kwargs["key__in"] = self.source_definition_model.keys
+        if self.source_definition_model.ontology_terms:
+            kwargs["ontology_references__name__in"] = self.source_definition_model.ontology_terms
+
+        return self.graph.entity_categories.filter(**kwargs).distinct()
+
+    def get_matching_target_entities(self) -> QuerySet["EntityCategory"]:
+        """Get all entities in the graph that match the target definition of this edge category."""
+        kwargs = {}
+        if self.target_definition_model.keys:
+            kwargs["key__in"] = self.target_definition_model.keys
+        if self.target_definition_model.ontology_terms:
+            kwargs["ontology_references__name__in"] = self.target_definition_model.ontology_terms
+
+        return self.graph.entity_categories.filter(**kwargs).distinct()
 
     def get_age_edge_name(self):
-        return "Relation"
-
-    def get_age_type_name(self):
         return self.age_name
 
+    def get_age_type_name(self) -> str:
+        return "RELATION"
+
+    # `source_matches` lived here and was called by nothing. It read
+    # `source_definition["tags"]` directly rather than through
+    # `source_definition_model`, so it was also the only place that survived the
+    # descriptor rewrite by ignoring it. `matches_source`, inherited from
+    # `EdgeCategory`, is the one the codebase actually uses.
+
     class Meta:
-        default_related_name = "relation_categories"
+        proxy = True
 
 
-class GraphQuery(models.Model):
+class StructureRelationCategory(EdgeCategory):
+    """A Relation class is a class that describes a relation between two entities without a value"""
+
+    objects: managers.StructureRelationCategoryManager = managers.StructureRelationCategoryManager()
+
+    KIND = enums.CategoryKindChoices.STRUCTURE_RELATION
+    KINDS = (enums.CategoryKindChoices.STRUCTURE_RELATION,)
+
+    @property
+    def source_definition_model(self) -> StructureDescriptorInput:
+        return StructureDescriptorInput(**self.source_definition)
+
+    @property
+    def target_definition_model(self) -> StructureDescriptorInput:
+        return StructureDescriptorInput(**self.target_definition)
+
+    def matches_source(self, entity: "StructureKind") -> bool:
+        """Check if a structure matches the source definition of this edge category."""
+        return self.source_definition_model.matches(entity)
+
+    def matches_target(self, entity: "StructureKind") -> bool:
+        """Check if a structure matches the target definition of this edge category."""
+        return self.target_definition_model.matches(entity)
+
+    def get_matching_source_structures(self) -> QuerySet["StructureKind"]:
+        """Structure kinds this edge category's source definition selects."""
+        return _matching_structure_kinds(self.graph.organization, self.source_definition_model)
+
+    def get_matching_target_structures(self) -> QuerySet["StructureKind"]:
+        """Structure kinds this edge category's target definition selects."""
+        return _matching_structure_kinds(self.graph.organization, self.target_definition_model)
+
+    def get_age_edge_name(self):
+        return self.age_name
+
+    def get_age_type_name(self) -> str:
+        return "STRUCTURE_RELATION"
+
+    class Meta:
+        proxy = True
+
+
+#: Which proxy class owns each `kind`, for `Category.as_kind()`.
+CATEGORY_PROXIES: dict[str, type[Category]] = {
+    enums.CategoryKindChoices.ENTITY: EntityCategory,
+    enums.CategoryKindChoices.NATURAL_EVENT: NaturalEventCategory,
+    enums.CategoryKindChoices.PROTOCOL_EVENT: ProtocolEventCategory,
+    enums.CategoryKindChoices.MEASUREMENT: MeasurementCategory,
+    enums.CategoryKindChoices.RELATION: RelationCategory,
+    enums.CategoryKindChoices.STRUCTURE_RELATION: StructureRelationCategory,
+}
+
+
+#: Shared by the three saved-query tables. All nine `archive_*_query` mutations
+#: wrote `item.archived = True; item.save()` against a field that existed on no
+#: model, so `save()` persisted nothing and the caller was told it had worked.
+#: No GraphQL type exposed the value either, which is why a client could write it
+#: and never see that it had not taken.
+#:
+#: Ordinary mutable Django state, deliberately. A saved query is container and UI,
+#: not a claim about the world — `docs/LOG.md` lists exactly this class of thing
+#: under "correctly mutable" — so archiving one carries no assertion.
+ARCHIVED_HELP = "Whether this saved query has been put away. Archiving is the reversible alternative to deleting it."
+
+
+class GraphQuery(KindDiscriminatedModel):
+    """A saved query over a graph, in one table.
+
+    `kind` was already the discriminator here -- it just used to sit alongside a
+    multi-table inheritance chain that said the same thing a second time. The former
+    subclasses are proxies, and the fields only one shape uses are nullable.
+    """
+
+    objects = managers.KindedManager()
     graph = models.ForeignKey(
         Graph,
         on_delete=models.CASCADE,
-        related_name="graph_queries",
+        related_name="queries",
         help_text="The graph this query belongs to",
     )
-    query = models.CharField(
-        max_length=7000, help_text="The query that is used to materialize the graph"
+    archived = models.BooleanField(default=False, help_text=ARCHIVED_HELP)
+    key = models.CharField(
+        max_length=1000,
+        help_text="The key of the query, used for referencing the query in the frontend and for pinning it",
     )
-    name = models.CharField(
-        max_length=1000, help_text="The name of the materialized graph"
-    )
+    # The **plan** is the contract — `graph_engine.query_ir.TableQueryPlan` as
+    # JSON: matches, wheres, returns, columns. It is what a client writes, what
+    # comes back, and what each projection kind compiles (`TableProjector` →
+    # SQL). `query` is a fossil: raw Cypher from rows saved before plans
+    # existed. A legacy row has `plan = NULL` and cannot render at all — no
+    # projection kind executes Cypher — so `manage.py list_legacy_queries`
+    # names them to be rebuilt through the builder.
+    plan = models.JSONField(null=True, blank=True, help_text="The saved query as a `TableQueryPlan` (matches, wheres, returns, columns). Null only on a legacy row that stores raw Cypher.")
+    query = models.CharField(max_length=7000, null=True, blank=True, help_text="Legacy: raw Cypher saved before plans existed. Read-only; never accepted any more.")
+    label = models.CharField(max_length=1000, help_text="The name of the materialized graph")
     description = models.CharField(
         max_length=1000,
         help_text="The description of the materialized graph",
@@ -762,12 +1133,8 @@ class GraphQuery(models.Model):
     )
     kind = models.CharField(
         max_length=1000,
-        help_text="The kind of the materialized graph (i.e path, property, etc.)",
-    )
-    columns = models.JSONField(
-        help_text="The columns (if ViewKind is Table)",
-        default=None,
-        null=True,
+        choices=enums.GraphQueryKindChoices.choices,
+        help_text="The kind of result this query renders. Only TABLE exists.",
     )
     pinned_by = models.ManyToManyField(
         get_user_model(),
@@ -779,109 +1146,45 @@ class GraphQuery(models.Model):
         related_name="relevant_graph_queries",
         help_text="The expression that this query should be mostly used for",
     )
-
-    @property
-    def input_columns(self):
-        from core import inputs
-
-        return [inputs.ColumnInput(**i) for i in self.columns]
-
-
-class NodeQuery(models.Model):
-    graph = models.ForeignKey(
-        Graph,
-        on_delete=models.CASCADE,
-        related_name="node_queries",
-        help_text="The graph this query belongs to",
-    )
-    query = models.CharField(
-        max_length=7000, help_text="The query that is used to materialize the graph"
-    )
-    name = models.CharField(
-        max_length=1000, help_text="The name of the materialized graph"
-    )
-    description = models.CharField(
-        max_length=1000,
-        help_text="The description of the materialized graph",
-        null=True,
-    )
-    kind = models.CharField(
-        max_length=1000,
-        help_text="The kind of the materialized graph (i.e path, property, etc.)",
-    )
     columns = models.JSONField(
-        help_text="The columns (if ViewKind is Table)",
-        default=None,
+        help_text="How the returned aliases are presented. Mirrors `plan.columns` for rows that have a plan",
+        default=list,
         null=True,
-    )
-    pinned_by = models.ManyToManyField(
-        get_user_model(),
-        related_name="pinned_node_queries",
-        help_text="The users that have this query active",
-    )
-    relevant_for_nodes = models.ManyToManyField(
-        Category,
-        related_name="relevant_node_queries",
-        help_text="The entities that this query should be mostly used for",
     )
 
     @property
-    def input_columns(self):
-        from core import inputs
+    def is_legacy(self) -> bool:
+        """A row saved as raw Cypher before the plan became the contract."""
+        return not self.plan
 
-        return [inputs.ColumnInput(**i) for i in self.columns]
+    class Meta:
+        """Some Meta options for the GraphQuery model"""
 
-    @classmethod
-    def active_for_user_and_graph(self, user, graph):
-
-        return self.objects.filter(graph=graph, pinned_by=user).first()
+        default_related_name = "graph_queries"
+        unique_together = ("graph", "key")
 
 
-class MaterializedView(models.Model):
-    """A view of a graph that is materialized"""
+class GraphTableQuery(GraphQuery):
+    """A query that is used to materialize a table"""
 
-    query = models.ForeignKey(
-        GraphQuery,
-        on_delete=models.CASCADE,
-        related_name="views",
-        help_text="The query that is used to materialize the graph",
-    )
-    creator = models.ForeignKey(
-        get_user_model(),
-        on_delete=models.CASCADE,
-        related_name="graph_views",
-        help_text="The user that created the view",
-    )
-    materialized_at = models.DateTimeField(
-        auto_now_add=True,
-        help_text="The time the view was materialized. Newer created or deleted_instances are not part of the view",
-    )
-    valid_from = models.DateTimeField(
-        help_text="The time the view was created. Newer created or deleted_instances are not part of the view",
-        null=True,
-        blank=True,
-    )
-    valid_to = models.DateTimeField(
-        help_text="The time the view was created. Newer created or deleted_instances are not part of the view",
-        null=True,
-        blank=True,
-    )
+    KIND = enums.GraphQueryKindChoices.TABLE
+    KINDS = (enums.GraphQueryKindChoices.TABLE,)
+    objects = managers.KindedManager()
+
+    class Meta:
+        proxy = True
 
 
 class ScatterPlot(models.Model):
-    query = models.ForeignKey(
-        GraphQuery,
+    # The one saved query a plot is drawn from. `node_query` / `path_query` used
+    # to sit beside it, pointing at `NodeTableQuery` / `NodePathQuery` — kinds
+    # nothing could render — and `_scoped.graph_of` walked all three to find a
+    # tenant. A plot is over a graph table query.
+    graph_query = models.ForeignKey(
+        GraphTableQuery,
         on_delete=models.CASCADE,
         related_name="scatter_plots",
-        help_text="The query this scatter plot was trained on",
-    )
-    view = models.ForeignKey(
-        MaterializedView,
-        null=True,
-        blank=True,
-        on_delete=models.CASCADE,
-        related_name="scatter_plots",
-        help_text="If this scatter plot is based on a materialized view, this is the view",
+        help_text="The graph table query this scatter plot is drawn from",
     )
     name = models.CharField(max_length=1000, help_text="The name of the scatter plot")
     description = models.CharField(
@@ -893,55 +1196,21 @@ class ScatterPlot(models.Model):
         max_length=1000,
         help_text="The column that assigns the row_id (could be an edge, a node, etc.)",
     )
-    x_column = models.CharField(
-        max_length=1000, help_text="The column that assigns the x value", null=True
-    )
-    x_id_column = models.CharField(
-        max_length=1000, help_text="The column that assigns the x_id value", null=True
-    )
-    y_column = models.CharField(
-        max_length=1000, help_text="The column that assigns the y value", null=True
-    )
+    x_column = models.CharField(max_length=1000, help_text="The column that assigns the x value", null=True)
+    x_id_column = models.CharField(max_length=1000, help_text="The column that assigns the x_id value", null=True)
+    y_column = models.CharField(max_length=1000, help_text="The column that assigns the y value", null=True)
     y_id_column = models.CharField(
         max_length=1000,
         help_text="The column that assigns an ID to the y value",
         null=True,
     )
-    color_column = models.CharField(
-        max_length=1000, help_text="The column that assigns the color value", null=True
-    )
-    size_column = models.CharField(
-        max_length=1000, help_text="The column that assigns the size value", null=True
-    )
-    shape_column = models.CharField(
-        max_length=1000, help_text="The column that assigns the shape value", null=True
-    )
+    color_column = models.CharField(max_length=1000, help_text="The column that assigns the color value", null=True)
+    size_column = models.CharField(max_length=1000, help_text="The column that assigns the size value", null=True)
+    shape_column = models.CharField(max_length=1000, help_text="The column that assigns the shape value", null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     creator = models.ForeignKey(
         get_user_model(),
         on_delete=models.CASCADE,
         related_name="scatter_plots",
         help_text="The user that created the scatter plot",
-    )
-
-
-class Model(models.Model):
-    """A Model is a deep learning model"""
-
-    name = models.CharField(max_length=1000, help_text="The name of the model")
-    materialized_graph = models.ForeignKey(
-        MaterializedView,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="models",
-        help_text="The materialized grpah this model was trained on",
-    )
-    store = models.ForeignKey(
-        MediaStore,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="models",
-        help_text="The store of the model",
     )

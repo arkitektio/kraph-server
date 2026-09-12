@@ -1,5 +1,16 @@
 from .settings import *  # noqa
 from .settings import DATABASES, AUTHENTIKATE
 
-DATABASES["default"] = {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}
-AUTHENTIKATE = {**AUTHENTIKATE, "STATIC_TOKENS": {"test": {"sub": "1"}}}
+DATABASES["default"] = {**DATABASES["default"], "NAME": "testdb", "PORT": 5555, "HOST": "localhost", "USER": "test", "PASSWORD": "test"}
+# Django forces DEBUG=False under the test runner, and authentikate 3.0 refuses static
+# tokens when DEBUG is False. These are deliberate test fixtures, so opt in explicitly.
+AUTHENTIKATE = {**AUTHENTIKATE, "allow_static_tokens_in_production": True, "static_tokens": {"test": {"sub": "1"}}}
+# `allow_unscoped_fallback`: there is no STS to assume a role against under unit tests, and a
+# grant that cannot be scoped now refuses rather than quietly returning this service's permanent
+# key. Tests that exercise a grant care about its *shape*, not its credentials.
+DATALAYER = {"media": {"path": "/tmp/datalayer_test", "jwt_key": "testkey"}, "allow_unscoped_fallback": True}
+# The compose stack's redis (tests/integration/docker-compose.yaml); `/ht` pings it.
+REDIS_URL = "redis://localhost:6666/0"
+# The subscription tests listen through a stub consumer on the process-local layer;
+# production uses channels_redis (settings.py), which the test stack does not need.
+CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}

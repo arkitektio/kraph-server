@@ -1,0 +1,367 @@
+from kante.types import Info
+from .relation_category import relation_category_creator
+import strawberry
+from core import types, models, age, manager, inputs
+from django.db.models import Q
+from .entity_category import entity_category_creator
+from .natural_event_category import natural_event_category_creator
+from .protocol_event_category import protocol_event_category_creator
+
+
+@strawberry.input(description="Input type for creating a new ontology")
+class GraphInput:
+    name: str = strawberry.field(description="The name of the ontology (will be converted to snake_case)")
+    description: str | None = strawberry.field(default=None, description="An optional description of the ontology")
+    image: strawberry.ID | None = strawberry.field(default=None, description="An optional ID reference to an associated image")
+    pin: bool | None = strawberry.field(
+        default=None,
+        description="Whether this ontology should be pinned or not",
+    )
+    schema: inputs.SchemaInput | None = strawberry.field(
+        default=None,
+        description="An optional schema defining the categories in the ontology",
+    )
+
+
+@strawberry.input(description="Input type for creating a new ontology node")
+class GraphNodeInput:
+    id: str = strawberry.field(description="The AGE_NAME of the ontology")
+    position_x: float | None = strawberry.field(default=None, description="An optional x position for the ontology node")
+    position_y: float | None = strawberry.field(default=None, description="An optional y position for the ontology node")
+    height: float | None = strawberry.field(default=None, description="An optional height for the ontology node")
+    width: float | None = strawberry.field(default=None, description="An optional width for the ontology node")
+    color: list[int] | None = strawberry.field(default=None, description="An optional RGBA color for the ontology node")
+
+
+@strawberry.input(description="Input type for updating an existing ontology")
+class UpdateGraphInput:
+    id: strawberry.ID = strawberry.field(description="The ID of the ontology to update")
+    name: str | None = strawberry.field(
+        default=None,
+        description="New name for the ontology (will be converted to snake_case)",
+    )
+    purl: str | None = strawberry.field(
+        default=None,
+        description="A new PURL for the ontology (will be converted to snake_case)",
+    )
+    description: str | None = strawberry.field(default=None, description="New description for the ontology")
+    image: strawberry.ID | None = strawberry.field(default=None, description="New ID reference to an associated image")
+    nodes: list[GraphNodeInput] | None = strawberry.field(default=None, description="New nodes for the ontology")
+    pin: bool | None = strawberry.field(
+        default=None,
+        description="Whether this ontology should be pinned or not",
+    )
+
+
+@strawberry.input(description="Input type for deleting an ontology")
+class DeleteGraphInput:
+    id: strawberry.ID = strawberry.field(description="The ID of the ontology to delete")
+
+
+@strawberry.input(description="Input type for deleting an ontology")
+class MaterializeGraphInput:
+    id: strawberry.ID = strawberry.field(description="The ID of the ontology to delete")
+
+
+def to_snake_case(string):
+    return string.replace(" ", "_").lower()
+
+
+def create_graph(
+    info: Info,
+    input: GraphInput,
+) -> types.Graph:
+    assert input.name, "Graph name is required"
+    assert input.name != "", "Graph name cannot be empty"
+    assert len(input.name) < 100, "Graph name cannot be longer than 100 characters"
+    assert len(input.name) > 5, "Graph name must be at least 3 characters long"
+
+    if input.image:
+        media_store = models.MediaStore.objects.get(
+            id=input.image,
+        )
+    else:
+        media_store = None
+
+    item, _ = models.Graph.objects.update_or_create(
+        age_name=manager.build_graph_age_name(input.name, info.context.request.organization),
+        defaults=dict(
+            description=input.description or "",
+            store=media_store,
+            user=info.context.request.user,
+            name=input.name,
+            organization=info.context.request.organization,
+            membership=info.context.request.membership,
+        ),
+    )
+
+    age.create_age_graph(item.age_name)
+
+    if input.pin is not False:
+        item.pinned_by.add(info.context.request.user)
+    else:
+        item.pinned_by.remove(info.context.request.user)
+
+    label_category_map = {}
+    label_relation_map = {}
+
+    if input.schema:
+        for e in input.schema.entity_schemas:
+            cat = entity_category_creator(
+                info=info,
+                graph_id=item.id,
+                label=e.label,
+                description=e.description,
+                purl=e.purl,
+                color=e.color,
+                image_id=e.image,
+                property_definitions=[strawberry.asdict(x) for x in e.property_definitions] if e.property_definitions else None,
+                tags=e.tags,
+                pin=e.pin,
+                sequence=e.sequence,
+                auto_create_sequence=e.auto_create_sequence or False,
+                position_x=e.position_x,
+                position_y=e.position_y,
+                height=e.height,
+                width=e.width,
+            )
+            label_category_map[e.label] = cat
+            manager.add_descriptors_to_category(category=cat, descriptors=e.descriptors or [])
+
+        if input.schema.natural_event_schemas:
+            for e in input.schema.natural_event_schemas:
+                cat = natural_event_category_creator(
+                    info=info,
+                    graph_id=item.id,
+                    label=e.label,
+                    description=e.description,
+                    purl=e.purl,
+                    image_id=e.image,
+                    property_definitions=[strawberry.asdict(x) for x in e.property_definitions] if e.property_definitions else None,
+                    source_entity_roles=[strawberry.asdict(v) for v in e.source_entity_roles] if e.source_entity_roles else None,
+                    target_entity_roles=[strawberry.asdict(v) for v in e.target_entity_roles] if e.target_entity_roles else None,
+                    tags=e.tags,
+                    position_x=e.position_x,
+                    position_y=e.position_y,
+                    height=e.height,
+                    width=e.width,
+                )
+                label_category_map[e.label] = cat
+                manager.add_descriptors_to_category(category=cat, descriptors=e.descriptors or [])
+
+        if input.schema.protocol_event_schemas:
+            for e in input.schema.protocol_event_schemas:
+                cat = protocol_event_category_creator(
+                    info=info,
+                    graph_id=item.id,
+                    label=e.label,
+                    description=e.description,
+                    purl=e.purl,
+                    property_definitions=[strawberry.asdict(x) for x in e.property_definitions] if e.property_definitions else None,
+                    source_entity_roles=[strawberry.asdict(v) for v in e.source_entity_roles] if e.source_entity_roles else None,
+                    target_entity_roles=[strawberry.asdict(v) for v in e.target_entity_roles] if e.target_entity_roles else None,
+                    source_reagent_roles=[strawberry.asdict(v) for v in e.source_reagent_roles] if e.source_reagent_roles else None,
+                    target_reagent_roles=[strawberry.asdict(v) for v in e.target_reagent_roles] if e.target_reagent_roles else None,
+                    variable_definitions=[strawberry.asdict(v) for v in e.variable_definitions] if e.variable_definitions else None,
+                    plate_children=None,
+                    tags=e.tags,
+                    sequence=e.sequence,
+                    auto_create_sequence=e.auto_create_sequence or False,
+                    position_x=e.position_x,
+                    position_y=e.position_y,
+                    height=e.height,
+                    width=e.width,
+                )
+                label_category_map[e.label] = cat
+                manager.add_descriptors_to_category(category=cat, descriptors=e.descriptors or [])
+
+        if input.schema.relation_schemas:
+            for e in input.schema.relation_schemas:
+                source_defintion = inputs.EntityCategoryDefinitionInput(
+                    category_filters=[label_category_map[label].id for label in e.source_definition.labels] if e.source_definition.labels else None,
+                    tag_filters=e.source_definition.tags,
+                )
+
+                target_defintion = inputs.EntityCategoryDefinitionInput(
+                    category_filters=[label_category_map[label].id for label in e.target_definition.labels] if e.target_definition.labels else None,
+                    tag_filters=e.target_definition.tags,
+                )
+
+                cat = relation_category_creator(
+                    info=info,
+                    graph_id=item.id,
+                    label=e.label,
+                    source_definition=strawberry.asdict(source_defintion),
+                    target_definition=strawberry.asdict(target_defintion),
+                    description=e.description,
+                    purl=e.purl,
+                    color=e.color,
+                    image_id=e.image,
+                    tags=e.tags,
+                    sequence=e.sequence,
+                    auto_create_sequence=e.auto_create_sequence or False,
+                )
+
+                label_relation_map[e.label] = cat
+
+    return item
+
+
+def update_graph(info: Info, input: UpdateGraphInput) -> types.Graph:
+    item = models.Graph.objects.get(id=input.id)
+
+    if input.image:
+        media_store = models.MediaStore.objects.get(
+            id=input.image,
+        )
+    else:
+        media_store = None
+
+    item.name = input.name or item.name
+    item.description = input.description or item.description
+    item.purl = input.purl or item.purl
+    item.store = media_store or item.store
+    item.save()
+
+    if input.nodes:
+        for i in input.nodes:
+            x = models.NodeCategory.objects.get(
+                id=i.id,
+            )
+            if i.position_x:
+                x.position_x = i.position_x
+            if i.position_y:
+                x.position_y = i.position_y
+            if i.height:
+                x.height = i.height
+            if i.width:
+                x.width = i.width
+            if i.color:
+                x.color = i.color
+
+            x.save()
+
+    if input.pin is not None:
+        if input.pin:
+            item.pinned_by.add(info.context.request.user)
+        else:
+            item.pinned_by.remove(info.context.request.user)
+
+    return item
+
+
+def delete_graph(
+    info: Info,
+    input: DeleteGraphInput,
+) -> strawberry.ID:
+    item = models.Graph.objects.get(id=input.id)
+
+    try:
+        age.delete_age_graph(item.age_name)
+    except Exception as e:
+        print("Error deleting AGE graph:", e)
+
+    # Explicitly delete polymorphic categories to avoid cascade issues
+    # Delete in order: first edges, then nodes
+    try:
+        # Delete edge categories first
+        models.MeasurementCategory.objects.filter(graph=item).delete()
+        models.RelationCategory.objects.filter(graph=item).delete()
+        models.StructureRelationCategory.objects.filter(graph=item).delete()
+
+        # Then delete node categories
+        models.MetricCategory.objects.filter(graph=item).delete()
+        models.EntityCategory.objects.filter(graph=item).delete()
+        models.ReagentCategory.objects.filter(graph=item).delete()
+        models.StructureCategory.objects.filter(graph=item).delete()
+        models.ProtocolEventCategory.objects.filter(graph=item).delete()
+        models.NaturalEventCategory.objects.filter(graph=item).delete()
+    except Exception as e:
+        print("Error deleting categories:", e)
+
+    item.delete()
+
+    return input.id
+
+
+def materialize_graph(
+    info: Info,
+    input: MaterializeGraphInput,
+) -> types.Graph:
+    graph = models.Graph.objects.get(id=input.id)
+
+    for mcat in graph.measurement_categories.all():
+        source_tags = models.CategoryTag.objects.filter(value__in=mcat.source_definition.get("tag_filters", []))
+
+        target_tags = models.CategoryTag.objects.filter(value__in=mcat.target_definition.get("tag_filters", []))
+
+        all_sources = models.StructureCategory.objects.filter(graph=graph).filter(Q(tags__in=source_tags) | Q(identifier__in=mcat.source_definition.get("identifier_filters", []))).distinct()
+
+        all_targets = models.EntityCategory.objects.filter(graph=graph).filter(Q(tags__in=target_tags) | Q(id__in=mcat.target_definition.get("category_filters", []))).distinct()
+
+        for source in all_sources:
+            for target in all_targets:
+                print("Creating materialized edge", source, target, mcat)
+                models.MaterializedEdge.objects.get_or_create(
+                    graph=graph,
+                    source=source,
+                    target=target,
+                    relation=mcat,
+                )
+
+    for mcat in graph.structure_relation_categories.all():
+        source_tags = models.CategoryTag.objects.filter(value__in=mcat.source_definition.get("tag_filters", []))
+
+        target_tags = models.CategoryTag.objects.filter(value__in=mcat.target_definition.get("tag_filters", []))
+
+        all_sources = models.StructureCategory.objects.filter(graph=graph).filter(Q(tags__in=source_tags) | Q(identifier__in=mcat.source_definition.get("identifier_filters", []))).distinct()
+
+        all_targets = models.StructureCategory.objects.filter(graph=graph).filter(Q(tags__in=target_tags) | Q(identifier__in=mcat.source_definition.get("identifier_filters", []))).distinct()
+
+        for source in all_sources:
+            for target in all_targets:
+                print("Creating materialized edge", source, target, mcat)
+                models.MaterializedEdge.objects.get_or_create(
+                    graph=graph,
+                    source=source,
+                    target=target,
+                    relation=mcat,
+                )
+
+    for mcat in graph.relation_categories.all():
+        source_tags = models.CategoryTag.objects.filter(value__in=mcat.source_definition.get("tag_filters", []))
+
+        target_tags = models.CategoryTag.objects.filter(value__in=mcat.target_definition.get("tag_filters", []))
+
+        all_sources = models.EntityCategory.objects.filter(graph=graph).filter(Q(tags__in=source_tags) | Q(id__in=mcat.source_definition.get("category_filters", []) or [])).distinct()
+
+        all_targets = models.EntityCategory.objects.filter(graph=graph).filter(Q(tags__in=target_tags) | Q(id__in=mcat.target_definition.get("category_filters", []) or [])).distinct()
+
+        for source in all_sources:
+            for target in all_targets:
+                print("Creating materialized edge", source, target, mcat)
+                models.MaterializedEdge.objects.get_or_create(
+                    graph=graph,
+                    source=source,
+                    target=target,
+                    relation=mcat,
+                )
+
+    return graph
+
+
+@strawberry.input(description="Input type for pinning an ontology")
+class PinGraphInput:
+    id: strawberry.ID = strawberry.field(description="The ID of the ontology to pin")
+    pinned: bool = strawberry.field(description="Whether to pin the ontology or not")
+
+
+def pin_graph(
+    info: Info,
+    input: PinGraphInput,
+) -> types.Graph:
+    item = models.Graph.objects.get(id=input.id)
+    item.pinned = input.pinned
+    item.save()
+
+    return item
