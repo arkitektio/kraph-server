@@ -798,21 +798,24 @@ def _admitted_by(categories: Iterable[core_models.Category], base: QuerySet[evid
 
     The one implementation of "which claims draw this category's edges" (RFC 0009):
     a defined category admits the claims its classification filter matches and
-    folds their standings under its trust; a primitive category admits every
-    claim naming its word, standings organization grain. `active_relation_links`,
+    folds their standings under its trust; a category admits every claim naming
+    its own word, standings organization grain — every primitive category, and a
+    defined one whose rules do not name that word (RFC 0026). `active_relation_links`,
     `active_participation_links`, `project_edges`, `project_participation`, the
     correction paths and the API's edge lists all read through here, so none of
     them can disagree about which claims exist.
     """
     admitted: dict[int, list[evidence_models.Link]] = {}
     for category in categories:
+        links: dict[uuid.UUID, evidence_models.Link] = {}
         if category.definition:
             claims = base.filter(selector_module.classification_filter(category.definition), term__kind=str(category.kind))
             predicate = selector_module.trust_predicate(category.definition, kind="EXISTENCE")
-        else:
-            claims = base.filter(term_id=category.term_id)
-            predicate = None
-        admitted[category] = list(claims_module.standing(claims, "link", predicate=predicate).select_related("term"))
+            links.update((link.pk, link) for link in claims_module.standing(claims, "link", predicate=predicate).select_related("term"))
+        if selector_module.admits_own_word(category):
+            own = base.filter(term_id=category.term_id)
+            links.update((link.pk, link) for link in claims_module.standing(own, "link").select_related("term"))
+        admitted[category] = list(links.values())
     return admitted
 
 
@@ -979,8 +982,9 @@ def resolve_categories(graph: core_models.Graph, nodes: list[evidence_models.Ins
 
     **A node is drawn under every category that admits it** (RFC 0019). The
     categories are a union: every defined category whose definition matches,
-    and every primitive category declaring a word a standing classification
-    names (its own term, when nothing classifies it). A view that declares Pyramidal and
+    and every category declaring a word a standing classification names (its
+    own term, when nothing classifies it) — primitive or defined, unless a
+    defined category's rules name that word and so govern it (RFC 0026). A view that declares Pyramidal and
     Excitatory draws a cell that is both once, under both; a view that declares
     AIS primitively beside a defined AISproximal draws an AIS the definition
     admits under both too, because "anything claimed AIS" is what a primitive
@@ -1015,6 +1019,9 @@ def resolve_categories(graph: core_models.Graph, nodes: list[evidence_models.Ins
     categories = list(core_models.Category.objects.filter(graph=graph).select_related("term"))
     defined = [category for category in categories if category.definition]
     by_term = {category.term_id: category for category in categories}
+    # The categories a claim under their own word admits — every primitive one,
+    # and every defined one whose rules do not name its word (RFC 0026).
+    own_word = {category.pk for category in categories if selector_module.admits_own_word(category)}
 
     # The unfolded claim base, built once. A defined category folds the claims
     # *and their standings* under its own clauses; a primitive category folds
@@ -1065,13 +1072,15 @@ def resolve_categories(graph: core_models.Graph, nodes: list[evidence_models.Ins
         # **no** classification of it stands: a node whose every claim is
         # retracted is not thereby a node under a word nobody claims, but a
         # node nothing has classified needs a word to be drawn at all.
+        # Not only primitive categories: a defined one admits its own word too,
+        # unless its rules name that word and so govern it (RFC 0026).
         claims = claims_by_ref.get(ref, [])
         for claim in claims:
             category = by_term.get(claim.term_id)
-            if category is not None and not category.definition:
+            if category is not None and category.pk in own_word:
                 admitted[category.pk] = category
         own = by_term.get(node.term_id)
-        if not claims and own is not None and not own.definition:
+        if not claims and own is not None and own.pk in own_word:
             admitted[own.pk] = own
 
         if not admitted:
@@ -1133,8 +1142,8 @@ def refs_admitted_by(category: core_models.Category) -> set[str]:
     The candidate set is narrowed first so this costs the category rather than the
     graph. A node can only resolve to this category two ways — its definition
     matched (so some standing `CLASSIFIES` claim names one of the words its
-    ``asserted_as`` lists), or the category is primitive and the node was claimed
-    under its word (as `Instance.term` or as a claim naming that term). Anything outside
+    ``asserted_as`` lists), or the category admits its own word (RFC 0026) and
+    the node was claimed under it (as `Instance.term` or as a claim naming that term). Anything outside
     that set resolves elsewhere or nowhere, so leaving it out cannot change an
     answer. `resolve_categories` evaluates every definition in the graph against
     whatever batch it is given, so its verdict for these nodes is the same one a
@@ -1145,11 +1154,13 @@ def refs_admitted_by(category: core_models.Category) -> set[str]:
 
     # Every written rule names its words (RFC 0010 refuses one that does not),
     # so the wordless-matches-everything branch is gone with the clause shape.
+    # A category admits its own word unless its rules name it (RFC 0026), so
+    # the own-word claims are candidates beside whatever the rules derive from.
     asserted_as = selector_module.asserted_as_keys(category.definition) if category.definition else []
-    if asserted_as:
-        claimed = standing_claims.filter(term__key__in=asserted_as)
-    else:
-        claimed = standing_claims.filter(term_id=category.term_id)
+    words = Q(term__key__in=asserted_as) if asserted_as else Q(pk__in=[])
+    if selector_module.admits_own_word(category):
+        words |= Q(term_id=category.term_id)
+    claimed = standing_claims.filter(words)
     claimed_refs = {str(ref) for ref in claimed.values_list("source_ref", flat=True)}
 
     candidates = list(selector_module.instances_for(graph).filter(Q(term_id=category.term_id) | Q(id__in=claimed_refs)).select_related("term"))

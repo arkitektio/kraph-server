@@ -329,8 +329,11 @@ The load-bearing facts:
   conflict by guessing which other claim to drop.
 - **A node is drawn under every category that admits it (RFC 0019).** `resolve_categories` answers
   `dict[ref, list[Category]]`: the union of defined categories whose rule admits the node and
-  primitive categories of the words its standing classifications name (its own `Instance.term`
-  only when nothing classifies it). Existence folds **per category**; properties are the union;
+  categories of the words its standing classifications name (its own `Instance.term`
+  only when nothing classifies it). **A category's own word always admits (RFC 0026)**: primitive
+  or defined, unless the rules name that word and so govern it. The single predicate for this is
+  `selector.admits_own_word`, read by `resolve_categories`, `_admitted_by`, `refs_admitted_by`
+  and `links_for_category`. Existence folds **per category**; properties are the union;
   the one refusal left is `projector.property_conflicts` — a key two of the node's categories
   define differently (`PropertyDefinitionInput` or category `definition` differ). `draw_node`
   takes `categories: [(label, category_id), …]`, `write_properties` takes no label, a drawn record

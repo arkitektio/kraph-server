@@ -402,6 +402,26 @@ def asserted_as_keys(definition: Definition | None) -> list[str]:
     return list(seen)
 
 
+def admits_own_word(category: Category) -> bool:
+    """Whether a claim naming this category's own word counts for it, from anyone (RFC 0026).
+
+    Declaring a category declares a word — `_term_for` mints its key as the
+    organization's `Term` — and in the view that declared it, that word means the
+    category. So a **defined** category admits what its rules match *and*
+    whatever is claimed under its own word: its rules extend the word, they do
+    not replace it. Before this, "a new CuratedAIS in the CuratedAIS view" was a
+    member of the view and admitted by nothing in it, so it was drawn nowhere.
+
+    **Unless the rules name the word themselves.** Then they govern it: EXAMPLE.md's
+    `AIS` counts Peter's `AIS` claims and not a student's, and an implicit clause
+    admitting the student would silently undo the one rule that says otherwise.
+
+    Own-word claims fold at organization grain, exactly as a primitive category's
+    do — a primitive category is the case where the rules name nothing.
+    """
+    return not category.definition or category.key not in asserted_as_keys(category.definition)
+
+
 def classification_filter(definition: Definition | None) -> Q:
     """The predicate a claim must satisfy to *mean* a defined category.
 

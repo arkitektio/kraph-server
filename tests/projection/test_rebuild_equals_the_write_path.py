@@ -636,6 +636,22 @@ async def _scenario_edge_under_two_categories(api_schema, ctx, graph, table_proj
     await writes.create_relation(api_schema, ctx, "touches", a, b)
 
 
+async def _scenario_own_word_of_a_defined_category(api_schema, ctx, graph, table_projector) -> None:
+    """Claims under a defined category's own word, node and edge: drawn under it (RFC 0026)."""
+
+    @sync_to_async
+    def declare() -> None:
+        organization = graph.organization
+        core_models.EntityCategory.objects.create(graph=graph, key="CuratedAIS", age_name="CuratedAIS", label="CuratedAIS", term=writer.ensure_term(organization, enums.CategoryKindChoices.ENTITY, "CuratedAIS"), definition=rules.definition(rules.rule(rules.word("AIS"))))
+        core_models.RelationCategory.objects.create(graph=graph, key="curated_touch", age_name="CURATED", label="curated_touch", term=writer.ensure_term(organization, enums.CategoryKindChoices.RELATION, "curated_touch"), source_definition={}, target_definition={}, definition=rules.definition(rules.rule(rules.word("touches"))))
+
+    await declare()
+    curated = await writes.create_entity(api_schema, ctx, "CuratedAIS")
+    await writes.create_entity(api_schema, ctx, "AIS")
+    cell = await writes.create_entity(api_schema, ctx, "Cell")
+    await writes.create_relation(api_schema, ctx, "curated_touch", curated, cell)
+
+
 async def _scenario_participation(api_schema, ctx, graph, table_projector) -> None:
     """An event with an input and two outputs: participation edges either side of the vertex."""
     mother = await writes.create_entity(api_schema, ctx, "Cell")
@@ -667,6 +683,7 @@ SCENARIOS = {
     "relation_twice": _scenario_relation_twice,
     "edge_under_two_categories": _scenario_edge_under_two_categories,
     "participation": _scenario_participation,
+    "own_word_of_a_defined_category": _scenario_own_word_of_a_defined_category,
     "retracted_node": _scenario_retracted_node,
     "retracted_datum": _scenario_retracted_datum,
 }

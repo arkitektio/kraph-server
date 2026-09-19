@@ -60,7 +60,10 @@ This is the `createGraph` input, with comments.
         //    counts: classification, retraction, sameness, measurements, all of it.
         { "key": "Cell" },
 
-        // 2. AIS carries the rules.
+        // 2. AIS carries the rules. They name AIS itself, so they govern it:
+        //    a student's "AIS" claim does not count here. A defined category
+        //    whose rules do not name its own word admits that word from anyone
+        //    (RFC 0026).
         {
           "key": "AIS",
           "definition": {

@@ -37,7 +37,7 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 from authentikate.models import Organization
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 
 from evidence import claims as claims_module
 from evidence import models as evidence_models
@@ -78,20 +78,28 @@ def links_for_category(organization: Organization, category: Category, kind: evi
     claims, which is the gain from the log naming a term. A **defined**
     category lists what its rules admit (RFC 0012): the claims its
     CLASSIFICATION-covering rules match, standings folded under its EXISTENCE
-    trust — the same two-part fold every other claim kind gets.
+    trust — the same two-part fold every other claim kind gets — **and** every
+    claim naming its own word, unless its rules name that word (RFC 0026).
 
     The organization is passed in rather than reached through `category.graph`. The
     claims are the tenant's and the category only supplies the rule, so taking the
     tenant from a graph would say that a view owns the claims it lists — and it made
     the one thing the caller has already authorized implicit here.
     """
+    own_word = links_of_kind(organization, kind).filter(term_id=category.term_id)
     if category.definition:
-        return claims_module.standing(
+        admitted = claims_module.standing(
             evidence_models.Link.objects.for_organization(organization).filter(kind=kind, term__kind=str(category.kind)).filter(selector_module.classification_filter(category.definition)),
             "link",
             predicate=selector_module.trust_predicate(category.definition, kind="EXISTENCE"),
-        ).select_related("assertion", "term")
-    return links_of_kind(organization, kind).filter(term_id=category.term_id)
+        )
+        if selector_module.admits_own_word(category):
+            # Its own word counts too, unless its rules name it (RFC 0026) — the
+            # same union `projector._admitted_by` draws, so the list and the
+            # drawing agree.
+            return evidence_models.Link.objects.for_organization(organization).filter(Q(pk__in=admitted.values("pk")) | Q(pk__in=own_word.values("pk"))).select_related("assertion", "term")
+        return admitted.select_related("assertion", "term")
+    return own_word
 
 
 def links_in_graph(graph: Graph, kind: evidence_models.Link.Kind, *, ref_field: str) -> QuerySet[evidence_models.Link]:

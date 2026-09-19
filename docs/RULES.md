@@ -32,6 +32,14 @@ category has no rules, everything counts, which is the default.
 A category without a definition is called primitive. Any claim naming its word
 counts, from anyone.
 
+A category's own word always counts for it, defined or not (RFC 0026). A
+`CuratedAIS` defined as "anything claimed AIS or AxonInitialSegment" also
+admits every claim made as `CuratedAIS`, from anyone: the rules extend the
+word, they do not replace it. The one exception is a rule that names the
+category's own word. Then the rules govern that word, as the worked example's
+`AIS` does to refuse a student's `AIS` claims. Retractions still count only
+from the people the category's rules trust for existence.
+
 ## The shape
 
 ```jsonc
