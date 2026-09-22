@@ -6,6 +6,7 @@ mutations.
 """
 
 from strawberry.schema.config import StrawberryConfig
+from kraph_server.logs import QuietErrorsSchema
 from strawberry.extensions import QueryDepthLimiter
 from typing import Optional
 from authentikate.strawberry.extension import AuthentikateExtension
@@ -536,6 +537,10 @@ class Mutation:
 # write, on commit.
 
 
+class Schema(QuietErrorsSchema, kante.Schema):
+    """kante.Schema, logging expected resolver errors as one line and bugs with a traceback (see logs.py)."""
+
+
 def create_schema(
     max_depth: int = 10,
     projector: Optional[Projector] = None,
@@ -567,7 +572,7 @@ def create_schema(
     if projector is not None:
         extensions.append(ProjectionExtension(projector=projector))
 
-    return kante.Schema(
+    return Schema(
         query=Query,
         mutation=Mutation,
         subscription=Subscription,
