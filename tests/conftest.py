@@ -16,9 +16,10 @@ import time
 from datetime import datetime, timezone
 
 import boto3
+import psycopg
 import pytest
 from authentikate.models import Client, Membership, Organization, User
-from dokker import local
+from dokker import PortNotFoundError, testing
 from kante.context import HttpContext, UniversalRequest
 from moto import mock_aws
 from strawberry.http.temporal_response import TemporalResponse
@@ -59,18 +60,52 @@ def create_bucket2(s3) -> None:
 
 @pytest.fixture(scope="session")
 def backend_stack():
+    """Bring up the integration stack and yield the host ports it landed on: `(db, redis)`.
+
+    The ports are *not* fixed. The compose file publishes them with no host port, so
+    docker assigns free ones per run and this asks the running stack which it got.
+    `testing()` gives the stack a project name of its own and takes it down on exit,
+    so two runs at once, or a stack a crashed run left behind, cannot be in each
+    other's way -- which a pinned host port would undo.
+    """
     docker_compose_path = os.path.join(os.path.dirname(__file__), "integration", "docker-compose.yaml")
 
-    with local(docker_compose_path) as e:
-        e.inspect()
-
-        e.down()
-
+    with testing(docker_compose_path) as e:
         e.up()
 
-        time.sleep(2)
+        # Resolved *inside* the retry loop: `up()` can return before the container is
+        # running, and compose reports no port for one that is not up yet.
+        db_port = None
+        deadline = time.monotonic() + 30
+        while True:
+            try:
+                if db_port is None:
+                    db_port = e.get_port("db", 5432)
+                with psycopg.connect(dbname="testdb", user="test", password="test", host="localhost", port=db_port, connect_timeout=1) as connection:
+                    connection.execute("SELECT 1")
+                break
+            except (psycopg.OperationalError, PortNotFoundError):
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.2)
 
-        yield
+        yield db_port, e.get_port("redis", 6379)
+
+
+@pytest.fixture(scope="session")
+def django_db_modify_db_settings(backend_stack):
+    """Start the backend services, and point Django at the ports they came up on.
+
+    pytest-django calls this before creating the test database, which is the only
+    window in which the port can be set: `settings_test` is imported long before any
+    fixture runs, so it cannot know ports docker had not assigned yet.
+    """
+    from django.conf import settings
+
+    db_port, redis_port = backend_stack
+    settings.DATABASES["default"]["PORT"] = str(db_port)
+    settings.REDIS_URL = f"redis://localhost:{redis_port}/0"
+    yield
 
 
 @pytest.fixture(scope="function")

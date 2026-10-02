@@ -37,10 +37,10 @@ tests/
 
 ## Running
 
-Every test that touches the database needs the docker stack (`tests/integration/docker-compose.yaml`,
-Postgres on 5555, redis on 6666, seaweedfs on 18888); `conftest.py::backend_stack` brings it down
-and up once per session, so **only one pytest session may run at a time**. Remove stale
-`integration-*` containers before a run.
+Every test that touches the database needs the docker stack (`tests/integration/docker-compose.yaml`:
+Postgres, redis, seaweedfs). `conftest.py::backend_stack` brings it up once per session with
+dokker's `testing()`: a project name of its own and host ports docker picks, taken down again on
+exit. Several sessions can run at once, and nothing has to be cleaned up before a run.
 
 ```bash
 uv run pytest                                  # everything, ~2½ minutes

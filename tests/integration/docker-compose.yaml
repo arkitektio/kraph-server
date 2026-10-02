@@ -12,15 +12,18 @@ services:
          POSTGRES_USER: test
       labels:
          - fakts.service=live.arkitekt.postgres
+      # No host port: docker picks a free one and `backend_stack` asks the running
+      # stack which (`deployment.get_port`). A pinned port makes two runs, or a run
+      # and a stack left behind, fight over it whatever their project names.
       ports:
-        - 5555:5432
+        - 5432
    redis:
       environment:
          REDIS_HOST: redis
          REDIS_PORT: 6379
       image: redis
       ports:
-         - 6666:6379
+         - 6379
    seaweedfs:
       image: chrislusf/seaweedfs:latest
       user: '0:0'
@@ -31,7 +34,7 @@ services:
       volumes:
          - ./configs/seaweed.toml:/etc/seaweedfs/security.toml
       ports:
-         - 18888:8888
+         - 8888
       
 
 volumes:

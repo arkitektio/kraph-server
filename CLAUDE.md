@@ -71,11 +71,13 @@ Notes:
 
 ### Tests need Docker — always
 
-`tests/conftest.py::backend_stack` is session-scoped and uses `dokker` to `down()` then `up()`
-`tests/integration/docker-compose.yaml` (Postgres on **5555**, redis on **6666**, seaweedfs on
-**18888**). Those ports must be free. `kraph_server/settings_test.py` hardcodes
-`localhost:5555 / test / test`, so that compose file is the only supported test database — even a
-single test pays the full stack bring-up. Settings module is wired in `pyproject.toml`, so plain
+`tests/conftest.py::backend_stack` is session-scoped and brings up
+`tests/integration/docker-compose.yaml` (Postgres, redis, seaweedfs) with dokker's `testing()`:
+its own compose project, host ports docker picks, down again on exit. No port has to be free and
+sessions can run side by side. `django_db_modify_db_settings` points Django at the ports the stack
+got; the ports in `kraph_server/settings_test.py` are only a fallback for a stack started by hand
+(`KRAPH_TEST_DB_PORT`, `KRAPH_TEST_REDIS_PORT`). That compose file is the only supported test
+database — even a single test pays the full stack bring-up. Settings module is wired in `pyproject.toml`, so plain
 `uv run pytest` is correct.
 
 The drawing lives in the projection tables of the same test database, so `transactional_db`
