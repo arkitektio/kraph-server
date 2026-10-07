@@ -46,17 +46,20 @@ It has no peers. Other services' objects are named in claims by their structure 
 
 ## Running
 
-The image is `jhnnsrs/kraph`. A deployment runs it as two processes:
+The image is `jhnnsrs/kraph`. Started with no command it only says what it is; to run it:
 
 ```sh
-python -m arkitekt_service migrate   # once per release: wait for the database, apply migrations
-bash run.sh                          # web: serve on :80 (daphne); the image's default command
-bash run-worker.sh                   # the convergence runner
+arkitekt-service run migrate   # once per release: wait for the database, apply migrations
+arkitekt-service serve         # serve on :80 (daphne)
+arkitekt-service standalone    # both, for one image run on its own
 ```
 
-Every write draws inside its own request. The runner is the backstop: it finishes any
-drawing a request could not, every `KRAPH_REPROJECT_INTERVAL` seconds (default 30).
-`run-debug.sh` migrates and serves with Django's autoreloading server, for development.
+Every write draws inside its own request. What a request could not finish is finished by a
+later pass (`manage.py reproject --incremental --all`). Nothing runs that pass on a timer
+at the moment: the runner that did was a second process of this image and is gone, and the
+pass is to become a rekuest worker. Until then it is run by hand, or by whatever schedules
+it.
+`arkitekt-service debug` migrates and serves with Django's autoreloading server, for development.
 
 It needs **PostgreSQL 19** (for SQL/PGQ), Redis and an S3 object store.
 

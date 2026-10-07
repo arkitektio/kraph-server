@@ -16,6 +16,10 @@ import os
 from .configuration import Settings
 from .logs import build_logging
 
+# Where this service's contract is: what the image's environment says, and the same here for a
+# checkout, so that `manage.py validate_settings` and the configuration check work in both.
+os.environ.setdefault("ARKITEKT_SERVICE", "kraph_server.contract")
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -31,7 +35,7 @@ SECRET_KEY = conf.django.secret_key
 # while `configuration.py` parsed `django.debug` / `django.hosts` /
 # `django.use_x_forwarded_host` and nothing read them — production served full
 # tracebacks and kept every SQL query in memory. `manage.py check --deploy`
-# (run.sh) is what tells you when a deployment turns debug on.
+# (arkitekt-service serve) is what tells you when a deployment turns debug on.
 DEBUG = conf.django.debug
 ALLOWED_HOSTS: list[str] = list(conf.django.hosts)
 USE_X_FORWARDED_HOST = conf.django.use_x_forwarded_host
@@ -73,6 +77,10 @@ INSTALLED_APPS = [
     "health_check",  # required for health checks
     "health_check.db",  # stock Django health checkers
     "health_check.contrib.redis",  # the channel layer; a dead redis is a dead subscription
+    # What every service is as a Django server: `ensureadmin`, `validate_settings`, and the
+    # check that warns about config keys this release does not read. Last, so that a command
+    # of the service's own with the same name is the one that runs.
+    "arkitekt_service.server",
 ]
 
 

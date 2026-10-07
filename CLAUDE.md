@@ -55,13 +55,15 @@ Notes:
 - **basedpyright is the only type checker.** `[tool.mypy]` used to sit in `pyproject.toml` set to
   `strict = true` with no CI job running it — a standard nothing checked — and is gone along with
   the `mypy` dev dependency. basedpyright runs unscoped over the whole repo, advisory.
-- Serving: `run.sh` (daphne on :80, production) / `run-debug.sh` (`runserver` on :80). Both
-  `wait_for_database` → `migrate` first, under `set -euo pipefail`; `run.sh` also runs
+- Serving: `arkitekt-service serve` (daphne on :80, production) / `arkitekt-service debug` (`runserver` on :80). Both
+  `wait_for_database` → `migrate` first, under `set -euo pipefail`; `arkitekt-service serve` also runs
   `validate_settings` and `check --deploy`. They used to call `ensureadmin`
   too — a command that is not installed — and without `set -e` that errored on every boot and
-  carried on serving. **The second process is `run-worker.sh`**: `reproject --incremental --all
+  carried on serving. **There is no second process any more.** `reproject --incremental --all
   --loop`, the convergence runner (`graph_engine/runner.py`) that finishes any drawing a request
-  could not. The `Dockerfile`'s `CMD` is `run.sh`; the deployment compose overrides it per service.
+  could not, used to run from `run-worker.sh`; that script is removed and the pass is to become a
+  rekuest worker. The `Dockerfile`'s `CMD` is `arkitekt-service describe`; how the service is started
+  is `serve`/`debug` in `kraph_server/contract.py`.
 - `DEBUG`, `ALLOWED_HOSTS` and the proxy trust come from `config.yaml` (`django.debug`, `django.hosts`,
   `django.use_x_forwarded_host`). They were literals (`DEBUG = True`) while the config keys were parsed and
   read by nothing. Turning `DEBUG` off for the first time exposed a latent bug: the projection's signal
@@ -280,8 +282,9 @@ The load-bearing facts:
   in and which `tests/guards/test_the_draw_follows_the_act.py` holds outside the transaction. A
   failure there is **not a failed mutation**: the act is durable and already announced, so it is
   logged with the assertion id, the outbox row is left standing, and the payload reports
-  `pending: true` beside whatever was drawn (`Asserted*.pending`); the runner (`run-worker.sh`,
-  `graph_engine/runner.py`) applies it. `lag` is that outstanding count, zero in steady state
+  `pending: true` beside whatever was drawn (`Asserted*.pending`); the runner
+  (`graph_engine/runner.py`, no longer started by a deployment: it is to become a rekuest
+  worker) applies it. `lag` is that outstanding count, zero in steady state
   because the draw normally completes within the request. (It used to propagate as a mutation
   error for a committed act; before that it was two evidence transactions on the ground that AGE
   could not join one. Both gaps are closed.)

@@ -20,8 +20,9 @@ Two modes:
   classification can widen membership in any view. `--dry-run` prints where each
   graph's cursor stands and how much work is owed. See `graph_engine/watermark.py`.
   `--loop` turns it into the **runner**: the same pass every `--interval`
-  seconds, under the organization's projection lock, until SIGTERM. This is
-  what `run-worker.sh` starts; see `graph_engine/runner.py`.
+  seconds, under the organization's projection lock, until SIGTERM; see
+  `graph_engine/runner.py`. Nothing starts it in a deployment any more: the pass is
+  to become a rekuest worker.
 """
 
 import datetime

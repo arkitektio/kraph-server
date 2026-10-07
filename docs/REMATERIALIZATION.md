@@ -111,8 +111,9 @@ erasing anything — the members of every vertex holding a touched ref, and the
 view-scoped sameness closure of the touched refs — so a merge or a split redraws
 both individuals concerned and nothing outside them moves.
 
-This service has no job queue to hand it to. It has a **runner** now — `run-worker.sh`,
-`reproject --incremental --loop` — but that runner applies the outbox (the drawings
+This service has no job queue to hand it to. It has a **runner** —
+`reproject --incremental --loop`, no longer started by a deployment and due to become a
+rekuest worker — but that runner applies the outbox (the drawings
 individual writes owe), not a category's stale vertices, which no outbox row records.
 So the limit is **accepted and stated** rather than hidden, on three grounds:
 
