@@ -7,7 +7,7 @@ the same commit, and no installer has to learn of it.
 
 from __future__ import annotations
 
-from arkitekt_service.contract import JSON, Contract, Description, Facts, Needs, Offers, Scope, Start, blocks
+from arkitekt_service.contract import JSON, Contract, Description, Facts, Job, Needs, Offers, Scope, Start, blocks
 
 from kraph_server.configuration import Settings
 
@@ -50,4 +50,16 @@ contract = Contract(
     # (and `debug`) become these, so they get the container's signals themselves.
     serve=Start(("daphne", "-b", "0.0.0.0", "-p", "80", "--websocket_timeout", "-1", "kraph_server.asgi:application")),
     debug=Start(("python", "manage.py", "runserver", "0.0.0.0:80")),
+    jobs={
+        "ensureadmin": Job(("ensureadmin",), "Create the operator account the config names"),
+        "reproject": Job(("reproject",), "Rebuild a graph's projection from the evidence, or converge what is owed: --graph, --all, --incremental"),
+        "rematerialize": Job(("rematerialize",), "Redraw the vertices of categories whose rules moved on without them: --graph, --stale"),
+        "refresh_namespaces": Job(("refresh_namespaces",), "Rebuild graphs' queryable namespaces from their categories: --graph, --all"),
+        "rebuild_identity": Job(("rebuild_identity",), "Rebuild the instance-identity fold from the sameness claims that stand: --check, --stale"),
+        "rebuild_asserted_terms": Job(("rebuild_asserted_terms",), "Rebuild the index of the words each category's definition derives from: --check"),
+        "backfill_schema": Job(("backfill_schema",), "Apply a schema change to the data it affects: --graph, --to-version"),
+        "list_legacy_queries": Job(("list_legacy_queries",), "Name the saved queries that still store raw Cypher instead of a plan"),
+        "redact": Job(("redact",), "Destroy evidence on purpose, logged: what no mutation can do"),
+    },
+    setup=("ensureadmin",),
 )

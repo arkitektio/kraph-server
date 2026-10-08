@@ -31,7 +31,7 @@ dependencies = [
     "kante>=2.1.1",
     "pyjwt>=2.12.1",
     "whitenoise>=6.6",
-    "arkitekt-service>=1.11.0",
+    "arkitekt-service>=3.0.0",
 ]
 
 [dependency-groups]

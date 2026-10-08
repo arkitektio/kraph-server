@@ -56,10 +56,11 @@ Notes:
   `strict = true` with no CI job running it — a standard nothing checked — and is gone along with
   the `mypy` dev dependency. basedpyright runs unscoped over the whole repo, advisory.
 - Serving: `arkitekt-service serve` (daphne on :80, production) / `arkitekt-service debug` (`runserver` on :80). Both
-  `wait_for_database` → `migrate` first, under `set -euo pipefail`; `arkitekt-service serve` also runs
-  `validate_settings` and `check --deploy`. They used to call `ensureadmin`
-  too — a command that is not installed — and without `set -e` that errored on every boot and
-  carried on serving. **There is no second process any more.** `reproject --incremental --all
+  only serve: the database is prepared by a job of its own, `arkitekt-service run migrate`
+  (`wait_for_database` → `migrate` → the contract's setup, which is `ensureadmin` from
+  `arkitekt_service.server`), run by the installer once per build. `arkitekt-service standalone
+  [--debug]` is the two together, and what `deployments/next` runs. See "Migrations and jobs" at the
+  end of this file. **There is no second process any more.** `reproject --incremental --all
   --loop`, the convergence runner (`graph_engine/runner.py`) that finishes any drawing a request
   could not, used to run from `run-worker.sh`; that script is removed and the pass is to become a
   rekuest worker. The `Dockerfile`'s `CMD` is `arkitekt-service describe`; how the service is started
@@ -570,3 +571,36 @@ pass working, not regressing.
 - Releases are `python-semantic-release` off conventional commits: `main` → stable, `next` →
   `-rc.N` prereleases, `N.x` → maintenance. Commit messages drive version bumps, so use
   `feat:`/`fix:`/`chore:` deliberately.
+
+## Migrations and jobs
+
+A container of this image only serves. An installer (konstruktor) prepares the database with
+`arkitekt-service run migrate` once per build — before the first start, and in an update before
+anything is recreated — and runs everything else as a job the image offers by name
+(`konstruktor job run kraph <job>`). Nothing is migrated, seeded or repaired at start.
+
+**Read the rules before changing a model, a management command or `kraph_server/contract.py`:**
+<https://github.com/arkitektio/arkitekt-service/blob/main/docs/migrations-and-jobs.md>. The ones that are broken most easily:
+
+- A model change and its migration are one commit.
+- Within a major, a migration leaves a schema the previous release still runs on: a failed
+  update, and a rollback, start the old build on the migrated database. What cannot do that
+  is a `feat!:`.
+- A `manage.py` command an operator should be able to run on a hub is declared in `jobs=` in
+  `kraph_server/contract.py`; one nobody runs is deleted. Any job is safe to run again.
+- What `setup=` names runs for every build, after the migrations: it changes nothing the
+  second time and needs nothing but the database and the config.
+- Existing data is rewritten by a data migration when that needs only the database (it runs
+  once, with the service stopped), and by a re-runnable job in `setup=` when it needs the
+  service's code or its storage. There is no upgrade step, and nothing is keyed to a version.
+
+What this service declares:
+
+- Setup, in order: `ensureadmin`.
+- Other jobs: `reproject`, `rematerialize`, `refresh_namespaces`, `rebuild_identity`, `rebuild_asserted_terms`, `backfill_schema`, `list_legacy_queries`, `redact`.
+- Not jobs, on purpose: `print_schema` regenerates the committed `test.graphql`: a developer's tool, run in a checkout. `core-backup-do-not-delete/` is not an app and none of its commands exist.
+
+`tests/test_prepared.py` holds the contract to this: migrations committed, every job a command
+of this service, the setup run twice. In `deployments/next` the service runs
+`arkitekt-service standalone --debug`, which migrates and then serves: restart its container
+to apply a new migration.
