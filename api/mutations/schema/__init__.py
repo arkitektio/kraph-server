@@ -1,6 +1,6 @@
 from .entity_category import create_entity_category, update_entity_category, delete_entity_category
 from .structure_kind import update_structure_kind, delete_structure_kind
-from .term import create_term, update_term, delete_term
+from .term import create_term, update_term
 from .structure_relation_category import create_structure_relation_category, update_structure_relation_category, delete_structure_relation_category
 from .metric_kind import update_metric_kind, delete_metric_kind
 from .measurement_category import create_measurement_category, update_measurement_category, delete_measurement_category
@@ -18,7 +18,6 @@ __all__ = [
     "delete_entity_category",
     "create_term",
     "update_term",
-    "delete_term",
     "update_structure_kind",
     "delete_structure_kind",
     "delete_graph",

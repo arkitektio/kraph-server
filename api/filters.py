@@ -280,6 +280,17 @@ class TermFilter:
         """
         return Q(**{f"{prefix}categories__isnull": not value})
 
+    @kante.filter_field(description="Only hidden words, or only offered ones. Omitted shows both")
+    def hidden(self, info: kante.Info, value: bool, prefix: str) -> Q:
+        """The read half of hiding.
+
+        Opt-in, for the same reason as `GraphFilter.is_archived`: a default
+        exclusion would make a hidden word unfindable, and the only way back is
+        `updateTerm(hidden: false)`, which needs the client to find it first.
+        Pickers ask for `hidden: false`.
+        """
+        return Q(**{f"{prefix}hidden": value})
+
 
 # ---------------------------------------------------------------------------
 # The log (RFC 0020)

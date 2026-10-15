@@ -16,15 +16,19 @@ Creating one is never *required*. `writer.ensure_term` mints a term the moment a
 category declares the word or a claim names it, and it is a `get_or_create` on
 `(organization, kind, key)` — so a term curated in advance is found and reused
 rather than duplicated.
+
+There is no delete. A word is what the log names, and the log is append-only:
+even a word nothing has been claimed under yet may be named by a client that
+learned it yesterday. A word nobody wants offered any more is *hidden* — pickers
+stop showing it and `terms` lists it only when asked — and can be shown again.
 """
 
-import strawberry
 from kante.types import Info
 
 from api import context, inputs, types
 from datalayer import models as datalayer_models
 from evidence import models as evidence_models
-from ._guards import delete_or_explain, refuse_bad_color
+from ._guards import refuse_bad_color
 
 
 def _resolve(info: Info, term_id: str) -> evidence_models.Term:
@@ -62,15 +66,18 @@ def create_term(info: Info, input: inputs.CreateTermInput) -> types.Term:
     term.purl = model.purl or term.purl
     term.color = model.color or term.color
     term.image = _media_store(model.image) or term.image
+    # Declaring a word is wanting it, so a hidden one comes back. `ensure_term`
+    # (a claim or a category naming the word) deliberately does not do this.
+    term.hidden = False
     term.save()
 
     return term
 
 
 def update_term(info: Info, input: inputs.UpdateTermInput) -> types.Term:
-    """Edit how a word presents itself.
+    """Edit how a word presents itself, or hide it.
 
-    Descriptive fields only. `kind` and `key` are the term's identity, and every
+    Descriptive fields and the `hidden` flag only. `kind` and `key` are the term's identity, and every
     claim ever recorded points at it — renaming would silently re-point all of
     them at a different word. Correcting a mistaken word means declaring the right
     one and re-classifying, which leaves both claims on the record. The database
@@ -87,27 +94,10 @@ def update_term(info: Info, input: inputs.UpdateTermInput) -> types.Term:
     term.purl = model.purl or term.purl
     term.color = model.color or term.color
     term.image = _media_store(model.image) or term.image
+    # `is not None`, not `or`: `False or term.hidden` would make a hidden word
+    # impossible to show again.
+    if model.hidden is not None:
+        term.hidden = model.hidden
     term.save()
 
     return term
-
-
-def delete_term(info: Info, input: inputs.DeleteTermInput) -> strawberry.ID:
-    """Retire a word nothing has been claimed under.
-
-    `Instance.term` and `Link.term` are `PROTECT`, so a word in use cannot be removed
-    and the refusal names what is in the way. That guard sits here rather than on
-    `Category` deliberately: a category is one view's rule and deleting it is
-    free, but the word every view's claims were recorded under has to outlive
-    them.
-
-    `Category.term` is `PROTECT` too, so a word a graph still declares is also
-    refused — delete the category first, which takes no evidence with it.
-    """
-    model = input.to_pydantic()
-    delete_or_explain(
-        _resolve(info, str(model.id)),
-        what="this term",
-        instead="Retract the claims recorded under it, and delete the categories declaring it, first.",
-    )
-    return model.id

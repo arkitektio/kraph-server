@@ -126,7 +126,7 @@ NODES_PAGED = """
 
 TERMS = """
     query Terms($filters: TermFilter) {
-        terms(filters: $filters) { id kind key label description purl }
+        terms(filters: $filters) { id kind key label description purl hidden }
     }
 """
 

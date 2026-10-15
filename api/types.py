@@ -556,6 +556,7 @@ class Term:
     purl: Optional[str] = kante.django_field(description="Persistent URL, where this corresponds to a published ontology term")
     color: Optional[List[int]] = kante.django_field(description="Display colour as RGBA")
     image: Optional[MediaStore] = kante.django_field(description="Illustrative image, if any")
+    hidden: bool = kante.django_field(description="Whether curators have put this word away. A word is never deleted; a hidden one is still named by its claims, it is just no longer offered")
     created_at: datetime = kante.django_field(description="When this organization first used this word")
 
     @kante.django_field(description="The categories declaring this term — one per graph that speaks the word")

@@ -293,7 +293,7 @@ CREATE_TERM = """
 
 UPDATE_TERM = """
     mutation UpdateTerm($input: UpdateTermInput!) {
-        updateTerm(input: $input) { id kind key label description }
+        updateTerm(input: $input) { id kind key label description hidden }
     }
 """
 

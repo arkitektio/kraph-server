@@ -439,12 +439,8 @@ class Mutation:
         resolver=mutations.create_term,
     )
     update_term = kante.django_mutation(
-        description="Update a term's label, description, PURL or colour. Its kind and key are its identity and cannot change.",
+        description="Update a term's label, description, PURL or colour, or hide it. Its kind and key are its identity and cannot change, and a term is never deleted — hiding is how a word is put away.",
         resolver=mutations.update_term,
-    )
-    delete_term = kante.django_mutation(
-        description="Retire a word nothing has been claimed under",
-        resolver=mutations.delete_term,
     )
     # No `create`: structure kinds are minted lazily by `ensure_structure_kind`
     # the first time a measurement names an identifier.

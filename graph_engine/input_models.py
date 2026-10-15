@@ -1334,12 +1334,7 @@ class UpdateTermInput(StrictModel):
     purl: Optional[str] = Field(default=None, description="Persistent URL, where this corresponds to a published ontology term")
     color: Optional[List[int]] = Field(default=None, description="Optional RGBA colour")
     image: Optional[str] = Field(default=None, description="Optional media store ID for an illustrative image")
-
-
-class DeleteTermInput(StrictModel):
-    """Input for retiring one of the organization's words."""
-
-    id: str = Field(..., description="The ID of the term to delete")
+    hidden: Optional[bool] = Field(default=None, description="Put the word away (true) or offer it again (false). A word is never deleted; omitted leaves it as it is")
 
 
 class UpdateMetricKindInput(UpdateDefinitionInput):

@@ -353,9 +353,9 @@ there is one global answer.
 | every `attest*` | `Assertion`, `Standing(stands=True)`, and the node redrawn into every view whose rules admit it |
 | `createTerm` | a `Term`, or fills in the description of one an ingest minted bare — idempotent on `(kind, key)` |
 | `updateTerm` | nothing in the log: descriptive fields only. `kind` and `key` are identity and cannot change, because every claim points at them |
-| `deleteTerm` | nothing — refused while any claim or category names the word |
+| `updateTerm(hidden:)` | nothing in the log: a word is never deleted, only hidden — pickers stop offering it, `terms(filters: {hidden: …})` finds it, and `createTerm` or `hidden: false` brings it back |
 
-The vocabulary is readable and curatable through `terms` / `term` and the three
+The vocabulary is readable and curatable through `terms` / `term` and the two
 mutations above, alongside `structureKinds` and `metricKinds`. `Category.term`
 and `Term.categories` navigate the join in both directions: a client showing a
 graph wants the word behind a category, and one curating vocabulary wants every

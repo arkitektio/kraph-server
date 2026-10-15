@@ -274,6 +274,22 @@ class Term(models.Model):
         null=True,
         blank=True,
     )
+    hidden = models.BooleanField(
+        default=False,
+        db_default=False,
+        help_text=(
+            "Whether curators have put this word away. A word is never deleted: every "
+            "claim ever recorded under it names it, and so may one recorded tomorrow by "
+            "a client that still speaks it. Hiding is what is left — pickers stop "
+            "offering the word, and the vocabulary lists it only when asked. "
+            "A presentation flag, not evidence: it says nothing about the world, so it "
+            "is ordinary mutable state and carries no assertion. `ensure_term` leaves "
+            "it alone, so a claim under a hidden word stands and is drawn like any "
+            "other; `createTerm` clears it, because declaring a word is wanting it. "
+            "`db_default` so a previous release, which does not know the column, can "
+            "still insert a term."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     objects = OrganizationScopedManager["Term"]()

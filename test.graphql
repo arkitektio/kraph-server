@@ -1955,12 +1955,6 @@ input DeleteStructureRelationCategoryInput {
   id: String!
 }
 
-"""Input for retiring one of the organization's words"""
-input DeleteTermInput {
-  """The ID of the term to delete"""
-  id: String!
-}
-
 """A DERIVED_FROM claim: this claim came from that one (RFC 0017)"""
 type Derivation implements Edge {
   """This claim's durable identity — the `Link` primary key, a bare uuid"""
@@ -4164,12 +4158,9 @@ type Mutation {
   createTerm(input: CreateTermInput!): Term!
 
   """
-  Update a term's label, description, PURL or colour. Its kind and key are its identity and cannot change.
+  Update a term's label, description, PURL or colour, or hide it. Its kind and key are its identity and cannot change, and a term is never deleted — hiding is how a word is put away.
   """
   updateTerm(input: UpdateTermInput!): Term!
-
-  """Retire a word nothing has been claimed under"""
-  deleteTerm(input: DeleteTermInput!): ID!
 
   """
   Retire a structure kind. Refused while any structure is recorded under it — evidence is never deleted; retract the structures first
@@ -6862,6 +6853,11 @@ type Term @key(fields: "id", resolvable: true) {
   """Illustrative image, if any"""
   image: MediaStore
 
+  """
+  Whether curators have put this word away. A word is never deleted; a hidden one is still named by its claims, it is just no longer offered
+  """
+  hidden: Boolean!
+
   """When this organization first used this word"""
   createdAt: DateTime!
 
@@ -6891,6 +6887,9 @@ input TermFilter {
 
   """Filter to terms at least one graph declares a category for"""
   declared: Boolean
+
+  """Only hidden words, or only offered ones. Omitted shows both"""
+  hidden: Boolean
 }
 
 enum TermKind {
@@ -7342,6 +7341,11 @@ input UpdateTermInput {
 
   """Optional media store ID for an illustrative image"""
   image: String = null
+
+  """
+  Put the word away (true) or offer it again (false). A word is never deleted; omitted leaves it as it is
+  """
+  hidden: Boolean = null
 }
 
 enum ValueKind {

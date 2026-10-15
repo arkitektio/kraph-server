@@ -255,11 +255,6 @@ class UpdateTermInput:
     """Input for editing how one of the organization's words presents itself."""
 
 
-@pydantic.input(model=input_models.DeleteTermInput, all_fields=True, description="Input for retiring one of the organization's words")
-class DeleteTermInput:
-    """Input for retiring one of the organization's words."""
-
-
 @pydantic.input(model=input_models.UpdateStructureKindInput, all_fields=True, description="Input for updating an existing structure definition in the graph schema")
 class UpdateStructureKindInput:
     """Input for updating an existing structure definition in the graph schema."""

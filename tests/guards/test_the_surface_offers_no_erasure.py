@@ -47,6 +47,10 @@ REMOVED = [
     # that additively now, so their last job is gone.
     "updateNaturalEvent",  # retired
     "updateProtocolEvent",  # retired
+    # A word is what the log names, so it is never deleted — not even one nothing
+    # has been claimed under yet, which a client may name tomorrow. It is hidden
+    # (`updateTerm(hidden: true)`) instead.
+    "deleteTerm",
 ]
 
 #: The retraction path each removed mutation's callers should use instead. Kept as
