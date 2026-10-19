@@ -40,7 +40,7 @@ def test_its_config_is_written_from_what_the_hub_says(tmp_path: Path, capsys: py
     assert config["postgres"]["db_name"] == "kraph"
     # The hook agent reports to rekuest's agents' endpoint, and reads mikro's metrics where mikro offers them.
     assert config["rekuest_hook"] == {"rekuest_url": "http://rekuest-takt:8080/rekuest"}
-    assert config["mikro"] == {"url": "http://mikro:80/mikro/_feed", "identifier": "live.arkitekt.mikro"}
+    assert config["mikro"] == {"url": "http://mikro:80/mikro/_feed", "identifier": "mikro"}
     assert config["instance"]["private_key"].startswith("-----BEGIN PRIVATE KEY-----")
 
 

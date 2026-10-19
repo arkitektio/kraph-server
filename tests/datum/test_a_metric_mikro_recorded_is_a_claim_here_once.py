@@ -84,7 +84,7 @@ def test_a_withdrawn_metric_is_retracted_never_deleted(organization: Organizatio
     assert not _stands(metric)
     # A withdrawal is mikro's: no user of it is named.
     standing = evidence_models.Standing.objects.for_organization(organization).get(target_id=str(metric.pk))
-    assert standing.assertion.subject == "live.arkitekt.mikro"
+    assert standing.assertion.subject == "mikro"
 
 
 def test_a_metric_gone_before_it_was_read_records_nothing(organization: Organization) -> None:

@@ -44,7 +44,7 @@ from evidence import writer
 #: The feed metrics are read from, as the structure mikro hosts them under.
 FEED = "@mikro/metric"
 #: The service the feed is read from: the subject of an act no user of its is named in.
-PRODUCER = "live.arkitekt.mikro"
+PRODUCER = "mikro"
 
 
 @dataclass(frozen=True)

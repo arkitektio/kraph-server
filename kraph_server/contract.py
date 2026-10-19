@@ -47,7 +47,7 @@ def render(facts: Facts) -> dict[str, JSON]:
         document["rekuest_hook"] = hook
     mikro = facts.peers.get("mikro")
     if mikro is not None and FEED in mikro.offers:
-        document["mikro"] = {"url": mikro.offers[FEED], "identifier": mikro.identifier or "live.arkitekt.mikro"}
+        document["mikro"] = {"url": mikro.offers[FEED], "identifier": mikro.identifier or "mikro"}
     return document
 
 

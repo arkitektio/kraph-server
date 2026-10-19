@@ -28,8 +28,8 @@ def mikro(settings, live_server) -> None:
     """mikro's feed at the live server, and kraph's instance key, as the hub would vouch for it."""
     prefix = f"/{settings.MY_SCRIPT_NAME.strip('/')}" if settings.MY_SCRIPT_NAME else ""
     settings.ROOT_URLCONF = "tests.support.feed_urls"
-    settings.INSTANCE = {"PRIVATE_KEY": KRAPH_KEY.as_pem(private=True).decode(), "TRUST_JWKS": {"keys": [{**trust.public_jwk(KRAPH_KEY), "service": "live.arkitekt.kraph"}]}}
-    settings.MIKRO_FEED = {"URL": f"{live_server.url}{prefix}/_feed", "IDENTIFIER": "live.arkitekt.mikro"}
+    settings.INSTANCE = {"PRIVATE_KEY": KRAPH_KEY.as_pem(private=True).decode(), "TRUST_JWKS": {"keys": [{**trust.public_jwk(KRAPH_KEY), "service": "kraph"}]}}
+    settings.MIKRO_FEED = {"URL": f"{live_server.url}{prefix}/_feed", "IDENTIFIER": "mikro"}
     feeds.BODIES.clear()
 
 
@@ -44,7 +44,7 @@ def test_a_run_ingests_everything_new_and_the_next_finds_nothing(mikro, organiza
     again = ingest_metrics(organization=organization.slug)
     assert (again["ended"], again["applied"]) == ("CAUGHT_UP", 0)
     cursor = FeedCursor.objects.get(feed="@mikro/metric", organization=organization.slug)
-    assert cursor.producer == "live.arkitekt.mikro" and cursor.halted is None and cursor.entry > 0
+    assert cursor.producer == "mikro" and cursor.halted is None and cursor.entry > 0
 
 
 def test_a_run_reads_its_own_organization_only(mikro, organization: Organization, other_organization: Organization) -> None:

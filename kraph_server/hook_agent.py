@@ -21,9 +21,8 @@ from django.conf import settings
 from evidence import ingest
 from graph_engine.controller import GraphController
 from graph_engine.projection.context import current_or_default
-from kraph_server.contract import contract
 
-agent = HookAgent("kraph", identifier=contract.description.identifier, description="kraph: records what other services observed as claims.")
+agent = HookAgent("kraph", description="kraph: records what other services observed as claims.")
 
 class FeedHalted(RuntimeError):
     """The organization's feed stopped for good (a restore, a poison entry): a run fails until it is resumed."""
