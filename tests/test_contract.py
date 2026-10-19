@@ -55,3 +55,15 @@ def test_a_setting_this_release_does_not_read_is_refused_by_name(tmp_path: Path,
     assert cli.main(["render", "--facts", str(FACTS), "--overrides", str(overrides)]) == cli.REFUSED
     said = capsys.readouterr()
     assert said.out == "" and "django.debgu" in said.err
+
+
+def test_a_hub_that_gives_it_no_key_yet_still_configures_it(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Until the hub vouches for a key of its own, kraph serves without ingesting: no hook agent, no feed."""
+    facts = yaml.safe_load(FACTS.read_text(encoding="utf-8"))
+    del facts["instance"]
+    keyless = tmp_path / "facts.yaml"
+    keyless.write_text(yaml.safe_dump(facts), encoding="utf-8")
+    assert cli.main(["render", "--facts", str(keyless), "--overrides", str(tmp_path / "none.yaml")]) == 0, capsys.readouterr().err
+    config = yaml.safe_load(capsys.readouterr().out)
+    assert "instance" not in config and "rekuest_hook" not in config and "mikro" not in config
+    assert config["postgres"]["db_name"] == "kraph"

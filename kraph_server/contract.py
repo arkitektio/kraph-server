@@ -37,6 +37,10 @@ def render(facts: Facts) -> dict[str, JSON]:
     """This release's config for the hub ``facts`` describes."""
     document: dict[str, JSON] = blocks.server(facts)
     document["datalayer"] = blocks.datalayer(facts, "media")
+    # Without a key of its own (a hub that has not vouched for one yet: `konstruktor authorize`)
+    # kraph serves as before and ingests nothing: no hook agent, no reads of mikro's feed.
+    if facts.instance is None:
+        return document
     document["instance"] = blocks.instance(facts)
     hook = blocks.rekuest_hook(facts)
     if hook is not None:
