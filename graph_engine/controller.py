@@ -1076,19 +1076,25 @@ class GraphController:
     def _provenance_of_fed(self, act: ingest_module.Act) -> ProvenanceContext:
         """Who made a fed act: the producer mikro verified and recorded, as this service knows them.
 
-        The subject is the local user of that ``(sub, iss)`` -- the id every other assertion's
-        subject is -- made here when they have not been seen yet, exactly as authenticating them
-        would. A withdrawal carries no producer: mikro, the service, is its subject.
+        The subject is the local user of that ``(sub, iss)`` and the app the local client of that
+        ``client_id`` -- the ids every other assertion records -- made here when they have not
+        been seen yet, exactly as authenticating them would. A withdrawal carries no producer:
+        mikro, the service, is its subject.
         """
         producer = act.producer
         if producer is None:
             return ProvenanceContext(subject=ingest_module.PRODUCER, app_id=ingest_module.PRODUCER, action_args={"feed": ingest_module.FEED, "xid": str(act.xid)})
-        subject = ingest_module.local_user_id(producer) if producer.user else None
+        # Both ids in this service's own id spaces, as `_provenance_from_info` records them, so a
+        # SUBJECT or APP rule reads a fed act like any other; the producer's own names ride along.
         return ProvenanceContext(
-            subject=subject or ingest_module.PRODUCER,
-            app_id=producer.app or producer.client or ingest_module.PRODUCER,
+            subject=ingest_module.local_user_id(producer) or ingest_module.PRODUCER,
+            app_id=ingest_module.local_client_id(producer) or ingest_module.PRODUCER,
             action_id=producer.task,
-            action_args={"feed": ingest_module.FEED, "xid": str(act.xid), **({"task": producer.task} if producer.task else {})},
+            action_args={
+                "feed": ingest_module.FEED,
+                "xid": str(act.xid),
+                **{name: value for name, value in (("app", producer.app), ("app_version", producer.version), ("client_id", producer.client), ("task", producer.task)) if value},
+            },
         )
 
     def record_metrics(

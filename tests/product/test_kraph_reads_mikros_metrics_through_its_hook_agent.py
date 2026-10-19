@@ -14,7 +14,7 @@ from authentikate.models import Organization
 from joserfc.jwk import OKPKey
 
 from evidence import models as evidence_models
-from kraph_server.hook_agent import ingest_metrics
+from kraph_server.hook_agent import FeedHalted, ingest_metrics
 from tests.support import feeds
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -58,8 +58,10 @@ def test_a_run_reads_its_own_organization_only(mikro, organization: Organization
 
 def test_a_poison_entry_halts_the_organizations_feed(mikro, organization: Organization) -> None:
     feeds.serve(organization.slug, [{**feeds.body(DATASET, "1", "a/b", magnitude=1.0, unit="s"), "magnitude": None}])
-    halted = ingest_metrics(organization=organization.slug)
-    assert halted["ended"] == "HALTED" and "neither a quantity nor a code" in halted["halted"]
+    # A failed run, as rekuest shows it -- every run, until someone resumes the feed.
+    for _ in range(2):
+        with pytest.raises(FeedHalted, match="neither a quantity nor a code"):
+            ingest_metrics(organization=organization.slug)
     assert evidence_models.Metric.all_objects.count() == 0
     assert FeedCursor.objects.get(organization=organization.slug).entry == 0
 
@@ -67,3 +69,17 @@ def test_a_poison_entry_halts_the_organizations_feed(mikro, organization: Organi
 def test_a_hub_that_tells_kraph_of_no_mikro_ingests_nothing(mikro, settings, organization: Organization) -> None:
     settings.MIKRO_FEED = None
     assert ingest_metrics(organization=organization.slug) == {"ended": "NO_FEED", "applied": 0}
+
+
+def test_an_organization_kraph_has_not_seen_is_read_all_the_same(mikro) -> None:
+    """rekuest gives every organization the agent; nobody need have opened kraph there first."""
+    feeds.serve("newcomer", [feeds.body(DATASET, "1", "a/b", magnitude=1.0, unit="s")])
+    assert ingest_metrics(organization="newcomer")["applied"] == 1
+    assert evidence_models.Metric.objects.for_organization(Organization.objects.get(slug="newcomer")).count() == 1
+
+
+def test_one_transaction_of_mikros_is_one_act_however_many_pages_it_fills(mikro, organization: Organization) -> None:
+    """A batch larger than a page is read whole (the feed never ends a page inside a transaction): one assertion."""
+    feeds.serve(organization.slug, [feeds.body(DATASET, str(i), "a/b", magnitude=float(i), unit="s") for i in range(2500)])
+    assert ingest_metrics(organization=organization.slug)["applied"] == 2500
+    assert evidence_models.Assertion.objects.for_organization(organization).filter(metrics__isnull=False).distinct().count() == 1

@@ -296,12 +296,16 @@ The load-bearing facts:
   with its instance key and applies each page **in one transaction with the reader's cursor**
   (`apply_pages`, an advisory lock per organization) -- so a metric is recorded once, and a run
   that finds the lock taken returns at once. One transaction of mikro's is one act here: one
-  `Assertion` whose subject is the local user of the `(sub, iss)` mikro recorded, `app_id` the
-  producer's app, `action_id` its rekuest task (mikro's record, never a re-verified token). Rows
+  `Assertion` whose subject is the local user of the `(sub, iss)` mikro recorded and whose
+  `app_id` is the local client of its `client_id` (the id spaces every assertion uses; the app's
+  identifier and version are in `action_args`), `action_id` its rekuest task (mikro's record,
+  never a re-verified token). The feed never ends a page inside a transaction, so an act is
+  never split. Rows
   go in set-based: `Metric.source_uuid` (unique) makes a page read twice a no-op,
   `state.merge_many` folds once per (entity, kind, key). A DELETED entry is a retraction, a
   `supersedes` a retraction plus `DERIVED_FROM`; an entry that can never be applied raises
-  `Poison` and halts that organization's feed (`FeedCursor.halted`, `consumer.resume`). The draw
+  `Poison` and halts that organization's feed (`FeedCursor.halted`, `consumer.resume`); every
+  run fails (`FeedHalted`, CRITICAL in rekuest) until it is resumed. The draw
   follows the commit under `_draw_after`, like every write. Wiring is the organization's:
   `docs/wiregram.yaml` (a trigger on CREATED `@mikro/metric` as the nudge, a 60 s `ALLOW`
   schedule as the guarantee).

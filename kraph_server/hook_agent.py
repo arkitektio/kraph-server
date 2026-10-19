@@ -12,9 +12,7 @@ schedule are the organization's own automation (``docs/wiregram.yaml``).
 
 from __future__ import annotations
 
-import logging
-
-from arkitekt_service.feed.consumer import apply_pages
+from arkitekt_service.feed.consumer import Ended, apply_pages
 from arkitekt_service.feed.reader import FeedReader
 from arkitekt_service.hook import HookAgent, StructurePort, StructureRef
 from authentikate.models import Organization
@@ -25,9 +23,11 @@ from graph_engine.controller import GraphController
 from graph_engine.projection.context import current_or_default
 from kraph_server.contract import contract
 
-logger = logging.getLogger(__name__)
-
 agent = HookAgent("kraph", identifier=contract.description.identifier, description="kraph: records what other services observed as claims.")
+
+class FeedHalted(RuntimeError):
+    """The organization's feed stopped for good (a restore, a poison entry): a run fails until it is resumed."""
+
 
 #: How long one run reads before it returns; the next run (or the schedule) goes on from the cursor.
 BUDGET_SECONDS = 20.0
@@ -54,9 +54,12 @@ def ingest_metrics(organization: str, metric: StructureRef | None = None) -> dic
     reader = mikro_reader()
     if reader is None:
         return {"ended": "NO_FEED", "applied": 0}
-    org = Organization.objects.get(slug=organization)
+    # rekuest gives every organization the agent; kraph learns of one when somebody first
+    # authenticates in it -- which a schedule may well run before.
+    org, _ = Organization.objects.get_or_create(slug=organization)
     controller = GraphController(projector=current_or_default())
     outcome = apply_pages(reader, organization, lambda entries: controller.ingest_metric_page(org, entries), budget_s=BUDGET_SECONDS, limit=PAGE)
-    if outcome.halted:
-        logger.error("Reading mikro's metrics for %s is halted: %s", organization, outcome.halted)
+    if outcome.ended == Ended.HALTED:
+        # A failed run, where the organization's automation shows it -- not a green one.
+        raise FeedHalted(f"Reading mikro's metrics for {organization} is halted until someone resumes it: {outcome.halted}")
     return outcome.report()

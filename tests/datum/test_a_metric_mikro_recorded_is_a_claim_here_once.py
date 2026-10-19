@@ -12,7 +12,7 @@ import uuid
 import pytest
 from arkitekt_service.feed.consumer import Poison
 from asgiref.sync import sync_to_async
-from authentikate.models import Organization, User
+from authentikate.models import Client, Organization, User
 
 from evidence import claims as claims_module
 from evidence import models as evidence_models
@@ -41,7 +41,9 @@ def test_a_metric_is_a_claim_about_the_datum_it_measures(organization: Organizat
     assert (metric.structure.identifier, metric.structure.object) == (DATASET, "17")
     assert (metric.key, metric.value, metric.unit, metric.value_kind) == ("ais_suite.measure_profile/threshold_distance", 31.2, "µm", "FLOAT")
     user = User.objects.get(sub="mikro-user-1", iss=feeds.ISSUER)
-    assert (metric.assertion.subject, metric.assertion.app_id, metric.assertion.action_id) == (str(user.id), "ais_suite", "task-1")
+    client = Client.objects.get(client_id="ais-client")
+    assert (metric.assertion.subject, metric.assertion.app_id, metric.assertion.action_id) == (str(user.id), str(client.id), "task-1")
+    assert metric.assertion.action_args["app"] == "ais_suite" and metric.assertion.action_args["app_version"] == "0.4.1"
     assert metric.observed_at.isoformat() == "2026-10-19T09:12:03+00:00"
 
 

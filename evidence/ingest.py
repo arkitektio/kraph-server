@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 
 from arkitekt_service.feed.consumer import Poison
 from arkitekt_service.feed.reader import RemoteEntry
-from authentikate.models import Organization, User
+from authentikate.models import Client, Organization, User
 from django.db import IntegrityError, transaction
 
 from core.enums import ValueKind
@@ -54,6 +54,7 @@ class Producer:
     user: str | None
     issuer: str | None
     app: str | None
+    version: str | None
     client: str | None
     task: str | None
 
@@ -134,6 +135,7 @@ def parse(entry: RemoteEntry) -> FedMetric | None:
             user=_optional_str(producer.get("user"), "producer.user"),
             issuer=_optional_str(producer.get("issuer"), "producer.issuer"),
             app=_optional_str(producer.get("app"), "producer.app"),
+            version=_optional_str(producer.get("version"), "producer.version"),
             client=_optional_str(producer.get("client"), "producer.client"),
             task=_optional_str(task.get("task_id"), "task.task_id") if isinstance(task, dict) else None,
         ),
@@ -184,6 +186,14 @@ def local_user_id(producer: Producer) -> str | None:
         except IntegrityError:  # made meanwhile by a request authenticating them
             user = User.objects.get(sub=producer.user, iss=producer.issuer)
     return str(user.id)
+
+
+def local_client_id(producer: Producer) -> str | None:
+    """This service's id of the OAuth client mikro recorded the metric through: what every assertion's ``app_id`` is."""
+    if producer.client is None:
+        return None
+    client, _ = Client.objects.get_or_create(client_id=producer.client)
+    return str(client.id)
 
 
 @dataclass
