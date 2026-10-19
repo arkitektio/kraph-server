@@ -57,6 +57,9 @@ contract = Contract(
         # `rekuest_hook`: the hook agent (`kraph_server.hook_agent`), whose `ingest_metrics` a
         # trigger on mikro's metrics and a schedule run (internal network only).
         offers=Offers(endpoints={"rekuest_hook": "_rekuest/hook"}),
+        # rekuest 8 registers a hook action's ports: without them the wiregram's trigger on
+        # @mikro/metric is refused, and its import with it.
+        requires={"rekuest": ">=8"},
     ),
     settings=Settings,
     render=render,
