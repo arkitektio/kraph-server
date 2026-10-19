@@ -142,6 +142,7 @@ peers:
     offers:
       rekuest_hook: http://mikro:80/mikro/_rekuest/hook
       rekuest_service: http://mikro:80/mikro/_rekuest/service
+      feed: http://mikro:80/mikro/_feed
   fluss:
     identifier: live.arkitekt.fluss
     url: http://fluss:80/fluss

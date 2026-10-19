@@ -29,10 +29,21 @@ ROLES = [
 ]
 
 
+#: What mikro offers its change feed as (its `Offers.endpoints`).
+FEED = "feed"
+
+
 def render(facts: Facts) -> dict[str, JSON]:
     """This release's config for the hub ``facts`` describes."""
     document: dict[str, JSON] = blocks.server(facts)
     document["datalayer"] = blocks.datalayer(facts, "media")
+    document["instance"] = blocks.instance(facts)
+    hook = blocks.rekuest_hook(facts)
+    if hook is not None:
+        document["rekuest_hook"] = hook
+    mikro = facts.peers.get("mikro")
+    if mikro is not None and FEED in mikro.offers:
+        document["mikro"] = {"url": mikro.offers[FEED], "identifier": mikro.identifier or "live.arkitekt.mikro"}
     return document
 
 
@@ -41,8 +52,11 @@ contract = Contract(
         name="kraph",
         identifier="live.arkitekt.kraph",
         summary="The graph that ties samples, images and measurements together.",
-        needs=Needs(scopes=SCOPES, roles=ROLES, storage=["media", "zarr", "bigfile"], instance_key=False, peers=[]),
-        offers=Offers(),
+        # The instance key signs the hook agent's reports and its reads of mikro's change feed.
+        needs=Needs(scopes=SCOPES, roles=ROLES, storage=["media", "zarr", "bigfile"], instance_key=True, peers=["rekuest", "mikro"]),
+        # `rekuest_hook`: the hook agent (`kraph_server.hook_agent`), whose `ingest_metrics` a
+        # trigger on mikro's metrics and a schedule run (internal network only).
+        offers=Offers(endpoints={"rekuest_hook": "_rekuest/hook"}),
     ),
     settings=Settings,
     render=render,

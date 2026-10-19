@@ -289,6 +289,22 @@ The load-bearing facts:
   because the draw normally completes within the request. (It used to propagate as a mutation
   error for a committed act; before that it was two evidence transactions on the ground that AGE
   could not join one. Both gaps are closed.)
+- **mikro's metrics arrive through its change feed** (`evidence/ingest.py`,
+  `GraphController.ingest_metric_page`, the hook agent's `ingest_metrics` in
+  `kraph_server/hook_agent.py`). mikro records each metric with a feed entry in the same
+  transaction (`@mikro/metric`, `arkitekt_service.feed`); kraph reads one organization's pages
+  with its instance key and applies each page **in one transaction with the reader's cursor**
+  (`apply_pages`, an advisory lock per organization) -- so a metric is recorded once, and a run
+  that finds the lock taken returns at once. One transaction of mikro's is one act here: one
+  `Assertion` whose subject is the local user of the `(sub, iss)` mikro recorded, `app_id` the
+  producer's app, `action_id` its rekuest task (mikro's record, never a re-verified token). Rows
+  go in set-based: `Metric.source_uuid` (unique) makes a page read twice a no-op,
+  `state.merge_many` folds once per (entity, kind, key). A DELETED entry is a retraction, a
+  `supersedes` a retraction plus `DERIVED_FROM`; an entry that can never be applied raises
+  `Poison` and halts that organization's feed (`FeedCursor.halted`, `consumer.resume`). The draw
+  follows the commit under `_draw_after`, like every write. Wiring is the organization's:
+  `docs/wiregram.yaml` (a trigger on CREATED `@mikro/metric` as the nudge, a 60 s `ALLOW`
+  schedule as the guarantee).
 - **The graph carries no lifecycle state**, and neither does the API. If the claims do not say a
   node exists, it has no vertex — not a vertex with a flag, and not a `lifecycle` field either. Retracting is a `Standing(stands=False)` and removes the drawing
   (`projector.unproject`; edges go by FK cascade — the `DETACH`); `attest*` writes `Standing(stands=True)` and redraws it. There is

@@ -196,6 +196,32 @@ top-level `s3` block). This block is **required** for kraph, and `access_key`,
 | `parquet` | — (use YAML) | object | `null` | Bucket for Parquet tables, `{ bucket: <name> }`. |
 | `bigfile` | — (use YAML) | object | `null` | Bucket for large binary files, `{ bucket: <name> }`. |
 
+### `rekuest_hook` — the hook agent (optional)
+
+How this process reaches the hub's rekuest as a hook agent (`kraph_server/hook_agent.py`, whose
+`ingest_metrics` reads mikro's metrics). Without it the agent's endpoints answer 503.
+
+| Key | Env var | Type | Default | Description |
+|---|---|---|---|---|
+| `rekuest_url` | `REKUEST_HOOK__REKUEST_URL` | str | `http://rekuest:80/rekuest` | Where runs are reported: rekuest's agents' endpoint (`agi/http/<agent>`). |
+| `agent` | `REKUEST_HOOK__AGENT` | str | `kraph` | The name rekuest knows the agent by (`rekuest.hook_agents[].name`). |
+| `max_skew` | `REKUEST_HOOK__MAX_SKEW` | int | `30` | Clock skew (seconds) tolerated on a signed request. |
+
+### `instance` — this instance's key (optional)
+
+The Ed25519 key that signs the agent's reports and its reads of mikro's feed, and the hub's trust
+bundle. `private_key` 🔒 (PKCS#8 PEM, **required** in the block), `trust.jwks_uri` or an inline
+`trust.jwks`.
+
+### `mikro` — mikro's change feed of metrics (optional)
+
+| Key | Env var | Type | Default | Description |
+|---|---|---|---|---|
+| `url` | `MIKRO__URL` | str | **required** | mikro's `_feed` endpoint on the internal network, with its path. |
+| `identifier` | `MIKRO__IDENTIFIER` | str | **required** | mikro's identifier in the trust bundle (`live.arkitekt.mikro`). |
+
+Without it `ingest_metrics` ingests nothing.
+
 ---
 
 ## Minimal example

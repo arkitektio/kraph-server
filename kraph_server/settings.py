@@ -74,6 +74,8 @@ INSTALLED_APPS = [
     "core",
     "graph_engine",
     "evidence",
+    # A reader's cursors in other services' change feeds (mikro's metrics: `evidence.ingest`).
+    "arkitekt_service.feed",
     "health_check",  # required for health checks
     "health_check.db",  # stock Django health checkers
     "health_check.contrib.redis",  # the channel layer; a dead redis is a dead subscription
@@ -104,6 +106,13 @@ AWS_S3_SECURE_URLS = False
 
 
 DATALAYER = conf.datalayer.model_dump(exclude_none=True) if conf.datalayer else {}
+
+# The hook agent (``kraph_server.hook_agent``): where rekuest is, and this instance's key and the
+# hub trust bundle (``arkitekt_service.trust``) it signs and verifies with -- no shared secrets.
+REKUEST_HOOK = {"REKUEST_URL": conf.rekuest_hook.rekuest_url, "AGENT": conf.rekuest_hook.agent, "MAX_SKEW": conf.rekuest_hook.max_skew} if conf.rekuest_hook else None
+INSTANCE = {"PRIVATE_KEY": conf.instance.private_key, "TRUST_JWKS_URI": conf.instance.trust.jwks_uri, "TRUST_JWKS": conf.instance.trust.jwks} if conf.instance else None
+# mikro's change feed of metrics: where it is and whom to address.
+MIKRO_FEED = {"URL": conf.mikro.url, "IDENTIFIER": conf.mikro.identifier} if conf.mikro else None
 
 
 CHANNEL_LAYERS = {

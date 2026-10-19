@@ -12,7 +12,7 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from arkitekt_service.server import settings as shared
-from arkitekt_service.server.settings import DjangoSettings, PostgresSettings, ServiceSettings
+from arkitekt_service.server.settings import DjangoSettings, InstanceSettings, PostgresSettings, ServiceSettings
 from authentikate.base_models import AuthentikateSettings
 
 class RedisSettings(shared.RedisSettings):
@@ -56,6 +56,21 @@ class ProjectionSettings(BaseModel):
     )
 
 
+class RekuestHookSettings(BaseModel):
+    """How this process reaches the hub's rekuest as a hook agent (``kraph_server.hook_agent``)."""
+
+    rekuest_url: str = Field(default="http://rekuest:80/rekuest", description="Where runs are reported: rekuest's agents' endpoint on the internal network (`agi/http/<agent>`).")
+    agent: str = Field(default="kraph", description="The name rekuest knows the agent by: its `rekuest.hook_agents[].name`.")
+    max_skew: int = Field(default=30, description="Clock skew (seconds) tolerated on a signed request; tokens themselves live 60 s.")
+
+
+class FeedPeerSettings(BaseModel):
+    """Another service's change feed, read with this instance's key."""
+
+    url: str = Field(description="Its `_feed` endpoint on the internal network, with its path.")
+    identifier: str = Field(description="Its identifier in the hub's trust bundle: whom the read is addressed to.")
+
+
 class Settings(ServiceSettings):
     """Top-level, validated configuration for the kraph service."""
 
@@ -65,3 +80,6 @@ class Settings(ServiceSettings):
     authentikate: AuthentikateSettings = Field(description="Token-verification config (authentikate).")
     datalayer: DatalayerSettings = Field(description="S3 storage connection and buckets.")
     projection: ProjectionSettings = Field(default_factory=ProjectionSettings, description="Projection health thresholds.")
+    rekuest_hook: Optional[RekuestHookSettings] = Field(default=None, description="How this process reaches the hub's rekuest as a hook agent. Without it the agent's endpoints answer 503 and nothing is ingested.")
+    instance: Optional[InstanceSettings] = Field(default=None, description="This instance's key and the hub trust bundle: it signs the agent's reports and the reads of mikro's feed.")
+    mikro: Optional[FeedPeerSettings] = Field(default=None, description="mikro's change feed of metrics, which `ingest_metrics` reads. Without it the action ingests nothing.")

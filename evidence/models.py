@@ -187,8 +187,8 @@ def _default_observed_at(claim: "Instance | Link | Metric") -> None:
     NULL, and "when it was claimed" is the honest answer when nobody said when
     the world was in that state. ``Metric`` does the same through
     :func:`evidence.writer.record_metric`. A ``bulk_create`` bypasses ``save`` and
-    so must supply the column itself; none of the three claim tables is bulk
-    written today.
+    so must supply the column itself. ``Metric`` is bulk written in one place, the
+    feed ingest (:mod:`evidence.ingest`), which sets ``observed_at`` on every row.
     """
     if claim.observed_at is None:
         claim.observed_at = claim.assertion.asserted_at
@@ -616,6 +616,13 @@ class Metric(models.Model):
         Assertion,
         on_delete=models.PROTECT,
         related_name="metrics",
+    )
+    source_uuid = models.UUIDField(
+        null=True,
+        blank=True,
+        unique=True,
+        help_text="The uuid of the metric this claim was ingested from, in the service that recorded it (mikro's `@mikro/metric`). "
+        "Null for a metric recorded here. Unique: an entry of the feed read twice is recorded once (`evidence/ingest.py`).",
     )
     #: No cached `stands`, and deliberately. It used to live here: `writer.record_standing`
     #: wrote the claim and flipped this boolean in one transaction, which made a

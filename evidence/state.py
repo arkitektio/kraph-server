@@ -17,7 +17,8 @@ operation.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterable
+from collections import defaultdict
+from collections.abc import Iterable, Mapping, Sequence
 
 from authentikate.models import Organization
 from django.db import transaction
@@ -54,7 +55,6 @@ def merge(
     module only knows how to fold.
     """
     updated: list[evidence_models.State] = []
-    numeric = _numeric(metric.value)
 
     for claim_ref in instance_refs:
         state, _ = evidence_models.State.all_objects.select_for_update().get_or_create(
@@ -64,26 +64,62 @@ def merge(
             key=metric.key,
             value_kind=metric.value_kind,
         )
-
-        state.n += 1
-        if numeric is not None:
-            state.sum = numeric if state.sum is None else state.sum + numeric
-            state.min = numeric if state.min is None else min(state.min, numeric)
-            state.max = numeric if state.max is None else max(state.max, numeric)
-
-        # First and last are ordered by observation time, not by arrival: a
-        # backfilled measurement from last year must not become "latest" just
-        # because it was ingested today.
-        if state.first_ts is None or metric.observed_at < state.first_ts:
-            state.first_ts, state.first_value = metric.observed_at, metric.value
-        if state.last_ts is None or metric.observed_at >= state.last_ts:
-            state.last_ts, state.last_value = metric.observed_at, metric.value
-
-        state.high_water_assertion = metric.assertion
+        _fold_one(state, metric)
         state.save()
         updated.append(state)
 
     return updated
+
+
+@transaction.atomic
+def merge_many(
+    metrics: Sequence[evidence_models.Metric],
+    informed: Mapping[str, Sequence[str]],
+) -> int:
+    """Fold many new metrics, each into the state of every entity its structure informs.
+
+    The same fold as :func:`merge`, grouped: each `State` row is locked, folded with every
+    metric that reaches it and saved **once**, so a batch costs one round trip per
+    (entity, kind, key) it touches rather than one per metric and entity. ``informed`` maps a
+    structure's id (as text) to the refs it is standing evidence for. Returns the rows folded.
+    """
+    grouped: dict[tuple[str, uuid.UUID, str, str], list[evidence_models.Metric]] = defaultdict(list)
+    for metric in metrics:
+        for claim_ref in informed.get(str(metric.structure_id), ()):
+            grouped[(claim_ref, metric.structure.kind_id, metric.key, metric.value_kind)].append(metric)
+
+    for (claim_ref, source_kind_id, key, value_kind), folded in grouped.items():
+        state, _ = evidence_models.State.all_objects.select_for_update().get_or_create(
+            organization_id=folded[0].organization_id,
+            claim_ref=claim_ref,
+            source_kind_id=source_kind_id,
+            key=key,
+            value_kind=value_kind,
+        )
+        for metric in folded:
+            _fold_one(state, metric)
+        state.save()
+    return len(grouped)
+
+
+def _fold_one(state: evidence_models.State, metric: evidence_models.Metric) -> None:
+    """Fold one metric into ``state`` in memory: the monoid step both merges share."""
+    numeric = _numeric(metric.value)
+    state.n += 1
+    if numeric is not None:
+        state.sum = numeric if state.sum is None else state.sum + numeric
+        state.min = numeric if state.min is None else min(state.min, numeric)
+        state.max = numeric if state.max is None else max(state.max, numeric)
+
+    # First and last are ordered by observation time, not by arrival: a
+    # backfilled measurement from last year must not become "latest" just
+    # because it was ingested today.
+    if state.first_ts is None or metric.observed_at < state.first_ts:
+        state.first_ts, state.first_value = metric.observed_at, metric.value
+    if state.last_ts is None or metric.observed_at >= state.last_ts:
+        state.last_ts, state.last_value = metric.observed_at, metric.value
+
+    state.high_water_assertion = metric.assertion
 
 
 @transaction.atomic

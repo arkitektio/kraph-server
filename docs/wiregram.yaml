@@ -1,0 +1,29 @@
+# kraph's automation, for an organization to import once (rekuest `importWiregram`):
+# what makes kraph read mikro's metrics. Nothing is wired by itself -- every organization
+# has kraph's hook agent, and decides here when its `ingest_metrics` runs.
+#
+# - The trigger is the nudge: a metric recorded on its own (mikro's `createMetric`) is
+#   signalled, and kraph reads at once. A batch (`createMetrics`) is not signalled.
+# - The schedule is the guarantee: every minute, kraph reads whatever is new, batches and
+#   lost signals included. `overlap: ALLOW` because a run that died after it started is never
+#   finished by rekuest and must not block the next; two runs at once are safe (one reads, the
+#   other returns). `ephemeral_runs`: housekeeping, not kept forever.
+key: kraph-ingest
+name: kraph reads mikro's metrics
+description: Record every metric mikro records as a claim in kraph, once.
+triggers:
+  - key: on-metric
+    name: Ingest when a metric is recorded
+    agent: kraph
+    interface: ingest_metrics
+    kind: CREATED
+    identifier: "@mikro/metric"
+    port: metric
+schedules:
+  - key: catch-up
+    name: Ingest whatever is new
+    agent: kraph
+    interface: ingest_metrics
+    interval_seconds: 60
+    overlap: ALLOW
+    ephemeral_runs: true

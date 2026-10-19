@@ -21,7 +21,11 @@ from kante.path import dynamicpath
 from health_check.views import MainView
 from django.views.decorators.csrf import csrf_exempt
 
+from kraph_server.hook_agent import agent as hook_agent
+
 urlpatterns = [
     dynamicpath("admin/", admin.site.urls),
     dynamicpath("ht", csrf_exempt(MainView.as_view()), name="health_check"),
+    # The hook agent: the hub's rekuest POSTs it Assigns (internal network only).
+    *hook_agent.urls,
 ]

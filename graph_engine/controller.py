@@ -40,6 +40,7 @@ from evidence import selector as selector_module
 from evidence import state as state_module
 from evidence import writer
 from evidence import channel
+from evidence import ingest as ingest_module
 
 logger = logging.getLogger(__name__)
 
@@ -1034,6 +1035,61 @@ class GraphController:
             if result.moved:
                 self.project_refs(organization, informed)
         return results.Asserted.of(assertion, structure, pending=draw.failed)
+
+    def ingest_metric_page(self, organization: Organization, entries: List[Any]) -> ingest_module.Recorded:
+        """Record one page of mikro's metric feed (``@mikro/metric``): one act per transaction of mikro's.
+
+        Runs **inside the caller's transaction** -- the feed reader's, which moves its cursor in
+        the same commit (``arkitekt_service.feed.consumer.apply_pages``) -- so a page is recorded
+        once or not at all. Each act's assertion names the producer mikro recorded (its user, its
+        app, the rekuest task) and writes its outbox row like every other write's; the draw
+        follows the commit, under `_draw_after`, as for every write. An act that would record
+        nothing -- every metric already ingested, every withdrawn one unknown -- mints no
+        assertion. See :mod:`evidence.ingest`.
+        """
+        total = ingest_module.Recorded()
+        owed: list[tuple[evidence_models.Assertion, set[uuid.UUID]]] = []
+        # The page's acts, all or none: a savepoint inside the reader's transaction, which
+        # commits them with its cursor.
+        with transaction.atomic():
+            for act in ingest_module.acts(entries):
+                act = ingest_module.outstanding(organization, act)
+                if not act.created and not act.deleted:
+                    continue
+                assertion = self._create_assertion(organization, self._provenance_of_fed(act))
+                recorded = ingest_module.record(organization, act, assertion)
+                total.metrics += recorded.metrics
+                total.retracted += recorded.retracted
+                total.structure_ids |= recorded.structure_ids
+                owed.append((assertion, recorded.structure_ids))
+
+        def draw() -> None:
+            for assertion, structure_ids in owed:
+                with self._draw_after(assertion):
+                    if structure_ids:
+                        self.project_from_structures(organization, list(structure_ids))
+
+        if owed:
+            transaction.on_commit(draw)
+        return total
+
+    def _provenance_of_fed(self, act: ingest_module.Act) -> ProvenanceContext:
+        """Who made a fed act: the producer mikro verified and recorded, as this service knows them.
+
+        The subject is the local user of that ``(sub, iss)`` -- the id every other assertion's
+        subject is -- made here when they have not been seen yet, exactly as authenticating them
+        would. A withdrawal carries no producer: mikro, the service, is its subject.
+        """
+        producer = act.producer
+        if producer is None:
+            return ProvenanceContext(subject=ingest_module.PRODUCER, app_id=ingest_module.PRODUCER, action_args={"feed": ingest_module.FEED, "xid": str(act.xid)})
+        subject = ingest_module.local_user_id(producer) if producer.user else None
+        return ProvenanceContext(
+            subject=subject or ingest_module.PRODUCER,
+            app_id=producer.app or producer.client or ingest_module.PRODUCER,
+            action_id=producer.task,
+            action_args={"feed": ingest_module.FEED, "xid": str(act.xid), **({"task": producer.task} if producer.task else {})},
+        )
 
     def record_metrics(
         self,
