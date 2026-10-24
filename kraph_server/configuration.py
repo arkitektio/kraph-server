@@ -9,7 +9,7 @@ with a ``ValidationError`` if they are not supplied via config or environment.
 
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from arkitekt_datalayer.configuration import DatalayerBucket, DatalayerSettings
 
