@@ -22,7 +22,10 @@ import strawberry
 
 from api import queries, types, mutations
 from api.subscriptions import Subscription
-from datalayer import mutations as datalayer_mutations
+from arkitekt_datalayer import mutations as datalayer_mutations
+from arkitekt_datalayer import scalars as datalayer_scalars
+from arkitekt_datalayer.datalayer import load_config
+from authentikate.strawberry.directives import AuthExtension
 from graph_engine import scalars
 
 
@@ -150,6 +153,14 @@ class Query:
 
     scatter_plots: list[types.ScatterPlot] = kante.django_field(description="Show all saved scatter plots")
     scatter_plot: types.ScatterPlot = kante.django_field(description="Show a single saved scatter plot by ID")
+
+
+def upload_mutation(**kwargs) -> strawberry.mutation:  # noqa: ANN003
+    """A mutation that hands out or finishes upload credentials: gated by ``datalayer.upload_roles``.
+
+    Holding any one of the configured roles is enough. Read once, at schema build.
+    """
+    return kante.django_mutation(extensions=[AuthExtension(any_role_of=load_config().upload_roles)], **kwargs)
 
 
 @strawberry.type(description="Graph Engine Mutations")
@@ -332,29 +343,21 @@ class Mutation:
     # Product surface, not the model. Object-store upload grants: nothing
     # below records a claim or reads a view (RFC 0025).
     # ------------------------------------------------------------------
-    request_media_upload = kante.django_mutation(
+    request_media_upload = upload_mutation(
         description="Upload media and return a URL for access",
         resolver=datalayer_mutations.request_media_upload,
     )
-    finish_media_upload = kante.django_mutation(
+    finish_media_upload = upload_mutation(
         description="Finalize a media upload after the client has written the object",
         resolver=datalayer_mutations.finish_media_upload,
     )
-    request_big_file_upload = kante.django_mutation(
-        description="Request an upload grant for a big file store",
-        resolver=datalayer_mutations.request_bigfile_upload,
+    request_media_access = kante.django_mutation(
+        description="Request temporary S3 read credentials for a media file",
+        resolver=datalayer_mutations.request_media_access,
     )
-    finish_big_file_upload = kante.django_mutation(
-        description="Finalize a big file upload after the client has written the object",
-        resolver=datalayer_mutations.finish_bigfile_upload,
-    )
-    request_zarr_upload = kante.django_mutation(
-        description="Request an upload grant for a Zarr store",
-        resolver=datalayer_mutations.request_zarr_upload,
-    )
-    finish_zarr_upload = kante.django_mutation(
-        description="Finalize a Zarr upload after the client has written the object",
-        resolver=datalayer_mutations.finish_zarr_upload,
+    request_general_media_access = kante.django_mutation(
+        description="Request temporary S3 read credentials for media files in the organization",
+        resolver=datalayer_mutations.request_general_media_access,
     )
 
     # =========================
@@ -620,6 +623,7 @@ def create_schema(
         ],
         config=StrawberryConfig(
             scalar_map={
+                **datalayer_scalars.SCALAR_MAP,
                 scalars.UnixMilliseconds: strawberry.scalar(
                     name="UnixMilliseconds",
                     serialize=lambda v: v,  # Implement your serialization logic here

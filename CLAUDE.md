@@ -145,7 +145,7 @@ one view *declared* about it, or something a projection *computed* — three lay
 rules about who may change them and what happens when they disagree.
 
 The short version. Each of the first three words used to carry two or more meanings, and the
-renames that fixed that are in `evidence/migrations/0008_instance_and_standing.py`.
+renames that fixed that were made before the migration history restarted at `0001`.
 
 | Word | Layer | Means | Lives in |
 |---|---|---|---|
@@ -400,8 +400,8 @@ The load-bearing facts:
   selector routes it through `observed_at_column` (`"at"` over `Standing` querysets —
   `trust_predicate`, the standing halves of `metric_scope`, the projector's EXISTENCE fold). Every
   instance/link/metric input takes `observedAt`, every `retract*`/`attest*` input takes `at`;
-  `MetricInput.timestamp` is gone. `core` migration 0020 rewrote stored `MEASURED_AT`; an unknown
-  field compiles to *nothing*, so a rename without it would silently widen every bounded property. **KIND (RFC
+  `MetricInput.timestamp` is gone. An unknown field compiles to *nothing*, so renaming a field
+  needs a data migration of every stored rule, or it would silently widen every bounded property. **KIND (RFC
   0011)** scopes a rule to what a claim *says* — CLASSIFICATION/EXISTENCE/SAMENESS/EVIDENCE/
   MEASUREMENT; a rule covers every kind its KIND conditions do not exclude (`rule_covers`, the
   one coverage implementation), `trust_filter(kind=…)` is a required keyword at every call site,
@@ -433,8 +433,7 @@ The load-bearing facts:
   how" checkable rather than asserted;
   `graph_engine/namespace.py` decides what a namespace *declares* (pure spec, no SQL);
   `GraphController` holds a projector and runs no query.
-  `tests/guards/test_the_projector_is_a_protocol.py` enforces all of it, including repo-wide scans that
-  no other production module names the projection tables or the DDL. There is no engine layer any
+  `tests/guards/test_the_projector_is_a_protocol.py` holds the seam's own modules to it. There is no engine layer any
   more — `CypherEngine`, `AgeEngine` and the mock went with Apache AGE (RFC 0005).
 - **The namespace is a derived artifact** (RFC 0006). `Projector.refresh_namespace(graph)`
   drops and recreates the per-graph schema wholesale from `core.Category` rows: one view per node
@@ -446,7 +445,7 @@ The load-bearing facts:
   `materialize` refreshes once itself, after its categories exist). Out-of-band repair:
   `manage.py refresh_namespaces`. Write-side, a raw composite FK
   `ProjectionLabel(graph, category_pk) → Category(graph, id) ON DELETE CASCADE`
-  (graph_engine migration 0005, relocated to the label table by 0009; the edge, member and label
+  (`graph_engine/migrations/0002_database_rules.py`, hand-written; the edge, member and label
   FKs are DB-level CASCADE for the same reason) makes the database refuse a vertex drawn under a
   category its graph does not declare. A category delete cascades its label rows, and the
   `projectionlabel_last_label_deletes_vertex` trigger takes a vertex whose last label went. Measurement and
@@ -524,7 +523,10 @@ The load-bearing facts:
   `api/extensions/projection.py::ProjectionExtension` binds the projector per-operation through
   `graph_engine/projection/context.py::current_projector`. Serving is the kante router in `asgi.py` (`/graphql` + SDL at `/schema`);
   `urls.py` only carries `admin/` and the `/ht` health check.
-- `datalayer/` is the S3/object-store abstraction (presigned upload grants). `rekuest_core/` — a
+- The S3/object-store layer is the shared `arkitekt-datalayer` package (`arkitekt_datalayer`, app
+  label `datalayer`): media stores are organization-owned, uploads are gated by
+  `datalayer.upload_roles`, and an image a category or term names must be a store of the same
+  organization (`CategoryManager._resolve_store_id`, `term._media_store`). `rekuest_core/` — a
   vendored Arkitekt port/widget type system — is gone: nothing imported it and it was in no
   `INSTALLED_APPS`, so the only thing keeping it alive was a test that smoke-imported every package.
 
@@ -593,6 +595,13 @@ pass working, not regressing.
   `feat:`/`fix:`/`chore:` deliberately.
 
 ## Migrations and jobs
+
+The history restarted at `0001` with the breaking release that moved the datalayer into the
+shared package (every hub database reset). What `makemigrations` cannot emit is hand-written
+and must be carried whenever the history is regenerated: the `evidence_assertion_seq` sequence
+at the top of `evidence/0001`, the append-only and identity-immutability triggers in
+`evidence/0002_database_rules.py`, and the vertex cascades, the label→category composite FK and
+the last-label trigger in `graph_engine/0002_database_rules.py`.
 
 A container of this image only serves. An installer (konstruktor) prepares the database with
 `arkitekt-service run migrate` once per build — before the first start, and in an update before

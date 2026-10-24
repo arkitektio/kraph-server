@@ -62,7 +62,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "django.contrib.postgres",
     "channels_redis",
-    "datalayer",
+    "arkitekt_datalayer",
     "simple_history",
     "strawberry",
     "strawberry_django",
@@ -88,21 +88,6 @@ INSTALLED_APPS = [
 
 AUTH_USER_MODEL = "authentikate.User"
 
-AWS_ACCESS_KEY_ID = conf.datalayer.access_key
-AWS_SECRET_ACCESS_KEY = conf.datalayer.secret_key
-AWS_S3_ENDPOINT_URL = f"{conf.datalayer.protocol}://{conf.datalayer.host}:{conf.datalayer.port}"
-AWS_S3_URL_PROTOCOL = f"{conf.datalayer.protocol}:"
-AWS_S3_FILE_OVERWRITE = False
-AWS_QUERYSTRING_EXPIRE = 3600
-AWS_S3_REGION_NAME = conf.datalayer.region
-
-FILE_BUCKET = conf.datalayer.media.bucket
-MEDIA_BUCKET = conf.datalayer.media.bucket
-
-AWS_STORAGE_BUCKET_NAME = conf.datalayer.media.bucket
-AWS_DEFAULT_ACL = "private"
-AWS_S3_USE_SSL = True
-AWS_S3_SECURE_URLS = False
 
 
 DATALAYER = conf.datalayer.model_dump(exclude_none=True) if conf.datalayer else {}

@@ -59,7 +59,7 @@ def _patch_fields(item, model, manager) -> bool:
     item.description = model.description if model.description else item.description
     item.color = model.color if model.color else item.color
 
-    store_id = manager._resolve_store_id(getattr(model, "image", None))
+    store_id = manager._resolve_store_id(getattr(model, "image", None), item.graph_id)
     if store_id is not None:
         # `image_id`, not `image` — see the comment in
         # `NodeCategoryManager.acreate_from_node_definition`, which records what

@@ -5,7 +5,7 @@ from typing import Generic, Iterable, Optional, TYPE_CHECKING, TypeVar
 from asgiref.sync import sync_to_async, async_to_sync
 from django.db import models
 
-from datalayer import models as datalayer_models
+from arkitekt_datalayer import models as datalayer_models
 from graph_engine import input_models
 
 if TYPE_CHECKING:
@@ -76,12 +76,21 @@ class CategoryManager(KindedManager["core_models.Category"], Generic[T]):
 
         return evidence_writer.ensure_term(graph.organization, self.model.KIND, key)
 
-    def _resolve_store_id(self, image: datalayer_models.MediaStore | str | None) -> str | None:
+    def _resolve_store_id(self, image: datalayer_models.MediaStore | str | None, graph_id: int) -> str | None:
+        """The id of the media store ``image`` names, refused unless it belongs to the graph's organization.
+
+        A store is an organization's: naming another organization's store id would hand
+        its picture (and a read grant on it) to whoever can see this category.
+        """
         if image is None:
             return None
-        if hasattr(image, "id"):
-            return image.id
-        return image
+        store_id = str(image.id) if isinstance(image, datalayer_models.MediaStore) else str(image)
+        from core.models import Graph
+
+        organization_id = Graph.objects.values_list("organization_id", flat=True).get(pk=graph_id)
+        if not datalayer_models.MediaStore.objects.filter(id=store_id, organization_id=organization_id).exists():
+            raise PermissionError(f"No media store {store_id} in this graph's organization.")
+        return store_id
 
     def _apply_pin(self, category: "core_models.Category", user, pin: Optional[bool]) -> None:
         """Add or remove this user's pin. `None` means the caller said nothing about it.
@@ -167,7 +176,7 @@ class NodeCategoryManager(CategoryManager[T], Generic[T]):
             **(other_defaults or {}),
         }
 
-        store_id = self._resolve_store_id(definition.image)
+        store_id = await sync_to_async(self._resolve_store_id)(definition.image, graph.pk)
         if store_id is not None:
             # `image_id`, not `store_id`. `Category` has an `image` FK and no
             # `store` field at all, so `defaults["store_id"]` named a column that
@@ -247,7 +256,7 @@ class EntityCategoryManager(NodeCategoryManager["core_models.EntityCategory"]):
         elif getattr(definition, "definition", None) is not None:
             category.definition = definition.definition.to_stored()
 
-        store_id = self._resolve_store_id(definition.image)
+        store_id = await sync_to_async(self._resolve_store_id)(definition.image, category.graph_id)
         if store_id is not None:
             category.image_id = store_id
         if definition.color is not None:
@@ -363,7 +372,7 @@ class EdgeCategoryManager(CategoryManager[T], Generic[T]):
         if property_definitions is not None:
             defaults["property_definitions"] = [prop.model_dump(mode="json") for prop in property_definitions]
 
-        store_id = self._resolve_store_id(definition.image)
+        store_id = await sync_to_async(self._resolve_store_id)(definition.image, graph.pk)
         if store_id is not None:
             # `image_id`, not `store_id`. `Category` has an `image` FK and no
             # `store` field at all, so `defaults["store_id"]` named a column that

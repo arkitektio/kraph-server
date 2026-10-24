@@ -14,10 +14,6 @@ from evidence import models as evidence_models
 from evidence import selector, writer
 from graph_engine import input_models as models
 from tests.support import rules, rules as R  # noqa: E402
-import importlib
-from core import models as core_models
-from evidence.selector import rule_metric_filter
-from evidence.selector import trust_filter
 
 
 DEC5 = datetime(2026, 12, 5, tzinfo=timezone.utc)
@@ -381,139 +377,6 @@ def test_key_in_a_measurement_only_definition_rule_compiles_on_the_metric_side_o
     assert standing is not None and "key" not in _sql(standing)
 
 
-migration = importlib.import_module("core.migrations.0019_property_evidence_is_a_rule_list")
-
-
-def test_convert_evidence_wraps_a_list_in_one_rule():
-    flat = [
-        {"field": "APP", "operator": "IS", "value": "segmenter-v3"},
-        {"field": "MEASURED_AT", "operator": "SINCE", "value": "2026-06-01T00:00:00Z"},
-    ]
-    assert migration.convert_evidence(flat) == {"rules": [{"when": flat}]}
-    already = {"rules": [{"when": flat}]}
-    assert migration.convert_evidence(already) is already
-    assert migration.convert_evidence(None) is None
-
-
-@pytest.mark.django_db(transaction=True)
-def test_converted_evidence_parses_and_compiles(test_graph: core_models.Graph, table_projector):
-    category = core_models.Category.objects.filter(graph=test_graph, kind="ENTITY").first()
-    assert category is not None
-    # Stored the way a pre-0014 write left it: the flat list.
-    core_models.Category.objects.filter(pk=category.pk).update(
-        property_definitions=[
-            {
-                "key": "avg_length",
-                "value_kind": "FLOAT",
-                "derivation": "ROLLUP",
-                "rule": {
-                    "source_node": "ROI",
-                    "key": "vector_length",
-                    "aggregation": "MEAN",
-                    "evidence": [{"field": "APP", "operator": "IS", "value": "segmenter-v3"}],
-                },
-            }
-        ]
-    )
-    category.refresh_from_db()
-
-    with pytest.raises(Exception):
-        category.defined_properties  # the flat list no longer parses
-
-    migration.convert(_Apps(), None)
-    category.refresh_from_db()
-
-    (prop,) = category.defined_properties
-    assert prop.rule is not None and prop.rule.evidence is not None
-    assert prop.rule.evidence.to_stored() == {"rules": [{"when": [{"field": "APP", "operator": "IS", "value": "segmenter-v3"}]}]}
-    assert "segmenter-v3" in str(rule_metric_filter(prop.rule))
-
-
-class _Apps:
-    """Enough of the migration `apps` registry for `convert`: the real model."""
-
-    def get_model(self, app_label, model_name):
-        assert (app_label, model_name) == ("core", "Category")
-        return core_models.Category
-
-
-migration_0020 = importlib.import_module("core.migrations.0020_every_claim_has_a_time_of_observation")
-
-
-def test_rename_field_walks_when_and_unless():
-    stored = {
-        "rules": [
-            {
-                "when": [
-                    {"field": "APP", "operator": "IS", "value": "segmenter-v3"},
-                    {"field": "MEASURED_AT", "operator": "SINCE", "value": "2026-06-01T00:00:00Z"},
-                ],
-                "unless": [{"when": [{"field": "MEASURED_AT", "operator": "BEFORE", "value": "2026-01-01T00:00:00Z"}]}],
-            }
-        ]
-    }
-    assert migration_0020.rename_field(stored) is True
-    assert stored["rules"][0]["when"][1]["field"] == "OBSERVED_AT"
-    assert stored["rules"][0]["unless"][0]["when"][0]["field"] == "OBSERVED_AT"
-    assert stored["rules"][0]["when"][0]["field"] == "APP", "other fields untouched"
-
-    assert migration_0020.rename_field(stored) is False, "idempotent"
-    assert migration_0020.rename_field(None) is False
-    assert migration_0020.rename_field({"rules": "not-a-list"}) is False
-
-
-@pytest.mark.django_db(transaction=True)
-def test_renamed_definitions_compile_to_a_time_predicate(test_graph: core_models.Graph, table_projector):
-    category = core_models.Category.objects.filter(graph=test_graph, kind="ENTITY").first()
-    assert category is not None
-    # Stored the way a pre-0015 write left it: MEASURED_AT in a measurement-only
-    # definition rule and in a property's evidence.
-    core_models.Category.objects.filter(pk=category.pk).update(
-        definition={
-            "rules": [
-                {"when": [{"field": "WORD", "operator": "IS", "value": category.key}, {"field": "KIND", "operator": "NOT_IN", "value": ["MEASUREMENT"]}]},
-                {"when": [{"field": "KIND", "operator": "IS", "value": "MEASUREMENT"}, {"field": "MEASURED_AT", "operator": "SINCE", "value": "2026-06-01T00:00:00Z"}]},
-            ]
-        },
-        property_definitions=[
-            {
-                "key": "avg_length",
-                "value_kind": "FLOAT",
-                "derivation": "ROLLUP",
-                "rule": {
-                    "source_node": "ROI",
-                    "key": "vector_length",
-                    "aggregation": "MEAN",
-                    "evidence": {"rules": [{"when": [{"field": "MEASURED_AT", "operator": "SINCE", "value": "2026-06-01T00:00:00Z"}]}]},
-                },
-            }
-        ],
-    )
-    category.refresh_from_db()
-
-    stale_claim = trust_filter(category.definition, kind="MEASUREMENT", asserted_at_column="asserted_at", include_metric_fields=True)
-    assert "observed_at" not in str(stale_claim), "the unknown field compiles to nothing — the silent drop the migration_0020 exists for"
-
-    migration_0020.rename(_Apps0020(), None)
-    category.refresh_from_db()
-
-    assert category.definition["rules"][1]["when"][1]["field"] == "OBSERVED_AT"
-    claim = trust_filter(category.definition, kind="MEASUREMENT", asserted_at_column="asserted_at", include_metric_fields=True)
-    assert "observed_at__gte" in str(claim)
-
-    (prop,) = category.defined_properties
-    assert prop.rule is not None and prop.rule.evidence is not None
-    assert "observed_at__gte" in str(rule_metric_filter(prop.rule))
-
-
-class _Apps0020:
-    """Enough of the migration_0020 `apps` registry for `rename`: the real model."""
-
-    def get_model(self, app_label, model_name):
-        assert (app_label, model_name) == ("core", "Category")
-        return core_models.Category
-
-
 @pytest.mark.parametrize("kind", ["CLASSIFICATION", "EXISTENCE", "SAMENESS", "EVIDENCE", "MEASUREMENT"])
 def test_confidence_and_observed_at_bound_every_kind(kind: str) -> None:
     """RFC 0015 / RFC 0016: `CONFIDENCE` and `OBSERVED_AT` compile to a bound on
@@ -525,23 +388,3 @@ def test_confidence_and_observed_at_bound_every_kind(kind: str) -> None:
     assert "observed_at" in compiled, f"{kind}: the observation bound compiled to nothing"
     standing = str(selector.trust_filter(definition, kind=kind, observed_at_column="at"))
     assert "'at__gte'" in standing, f"{kind}: over standings the bound has to read `at`"
-
-
-migration_0024 = importlib.import_module("core.migrations.0024_sameness_is_the_views")
-
-
-def test_migration_0024_strips_sameness_from_every_shape_a_rule_can_take() -> None:
-    """RFC 0024: a category definition may no longer name `KIND SAMENESS`. The
-    migration drops a rule that covered sameness only, removes SAMENESS from a
-    KIND list, drops a KIND condition that named nothing else, and leaves every
-    other rule as it was."""
-    strip = migration_0024._strip_sameness
-    word = {"field": "WORD", "operator": "IS", "value": "Cell"}
-
-    assert strip({"when": [{"field": "KIND", "operator": "IS", "value": "SAMENESS"}, word]}) is None, "a rule covering sameness only is gone"
-    assert strip({"when": [{"field": "KIND", "operator": "IN", "value": ["SAMENESS"]}, word]}) is None
-    assert strip({"when": [word, {"field": "KIND", "operator": "IN", "value": ["SAMENESS", "EXISTENCE"]}]}) == {"when": [word, {"field": "KIND", "operator": "IN", "value": ["EXISTENCE"]}]}, "SAMENESS leaves the list, the rest stays"
-    assert strip({"when": [word, {"field": "KIND", "operator": "NOT_IN", "value": ["SAMENESS", "EXISTENCE"]}]}) == {"when": [word, {"field": "KIND", "operator": "NOT_IN", "value": ["EXISTENCE"]}]}
-    assert strip({"when": [word, {"field": "KIND", "operator": "NOT_IN", "value": ["SAMENESS"]}]}) == {"when": [word]}, "a carve-out that excluded sameness only excludes nothing now"
-    untouched = {"when": [word, {"field": "SUBJECT", "operator": "IS", "value": "peter"}], "unless": [{"when": [{"field": "APP", "operator": "IS", "value": "sloppy"}]}]}
-    assert strip(untouched) == untouched

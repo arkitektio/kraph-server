@@ -11,6 +11,8 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from arkitekt_datalayer.configuration import DatalayerBucket, DatalayerSettings
+
 from arkitekt_service.server import settings as shared
 from arkitekt_service.server.settings import DjangoSettings, InstanceSettings, PostgresSettings, ServiceSettings
 from authentikate.base_models import AuthentikateSettings
@@ -21,29 +23,11 @@ class RedisSettings(shared.RedisSettings):
     channel_prefix: str = Field(default="kraph", description="Key prefix for the channels_redis channel layer. Must be unique per service: every service on a shared redis used to send under the same prefix, so identically-named groups (e.g. \"files\") delivered one service's events to another's subscribers.")
 
 
-class DatalayerBucket(BaseModel):
-    """A single S3 bucket binding within the datalayer."""
+class KraphDatalayerSettings(DatalayerSettings):
+    """The datalayer block: kraph stores images of graphs, categories and terms as media."""
 
-    model_config = ConfigDict(extra="allow")
-
-    bucket: str = Field(description="S3 bucket name.")
-
-
-class DatalayerSettings(BaseModel):
-    """S3 storage connection and buckets (the datalayer module; replaces the old top-level ``s3`` block)."""
-
-    model_config = ConfigDict(extra="allow")
-
-    access_key: str = Field(description="S3 access key. Secret — must be set.")
-    secret_key: str = Field(description="S3 secret key. Secret — must be set.")
-    host: Optional[str] = Field(default=None, description="S3 endpoint host.")
-    port: Optional[int] = Field(default=None, description="S3 endpoint port.")
-    protocol: str = Field(default="http", description="S3 endpoint protocol (http or https).")
-    region: str = Field(default="us-east-1", description="S3 region name.")
+    session_name: str = Field(default="kraph", description="Prefix of every STS session kraph assumes, so an object store's audit log names it.")
     media: DatalayerBucket = Field(description="Bucket for media / general file storage. Required for this service.")
-    zarr: Optional[DatalayerBucket] = Field(default=None, description="Bucket for Zarr arrays.")
-    parquet: Optional[DatalayerBucket] = Field(default=None, description="Bucket for Parquet tables.")
-    bigfile: Optional[DatalayerBucket] = Field(default=None, description="Bucket for large binary files.")
 
 
 class ProjectionSettings(BaseModel):
@@ -78,7 +62,7 @@ class Settings(ServiceSettings):
     postgres: PostgresSettings = Field(description="PostgreSQL connection.")
     redis: RedisSettings = Field(description="Redis connection.")
     authentikate: AuthentikateSettings = Field(description="Token-verification config (authentikate).")
-    datalayer: DatalayerSettings = Field(description="S3 storage connection and buckets.")
+    datalayer: KraphDatalayerSettings = Field(description="S3 storage connection and buckets.")
     projection: ProjectionSettings = Field(default_factory=ProjectionSettings, description="Projection health thresholds.")
     rekuest_hook: Optional[RekuestHookSettings] = Field(default=None, description="How this process reaches the hub's rekuest as a hook agent. Without it the agent's endpoints answer 503 and nothing is ingested.")
     instance: Optional[InstanceSettings] = Field(default=None, description="This instance's key and the hub trust bundle: it signs the agent's reports and the reads of mikro's feed.")

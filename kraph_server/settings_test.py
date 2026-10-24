@@ -16,7 +16,9 @@ AUTHENTIKATE = {**AUTHENTIKATE, "allow_static_tokens_in_production": True, "stat
 # `allow_unscoped_fallback`: there is no STS to assume a role against under unit tests, and a
 # grant that cannot be scoped now refuses rather than quietly returning this service's permanent
 # key. Tests that exercise a grant care about its *shape*, not its credentials.
-DATALAYER = {"media": {"path": "/tmp/datalayer_test", "jwt_key": "testkey"}, "allow_unscoped_fallback": True}
+# No object store in the test stack: grants are never minted here, so the datalayer only needs a
+# media bucket name for the store rows the tests create.
+DATALAYER = {"access_key": "test", "secret_key": "test", "media": {"bucket": "media"}, "allow_unscoped_fallback": True}
 # The compose stack's redis (tests/integration/docker-compose.yaml); `/ht` pings it.
 REDIS_URL = f"redis://localhost:{os.environ.get('KRAPH_TEST_REDIS_PORT', '6666')}/0"
 # The subscription tests listen through a stub consumer on the process-local layer;

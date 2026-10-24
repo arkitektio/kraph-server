@@ -52,7 +52,7 @@ from __future__ import annotations
 import uuid
 
 from authentikate.models import Organization
-from datalayer import models as datalayer_models
+from arkitekt_datalayer import models as datalayer_models
 from django.db import models
 
 from core.enums import ValueKind

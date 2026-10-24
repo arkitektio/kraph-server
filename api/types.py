@@ -19,7 +19,7 @@ from typing import Annotated, Optional, List, Sequence, Type, TypeVar, Union, ca
 from datetime import datetime
 from api import loaders, order, pagination, filters
 from api import pagination as pagination_module
-from datalayer.types import MediaStore
+from arkitekt_datalayer.types import MediaStore
 from graph_engine.scalars import AnyScalar, StructureIdentifier
 from graph_engine.retrieved import RetrievedMetric, RetrievedNode, RetrievedEdge, RetrievedStructure, _as_datetime
 from api.context import get_active_organization, get_controller

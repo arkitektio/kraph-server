@@ -154,9 +154,9 @@ async def test_archiving_a_saved_query_persists(
 def test_deleting_an_image_does_not_delete_the_view(test_graph: Graph) -> None:
     """`Graph.image` and `Category.image` cascaded *from* the media store: deleting
     a picture deleted the view, its categories and its whole projection."""
-    from datalayer.models import MediaStore
+    from arkitekt_datalayer.models import MediaStore
 
-    store = MediaStore.objects.create(key="graph.png", bucket="media", kind="MEDIA")
+    store = MediaStore.objects.create(organization=test_graph.organization, key="graph.png", bucket="media")
     test_graph.image = store
     test_graph.save(update_fields=["image"])
     category = test_graph.categories.first()

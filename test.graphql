@@ -1,3 +1,5 @@
+directive @auth(required_scopes: [String!], required_roles: [String!], required_org_roles: [String!], any_scope_of: [String!], any_role_of: [String!], any_org_role_of: [String!], allow_scoped: Boolean) on FIELD_DEFINITION
+
 directive @oneOf on INPUT_OBJECT
 
 schema @link(url: "https://specs.apollo.dev/federation/v2.11", import: ["@key"]) {
@@ -962,55 +964,6 @@ input AttestStructureInput {
   confidence: Float = null
 }
 
-"""Temporary S3 credentials for reading a big file."""
-type BigFileAccessGrant {
-  status: String!
-  accessKey: String!
-  secretKey: String!
-  sessionToken: String!
-  region: String!
-  bucket: String!
-  key: String!
-  path: String!
-  expiresIn: Int!
-  store: String
-}
-
-"""
-A BigFileStore represents a large object stored behind the S3 datalayer.
-"""
-type BigFileStore @key(fields: "id", resolvable: true) {
-  id: ID!
-  path: String!
-  bucket: String!
-  key: String!
-  originalFileName: String
-  contentType: String
-
-  """Get temporary S3 read credentials for the object."""
-  accessGrant(host: String = null): BigFileAccessGrant!
-  presignedUrl: String!
-}
-
-"""Temporary S3 credentials for uploading a big file."""
-type BigFileUploadGrant {
-  status: String!
-  accessKey: String!
-  secretKey: String!
-  sessionToken: String!
-  region: String!
-  bucket: String!
-  key: String!
-  path: String!
-  expiresIn: Int!
-  store: String!
-  maxBytes: Int!
-  originalFileName: String
-  uploadFileName: String!
-  uploadContentType: String
-  uploadFormField: String!
-}
-
 """Builder arguments for generating a graph table query"""
 input BuilderArgsInput {
   """Optional filtering conditions for the graph query"""
@@ -1022,6 +975,11 @@ input BuilderArgsInput {
   """The values to return for each matched pattern in the graph query"""
   returnStatements: [ReturnStatementInput!] = null
 }
+
+"""
+A number of bytes. 64-bit, unlike Int: serialized as a JSON number, and accepted as a number or a numeric string.
+"""
+scalar ByteCount
 
 enum Cardinality {
   ONE_TO_ONE
@@ -2766,19 +2724,22 @@ input EventRoleInput {
   ontologyReferences: [OntologyReferenceInput!]! = []
 }
 
-input FinishBigFileUploadInput {
-  storeId: String!
-  valid: Boolean! = true
-}
-
 input FinishMediaUploadInput {
   storeId: String!
   valid: Boolean! = true
 }
 
-input FinishZarrUploadInput {
-  storeId: String!
-  valid: Boolean! = true
+"""Temporary S3 credentials for reading a media object."""
+type GeneralMediaAccessGrant {
+  path: String!
+  store: String
+  status: String!
+  accessKey: String!
+  secretKey: String!
+  sessionToken: String!
+  region: String!
+  bucket: String!
+  expiresIn: Int!
 }
 
 """One view over the organization's evidence log"""
@@ -3686,17 +3647,24 @@ type MediaStore @key(fields: "id", resolvable: true) {
   path: String!
   bucket: String!
   key: String!
+
+  """
+  The byte budget the upload grant advertised for this store. Advertised, not enforced: a session policy bounds what a credential may write, never how much, so a store may exceed this
+  """
+  maxBytes: ByteCount
+
+  """
+  How many bytes this store actually holds, measured when its upload was finished. Null while unfinished, or for stores written before this was recorded
+  """
+  sizeBytes: ByteCount
   originalFileName: String
   contentType: String
 
   """Get temporary S3 read credentials for the media object."""
-  accessGrant(host: String = null): MediaAccessGrant!
-
-  """Compatibility field returning the canonical S3 object path."""
-  presignedUrl(host: String = null): String!
+  accessGrant: MediaAccessGrant!
 }
 
-"""A presigned PUT grant for uploading a media object."""
+"""Temporary S3 credentials for uploading a media object."""
 type MediaUploadGrant {
   status: String!
   accessKey: String!
@@ -3708,11 +3676,10 @@ type MediaUploadGrant {
   path: String!
   expiresIn: Int!
   store: String!
-  maxBytes: Int!
+  maxBytes: ByteCount!
   originalFileName: String
   uploadFileName: String!
   uploadContentType: String
-  uploadFormField: String!
 }
 
 """
@@ -4087,22 +4054,18 @@ type Mutation {
   retractDifferentInstance(input: RetractDifferentInstanceInput!): AssertedDifference!
 
   """Upload media and return a URL for access"""
-  requestMediaUpload(input: RequestMediaUploadInput!): MediaUploadGrant!
+  requestMediaUpload(input: RequestMediaUploadInput!): MediaUploadGrant! @auth(any_role_of: ["admin", "editor", "bot"])
 
   """Finalize a media upload after the client has written the object"""
-  finishMediaUpload(input: FinishMediaUploadInput!): MediaStore!
+  finishMediaUpload(input: FinishMediaUploadInput!): MediaStore! @auth(any_role_of: ["admin", "editor", "bot"])
 
-  """Request an upload grant for a big file store"""
-  requestBigFileUpload(input: RequestBigFileUploadInput!): BigFileUploadGrant!
+  """Request temporary S3 read credentials for a media file"""
+  requestMediaAccess(input: RequestMediaAccessInput!): MediaAccessGrant!
 
-  """Finalize a big file upload after the client has written the object"""
-  finishBigFileUpload(input: FinishBigFileUploadInput!): BigFileStore!
-
-  """Request an upload grant for a Zarr store"""
-  requestZarrUpload(input: RequestZarrUploadInput!): ZarrUploadGrant!
-
-  """Finalize a Zarr upload after the client has written the object"""
-  finishZarrUpload(input: FinishZarrUploadInput!): ZarrStore!
+  """
+  Request temporary S3 read credentials for media files in the organization
+  """
+  requestGeneralMediaAccess(input: RequestGeneralMediaAccessInput!): GeneralMediaAccessGrant!
 
   """Create a new graph in the graph engine"""
   createGraph(input: CreateGraphInput!): Graph!
@@ -5721,30 +5684,18 @@ input RenderGraphTablePagination {
   offset: Int!
 }
 
-input RequestBigFileUploadInput {
-  originalFileName: String!
-  fileSize: Int = null
-  contentType: String = null
-  datalayer: String! = "s3"
-  host: String = null
-  port: Int = null
-  protocol: String! = "https"
+input RequestGeneralMediaAccessInput {
+  expiresIn: Int = null
+}
+
+input RequestMediaAccessInput {
+  storeId: String!
 }
 
 input RequestMediaUploadInput {
   originalFileName: String!
-  fileSize: Int = null
+  fileSize: ByteCount = null
   contentType: String = null
-}
-
-input RequestZarrUploadInput {
-  shape: [Int!] = null
-  chunks: [Int!] = null
-  version: String = null
-  datalayer: String! = "s3"
-  host: String = null
-  port: Int = null
-  protocol: String! = "https"
 }
 
 """
@@ -7419,62 +7370,9 @@ enum WhereOperator {
   ENDS_WITH
 }
 
-"""Temporary S3 credentials for reading a Zarr store."""
-type ZarrAccessGrant {
-  status: String!
-  accessKey: String!
-  secretKey: String!
-  sessionToken: String!
-  region: String!
-  bucket: String!
-  key: String!
-  path: String!
-  expiresIn: Int!
-  store: String
-}
-
-type ZarrStore @key(fields: "id", resolvable: true) {
-  id: ID!
-  path: String!
-  bucket: String!
-  key: String!
-  shape: [Int!]!
-  chunks: [Int!]!
-  version: String
-  dtype: String
-  dimensionNames: [String]
-  fillValue: JSON!
-  attributes: JSON
-  storageTransformers: JSON
-  chunkKeyEncoding: JSON
-  codecs: JSON
-
-  """Get temporary S3 read credentials for the Zarr object."""
-  accessGrant(host: String = null): ZarrAccessGrant!
-}
-
-"""Temporary S3 credentials for uploading a Zarr store."""
-type ZarrUploadGrant {
-  action: String!
-  status: String!
-  accessKey: String!
-  secretKey: String!
-  sessionToken: String!
-  bucket: String!
-  key: String!
-  path: String!
-  expiresIn: Int!
-  store: String!
-  maxBytes: Int!
-  originalFileName: String
-  uploadFileName: String!
-  uploadContentType: String
-  uploadFormField: String!
-}
-
 scalar _Any
 
-union _Entity = Assertion | BigFileStore | Comment | EntityCategory | Graph | GraphTableQuery | Instance | Link | MeasurementCategory | MediaStore | MetricKind | NaturalEventCategory | ProtocolEventCategory | RelationCategory | ScatterPlot | Standing | StructureKind | StructureRelationCategory | Term | ZarrStore
+union _Entity = Assertion | Comment | EntityCategory | Graph | GraphTableQuery | Instance | Link | MeasurementCategory | MediaStore | MetricKind | NaturalEventCategory | ProtocolEventCategory | RelationCategory | ScatterPlot | Standing | StructureKind | StructureRelationCategory | Term
 
 type _Service {
   sdl: String!

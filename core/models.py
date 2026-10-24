@@ -7,7 +7,7 @@ from kante import Info
 from core import enums
 from core import managers
 from koherent.fields import ProvenanceField
-from datalayer import models as datalayer_models
+from arkitekt_datalayer import models as datalayer_models
 from authentikate.models import Organization, Membership
 from django.db.models import Q, QuerySet
 # Create your models here.

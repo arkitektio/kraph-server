@@ -162,10 +162,6 @@ def test_the_migrations_escape_hatch_actually_rewrites_the_log(organization, roi
     migration matched zero rows and the `FOR EACH ROW` trigger never fired. A row has
     to exist for the escape to be exercised at all, so this makes one.
     """
-    import importlib
-
-    migration = importlib.import_module("evidence.migrations.0008_instance_and_standing")
-
     minting = writer.create_assertion(organization, subject="minter", app_id="app")
     structure = writer.ensure_structure(organization, kind=roi_kind, object="roi-escape-hatch", assertion=minting)
     writer.retract(organization, structure, writer.create_assertion(organization, subject="r", app_id="app"))
@@ -177,9 +173,9 @@ def test_the_migrations_escape_hatch_actually_rewrites_the_log(organization, roi
     with pytest.raises(REFUSED), transaction.atomic(), connection.cursor() as cursor:
         cursor.execute("UPDATE evidence_standing SET target_type = 'rewritten'")
 
-    # With it, and through the migration's own SQL rather than a paraphrase of it.
+    # With it, in one multi-statement string, which is what a redaction sends.
     with transaction.atomic(), connection.cursor() as cursor:
-        cursor.execute(migration._rename_target_type("structure", "rewritten"))
+        cursor.execute("SET LOCAL kraph.allow_log_rewrite = 'on'; UPDATE evidence_standing SET target_type = 'rewritten' WHERE target_type = 'structure';")
 
     assert standings.filter(target_type="rewritten").count() == 1, "The escape hatch let the rewrite through"
 

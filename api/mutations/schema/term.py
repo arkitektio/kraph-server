@@ -26,7 +26,7 @@ stop showing it and `terms` lists it only when asked — and can be shown again.
 from kante.types import Info
 
 from api import context, inputs, types
-from datalayer import models as datalayer_models
+from arkitekt_datalayer import models as datalayer_models
 from evidence import models as evidence_models
 from ._guards import refuse_bad_color
 
@@ -40,8 +40,14 @@ def _resolve(info: Info, term_id: str) -> evidence_models.Term:
     return term
 
 
-def _media_store(image: str | None) -> datalayer_models.MediaStore | None:
-    return datalayer_models.MediaStore.objects.get(id=image) if image else None
+def _media_store(image: str | None, organization) -> datalayer_models.MediaStore | None:  # noqa: ANN001 - authentikate Organization
+    """The organization's media store ``image`` names; another organization's store id is not found."""
+    if not image:
+        return None
+    try:
+        return datalayer_models.MediaStore.objects.get(id=image, organization=organization)
+    except datalayer_models.MediaStore.DoesNotExist:
+        raise PermissionError(f"No media store {image} in your organization.") from None
 
 
 def create_term(info: Info, input: inputs.CreateTermInput) -> types.Term:
@@ -65,7 +71,7 @@ def create_term(info: Info, input: inputs.CreateTermInput) -> types.Term:
     term.description = model.description or term.description
     term.purl = model.purl or term.purl
     term.color = model.color or term.color
-    term.image = _media_store(model.image) or term.image
+    term.image = _media_store(model.image, term.organization) or term.image
     # Declaring a word is wanting it, so a hidden one comes back. `ensure_term`
     # (a claim or a category naming the word) deliberately does not do this.
     term.hidden = False
@@ -93,7 +99,7 @@ def update_term(info: Info, input: inputs.UpdateTermInput) -> types.Term:
     term.description = model.description or term.description
     term.purl = model.purl or term.purl
     term.color = model.color or term.color
-    term.image = _media_store(model.image) or term.image
+    term.image = _media_store(model.image, term.organization) or term.image
     # `is not None`, not `or`: `False or term.hidden` would make a hidden word
     # impossible to show again.
     if model.hidden is not None:
