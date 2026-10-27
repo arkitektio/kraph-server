@@ -85,7 +85,7 @@ def run_once(
             continue
         with locks.organization_projection_lock(organization, wait=wait_for_lock) as held:
             if not held:
-                logger.info("%s: projection lock held elsewhere; leaving this pass to whoever holds it", organization.slug)
+                logger.info("%s: projection lock held elsewhere; leaving this pass to whoever holds it", organization.identifier)
                 passes.append(Pass(organization=organization, locked_elsewhere=True))
                 continue
             report = projector.replay(controller, organization, older_than=older_than)
@@ -96,17 +96,17 @@ def run_once(
 
 def _log(organization: Organization, report: ReplayReport) -> None:
     if report.pending == 0:
-        logger.info("%s: nothing old enough to apply yet", organization.slug)
+        logger.info("%s: nothing old enough to apply yet", organization.identifier)
         return
     logger.info(
         "%s: %d assertion(s) settled over %d ref(s) in %d graph(s)",
-        organization.slug,
+        organization.identifier,
         report.settled,
         report.refs,
         len(report.graphs),
     )
     for entry in report.skipped:
-        logger.warning("%s: graph #%s %r skipped, %s — needs a full `reproject --graph %s`", organization.slug, entry.graph.pk, entry.graph.name, entry.status, entry.graph.pk)
+        logger.warning("%s: graph #%s %r skipped, %s — needs a full `reproject --graph %s`", organization.identifier, entry.graph.pk, entry.graph.name, entry.status, entry.graph.pk)
 
 
 @dataclass
@@ -154,7 +154,7 @@ def run_forever(
                     strikes = state.backoff.get(org.pk, 0)
                     skip = min(2 ** min(strikes, 6), 64)
                     state.backoff[org.pk] = skip
-                    logger.exception("%s: runner pass failed; skipping the next %d pass(es)", org.slug, skip)
+                    logger.exception("%s: runner pass failed; skipping the next %d pass(es)", org.identifier, skip)
                     connections.close_all()
         except Exception:  # noqa: BLE001 - see above
             state.failures += 1

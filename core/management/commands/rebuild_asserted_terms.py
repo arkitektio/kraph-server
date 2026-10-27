@@ -49,7 +49,7 @@ class Command(BaseCommand):
         if not options["organization"] and not options["all"]:
             raise CommandError("Name an organization with --organization, or pass --all.")
 
-        organizations = list(Organization.objects.all()) if options["all"] else list(Organization.objects.filter(slug=str(options["organization"])))
+        organizations = list(Organization.objects.all()) if options["all"] else list(Organization.objects.filter(identifier=str(options["organization"])))
         if not organizations:
             raise CommandError("No matching organizations.")
 
@@ -58,7 +58,7 @@ class Command(BaseCommand):
                 self._check(organization)
             else:
                 written = asserted_terms.refold(organization)
-                self.stdout.write(self.style.SUCCESS(f"{organization.slug}: {written} asserted-term row(s)"))
+                self.stdout.write(self.style.SUCCESS(f"{organization.identifier}: {written} asserted-term row(s)"))
 
     def _check(self, organization: Organization) -> None:
         """Compare the index against the definitions, and write nothing.
@@ -74,10 +74,10 @@ class Command(BaseCommand):
         extra = sorted(stored - expected, key=lambda pair: (str(pair[0]), pair[1]))
 
         if not (missing or extra):
-            self.stdout.write(self.style.SUCCESS(f"{organization.slug}: index agrees with the definitions ({len(stored)} row(s))"))
+            self.stdout.write(self.style.SUCCESS(f"{organization.identifier}: index agrees with the definitions ({len(stored)} row(s))"))
             return
 
-        self.stdout.write(self.style.ERROR(f"{organization.slug}: index disagrees with the definitions"))
+        self.stdout.write(self.style.ERROR(f"{organization.identifier}: index disagrees with the definitions"))
         for category_id, key in missing:
             self.stdout.write(f"  missing  category {category_id} derives from {key!r} and is not indexed")
         for category_id, key in extra:

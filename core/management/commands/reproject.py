@@ -13,7 +13,7 @@ Two modes:
 - **full** (`--graph` / `--all`): drop the namespace and replay everything the
   graph admits. The honesty test, and the only thing that moves a vertex between
   labels or brings a `NEEDS_BACKFILL` graph up.
-- **incremental** (`--incremental --organization <slug>` / `--all`): apply what the
+- **incremental** (`--incremental --organization <identifier>` / `--all`): apply what the
   outbox says is owed — the assertions whose synchronous projection did not
   finish — to every consistent graph of the organization, and settle exactly
   those rows. Organization-scoped because an outbox row is, and because a
@@ -93,16 +93,16 @@ class Command(BaseCommand):
     def _incremental(self, options) -> None:
         """Apply the outbox to every consistent graph of each selected organization."""
         if options["graph"]:
-            raise CommandError("--incremental replays an organization's outstanding assertions into every graph it has; pending work is per organization, not per graph. Pass --organization <slug> or --all.")
+            raise CommandError("--incremental replays an organization's outstanding assertions into every graph it has; pending work is per organization, not per graph. Pass --organization <identifier> or --all.")
         if not options["organization"] and not options["all"]:
-            raise CommandError("Name an organization with --organization <slug>, or pass --all.")
+            raise CommandError("Name an organization with --organization <identifier>, or pass --all.")
 
         if options["all"]:
             organizations = list(Organization.objects.all().order_by("id"))
         else:
-            organization = Organization.objects.filter(slug=options["organization"]).first()
+            organization = Organization.objects.filter(identifier=options["organization"]).first()
             if organization is None:
-                raise CommandError(f"No organization with slug {options['organization']!r}.")
+                raise CommandError(f"No organization with identifier {options['organization']!r}.")
             organizations = [organization]
 
         controller = GraphController(projector=current_or_default())
@@ -122,7 +122,7 @@ class Command(BaseCommand):
             graphs = list(models.Graph.objects.filter(organization=organization).order_by("id"))
             head = watermark.max_seq(organization)
             pending = watermark.pending_count(organization)
-            self.stdout.write(f"{organization.slug}: log head {head}, {pending} assertion(s) outstanding")
+            self.stdout.write(f"{organization.identifier}: log head {head}, {pending} assertion(s) outstanding")
             for graph in graphs:
                 self.stdout.write(f"  {_graphs.describe(graph)}{self._standing(graph)}")
 

@@ -65,15 +65,15 @@ class Command(BaseCommand):
                 self._check(organization)
             elif options["stale"]:
                 rebuilt = identity_module.recompute_stale(organization)
-                self.stdout.write(self.style.SUCCESS(f"{organization.slug}: {rebuilt} flagged component(s) rebuilt"))
+                self.stdout.write(self.style.SUCCESS(f"{organization.identifier}: {rebuilt} flagged component(s) rebuilt"))
             else:
                 components = identity_module.refold(organization)
-                self.stdout.write(self.style.SUCCESS(f"{organization.slug}: {components} component(s)"))
+                self.stdout.write(self.style.SUCCESS(f"{organization.identifier}: {components} component(s)"))
 
     def _select(self, options) -> list[Organization]:
         if options["all"]:
             return list(Organization.objects.all())
-        return list(Organization.objects.filter(slug=str(options["organization"])))
+        return list(Organization.objects.filter(identifier=str(options["organization"])))
 
     def _check(self, organization: Organization) -> None:
         """Compare what is stored against what the claims say, and write nothing.
@@ -91,10 +91,10 @@ class Command(BaseCommand):
         moved = sorted(node for node in set(stored) & set(expected) if stored[node] != expected[node])
 
         if not (missing or extra or moved):
-            self.stdout.write(self.style.SUCCESS(f"{organization.slug}: fold agrees with the claims ({len(stored)} row(s))"))
+            self.stdout.write(self.style.SUCCESS(f"{organization.identifier}: fold agrees with the claims ({len(stored)} row(s))"))
             return
 
-        self.stdout.write(self.style.ERROR(f"{organization.slug}: fold disagrees with the claims"))
+        self.stdout.write(self.style.ERROR(f"{organization.identifier}: fold disagrees with the claims"))
         for node in missing:
             self.stdout.write(f"  missing  {node} should be under {expected[node]}")
         for node in extra:

@@ -221,7 +221,7 @@ async def test_resolving_an_edge_endpoint_checks_the_endpoint_s_own_tenant(
 
     @sync_to_async
     def foreign_structure() -> str:
-        other, _ = Organization.objects.get_or_create(slug="an-unrelated-tenant")
+        other, _ = Organization.objects.get_or_create(identifier="static_issuer#an-unrelated-tenant")
         assertion = evidence_writer.create_assertion(other, subject="someone-else", app_id="elsewhere")
         kind = evidence_writer.ensure_structure_kind(other, "@mikro/roi")
         structure = evidence_writer.ensure_structure(other, kind=kind, object="not-yours", assertion=assertion)

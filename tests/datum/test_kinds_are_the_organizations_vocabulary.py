@@ -311,7 +311,7 @@ def _seed(organization: Organization) -> None:
 
 @sync_to_async
 def _seed_other_organization() -> Organization:
-    other, _ = Organization.objects.get_or_create(slug="a-different-tenant")
+    other, _ = Organization.objects.get_or_create(identifier="static_issuer#a-different-tenant")
     writer.ensure_structure_kind(other, "@secret/thing")
     return other
 

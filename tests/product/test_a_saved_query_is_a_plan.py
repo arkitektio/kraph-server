@@ -29,7 +29,7 @@ def outsider_graph(db, backend_stack, test_graph: core_models.Graph) -> core_mod
     """A graph in an organization the test identity is not a member of."""
     from authentikate.models import Membership, Organization, User
 
-    other, _ = Organization.objects.get_or_create(slug="a-rival-lab")
+    other, _ = Organization.objects.get_or_create(identifier="static_issuer#a-rival-lab")
     stranger, _ = User.objects.get_or_create(username="stranger", sub="stranger-sub")
     membership, _ = Membership.objects.get_or_create(user=stranger, organization=other)
     return core_models.Graph.objects.create(name="rival_graph", user=stranger, membership=membership, organization=other)

@@ -148,7 +148,7 @@ async def test_a_metric_from_mikro_moves_the_value_it_informs(api_schema, simple
     assert created.errors is None, created.errors
     entity = created.data["assertEntityExists"]["instance"]["id"]
 
-    await sync_to_async(feeds.apply)(test_graph.organization, [feeds.entry(5, feeds.body("ROI", "roi-17", "vector_length", magnitude=10.0, unit="µm"), organization=test_graph.organization.slug)])
+    await sync_to_async(feeds.apply)(test_graph.organization, [feeds.entry(5, feeds.body("ROI", "roi-17", "vector_length", magnitude=10.0, unit="µm"), organization=test_graph.organization.identifier)])
 
     read = await api_schema.execute(NODE_PROPERTIES, variable_values={"id": entity, "graph": str(test_graph.pk)}, context_value=simple_api_context)
     assert read.errors is None, read.errors

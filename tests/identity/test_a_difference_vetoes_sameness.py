@@ -233,7 +233,7 @@ async def test_rebuild_identity_check_agrees_under_the_veto(api_schema, simple_a
     @sync_to_async
     def check() -> str:
         out = StringIO()
-        call_command("rebuild_identity", "--check", "--organization", test_graph.organization.slug, stdout=out)
+        call_command("rebuild_identity", "--check", "--organization", test_graph.organization.identifier, stdout=out)
         return out.getvalue()
 
     assert "fold agrees with the claims" in await check()

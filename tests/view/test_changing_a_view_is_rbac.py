@@ -71,7 +71,7 @@ def test_an_admin_of_another_organization_may_not(test_graph: core_models.Graph,
     """The admin role is per organization, not global."""
     from authentikate.models import Organization
 
-    other, _ = Organization.objects.get_or_create(slug="somewhere-else")
+    other, _ = Organization.objects.get_or_create(identifier="static_issuer#somewhere-else")
     user, _ = User.objects.get_or_create(username="foreign-admin", defaults={"sub": "foreign-admin", "iss": "static_issuer"})
     membership, _ = Membership.objects.get_or_create(user=user, organization=other)
     membership.roles = ["admin"]
@@ -105,7 +105,7 @@ def outsider_graph(db, backend_stack, test_graph: core_models.Graph) -> core_mod
     """A graph in a tenant the requesting user is not a member of."""
     from authentikate.models import Membership, Organization, User
 
-    other, _ = Organization.objects.get_or_create(slug="a-rival-lab")
+    other, _ = Organization.objects.get_or_create(identifier="static_issuer#a-rival-lab")
     stranger, _ = User.objects.get_or_create(username="stranger", sub="stranger-sub")
     membership, _ = Membership.objects.get_or_create(user=stranger, organization=other)
 

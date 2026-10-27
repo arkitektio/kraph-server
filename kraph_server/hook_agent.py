@@ -55,7 +55,7 @@ def ingest_metrics(organization: str, metric: StructureRef | None = None) -> dic
         return {"ended": "NO_FEED", "applied": 0}
     # rekuest gives every organization the agent; kraph learns of one when somebody first
     # authenticates in it -- which a schedule may well run before.
-    org, _ = Organization.objects.get_or_create(slug=organization)
+    org, _ = Organization.objects.get_or_create(identifier=organization)
     controller = GraphController(projector=current_or_default())
     outcome = apply_pages(reader, organization, lambda entries: controller.ingest_metric_page(org, entries), budget_s=BUDGET_SECONDS, limit=PAGE)
     if outcome.ended == Ended.HALTED:

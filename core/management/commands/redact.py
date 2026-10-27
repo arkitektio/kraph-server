@@ -57,9 +57,9 @@ class Command(BaseCommand):
         if bool(options["structure"]) == bool(options["entity"]):
             raise CommandError("Name exactly one of --structure or --entity.")
 
-        organization = Organization.objects.filter(slug=options["organization"]).first()
+        organization = Organization.objects.filter(identifier=options["organization"]).first()
         if organization is None:
-            raise CommandError(f"No organization with slug '{options['organization']}'.")
+            raise CommandError(f"No organization with identifier '{options['organization']}'.")
 
         if options["structure"]:
             plan = self._plan_structure(organization, options["structure"])

@@ -5,7 +5,7 @@ Two tenants appear in this suite and they are not the same organization:
 - `api_context` authenticates as the static token's identity — user
   `static_issuer_1`, organization `static_org` (`tests.support.identity`). Every
   graph fixture below is owned by it, and every GraphQL write lands in it.
-- `organization` (slug `evidence-org`) and `other_organization` are tenants for
+- `organization` (identifier `static_issuer#evidence-org`) and `other_organization` are tenants for
   tests that write evidence rows directly through `evidence.writer`.
 
 A test that mixes the two writes evidence the API caller cannot see. Pick one.
@@ -567,15 +567,15 @@ def subsumption_graph(transactional_db, table_projector, authenticated_context) 
 
 @pytest.fixture
 def organization(db: None, backend_stack: None) -> Organization:
-    """The tenant most evidence-level tests write under (slug `evidence-org`)."""
-    org, _ = Organization.objects.get_or_create(slug="evidence-org")
+    """The tenant most evidence-level tests write under (identifier `static_issuer#evidence-org`)."""
+    org, _ = Organization.objects.get_or_create(identifier="static_issuer#evidence-org")
     return org
 
 
 @pytest.fixture
 def other_organization(db: None, backend_stack: None) -> Organization:
     """An organization the static test token is **not** a member of. Nothing it owns may be visible to any other tenant."""
-    org, _ = Organization.objects.get_or_create(slug="a_tenant_you_are_not_in")
+    org, _ = Organization.objects.get_or_create(identifier="static_issuer#a_tenant_you_are_not_in")
     return org
 
 

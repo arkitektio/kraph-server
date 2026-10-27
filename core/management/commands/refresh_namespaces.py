@@ -39,9 +39,9 @@ class Command(BaseCommand):
         if options["graph"]:
             graphs = [_graphs.select_graph(options["graph"])]
         elif options["organization"]:
-            organization = Organization.objects.filter(slug=options["organization"]).first()
+            organization = Organization.objects.filter(identifier=options["organization"]).first()
             if organization is None:
-                raise CommandError(f"No organization is slugged {options['organization']!r}.")
+                raise CommandError(f"No organization with identifier {options['organization']!r}.")
             graphs = list(models.Graph.objects.filter(organization=organization).order_by("id"))
         else:
             graphs = list(models.Graph.objects.order_by("id"))

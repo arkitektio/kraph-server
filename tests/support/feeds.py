@@ -46,12 +46,12 @@ def body(identifier: str, object: str, key: str, *, magnitude: float | None = No
 _next_id = iter(range(1, 10**9))
 
 
-def entry(xid: int, metric_body: dict[str, Any] | None, *, uid: uuid.UUID | None = None, organization: str = "evidence-org") -> RemoteEntry:
+def entry(xid: int, metric_body: dict[str, Any] | None, *, uid: uuid.UUID | None = None, organization: str = "static_issuer#evidence-org") -> RemoteEntry:
     """A CREATED entry of mikro's transaction ``xid``; a None body is a metric deleted before it was read."""
     return RemoteEntry(xid=xid, id=next(_next_id), kind="CREATED", object=str(next(_next_id)), uuid=uid or uuid.uuid4(), organization=organization, body=metric_body)
 
 
-def withdrawal(xid: int, uid: uuid.UUID, *, organization: str = "evidence-org") -> RemoteEntry:
+def withdrawal(xid: int, uid: uuid.UUID, *, organization: str = "static_issuer#evidence-org") -> RemoteEntry:
     """A DELETED entry: mikro withdrawing the metric ``uid``."""
     return RemoteEntry(xid=xid, id=next(_next_id), kind="DELETED", object="0", uuid=uid, organization=organization, body=None)
 

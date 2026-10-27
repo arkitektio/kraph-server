@@ -34,7 +34,7 @@ class ProjectionLagHealthCheck(BaseHealthCheckBackend):
         if not graphs:
             return
         positions = watermark.positions(graphs)
-        names = {graph.pk: f"{graph.organization.slug}/{graph.name}" for graph in graphs}
+        names = {graph.pk: f"{graph.organization.identifier}/{graph.name}" for graph in graphs}
 
         behind = [(names[pk], where.lag) for pk, where in positions.items() if where.status == Projection.Status.CONSISTENT and where.lag > threshold]
         if behind:

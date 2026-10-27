@@ -158,7 +158,7 @@ async def test_listing_another_tenants_category_is_refused(
 
     @sync_to_async
     def foreign_category() -> int:
-        other, _ = Organization.objects.get_or_create(slug="a-tenant-next-door")
+        other, _ = Organization.objects.get_or_create(identifier="static_issuer#a-tenant-next-door")
         membership = Membership.objects.filter(organization=other).first()
         if membership is None:
             membership = Membership.objects.create(user=test_graph.membership.user, organization=other)
@@ -348,7 +348,7 @@ async def test_stats_answer_and_stay_inside_the_organization(
 
     @sync_to_async
     def foreign_rows() -> None:
-        other, _ = Organization.objects.get_or_create(slug="a-tenant-next-door")
+        other, _ = Organization.objects.get_or_create(identifier="static_issuer#a-tenant-next-door")
         membership = Membership.objects.filter(organization=other).first()
         if membership is None:
             membership = Membership.objects.create(user=test_graph.membership.user, organization=other)

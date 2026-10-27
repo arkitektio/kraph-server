@@ -233,7 +233,7 @@ async def test_a_claim_cannot_reach_into_another_organization(
 
     @sync_to_async
     def foreign_node() -> str:
-        other, _ = Organization.objects.get_or_create(slug="a-different-tenant")
+        other, _ = Organization.objects.get_or_create(identifier="static_issuer#a-different-tenant")
         # The caller is a member of *both* tenants. That is the whole scenario:
         # `_assert_can_access` passes for rows in either, so membership alone cannot
         # stop a claim in one from naming rows in the other. Without this line the
@@ -284,7 +284,7 @@ async def test_a_claim_cannot_reach_into_another_organization(
         from authentikate.models import Organization as Org
 
         controller = controller_module.GraphController(projector=None)
-        other = Org.objects.get(slug="a-different-tenant")
+        other = Org.objects.get(identifier="static_issuer#a-different-tenant")
         return controller._resolve_instance(outsider, None, organization=other) is not None
 
     assert await allowed(), "The guard is about the tenant, not about the node"

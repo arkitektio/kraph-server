@@ -123,5 +123,5 @@ def test_the_runner_flags_go_with_incremental(table_projector) -> None:
 @pytest.mark.django_db(transaction=True)
 def test_the_manual_incremental_pass_reports_an_idle_organization(test_graph: core_models.Graph, table_projector) -> None:
     out = StringIO()
-    call_command("reproject", incremental=True, organization=test_graph.organization.slug, stdout=out)
+    call_command("reproject", incremental=True, organization=test_graph.organization.identifier, stdout=out)
     assert "nothing owed" in out.getvalue()

@@ -201,7 +201,7 @@ async def test_citing_another_organizations_claim_is_refused(api_schema, simple_
 
     @sync_to_async
     def foreign_instance() -> str:
-        org, _ = Organization.objects.get_or_create(slug="a_tenant_you_are_not_in")
+        org, _ = Organization.objects.get_or_create(identifier="static_issuer#a_tenant_you_are_not_in")
         return claims.mint(org, "Cell", "stranger")
 
     foreign = await foreign_instance()

@@ -23,9 +23,9 @@ def _down(*args, **kwargs):
     raise RuntimeError("projector down")
 
 
-def _replay(organization_slug: str) -> str:
+def _replay(organization: str) -> str:
     out = StringIO()
-    call_command("reproject", incremental=True, organization=organization_slug, stdout=out)
+    call_command("reproject", incremental=True, organization=organization, stdout=out)
     return out.getvalue()
 
 
@@ -52,7 +52,7 @@ async def test_replay_draws_a_node_the_write_path_could_not(api_schema, simple_a
 
     @sync_to_async
     def replay():
-        output = _replay(test_graph.organization.slug)
+        output = _replay(test_graph.organization.identifier)
         return output, watermark.pending_count(test_graph.organization), drawing.vertices_with_ref(test_graph, ref), watermark.position(test_graph)
 
     output, pending, drawn, position = await replay()
@@ -79,7 +79,7 @@ async def test_replay_removes_a_node_whose_retraction_was_not_drawn(api_schema, 
     @sync_to_async
     def replay():
         assert drawing.vertices_with_ref(test_graph, entity_id) == 1, "the failed unproject left the vertex"
-        _replay(test_graph.organization.slug)
+        _replay(test_graph.organization.identifier)
         return drawing.vertices_with_ref(test_graph, entity_id), watermark.pending_count(test_graph.organization)
 
     drawn, pending = await replay()
@@ -104,7 +104,7 @@ async def test_replay_draws_an_edge_whose_write_did_not_reach_age(api_schema, si
 
     @sync_to_async
     def replay():
-        _replay(test_graph.organization.slug)
+        _replay(test_graph.organization.identifier)
         return drawing.edges_between(test_graph, a, b, "IS_CONNECTED_TO"), watermark.pending_count(test_graph.organization)
 
     edges, pending = await replay()
@@ -136,7 +136,7 @@ async def test_replay_equals_a_full_rebuild(api_schema, simple_api_context, test
     def replay_then_rebuild():
         organization = test_graph.organization
         assert watermark.pending_count(organization) == 2
-        _replay(organization.slug)
+        _replay(organization.identifier)
         assert watermark.pending_count(organization) == 0
         controller = GraphController(projector=table_projector)
         snapshot = drawing.all_vertex_properties(test_graph)
@@ -162,7 +162,7 @@ def test_replay_tolerates_an_assertion_with_no_claims(test_graph: core_models.Gr
     assertion = writer.create_assertion(organization, subject="tester", app_id="tests", action_id=None, action_name=None, action_args={})
     watermark.expect(assertion)
 
-    _replay(organization.slug)
+    _replay(organization.identifier)
     assert not projection_models.PendingProjection.objects.filter(pk=assertion.pk).exists()
 
 
@@ -193,7 +193,7 @@ async def test_replay_folds_a_merge_the_write_path_could_not_draw(api_schema, si
     def replay():
         assert drawing.vertex_count(test_graph, "AIS") == 2, "the failed draw left the two observations apart"
         out = StringIO()
-        call_command("reproject", incremental=True, organization=test_graph.organization.slug, stdout=out)
+        call_command("reproject", incremental=True, organization=test_graph.organization.identifier, stdout=out)
         return drawing.vertex_count(test_graph, "AIS"), drawing.members_of(test_graph, a), drawing.vertex_properties(test_graph, a).get("avg_length"), watermark.pending_count(test_graph.organization)
 
     count, members, avg_length, pending = await replay()

@@ -702,7 +702,7 @@ def _replay_from_scratch(graph, table_projector) -> None:
     table_projector.erase_nodes(graph, list(drawing.snapshot(graph)))
     for assertion in evidence_models.Assertion.objects.for_organization(graph.organization).order_by("seq"):
         watermark.expect(assertion)
-    call_command("reproject", incremental=True, organization=graph.organization.slug, stdout=StringIO())
+    call_command("reproject", incremental=True, organization=graph.organization.identifier, stdout=StringIO())
 
 
 @pytest.mark.django_db(transaction=True)
