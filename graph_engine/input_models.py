@@ -168,7 +168,7 @@ class PropertyType(str, Enum):
 
 # The `Action` enum is gone with `Graph.rules` (RFC 0013): per-action
 # allow/deny lists are replaced by plain RBAC — a graph's definition is edited
-# by its owner, an organization admin, or a superuser.
+# by its owner, a curator or Kraph's admin, or a superuser.
 
 
 class WhereOperator(str, Enum):

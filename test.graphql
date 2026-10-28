@@ -3871,324 +3871,324 @@ type Mutation {
   """
   Claim that an entity exists, under one of the organization's words. Returns the assertion and every view that draws it — empty when no view declares the word, which is an ordinary outcome
   """
-  assertEntityExists(input: AssertEntityExistsInput!): AssertedEntity!
+  assertEntityExists(input: AssertEntityExistsInput!): AssertedEntity! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Claim that an entity no longer stands. It leaves every projection that counts the claim; the evidence stays.
   """
-  retractEntity(input: RetractEntityInput!): AssertedEntity!
+  retractEntity(input: RetractEntityInput!): AssertedEntity! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Claim that an entity exists, returning it to every projection whose rules admit it
   """
-  attestEntity(input: AttestEntityInput!): AssertedEntity!
+  attestEntity(input: AttestEntityInput!): AssertedEntity! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Claim that an external datum exists. Idempotent by (identifier, object): a second claim about a datum already on the record is agreement, recorded as a standing under this act (RFC 0023)
   """
-  assertStructureExists(input: AssertStructureExistsInput!): AssertedStructure!
+  assertStructureExists(input: AssertStructureExistsInput!): AssertedStructure! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Claim that a structure still stands, after somebody retracted it. New evidence, not an undo — both positions stay on the record
   """
-  attestStructure(input: AttestStructureInput!): AssertedStructure!
+  attestStructure(input: AttestStructureInput!): AssertedStructure! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Claim that a measurement still stands. The derived values that dropped it are refolded
   """
-  attestMetric(input: AttestMetricInput!): AssertedMetric!
+  attestMetric(input: AttestMetricInput!): AssertedMetric! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Claim that a link claim still stands — a relation, a classification, a participation, a measurement. One act for every kind, as `retractLinks` is
   """
-  attestLink(input: AttestLinkInput!): AssertedLinks!
+  attestLink(input: AttestLinkInput!): AssertedLinks! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Retract a datum: a Standing(stands=false) against it. Its metrics and INFORMS claims stay on the record, but stop counting for every node it informs until somebody attests it again (RFC 0023)
   """
-  retractStructure(input: RetractStructureInput!): AssertedStructure!
+  retractStructure(input: RetractStructureInput!): AssertedStructure! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """Claim that a datum is evidence for an entity — an INFORMS claim"""
-  assertInforms(input: AssertInformsInput!): AssertedDescription!
+  assertInforms(input: AssertInformsInput!): AssertedDescription! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Record measurements against a datum already on the record, as one act (was `updateStructure`)
   """
-  recordMetrics(input: RecordMetricsInput!): AssertedStructure!
+  recordMetrics(input: RecordMetricsInput!): AssertedStructure! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Record a remark about an external datum, minting its structure if this is the first sight of it. A reply names its parent and stays on the parent's thread
   """
-  commentOnStructure(input: CommentOnStructureInput!): AssertedComment!
+  commentOnStructure(input: CommentOnStructureInput!): AssertedComment! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Claim a remark no longer stands — resolved by a reviewer or withdrawn by its author; the assertion records whose position it is. The row survives
   """
-  retractComment(input: RetractCommentInput!): AssertedComment!
+  retractComment(input: RetractCommentInput!): AssertedComment! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Claim a remark stands again — reopening, as new evidence rather than an undo
   """
-  attestComment(input: AttestCommentInput!): AssertedComment!
+  attestComment(input: AttestCommentInput!): AssertedComment! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Record a measurement, creating the structure it describes if this is its first sight. One assertion covers both
   """
-  assertMetricValue(input: AssertMetricValueInput!): AssertedMetric!
+  assertMetricValue(input: AssertMetricValueInput!): AssertedMetric! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Record a measurement against a structure that already exists, named by its evidence id
   """
-  assertMetricValueForStructure(input: AssertMetricValueForStructureInput!): AssertedMetric!
+  assertMetricValueForStructure(input: AssertMetricValueForStructureInput!): AssertedMetric! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Retract a measurement without destroying it. It stays readable, because a derived value that dropped it still has to be explainable
   """
-  retractMetric(input: RetractMetricInput!): AssertedMetric!
+  retractMetric(input: RetractMetricInput!): AssertedMetric! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Correct a measurement by retracting it and asserting a new one. The returned metric has a new id: it is a new row, not an edited one
   """
-  supersedeMetricValue(input: SupersedeMetricValueInput!): AssertedMetric!
+  supersedeMetricValue(input: SupersedeMetricValueInput!): AssertedMetric! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Assert that a structure measures an entity, under one of the organization's words. Drawings are always empty: a measurement has no AGE edge
   """
-  assertMeasurementExists(input: AssertMeasurementExistsInput!): AssertedMeasurement!
+  assertMeasurementExists(input: AssertMeasurementExistsInput!): AssertedMeasurement! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """Retract a measurement assertion without destroying it"""
-  retractMeasurement(input: RetractMeasurementInput!): AssertedMeasurement!
+  retractMeasurement(input: RetractMeasurementInput!): AssertedMeasurement! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Assert a relation between two entities, under one of the organization's words
   """
-  assertRelationExists(input: AssertRelationExistsInput!): AssertedRelation!
+  assertRelationExists(input: AssertRelationExistsInput!): AssertedRelation! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Replace a relation with a new assertion, retracting the old one. Two assertions are recorded; the result reports the one that made the relation now standing
   """
-  supersedeRelation(input: SupersedeRelationInput!): AssertedRelation!
+  supersedeRelation(input: SupersedeRelationInput!): AssertedRelation! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Retract a relation assertion without destroying it. The edge survives wherever another live assertion still states the same proposition
   """
-  retractRelation(input: RetractRelationInput!): AssertedRelation!
+  retractRelation(input: RetractRelationInput!): AssertedRelation! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Assert a relation between two structures. Drawings are always empty: neither endpoint has a vertex
   """
-  assertStructureRelationExists(input: AssertStructureRelationExistsInput!): AssertedStructureRelation!
+  assertStructureRelationExists(input: AssertStructureRelationExistsInput!): AssertedStructureRelation! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """Replace a structure relation, keeping the old assertion on the record"""
-  supersedeStructureRelation(input: SupersedeStructureRelationInput!): AssertedStructureRelation!
+  supersedeStructureRelation(input: SupersedeStructureRelationInput!): AssertedStructureRelation! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """Retract a structure relation assertion without destroying it"""
-  retractStructureRelation(input: RetractStructureRelationInput!): AssertedStructureRelation!
+  retractStructureRelation(input: RetractStructureRelationInput!): AssertedStructureRelation! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Claim that a natural event happened, under one of the organization's words
   """
-  assertNaturalEventExists(input: AssertNaturalEventExistsInput!): AssertedNaturalEvent!
+  assertNaturalEventExists(input: AssertNaturalEventExistsInput!): AssertedNaturalEvent! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """Claim that a natural event no longer stands"""
-  retractNaturalEvent(input: RetractNaturalEventInput!): AssertedNaturalEvent!
+  retractNaturalEvent(input: RetractNaturalEventInput!): AssertedNaturalEvent! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """Claim that a natural event exists"""
-  attestNaturalEvent(input: AttestNaturalEventInput!): AssertedNaturalEvent!
+  attestNaturalEvent(input: AttestNaturalEventInput!): AssertedNaturalEvent! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Claim that a protocol step happened, under one of the organization's words
   """
-  assertProtocolEventExists(input: AssertProtocolEventExistsInput!): AssertedProtocolEvent!
+  assertProtocolEventExists(input: AssertProtocolEventExistsInput!): AssertedProtocolEvent! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """Claim that a protocol event no longer stands"""
-  retractProtocolEvent(input: RetractProtocolEventInput!): AssertedProtocolEvent!
+  retractProtocolEvent(input: RetractProtocolEventInput!): AssertedProtocolEvent! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """Claim that a protocol event exists"""
-  attestProtocolEvent(input: AttestProtocolEventInput!): AssertedProtocolEvent!
+  attestProtocolEvent(input: AttestProtocolEventInput!): AssertedProtocolEvent! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Claim that an entity took part in an event, without displacing anyone else's claim
   """
-  assertParticipation(input: AssertParticipationInput!): AssertedParticipation!
+  assertParticipation(input: AssertParticipationInput!): AssertedParticipation! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Claim that several entities took part in one event, as one act and one assertion
   """
-  assertParticipations(input: AssertParticipationsInput!): AssertedLinks!
+  assertParticipations(input: AssertParticipationsInput!): AssertedLinks! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Retract one claim that an entity took part in an event. The edge survives while another claim still states it
   """
-  retractParticipation(input: RetractParticipationInput!): AssertedParticipation!
+  retractParticipation(input: RetractParticipationInput!): AssertedParticipation! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Claim that several nodes are of a word, without displacing anyone else's claim. One act, one assertion
   """
-  classifyNodes(input: ClassifyNodesInput!): AssertedInstances!
+  classifyNodes(input: ClassifyNodesInput!): AssertedInstances! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Retract several link claims as one act, by their `Link` ids — a relation, a classification, a participation, a measurement
   """
-  retractLinks(input: RetractLinksInput!): AssertedLinks!
+  retractLinks(input: RetractLinksInput!): AssertedLinks! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Claim that several already-recorded instances are one thing. An equivalence with no primary — the order of the ids carries no meaning
   """
-  assertSameInstance(input: AssertSameInstanceInput!): AssertedSameness!
+  assertSameInstance(input: AssertSameInstanceInput!): AssertedSameness! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Withdraw one sameness claim. The component it held together is rebuilt from the claims that survive, which may split it
   """
-  retractSameInstance(input: RetractSameInstanceInput!): AssertedSameness!
+  retractSameInstance(input: RetractSameInstanceInput!): AssertedSameness! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Claim that several already-recorded instances are distinct things (RFC 0019). A standing, trusted difference vetoes every direct sameness between its two ends; a disagreement through a third instance is reported as a conflict, not resolved
   """
-  assertDifferentInstance(input: AssertDifferentInstanceInput!): AssertedDifference!
+  assertDifferentInstance(input: AssertDifferentInstanceInput!): AssertedDifference! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """
   Withdraw one difference claim. The sameness it vetoed counts again, and the component is rebuilt
   """
-  retractDifferentInstance(input: RetractDifferentInstanceInput!): AssertedDifference!
+  retractDifferentInstance(input: RetractDifferentInstanceInput!): AssertedDifference! @auth(required_scopes: ["kraph_assert"], any_role_of: ["kraph_editor"])
 
   """Upload media and return a URL for access"""
-  requestMediaUpload(input: RequestMediaUploadInput!): MediaUploadGrant! @auth(any_role_of: ["admin", "editor", "bot"])
+  requestMediaUpload(input: RequestMediaUploadInput!): MediaUploadGrant! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
 
   """Finalize a media upload after the client has written the object"""
-  finishMediaUpload(input: FinishMediaUploadInput!): MediaStore! @auth(any_role_of: ["admin", "editor", "bot"])
+  finishMediaUpload(input: FinishMediaUploadInput!): MediaStore! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
 
   """
   Reissue upload credentials for a media upload still in flight, to the same key, so a write that outlives its credentials carries on. Only the uploader may, never for a finished store, and never past the upload's time limit
   """
-  refreshMediaUpload(input: RefreshUploadInput!): MediaUploadGrant! @auth(any_role_of: ["admin", "editor", "bot"])
+  refreshMediaUpload(input: RefreshUploadInput!): MediaUploadGrant! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
 
   """Request temporary S3 read credentials for a media file"""
-  requestMediaAccess(input: RequestMediaAccessInput!): MediaAccessGrant!
+  requestMediaAccess(input: RequestMediaAccessInput!): MediaAccessGrant! @auth(required_scopes: ["kraph_read"])
 
   """
   Request temporary S3 read credentials for media files in the organization
   """
-  requestGeneralMediaAccess(input: RequestGeneralMediaAccessInput!): GeneralMediaAccessGrant!
+  requestGeneralMediaAccess(input: RequestGeneralMediaAccessInput!): GeneralMediaAccessGrant! @auth(required_scopes: ["kraph_read"])
 
   """Create a new graph in the graph engine"""
-  createGraph(input: CreateGraphInput!): Graph!
+  createGraph(input: CreateGraphInput!): Graph! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
 
   """Update an existing graph in the graph engine"""
-  updateGraph(input: UpdateGraphInput!): Graph!
+  updateGraph(input: UpdateGraphInput!): Graph! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
 
   """Update the visual configuration of a graph in the graph engine"""
-  updateGraphVisual(input: UpdateGraphVisualInput!): Graph!
+  updateGraphVisual(input: UpdateGraphVisualInput!): Graph! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
 
   """Create or update a graph table query using builder arguments"""
-  createGraphTableQueryThroughBuilder(input: CreateGraphTableQueryThroughBuilderInput!): GraphTableQuery!
+  createGraphTableQueryThroughBuilder(input: CreateGraphTableQueryThroughBuilderInput!): GraphTableQuery! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
 
   """Create a graph table query"""
-  createGraphTableQuery(input: CreateGraphTableQueryInput!): GraphTableQuery!
+  createGraphTableQuery(input: CreateGraphTableQueryInput!): GraphTableQuery! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
 
   """Update a graph table query"""
-  updateGraphTableQuery(input: UpdateGraphTableQueryInput!): GraphTableQuery!
+  updateGraphTableQuery(input: UpdateGraphTableQueryInput!): GraphTableQuery! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
 
   """Delete a graph table query"""
-  deleteGraphTableQuery(input: DeleteGraphTableQueryInput!): ID!
+  deleteGraphTableQuery(input: DeleteGraphTableQueryInput!): ID! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
 
   """Archive a graph table query"""
-  archiveGraphTableQuery(input: ArchiveGraphTableQueryInput!): GraphTableQuery!
+  archiveGraphTableQuery(input: ArchiveGraphTableQueryInput!): GraphTableQuery! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
 
   """Create a scatter plot"""
-  createScatterPlot(input: CreateScatterPlotInput!): ScatterPlot!
+  createScatterPlot(input: CreateScatterPlotInput!): ScatterPlot! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
 
   """Update a scatter plot"""
-  updateScatterPlot(input: UpdateScatterPlotInput!): ScatterPlot!
+  updateScatterPlot(input: UpdateScatterPlotInput!): ScatterPlot! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
 
   """Delete a scatter plot"""
-  deleteScatterPlot(input: DeleteScatterPlotInput!): ID!
+  deleteScatterPlot(input: DeleteScatterPlotInput!): ID! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
 
   """Delete a graph from the graph engine"""
-  deleteGraph(input: DeleteGraphInput!): ID!
+  deleteGraph(input: DeleteGraphInput!): ID! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
 
   """Archive a graph in the graph engine (soft delete)"""
-  archiveGraph(input: ArchiveGraphInput!): Graph!
+  archiveGraph(input: ArchiveGraphInput!): Graph! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
 
   """Create a new entity category in the graph"""
-  createEntityCategory(input: CreateEntityCategoryInput!): EntityCategory!
+  createEntityCategory(input: CreateEntityCategoryInput!): EntityCategory! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
 
   """Delete an entity category from the graph"""
-  deleteEntityCategory(input: DeleteEntityCategoryInput!): ID!
+  deleteEntityCategory(input: DeleteEntityCategoryInput!): ID! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
 
   """Update an existing entity category in the graph"""
-  updateEntityCategory(input: UpdateEntityCategoryInput!): EntityCategory!
+  updateEntityCategory(input: UpdateEntityCategoryInput!): EntityCategory! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
 
   """
   Declare one of the organization's words, or describe one an ingest minted bare
   """
-  createTerm(input: CreateTermInput!): Term!
+  createTerm(input: CreateTermInput!): Term! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
 
   """
   Update a term's label, description, PURL or colour, or hide it. Its kind and key are its identity and cannot change, and a term is never deleted — hiding is how a word is put away.
   """
-  updateTerm(input: UpdateTermInput!): Term!
+  updateTerm(input: UpdateTermInput!): Term! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
 
   """
   Retire a structure kind. Refused while any structure is recorded under it — evidence is never deleted; retract the structures first
   """
-  deleteStructureKind(input: DeleteStructureKindInput!): ID!
+  deleteStructureKind(input: DeleteStructureKindInput!): ID! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
 
   """Update a structure kind's label, description or colour"""
-  updateStructureKind(input: UpdateStructureKindInput!): StructureKind!
+  updateStructureKind(input: UpdateStructureKindInput!): StructureKind! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
 
   """Create a new structure relation category in the graph"""
-  createStructureRelationCategory(input: CreateStructureRelationCategoryInput!): StructureRelationCategory!
+  createStructureRelationCategory(input: CreateStructureRelationCategoryInput!): StructureRelationCategory! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
 
   """Delete a structure relation category from the graph"""
-  deleteStructureRelationCategory(input: DeleteStructureRelationCategoryInput!): ID!
+  deleteStructureRelationCategory(input: DeleteStructureRelationCategoryInput!): ID! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
 
   """Update an existing structure relation category in the graph"""
-  updateStructureRelationCategory(input: UpdateStructureRelationCategoryInput!): StructureRelationCategory!
+  updateStructureRelationCategory(input: UpdateStructureRelationCategoryInput!): StructureRelationCategory! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
 
   """
   Retire a metric kind. Refused while any metric is recorded under it — evidence is never deleted; retract the metrics first
   """
-  deleteMetricKind(input: DeleteMetricKindInput!): ID!
+  deleteMetricKind(input: DeleteMetricKindInput!): ID! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
 
   """Update a metric kind's label, description or colour"""
-  updateMetricKind(input: UpdateMetricKindInput!): MetricKind!
+  updateMetricKind(input: UpdateMetricKindInput!): MetricKind! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
 
   """Create a new measurement category in the graph"""
-  createMeasurementCategory(input: CreateMeasurementCategoryInput!): MeasurementCategory!
+  createMeasurementCategory(input: CreateMeasurementCategoryInput!): MeasurementCategory! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
 
   """Delete a measurement category from the graph"""
-  deleteMeasurementCategory(input: DeleteMeasurementCategoryInput!): ID!
+  deleteMeasurementCategory(input: DeleteMeasurementCategoryInput!): ID! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
 
   """Update an existing measurement category in the graph"""
-  updateMeasurementCategory(input: UpdateMeasurementCategoryInput!): MeasurementCategory!
+  updateMeasurementCategory(input: UpdateMeasurementCategoryInput!): MeasurementCategory! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
 
   """Create a new relation category in the graph"""
-  createRelationCategory(input: CreateRelationCategoryInput!): RelationCategory!
+  createRelationCategory(input: CreateRelationCategoryInput!): RelationCategory! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
 
   """Delete a relation category from the graph"""
-  deleteRelationCategory(input: DeleteRelationCategoryInput!): ID!
+  deleteRelationCategory(input: DeleteRelationCategoryInput!): ID! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
 
   """Update an existing relation category in the graph"""
-  updateRelationCategory(input: UpdateRelationCategoryInput!): RelationCategory!
+  updateRelationCategory(input: UpdateRelationCategoryInput!): RelationCategory! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
 
   """Create a new natural event category in the graph"""
-  createNaturalEventCategory(input: CreateNaturalEventCategoryInput!): NaturalEventCategory!
+  createNaturalEventCategory(input: CreateNaturalEventCategoryInput!): NaturalEventCategory! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
 
   """Delete a natural event category from the graph"""
-  deleteNaturalEventCategory(input: DeleteNaturalEventCategoryInput!): ID!
+  deleteNaturalEventCategory(input: DeleteNaturalEventCategoryInput!): ID! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
 
   """Update an existing natural event category in the graph"""
-  updateNaturalEventCategory(input: UpdateNaturalEventCategoryInput!): NaturalEventCategory!
+  updateNaturalEventCategory(input: UpdateNaturalEventCategoryInput!): NaturalEventCategory! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
 
   """Create a new protocol event category in the graph"""
-  createProtocolEventCategory(input: CreateProtocolEventCategoryInput!): ProtocolEventCategory!
+  createProtocolEventCategory(input: CreateProtocolEventCategoryInput!): ProtocolEventCategory! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
 
   """Delete a protocol event category from the graph"""
-  deleteProtocolEventCategory(input: DeleteProtocolEventCategoryInput!): ID!
+  deleteProtocolEventCategory(input: DeleteProtocolEventCategoryInput!): ID! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
 
   """Update an existing protocol event category in the graph"""
-  updateProtocolEventCategory(input: UpdateProtocolEventCategoryInput!): ProtocolEventCategory!
+  updateProtocolEventCategory(input: UpdateProtocolEventCategoryInput!): ProtocolEventCategory! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
 }
 
 """A natural event in the knowledge graph"""
@@ -5162,261 +5162,261 @@ type Query {
   _service: _Service!
 
   """Get a graph by ID"""
-  graph(id: ID!): Graph!
+  graph(id: ID!): Graph! @auth(required_scopes: ["kraph_read"])
 
   """List all graphs in the graph engine"""
-  graphs(filters: GraphFilter, ordering: [GraphOrder!]! = [], pagination: OffsetPaginationInput): [Graph!]!
+  graphs(filters: GraphFilter, ordering: [GraphOrder!]! = [], pagination: OffsetPaginationInput): [Graph!]! @auth(required_scopes: ["kraph_read"])
 
   """List all entity categories"""
-  entityCategories(filters: EntityCategoryFilter, ordering: [EntityCategoryOrder!]! = [], pagination: OffsetPaginationInput): [EntityCategory!]!
+  entityCategories(filters: EntityCategoryFilter, ordering: [EntityCategoryOrder!]! = [], pagination: OffsetPaginationInput): [EntityCategory!]! @auth(required_scopes: ["kraph_read"])
 
   """Get a single entity category by ID"""
-  entityCategory(id: ID!): EntityCategory!
+  entityCategory(id: ID!): EntityCategory! @auth(required_scopes: ["kraph_read"])
 
   """List all measurement categories"""
-  measurementCategories(filters: MeasurementCategoryFilter, ordering: [MeasurementCategoryOrder!]! = [], pagination: OffsetPaginationInput): [MeasurementCategory!]!
+  measurementCategories(filters: MeasurementCategoryFilter, ordering: [MeasurementCategoryOrder!]! = [], pagination: OffsetPaginationInput): [MeasurementCategory!]! @auth(required_scopes: ["kraph_read"])
 
   """Get a single measurement category by ID"""
-  measurementCategory(id: ID!): MeasurementCategory!
+  measurementCategory(id: ID!): MeasurementCategory! @auth(required_scopes: ["kraph_read"])
 
   """List all relation categories"""
-  relationCategories(filters: RelationCategoryFilter, ordering: [RelationCategoryOrder!]! = [], pagination: OffsetPaginationInput): [RelationCategory!]!
+  relationCategories(filters: RelationCategoryFilter, ordering: [RelationCategoryOrder!]! = [], pagination: OffsetPaginationInput): [RelationCategory!]! @auth(required_scopes: ["kraph_read"])
 
   """Get a single relation category by ID"""
-  relationCategory(id: ID!): RelationCategory!
+  relationCategory(id: ID!): RelationCategory! @auth(required_scopes: ["kraph_read"])
 
   """List all structure relation categories"""
-  structureRelationCategories(filters: StructureRelationCategoryFilter, ordering: [StructureRelationCategoryOrder!]! = [], pagination: OffsetPaginationInput): [StructureRelationCategory!]!
+  structureRelationCategories(filters: StructureRelationCategoryFilter, ordering: [StructureRelationCategoryOrder!]! = [], pagination: OffsetPaginationInput): [StructureRelationCategory!]! @auth(required_scopes: ["kraph_read"])
 
   """Get a single structure relation category by ID"""
-  structureRelationCategory(id: ID!): StructureRelationCategory!
+  structureRelationCategory(id: ID!): StructureRelationCategory! @auth(required_scopes: ["kraph_read"])
 
   """List all natural event categories"""
-  naturalEventCategories(filters: NaturalEventCategoryFilter, ordering: [NaturalEventCategoryOrder!]! = [], pagination: OffsetPaginationInput): [NaturalEventCategory!]!
+  naturalEventCategories(filters: NaturalEventCategoryFilter, ordering: [NaturalEventCategoryOrder!]! = [], pagination: OffsetPaginationInput): [NaturalEventCategory!]! @auth(required_scopes: ["kraph_read"])
 
   """Get a single natural event category by ID"""
-  naturalEventCategory(id: ID!): NaturalEventCategory!
+  naturalEventCategory(id: ID!): NaturalEventCategory! @auth(required_scopes: ["kraph_read"])
 
   """List all protocol event categories"""
-  protocolEventCategories(filters: ProtocolEventCategoryFilter, ordering: [ProtocolEventCategoryOrder!]! = [], pagination: OffsetPaginationInput): [ProtocolEventCategory!]!
+  protocolEventCategories(filters: ProtocolEventCategoryFilter, ordering: [ProtocolEventCategoryOrder!]! = [], pagination: OffsetPaginationInput): [ProtocolEventCategory!]! @auth(required_scopes: ["kraph_read"])
 
   """Get a single protocol event category by ID"""
-  protocolEventCategory(id: ID!): ProtocolEventCategory!
+  protocolEventCategory(id: ID!): ProtocolEventCategory! @auth(required_scopes: ["kraph_read"])
 
   """Get aggregated graph stats with optional filters"""
-  graphStats(filters: GraphFilter = null): GraphStats!
+  graphStats(filters: GraphFilter = null): GraphStats! @auth(required_scopes: ["kraph_read"])
 
   """Get aggregated entity-category stats with optional filters"""
-  entityCategoryStats(filters: EntityCategoryFilter = null): EntityCategoryStats!
+  entityCategoryStats(filters: EntityCategoryFilter = null): EntityCategoryStats! @auth(required_scopes: ["kraph_read"])
 
   """Aggregated structure-kind stats"""
-  structureKindStats(filters: StructureKindFilter = null): StructureKindStats!
+  structureKindStats(filters: StructureKindFilter = null): StructureKindStats! @auth(required_scopes: ["kraph_read"])
 
   """Aggregated metric-kind stats"""
-  metricKindStats(filters: MetricKindFilter = null): MetricKindStats!
+  metricKindStats(filters: MetricKindFilter = null): MetricKindStats! @auth(required_scopes: ["kraph_read"])
 
   """Get aggregated measurement-category stats with optional filters"""
-  measurementCategoryStats(filters: MeasurementCategoryFilter = null): MeasurementCategoryStats!
+  measurementCategoryStats(filters: MeasurementCategoryFilter = null): MeasurementCategoryStats! @auth(required_scopes: ["kraph_read"])
 
   """Get aggregated relation-category stats with optional filters"""
-  relationCategoryStats(filters: RelationCategoryFilter = null): RelationCategoryStats!
+  relationCategoryStats(filters: RelationCategoryFilter = null): RelationCategoryStats! @auth(required_scopes: ["kraph_read"])
 
   """Get aggregated structure-relation-category stats with optional filters"""
-  structureRelationCategoryStats(filters: StructureRelationCategoryFilter = null): StructureRelationCategoryStats!
+  structureRelationCategoryStats(filters: StructureRelationCategoryFilter = null): StructureRelationCategoryStats! @auth(required_scopes: ["kraph_read"])
 
   """Get aggregated protocol-event-category stats with optional filters"""
-  protocolEventCategoryStats(filters: ProtocolEventCategoryFilter = null): ProtocolEventCategoryStats!
+  protocolEventCategoryStats(filters: ProtocolEventCategoryFilter = null): ProtocolEventCategoryStats! @auth(required_scopes: ["kraph_read"])
 
   """Get aggregated natural-event-category stats with optional filters"""
-  naturalEventCategoryStats(filters: NaturalEventCategoryFilter = null): NaturalEventCategoryStats!
+  naturalEventCategoryStats(filters: NaturalEventCategoryFilter = null): NaturalEventCategoryStats! @auth(required_scopes: ["kraph_read"])
 
   """Show all saved graph queries"""
-  graphQueries: [GraphQuery!]!
+  graphQueries: [GraphQuery!]! @auth(required_scopes: ["kraph_read"])
 
   """Show a single saved graph query by ID"""
-  graphQuery(id: ID!): GraphQuery!
+  graphQuery(id: ID!): GraphQuery! @auth(required_scopes: ["kraph_read"])
 
   """Show all saved graph table queries"""
-  graphTableQueries(filters: GraphTableQueryFilter, ordering: [GraphTableQueryOrder!]! = [], pagination: OffsetPaginationInput): [GraphTableQuery!]!
+  graphTableQueries(filters: GraphTableQueryFilter, ordering: [GraphTableQueryOrder!]! = [], pagination: OffsetPaginationInput): [GraphTableQuery!]! @auth(required_scopes: ["kraph_read"])
 
   """Show a single saved graph table query by ID"""
-  graphTableQuery(id: ID!): GraphTableQuery!
+  graphTableQuery(id: ID!): GraphTableQuery! @auth(required_scopes: ["kraph_read"])
 
   """Show all saved scatter plots"""
-  scatterPlots(filters: ScatterPlotFilter, ordering: [ScatterPlotOrder!]! = [], pagination: OffsetPaginationInput): [ScatterPlot!]!
+  scatterPlots(filters: ScatterPlotFilter, ordering: [ScatterPlotOrder!]! = [], pagination: OffsetPaginationInput): [ScatterPlot!]! @auth(required_scopes: ["kraph_read"])
 
   """Show a single saved scatter plot by ID"""
-  scatterPlot(id: ID!): ScatterPlot!
+  scatterPlot(id: ID!): ScatterPlot! @auth(required_scopes: ["kraph_read"])
 
   """Get one claimed individual by ID, as the log has it"""
-  instance(id: ID!): Instance!
+  instance(id: ID!): Instance! @auth(required_scopes: ["kraph_read"])
 
   """Get one claim relating two things by ID, as the log has it"""
-  link(id: ID!): Link!
+  link(id: ID!): Link! @auth(required_scopes: ["kraph_read"])
 
   """Every position anyone has taken on one claim, newest first"""
-  standings(id: ID = null, filters: StandingFilter = null, pagination: LogPaginationInput = null): [Standing!]!
+  standings(id: ID = null, filters: StandingFilter = null, pagination: LogPaginationInput = null): [Standing!]! @auth(required_scopes: ["kraph_read"])
 
   """Get one remark by ID, as the log has it"""
-  comment(id: ID!): Comment!
+  comment(id: ID!): Comment! @auth(required_scopes: ["kraph_read"])
 
   """
   Every remark about one external datum, addressed by (identifier, object), newest first — resolved ones included
   """
-  commentsFor(identifier: String!, object: ID!): [Comment!]!
+  commentsFor(identifier: String!, object: ID!): [Comment!]! @auth(required_scopes: ["kraph_read"])
 
   """Every remark that mentions the caller, newest first"""
-  myMentions: [Comment!]!
+  myMentions: [Comment!]! @auth(required_scopes: ["kraph_read"])
 
   """
   Get a node by ID, as the named view holds it. Refused when that view does not admit the node; the claim itself is `instance(id:)`
   """
-  node(id: ID!, graph: ID!): Node!
+  node(id: ID!, graph: ID!): Node! @auth(required_scopes: ["kraph_read"])
 
   """
   List the individuals a view holds, as it draws them — view grain: one row per individual, membership from the view's rule, properties as of the view's cursor
   """
-  nodes(graph: ID!, filters: NodeFilters = null, ordering: [NodeOrder!] = null, pagination: NodePaginationInput = null): [Node!]!
+  nodes(graph: ID!, filters: NodeFilters = null, ordering: [NodeOrder!] = null, pagination: NodePaginationInput = null): [Node!]! @auth(required_scopes: ["kraph_read"])
 
   """Get an entity by ID, as the named view holds it — see `node`"""
-  entity(id: ID!, graph: ID!): Entity!
+  entity(id: ID!, graph: ID!): Entity! @auth(required_scopes: ["kraph_read"])
 
   """
   List the entities a category's view holds, as it draws them — view grain: one row per individual
   """
-  entities(entityCategoryId: ID!, filters: EntityFilter = null, ordering: [EntityOrder!] = null, pagination: EntityPaginationInput = null): [Entity!]!
+  entities(entityCategoryId: ID!, filters: EntityFilter = null, ordering: [EntityOrder!] = null, pagination: EntityPaginationInput = null): [Entity!]! @auth(required_scopes: ["kraph_read"])
 
   """Get a structure by ID — a bare uuid, its evidence primary key"""
-  structure(id: ID!): Structure!
+  structure(id: ID!): Structure! @auth(required_scopes: ["kraph_read"])
 
   """List structures with optional filters, ordering, and pagination"""
-  structures(structureKindId: ID = null, filters: StructureFilter = null, ordering: [StructureOrder!] = null, pagination: StructurePaginationInput = null): [Structure!]!
+  structures(structureKindId: ID = null, filters: StructureFilter = null, ordering: [StructureOrder!] = null, pagination: StructurePaginationInput = null): [Structure!]! @auth(required_scopes: ["kraph_read"])
 
   """
   Get a structure by identifier and object. No graph: a structure belongs to the organization and has no vertex in any projection
   """
-  structureByIdentifier(identifier: StructureIdentifier!, object: StructureObject!): Structure!
+  structureByIdentifier(identifier: StructureIdentifier!, object: StructureObject!): Structure! @auth(required_scopes: ["kraph_read"])
 
   """List the structures that are evidence for an entity"""
-  informingStructures(entityId: String!): [Structure!]!
+  informingStructures(entityId: String!): [Structure!]! @auth(required_scopes: ["kraph_read"])
 
   """Get a natural event by ID, as the named view holds it — see `node`"""
-  naturalEvent(id: ID!, graph: ID!): NaturalEvent!
+  naturalEvent(id: ID!, graph: ID!): NaturalEvent! @auth(required_scopes: ["kraph_read"])
 
   """
   List the natural events a category's view holds — view grain: one row per individual
   """
-  naturalEvents(naturalEventCategoryId: ID!, filters: NaturalEventFilter = null, ordering: [NaturalEventOrder!] = null, pagination: NaturalEventPaginationInput = null): [NaturalEvent!]!
+  naturalEvents(naturalEventCategoryId: ID!, filters: NaturalEventFilter = null, ordering: [NaturalEventOrder!] = null, pagination: NaturalEventPaginationInput = null): [NaturalEvent!]! @auth(required_scopes: ["kraph_read"])
 
   """Get a protocol event by ID, as the named view holds it — see `node`"""
-  protocolEvent(id: ID!, graph: ID!): ProtocolEvent!
+  protocolEvent(id: ID!, graph: ID!): ProtocolEvent! @auth(required_scopes: ["kraph_read"])
 
   """
   List the protocol events a category's view holds — view grain: one row per individual
   """
-  protocolEvents(protocolEventCategoryId: ID!, filters: ProtocolEventFilter = null, ordering: [ProtocolEventOrder!] = null, pagination: ProtocolEventPaginationInput = null): [ProtocolEvent!]!
+  protocolEvents(protocolEventCategoryId: ID!, filters: ProtocolEventFilter = null, ordering: [ProtocolEventOrder!] = null, pagination: ProtocolEventPaginationInput = null): [ProtocolEvent!]! @auth(required_scopes: ["kraph_read"])
 
   """Get a measurement claim by ID — a bare uuid, its `Link` primary key"""
-  measurement(id: ID!): Measurement!
+  measurement(id: ID!): Measurement! @auth(required_scopes: ["kraph_read"])
 
   """List the measurement claims a category's rule admits — log grain"""
-  measurements(measurementCategoryId: ID!, filters: MeasurementFilter = null, ordering: [MeasurementOrder!] = null, pagination: MeasurementPaginationInput = null): [Measurement!]!
+  measurements(measurementCategoryId: ID!, filters: MeasurementFilter = null, ordering: [MeasurementOrder!] = null, pagination: MeasurementPaginationInput = null): [Measurement!]! @auth(required_scopes: ["kraph_read"])
 
   """Get an INFORMS claim by ID — a bare uuid, its `Link` primary key"""
-  description(id: ID!): Description!
+  description(id: ID!): Description! @auth(required_scopes: ["kraph_read"])
 
   """
   Get an input participation claim by ID — a bare uuid, its `Link` primary key
   """
-  inputParticipation(id: ID!): InputParticipation!
+  inputParticipation(id: ID!): InputParticipation! @auth(required_scopes: ["kraph_read"])
 
   """
   List the input participation claims a view admits — log grain, under the view's event categories' rules
   """
-  inputParticipations(graph: ID!, filters: ParticipationFilter = null, ordering: [ParticipationOrder!] = null, pagination: ParticipationPaginationInput = null): [InputParticipation!]!
+  inputParticipations(graph: ID!, filters: ParticipationFilter = null, ordering: [ParticipationOrder!] = null, pagination: ParticipationPaginationInput = null): [InputParticipation!]! @auth(required_scopes: ["kraph_read"])
 
   """
   Get an output participation claim by ID — a bare uuid, its `Link` primary key
   """
-  outputParticipation(id: ID!): OutputParticipation!
+  outputParticipation(id: ID!): OutputParticipation! @auth(required_scopes: ["kraph_read"])
 
   """
   List the output participation claims a view admits — log grain, under the view's event categories' rules
   """
-  outputParticipations(graph: ID!, filters: ParticipationFilter = null, ordering: [ParticipationOrder!] = null, pagination: ParticipationPaginationInput = null): [OutputParticipation!]!
+  outputParticipations(graph: ID!, filters: ParticipationFilter = null, ordering: [ParticipationOrder!] = null, pagination: ParticipationPaginationInput = null): [OutputParticipation!]! @auth(required_scopes: ["kraph_read"])
 
   """
   The acts of claiming, newest first, by who made them, with what tool and when
   """
-  assertions(filters: AssertionFilter = null, pagination: LogPaginationInput = null): [Assertion!]!
+  assertions(filters: AssertionFilter = null, pagination: LogPaginationInput = null): [Assertion!]! @auth(required_scopes: ["kraph_read"])
 
   """One act of claiming, with every claim it recorded"""
-  assertion(id: ID!): Assertion!
+  assertion(id: ID!): Assertion! @auth(required_scopes: ["kraph_read"])
 
   """
   The log forward from a seq, ascending, cut at the committed horizon — the read a consumer polls without ever skipping a late-committing act
   """
-  changes(afterSeq: Int!, limit: Int! = 100): Changes!
+  changes(afterSeq: Int!, limit: Int! = 100): Changes! @auth(required_scopes: ["kraph_read"])
 
   """Get a relation claim by ID — a bare uuid, its `Link` primary key"""
-  relation(id: ID!): Relation!
+  relation(id: ID!): Relation! @auth(required_scopes: ["kraph_read"])
 
   """
   List the relation claims a category's rule admits — log grain: every claim, standings folded under the category's rule, however the view draws them
   """
-  relations(relationCategoryId: ID!, filters: RelationFilter = null, ordering: [RelationOrder!] = null, pagination: RelationPaginationInput = null): [Relation!]!
+  relations(relationCategoryId: ID!, filters: RelationFilter = null, ordering: [RelationOrder!] = null, pagination: RelationPaginationInput = null): [Relation!]! @auth(required_scopes: ["kraph_read"])
 
   """
   Get a structure relation claim by ID — a bare uuid, its `Link` primary key
   """
-  structureRelation(id: ID!): StructureRelation!
+  structureRelation(id: ID!): StructureRelation! @auth(required_scopes: ["kraph_read"])
 
   """
   List the structure relation claims a category's rule admits — log grain
   """
-  structureRelations(structureRelationCategoryId: ID!, filters: StructureRelationFilter = null, ordering: [StructureRelationOrder!] = null, pagination: StructureRelationPaginationInput = null): [StructureRelation!]!
+  structureRelations(structureRelationCategoryId: ID!, filters: StructureRelationFilter = null, ordering: [StructureRelationOrder!] = null, pagination: StructureRelationPaginationInput = null): [StructureRelation!]! @auth(required_scopes: ["kraph_read"])
 
   """Get a metric by ID"""
-  metric(id: ID!): Metric!
+  metric(id: ID!): Metric! @auth(required_scopes: ["kraph_read"])
 
   """List every un-retracted metric recorded under one metric kind"""
-  metrics(metricKindId: ID!): [Metric!]!
+  metrics(metricKindId: ID!): [Metric!]! @auth(required_scopes: ["kraph_read"])
 
   """List every un-retracted metric describing a structure"""
-  metricsForStructure(structureId: ID!): [Metric!]!
+  metricsForStructure(structureId: ID!): [Metric!]! @auth(required_scopes: ["kraph_read"])
 
   """List every metric recorded under one assertion"""
-  metricsForAssertion(assertionId: ID!): [Metric!]!
+  metricsForAssertion(assertionId: ID!): [Metric!]! @auth(required_scopes: ["kraph_read"])
 
   """
   List the organization's words — its vocabulary, independent of any graph
   """
-  terms(filters: TermFilter = null, pagination: VocabularyPaginationInput = null): [Term!]!
+  terms(filters: TermFilter = null, pagination: VocabularyPaginationInput = null): [Term!]! @auth(required_scopes: ["kraph_read"])
 
   """Get one of the organization's words by ID"""
-  term(id: ID!): Term!
+  term(id: ID!): Term! @auth(required_scopes: ["kraph_read"])
 
   """List the organization's structure kinds"""
-  structureKinds(filters: StructureKindFilter = null, pagination: VocabularyPaginationInput = null): [StructureKind!]!
+  structureKinds(filters: StructureKindFilter = null, pagination: VocabularyPaginationInput = null): [StructureKind!]! @auth(required_scopes: ["kraph_read"])
 
   """Get one structure kind by ID"""
-  structureKind(id: ID!): StructureKind!
+  structureKind(id: ID!): StructureKind! @auth(required_scopes: ["kraph_read"])
 
   """List the organization's metric kinds"""
-  metricKinds(filters: MetricKindFilter = null, pagination: VocabularyPaginationInput = null): [MetricKind!]!
+  metricKinds(filters: MetricKindFilter = null, pagination: VocabularyPaginationInput = null): [MetricKind!]! @auth(required_scopes: ["kraph_read"])
 
   """Get one metric kind by ID"""
-  metricKind(id: ID!): MetricKind!
+  metricKind(id: ID!): MetricKind! @auth(required_scopes: ["kraph_read"])
 
   """
   Render a saved table query. Answers from the **drawing**: a page of the view's property graph as of its cursor, filtered, ordered and paged there — the one read with no log path. `Graph.projection { lag }` says how far behind the log it is
   """
-  renderGraphTable(query: ID!, filters: RenderGraphTableFilter = null, pagination: RenderGraphTablePagination = null, order: RenderGraphTableOrder = null): GraphTableRender
+  renderGraphTable(query: ID!, filters: RenderGraphTableFilter = null, pagination: RenderGraphTablePagination = null, order: RenderGraphTableOrder = null): GraphTableRender @auth(required_scopes: ["kraph_read"])
 
   """
   Render a table plan **without saving it** — the plan a client is still writing, against one view. Same compile path as `renderGraphTable`: answers from the drawing, labels resolved against the view's namespace, filtered, ordered and paged there. Nothing is written; the plan comes back as compiled
   """
-  renderTablePlan(graph: ID!, plan: TableQueryPlanInput!, filters: RenderGraphTableFilter = null, pagination: RenderGraphTablePagination = null, order: RenderGraphTableOrder = null): TablePlanRender!
+  renderTablePlan(graph: ID!, plan: TableQueryPlanInput!, filters: RenderGraphTableFilter = null, pagination: RenderGraphTablePagination = null, order: RenderGraphTableOrder = null): TablePlanRender! @auth(required_scopes: ["kraph_read"])
 }
 
 """Input for recording measurements against a datum already on the record"""
@@ -6632,7 +6632,7 @@ type Subscription {
   """
   Each act of claiming in the caller's organization, as its transaction commits. Never an act that rolled back, never another tenant's
   """
-  assertionRecorded: Assertion!
+  assertionRecorded: Assertion! @auth(required_scopes: ["kraph_read"])
 }
 
 """Input for superseding a metric value"""

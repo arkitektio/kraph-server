@@ -9,6 +9,7 @@ from core import managers
 from koherent.fields import ProvenanceField
 from arkitekt_datalayer import models as datalayer_models
 from authentikate.models import Organization, Membership
+from kraph_server.contract import ADMIN, CURATOR
 from django.db.models import Q, QuerySet
 # Create your models here.
 
@@ -132,7 +133,7 @@ class Graph(models.Model):
         help_text="The users that have this query active",
     )
     # `rules` (per-action allow/deny lists) are gone (RFC 0013). Changing a
-    # graph's definition is plain RBAC: the owner, an organization admin, or a
+    # graph's definition is plain RBAC: the owner, a curator or Kraph's admin, or a
     # superuser — see `validate_definition_editable`.
     # `selector` is gone (RFC 0009): a graph has no claim scope of its own.
     # What counts as evidence is each category's `definition` — the complete
@@ -224,7 +225,7 @@ class Graph(models.Model):
         return None
 
     def validate_definition_editable(self, info: Info | Any) -> None:
-        """Refuse a schema change from anyone but the owner, an admin, or a superuser.
+        """Refuse a schema change from anyone but the owner, a curator or Kraph's admin, or a superuser.
 
         This replaced the per-action `rules` lists (RFC 0013). Tenancy
         (`validate_accessible`) still governs reading and instance writes; this
@@ -238,9 +239,9 @@ class Graph(models.Model):
         if user is not None and self.user_id == getattr(user, "id", None):
             return
         membership = getattr(request, "membership", None)
-        if membership is not None and getattr(membership, "organization_id", None) == self.organization_id and "admin" in list(getattr(membership, "roles", None) or []):
+        if membership is not None and getattr(membership, "organization_id", None) == self.organization_id and {ADMIN, CURATOR} & set(getattr(membership, "roles", None) or []):
             return
-        raise PermissionError(f"Changing graph '{self.name}' needs its owner or an organization admin — the schema is the view's contract, and tenancy alone does not grant rewriting it.")
+        raise PermissionError(f"Changing graph '{self.name}' needs its owner, a curator or Kraph's admin — the schema is the view's contract, and tenancy alone does not grant rewriting it.")
 
     def validate_accessible(self, membership: Membership, scopes: list[str]):
         """Validate if the graph is accessible for a given membership and scopes."""

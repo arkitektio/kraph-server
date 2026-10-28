@@ -108,7 +108,7 @@ uv run pytest tests/projection/test_rebuild_equals_the_write_path.py   # the mat
 | `test_rules_on_every_claim_family` | structure relations and measurements carry rules too (RFC 0012) |
 | `test_every_change_to_a_view_is_a_version` | a meaning change is a version; product state is not |
 | `test_a_schema_change_costs_what_the_diff_says` | the rescan matrix |
-| `test_changing_a_view_is_rbac` | owner, admin or superuser (RFC 0013) |
+| `test_changing_a_view_is_rbac` | owner, curator, kraph admin or superuser (RFC 0013) |
 | `test_deleting_a_view_leaves_the_log` | deletion is guarded and records what went; the claims survive |
 | `test_the_definition_document_is_the_views_meaning` | `materialize` and the definition mutations |
 | `test_the_namespace_is_derived_from_the_view` | spec from the definition, DDL from the spec (RFC 0006) |

@@ -7,26 +7,32 @@ the same commit, and no installer has to learn of it.
 
 from __future__ import annotations
 
-from arkitekt_service.contract import JSON, Contract, Description, Facts, Job, Needs, Offers, Scope, Start, blocks
+from arkitekt_service.contract import JSON, Contract, Description, Facts, Job, Needs, Offers, Role, Scope, Start, blocks
 
 from kraph_server.configuration import Settings
 
-#: What a token may be allowed to do here: defined at the coordination server when the hub enrols.
+#: What an app may do here on a user's behalf: defined at the coordination server when the hub
+#: enrols. Every root field of the schema asks for one of them (`AuthExtension(scopes=...)`).
 SCOPES = [
-    Scope(key="kraph_read", description="Read graph data"),
-    Scope(key="kraph_write", description="Write graph data"),
-    Scope(key="kraph_query", description="Execute graph queries"),
-    Scope(key="read", description="Generic read access"),
-    Scope(key="write", description="Generic write access"),
+    Scope(key="kraph_read", description="Browse the knowledge graph and run graph queries and views."),
+    Scope(key="kraph_assert", description="Record facts in the knowledge graph (entities, structures, metrics, measurements, relations, events, comments) and retract or supersede them."),
+    Scope(key="kraph_insights", description="Create and change graphs, table queries and plots."),
+    Scope(key="kraph_schema", description="Change the graph's vocabulary: entity, structure, metric, relation and event categories and terms."),
+    Scope(key="kraph_all", description="Do everything in Kraph on your behalf.", is_all_scope=True),
 ]
 
-#: The roles a member of an organization can hold here.
+#: What a member of an organization may do here.
 ROLES = [
-    Scope(key="admin", description="Full administrative access"),
-    Scope(key="user", description="Standard user access"),
-    Scope(key="editor", description="Can edit graph data"),
-    Scope(key="viewer", description="Read-only access"),
+    Role(key="kraph_admin", description="Full control of Kraph in this organization.", is_admin_role=True),
+    Role(key="kraph_editor", description="Record facts and build graphs and queries.", is_default_role=True),
+    Role(key="kraph_curator", description="Curate the graph's vocabulary of categories and terms."),
 ]
+
+#: The role every write asks for, the one a change to the vocabulary asks for instead, and the one
+#: that holds both.
+EDITOR = "kraph_editor"
+CURATOR = "kraph_curator"
+ADMIN = "kraph_admin"
 
 
 #: What mikro offers its change feed as (its `Offers.endpoints`).

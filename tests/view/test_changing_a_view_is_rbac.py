@@ -1,4 +1,4 @@
-"""Changing a view is RBAC: its owner, an organization admin, or a superuser (RFC 0013).
+"""Changing a view is RBAC: its owner, a curator or Kraph's admin, or a superuser (RFC 0013).
 
 Reads and instance writes are untouched: they stay organization-scoped.
 
@@ -52,7 +52,7 @@ def test_a_plain_colleague_may_not(test_graph: core_models.Graph, table_projecto
     user, _ = User.objects.get_or_create(username="plain-colleague", defaults={"sub": "colleague", "iss": "static_issuer"})
     membership, _ = Membership.objects.get_or_create(user=user, organization=test_graph.organization)
 
-    with pytest.raises(PermissionError, match="owner or an organization admin"):
+    with pytest.raises(PermissionError, match="owner, a curator or Kraph's admin"):
         test_graph.validate_definition_editable(_info_for(user, test_graph.organization, membership))
 
 
@@ -60,10 +60,33 @@ def test_a_plain_colleague_may_not(test_graph: core_models.Graph, table_projecto
 def test_an_admin_may(test_graph: core_models.Graph, table_projector) -> None:
     user, _ = User.objects.get_or_create(username="org-admin", defaults={"sub": "org-admin", "iss": "static_issuer"})
     membership, _ = Membership.objects.get_or_create(user=user, organization=test_graph.organization)
-    membership.roles = ["admin"]
+    membership.roles = ["kraph_admin"]
     membership.save()
 
     test_graph.validate_definition_editable(_info_for(user, test_graph.organization, membership))
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_curator_may(test_graph: core_models.Graph, table_projector) -> None:
+    """Curating the vocabulary is the curator's role, whoever owns the graph."""
+    user, _ = User.objects.get_or_create(username="org-curator", defaults={"sub": "org-curator", "iss": "static_issuer"})
+    membership, _ = Membership.objects.get_or_create(user=user, organization=test_graph.organization)
+    membership.roles = ["kraph_curator"]
+    membership.save()
+
+    test_graph.validate_definition_editable(_info_for(user, test_graph.organization, membership))
+
+
+@pytest.mark.django_db(transaction=True)
+def test_the_generic_admin_role_grants_nothing(test_graph: core_models.Graph, table_projector) -> None:
+    """Only kraph's own roles count here: a generic `admin` is no curator."""
+    user, _ = User.objects.get_or_create(username="generic-admin", defaults={"sub": "generic-admin", "iss": "static_issuer"})
+    membership, _ = Membership.objects.get_or_create(user=user, organization=test_graph.organization)
+    membership.roles = ["admin"]
+    membership.save()
+
+    with pytest.raises(PermissionError):
+        test_graph.validate_definition_editable(_info_for(user, test_graph.organization, membership))
 
 
 @pytest.mark.django_db(transaction=True)
@@ -74,7 +97,7 @@ def test_an_admin_of_another_organization_may_not(test_graph: core_models.Graph,
     other, _ = Organization.objects.get_or_create(identifier="static_issuer#somewhere-else")
     user, _ = User.objects.get_or_create(username="foreign-admin", defaults={"sub": "foreign-admin", "iss": "static_issuer"})
     membership, _ = Membership.objects.get_or_create(user=user, organization=other)
-    membership.roles = ["admin"]
+    membership.roles = ["kraph_admin"]
     membership.save()
 
     with pytest.raises(PermissionError):

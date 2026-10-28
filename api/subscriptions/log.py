@@ -17,6 +17,7 @@ from typing import AsyncGenerator
 
 from asgiref.sync import sync_to_async
 import kante
+from authentikate.strawberry.directives import AuthSubscribeExtension
 from kante.types import Info
 
 from api import context, types
@@ -29,7 +30,7 @@ from evidence.channel import assertion_channel
 class Subscription:
     """Root subscription type. Websocket transport only — see `kante.channel`."""
 
-    @kante.subscription(description="Each act of claiming in the caller's organization, as its transaction commits. Never an act that rolled back, never another tenant's")
+    @kante.subscription(extensions=[AuthSubscribeExtension(scopes=["kraph_read"])], description="Each act of claiming in the caller's organization, as its transaction commits. Never an act that rolled back, never another tenant's")
     async def assertion_recorded(self, info: Info) -> AsyncGenerator[types.Assertion, None]:
         organization = context.get_active_organization(info)
         # The membership check is an ORM query; the resolver is async.

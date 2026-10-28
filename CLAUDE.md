@@ -414,9 +414,12 @@ The load-bearing facts:
   `tests/support/rules.py`.
 - **Schema changes are RBAC (RFC 0013).** `Graph.rules` (per-action allow/deny) is gone; every
   category create/update/delete goes through `schema_graph`/`schema_scoped`
-  (`api/mutations/_scoped.py`) → `Graph.validate_definition_editable`: owner, organization admin
-  (`Membership.roles` contains "admin"), or superuser. Reads and instance writes stay
-  organization-scoped.
+  (`api/mutations/_scoped.py`) → `Graph.validate_definition_editable`: owner, a curator or
+  Kraph's admin (`Membership.roles` holds `kraph_curator` or `kraph_admin`), or superuser. Reads
+  and instance writes stay organization-scoped. On top of that every root field asks for one of
+  kraph's scopes (`kraph_read`, `kraph_assert`, `kraph_insights`, `kraph_schema`; `kraph_all`
+  passes them all) and every write for a role: `kraph_editor`, or `kraph_curator` for the
+  vocabulary (`api/schema.py`'s `field`/`mutation`/`schema_mutation`; `kraph_admin` holds both).
 - **The projection seam** is `graph_engine/projection/protocol.py::Projector` — the writer half
   (`draw_node`, `draw_edge`, `write_properties`, `erase_nodes`, namespaces) and the reader half
   (`drawn_nodes`, `drawn_edge`, `list_drawn`, `render_table`), phrased in refs, labels, structured
