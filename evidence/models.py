@@ -621,8 +621,8 @@ class Metric(models.Model):
         null=True,
         blank=True,
         unique=True,
-        help_text="The uuid of the metric this claim was ingested from, in the service that recorded it (mikro's `@mikro/metric`). "
-        "Null for a metric recorded here. Unique: an entry of the feed read twice is recorded once (`evidence/ingest.py`).",
+        help_text="The uuid `assertMetricValues` recorded this metric under, the producer's or a minted one, or the metric's own in the service that recorded it (mikro's `@mikro/metric`). "
+        "Null for a metric recorded one at a time. Unique: a batch retried, or an entry of the feed read twice, is recorded once (`evidence/metric_batch.py`).",
     )
     #: No cached `stands`, and deliberately. It used to live here: `writer.record_standing`
     #: wrote the claim and flipped this boolean in one transaction, which made a

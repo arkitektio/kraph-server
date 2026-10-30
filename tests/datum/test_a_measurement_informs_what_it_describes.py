@@ -1,6 +1,6 @@
 """A measurement is a claim about a datum, and it informs what the datum describes (C6).
 
-`recordMetrics` and `assertMetricValue` write metric rows against a structure;
+`assertMetricValue` and `assertMetricValues` write metric rows against a structure;
 a correction is a new claim citing the old one (`supersedeMetricValue`), never
 an edit; and every value the datum informs refolds from what still stands.
 """
@@ -95,11 +95,9 @@ async def test_create_metric(
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
 ):
-    structure_id = await writes.create_structure(api_schema, simple_api_context, identifier="roi_test")
-
     mutation = """
-        mutation CreateMetric($input: AssertMetricValueForStructureInput!) {
-            assertMetricValueForStructure(input: $input) { metric { id } }
+        mutation CreateMetric($input: AssertMetricValueInput!) {
+            assertMetricValue(input: $input) { metric { id } }
         }
     """
 
@@ -107,7 +105,8 @@ async def test_create_metric(
         mutation,
         variable_values={
             "input": {
-                "structure": structure_id,
+                "identifier": "roi_test",
+                "object": "roi-1",
                 "key": "area",
                 "value": 12.5,
                 "valueKind": "FLOAT",
@@ -118,7 +117,7 @@ async def test_create_metric(
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     assert result.data is not None
-    assert result.data["assertMetricValueForStructure"]["metric"]["id"]
+    assert result.data["assertMetricValue"]["metric"]["id"]
 
 
 @pytest.mark.django_db(transaction=True)
@@ -128,11 +127,9 @@ async def test_supersede_metric_value_cites_the_value_it_replaces(
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
 ):
-    structure_id = await writes.create_structure(api_schema, simple_api_context, identifier="roi_test")
-
     create_mutation = """
-        mutation CreateMetric($input: AssertMetricValueForStructureInput!) {
-            assertMetricValueForStructure(input: $input) { metric { id } }
+        mutation CreateMetric($input: AssertMetricValueInput!) {
+            assertMetricValue(input: $input) { metric { id } }
         }
     """
 
@@ -140,7 +137,8 @@ async def test_supersede_metric_value_cites_the_value_it_replaces(
         create_mutation,
         variable_values={
             "input": {
-                "structure": structure_id,
+                "identifier": "roi_test",
+                "object": "roi-1",
                 "key": "area",
                 "value": 12.5,
                 "valueKind": "FLOAT",
@@ -151,7 +149,7 @@ async def test_supersede_metric_value_cites_the_value_it_replaces(
 
     assert create_result.errors is None, f"GraphQL errors: {create_result.errors}"
     assert create_result.data is not None
-    metric_id = create_result.data["assertMetricValueForStructure"]["metric"]["id"]
+    metric_id = create_result.data["assertMetricValue"]["metric"]["id"]
 
     update_mutation = """
         mutation UpdateMetric($input: SupersedeMetricValueInput!) {

@@ -138,6 +138,8 @@ uv run pytest tests/projection/test_rebuild_equals_the_write_path.py   # the mat
 | `test_a_structure_is_an_individual` | a datum has a standing, the folds honour it, agreement is countable; never `ensure`d (RFC 0023) |
 | `test_kinds_are_the_organizations_vocabulary` | one kind per identifier per organization |
 | `test_a_measurement_informs_what_it_describes` | metrics, supersession, and the INFORMS claim's standing |
+| `test_a_metric_mikro_recorded_is_a_claim_here_once` | mikro's feed: one act per transaction, a page applied twice records nothing twice |
+| `test_a_batch_of_metrics_is_one_act` | `assertMetricValues`: many data, one assertion, a retry or a race records nothing twice, refusals name what was wrong |
 
 ### surface — C4 / C5
 
@@ -177,8 +179,8 @@ uv run pytest tests/projection/test_rebuild_equals_the_write_path.py   # the mat
 4. **`rebuild_projection` is called in four places**: the matrix, the incremental-replay
    module, the cursor module, and `support/graphs.py::rebuild`. Everything else rebuilds
    through `graphs.rebuild`.
-5. **Names are the model's**: `retract`, not `archive`, for a claim; `supersede` /
-   `recordMetrics`, not `update_*`; no `selector`, no `lifecycle`, no lowercase `rollup`, no
+5. **Names are the model's**: `retract`, not `archive`, for a claim; `supersede`, not
+   `update_*`; no `selector`, no `lifecycle`, no lowercase `rollup`, no
    graph database. `guards/test_vocabulary.py` enforces it; a `History:` paragraph and a line
    ending `# retired` are exempt.
 6. **Docstrings state the property first.** The story of the bug a test was written against

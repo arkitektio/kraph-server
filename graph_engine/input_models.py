@@ -1,4 +1,5 @@
 from enum import Enum
+from collections import Counter
 from collections.abc import Mapping
 from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 from pydantic.fields import FieldInfo
@@ -6,6 +7,7 @@ from typing import List, Dict, Optional, Any, Protocol
 
 from evidence.values import JSONValue
 from datetime import datetime, timezone
+from uuid import UUID
 import re
 
 import strawberry
@@ -2079,12 +2081,6 @@ class AssertStructureExistsInput(StructureInput):
     confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
 
 
-class RecordMetricsInput(StructureInput):
-    """Record measurements against a datum already on the record, as one act."""
-
-    id: str = Field(..., description="The ID of the structure the measurements describe")
-
-
 class RetractStructureInput(StrictModel):
     """Input for retracting a structure claim. Not a soft delete: the row and its metrics survive, and the retraction is its own assertion on the record."""
 
@@ -2105,10 +2101,32 @@ class AssertMetricValueInput(MetricInput):
     object: scalars.StructureObject = Field(..., description="The unique ID of the object this metric references")
 
 
-class AssertMetricValueForStructureInput(MetricInput):
-    """Input for creating a new metric associated with a structure."""
+#: The most metrics one act may hold.
+MAX_METRIC_VALUES = 5000
 
-    structure: str = Field(..., description="The unique ID of the structure this metric is associated with")
+
+class MetricValueInput(MetricInput):
+    """One value about one external datum, inside a batch."""
+
+    uuid: Optional[UUID] = Field(default=None, description="Optional: a uuid for this metric that stays the same across retries, so a retried batch records nothing twice. Left out, one is minted, and rerunning records the value again")
+    identifier: scalars.StructureIdentifier = Field(..., description="The structure identifier of the datum this value is about, e.g. '@mikro/annotation'")
+    object: scalars.StructureObject = Field(..., description="The id of the datum this value is about")
+    value_kind: enums.ValueKind = Field(..., description="What type of value this is. Required: it decides the storage column and the measurement term")
+    supersedes: Optional[UUID] = Field(default=None, description="The uuid of an earlier metric of this API that this value corrects: that one is retracted and cited, under this act")
+
+
+class AssertMetricValuesInput(StrictModel):
+    """Input for recording many metrics, about any number of data, as one act."""
+
+    metrics: List[MetricValueInput] = Field(..., min_length=1, max_length=MAX_METRIC_VALUES, description=f"The values to record, at most {MAX_METRIC_VALUES} in one act")
+
+    @model_validator(mode="after")
+    def each_uuid_names_one_metric(self) -> "AssertMetricValuesInput":
+        counts = Counter(metric.uuid for metric in self.metrics if metric.uuid is not None)
+        repeated = [source for source, count in counts.items() if count > 1]
+        if repeated:
+            raise ValueError(f"A uuid names one metric, and these appear more than once in this batch: {sorted(str(source) for source in repeated)}")
+        return self
 
 
 class RetractMetricInput(StrictModel):

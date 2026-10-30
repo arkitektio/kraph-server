@@ -3183,6 +3183,30 @@ class AssertedMetric(Asserted):
         return Metric(_value=RetrievedMetric.from_row(get_controller(), self._value.subject))
 
 
+@strawberry.type(description="A batch of metrics as one act. A metric that names a uuid already on the record is reported, not recorded again")
+class AssertedMetricValues:
+    """Not an `Asserted`: a batch whose uuids are all on the record made no new act, so its `assertion` is null."""
+
+    _value: strawberry.Private[results.AssertedMetricValues]
+
+    @strawberry.field(description="The act that recorded this batch's new metrics. Null when every one of them was already recorded")
+    def assertion(self) -> Optional[Assertion]:
+        return cast(Optional[Assertion], self._value.assertion)
+
+    @strawberry.field(description=_PENDING_DESCRIPTION)
+    def pending(self) -> bool:
+        return self._value.pending
+
+    @strawberry.field(description="How many of the batch's metrics this call recorded")
+    def recorded(self) -> int:
+        return self._value.recorded
+
+    @strawberry.field(description="Every metric of the batch, in the order given: new ones and those an earlier attempt recorded")
+    def metrics(self) -> List["Metric"]:
+        controller = get_controller()
+        return [Metric(_value=RetrievedMetric.from_row(controller, row)) for row in self._value.metrics]
+
+
 # ===========================================
 # RESULT TYPES
 # ===========================================

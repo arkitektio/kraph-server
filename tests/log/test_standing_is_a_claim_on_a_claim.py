@@ -278,11 +278,9 @@ async def test_retract_metric(
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
 ):
-    structure_id = await writes.create_structure(api_schema, simple_api_context, identifier="roi_test")
-
     create_mutation = """
-        mutation CreateMetric($input: AssertMetricValueForStructureInput!) {
-            assertMetricValueForStructure(input: $input) { metric { id } }
+        mutation CreateMetric($input: AssertMetricValueInput!) {
+            assertMetricValue(input: $input) { metric { id } }
         }
     """
 
@@ -290,7 +288,8 @@ async def test_retract_metric(
         create_mutation,
         variable_values={
             "input": {
-                "structure": structure_id,
+                "identifier": "roi_test",
+                "object": "roi-1",
                 "key": "area",
                 "value": 12.5,
                 "valueKind": "FLOAT",
@@ -301,7 +300,7 @@ async def test_retract_metric(
 
     assert create_result.errors is None, f"GraphQL errors: {create_result.errors}"
     assert create_result.data is not None
-    metric_id = create_result.data["assertMetricValueForStructure"]["metric"]["id"]
+    metric_id = create_result.data["assertMetricValue"]["metric"]["id"]
 
     archive_mutation = """
         mutation ArchiveMetric($input: RetractMetricInput!) {
@@ -327,11 +326,9 @@ async def test_retracting_a_metric_twice_is_one_position(
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
 ):
-    structure_id = await writes.create_structure(api_schema, simple_api_context, identifier="roi_test")
-
     create_mutation = """
-        mutation CreateMetric($input: AssertMetricValueForStructureInput!) {
-            assertMetricValueForStructure(input: $input) { metric { id } }
+        mutation CreateMetric($input: AssertMetricValueInput!) {
+            assertMetricValue(input: $input) { metric { id } }
         }
     """
 
@@ -339,7 +336,8 @@ async def test_retracting_a_metric_twice_is_one_position(
         create_mutation,
         variable_values={
             "input": {
-                "structure": structure_id,
+                "identifier": "roi_test",
+                "object": "roi-1",
                 "key": "area",
                 "value": 12.5,
                 "valueKind": "FLOAT",
@@ -350,7 +348,7 @@ async def test_retracting_a_metric_twice_is_one_position(
 
     assert create_result.errors is None, f"GraphQL errors: {create_result.errors}"
     assert create_result.data is not None
-    metric_id = create_result.data["assertMetricValueForStructure"]["metric"]["id"]
+    metric_id = create_result.data["assertMetricValue"]["metric"]["id"]
 
     # `deleteMetric` is gone: it destroyed the metric without retracting its
     # contribution from the state vector, so derived values kept counting a

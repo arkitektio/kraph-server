@@ -51,27 +51,18 @@ def assert_metric_value(
     )
 
 
-def assert_metric_value_for_structure(
+def assert_metric_values(
     info: Info,
-    input: inputs.AssertMetricValueForStructureInput,
-) -> types.AssertedMetric:
-    """Record a measurement against a structure that already exists.
+    input: inputs.AssertMetricValuesInput,
+) -> types.AssertedMetricValues:
+    """Record many measurements as one act, the way an app states what it computed.
 
-    Distinct from `assertMetricValue`, not a duplicate of it: that one names the
-    datum by `(identifier, object)` and mints the structure if it is new, this one
-    names an evidence primary key the caller already holds.
+    Set-based, where `assertMetricValue` is one row per call (`evidence.metric_batch`). Who
+    recorded them comes from the request, and the rekuest task from its provenance token,
+    never from the input: a caller cannot name a task it was not called in.
     """
-    controller = context.get_controller()
-
     model = input.to_pydantic()
-
-    return types.AssertedMetric(
-        _value=controller.create_metric(
-            structure_id=str(model.structure),
-            input=model,
-            info=info,
-        )
-    )
+    return types.AssertedMetricValues(_value=context.get_controller().assert_metric_values(context.get_active_organization(info), model.metrics, info))
 
 
 def supersede_metric_value(

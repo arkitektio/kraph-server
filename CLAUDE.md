@@ -289,6 +289,13 @@ The load-bearing facts:
   because the draw normally completes within the request. (It used to propagate as a mutation
   error for a committed act; before that it was two evidence transactions on the ground that AGE
   could not join one. Both gaps are closed.)
+- **An app states its metrics with `assertMetricValues`** (`evidence/metric_batch.py`,
+  `GraphController.assert_metric_values`): up to 5000 values about any number of data as one act,
+  structures created as needed, set-based like the feed below, which shares this write. A metric
+  may name its own `uuid` (`Metric.source_uuid`, unique; minted when left out), and then a retry
+  records nothing twice and a batch recorded in full mints no assertion: the one write whose
+  `assertion` can be null, so its payload is `AssertedMetricValues`, not an `Asserted`. This is to
+  replace mikro's metrics.
 - **mikro's metrics arrive through its change feed** (`evidence/ingest.py`,
   `GraphController.ingest_metric_page`, the hook agent's `ingest_metrics` in
   `kraph_server/hook_agent.py`). mikro records each metric with a feed entry in the same

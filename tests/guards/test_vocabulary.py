@@ -6,7 +6,7 @@ RFC 0005, the view-level `selector` (RFC 0009), the `lifecycle` flag (C7), the
 lowercase `rollup` (it is a derivation; `ROLLUP` the enum value stays),
 `archive*` for a claim (a claim is `retract`ed; `archiveGraph` is product state
 and stays), and the six in-place `update*` instance mutations (a correction is a
-new claim: `supersede*` / `recordMetrics`).
+new claim: `supersede*`).
 
 Text from a line `History:` to the end of that docstring is exempt, because the
 story of a bug is allowed to name what the bug was; so is a line ending in

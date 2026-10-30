@@ -25,7 +25,7 @@ also committed as [`test.graphql`](test.graphql), and a test holds the two equal
 
 | Operations | What they do |
 | --- | --- |
-| `assert…Exists`, `assertSameInstance`, `assertDifferentInstance`, `assertParticipation`, `recordMetrics` | Record a claim. A write returns the act it recorded. |
+| `assert…Exists`, `assertSameInstance`, `assertDifferentInstance`, `assertParticipation`, `assertMetricValues` | Record a claim. A write returns the act it recorded. |
 | `retract…`, `supersede…`, `attest…` | Claims about claims: withdraw one, replace one, vouch for one. |
 | `createGraph`, `create…Category`, `createTerm` | Declare a view and its rules. |
 | `nodes`, `node`, `entities`, `structures`, `relations`, `metrics` | Read a view. |

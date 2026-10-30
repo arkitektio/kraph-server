@@ -110,7 +110,7 @@ def value_columns(value: JSONValue, value_kind: str, key: str = "?") -> dict[str
         raise ValueError(f"'{key}' is declared {value_kind}, but {value!r} is not a {value_kind} value ({error}). Declare the kind that matches what you are recording.") from error
 
 
-def _as_datetime(value: JSONValue | datetime.datetime, default: datetime.datetime) -> datetime.datetime:
+def as_datetime(value: JSONValue | datetime.datetime, default: datetime.datetime) -> datetime.datetime:
     """Accept the ms-epoch ints the GraphQL surface still speaks."""
     if value is None:
         return default
@@ -296,7 +296,7 @@ def record_metric(
         unit=unit,
         confidence=confidence,
         confidence_type=confidence_type,
-        observed_at=_as_datetime(observed_at, assertion.asserted_at),
+        observed_at=as_datetime(observed_at, assertion.asserted_at),
         asserted_at=assertion.asserted_at,
         **value_columns(value, resolved, key),
     )

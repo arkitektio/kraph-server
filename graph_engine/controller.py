@@ -41,6 +41,7 @@ from evidence import state as state_module
 from evidence import writer
 from evidence import channel
 from evidence import ingest as ingest_module
+from evidence import metric_batch
 
 logger = logging.getLogger(__name__)
 
@@ -1036,6 +1037,51 @@ class GraphController:
                 self.project_refs(organization, informed)
         return results.Asserted.of(assertion, structure, pending=draw.failed)
 
+    def assert_metric_values(self, organization: Organization, metrics: List[input_models.MetricValueInput], info: Info) -> results.AssertedMetricValues:
+        """Record a batch of metrics as one act, set-based (:mod:`evidence.metric_batch`).
+
+        A metric that names a uuid already on the record is left there, so a retried batch records
+        nothing twice and, recorded in full, mints no assertion. One that names none gets a fresh
+        uuid: rerunning it records it again, under its own act. Who made the act comes from the request, the
+        rekuest task from its verified provenance token. The draw follows the commit.
+        """
+        stated = [
+            metric_batch.StatedMetric(
+                source_uuid=metric.uuid or uuid.uuid4(),
+                identifier=metric.identifier,
+                object=metric.object,
+                key=metric.key,
+                value=metric.value,
+                value_kind=metric.value_kind.value,
+                unit=metric.unit,
+                confidence=metric.confidence,
+                confidence_type=metric.confidence_type,
+                observed_at=metric.observed_at,
+                supersedes=metric.supersedes,
+                derived_from=tuple(metric.derived_from),
+            )
+            for metric in metrics
+        ]
+        assertion: evidence_models.Assertion | None = None
+        recorded = metric_batch.Recorded()
+        with transaction.atomic():
+            fresh = metric_batch.outstanding(organization, stated)
+            if fresh:
+                self._resolve_citations(organization, [ref for metric in fresh for ref in metric.derived_from])
+                metric_batch.assert_corrections_known(organization, fresh)
+                assertion = self._create_assertion(organization, self._provenance_from_info(info))
+                metric_batch.record_into(organization, fresh, assertion, recorded)
+
+        pending = False
+        if assertion is not None:
+            with self._draw_after(assertion) as draw:
+                if recorded.structure_ids:
+                    self.project_from_structures(organization, list(recorded.structure_ids))
+            pending = draw.failed
+
+        rows = {row.source_uuid: row for row in evidence_models.Metric.all_objects.filter(organization=organization, source_uuid__in=[metric.source_uuid for metric in stated])}
+        return results.AssertedMetricValues(assertion=assertion, metrics=tuple(rows[metric.source_uuid] for metric in stated), recorded=recorded.metrics, pending=pending)
+
     def ingest_metric_page(self, organization: Organization, entries: List[Any]) -> ingest_module.Recorded:
         """Record one page of mikro's metric feed (``@mikro/metric``): one act per transaction of mikro's.
 
@@ -1096,37 +1142,6 @@ class GraphController:
                 **{name: value for name, value in (("app", producer.app), ("app_version", producer.version), ("client_id", producer.client), ("task", producer.task)) if value},
             },
         )
-
-    def record_metrics(
-        self,
-        structure_id: str,
-        payload: inputs.StructureInput,
-        info: Info,
-    ) -> results.Asserted:
-        """Record measurements against a datum already on the record (was `update_structure`).
-
-        A structure's `(identifier, object)` is its identity, so `object` is
-        **immutable** and repointing it is rejected. The original plan called for
-        a supersede assertion here, but a supersede is incoherent under the
-        uniqueness constraint: a row with a different `object` is not a new
-        version of this datum, it is a different datum. Pointing at the wrong ROI
-        is fixed by creating the right structure and archiving the wrong one,
-        which keeps both facts on the record.
-        """
-        structure = self._resolve_structure(structure_id, info)
-        organization = structure.organization
-
-        if payload.object and payload.object != structure.object:
-            raise ValueError(f"A structure's object is immutable: {structure.identifier}:{structure.object} cannot become {structure.identifier}:{payload.object}. Create the correct structure and archive this one instead.")
-
-        with transaction.atomic():
-            assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            for metric in payload.metrics or []:
-                self._record_metric(organization, structure, metric, info=info, assertion=assertion)
-
-        with self._draw_after(assertion) as draw:
-            self.project_from_structures(organization, [structure.pk])
-        return results.Asserted.of(assertion, structure, pending=draw.failed)
 
     def comment_on_structure(
         self,
@@ -1340,37 +1355,6 @@ class GraphController:
         # a message — whenever the graph the caller named did not draw the event.
         # The claim was already durable at that point.
         return results.Asserted.of(assertion, node, self.drawings_for_instance(node), pending=draw.failed)
-
-    def create_metric(
-        self,
-        structure_id: str,
-        input: MetricInput,
-        info: Info,
-    ) -> results.Asserted:
-        """
-        Append a measurement to an existing structure.
-
-        Args:
-            structure_id: The evidence primary key of the structure
-            input: The measurement data
-            info: Request info used to extract provenance
-
-        Returns:
-            RetrievedMetric with the created measurement info
-        """
-        structure = self._resolve_structure(structure_id, info)
-        organization = structure.organization
-
-        with transaction.atomic():
-            assertion = self._create_assertion(organization, self._provenance_from_info(info))
-            metric = self._record_metric(organization, structure, input, info=info, assertion=assertion)
-
-        with self._draw_after(assertion) as draw:
-            # Refresh every projection this structure is evidence for. Separate from
-            # the fold above because it is batched: a bulk ingest of a thousand
-            # metrics folds a thousand times (O(1) each) but projects once.
-            self.project_from_structures(organization, [structure.pk])
-        return results.Asserted.of(assertion, metric, pending=draw.failed)
 
     def _resolve_metric(self, metric_id: str, info: Info | None = None) -> evidence_models.Metric:
         """Fetch a metric by evidence primary key, then authorize against its organization."""

@@ -15,6 +15,7 @@ from graph_engine import input_models
 from graph_engine.scalars import AnyScalar
 from strawberry.experimental import pydantic
 from typing import Annotated
+from uuid import UUID
 
 
 @pydantic.input(model=input_models.CategoryNodePositionInput, all_fields=True, description="Input for specifying the position of a node in the graph visualization")
@@ -457,15 +458,26 @@ class AssertMetricValueInput(MetricInput):
     value: AnyScalar = strawberry.field(description="The value of the metric, which can be any scalar type (string, number, boolean)")
 
 
-@pydantic.input(model=input_models.AssertMetricValueForStructureInput, description="Input for creating a new metric")
-class AssertMetricValueForStructureInput(MetricInput):
-    """Input for creating a new metric."""
+@pydantic.input(model=input_models.MetricValueInput, description="One value about one external datum, inside a batch")
+class MetricValueInput:
+    """One value about one external datum, inside a batch."""
 
+    identifier: str = strawberry.field(description="The structure identifier of the datum this value is about, e.g. '@mikro/annotation'")
+    object: str = strawberry.field(description="The id of the datum this value is about")
     key: str = strawberry.field(description="The key/name of the metric")
     value: AnyScalar = strawberry.field(description="The value of the metric, which can be any scalar type (string, number, boolean)")
-    structure: strawberry.ID = strawberry.field(description="The ID of the structure this metric will be attached to — a bare uuid, its evidence primary key")
-    pass
+    value_kind: enums.ValueKind = strawberry.field(description="What type of value this is. Required: it decides the storage column and the measurement term")
+    uuid: Optional[UUID] = strawberry.field(default=None, description="Optional: a uuid for this metric that stays the same across retries, so a retried batch records nothing twice. Left out, one is minted, and rerunning records the value again")
+    unit: Optional[str] = strawberry.field(default=None, description="Unit of measurement, e.g. 'um'")
+    confidence: Optional[float] = strawberry.field(default=None, description=input_models.CONFIDENCE_FIELD_DESCRIPTION)
+    confidence_type: Optional[str] = strawberry.field(default=None, description="What kind of number `confidence` is — a method's own score, a p-value. Measurement-only")
+    observed_at: Optional[datetime] = strawberry.field(default=None, description=input_models.OBSERVED_AT_FIELD_DESCRIPTION)
+    derived_from: List[str] = strawberry.field(default_factory=list, description=input_models.DERIVED_FROM_FIELD_DESCRIPTION)
+    supersedes: Optional[UUID] = strawberry.field(default=None, description="The uuid of an earlier metric of this API that this value corrects: that one is retracted and cited, under this act")
 
+
+@pydantic.input(model=input_models.AssertMetricValuesInput, all_fields=True, description="Input for recording many metrics, about any number of data, as one act")
+class AssertMetricValuesInput:
     pass
 
 
@@ -490,11 +502,6 @@ class RetractMetricInput:
 class AssertStructureExistsInput:
     """Input for creating a new structure."""
 
-    pass
-
-
-@pydantic.input(model=input_models.RecordMetricsInput, all_fields=True, description="Input for recording measurements against a datum already on the record")
-class RecordMetricsInput:
     pass
 
 

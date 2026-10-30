@@ -61,28 +61,6 @@ def retract_structure(
     )
 
 
-def record_metrics(
-    info: Info,
-    input: inputs.RecordMetricsInput,
-) -> types.AssertedStructure:
-    """Record measurements against a datum already on the record.
-
-    Named for the act (it was `updateStructure`): nothing about the structure
-    changes — its `(identifier, object)` is its identity and repointing it is
-    rejected — only new metric claims are appended under one assertion.
-    """
-    controller = context.get_controller()
-
-    model = input.to_pydantic()
-    return types.AssertedStructure(
-        _value=controller.record_metrics(
-            structure_id=str(model.id),
-            payload=model,
-            info=info,
-        )
-    )
-
-
 def attest_structure(
     info: Info,
     input: inputs.AttestStructureInput,

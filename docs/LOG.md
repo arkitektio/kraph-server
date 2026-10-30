@@ -338,7 +338,7 @@ there is one global answer.
 |---|---|
 | `assertEntityExists` | `Assertion`, `Instance(ENTITY)`, `Link(CLASSIFIES)`, plus `Structure`/`Metric`/`Link(INFORMS)` per supporting evidence |
 | `assertStructureExists` / `ensureStructure` | `Assertion`, `Structure`, `Metric` |
-| `assertMetricValue` / `assertMetricValueForStructure` | `Assertion`, `Metric`. The first mints the structure if it is new, as one act |
+| `assertMetricValue` / `assertMetricValues` | `Assertion`, `Metric`, and the `Structure` if it is new, as one act. The second takes many, about any number of data |
 | `supersedeMetricValue` | `Standing(stands=False)` on the old metric, then a new `Metric` and a `Link(DERIVED_FROM)` from the new to the old, under **one** assertion — both stay on the record. Named for what it does: there is no in-place update |
 | `linkStructureToEntity` | `Assertion`, `Link(INFORMS)` — how evidence is attached to a *live* entity |
 | `assertNaturalEventExists` / `assertProtocolEventExists` | `Assertion`, `Instance`, `Link(CLASSIFIES)`, `Link(PARTICIPATES_AS_*)` per role |

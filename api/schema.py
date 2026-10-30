@@ -242,10 +242,6 @@ class Mutation:
         description="Claim that a datum is evidence for an entity — an INFORMS claim",
         resolver=mutations.assert_informs,
     )
-    record_metrics = mutation(
-        description="Record measurements against a datum already on the record, as one act (was `updateStructure`)",
-        resolver=mutations.record_metrics,
-    )
     comment_on_structure = mutation(
         description="Record a remark about an external datum, minting its structure if this is the first sight of it. A reply names its parent and stays on the parent's thread",
         resolver=mutations.comment_on_structure,
@@ -262,9 +258,9 @@ class Mutation:
         description="Record a measurement, creating the structure it describes if this is its first sight. One assertion covers both",
         resolver=mutations.assert_metric_value,
     )
-    assert_metric_value_for_structure = mutation(
-        description="Record a measurement against a structure that already exists, named by its evidence id",
-        resolver=mutations.assert_metric_value_for_structure,
+    assert_metric_values = mutation(
+        description="Record many measurements, about any number of data, as one act, creating the structures they describe. A metric that names its own uuid is recorded once however often the batch is retried",
+        resolver=mutations.assert_metric_values,
     )
     retract_metric = mutation(
         description="Retract a measurement without destroying it. It stays readable, because a derived value that dropped it still has to be explainable",

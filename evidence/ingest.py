@@ -13,7 +13,8 @@ ingested metric carries its mikro uuid in `Metric.source_uuid` (unique): a page 
 records nothing the second time. **Set-based.** Kinds, structures and metrics are written per
 page, and `State` is folded once per (entity, kind, key) touched, not once per metric
 (`state.merge_many`) -- a batch of thousands of metrics about new objects is a handful of
-statements.
+statements. That write is :mod:`evidence.metric_batch`, shared with `assertMetricValues`; this module
+is the feed's reading of an entry.
 
 A DELETED entry is mikro withdrawing the metric: a `Standing(stands=False)` here, never a delete
 (the log is append-only). A correction (``supersedes``) retracts what it corrects and cites it
@@ -27,7 +28,7 @@ from __future__ import annotations
 import datetime
 import re
 import uuid
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from arkitekt_service.feed.consumer import Poison
@@ -36,10 +37,9 @@ from authentikate.models import Client, Organization, User
 from django.db import IntegrityError, transaction
 
 from core.enums import ValueKind
-from evidence import claims as claims_module
+from evidence import metric_batch
 from evidence import models as evidence_models
-from evidence import state as state_module
-from evidence import writer
+from evidence.metric_batch import Recorded, StatedMetric
 
 #: The feed metrics are read from, as the structure mikro hosts them under.
 FEED = "@mikro/metric"
@@ -77,6 +77,20 @@ class FedMetric:
     @property
     def value_kind(self) -> str:
         return ValueKind.CATEGORY.value if self.code is not None else ValueKind.FLOAT.value
+
+    def stated(self) -> StatedMetric:
+        """This metric as the write takes it: observed when mikro recorded it."""
+        return StatedMetric(
+            source_uuid=self.source_uuid,
+            identifier=self.identifier,
+            object=self.object,
+            key=self.key,
+            value=self.code if self.code is not None else self.magnitude,
+            value_kind=self.value_kind,
+            unit=self.unit,
+            observed_at=self.created_at,
+            supersedes=self.supersedes,
+        )
 
 
 @dataclass
@@ -196,122 +210,12 @@ def local_client_id(producer: Producer) -> str | None:
     return str(client.id)
 
 
-@dataclass
-class Recorded:
-    """What one act wrote: the structures whose evidence moved, for the draw that follows."""
-
-    metrics: int = 0
-    retracted: int = 0
-    structure_ids: set[uuid.UUID] = field(default_factory=set)
-
-
-def _structures(organization: Organization, metrics: Sequence[FedMetric], assertion: evidence_models.Assertion) -> dict[tuple[str, str], evidence_models.Structure]:
-    """The individual each metric is about: one query per identifier, one insert for the new ones."""
-    kinds = {identifier: writer.ensure_structure_kind(organization, identifier) for identifier in {m.identifier for m in metrics}}
-    wanted = {(m.identifier, m.object) for m in metrics}
-
-    def existing() -> dict[tuple[str, str], evidence_models.Structure]:
-        found: dict[tuple[str, str], evidence_models.Structure] = {}
-        for identifier in kinds:
-            objects = [obj for ident, obj in wanted if ident == identifier]
-            for structure in evidence_models.Structure.all_objects.filter(organization=organization, identifier=identifier, object__in=objects):
-                found[(structure.identifier, structure.object)] = structure
-        return found
-
-    found = existing()
-    missing = wanted - set(found)
-    if missing:
-        # `bulk_create` skips `save`, so `observed_at` is set here: the datum was observed to
-        # exist when it was first referenced.
-        evidence_models.Structure.all_objects.bulk_create(
-            [
-                evidence_models.Structure(organization=organization, kind=kinds[identifier], identifier=identifier, object=obj, assertion=assertion, observed_at=assertion.asserted_at)
-                for identifier, obj in missing
-            ],
-            ignore_conflicts=True,
-        )
-        found = existing()
-    return found
-
-
-def informed_by(organization: Organization, structure_ids: Iterable[uuid.UUID]) -> dict[str, list[str]]:
-    """What each structure is standing evidence for (its INFORMS links that stand), by structure."""
-    informed: dict[str, list[str]] = {}
-    links = claims_module.standing(
-        evidence_models.Link.objects.for_organization(organization).filter(kind=evidence_models.Link.Kind.INFORMS, source_ref__in=[str(s) for s in structure_ids]),
-        "link",
-    )
-    for source_ref, target_ref in links.values_list("source_ref", "target_ref").distinct():
-        informed.setdefault(str(source_ref), []).append(str(target_ref))
-    return informed
-
-
 def record(organization: Organization, act: Act, assertion: evidence_models.Assertion) -> Recorded:
     """Write one act's outstanding claims (:func:`outstanding`) under ``assertion``. Inside the page's transaction; draws nothing."""
     recorded = Recorded()
     if act.created:
-        _record_created(organization, act.created, assertion, recorded)
+        metric_batch.record_into(organization, [metric.stated() for metric in act.created], assertion, recorded)
     if act.deleted:
         withdrawn = list(evidence_models.Metric.all_objects.filter(organization=organization, source_uuid__in=act.deleted).select_related("structure"))
-        _retract(organization, withdrawn, assertion, recorded)
+        metric_batch.retract(organization, withdrawn, assertion, recorded)
     return recorded
-
-
-def _record_created(organization: Organization, fresh: Sequence[FedMetric], assertion: evidence_models.Assertion, recorded: Recorded) -> None:
-    """Record metrics not ingested before (:func:`outstanding`); the unique ``source_uuid`` is the backstop."""
-    structures = _structures(organization, fresh, assertion)
-    kinds: dict[tuple[uuid.UUID, str, str], evidence_models.MetricKind] = {}
-    rows: list[evidence_models.Metric] = []
-    for metric in fresh:
-        structure = structures[(metric.identifier, metric.object)]
-        kind_key = (structure.kind_id, metric.key, metric.value_kind)
-        if kind_key not in kinds:
-            kinds[kind_key] = writer.ensure_metric_kind(organization, structure.kind, metric.key, metric.value_kind)
-        rows.append(
-            evidence_models.Metric(
-                organization=organization,
-                structure=structure,
-                kind=kinds[kind_key],
-                key=metric.key,
-                # The term's, as `writer.record_metric` has it: the kind is part of the term's identity.
-                value_kind=kinds[kind_key].value_kind,
-                assertion=assertion,
-                unit=metric.unit,
-                # Set here, as `record_metric` would: a bulk insert runs no `save`.
-                observed_at=metric.created_at,
-                asserted_at=assertion.asserted_at,
-                source_uuid=metric.source_uuid,
-                **writer.value_columns(metric.code if metric.code is not None else metric.magnitude, metric.value_kind, metric.key),
-            )
-        )
-    created = evidence_models.Metric.all_objects.bulk_create(rows)
-    recorded.metrics += len(created)
-    recorded.structure_ids.update(row.structure_id for row in created)
-    state_module.merge_many(created, informed_by(organization, {row.structure_id for row in created}))
-
-    corrected = {m.supersedes: m for m in fresh if m.supersedes is not None}
-    if corrected:
-        by_source = {row.source_uuid: row for row in created}
-        old = list(evidence_models.Metric.all_objects.filter(organization=organization, source_uuid__in=list(corrected)).select_related("structure"))
-        for previous in old:
-            writer.create_link(
-                organization,
-                kind=evidence_models.Link.Kind.DERIVED_FROM,
-                source_ref=str(by_source[corrected[previous.source_uuid].source_uuid].pk),
-                target_ref=str(previous.pk),
-                assertion=assertion,
-            )
-        _retract(organization, old, assertion, recorded)
-
-
-def _retract(organization: Organization, metrics: Sequence[evidence_models.Metric], assertion: evidence_models.Assertion, recorded: Recorded) -> None:
-    """Withdraw each metric that still stands, and take it out of the statistics once."""
-    if not metrics:
-        return
-    informed = informed_by(organization, {m.structure_id for m in metrics})
-    for metric in metrics:
-        result = writer.retract(organization, metric, assertion)
-        if result.moved:
-            state_module.retract(metric, informed.get(str(metric.structure_id), []))
-            recorded.retracted += 1
-            recorded.structure_ids.add(metric.structure_id)

@@ -277,14 +277,13 @@ async def test_create_structure(
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_supersede_structure_keeps_the_individual(
+async def test_a_later_value_about_a_datum_stays_on_that_individual(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
 ):
     category = await claims.ensure_kind(test_graph)
     object_id = f"obj_{uuid.uuid4().hex[:8]}"
-    updated_object_id = f"obj_{uuid.uuid4().hex[:8]}"
 
     create_mutation = """
         mutation CreateStructure($input: AssertStructureExistsInput!) {
@@ -307,49 +306,20 @@ async def test_supersede_structure_keeps_the_individual(
     assert create_result.errors is None, f"GraphQL errors: {create_result.errors}"
     structure_id = create_result.data["assertStructureExists"]["structure"]["id"]
 
-    update_mutation = """
-        mutation UpdateStructure($input: RecordMetricsInput!) {
-            recordMetrics(input: $input) { structure { id object } }
+    recorded = await api_schema.execute(
+        """
+        mutation RecordMetric($input: AssertMetricValueInput!) {
+            assertMetricValue(input: $input) { metric { id } }
         }
-    """
-
-    # A structure's (identifier, object) is its identity in the evidence base, so
-    # repointing `object` is rejected rather than silently creating a second
-    # identity or violating the uniqueness constraint. This test previously
-    # asserted the opposite; the in-place `SET s.object = $obj` it exercised
-    # no longer exists.
-    reidentify_result = await api_schema.execute(
-        update_mutation,
-        variable_values={
-            "input": {
-                "id": structure_id,
-                "object": updated_object_id,
-                "metrics": [],
-            }
-        },
+        """,
+        variable_values={"input": {"identifier": category.identifier, "object": object_id, "key": "vector_length", "value": 42.0, "valueKind": "FLOAT"}},
         context_value=simple_api_context,
     )
 
-    assert reidentify_result.errors is not None, "Repointing a structure's object must be rejected"
-    assert "immutable" in str(reidentify_result.errors[0])
-
-    # What update *is* for: appending measurements to an existing structure.
-    update_result = await api_schema.execute(
-        update_mutation,
-        variable_values={
-            "input": {
-                "id": structure_id,
-                "object": object_id,
-                "metrics": [{"key": "vector_length", "value": 42.0, "valueKind": "FLOAT"}],
-            }
-        },
-        context_value=simple_api_context,
-    )
-
-    assert update_result.errors is None, f"GraphQL errors: {update_result.errors}"
-    assert update_result.data is not None
-    assert update_result.data["recordMetrics"]["structure"]["id"] == structure_id
-    assert update_result.data["recordMetrics"]["structure"]["object"] == object_id
+    assert recorded.errors is None, f"GraphQL errors: {recorded.errors}"
+    metric = await evidence_models.Metric.all_objects.select_related("structure").aget(key="vector_length")
+    assert str(metric.structure_id) == structure_id, "The same (identifier, object) is the same datum"
+    assert await evidence_models.Structure.all_objects.filter(identifier=category.identifier, object=object_id).acount() == 1
 
 
 @pytest.fixture(scope="session")

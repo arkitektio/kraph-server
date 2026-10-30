@@ -183,12 +183,7 @@ async def test_the_lowercase_input_spelling_is_normalised(
     assert terms[0].value_kind == "FLOAT", "…in the canonical vocabulary, not the input spelling"
 
 
-MEASUREMENT_INPUTS = ["MetricInput", "AssertMetricValueInput", "AssertMetricValueForStructureInput", "SupersedeMetricValueInput"]
-CREATE = """
-mutation CreateMetric($input: AssertMetricValueForStructureInput!) {
-    assertMetricValueForStructure(input: $input) { metric { id value } }
-}
-"""
+MEASUREMENT_INPUTS = ["MetricInput", "AssertMetricValueInput", "MetricValueInput", "SupersedeMetricValueInput"]
 
 
 @pytest.mark.parametrize("type_name", MEASUREMENT_INPUTS)
@@ -203,17 +198,12 @@ def test_the_input_requires_a_value_kind(api_schema: kante.Schema, type_name: st
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_create_metric_works_on_a_key_with_several_terms(
+async def test_a_key_with_several_terms_stays_writable(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
 ) -> None:
-    """The dead end itself. This mutation had no way to succeed.
-
-    Two terms are established through `recordMetric` — the one input that could
-    always declare — and then `createMetric`, which could not, writes to the same
-    key. Before `value_kind` moved onto the base this failed with "Declare one".
-    """
+    """A third value on a key with two terms lands on the term it names."""
     identifier = f"@test/deadend_{uuid.uuid4().hex[:6]}"
     object_id = "obj-1"
 
@@ -229,13 +219,13 @@ async def test_create_metric_works_on_a_key_with_several_terms(
     assert structure is not None
 
     created = await api_schema.execute(
-        CREATE,
-        variable_values={"input": {"structure": str(structure.pk), "key": "confidence", "value": "medium", "valueKind": "STRING"}},
+        RECORD,
+        variable_values={"input": {"identifier": identifier, "object": object_id, "key": "confidence", "value": "medium", "valueKind": "STRING"}},
         context_value=simple_api_context,
     )
 
-    assert created.errors is None, f"createMetric must reach a named term: {created.errors}"
-    assert created.data["assertMetricValueForStructure"]["metric"]["value"] == "medium"
+    assert created.errors is None, f"A key with several terms must stay writable: {created.errors}"
+    assert created.data["assertMetricValue"]["metric"]["value"] == "medium"
 
     metric = await evidence_models.Metric.all_objects.filter(structure=structure, key="confidence", value_txt="medium").select_related("kind").afirst()
     assert metric is not None
@@ -249,7 +239,7 @@ async def test_the_declared_kind_selects_the_term(
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
 ) -> None:
-    """`createMetric` reaches the term it names, not one inference would pick.
+    """A write reaches the term it names, not one inference would pick.
 
     Proves the field is wired through `_record_metric` and not merely present in
     the schema. `12.5` looks like a float from every angle; declaring STRING has
@@ -270,8 +260,8 @@ async def test_the_declared_kind_selects_the_term(
     assert structure is not None
 
     created = await api_schema.execute(
-        CREATE,
-        variable_values={"input": {"structure": str(structure.pk), "key": "area", "value": 12.5, "valueKind": "STRING"}},
+        RECORD,
+        variable_values={"input": {"identifier": identifier, "object": "obj-1", "key": "area", "value": 12.5, "valueKind": "STRING"}},
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"

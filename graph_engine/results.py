@@ -90,6 +90,20 @@ Drawing = Union[NodeDrawing, EdgeDrawing]
 
 
 @dataclass(frozen=True)
+class AssertedMetricValues:
+    """A batch of metrics: the act that recorded what was new, and every metric of the batch.
+
+    Not an :class:`Asserted`, whose assertion is always there: a retry of a batch recorded in
+    full is no act at all, so it has none.
+    """
+
+    assertion: evidence_models.Assertion | None
+    metrics: tuple[evidence_models.Metric, ...]
+    recorded: int
+    pending: bool = False
+
+
+@dataclass(frozen=True)
 class Asserted:
     """One act of claiming: what was recorded, what it was about, where it stands."""
 
