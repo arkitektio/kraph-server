@@ -56,6 +56,7 @@ async def test_many_values_about_many_data_are_one_assertion(api_schema: kante.S
     assert payload["assertion"]["subject"] == str(api_context.request.user.id)
     assert payload["assertion"]["appId"] == str(api_context.request.client.id)
     assert [metric["value"] for metric in payload["metrics"]] == [4555.0, 12.5, 4555.0]
+    assert all(metric["kind"]["id"] == metric["kindId"] and metric["kind"]["key"] == metric["key"] for metric in payload["metrics"])
     rows = await sync_to_async(_rows)(source_uuid__in=[metric["uuid"] for metric in batch])
     assert {str(row.assertion_id) for row in rows} == {payload["assertion"]["id"]}
     assert {(row.structure.identifier, row.structure.object) for row in rows} == {(ROI, "1"), (ROI, "2"), (TABLE, "7")}

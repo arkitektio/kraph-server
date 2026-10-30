@@ -788,6 +788,11 @@ class RetrievedStructure(RetrievedNode):
     mean doing it twice.
     """
 
+    @property
+    def category_id(self) -> Optional[str]:
+        """The structure kind's id: what `Structure.kindId` and `Structure.kind` read."""
+        return self.properties.get("category_id")
+
     @classmethod
     def from_row(cls, controller: "GraphController", row: "Structure", graph_name: str = "", stands: Optional[bool] = None) -> "RetrievedStructure":
         """Adapt an `evidence.models.Structure` row to the node-shaped API surface.
@@ -861,6 +866,11 @@ class RetrievedMeasurement(RetrievedEdge):
 @dataclass
 class RetrievedMetric(RetrievedNode):
     """A metric, read from the relational evidence base."""
+
+    @property
+    def category_id(self) -> Optional[str]:
+        """The metric kind's id: what `Metric.kindId` and `Metric.kind` read."""
+        return self.properties.get("category_id")
 
     @property
     def value(self) -> JSONValue:

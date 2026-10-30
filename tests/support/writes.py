@@ -372,7 +372,7 @@ UPDATE_ENTITY_CATEGORY = """
 
 ASSERT_METRIC_VALUES = """
     mutation AssertMetricValues($input: AssertMetricValuesInput!) {
-        assertMetricValues(input: $input) { assertion { id subject appId } pending recorded metrics { id key value unit } }
+        assertMetricValues(input: $input) { assertion { id subject appId } pending recorded metrics { id kindId kind { id key } key value unit } }
     }
 """
 

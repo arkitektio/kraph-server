@@ -322,6 +322,24 @@ async def test_a_later_value_about_a_datum_stays_on_that_individual(
     assert await evidence_models.Structure.all_objects.filter(identifier=category.identifier, object=object_id).acount() == 1
 
 
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_a_structure_names_its_kind(api_schema: kante.Schema, simple_api_context: HttpContext) -> None:
+    result = await api_schema.execute(
+        """
+        mutation M($input: AssertStructureExistsInput!) {
+            assertStructureExists(input: $input) { structure { kindId kind { id identifier } } }
+        }
+        """,
+        variable_values={"input": {"identifier": "@mikro/annotation", "object": "1", "metrics": []}},
+        context_value=simple_api_context,
+    )
+
+    assert result.errors is None, f"GraphQL errors: {result.errors}"
+    structure = result.data["assertStructureExists"]["structure"]
+    assert structure["kind"] == {"id": structure["kindId"], "identifier": "@mikro/annotation"}
+
+
 @pytest.fixture(scope="session")
 def edge_schema() -> models.GraphDefinitionInput:
     """A schema that declares the two edge kinds the bio schema leaves out.
