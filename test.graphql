@@ -840,6 +840,15 @@ input AssertionFilter {
   seqAfter: Int
 }
 
+"""Input for putting objects on a todo item"""
+input AttachToTodoItemInput {
+  """The item to put the objects on"""
+  item: ID!
+
+  """The objects; one already on the item is left as it is"""
+  structures: [TodoStructureInput!]!
+}
+
 """Input for claiming a remark stands again — reopening, as new evidence"""
 input AttestCommentInput {
   """The ID of the comment to attest"""
@@ -1619,6 +1628,15 @@ input CreateNaturalEventCategoryInput {
   backfill: Boolean! = false
 }
 
+"""Input for creating a project"""
+input CreateProjectInput {
+  """The name of the project"""
+  name: String!
+
+  """What the project is about"""
+  description: String = null
+}
+
 """Input for creating a new protocol event definition in the graph schema"""
 input CreateProtocolEventCategoryInput {
   """The label of the node participating in the event"""
@@ -1828,6 +1846,44 @@ input CreateTermInput {
 
   """Optional media store ID for an illustrative image"""
   image: String = null
+}
+
+"""Input for creating a todo item"""
+input CreateTodoItemInput {
+  """The list the item goes on"""
+  list: ID!
+
+  """What is to be done"""
+  title: String!
+
+  """More about what is to be done"""
+  description: String = null
+
+  """
+  The sub of the user the item is assigned to; the list's assignee when not given
+  """
+  assignee: ID = null
+
+  """The column it starts in; To do when not given"""
+  status: TodoStatus = null
+
+  """The objects it is about"""
+  structures: [TodoStructureInput!] = null
+}
+
+"""Input for creating a todo list"""
+input CreateTodoListInput {
+  """The project the list belongs to"""
+  project: ID!
+
+  """The name of the list"""
+  name: String!
+
+  """What the list is for"""
+  description: String = null
+
+  """The sub of the user the list is assigned to"""
+  assignee: ID = null
 }
 
 """Date with time (isoformat)"""
@@ -3910,6 +3966,20 @@ input MetricValueInput {
   supersedes: UUID = null
 }
 
+"""Input for moving a todo item on its board"""
+input MoveTodoItemInput {
+  """The item to move"""
+  id: ID!
+
+  """The column to move it to"""
+  status: TodoStatus!
+
+  """
+  Its place in that column once moved, 0 first; past the end puts it last
+  """
+  index: Int! = 0
+}
+
 """Graph Engine Mutations"""
 type Mutation {
   """
@@ -4142,6 +4212,52 @@ type Mutation {
 
   """Delete a scatter plot"""
   deleteScatterPlot(input: DeleteScatterPlotInput!): ID! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """Create a project"""
+  createProject(input: CreateProjectInput!): Project! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """Change a project"""
+  updateProject(input: UpdateProjectInput!): Project! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """Delete a project with its todo lists"""
+  deleteProject(input: ProjectIdInput!): ID! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """Create a todo list in a project"""
+  createTodoList(input: CreateTodoListInput!): TodoList! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """Change a todo list (name, description, assignee)"""
+  updateTodoList(input: UpdateTodoListInput!): TodoList! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """Delete a todo list with its items"""
+  deleteTodoList(input: TodoIdInput!): ID! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """Create a todo item, optionally with the objects it is about"""
+  createTodoItem(input: CreateTodoItemInput!): TodoItem! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """Change a todo item (title, description, assignee)"""
+  updateTodoItem(input: UpdateTodoItemInput!): TodoItem! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """Delete a todo item"""
+  deleteTodoItem(input: TodoIdInput!): ID! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """Move a todo item to a column and a place in it"""
+  moveTodoItem(input: MoveTodoItemInput!): TodoItem! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """Put objects on a todo item; one already on it is left as it is"""
+  attachToTodoItem(input: AttachToTodoItemInput!): TodoItem! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """Take one object off its todo item"""
+  detachFromTodoItem(input: TodoIdInput!): TodoItem! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """
+  Tick or untick one object on a todo item; ticking the last moves the item to Done
+  """
+  setTodoStructureDone(input: SetTodoStructureDoneInput!): TodoItem! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """
+  Move one object on a todo item to To do, Doing or Done; the item's column follows
+  """
+  setTodoStructureStatus(input: SetTodoStructureStatusInput!): TodoItem! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
 
   """Delete a graph from the graph engine"""
   deleteGraph(input: DeleteGraphInput!): ID! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
@@ -4833,6 +4949,51 @@ interface Plottable {
 }
 
 """
+One piece of work in an organization: the anchor its todo lists hang off
+"""
+type Project @key(fields: "id", resolvable: true) {
+  """Database ID of the project"""
+  id: ID!
+
+  """The name of the project"""
+  name: String!
+
+  """What the project is about"""
+  description: String
+
+  """When the project was made"""
+  createdAt: DateTime!
+
+  """The project's todo lists"""
+  todoLists(filters: TodoListFilter, ordering: [TodoListOrder!]! = [], pagination: OffsetPaginationInput): [TodoList!]!
+}
+
+input ProjectFilter {
+  id: ID
+  AND: ProjectFilter
+  OR: ProjectFilter
+  NOT: ProjectFilter
+  DISTINCT: Boolean
+
+  """Filter by list of IDs"""
+  ids: [ID!]
+
+  """Search the name and description"""
+  search: String
+}
+
+"""Input naming one project"""
+input ProjectIdInput {
+  """The project to act on"""
+  id: ID!
+}
+
+input ProjectOrder @oneOf {
+  name: Ordering
+  createdAt: Ordering
+}
+
+"""
 Whether a view's drawing reflects the log, has never been drawn, or is mid-replay
 """
 enum ProjectionStatus {
@@ -5286,6 +5447,26 @@ type Query {
 
   """Show a single saved scatter plot by ID"""
   scatterPlot(id: ID!): ScatterPlot! @auth(required_scopes: ["kraph_read"])
+
+  """The organization's projects"""
+  projects(filters: ProjectFilter, ordering: [ProjectOrder!]! = [], pagination: OffsetPaginationInput): [Project!]! @auth(required_scopes: ["kraph_read"])
+
+  """One project by ID"""
+  project(id: ID!): Project! @auth(required_scopes: ["kraph_read"])
+
+  """Todo lists; `mine` narrows to the caller's"""
+  todoLists(filters: TodoListFilter, ordering: [TodoListOrder!]! = [], pagination: OffsetPaginationInput): [TodoList!]! @auth(required_scopes: ["kraph_read"])
+
+  """One todo list by ID"""
+  todoList(id: ID!): TodoList! @auth(required_scopes: ["kraph_read"])
+
+  """
+  Todo items across lists; `mine` narrows to those whose effective assignee is the caller, `identifier` + `object` to those that carry an object
+  """
+  todoItems(filters: TodoItemFilter, ordering: [TodoItemOrder!]! = [], pagination: OffsetPaginationInput): [TodoItem!]! @auth(required_scopes: ["kraph_read"])
+
+  """One todo item by ID"""
+  todoItem(id: ID!): TodoItem! @auth(required_scopes: ["kraph_read"])
 
   """Get one claimed individual by ID, as the log has it"""
   instance(id: ID!): Instance! @auth(required_scopes: ["kraph_read"])
@@ -6142,6 +6323,24 @@ input ScatterPlotOrder @oneOf {
   id: Ordering
 }
 
+"""Input for ticking (or unticking) one object on a todo item"""
+input SetTodoStructureDoneInput {
+  """The object on an item (a TodoItemStructure)"""
+  id: ID!
+
+  """Whether it is done"""
+  done: Boolean!
+}
+
+"""Input for moving one object on a todo item to To do, Doing or Done"""
+input SetTodoStructureStatusInput {
+  """The object on an item (a TodoItemStructure)"""
+  id: ID!
+
+  """To do, Doing or Done"""
+  status: TodoStatus!
+}
+
 """Somebody's position on whether a claim still holds"""
 type Standing @key(fields: "id", resolvable: true) {
   """This position's own identity"""
@@ -6882,6 +7081,206 @@ enum TermKind {
   STRUCTURE_RELATION
 }
 
+"""Input naming one todo list, item or item object"""
+input TodoIdInput {
+  """The row to act on"""
+  id: ID!
+}
+
+"""One card on a todo board"""
+type TodoItem @key(fields: "id", resolvable: true) {
+  """Database ID of the item"""
+  id: ID!
+
+  """What is to be done"""
+  title: String!
+
+  """More about what is to be done"""
+  description: String
+
+  """Its place within its column, 0 first"""
+  position: Int!
+
+  """The item's own assignee (a sub); see `effectiveAssignee`"""
+  assignee: ID
+
+  """When the item was made"""
+  createdAt: DateTime!
+
+  """When the item last changed"""
+  updatedAt: DateTime!
+
+  """The list the item is on"""
+  list: TodoList!
+
+  """The objects the item is about"""
+  structures: [TodoItemStructure!]!
+
+  """The board column the item is in"""
+  status: TodoStatus!
+
+  """Who the item is for: its own assignee, else its list's (a sub)"""
+  effectiveAssignee: ID
+}
+
+input TodoItemFilter {
+  id: ID
+  AND: TodoItemFilter
+  OR: TodoItemFilter
+  NOT: TodoItemFilter
+  DISTINCT: Boolean
+
+  """Filter by list of IDs"""
+  ids: [ID!]
+
+  """The items of one list"""
+  list: ID
+
+  """The items of one project"""
+  project: ID
+
+  """Items in any of these columns"""
+  status: [TodoStatus!]
+
+  """
+  Items whose effective assignee (their own, else their list's) is this user (a sub)
+  """
+  assignee: ID
+
+  """Items whose effective assignee is the caller"""
+  mine: Boolean
+
+  """Items that carry this object; pair with `object`"""
+  identifier: String
+
+  """Items that carry this object; pair with `identifier`"""
+  object: ID
+
+  """Search the title and description"""
+  search: String
+}
+
+input TodoItemOrder @oneOf {
+  position: Ordering
+  createdAt: Ordering
+  updatedAt: Ordering
+}
+
+"""An object a todo item is about, with its own To do / Doing / Done"""
+type TodoItemStructure @key(fields: "id", resolvable: true) {
+  """Database ID of this object on the item"""
+  id: ID!
+
+  """The object's structure identifier, e.g. @mikro/image"""
+  identifier: String!
+
+  """The object's id within its structure"""
+  object: ID!
+
+  """When somebody started on it"""
+  startedAt: DateTime
+
+  """The sub of who started on it"""
+  startedBy: ID
+
+  """Whether this object has been dealt with"""
+  done: Boolean!
+
+  """When it was ticked"""
+  doneAt: DateTime
+
+  """The sub of who ticked it"""
+  doneBy: ID
+
+  """Its place on the item"""
+  position: Int!
+
+  """The item it is on"""
+  item: TodoItem!
+
+  """How far along this object is: To do, Doing or Done"""
+  status: TodoStatus!
+}
+
+"""A list of things to do, usually handed to one person"""
+type TodoList @key(fields: "id", resolvable: true) {
+  """Database ID of the list"""
+  id: ID!
+
+  """The name of the list"""
+  name: String!
+
+  """What the list is for"""
+  description: String
+
+  """The sub of the user the list is assigned to"""
+  assignee: ID
+
+  """When the list was made"""
+  createdAt: DateTime!
+
+  """The project the list belongs to"""
+  project: Project!
+
+  """The list's items"""
+  items(filters: TodoItemFilter, ordering: [TodoItemOrder!]! = [], pagination: OffsetPaginationInput): [TodoItem!]!
+
+  """Items done, out of all items on the list"""
+  progress: TodoProgress!
+}
+
+input TodoListFilter {
+  id: ID
+  AND: TodoListFilter
+  OR: TodoListFilter
+  NOT: TodoListFilter
+  DISTINCT: Boolean
+
+  """Filter by list of IDs"""
+  ids: [ID!]
+
+  """The lists of one project"""
+  project: ID
+
+  """
+  Lists assigned to this user (a sub), or holding an item assigned to them
+  """
+  assignee: ID
+
+  """Lists assigned to the caller, or holding an item assigned to them"""
+  mine: Boolean
+
+  """Search the name and description"""
+  search: String
+}
+
+input TodoListOrder @oneOf {
+  name: Ordering
+  createdAt: Ordering
+}
+
+"""How far along something is: done out of total"""
+type TodoProgress {
+  done: Int!
+  total: Int!
+}
+
+"""The board column a todo item is in"""
+enum TodoStatus {
+  TODO
+  DOING
+  DONE
+}
+
+"""An object to put on a todo item, named the way a comment names one"""
+input TodoStructureInput {
+  """The object's structure identifier, e.g. @mikro/image"""
+  identifier: String!
+
+  """The object's id within its structure"""
+  object: ID!
+}
+
 """Pagination options for a node's drawn edges and neighbours"""
 input TraversalPaginationInput {
   """Number of items to skip"""
@@ -7109,6 +7508,18 @@ input UpdateNaturalEventCategoryInput {
   clearDefinition: Boolean! = false
 }
 
+"""Input for changing a project"""
+input UpdateProjectInput {
+  """The project to change"""
+  id: ID!
+
+  """Its new name"""
+  name: String!
+
+  """Its new description"""
+  description: String = null
+}
+
 """
 Input for updating an existing protocol event definition in the graph schema
 """
@@ -7331,6 +7742,36 @@ input UpdateTermInput {
   hidden: Boolean = null
 }
 
+"""Input for changing a todo item. Every field is replaced."""
+input UpdateTodoItemInput {
+  """The item to change"""
+  id: ID!
+
+  """Its new title"""
+  title: String!
+
+  """Its new description"""
+  description: String = null
+
+  """Its own assignee (a sub); the list's when not given"""
+  assignee: ID = null
+}
+
+"""Input for changing a todo list. Every field is replaced."""
+input UpdateTodoListInput {
+  """The list to change"""
+  id: ID!
+
+  """Its new name"""
+  name: String!
+
+  """Its new description"""
+  description: String = null
+
+  """Its new assignee (a sub); unassigned when not given"""
+  assignee: ID = null
+}
+
 enum ValueKind {
   INT
   FLOAT
@@ -7404,7 +7845,7 @@ enum WhereOperator {
 
 scalar _Any
 
-union _Entity = Assertion | Comment | EntityCategory | Graph | GraphTableQuery | Instance | Link | MeasurementCategory | MediaStore | MetricKind | NaturalEventCategory | ProtocolEventCategory | RelationCategory | ScatterPlot | Standing | StructureKind | StructureRelationCategory | Term
+union _Entity = Assertion | Comment | EntityCategory | Graph | GraphTableQuery | Instance | Link | MeasurementCategory | MediaStore | MetricKind | NaturalEventCategory | Project | ProtocolEventCategory | RelationCategory | ScatterPlot | Standing | StructureKind | StructureRelationCategory | Term | TodoItem | TodoItemStructure | TodoList
 
 type _Service {
   sdl: String!

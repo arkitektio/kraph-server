@@ -74,6 +74,10 @@ INSTALLED_APPS = [
     "core",
     "graph_engine",
     "evidence",
+    # Projects: the organization's anchor for a piece of work (C7). See `projects/models.py`.
+    "projects",
+    # Todo lists: product state (C7), never evidence. See `todos/models.py`.
+    "todos",
     # A reader's cursors in other services' change feeds (mikro's metrics: `evidence.ingest`).
     "arkitekt_service.feed",
     "health_check",  # required for health checks

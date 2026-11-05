@@ -434,3 +434,47 @@ async def create_structure(api_schema: kante.Schema, ctx: HttpContext, *, identi
 
     payload = {"identifier": identifier, "object": object or f"roi_{uuid.uuid4().hex[:8]}", "metrics": list(metrics or [])}
     return (await _mutate(api_schema, ctx, ASSERT_STRUCTURE, "assertStructureExists", payload))["structure"]["id"]
+
+
+# Todo lists (product state, `todos/`).
+CREATE_PROJECT = """
+    mutation CreateProject($input: CreateProjectInput!) {
+        createProject(input: $input) { id name }
+    }
+"""
+
+CREATE_TODO_LIST = """
+    mutation CreateTodoList($input: CreateTodoListInput!) {
+        createTodoList(input: $input) { id name assignee }
+    }
+"""
+
+CREATE_TODO_ITEM = """
+    mutation CreateTodoItem($input: CreateTodoItemInput!) {
+        createTodoItem(input: $input) { id status position effectiveAssignee structures { id identifier object done } }
+    }
+"""
+
+MOVE_TODO_ITEM = """
+    mutation MoveTodoItem($input: MoveTodoItemInput!) {
+        moveTodoItem(input: $input) { id status position }
+    }
+"""
+
+ATTACH_TO_TODO_ITEM = """
+    mutation AttachToTodoItem($input: AttachToTodoItemInput!) {
+        attachToTodoItem(input: $input) { id status structures { id identifier object done } }
+    }
+"""
+
+SET_TODO_STRUCTURE_STATUS = """
+    mutation SetTodoStructureStatus($input: SetTodoStructureStatusInput!) {
+        setTodoStructureStatus(input: $input) { id status structures { id status done doneBy startedBy } }
+    }
+"""
+
+SET_TODO_STRUCTURE_DONE = """
+    mutation SetTodoStructureDone($input: SetTodoStructureDoneInput!) {
+        setTodoStructureDone(input: $input) { id status structures { id done doneBy } }
+    }
+"""

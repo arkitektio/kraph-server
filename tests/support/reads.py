@@ -159,3 +159,35 @@ def retrieved_node(properties: dict[str, Any]) -> Any:
 async def property_of(api_schema: Any, ctx: Any, graph: Any, ref: str, key: str) -> Any:
     """One derived property a view draws for an individual — None when it draws none."""
     return (await node_properties(api_schema, ctx, graph, ref)).get(key)
+
+
+# Todo lists (product state, `todos/`).
+TODO_ITEMS = """
+    query TodoItems($filters: TodoItemFilter) {
+        todoItems(filters: $filters, ordering: [{position: ASC}]) { id title status position effectiveAssignee }
+    }
+"""
+
+PROJECTS = "query Projects { projects { id name } }"
+
+# Shaped like orkestrator's `graphql/kraph/fragments/todo.graphql`: the board, a project, an item.
+TODO_LIST_BOARD = """
+    query TodoList($id: ID!) {
+        todoList(id: $id) {
+            id name assignee progress { done total } project { id name }
+            items(ordering: [{position: ASC}]) { id title status position assignee effectiveAssignee structures { id identifier object done doneBy } }
+        }
+    }
+"""
+
+PROJECT_TODO_LISTS = """
+    query Project($id: ID!) {
+        project(id: $id) { id name todoLists { id name assignee progress { done total } } }
+    }
+"""
+
+TODO_ITEM_WITH_LIST = """
+    query TodoItem($id: ID!) {
+        todoItem(id: $id) { id title effectiveAssignee structures { id done } list { id name project { id name } } }
+    }
+"""

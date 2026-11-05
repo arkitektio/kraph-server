@@ -16,7 +16,7 @@ from kraph_server.configuration import Settings
 SCOPES = [
     Scope(key="kraph_read", description="Browse the knowledge graph and run graph queries and views."),
     Scope(key="kraph_assert", description="Record facts in the knowledge graph (entities, structures, metrics, measurements, relations, events, comments) and retract or supersede them."),
-    Scope(key="kraph_insights", description="Create and change graphs, table queries and plots."),
+    Scope(key="kraph_insights", description="Create and change graphs, table queries, plots and todo lists."),
     Scope(key="kraph_schema", description="Change the graph's vocabulary: entity, structure, metric, relation and event categories and terms."),
     Scope(key="kraph_all", description="Do everything in Kraph on your behalf.", is_all_scope=True),
 ]

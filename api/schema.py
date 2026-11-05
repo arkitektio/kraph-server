@@ -30,6 +30,10 @@ from authentikate.catch_alls import declare_catch_alls
 from authentikate.strawberry.directives import AuthExtension
 from graph_engine import scalars
 from kraph_server.contract import CURATOR, EDITOR, contract
+from projects import resolvers as project_resolvers
+from projects import types as project_types
+from todos import resolvers as todo_resolvers
+from todos import types as todo_types
 
 
 def field(resolver: Callable[..., object] | None = None, *, scope: str = "kraph_read", **kwargs):  # noqa: ANN003, ANN201
@@ -177,6 +181,15 @@ class Query:
 
     scatter_plots: list[types.ScatterPlot] = field(description="Show all saved scatter plots")
     scatter_plot: types.ScatterPlot = field(description="Show a single saved scatter plot by ID")
+
+    # Projects: the organization's anchor for a piece of work, see `projects/models.py`.
+    projects: list[project_types.Project] = field(description="The organization's projects")
+    project: project_types.Project = field(description="One project by ID")
+    # Todo lists: product state, see `todos/models.py`.
+    todo_lists: list[todo_types.TodoList] = field(description="Todo lists; `mine` narrows to the caller's")
+    todo_list: todo_types.TodoList = field(description="One todo list by ID")
+    todo_items: list[todo_types.TodoItem] = field(description="Todo items across lists; `mine` narrows to those whose effective assignee is the caller, `identifier` + `object` to those that carry an object")
+    todo_item: todo_types.TodoItem = field(description="One todo item by ID")
 
 
 def upload_mutation(**kwargs) -> strawberry.mutation:  # noqa: ANN003
@@ -447,6 +460,78 @@ class Mutation:
         scope="kraph_insights",
         description="Delete a scatter plot",
         resolver=mutations.delete_scatter_plot,
+    )
+
+    # Projects and todo lists: product state, see `projects/models.py` and `todos/models.py`. Any member may change them.
+    create_project = mutation(
+        scope="kraph_insights",
+        description="Create a project",
+        resolver=project_resolvers.create_project,
+    )
+    update_project = mutation(
+        scope="kraph_insights",
+        description="Change a project",
+        resolver=project_resolvers.update_project,
+    )
+    delete_project = mutation(
+        scope="kraph_insights",
+        description="Delete a project with its todo lists",
+        resolver=project_resolvers.delete_project,
+    )
+    create_todo_list = mutation(
+        scope="kraph_insights",
+        description="Create a todo list in a project",
+        resolver=todo_resolvers.create_todo_list,
+    )
+    update_todo_list = mutation(
+        scope="kraph_insights",
+        description="Change a todo list (name, description, assignee)",
+        resolver=todo_resolvers.update_todo_list,
+    )
+    delete_todo_list = mutation(
+        scope="kraph_insights",
+        description="Delete a todo list with its items",
+        resolver=todo_resolvers.delete_todo_list,
+    )
+    create_todo_item = mutation(
+        scope="kraph_insights",
+        description="Create a todo item, optionally with the objects it is about",
+        resolver=todo_resolvers.create_todo_item,
+    )
+    update_todo_item = mutation(
+        scope="kraph_insights",
+        description="Change a todo item (title, description, assignee)",
+        resolver=todo_resolvers.update_todo_item,
+    )
+    delete_todo_item = mutation(
+        scope="kraph_insights",
+        description="Delete a todo item",
+        resolver=todo_resolvers.delete_todo_item,
+    )
+    move_todo_item = mutation(
+        scope="kraph_insights",
+        description="Move a todo item to a column and a place in it",
+        resolver=todo_resolvers.move_todo_item,
+    )
+    attach_to_todo_item = mutation(
+        scope="kraph_insights",
+        description="Put objects on a todo item; one already on it is left as it is",
+        resolver=todo_resolvers.attach_to_todo_item,
+    )
+    detach_from_todo_item = mutation(
+        scope="kraph_insights",
+        description="Take one object off its todo item",
+        resolver=todo_resolvers.detach_from_todo_item,
+    )
+    set_todo_structure_done = mutation(
+        scope="kraph_insights",
+        description="Tick or untick one object on a todo item; ticking the last moves the item to Done",
+        resolver=todo_resolvers.set_todo_structure_done,
+    )
+    set_todo_structure_status = mutation(
+        scope="kraph_insights",
+        description="Move one object on a todo item to To do, Doing or Done; the item's column follows",
+        resolver=todo_resolvers.set_todo_structure_status,
     )
 
     delete_graph = mutation(
