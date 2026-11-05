@@ -22,10 +22,13 @@ from health_check.views import MainView
 from django.views.decorators.csrf import csrf_exempt
 
 from kraph_server.hook_agent import agent as hook_agent
+from kraph_server.service import service as rekuest_service
 
 urlpatterns = [
     dynamicpath("admin/", admin.site.urls),
     dynamicpath("ht", csrf_exempt(MainView.as_view()), name="health_check"),
+    # What this service hosts and emits (the todo structures), read by the hub's rekuest (internal network only).
+    *rekuest_service.urls,
     # The hook agent: the hub's rekuest POSTs it Assigns (internal network only).
     *hook_agent.urls,
 ]

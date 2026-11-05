@@ -1,5 +1,6 @@
 """What a client sends to change a todo list: pydantic models, and the GraphQL inputs over them."""
 
+from datetime import datetime
 from enum import Enum
 from typing import List, Optional
 
@@ -37,6 +38,7 @@ class CreateTodoListInputModel(_Strict):
     name: str = Field(description="The name of the list")
     description: Optional[str] = Field(default=None, description="What the list is for")
     assignee: Optional[str] = Field(default=None, description="The sub of the user the list is assigned to")
+    due_at: Optional[datetime] = Field(default=None, description="When the list is due; its items without a date of their own follow it")
 
 
 @pydantic.input(CreateTodoListInputModel, description="Input for creating a todo list")
@@ -45,6 +47,7 @@ class CreateTodoListInput:
     name: str
     description: Optional[str] = None
     assignee: Optional[strawberry.ID] = None
+    due_at: Optional[datetime] = None
 
 
 class UpdateTodoListInputModel(_Strict):
@@ -69,6 +72,7 @@ class CreateTodoItemInputModel(_Strict):
     assignee: Optional[str] = Field(default=None, description="The sub of the user the item is assigned to; the list's assignee when not given")
     status: Optional[TodoStatus] = Field(default=None, description="The column it starts in; To do when not given")
     structures: Optional[List[TodoStructureInputModel]] = Field(default=None, description="The objects it is about")
+    due_at: Optional[datetime] = Field(default=None, description="When it is due; the list's due date when not given")
 
 
 @pydantic.input(CreateTodoItemInputModel, description="Input for creating a todo item")
@@ -79,6 +83,7 @@ class CreateTodoItemInput:
     assignee: Optional[strawberry.ID] = None
     status: Optional[TodoStatus] = None
     structures: Optional[List[TodoStructureInput]] = None
+    due_at: Optional[datetime] = None
 
 
 class UpdateTodoItemInputModel(_Strict):
@@ -100,13 +105,15 @@ class MoveTodoItemInputModel(_Strict):
     id: int = Field(description="The item to move")
     status: TodoStatus = Field(description="The column to move it to")
     index: int = Field(default=0, ge=0, description="Its place in that column once moved, 0 first; past the end puts it last")
+    list: Optional[int] = Field(default=None, description="Another list (of the same organization) to move it to; its own when not given")
 
 
-@pydantic.input(MoveTodoItemInputModel, description="Input for moving a todo item on its board")
+@pydantic.input(MoveTodoItemInputModel, description="Input for moving a todo item on its board, or onto another list")
 class MoveTodoItemInput:
     id: strawberry.ID
     status: TodoStatus
     index: int = 0
+    list: Optional[strawberry.ID] = None
 
 
 class AttachToTodoItemInputModel(_Strict):
@@ -140,6 +147,39 @@ class SetTodoStructureStatusInputModel(_Strict):
 class SetTodoStructureStatusInput:
     id: strawberry.ID
     status: TodoStatus
+
+
+class SetTodoStructuresStatusInputModel(_Strict):
+    ids: List[int] = Field(min_length=1, max_length=1000, description="The objects on items (TodoItemStructures)")
+    status: TodoStatus = Field(description="To do, Doing or Done, for all of them")
+
+
+@pydantic.input(SetTodoStructuresStatusInputModel, description="Input for moving several objects on todo items to one status at once")
+class SetTodoStructuresStatusInput:
+    ids: List[strawberry.ID]
+    status: TodoStatus
+
+
+class AssignTodoInputModel(_Strict):
+    id: int = Field(description="The list or item to assign")
+    assignee: Optional[str] = Field(default=None, description="Who it is for (a sub); nobody when not given (an item then falls back to its list's)")
+
+
+@pydantic.input(AssignTodoInputModel, description="Input for changing only who a todo list or item is for")
+class AssignTodoInput:
+    id: strawberry.ID
+    assignee: Optional[strawberry.ID] = None
+
+
+class ScheduleTodoInputModel(_Strict):
+    id: int = Field(description="The list or item to schedule")
+    due_at: Optional[datetime] = Field(default=None, description="When it is due; no date when not given (an item then follows its list's)")
+
+
+@pydantic.input(ScheduleTodoInputModel, description="Input for changing only when a todo list or item is due")
+class ScheduleTodoInput:
+    id: strawberry.ID
+    due_at: Optional[datetime] = None
 
 
 class TodoIdInputModel(_Strict):

@@ -478,3 +478,39 @@ SET_TODO_STRUCTURE_DONE = """
         setTodoStructureDone(input: $input) { id status structures { id done doneBy } }
     }
 """
+
+SET_TODO_STRUCTURES_STATUS = """
+    mutation SetTodoStructuresStatus($input: SetTodoStructuresStatusInput!) {
+        setTodoStructuresStatus(input: $input) { id status progress { done total } structures { id status done } }
+    }
+"""
+
+ASSIGN_TODO_ITEM = """
+    mutation AssignTodoItem($input: AssignTodoInput!) {
+        assignTodoItem(input: $input) { id title assignee effectiveAssignee }
+    }
+"""
+
+ASSIGN_TODO_LIST = """
+    mutation AssignTodoList($input: AssignTodoInput!) {
+        assignTodoList(input: $input) { id name assignee }
+    }
+"""
+
+DELETE_TODO_ITEM = """
+    mutation DeleteTodoItem($id: ID!) {
+        deleteTodoItem(input: { id: $id })
+    }
+"""
+
+SCHEDULE_TODO_ITEM = """
+    mutation ScheduleTodoItem($input: ScheduleTodoInput!) {
+        scheduleTodoItem(input: $input) { id title dueAt effectiveDueAt }
+    }
+"""
+
+SCHEDULE_TODO_LIST = """
+    mutation ScheduleTodoList($input: ScheduleTodoInput!) {
+        scheduleTodoList(input: $input) { id dueAt }
+    }
+"""

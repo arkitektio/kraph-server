@@ -7,7 +7,7 @@ the same commit, and no installer has to learn of it.
 
 from __future__ import annotations
 
-from arkitekt_service.contract import JSON, Contract, Description, Facts, Job, Needs, Offers, Role, Scope, Start, blocks
+from arkitekt_service.contract import JSON, Contract, Description, Descriptor, Facts, Hosts, Job, Needs, Offers, Role, Scope, Signal, Start, Structure, blocks
 
 from kraph_server.configuration import Settings
 
@@ -57,6 +57,61 @@ def render(facts: Facts) -> dict[str, JSON]:
     return document
 
 
+#: What a todo item says about itself, for a trigger to test: "an item of this project finished".
+TODO_ITEM_DESCRIPTORS = [
+    Descriptor(key="@kraph/status", type="STRING", description="Its board column: TODO, DOING or DONE"),
+    Descriptor(key="@kraph/done", type="INT", description="How many of its objects are done"),
+    Descriptor(key="@kraph/total", type="INT", description="How many objects it is about"),
+    Descriptor(key="@kraph/list", type="STRING", description="The id of the todo list it is on"),
+    Descriptor(key="@kraph/project", type="STRING", description="The id of the project its list belongs to"),
+    Descriptor(key="@kraph/assignee", type="STRING", description="Who it is for (a sub): its own assignee, else its list's"),
+]
+
+#: What one object on an item says, for a trigger to test: "an image of this item is done".
+TODO_OBJECT_DESCRIPTORS = [
+    Descriptor(key="@kraph/identifier", type="STRING", description="The structure identifier of the object, e.g. @mikro/arraydataset"),
+    Descriptor(key="@kraph/object", type="STRING", description="The object's id within its structure"),
+    Descriptor(key="@kraph/status", type="STRING", description="How far along this object is: TODO, DOING or DONE"),
+    Descriptor(key="@kraph/done_by", type="STRING", description="Who ticked it (a sub), once it is done"),
+    Descriptor(key="@kraph/item", type="STRING", description="The id of the todo item it is on"),
+    Descriptor(key="@kraph/list", type="STRING", description="The id of the todo list its item is on"),
+    Descriptor(key="@kraph/project", type="STRING", description="The id of the project its list belongs to"),
+]
+
+#: What exists on a hub because kraph is there, said as data so the hub knows it from the image.
+#: ``kraph_server/service.py`` binds each to its model. Todos are product state, not evidence.
+HOSTS = Hosts(
+    structures=[
+        Structure(
+            identifier="@kraph/todoitem",
+            label="Todo Item",
+            description="One card on a todo board: something somebody is asked to do over a set of objects (annotate these images), with a column (To do, Doing, Done) and the objects ticked off one by one.",
+            descriptors=TODO_ITEM_DESCRIPTORS,
+        ),
+        Structure(
+            identifier="@kraph/todoitemstructure",
+            label="Todo Object",
+            description="One object a todo item is about (an image to annotate), with its own To do / Doing / Done.",
+            descriptors=TODO_OBJECT_DESCRIPTORS,
+        ),
+    ],
+    signals=[
+        Signal(
+            identifier="@kraph/todoitem",
+            kinds=["CREATED", "UPDATED", "DELETED"],
+            descriptors=[d.key for d in TODO_ITEM_DESCRIPTORS],
+            description="A todo item was made, changed (moved, reassigned, an object ticked) or deleted, with its column and how many of its objects are done: e.g. run an analysis once an item is Done.",
+        ),
+        Signal(
+            identifier="@kraph/todoitemstructure",
+            kinds=["CREATED", "UPDATED", "DELETED"],
+            descriptors=[d.key for d in TODO_OBJECT_DESCRIPTORS],
+            description="An object was put on a todo item, moved to To do / Doing / Done, or taken off: e.g. segment an image as soon as it is marked done.",
+        ),
+    ],
+)
+
+
 contract = Contract(
     description=Description(
         name="kraph",
@@ -66,7 +121,8 @@ contract = Contract(
         needs=Needs(scopes=SCOPES, roles=ROLES, storage=["media", "zarr", "bigfile"], instance_key=True, peers=["rekuest", "mikro"]),
         # `rekuest_hook`: the hook agent (`kraph_server.hook_agent`), whose `ingest_metrics` a
         # trigger on mikro's metrics and a schedule run (internal network only).
-        offers=Offers(endpoints={"rekuest_hook": "_rekuest/hook"}),
+        offers=Offers(endpoints={"rekuest_hook": "_rekuest/hook", "rekuest_service": "_rekuest/service"}),
+        hosts=HOSTS,
         # rekuest 8 registers a hook action's ports: without them the wiregram's trigger on
         # @mikro/metric is refused, and its import with it.
         requires={"rekuest": ">=8"},
@@ -79,6 +135,7 @@ contract = Contract(
     debug=Start(("python", "manage.py", "runserver", "0.0.0.0:80")),
     jobs={
         "ensureadmin": Job(("ensureadmin",), "Create the operator account the config names"),
+        "restore_descriptors": Job(("restore_descriptors",), "Store the descriptors of every todo row that misses one its structure declares (--all: of every row)"),
         "reproject": Job(("reproject",), "Rebuild a graph's projection from the evidence, or converge what is owed: --graph, --all, --incremental"),
         "rematerialize": Job(("rematerialize",), "Redraw the vertices of categories whose rules moved on without them: --graph, --stale"),
         "refresh_namespaces": Job(("refresh_namespaces",), "Rebuild graphs' queryable namespaces from their categories: --graph, --all"),
@@ -88,5 +145,6 @@ contract = Contract(
         "list_legacy_queries": Job(("list_legacy_queries",), "Name the saved queries that still store raw Cypher instead of a plan"),
         "redact": Job(("redact",), "Destroy evidence on purpose, logged: what no mutation can do"),
     },
-    setup=("ensureadmin",),
+    # `restore_descriptors`: todo rows from before a descriptor key existed are given it, announcing nothing.
+    setup=("ensureadmin", "restore_descriptors"),
 )

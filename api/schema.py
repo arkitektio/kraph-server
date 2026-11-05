@@ -190,6 +190,13 @@ class Query:
     todo_list: todo_types.TodoList = field(description="One todo list by ID")
     todo_items: list[todo_types.TodoItem] = field(description="Todo items across lists; `mine` narrows to those whose effective assignee is the caller, `identifier` + `object` to those that carry an object")
     todo_item: todo_types.TodoItem = field(description="One todo item by ID")
+    todo_item_structures: list[todo_types.TodoItemStructure] = field(
+        description="Objects on todo items, one row per (item, object). `identifier` + `object` is an object's own todo track: its row on every item it is on, without the item's other objects"
+    )
+    todo_summary: todo_types.TodoSummary = field(
+        todo_resolvers.todo_summary,
+        description="The todo items `filters` selects (as in `todoItems`), counted by column, with their objects done out of total",
+    )
 
 
 def upload_mutation(**kwargs) -> strawberry.mutation:  # noqa: ANN003
@@ -532,6 +539,31 @@ class Mutation:
         scope="kraph_insights",
         description="Move one object on a todo item to To do, Doing or Done; the item's column follows",
         resolver=todo_resolvers.set_todo_structure_status,
+    )
+    set_todo_structures_status = mutation(
+        scope="kraph_insights",
+        description="Move several objects on todo items to one status at once; each item's column follows. Returns the touched items",
+        resolver=todo_resolvers.set_todo_structures_status,
+    )
+    assign_todo_item = mutation(
+        scope="kraph_insights",
+        description="Change only who a todo item is for; nobody means its list's assignee again",
+        resolver=todo_resolvers.assign_todo_item,
+    )
+    schedule_todo_item = mutation(
+        scope="kraph_insights",
+        description="Change only when a todo item is due; no date means its list's again",
+        resolver=todo_resolvers.schedule_todo_item,
+    )
+    schedule_todo_list = mutation(
+        scope="kraph_insights",
+        description="Change only when a todo list is due",
+        resolver=todo_resolvers.schedule_todo_list,
+    )
+    assign_todo_list = mutation(
+        scope="kraph_insights",
+        description="Change only who a todo list is for",
+        resolver=todo_resolvers.assign_todo_list,
     )
 
     delete_graph = mutation(

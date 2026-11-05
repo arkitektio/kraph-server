@@ -191,3 +191,29 @@ TODO_ITEM_WITH_LIST = """
         todoItem(id: $id) { id title effectiveAssignee structures { id done } list { id name project { id name } } }
     }
 """
+
+TODO_LISTS_PROGRESS = """
+    query TodoLists { todoLists { id progress { done total } } }
+"""
+
+# Shaped like orkestrator's `TodoTrack`: an object's own row on every item it is on.
+TODO_TRACK = """
+    query TodoTrack($identifier: String!, $object: ID!) {
+        todoItemStructures(filters: { identifier: $identifier, object: $object }) {
+            id identifier object status
+            item { id title status effectiveAssignee progress { done total } list { id name project { id name } } }
+        }
+    }
+"""
+
+TODO_SUMMARY = """
+    query TodoSummary($filters: TodoItemFilter) {
+        todoSummary(filters: $filters) { todo doing done total objects { done total } }
+    }
+"""
+
+TODO_SUMMARY_OVERDUE = """
+    query TodoSummary($filters: TodoItemFilter) {
+        todoSummary(filters: $filters) { total overdue }
+    }
+"""

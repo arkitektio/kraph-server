@@ -98,6 +98,9 @@ DATALAYER = conf.datalayer.model_dump(exclude_none=True) if conf.datalayer else 
 
 # The hook agent (``kraph_server.hook_agent``): where rekuest is, and this instance's key and the
 # hub trust bundle (``arkitekt_service.trust``) it signs and verifies with -- no shared secrets.
+# The service side (`kraph_server.service`: todo structures and their signals) reaches the same
+# rekuest as the hook agent, under the same name.
+REKUEST_SERVICE = {"REKUEST_URL": conf.rekuest_hook.rekuest_url, "SERVICE": conf.rekuest_hook.agent, "MAX_SKEW": conf.rekuest_hook.max_skew} if conf.rekuest_hook else None
 REKUEST_HOOK = {"REKUEST_URL": conf.rekuest_hook.rekuest_url, "AGENT": conf.rekuest_hook.agent, "MAX_SKEW": conf.rekuest_hook.max_skew} if conf.rekuest_hook else None
 INSTANCE = {"PRIVATE_KEY": conf.instance.private_key, "TRUST_JWKS_URI": conf.instance.trust.jwks_uri, "TRUST_JWKS": conf.instance.trust.jwks} if conf.instance else None
 # mikro's change feed of metrics: where it is and whom to address.
