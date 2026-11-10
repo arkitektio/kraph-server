@@ -5,6 +5,7 @@
 server on a local port standing in for rekuest's intake, signed with kraph's instance key.
 """
 
+import asyncio
 import json
 import threading
 import time
@@ -128,7 +129,7 @@ async def test_a_bulk_tick_signals_every_object(api_schema, api_context, intake)
 async def test_a_refused_write_signals_nothing(api_schema, api_context, intake, other_organization: Organization) -> None:
     item = await _item(api_schema, api_context, structures=IMAGES[:1])
     intake.until(lambda: intake.bodies("@kraph/todoitem", "CREATED"))
-    time.sleep(0.3)
+    await asyncio.sleep(0.3)
     before = len(intake.received)
 
     @sync_to_async
@@ -140,7 +141,7 @@ async def test_a_refused_write_signals_nothing(api_schema, api_context, intake, 
         return todo_models.TodoItemStructure.objects.create(item=foreign, identifier="@mikro/arraydataset", object="9").pk
 
     foreign = await foreign_row()
-    time.sleep(0.5)
+    await asyncio.sleep(0.5)
     before = len(intake.received)  # the foreign setup's own signals are not what this is about
     result = await api_schema.execute(
         writes.SET_TODO_STRUCTURES_STATUS,
@@ -148,7 +149,7 @@ async def test_a_refused_write_signals_nothing(api_schema, api_context, intake, 
         context_value=api_context,
     )
     assert result.errors
-    time.sleep(1)
+    await asyncio.sleep(1)
     assert len(intake.received) == before
 
 
@@ -157,12 +158,12 @@ async def test_touching_a_finished_item_does_not_tell_its_triggers_again(api_sch
     item = await _item(api_schema, api_context, structures=IMAGES[:1])
     await _run(api_schema, api_context, writes.SET_TODO_STRUCTURE_STATUS, input={"id": item["structures"][0]["id"], "status": "DONE"})
     intake.until(lambda: any(b["descriptors"]["@kraph/status"] == "DONE" for b in intake.bodies("@kraph/todoitem", "UPDATED")))
-    time.sleep(0.5)
+    await asyncio.sleep(0.5)
     finished = len(intake.bodies("@kraph/todoitem", "UPDATED"))
 
     await _run(api_schema, api_context, writes.MOVE_TODO_ITEM, input={"id": item["id"], "status": "DONE", "index": 0})
     await _run(api_schema, api_context, writes.SCHEDULE_TODO_ITEM, input={"id": item["id"], "dueAt": "2030-01-01T00:00:00+00:00"})
-    time.sleep(1)
+    await asyncio.sleep(1)
     assert len(intake.bodies("@kraph/todoitem", "UPDATED")) == finished
 
     # Reopened: that is news.

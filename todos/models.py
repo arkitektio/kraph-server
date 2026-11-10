@@ -13,7 +13,6 @@ and a sub needs no user row to be named.
 """
 
 from arkitekt_service.service.described import Described
-from authentikate.models import Organization
 from django.contrib.auth import get_user_model
 from django.contrib.postgres.indexes import GinIndex
 from django.db import models
