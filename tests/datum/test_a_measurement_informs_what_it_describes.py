@@ -201,6 +201,7 @@ def edge_schema() -> models.GraphDefinitionInput:
                     ],
                 )
             ],
+            structures=[models.StructureDefinitionInput(key="Region", identifier="ROI")],
             structure_relations=[
                 models.StructureRelationDefinitionInput(
                     key="CONTAINS",

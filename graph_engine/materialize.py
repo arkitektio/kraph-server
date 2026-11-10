@@ -323,6 +323,13 @@ def _materialize_categories(graph, definition: GraphDefinitionInput, user) -> No
     the mutation path dropped. Two creators for one row is two answers to what the
     row is.
     """
+    # Mounts first: a structure relation's ends must name identifiers the view mounts.
+    for structure_def in definition.extensions.structures:
+        models.StructureCategory.objects.create_from_structure_definition(
+            graph=graph,
+            definition=structure_def,
+        )
+
     for entity_def in definition.extensions.entities:
         models.EntityCategory.objects.create_from_entity_definition(
             graph=graph,

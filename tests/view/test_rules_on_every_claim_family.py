@@ -52,6 +52,8 @@ def _schema(*, entities=(), relations=(), events=(), structure_relations=(), mea
             entities=list(entities),
             relations=list(relations),
             events=list(events),
+            # Structure relations name ROI on both ends, so the view mounts it (RFC 0027).
+            structures=[models.StructureDefinitionInput(key="Region", identifier="ROI")] if structure_relations else [],
             structure_relations=list(structure_relations),
             measurements=list(measurements),
         ),

@@ -181,7 +181,7 @@ authentikate:
 
 S3 storage connection and bucket bindings (the datalayer module; replaces the old
 top-level `s3` block). This block is **required** for kraph, and `access_key`,
-`secret_key`, and the `media` bucket must be set.
+`secret_key`, and the `media` and `bigfile` buckets must be set.
 
 | Key | Env var | Type | Default | Description |
 |---|---|---|---|---|
@@ -194,7 +194,7 @@ top-level `s3` block). This block is **required** for kraph, and `access_key`,
 | `media` | — (use YAML) | object | **required** | Bucket for media / general file storage, `{ bucket: <name> }`. |
 | `zarr` | — (use YAML) | object | `null` | Bucket for Zarr arrays, `{ bucket: <name> }`. |
 | `parquet` | — (use YAML) | object | `null` | Bucket for Parquet tables, `{ bucket: <name> }`. |
-| `bigfile` | — (use YAML) | object | `null` | Bucket for large binary files, `{ bucket: <name> }`. |
+| `bigfile` | — (use YAML) | object | **required** | Bucket for large binary files (trained models' weights), `{ bucket: <name> }`. |
 
 ### `rekuest_hook` — the hook agent (optional)
 

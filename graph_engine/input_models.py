@@ -372,8 +372,8 @@ class NodePagination(StrictModel):
 
 
 class StructureFilters(StrictModel):
-    # `graph` is read by nothing. A structure belongs to the organization and has
-    # no vertex in any projection, so there is no graph to filter it by;
+    # `graph` is read by nothing. A structure belongs to the organization (a view
+    # draws it only where it mounts its kind, RFC 0027), so there is no graph to filter it by;
     # `controller._apply_structure_filters` never looks at this field. Kept only
     # because removing a field from a `StrictModel` an internal caller may set is
     # a separate change from correcting the API surface, which exposes neither.
@@ -1140,11 +1140,28 @@ class UpdateNodeDefinitionInput(UpdateDefinitionInput):
 
 
 class StructureDefinitionInput(NodeDefinitionInput):
-    """Input for a structure definition within an event."""
+    """A structure kind mounted into a view (RFC 0027): `key` is its vertex label here, `identifier` the kind.
 
-    identifier: scalars.StructureIdentifier = Field(description="Optional schema identifier for this structure (e.g. '@mikro/roi')")
+    The view's counterpart of a service's hosted-structure declaration. Label and description
+    default to the organization's `StructureKind`."""
 
-    pass
+    identifier: scalars.StructureIdentifier = Field(description="The structure identifier mounted (e.g. '@mikro/arraylens')")
+
+
+class CreateStructureCategoryInput(StructureDefinitionInput):
+    """Mount a structure kind into a graph."""
+
+    graph: str = Field(..., description="The graph id the structure kind is mounted into")
+
+
+class UpdateStructureCategoryInput(UpdateNodeDefinitionInput):
+    """Change a mounted structure kind's label, description, colour, image or pin. The identifier it mounts never changes."""
+
+
+class DeleteStructureCategoryInput(StrictModel):
+    """Unmount a structure kind from a graph."""
+
+    id: str = Field(..., description="The ID of the structure category to unmount")
 
 
 class MetricDefinitionInput(NodeDefinitionInput):
@@ -1407,12 +1424,51 @@ class EntityDescriptorInput(StrictModel):
         return True
 
 
+class DescriptorOperator(str, Enum):
+    """How a descriptor constraint compares an object's value with the stated one.
+
+    The operators a rekuest port's `requires` is written in, meaning what
+    `arkitekt_spec.declare.descriptors.holds` and the hosting service's SQL say:
+    `MATCHES` is equality, and a key the object does not carry fails everything but
+    `EXISTS false`.
+    """
+
+    EQUALS = "EQUALS"
+    MATCHES = "MATCHES"
+    NOT_EQUALS = "NOT_EQUALS"
+    GTE = "GTE"
+    LTE = "LTE"
+    EXISTS = "EXISTS"
+    CONTAINS = "CONTAINS"
+    IN = "IN"
+    NOT_IN = "NOT_IN"
+
+
+class DescriptorConstraintInput(StrictModel):
+    """One ``{key, operator, value}`` constraint on an external datum's descriptors.
+
+    The shape a rekuest port states its `requires` in, so a pin written for a
+    relation word reads like the port of the app that will consume it. kraph stores
+    and serves these; it does not evaluate them: the descriptors live with the
+    service that hosts the datum (mikro's `stored_descriptors`), and the client
+    asks that service before asserting a pair.
+    """
+
+    key: str = Field(..., min_length=1, description="The descriptor key, e.g. '@mikro/n_space_axes'")
+    operator: DescriptorOperator = Field(..., description="How the datum's value is compared with `value`. MATCHES is equality, as EQUALS is")
+    value: Any = Field(default=None, description="What is compared against: a number for GTE/LTE, a list for IN/NOT_IN, true or false for EXISTS, the member looked for with CONTAINS")
+
+
 class StructureDescriptorInput(StrictModel):
     """Input for filtering entities when linking to a structure. This only contains relativ fields
     that can be used for filtering, not absolute references like 'id'."""
 
     default_category_key: Optional[str] = Field(default=None, description="Default category to link to if no entities match the filters")
     identifiers: Optional[list[scalars.StructureIdentifier]] = Field(default=None, description="Structure identifiers to filter by (e.g. '@mikro/roi')")
+    requires: Optional[list[DescriptorConstraintInput]] = Field(
+        default=None,
+        description="Descriptor constraints this end of the relation pins (e.g. '@mikro/n_space_axes' EQUALS 3): what a datum must be for a claim under this word to make sense here. Stored and served; checked by the client against the datum's own service before it asserts a pair",
+    )
 
     def matches(self, entity: StructureCategoryProtocol) -> bool:
         """Whether a structure kind matches this descriptor."""
@@ -1592,6 +1648,42 @@ class UpdateGraphTableQueryInput(StrictModel):
     description: Optional[str] = Field(default=None, description="Description of this query")
     plan: Optional[TableQueryPlanInput] = Field(default=None, description="A new plan; omitted means unchanged")
     column_input: Optional[List[ColumnInput]] = Field(default=None, description="Definitions for the columns returned by this graph query")
+
+
+class PairEndInput(StrictModel):
+    """Which matched node is one end of a pair: a node of one path."""
+
+    path: str = Field(..., description="The path the node is matched in: its `title`, or `path_<i>` for the i-th path")
+    node: str = Field(..., description="The node's name within that path")
+
+
+class PairsQueryPlanInput(StrictModel):
+    """What a pairs query means: a match over the view's drawing, and which two nodes of it are the pair."""
+
+    matches: List[MatchPathInput] = Field(..., description="The paths to match, as a table query's are")
+    wheres: List[WhereClauseInput] = Field(default_factory=list, description="Predicates over matched nodes' properties")
+    source: PairEndInput = Field(..., description="The node every pair starts from")
+    target: PairEndInput = Field(..., description="The node every pair ends at")
+
+
+class CreateGraphPairsQueryInput(StrictModel):
+    """Save a pairs query: an insight over one view whose runs are training sets."""
+
+    graph: strawberry.ID = Field(..., description="The graph id this pairs query will belong to")
+    key: str = Field(..., description="Unique key for this query within its graph")
+    name: Optional[str] = Field(default=None, description="Human-readable name (defaults to `key`)")
+    description: Optional[str] = Field(default=None, description="Description of this query")
+    plan: PairsQueryPlanInput = Field(..., description="What the query means: the match and its two ends")
+
+
+class UpdateGraphPairsQueryInput(StrictModel):
+    """Change a saved pairs query. Runs keep the plan they were run with."""
+
+    id: strawberry.ID = Field(..., description="The ID of the pairs query to update")
+    key: Optional[str] = Field(default=None, description="Unique key for this query within its graph")
+    name: Optional[str] = Field(default=None, description="Human-readable name")
+    description: Optional[str] = Field(default=None, description="Description of this query")
+    plan: Optional[PairsQueryPlanInput] = Field(default=None, description="A new plan; omitted means unchanged")
 
 
 class CreateGraphTableQueryThroughBuilderInput(StrictModel):
@@ -2248,6 +2340,7 @@ class GraphExtensionsInput(StrictModel):
     dynamically from the structure identifier at write time.
     """
 
+    structures: List[StructureDefinitionInput] = Field(default_factory=list, description="Structure kinds the view mounts (RFC 0027): the vertex labels structure relations draw their ends under")
     entities: List[EntityDefinitionInput] = Field(default_factory=list, description="Entity definitions")
     relations: List[RelationDefinitionInput] = Field(default_factory=list, description="Relation definitions")
     structure_relations: List[StructureRelationDefinitionInput] = Field(default_factory=list, description="Structure relation definitions")

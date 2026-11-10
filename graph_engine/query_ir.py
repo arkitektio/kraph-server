@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Optional, Protocol
 from pydantic import BaseModel, ConfigDict, Field
 
 from evidence.values import JSONValue
-from graph_engine.input_models import ColumnInput, MatchPathInput, ReturnStatementInput, WhereClauseInput, WhereOperator
+from graph_engine.input_models import ColumnInput, MatchPathInput, PairEndInput, PairsQueryPlanInput, ReturnStatementInput, WhereClauseInput, WhereOperator
 
 if TYPE_CHECKING:
     from graph_engine.projection.protocol import Projector
@@ -97,6 +97,67 @@ def plan_from_input(plan_input: PlanShape, columns: Sequence[ColumnInput] | None
     return plan
 
 
+#: The aliases a pairs plan lowers its two ends to. `id` is the vertex's ref; `identifier`
+#: and `object` are what a drawn structure carries (RFC 0027), null on a drawn instance.
+PAIR_ALIASES = ("source_ref", "source_identifier", "source_object", "target_ref", "target_identifier", "target_object")
+
+
+class PairsQueryPlan(BaseModel):
+    """One saved pairs query: a match over a view's drawing, and which two of its nodes are the pair.
+
+    It is a table query with fixed returns, and compiles as one: :meth:`to_table_plan`
+    lowers it, so the same compiler, validation and cost bound apply.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: int = Field(default=PLAN_VERSION, description="Shape version of this plan")
+    matches: list[MatchPathInput] = Field(default_factory=list, description="The paths to match")
+    wheres: list[WhereClauseInput] = Field(default_factory=list, description="Predicates over matched nodes' properties")
+    source: PairEndInput = Field(..., description="The node every pair starts from")
+    target: PairEndInput = Field(..., description="The node every pair ends at")
+
+    @classmethod
+    def from_stored(cls, value: Mapping[str, JSONValue] | None) -> Optional["PairsQueryPlan"]:
+        """The plan a row carries, or None when it carries none."""
+        if not value:
+            return None
+        return cls.model_validate(value)
+
+    def to_stored(self) -> dict[str, JSONValue]:
+        return self.model_dump(mode="json")
+
+    def to_table_plan(self) -> TableQueryPlan:
+        """The table plan returning both ends' ref, identifier and object."""
+        returns: list[ReturnStatementInput] = []
+        for side, end in (("source", self.source), ("target", self.target)):
+            for prop, alias in (("id", f"{side}_ref"), ("identifier", f"{side}_identifier"), ("object", f"{side}_object")):
+                returns.append(ReturnStatementInput(path=end.path, node=end.node, property=prop, alias=alias))
+        return TableQueryPlan(matches=list(self.matches), wheres=list(self.wheres), returns=returns)
+
+    def end_category(self, end: PairEndInput) -> str | None:
+        """The vertex label the plan constrains one end to, if it does."""
+        for index, path in enumerate(self.matches):
+            if (path.title or f"path_{index}") != end.path:
+                continue
+            categories = list(path.node_categories or [])
+            for position, node in enumerate(path.nodes):
+                if str(node) == end.node and position < len(categories):
+                    return categories[position]
+        return None
+
+
+def pairs_plan_from_input(plan_input: PairsQueryPlanInput, projector: "Projector | None" = None) -> PairsQueryPlan:
+    """A validated pairs plan from a client's input: refused at save time if its lowering cannot compile."""
+    plan = PairsQueryPlan(matches=list(plan_input.matches), wheres=list(plan_input.wheres or []), source=plan_input.source, target=plan_input.target)
+    if projector is None:
+        from graph_engine.projection.context import current_or_default
+
+        projector = current_or_default()
+    projector.validate_plan(plan.to_table_plan())
+    return plan
+
+
 def sanitize_identifier(value: str, fallback: str) -> str:
     """A Cypher/SQL-safe identifier derived from a user-supplied name, or `fallback`."""
     sanitized = re.sub(r"[^A-Za-z0-9_]", "_", str(value))
@@ -111,4 +172,4 @@ def is_identifier(value: str) -> bool:
     return bool(_IDENTIFIER.match(str(value)))
 
 
-__all__ = ["PLAN_VERSION", "TableQueryPlan", "WhereOperator", "is_identifier", "sanitize_identifier"]
+__all__ = ["PAIR_ALIASES", "PLAN_VERSION", "PairsQueryPlan", "TableQueryPlan", "WhereOperator", "is_identifier", "pairs_plan_from_input", "sanitize_identifier"]

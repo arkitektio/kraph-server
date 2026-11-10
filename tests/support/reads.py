@@ -217,3 +217,36 @@ TODO_SUMMARY_OVERDUE = """
         todoSummary(filters: $filters) { total overdue }
     }
 """
+
+GRAPH_PAIRS_QUERIES = """
+    query GraphPairsQueries($filters: GraphPairsQueryFilter) {
+        graphPairsQueries(filters: $filters) { id key }
+    }
+"""
+
+RENDER_GRAPH_PAIRS = """
+    query RenderGraphPairs($id: ID!, $pagination: OffsetPaginationInput) {
+        renderGraphPairs(id: $id, pagination: $pagination) { sourceIdentifier sourceObject targetIdentifier targetObject }
+    }
+"""
+
+PAIRS_QUERY_RUNS = """
+    query PairsQueryRuns($filters: PairsQueryRunFilter) {
+        pairsQueryRuns(filters: $filters) { id name auto }
+    }
+"""
+
+STRUCTURE_RELATION_CATEGORY_ENDS = """
+    query StructureRelationCategoryEnds($id: ID!) {
+        structureRelationCategory(id: $id) {
+            sourceDescriptor { identifiers requires { key operator value } }
+            targetDescriptor { identifiers requires { key operator value } }
+        }
+    }
+"""
+
+MODELS = """
+    query Models($filters: ModelFilter) {
+        models(filters: $filters) { id name }
+    }
+"""

@@ -42,7 +42,7 @@ FEED = "feed"
 def render(facts: Facts) -> dict[str, JSON]:
     """This release's config for the hub ``facts`` describes."""
     document: dict[str, JSON] = blocks.server(facts)
-    document["datalayer"] = blocks.datalayer(facts, "media")
+    document["datalayer"] = blocks.datalayer(facts, "media", "bigfile")
     # Without a key of its own (a hub that has not vouched for one yet: `konstruktor authorize`)
     # kraph serves as before and ingests nothing: no hook agent, no reads of mikro's feed.
     if facts.instance is None:
@@ -78,6 +78,34 @@ TODO_OBJECT_DESCRIPTORS = [
     Descriptor(key="@kraph/project", type="STRING", description="The id of the project its list belongs to"),
 ]
 
+#: What a pairs query (an insight over a view) says about itself, for a training action to
+#: require: "pairs of images". The identifiers are the ones the plan constrains its ends to.
+PAIRS_QUERY_DESCRIPTORS = [
+    Descriptor(key="@kraph/graph", type="STRING", description="The id of the graph (view) the query reads"),
+    Descriptor(key="@kraph/source_identifier", type="STRING", description="The structure identifier the plan constrains the source to (e.g. @mikro/arraylens); null when it does not, which no EQUALS matches"),
+    Descriptor(key="@kraph/target_identifier", type="STRING", description="The structure identifier the plan constrains the target to; null when it does not"),
+]
+
+#: What a run of a pairs query says about itself: what it read, where the drawing stood, and its pairs.
+PAIRS_RUN_DESCRIPTORS = [
+    Descriptor(key="@kraph/graph", type="STRING", description="The id of the graph (view) the run read"),
+    Descriptor(key="@kraph/query", type="STRING", description="The id of the pairs query that was run"),
+    Descriptor(key="@kraph/n_pairs", type="INT", description="How many pairs it holds"),
+    Descriptor(key="@kraph/as_of_seq", type="INT", description="Where the drawing stood: everything the log committed at or below it was drawn"),
+    Descriptor(key="@kraph/source_identifier", type="STRING", description="The structure identifier every source shares (e.g. @mikro/arraylens); null when they differ, which no EQUALS matches"),
+    Descriptor(key="@kraph/target_identifier", type="STRING", description="The structure identifier every target shares; null when they differ"),
+]
+
+#: What a trained model says about itself, for a prediction action to require: "a CARE model trained on image pairs".
+MODEL_DESCRIPTORS = [
+    Descriptor(key="@kraph/framework", type="STRING", description="What the weights are for, e.g. care or cellpose"),
+    Descriptor(key="@kraph/trained_on", type="STRING", description="The id of the pairs query run it was trained on; null for weights from elsewhere"),
+    Descriptor(key="@kraph/query", type="STRING", description="The id of the pairs query its training run ran; null without a run"),
+    Descriptor(key="@kraph/as_of_seq", type="INT", description="Where the drawing stood when its training run read it; null without a run"),
+    Descriptor(key="@kraph/source_identifier", type="STRING", description="The structure identifier every source of its training pairs shares; null when they differ or there is no run"),
+    Descriptor(key="@kraph/target_identifier", type="STRING", description="The structure identifier every target of its training pairs shares; null when they differ or there is no run"),
+]
+
 #: What exists on a hub because kraph is there, said as data so the hub knows it from the image.
 #: ``kraph_server/service.py`` binds each to its model. Todos are product state, not evidence.
 HOSTS = Hosts(
@@ -93,6 +121,24 @@ HOSTS = Hosts(
             label="Todo Object",
             description="One object a todo item is about (an image to annotate), with its own To do / Doing / Done.",
             descriptors=TODO_OBJECT_DESCRIPTORS,
+        ),
+        Structure(
+            identifier="@kraph/pairsquery",
+            label="Pairs Query",
+            description="An insight over a view: a match on the knowledge graph's drawing and which two of its nodes are the pair (an image and its ground truth). Run, it becomes a training set.",
+            descriptors=PAIRS_QUERY_DESCRIPTORS,
+        ),
+        Structure(
+            identifier="@kraph/pairsrun",
+            label="Pairs Run",
+            description="A pairs query's answer, stored with where the drawing stood: the exact pairs a model learned from. What a training action takes.",
+            descriptors=PAIRS_RUN_DESCRIPTORS,
+        ),
+        Structure(
+            identifier="@kraph/model",
+            label="Model",
+            description="A trained model: its weights (a big file) and the pairs query run it learned from. What a prediction action takes.",
+            descriptors=MODEL_DESCRIPTORS,
         ),
     ],
     signals=[
@@ -135,7 +181,7 @@ contract = Contract(
     debug=Start(("python", "manage.py", "runserver", "0.0.0.0:80")),
     jobs={
         "ensureadmin": Job(("ensureadmin",), "Create the operator account the config names"),
-        "restore_descriptors": Job(("restore_descriptors",), "Store the descriptors of every todo row that misses one its structure declares (--all: of every row)"),
+        "restore_descriptors": Job(("restore_descriptors",), "Store the descriptors of every hosted row (todos, pairs queries, runs, models) that misses one its structure declares (--all: of every row)"),
         "reproject": Job(("reproject",), "Rebuild a graph's projection from the evidence, or converge what is owed: --graph, --all, --incremental"),
         "rematerialize": Job(("rematerialize",), "Redraw the vertices of categories whose rules moved on without them: --graph, --stale"),
         "refresh_namespaces": Job(("refresh_namespaces",), "Rebuild graphs' queryable namespaces from their categories: --graph, --all"),

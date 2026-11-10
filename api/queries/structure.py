@@ -20,7 +20,8 @@ def structure_by_identifier(
     """The structure for one external datum, by identifier and object.
 
     **No graph.** A structure is idempotent by `(organization, identifier,
-    object)` and has no vertex in any projection, so naming a view selected
+    object)` and belongs to the organization, not to a view (a view draws it
+    only where it mounts its kind, RFC 0027), so naming a view selected
     nothing — see `GraphController.get_structure`. The sibling
     `structures(structureKindId:)` was already de-graphed on the same grounds.
     """

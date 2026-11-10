@@ -17,6 +17,9 @@ class CategoryKindChoices(TextChoices):
     MEASUREMENT = "MEASUREMENT"
     RELATION = "RELATION"
     STRUCTURE_RELATION = "STRUCTURE_RELATION"
+    #: A structure kind mounted into a view: the vertex label its external data are drawn under
+    #: when a structure relation the view admits touches them (RFC 0027).
+    STRUCTURE = "STRUCTURE"
 
 
 #: The category kinds that are nodes in the graph (the former `NodeCategory` subtree).
@@ -25,6 +28,11 @@ NODE_CATEGORY_KINDS = (
     CategoryKindChoices.NATURAL_EVENT,
     CategoryKindChoices.PROTOCOL_EVENT,
 )
+
+#: The category kinds a view draws vertices under: its nodes, and the structure kinds it mounts.
+#: Not the same set as `NODE_CATEGORY_KINDS`: a `Node` is a view's drawing of an `Instance`
+#: (RFC 0025), and a drawn structure is neither (RFC 0027).
+VERTEX_CATEGORY_KINDS = (*NODE_CATEGORY_KINDS, CategoryKindChoices.STRUCTURE)
 
 #: The category kinds that are edges in the graph (the former `EdgeCategory` subtree).
 EDGE_CATEGORY_KINDS = (
@@ -37,14 +45,16 @@ EDGE_CATEGORY_KINDS = (
 class GraphQueryKindChoices(TextChoices):
     """Which shape of result a saved graph query returns.
 
-    Only `TABLE` now. `NODES`, `PATH` and `PAIRS` — and the whole `NodeQuery` /
-    `EdgeQuery` families — had mutations, types and filters but no execution path
-    anywhere: nothing could ever render one. They went with the saved-query
-    contract becoming a plan (`graph_engine/query_ir.py`); a new shape comes
-    back as a plan kind, not as a stored query string.
+    `TABLE` and `PAIRS`. `NODES`, `PATH` and an older `PAIRS` — and the whole
+    `NodeQuery` / `EdgeQuery` families — had mutations, types and filters but no
+    execution path anywhere: nothing could ever render one. They went with the
+    saved-query contract becoming a plan (`graph_engine/query_ir.py`); `PAIRS`
+    came back that way, as a plan kind (`PairsQueryPlan`) that selects a source and
+    a target node of a match and is run into a stored result (`datasets.PairsQueryRun`).
     """
 
     TABLE = "TABLE"
+    PAIRS = "PAIRS"
 
 
 @strawberry.enum
@@ -67,6 +77,7 @@ class TermKind(str, Enum):
     MEASUREMENT = "MEASUREMENT"
     RELATION = "RELATION"
     STRUCTURE_RELATION = "STRUCTURE_RELATION"
+    STRUCTURE = "STRUCTURE"
 
 
 #: Which word-kind a node's claims are stated in, keyed by `evidence.Node.Kind`.

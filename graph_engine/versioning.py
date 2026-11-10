@@ -114,6 +114,10 @@ def snapshot_definition(graph: core_models.Graph) -> dict[str, JSONValue]:
         for category in categories.order_by("key")
     ]
 
+    # The structure kinds the view mounts (RFC 0027), before the relations whose ends name
+    # them: `materialize` refuses an end naming an identifier nothing mounts.
+    structures = [{"key": category.key, "identifier": category.identifier, "description": category.description} for category in graph.structure_categories.select_related("structure_kind").order_by("key")]
+
     structure_relations = [
         {
             "key": category.key,
@@ -145,6 +149,7 @@ def snapshot_definition(graph: core_models.Graph) -> dict[str, JSONValue]:
             "entities": entities,
             "relations": relations,
             "events": events,
+            "structures": structures,
             "structure_relations": structure_relations,
             "measurements": measurements,
         },

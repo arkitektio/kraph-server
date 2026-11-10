@@ -49,9 +49,10 @@ def test_spec_participation_encodes_the_drawn_direction(test_graph, table_projec
     assert went_through == [(cell, mitosis)]
     assert came_out == [(mitosis, cell)]
 @pytest.mark.django_db(transaction=True)
-def test_spec_gives_measurement_and_structure_relation_categories_nothing(test_graph, table_projector) -> None:
-    # Nothing draws them, so a label would declare an element table that is
-    # empty by construction.
+def test_spec_gives_measurement_categories_nothing(test_graph, table_projector) -> None:
+    # Nothing draws a measurement, so a label would declare an element table that
+    # is empty by construction. (Structure relations are drawn, RFC 0027:
+    # `test_structures_are_drawn_where_a_view_mounts_them`.)
     labels = {e.label for e in namespace_module.namespace_spec(test_graph).edges}
     assert labels == {"IS_CONNECTED_TO", "PART_OF", "WENT_THROUGH", "CAME_OUT_OF"}
 @pytest.mark.django_db(transaction=True)

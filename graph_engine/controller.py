@@ -237,7 +237,7 @@ class GraphController:
         """This assertion's synchronous projection finished everywhere it was owed.
 
         Called by `_draw_after` once the drawing succeeded, and directly only by
-        the writes that draw nothing (comments, structure relations). An exception
+        the writes that draw nothing (comments). An exception
         anywhere in the projection skips it, and the outbox row stays — which is
         the point.
         """
@@ -1035,6 +1035,8 @@ class GraphController:
         with self._draw_after(assertion) as draw:
             if result.moved:
                 self.project_refs(organization, informed)
+                # A drawn structure goes with its standing, and its edges with it (RFC 0027).
+                self._reproject_structures_everywhere(organization, str(structure.pk))
         return results.Asserted.of(assertion, structure, pending=draw.failed)
 
     def assert_metric_values(self, organization: Organization, metrics: List[input_models.MetricValueInput], info: Info) -> results.AssertedMetricValues:
@@ -1903,6 +1905,8 @@ class GraphController:
         """
         if link.kind == evidence_models.Link.Kind.RELATION:
             self._reproject_proposition_everywhere(organization, str(link.source_ref), str(link.target_ref))
+        elif link.kind == evidence_models.Link.Kind.STRUCTURE_RELATION:
+            self._reproject_structures_everywhere(organization, str(link.source_ref), str(link.target_ref))
         elif link.kind in (evidence_models.Link.Kind.PARTICIPATES_AS_INPUT, evidence_models.Link.Kind.PARTICIPATES_AS_OUTPUT):
             self._reproject_participation_everywhere(organization, str(link.source_ref), str(link.target_ref), link.kind, link.role)
         elif link.kind == evidence_models.Link.Kind.CLASSIFIES:
@@ -1945,8 +1949,7 @@ class GraphController:
             self.project_refs(organization, [str(link.target_ref)])
         # `DERIVED_FROM` falls through: lineage is never drawn and feeds no
         # derivation, so retracting a citation changes nothing any view shows
-        # (RFC 0017). `MEASUREMENT` and `STRUCTURE_RELATION` fall through for the
-        # same reason they always have.
+        # (RFC 0017). `MEASUREMENT` falls through for the same reason it always has.
 
     def retract_participation(
         self,
@@ -2141,6 +2144,11 @@ class GraphController:
         """Correct the edges between two individuals in every view that draws either."""
         for graph in self._graphs_for_endpoints(organization, source_ref, target_ref):
             self._reproject_proposition(graph, organization, source_ref, target_ref)
+
+    def _reproject_structures_everywhere(self, organization: Organization, *structure_refs: str) -> None:
+        """Redraw these structures, and the structure-relation edges touching them, in every view that can draw one (RFC 0027)."""
+        for graph in projector.graphs_drawing_structures(organization):
+            projector.project_structure_refs(self, graph, [str(ref) for ref in structure_refs])
 
     def _reproject_participation_everywhere(
         self,
@@ -2570,13 +2578,12 @@ class GraphController:
         payload: RelationInput,
         info: Info,
     ) -> results.Asserted:
-        """Assert that a relation holds between two structures.
+        """Assert that a relation holds between two structures, and draw it where a view admits it.
 
-        No projection. Structures stopped being AGE vertices in M1, so there is
-        nothing here to draw an edge between — a structure relation is an
-        evidence row and only an evidence row. That is not a gap: both endpoints
-        are organization-scoped, so an edge in one graph's projection would be
-        the wrong place to keep it.
+        Both endpoints are organization-scoped evidence rows; a view that mounts their
+        identifiers and declares a structure-relation category admitting the claim draws
+        them as vertices and the claim as an edge between them (RFC 0027), which is what
+        a pairs query reads.
         """
         source = self._resolve_structure(str(payload.source_id), info, organization=organization)
         target = self._resolve_structure(str(payload.target_id), info, organization=organization)
@@ -2603,12 +2610,9 @@ class GraphController:
             self._attach_supporting_evidence(organization, link, recorded_metrics, assertion)
             self._cite(organization, assertion, str(link.pk), cited)
 
-        # No drawings, and none possible: both endpoints are structures, which are
-        # Postgres rows with no vertex, so `graphs_for_refs` returns nothing and
-        # there is no edge to draw between them.
-        # Nothing to draw, so nothing that can fail after the act: settle directly.
-        self._settle(assertion)
-        return results.Asserted.of(assertion, link)
+        with self._draw_after(assertion) as draw:
+            self._reproject_structures_everywhere(organization, str(source.pk), str(target.pk))
+        return results.Asserted.of(assertion, link, pending=draw.failed)
 
     def create_measurement(
         self,
@@ -2709,8 +2713,7 @@ class GraphController:
             writer.retract(organization, link, assertion, at=at, confidence=confidence)
 
         with self._draw_after(assertion) as draw:
-            source_ref, target_ref, term_id = projector.proposition_key(link)
-            self._reproject_proposition_everywhere(organization, source_ref, target_ref)
+            self._reproject_claim(organization, link)
         # Read back, not assumed gone: the edge survives wherever another live
         # assertion still states the same proposition.
         return results.Asserted.of(assertion, link, self.drawings_for_edge(link), pending=draw.failed)

@@ -49,6 +49,10 @@ class DrawCounts:
     edges: int = 0
     #: Participation edges drawn.
     participations: int = 0
+    #: Structure vertices drawn: the ends of the structure relations the view admits (RFC 0027).
+    structures: int = 0
+    #: Structure-relation edges drawn between them.
+    structure_edges: int = 0
     #: Nodes whose derived properties were written.
     projected: int = 0
     #: Vertices removed first, so a redraw converges. Only `converge` erases.

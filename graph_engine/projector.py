@@ -860,6 +860,135 @@ def active_relation_links(graph: core_models.Graph) -> list[evidence_models.Link
     return [link for link, _ in admitting_categories(relation_categories(graph), base).values()]
 
 
+def structure_relation_categories(graph: core_models.Graph) -> list[core_models.StructureRelationCategory]:
+    """This view's structure-relation categories that declare a word."""
+    return list(core_models.StructureRelationCategory.objects.filter(graph=graph, term_id__isnull=False))
+
+
+def graphs_drawing_structures(organization: Organization) -> list[core_models.Graph]:
+    """Every view of the organization that can draw a structure relation, in a stable order."""
+    ids = core_models.StructureRelationCategory.objects.filter(graph__organization=organization, term_id__isnull=False).values_list("graph_id", flat=True).distinct()
+    return list(core_models.Graph.objects.filter(pk__in=list(ids)).order_by("pk"))
+
+
+def _end_admits(end: object, identifier: str, mounted: Mapping[str, core_models.StructureCategory]) -> bool:
+    """Whether one end of a structure-relation category admits a structure of ``identifier``.
+
+    It must be mounted (RFC 0027: it is drawn under the view's STRUCTURE category for it),
+    and named by the end, or the end names none: an open end admits every mounted kind.
+    """
+    if identifier not in mounted:
+        return False
+    named = {str(value) for value in (getattr(end, "identifiers", None) or [])}
+    return not named or identifier in named
+
+
+def admitted_structure_relations(
+    graph: core_models.Graph,
+    base: QuerySet[evidence_models.Link],
+) -> tuple[dict[uuid.UUID, tuple[evidence_models.Link, list[core_models.Category]]], dict[str, evidence_models.Structure]]:
+    """The structure-relation claims from ``base`` this view draws, and their standing endpoints.
+
+    A claim is drawn under every structure-relation category that admits it (RFC 0027):
+
+    - the category's rule admits the claim, standings under its trust, as for every edge
+      (`admitting_categories`);
+    - both endpoint structures stand, at organization grain: a retracted image takes its
+      edges with it, as a retracted node does;
+    - each endpoint's identifier is mounted by the view and named by that end.
+
+    Returns ``(link pk -> (link, categories), structure ref -> standing Structure)``: the
+    structures are every endpoint of an admitted claim, and nothing else.
+    """
+    categories = structure_relation_categories(graph)
+    if not categories:
+        return {}, {}
+    admitted = admitting_categories(categories, base)
+    if not admitted:
+        return {}, {}
+    mounted = core_models.mounted_structure_categories(graph)
+    refs = {str(ref) for link, _ in admitted.values() for ref in (link.source_ref, link.target_ref)}
+    standing = {str(row.pk): row for row in claims_module.standing(evidence_models.Structure.objects.for_organization(graph.organization).filter(id__in=refs), "structure")}
+
+    out: dict[uuid.UUID, tuple[evidence_models.Link, list[core_models.Category]]] = {}
+    structures: dict[str, evidence_models.Structure] = {}
+    for pk, (link, admitting) in admitted.items():
+        source, target = standing.get(str(link.source_ref)), standing.get(str(link.target_ref))
+        if source is None or target is None:
+            continue
+        keep = [
+            category
+            for category in admitting
+            if _end_admits(category.source_definition_model, str(source.identifier), mounted) and _end_admits(category.target_definition_model, str(target.identifier), mounted)
+        ]
+        if keep:
+            out[pk] = (link, keep)
+            structures[str(source.pk)] = source
+            structures[str(target.pk)] = target
+    return out, structures
+
+
+def project_structure_relations(controller: DrawingHost, graph: core_models.Graph, links: Iterable[evidence_models.Link]) -> tuple[int, int]:
+    """Draw these structure-relation claims: their endpoint structures, then their edges.
+
+    A structure is a vertex only where an admitted claim touches it, labelled by the
+    view's STRUCTURE category for its identifier and carrying ``identifier`` and
+    ``object``, so a query returns the address a datum has outside kraph. It is a vertex
+    of one member, itself: structures have no sameness (`_claim_identity`). Edges group
+    per ``(source, target, category)`` with `__assertion_count`, as relation edges do.
+    Upserts throughout, so drawing twice converges. Returns ``(structures, edges)``.
+    """
+    pks = [link.pk for link in links]
+    if not pks:
+        return 0, 0
+    base = evidence_models.Link.objects.for_organization(graph.organization).filter(kind=evidence_models.Link.Kind.STRUCTURE_RELATION, pk__in=pks)
+    admitted, structures = admitted_structure_relations(graph, base)
+    if not admitted:
+        return 0, 0
+
+    mounted = core_models.mounted_structure_categories(graph)
+    for ref, structure in sorted(structures.items()):
+        category = mounted[str(structure.identifier)]
+        controller.projector.draw_node(graph, ref, [(category.age_name, category.pk)], "STRUCTURE", [ref])
+        controller.projector.write_properties(graph, ref, {"identifier": str(structure.identifier), "object": str(structure.object)})
+
+    grouped: dict[tuple[str, str, int], tuple[core_models.Category, int]] = {}
+    for link, categories in admitted.values():
+        for category in categories:
+            key = (str(link.source_ref), str(link.target_ref), category.pk)
+            grouped[key] = (category, grouped.get(key, (category, 0))[1] + 1)
+
+    edges = 0
+    for (source_ref, target_ref, _), (category, count) in sorted(grouped.items()):
+        if controller.projector.draw_edge(graph, source_ref, target_ref, category.age_name, {"category_id": category.pk, "__assertion_count": count}):
+            edges += 1
+    return len(structures), edges
+
+
+def project_structure_refs(controller: DrawingHost, graph: core_models.Graph, refs: Iterable[str]) -> tuple[int, int]:
+    """Make this view's drawing of these structures equal what a rebuild would draw.
+
+    The structure half of `converge`. The set widens one hop, to every structure a
+    structure-relation claim connects them to: those are erased with them (their edges
+    to the set go by cascade) and redrawn from every claim touching the widened set, so
+    a neighbour whose last admitted claim was the one that moved is not left behind as
+    a vertex no claim supports. Refs that are not structures are ignored.
+    """
+    if not structure_relation_categories(graph):
+        return 0, 0
+    refs = {str(ref) for ref in refs}
+    if not refs:
+        return 0, 0
+    claims = evidence_models.Link.objects.for_organization(graph.organization).filter(kind=evidence_models.Link.Kind.STRUCTURE_RELATION)
+    touching = claims.filter(Q(source_ref__in=refs) | Q(target_ref__in=refs)).values_list("source_ref", "target_ref")
+    scope = refs | {str(ref) for pair in touching for ref in pair}
+    scope = {str(pk) for pk in evidence_models.Structure.all_objects.filter(organization=graph.organization, id__in=scope).values_list("id", flat=True)}
+    if not scope:
+        return 0, 0
+    controller.projector.erase_nodes(graph, scope)
+    return project_structure_relations(controller, graph, claims.filter(Q(source_ref__in=scope) | Q(target_ref__in=scope)))
+
+
 def project_edges(
     controller: DrawingHost,
     graph: core_models.Graph,
@@ -1529,6 +1658,9 @@ def project_all(controller: DrawingHost, graph: core_models.Graph) -> DrawCounts
     # Edges after nodes: `MATCH (s) ... MATCH (t)` needs both endpoints to exist.
     edges = project_edges(controller, graph, active_relation_links(graph))
     participations = project_participation(controller, graph, active_participation_links(graph))
+    # Structures after instances, though they share nothing: a structure is a vertex
+    # only where an admitted structure relation touches it (RFC 0027).
+    structures, structure_edges = project_structure_relations(controller, graph, evidence_models.Link.objects.for_organization(graph.organization).filter(kind=evidence_models.Link.Kind.STRUCTURE_RELATION))
 
     projected = project(controller, graph, list(components))
 
@@ -1549,6 +1681,8 @@ def project_all(controller: DrawingHost, graph: core_models.Graph) -> DrawCounts
         unclassified=len(skipped),
         edges=edges,
         participations=participations,
+        structures=structures,
+        structure_edges=structure_edges,
         projected=projected,
     )
 
@@ -1794,10 +1928,12 @@ def touched_refs(organization: Organization, assertion_ids: Iterable[uuid.UUID],
 
     - an `Instance` — itself;
     - a `Link` — its node endpoints by kind: RELATION, PARTICIPATES_*, SAME_AS and
-      DIFFERENT_FROM on both sides; CLASSIFIES, INFORMS, MEASUREMENT on the node side only (the
-      other end is a term or a structure). STRUCTURE_RELATION touches no node;
+      DIFFERENT_FROM and STRUCTURE_RELATION on both sides (a structure relation's ends are
+      structures, drawn where a view admits it, RFC 0027); CLASSIFIES, INFORMS,
+      MEASUREMENT on the node side only (the other end is a term or a structure);
     - a `Structure` or a `Metric` — every node the structure informs
-      (`refs_informed_by`), since that is what its derived properties fold over;
+      (`refs_informed_by`), since that is what its derived properties fold over, and
+      the structure itself when a structure relation names it (it may be drawn);
     - a `Standing` — by what it is about: a node, a link's endpoints, or the nodes
       a metric's or structure's structure informs. A comment's standing moves no
       drawing.
@@ -1821,7 +1957,7 @@ def touched_refs(organization: Organization, assertion_ids: Iterable[uuid.UUID],
 
     refs.update(str(pk) for pk in evidence_models.Instance.objects.for_organization(organization).filter(predicate).values_list("id", flat=True))
 
-    both = {evidence_models.Link.Kind.RELATION, evidence_models.Link.Kind.PARTICIPATES_AS_INPUT, evidence_models.Link.Kind.PARTICIPATES_AS_OUTPUT, *identity_module.IDENTITY_KINDS}
+    both = {evidence_models.Link.Kind.RELATION, evidence_models.Link.Kind.STRUCTURE_RELATION, evidence_models.Link.Kind.PARTICIPATES_AS_INPUT, evidence_models.Link.Kind.PARTICIPATES_AS_OUTPUT, *identity_module.IDENTITY_KINDS}
     source_side = {evidence_models.Link.Kind.CLASSIFIES}
     target_side = {evidence_models.Link.Kind.INFORMS, evidence_models.Link.Kind.MEASUREMENT}
 
@@ -1858,6 +1994,12 @@ def touched_refs(organization: Organization, assertion_ids: Iterable[uuid.UUID],
 
     if structure_ids:
         refs.update(str(ref) for ref in refs_informed_by(organization, list(structure_ids)))
+        # A structure is drawn itself where a structure relation touches it (RFC 0027), so a
+        # structure's standing moves its own vertex too. Only those: a structure no relation
+        # names is drawn nowhere, and redrawing it would be work for nothing.
+        named = {str(pk) for pk in structure_ids}
+        related = evidence_models.Link.objects.for_organization(organization).filter(kind=evidence_models.Link.Kind.STRUCTURE_RELATION).filter(Q(source_ref__in=named) | Q(target_ref__in=named)).values_list("source_ref", "target_ref")
+        refs.update(named & {str(ref) for pair in related for ref in pair})
 
     return refs, saw_same_as
 
@@ -1899,9 +2041,10 @@ def converge(controller: DrawingHost, graph: core_models.Graph, refs: Iterable[s
 
     edges = project_edges(controller, graph, [link for link in active_relation_links(graph) if str(link.source_ref) in touched or str(link.target_ref) in touched])
     participations = project_participation(controller, graph, [link for link in active_participation_links(graph) if str(link.source_ref) in touched or str(link.target_ref) in touched])
+    structures, structure_edges = project_structure_refs(controller, graph, touched)
     projected = project(controller, graph, list(components))
 
-    return DrawCounts(nodes=len(resolved), individuals=len(components), edges=edges, participations=participations, projected=projected, erased=erased)
+    return DrawCounts(nodes=len(resolved), individuals=len(components), edges=edges, participations=participations, structures=structures, structure_edges=structure_edges, projected=projected, erased=erased)
 
 
 def replay(controller: DrawingHost, organization: Organization, *, older_than: datetime.timedelta | None = None) -> ReplayReport:

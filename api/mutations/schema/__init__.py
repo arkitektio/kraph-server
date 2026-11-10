@@ -2,6 +2,7 @@ from .entity_category import create_entity_category, update_entity_category, del
 from .structure_kind import update_structure_kind, delete_structure_kind
 from .term import create_term, update_term
 from .structure_relation_category import create_structure_relation_category, update_structure_relation_category, delete_structure_relation_category
+from .structure_category import create_structure_category, update_structure_category, delete_structure_category
 from .metric_kind import update_metric_kind, delete_metric_kind
 from .measurement_category import create_measurement_category, update_measurement_category, delete_measurement_category
 from .relation_category import create_relation_category, update_relation_category, delete_relation_category
@@ -24,6 +25,9 @@ __all__ = [
     "archive_graph",
     "update_graph_visual",
     "create_graph_table_query_through_builder",
+    "create_structure_category",
+    "update_structure_category",
+    "delete_structure_category",
     "create_structure_relation_category",
     "update_structure_relation_category",
     "delete_structure_relation_category",

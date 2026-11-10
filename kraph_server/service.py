@@ -1,4 +1,4 @@
-"""kraph as a service of the hub: the todo structures it hosts and the signals it sends rekuest.
+"""kraph as a service of the hub: the todo, pairs-query, run and model structures it hosts, and the signals it sends rekuest.
 
 What is hosted and signalled is declared once, as data, in ``kraph_server.contract`` (``HOSTS``);
 this module binds it to the models and to what computes their descriptors. Todos are product
@@ -12,6 +12,9 @@ column (the item's counts), bulk writes, a list reassigned.
 from arkitekt_service.service import Service, organization_of
 from django.db.models.signals import pre_save
 
+from core import models as core_models
+from datasets import logic as dataset_logic
+from datasets import models as dataset_models
 from kraph_server.contract import contract
 from todos import models
 
@@ -45,6 +48,13 @@ def _object_descriptors(row: models.TodoItemStructure) -> dict:
 
 todo_item = service.structure(models.TodoItem, "@kraph/todoitem", describe=_item_descriptors)
 todo_object = service.structure(models.TodoItemStructure, "@kraph/todoitemstructure", describe=_object_descriptors, whole=lambda row: row.item)
+# A pairs query (an insight): created and edited through this proxy, so its descriptors follow
+# its plan's ends; `restore_descriptors` fills in queries from before.
+pairs_query = service.structure(core_models.GraphPairsQuery, "@kraph/pairsquery", describe=dataset_logic.pairs_query_descriptors)
+# A run is never edited, so its descriptors are fixed at its one save.
+pairs_run = service.structure(dataset_models.PairsQueryRun, "@kraph/pairsrun", describe=dataset_logic.pairs_run_descriptors)
+# A model's descriptors read the dataset it cites, which is never edited either.
+trained_model = service.structure(dataset_models.TrainedModel, "@kraph/model", describe=dataset_logic.model_descriptors)
 
 # A save is announced only when it changes what a trigger can test. Every save is UPDATED to
 # `model_signal`, so without this a Done item dragged within its column, renamed or rescheduled

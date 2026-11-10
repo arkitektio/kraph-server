@@ -176,6 +176,12 @@ class StructureRelationCategoryOrder(EdgeCategoryOrder):
 
 
 @strawberry_django.order_type(models.Category)
+class StructureCategoryOrder(CategoryOrder):
+    label: auto
+    id: auto
+
+
+@strawberry_django.order_type(models.Category)
 class MeasurementCategoryOrder(CategoryOrder):
     label: auto
     id: auto
@@ -183,6 +189,12 @@ class MeasurementCategoryOrder(CategoryOrder):
 
 @strawberry_django.order_type(models.GraphQuery)
 class GraphQueryOrder:
+    label: auto
+    id: auto
+
+
+@strawberry_django.order_type(models.GraphQuery)
+class GraphPairsQueryOrder:
     label: auto
     id: auto
 

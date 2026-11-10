@@ -32,6 +32,8 @@ from graph_engine import scalars
 from kraph_server.contract import CURATOR, EDITOR, contract
 from projects import resolvers as project_resolvers
 from projects import types as project_types
+from datasets import resolvers as dataset_resolvers
+from datasets import types as dataset_types
 from todos import resolvers as todo_resolvers
 from todos import types as todo_types
 
@@ -82,7 +84,7 @@ class Query:
     entities = field(queries.entities, description="List the entities a category's view holds, as it draws them — view grain: one row per individual")
     structure = field(queries.structure, description="Get a structure by ID — a bare uuid, its evidence primary key")
     structures = field(queries.structures, description="List structures with optional filters, ordering, and pagination")
-    structure_by_identifier = field(queries.structure_by_identifier, description="Get a structure by identifier and object. No graph: a structure belongs to the organization and has no vertex in any projection")
+    structure_by_identifier = field(queries.structure_by_identifier, description="Get a structure by identifier and object. No graph: a structure belongs to the organization; a view draws it only where it mounts its kind (RFC 0027)")
     informing_structures = field(queries.informing_structures, description="List the structures that are evidence for an entity")
     natural_event = field(queries.natural_event, description="Get a natural event by ID, as the named view holds it — see `node`")
     natural_events = field(queries.natural_events, description="List the natural events a category's view holds — view grain: one row per individual")
@@ -130,6 +132,8 @@ class Query:
     measurement_category: types.MeasurementCategory = field(description="Get a single measurement category by ID")
     relation_categories: list[types.RelationCategory] = field(description="List all relation categories")
     relation_category: types.RelationCategory = field(description="Get a single relation category by ID")
+    structure_categories: list[types.StructureCategory] = field(description="List the structure kinds graphs mount (RFC 0027)")
+    structure_category: types.StructureCategory = field(description="Get a single mounted structure kind by ID")
     structure_relation_categories: list[types.StructureRelationCategory] = field(description="List all structure relation categories")
     structure_relation_category: types.StructureRelationCategory = field(description="Get a single structure relation category by ID")
     natural_event_categories: list[types.NaturalEventCategory] = field(description="List all natural event categories")
@@ -167,6 +171,9 @@ class Query:
     graph_query: types.GraphQuery = field(description="Show a single saved graph query by ID")
     graph_table_queries: list[types.GraphTableQuery] = field(description="Show all saved graph table queries")
     graph_table_query: types.GraphTableQuery = field(description="Show a single saved graph table query by ID")
+    graph_pairs_queries: list[types.GraphPairsQuery] = field(description="The saved pairs queries: insights whose runs are training sets; `requires` narrows to the ones a port accepts")
+    graph_pairs_query: types.GraphPairsQuery = field(description="One saved pairs query by ID")
+    render_graph_pairs = field(queries.render_graph_pairs, description="The pairs a saved pairs query answers now, from the view's drawing: a preview. A run (`runPairsQuery`) stores the same answer with where the drawing stood")
     # `GraphPathQuery` had a type, a dataloader and all four mutations, and no way
     # to read one back — the only member of the family missing its root fields.
 
@@ -181,6 +188,12 @@ class Query:
 
     scatter_plots: list[types.ScatterPlot] = field(description="Show all saved scatter plots")
     scatter_plot: types.ScatterPlot = field(description="Show a single saved scatter plot by ID")
+
+    # Runs of pairs queries (stored training sets) and trained models, see `datasets/models.py`.
+    pairs_query_runs: list[dataset_types.PairsQueryRun] = field(description="The runs of pairs queries: stored training sets; `requires` narrows to the ones a port accepts, `auto: false` hides the ones made for models")
+    pairs_query_run: dataset_types.PairsQueryRun = field(description="One run by ID")
+    models: list[dataset_types.Model] = field(description="The organization's trained models; `requires` narrows to the ones a port accepts")
+    model: dataset_types.Model = field(description="One trained model by ID")
 
     # Projects: the organization's anchor for a piece of work, see `projects/models.py`.
     projects: list[project_types.Project] = field(description="The organization's projects")
@@ -399,6 +412,23 @@ class Mutation:
         description="Reissue upload credentials for a media upload still in flight, to the same key, so a write that outlives its credentials carries on. Only the uploader may, never for a finished store, and never past the upload's time limit",
         resolver=datalayer_mutations.refresh_media_upload,
     )
+    # Big files: the weights of trained models (`createModel` names the finished store).
+    request_bigfile_upload = upload_mutation(
+        description="Request credentials to upload a big file (a trained model's weights) to the datalayer",
+        resolver=datalayer_mutations.request_bigfile_upload,
+    )
+    finish_bigfile_upload = upload_mutation(
+        description="Finalize a big-file upload after the client has written the object",
+        resolver=datalayer_mutations.finish_bigfile_upload,
+    )
+    refresh_bigfile_upload = upload_mutation(
+        description="Reissue upload credentials for a big-file upload still in flight, to the same key, so a write that outlives its credentials carries on. Only the uploader may, never for a finished store, and never past the upload's time limit",
+        resolver=datalayer_mutations.refresh_bigfile_upload,
+    )
+    request_bigfile_access = access_mutation(
+        description="Request temporary S3 read credentials for a big file",
+        resolver=datalayer_mutations.request_bigfile_access,
+    )
     request_media_access = access_mutation(
         description="Request temporary S3 read credentials for a media file",
         resolver=datalayer_mutations.request_media_access,
@@ -431,6 +461,21 @@ class Mutation:
         scope="kraph_insights",
         description="Create or update a graph table query using builder arguments",
         resolver=mutations.create_graph_table_query_through_builder,
+    )
+    create_graph_pairs_query = mutation(
+        scope="kraph_insights",
+        description="Save a pairs query: a match over a view's drawing and which two of its nodes are the pair. Its runs are training sets",
+        resolver=mutations.create_graph_pairs_query,
+    )
+    update_graph_pairs_query = mutation(
+        scope="kraph_insights",
+        description="Change a pairs query. Its runs keep the plan they were run with",
+        resolver=mutations.update_graph_pairs_query,
+    )
+    delete_graph_pairs_query = mutation(
+        scope="kraph_insights",
+        description="Delete a pairs query, refused while it has runs",
+        resolver=mutations.delete_graph_pairs_query,
     )
     create_graph_table_query = mutation(
         scope="kraph_insights",
@@ -489,6 +534,27 @@ class Mutation:
         scope="kraph_insights",
         description="Create a todo list in a project",
         resolver=todo_resolvers.create_todo_list,
+    )
+    # Paired datasets: derived from the log, never edited, see `datasets/models.py`.
+    run_pairs_query = mutation(
+        scope="kraph_insights",
+        description="Run a pairs query: its answer from the view's drawing, stored with where the drawing stood. What a model is trained on",
+        resolver=dataset_resolvers.run_pairs_query,
+    )
+    delete_pairs_query_run = mutation(
+        scope="kraph_insights",
+        description="Delete a run; a run a model was trained on cannot be deleted",
+        resolver=dataset_resolvers.delete_pairs_query_run,
+    )
+    create_model = mutation(
+        scope="kraph_insights",
+        description="Register a trained model: its weights, a finished big-file upload (a client passes the file and its upload middleware sends it), and what it was trained on: a run, or a pairs query the server runs",
+        resolver=dataset_resolvers.create_model,
+    )
+    delete_model = mutation(
+        scope="kraph_insights",
+        description="Delete a trained model. Its weights are flagged orphaned for the datalayer's purge; the run it was trained on stays",
+        resolver=dataset_resolvers.delete_model,
     )
     update_todo_list = mutation(
         scope="kraph_insights",
@@ -612,6 +678,18 @@ class Mutation:
     update_structure_kind = schema_mutation(
         description="Update a structure kind's label, description or colour",
         resolver=mutations.update_structure_kind,
+    )
+    create_structure_category = schema_mutation(
+        description="Mount a structure kind into a graph: the vertex label its data are drawn under wherever a structure relation the graph admits touches them (RFC 0027)",
+        resolver=mutations.create_structure_category,
+    )
+    update_structure_category = schema_mutation(
+        description="Change a mounted structure kind's label, description, colour, image or pin",
+        resolver=mutations.update_structure_category,
+    )
+    delete_structure_category = schema_mutation(
+        description="Unmount a structure kind, refused while a structure-relation category of the graph names it",
+        resolver=mutations.delete_structure_category,
     )
     create_structure_relation_category = schema_mutation(
         description="Create a new structure relation category in the graph",

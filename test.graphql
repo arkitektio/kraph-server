@@ -840,6 +840,17 @@ input AssertionFilter {
   seqAfter: Int
 }
 
+"""Input for changing only who a todo list or item is for"""
+input AssignTodoInput {
+  """The list or item to assign"""
+  id: ID!
+
+  """
+  Who it is for (a sub); nobody when not given (an item then falls back to its list's)
+  """
+  assignee: ID = null
+}
+
 """Input for putting objects on a todo item"""
 input AttachToTodoItemInput {
   """The item to put the objects on"""
@@ -967,6 +978,66 @@ input AttestStructureInput {
   How sure you are, 0 to 1. Left unset, the claim carries no number — which is neither 1.0 nor 0.0: a category rule with a CONFIDENCE condition admits only claims that carry one.
   """
   confidence: Float = null
+}
+
+"""Temporary S3 credentials for reading a big file."""
+type BigFileAccessGrant {
+  status: String!
+  accessKey: String!
+  secretKey: String!
+  sessionToken: String!
+  region: String!
+  bucket: String!
+  key: String!
+  path: String!
+  expiresIn: Int!
+  store: String
+}
+
+"""A reference to a big file store: the id its finished upload returned."""
+scalar BigFileLike
+
+"""
+A BigFileStore represents a large object stored behind the S3 datalayer.
+"""
+type BigFileStore @key(fields: "id", resolvable: true) {
+  id: ID!
+  path: String!
+  bucket: String!
+  key: String!
+
+  """
+  The byte budget the upload grant advertised for this store. Advertised, not enforced: a session policy bounds what a credential may write, never how much, so a store may exceed this
+  """
+  maxBytes: ByteCount
+
+  """
+  How many bytes this store actually holds, measured when its upload was finished. Null while unfinished, or for stores written before this was recorded
+  """
+  sizeBytes: ByteCount
+  originalFileName: String
+  contentType: String
+
+  """Get temporary S3 read credentials for the object."""
+  accessGrant: BigFileAccessGrant!
+}
+
+"""Temporary S3 credentials for uploading a big file."""
+type BigFileUploadGrant {
+  status: String!
+  accessKey: String!
+  secretKey: String!
+  sessionToken: String!
+  region: String!
+  bucket: String!
+  key: String!
+  path: String!
+  expiresIn: Int!
+  store: String!
+  maxBytes: ByteCount!
+  originalFileName: String
+  uploadFileName: String!
+  uploadContentType: String
 }
 
 """Builder arguments for generating a graph table query"""
@@ -1485,6 +1556,26 @@ input CreateGraphInput {
   backfill: Boolean! = false
 }
 
+"""
+Input for saving a pairs query: an insight over one view whose runs are training sets
+"""
+input CreateGraphPairsQueryInput {
+  """The graph id this pairs query will belong to"""
+  graph: String!
+
+  """Unique key for this query within its graph"""
+  key: String!
+
+  """Human-readable name (defaults to `key`)"""
+  name: String = null
+
+  """Description of this query"""
+  description: String = null
+
+  """What the query means: the match and its two ends"""
+  plan: PairsQueryPlanInput!
+}
+
 """Input for creating a new graph table query"""
 input CreateGraphTableQueryInput {
   """The graph id this table query will belong to"""
@@ -1573,6 +1664,36 @@ input CreateMeasurementCategoryInput {
 
   """The graph id this measurement category will belong to"""
   graph: String!
+}
+
+"""
+Input for registering a trained model: its weights (a finished big-file upload) and what it was trained on, a run or a pairs query the server runs
+"""
+input CreateModelInput {
+  """What the model is called"""
+  name: String!
+
+  """What the weights are for, e.g. 'care' or 'cellpose'"""
+  framework: String!
+
+  """The finished big-file upload holding the weights"""
+  store: BigFileLike!
+
+  """
+  The pairs query run it was trained on; give this or `trained_on_query`, or neither for weights from elsewhere
+  """
+  trainedOn: ID = null
+
+  """
+  The pairs query it was trained on, when nobody kept a run: the server runs it for the model
+  """
+  trainedOnQuery: ID = null
+
+  """What the model does"""
+  description: String = null
+
+  """How it was trained, as the trainer reports it"""
+  parameters: JSON = null
 }
 
 """Input for creating a new natural event definition in the graph schema"""
@@ -1777,6 +1898,40 @@ input CreateScatterPlotInput {
 }
 
 """
+Input for mounting a structure kind into a graph: the vertex label its data are drawn under (RFC 0027)
+"""
+input CreateStructureCategoryInput {
+  """The label of the node participating in the event"""
+  key: String!
+
+  """Description of this node role"""
+  description: String = null
+
+  """Ontology references for this event"""
+  ontologyReferences: [OntologyReferenceInput!]! = []
+
+  """Optional RGBA color for this node role (e.g. [255, 0, 0, 128])"""
+  color: [Int!] = null
+
+  """Optional media store ID for an image representing this node role"""
+  image: String = null
+
+  """
+  Optional human-readable label for this node role (defaults to 'key' if not provided)
+  """
+  label: String = null
+
+  """Whether to pin this node role in the UI"""
+  pin: Boolean = null
+
+  """The structure identifier mounted (e.g. '@mikro/arraylens')"""
+  identifier: String!
+
+  """The graph id the structure kind is mounted into"""
+  graph: String!
+}
+
+"""
 Input for creating a new structure relation definition in the graph schema
 """
 input CreateStructureRelationCategoryInput {
@@ -1869,6 +2024,9 @@ input CreateTodoItemInput {
 
   """The objects it is about"""
   structures: [TodoStructureInput!] = null
+
+  """When it is due; the list's due date when not given"""
+  dueAt: DateTime = null
 }
 
 """Input for creating a todo list"""
@@ -1884,6 +2042,9 @@ input CreateTodoListInput {
 
   """The sub of the user the list is assigned to"""
   assignee: ID = null
+
+  """When the list is due; its items without a date of their own follow it"""
+  dueAt: DateTime = null
 }
 
 """Date with time (isoformat)"""
@@ -1922,11 +2083,25 @@ input DeleteMetricKindInput {
 }
 
 """
+Input for deleting a trained model; its weights are flagged orphaned for the datalayer's purge
+"""
+input DeleteModelInput {
+  """The model to delete"""
+  id: ID!
+}
+
+"""
 Input for deleting an existing natural event definition in the graph schema
 """
 input DeleteNaturalEventCategoryInput {
   """The ID of the event category to delete"""
   id: String!
+}
+
+"""Input for deleting a run. A run a model was trained on stays"""
+input DeletePairsQueryRunInput {
+  """The run to delete"""
+  id: ID!
 }
 
 """
@@ -1947,6 +2122,12 @@ input DeleteRelationCategoryInput {
 input DeleteScatterPlotInput {
   """The database ID of the scatter plot to delete"""
   id: Int!
+}
+
+"""Input for unmounting a structure kind"""
+input DeleteStructureCategoryInput {
+  """The ID of the structure category to unmount"""
+  id: String!
 }
 
 """
@@ -2151,6 +2332,54 @@ type Description implements Edge {
   What this datum is evidence for — an individual as the log has it, or another claim (RFC 0025)
   """
   target: InformsTarget!
+}
+
+"""
+One constraint on an external datum's descriptors, in the shape a rekuest port states its `requires` in
+"""
+type DescriptorConstraint {
+  """The descriptor key, e.g. '@mikro/n_space_axes'"""
+  key: String!
+
+  """
+  How the datum's value is compared with `value`. MATCHES is equality, as EQUALS is
+  """
+  operator: DescriptorOperator!
+
+  """
+  What is compared against: a number for GTE/LTE, a list for IN/NOT_IN, true or false for EXISTS, the member looked for with CONTAINS
+  """
+  value: JSON
+}
+
+"""
+One constraint on an external datum's descriptors, in the shape a rekuest port states its `requires` in
+"""
+input DescriptorConstraintInput {
+  """The descriptor key, e.g. '@mikro/n_space_axes'"""
+  key: String!
+
+  """
+  How the datum's value is compared with `value`. MATCHES is equality, as EQUALS is
+  """
+  operator: DescriptorOperator!
+
+  """
+  What is compared against: a number for GTE/LTE, a list for IN/NOT_IN, true or false for EXISTS, the member looked for with CONTAINS
+  """
+  value: AnyScalar = null
+}
+
+enum DescriptorOperator {
+  EQUALS
+  MATCHES
+  NOT_EQUALS
+  GTE
+  LTE
+  EXISTS
+  CONTAINS
+  IN
+  NOT_IN
 }
 
 """A claim that two instances are two things, not one (RFC 0019)"""
@@ -2776,6 +3005,11 @@ input EventRoleInput {
   ontologyReferences: [OntologyReferenceInput!]! = []
 }
 
+input FinishBigFileUploadInput {
+  storeId: String!
+  valid: Boolean! = true
+}
+
 input FinishMediaUploadInput {
   storeId: String!
   valid: Boolean! = true
@@ -2850,6 +3084,11 @@ type Graph @key(fields: "id", resolvable: true) {
   """List of structure relation categories defined in this graph"""
   structureRelationCategories(filters: StructureRelationCategoryFilter, ordering: [StructureRelationCategoryOrder!]! = [], pagination: OffsetPaginationInput): [StructureRelationCategory!]!
 
+  """
+  The structure kinds this graph mounts: the vertex labels its structure relations draw their ends under
+  """
+  structureCategories(filters: StructureCategoryFilter, ordering: [StructureCategoryOrder!]! = [], pagination: OffsetPaginationInput): [StructureCategory!]!
+
   """List of graph queries defined in this graph"""
   queries: [GraphQuery!]!
 
@@ -2878,6 +3117,11 @@ input GraphDefinitionInput {
 
 """The categories a graph schema declares"""
 input GraphExtensionsInput {
+  """
+  Structure kinds the view mounts (RFC 0027): the vertex labels structure relations draw their ends under
+  """
+  structures: [StructureDefinitionInput!]! = []
+
   """Entity definitions"""
   entities: [EntityDefinitionInput!]! = []
 
@@ -2923,6 +3167,81 @@ input GraphFilter {
 
 input GraphOrder @oneOf {
   name: Ordering
+  id: Ordering
+}
+
+"""
+An insight that selects pairs from a view's drawing (an image and its ground truth). Run (`runPairsQuery`), its answer is stored: a training set
+"""
+type GraphPairsQuery implements GraphQuery @key(fields: "id", resolvable: true) {
+  """Database ID of this saved query"""
+  id: ID!
+
+  """The graph this query belongs to"""
+  graph: Graph!
+
+  """
+  The key this query is referenced and pinned by, unique within its graph
+  """
+  key: String!
+
+  """Human-readable name for this query"""
+  label: String!
+
+  """Description of this query"""
+  description: String
+
+  """List of node categories for which this query is relevant"""
+  relevantFor: [NodeCategory!]!
+
+  """Whether this saved query has been archived"""
+  archived: Boolean!
+
+  """
+  What this query means: its plan. Null only on a legacy row saved as raw Cypher before plans existed — see `legacy`
+  """
+  plan: TableQueryPlan
+
+  """
+  True for a row saved as raw Cypher before the plan became the contract. Such a row cannot render — no projection kind executes Cypher — until rebuilt through the builder
+  """
+  legacy: Boolean!
+
+  """The match and its two ends"""
+  pairsPlan: PairsQueryPlan
+
+  """
+  What the query says about itself, for a port's `requires`: its view, and the identifier each end is constrained to (null when it is not)
+  """
+  descriptors: JSON!
+
+  """The runs of this query: its stored answers, newest first"""
+  runs: [PairsQueryRun!]!
+}
+
+input GraphPairsQueryFilter {
+  AND: GraphPairsQueryFilter
+  OR: GraphPairsQueryFilter
+  NOT: GraphPairsQueryFilter
+  DISTINCT: Boolean
+
+  """Filter by list of IDs"""
+  ids: [ID!]
+
+  """Full-text search over label and description"""
+  search: String
+
+  """Only archived queries, or only live ones. Omitted shows both"""
+  archived: Boolean
+
+  """
+  Filter to the pairs queries satisfying every one of these descriptor constraints: the `requires` of a port, handed on unchanged, so a picker offers what the port accepts (e.g. `@kraph/source_identifier` EQUALS `@mikro/arraylens`). Answered in SQL from the descriptors stored on every pairs query. A key a pairs query does not declare is refused rather than ignored
+  """
+  requires: [DescriptorConstraintInput!]
+}
+
+input GraphPairsQueryOrder @oneOf {
+  label: Ordering
   id: Ordering
 }
 
@@ -3966,7 +4285,69 @@ input MetricValueInput {
   supersedes: UUID = null
 }
 
-"""Input for moving a todo item on its board"""
+"""A trained model: its weights, and the pairs query run it learned from"""
+type Model @key(fields: "id", resolvable: true) {
+  """Database ID of the model"""
+  id: ID!
+
+  """What the model is called"""
+  name: String!
+
+  """What the model does"""
+  description: String
+
+  """What the weights are for, e.g. 'care' or 'cellpose'"""
+  framework: String!
+
+  """The pairs query run it was trained on; null for weights from elsewhere"""
+  trainedOn: PairsQueryRun
+
+  """The big file holding the weights"""
+  store: BigFileStore!
+
+  """How it was trained, as the trainer reported it"""
+  parameters: JSON
+
+  """When the model was registered"""
+  createdAt: DateTime!
+
+  """
+  What the model says about itself, for a port's `requires`: its framework and what it was trained on (run, query, position, and the identifiers its pairs share; null where none)
+  """
+  descriptors: JSON!
+}
+
+input ModelFilter {
+  id: ID
+  AND: ModelFilter
+  OR: ModelFilter
+  NOT: ModelFilter
+  DISTINCT: Boolean
+
+  """Filter by list of IDs"""
+  ids: [ID!]
+
+  """The models of one framework, e.g. 'care'"""
+  framework: String
+
+  """The models trained on one run"""
+  trainedOn: ID
+
+  """Search the name and description"""
+  search: String
+
+  """
+  Filter to the models satisfying every one of these descriptor constraints: the `requires` of a port, handed on unchanged (e.g. `@kraph/framework` EQUALS `care`). Answered in SQL from the descriptors stored on every model. A key a model does not declare is refused rather than ignored
+  """
+  requires: [DescriptorConstraintInput!]
+}
+
+input ModelOrder @oneOf {
+  name: Ordering
+  createdAt: Ordering
+}
+
+"""Input for moving a todo item on its board, or onto another list"""
 input MoveTodoItemInput {
   """The item to move"""
   id: ID!
@@ -3978,6 +4359,11 @@ input MoveTodoItemInput {
   Its place in that column once moved, 0 first; past the end puts it last
   """
   index: Int! = 0
+
+  """
+  Another list (of the same organization) to move it to; its own when not given
+  """
+  list: ID = null
 }
 
 """Graph Engine Mutations"""
@@ -4172,6 +4558,22 @@ type Mutation {
   """
   refreshMediaUpload(input: RefreshUploadInput!): MediaUploadGrant! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
 
+  """
+  Request credentials to upload a big file (a trained model's weights) to the datalayer
+  """
+  requestBigfileUpload(input: RequestBigFileUploadInput!): BigFileUploadGrant! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """Finalize a big-file upload after the client has written the object"""
+  finishBigfileUpload(input: FinishBigFileUploadInput!): BigFileStore! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """
+  Reissue upload credentials for a big-file upload still in flight, to the same key, so a write that outlives its credentials carries on. Only the uploader may, never for a finished store, and never past the upload's time limit
+  """
+  refreshBigfileUpload(input: RefreshUploadInput!): BigFileUploadGrant! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """Request temporary S3 read credentials for a big file"""
+  requestBigfileAccess(input: RequestBigFileAccessInput!): BigFileAccessGrant! @auth(required_scopes: ["kraph_read"])
+
   """Request temporary S3 read credentials for a media file"""
   requestMediaAccess(input: RequestMediaAccessInput!): MediaAccessGrant! @auth(required_scopes: ["kraph_read"])
 
@@ -4191,6 +4593,17 @@ type Mutation {
 
   """Create or update a graph table query using builder arguments"""
   createGraphTableQueryThroughBuilder(input: CreateGraphTableQueryThroughBuilderInput!): GraphTableQuery! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """
+  Save a pairs query: a match over a view's drawing and which two of its nodes are the pair. Its runs are training sets
+  """
+  createGraphPairsQuery(input: CreateGraphPairsQueryInput!): GraphPairsQuery! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """Change a pairs query. Its runs keep the plan they were run with"""
+  updateGraphPairsQuery(input: UpdateGraphPairsQueryInput!): GraphPairsQuery! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """Delete a pairs query, refused while it has runs"""
+  deleteGraphPairsQuery(input: DeleteGraphTableQueryInput!): ID! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
 
   """Create a graph table query"""
   createGraphTableQuery(input: CreateGraphTableQueryInput!): GraphTableQuery! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
@@ -4224,6 +4637,24 @@ type Mutation {
 
   """Create a todo list in a project"""
   createTodoList(input: CreateTodoListInput!): TodoList! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """
+  Run a pairs query: its answer from the view's drawing, stored with where the drawing stood. What a model is trained on
+  """
+  runPairsQuery(input: RunPairsQueryInput!): PairsQueryRun! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """Delete a run; a run a model was trained on cannot be deleted"""
+  deletePairsQueryRun(input: DeletePairsQueryRunInput!): ID! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """
+  Register a trained model: its weights, a finished big-file upload (a client passes the file and its upload middleware sends it), and what it was trained on: a run, or a pairs query the server runs
+  """
+  createModel(input: CreateModelInput!): Model! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """
+  Delete a trained model. Its weights are flagged orphaned for the datalayer's purge; the run it was trained on stays
+  """
+  deleteModel(input: DeleteModelInput!): ID! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
 
   """Change a todo list (name, description, assignee)"""
   updateTodoList(input: UpdateTodoListInput!): TodoList! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
@@ -4259,6 +4690,25 @@ type Mutation {
   """
   setTodoStructureStatus(input: SetTodoStructureStatusInput!): TodoItem! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
 
+  """
+  Move several objects on todo items to one status at once; each item's column follows. Returns the touched items
+  """
+  setTodoStructuresStatus(input: SetTodoStructuresStatusInput!): [TodoItem!]! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """
+  Change only who a todo item is for; nobody means its list's assignee again
+  """
+  assignTodoItem(input: AssignTodoInput!): TodoItem! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """Change only when a todo item is due; no date means its list's again"""
+  scheduleTodoItem(input: ScheduleTodoInput!): TodoItem! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """Change only when a todo list is due"""
+  scheduleTodoList(input: ScheduleTodoInput!): TodoList! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
+  """Change only who a todo list is for"""
+  assignTodoList(input: AssignTodoInput!): TodoList! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
+
   """Delete a graph from the graph engine"""
   deleteGraph(input: DeleteGraphInput!): ID! @auth(required_scopes: ["kraph_insights"], any_role_of: ["kraph_editor"])
 
@@ -4291,6 +4741,21 @@ type Mutation {
 
   """Update a structure kind's label, description or colour"""
   updateStructureKind(input: UpdateStructureKindInput!): StructureKind! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
+
+  """
+  Mount a structure kind into a graph: the vertex label its data are drawn under wherever a structure relation the graph admits touches them (RFC 0027)
+  """
+  createStructureCategory(input: CreateStructureCategoryInput!): StructureCategory! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
+
+  """
+  Change a mounted structure kind's label, description, colour, image or pin
+  """
+  updateStructureCategory(input: UpdateStructureCategoryInput!): StructureCategory! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
+
+  """
+  Unmount a structure kind, refused while a structure-relation category of the graph names it
+  """
+  deleteStructureCategory(input: DeleteStructureCategoryInput!): ID! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
 
   """Create a new structure relation category in the graph"""
   createStructureRelationCategory(input: CreateStructureRelationCategoryInput!): StructureRelationCategory! @auth(required_scopes: ["kraph_schema"], any_role_of: ["kraph_curator"])
@@ -4859,6 +5324,213 @@ type OutputParticipation implements Edge {
   target: Instance!
 }
 
+"""Which matched node is one end of a pair: a node of one path"""
+type PairEnd {
+  """
+  The path the node is matched in: its `title`, or `path_<i>` for the i-th path
+  """
+  path: String!
+
+  """The node's name within that path"""
+  node: String!
+}
+
+"""Which matched node is one end of a pair: a node of one path"""
+input PairEndInput {
+  """
+  The path the node is matched in: its `title`, or `path_<i>` for the i-th path
+  """
+  path: String!
+
+  """The node's name within that path"""
+  node: String!
+}
+
+"""
+What a pairs query means: a match over the view's drawing, and which two of its nodes are the pair
+"""
+type PairsQueryPlan {
+  """Shape version of this plan"""
+  version: Int!
+
+  """The paths to match"""
+  matches: [MatchPath!]!
+
+  """Predicates over matched nodes' properties"""
+  wheres: [WhereClause!]!
+
+  """The node every pair starts from"""
+  source: PairEnd!
+
+  """The node every pair ends at"""
+  target: PairEnd!
+}
+
+"""
+What a pairs query means: a match over the view's drawing, and which two of its nodes are the pair
+"""
+input PairsQueryPlanInput {
+  """The paths to match, as a table query's are"""
+  matches: [MatchPathInput!]!
+
+  """Predicates over matched nodes' properties"""
+  wheres: [WhereClauseInput!]! = []
+
+  """The node every pair starts from"""
+  source: PairEndInput!
+
+  """The node every pair ends at"""
+  target: PairEndInput!
+}
+
+"""
+One pair a pairs query answers now, from the view's drawing: two data, as (identifier, object). A drawn instance travels as @kraph/entity
+"""
+type PairsQueryRow {
+  """The source's structure identifier, e.g. @mikro/arraylens"""
+  sourceIdentifier: String!
+
+  """The source's id within its structure"""
+  sourceObject: ID!
+
+  """The target's structure identifier"""
+  targetIdentifier: String!
+
+  """The target's id within its structure"""
+  targetObject: ID!
+}
+
+"""
+A pairs query's answer, stored with where the drawing stood: the exact pairs a model learned from
+"""
+type PairsQueryRun @key(fields: "id", resolvable: true) {
+  """Database ID of the run"""
+  id: ID!
+
+  """What the run is called"""
+  name: String!
+
+  """What the run is for"""
+  description: String
+
+  """Run by the server for a model registered against the query"""
+  auto: Boolean!
+
+  """
+  Where the drawing stood: everything the log committed at or below it was drawn
+  """
+  asOfSeq: Int!
+
+  """The query's plan as it was run"""
+  plan: JSON!
+
+  """The view's schema hash when it was run"""
+  schemaHash: String
+
+  """How many pairs it holds"""
+  nPairs: Int!
+
+  """The structure identifier every source shares; null when they differ"""
+  sourceIdentifier: String
+
+  """The structure identifier every target shares; null when they differ"""
+  targetIdentifier: String
+
+  """When the run was made"""
+  createdAt: DateTime!
+
+  """The pairs, in the run's order"""
+  entries(filters: PairsQueryRunEntryFilter, ordering: [PairsQueryRunEntryOrder!]! = [], pagination: OffsetPaginationInput): [PairsQueryRunEntry!]!
+
+  """The id of the pairs query that was run"""
+  queryId: ID!
+
+  """The id of the graph (view) the run read"""
+  graphId: ID!
+
+  """
+  What the run says about itself, for a port's `requires`: its view and query, size, position, and the identifiers every pair shares (null when mixed)
+  """
+  descriptors: JSON!
+}
+
+"""One pair a run answered: a source datum and a target datum"""
+type PairsQueryRunEntry @key(fields: "id", resolvable: true) {
+  """Database ID of the entry"""
+  id: ID!
+
+  """Its place in the run, 0 first"""
+  position: Int!
+
+  """
+  The source datum's structure identifier, e.g. @mikro/arraylens (@kraph/entity for a drawn instance)
+  """
+  sourceIdentifier: String!
+
+  """The source datum's id within its structure"""
+  sourceObject: ID!
+
+  """The target datum's structure identifier"""
+  targetIdentifier: String!
+
+  """The target datum's id within its structure"""
+  targetObject: ID!
+
+  """The run it belongs to"""
+  run: PairsQueryRun!
+}
+
+input PairsQueryRunEntryFilter {
+  id: ID
+  AND: PairsQueryRunEntryFilter
+  OR: PairsQueryRunEntryFilter
+  NOT: PairsQueryRunEntryFilter
+  DISTINCT: Boolean
+
+  """Filter by list of IDs"""
+  ids: [ID!]
+}
+
+input PairsQueryRunEntryOrder @oneOf {
+  position: Ordering
+}
+
+input PairsQueryRunFilter {
+  id: ID
+  AND: PairsQueryRunFilter
+  OR: PairsQueryRunFilter
+  NOT: PairsQueryRunFilter
+  DISTINCT: Boolean
+
+  """Filter by list of IDs"""
+  ids: [ID!]
+
+  """The runs of one pairs query"""
+  query: ID
+
+  """The runs against one graph (view)"""
+  graph: ID
+
+  """
+  Runs the server made for a model registered against a query (true), or ones somebody ran (false)
+  """
+  auto: Boolean
+
+  """Search the name and description"""
+  search: String
+
+  """
+  Filter to the runs satisfying every one of these descriptor constraints: the `requires` of a port, handed on unchanged, so a picker offers what the port accepts (e.g. `@kraph/source_identifier` EQUALS `@mikro/arraylens`). Answered in SQL from the descriptors stored on every run. A key a run does not declare is refused rather than ignored
+  """
+  requires: [DescriptorConstraintInput!]
+}
+
+input PairsQueryRunOrder @oneOf {
+  name: Ordering
+  createdAt: Ordering
+  asOfSeq: Ordering
+}
+
 """A paragraph of the comment body"""
 type ParagraphDescendant implements Descendant {
   """The kind of this node"""
@@ -5385,6 +6057,12 @@ type Query {
   """Get a single relation category by ID"""
   relationCategory(id: ID!): RelationCategory! @auth(required_scopes: ["kraph_read"])
 
+  """List the structure kinds graphs mount (RFC 0027)"""
+  structureCategories(filters: StructureCategoryFilter, ordering: [StructureCategoryOrder!]! = [], pagination: OffsetPaginationInput): [StructureCategory!]! @auth(required_scopes: ["kraph_read"])
+
+  """Get a single mounted structure kind by ID"""
+  structureCategory(id: ID!): StructureCategory! @auth(required_scopes: ["kraph_read"])
+
   """List all structure relation categories"""
   structureRelationCategories(filters: StructureRelationCategoryFilter, ordering: [StructureRelationCategoryOrder!]! = [], pagination: OffsetPaginationInput): [StructureRelationCategory!]! @auth(required_scopes: ["kraph_read"])
 
@@ -5442,11 +6120,35 @@ type Query {
   """Show a single saved graph table query by ID"""
   graphTableQuery(id: ID!): GraphTableQuery! @auth(required_scopes: ["kraph_read"])
 
+  """
+  The saved pairs queries: insights whose runs are training sets; `requires` narrows to the ones a port accepts
+  """
+  graphPairsQueries(filters: GraphPairsQueryFilter, ordering: [GraphPairsQueryOrder!]! = [], pagination: OffsetPaginationInput): [GraphPairsQuery!]! @auth(required_scopes: ["kraph_read"])
+
+  """One saved pairs query by ID"""
+  graphPairsQuery(id: ID!): GraphPairsQuery! @auth(required_scopes: ["kraph_read"])
+
   """Show all saved scatter plots"""
   scatterPlots(filters: ScatterPlotFilter, ordering: [ScatterPlotOrder!]! = [], pagination: OffsetPaginationInput): [ScatterPlot!]! @auth(required_scopes: ["kraph_read"])
 
   """Show a single saved scatter plot by ID"""
   scatterPlot(id: ID!): ScatterPlot! @auth(required_scopes: ["kraph_read"])
+
+  """
+  The runs of pairs queries: stored training sets; `requires` narrows to the ones a port accepts, `auto: false` hides the ones made for models
+  """
+  pairsQueryRuns(filters: PairsQueryRunFilter, ordering: [PairsQueryRunOrder!]! = [], pagination: OffsetPaginationInput): [PairsQueryRun!]! @auth(required_scopes: ["kraph_read"])
+
+  """One run by ID"""
+  pairsQueryRun(id: ID!): PairsQueryRun! @auth(required_scopes: ["kraph_read"])
+
+  """
+  The organization's trained models; `requires` narrows to the ones a port accepts
+  """
+  models(filters: ModelFilter, ordering: [ModelOrder!]! = [], pagination: OffsetPaginationInput): [Model!]! @auth(required_scopes: ["kraph_read"])
+
+  """One trained model by ID"""
+  model(id: ID!): Model! @auth(required_scopes: ["kraph_read"])
 
   """The organization's projects"""
   projects(filters: ProjectFilter, ordering: [ProjectOrder!]! = [], pagination: OffsetPaginationInput): [Project!]! @auth(required_scopes: ["kraph_read"])
@@ -5467,6 +6169,16 @@ type Query {
 
   """One todo item by ID"""
   todoItem(id: ID!): TodoItem! @auth(required_scopes: ["kraph_read"])
+
+  """
+  Objects on todo items, one row per (item, object). `identifier` + `object` is an object's own todo track: its row on every item it is on, without the item's other objects
+  """
+  todoItemStructures(filters: TodoItemStructureFilter, ordering: [TodoItemStructureOrder!]! = [], pagination: OffsetPaginationInput): [TodoItemStructure!]! @auth(required_scopes: ["kraph_read"])
+
+  """
+  The todo items `filters` selects (as in `todoItems`), counted by column, with their objects done out of total
+  """
+  todoSummary(filters: TodoItemFilter = null): TodoSummary! @auth(required_scopes: ["kraph_read"])
 
   """Get one claimed individual by ID, as the log has it"""
   instance(id: ID!): Instance! @auth(required_scopes: ["kraph_read"])
@@ -5513,7 +6225,7 @@ type Query {
   structures(structureKindId: ID = null, filters: StructureFilter = null, ordering: [StructureOrder!] = null, pagination: StructurePaginationInput = null): [Structure!]! @auth(required_scopes: ["kraph_read"])
 
   """
-  Get a structure by identifier and object. No graph: a structure belongs to the organization and has no vertex in any projection
+  Get a structure by identifier and object. No graph: a structure belongs to the organization; a view draws it only where it mounts its kind (RFC 0027)
   """
   structureByIdentifier(identifier: StructureIdentifier!, object: StructureObject!): Structure! @auth(required_scopes: ["kraph_read"])
 
@@ -5627,6 +6339,11 @@ type Query {
 
   """Get one metric kind by ID"""
   metricKind(id: ID!): MetricKind! @auth(required_scopes: ["kraph_read"])
+
+  """
+  The pairs a saved pairs query answers now, from the view's drawing: a preview. A run (`runPairsQuery`) stores the same answer with where the drawing stood
+  """
+  renderGraphPairs(id: ID!, pagination: OffsetPaginationInput = null): [PairsQueryRow!]! @auth(required_scopes: ["kraph_read"])
 
   """
   Render a saved table query. Answers from the **drawing**: a page of the view's property graph as of its cursor, filtered, ordered and paged there — the one read with no log path. `Graph.projection { lag }` says how far behind the log it is
@@ -5893,6 +6610,16 @@ input RenderGraphTableOrder {
 input RenderGraphTablePagination {
   limit: Int!
   offset: Int!
+}
+
+input RequestBigFileAccessInput {
+  storeId: String!
+}
+
+input RequestBigFileUploadInput {
+  originalFileName: String!
+  fileSize: ByteCount!
+  contentType: String = null
 }
 
 input RequestGeneralMediaAccessInput {
@@ -6214,6 +6941,20 @@ input RoleMappingInput {
   entityId: String!
 }
 
+"""
+Input for running a pairs query: its answer from the view's drawing, stored with where the drawing stood
+"""
+input RunPairsQueryInput {
+  """The pairs query to run"""
+  query: ID!
+
+  """What the run is called"""
+  name: String!
+
+  """What the run is for"""
+  description: String = null
+}
+
 """A claim that two instances are one thing"""
 type Sameness implements Edge {
   """This claim's durable identity — the `Link` primary key, a bare uuid"""
@@ -6323,6 +7064,17 @@ input ScatterPlotOrder @oneOf {
   id: Ordering
 }
 
+"""Input for changing only when a todo list or item is due"""
+input ScheduleTodoInput {
+  """The list or item to schedule"""
+  id: ID!
+
+  """
+  When it is due; no date when not given (an item then follows its list's)
+  """
+  dueAt: DateTime = null
+}
+
 """Input for ticking (or unticking) one object on a todo item"""
 input SetTodoStructureDoneInput {
   """The object on an item (a TodoItemStructure)"""
@@ -6338,6 +7090,15 @@ input SetTodoStructureStatusInput {
   id: ID!
 
   """To do, Doing or Done"""
+  status: TodoStatus!
+}
+
+"""Input for moving several objects on todo items to one status at once"""
+input SetTodoStructuresStatusInput {
+  """The objects on items (TodoItemStructures)"""
+  ids: [ID!]!
+
+  """To do, Doing or Done, for all of them"""
   status: TodoStatus!
 }
 
@@ -6466,10 +7227,129 @@ type Structure {
   derivations: [Link!]!
 }
 
+"""
+A structure kind mounted into a view (RFC 0027): the vertex label its data are drawn under wherever a structure relation the view admits touches them
+"""
+type StructureCategory implements Category @key(fields: "id", resolvable: true) {
+  """Database ID of the category"""
+  id: ID!
+
+  """Label/name of the category"""
+  label: String!
+
+  """
+  The unique key/identifier for this category, used for linking to entities or structures (e.g. 'Cell', 'ROI')
+  """
+  key: String!
+
+  """Description of the category"""
+  description: String
+
+  """
+  The label this view draws the category's nodes or edges under — its name in the projection namespace. One view's rename of the word; never what a node *is* (that is the claim's kind)
+  """
+  ageName: String!
+
+  """Persistent URL for this category"""
+  purl: String
+
+  """Color as RGBA list (0-255)"""
+  color: [Int!]
+
+  """An image representing this category, for visualization purposes"""
+  image: MediaStore
+
+  """The graph this category belongs to"""
+  graph: Graph!
+
+  """
+  The organization's word this category declares. Claims name the term, not this row — so a category is what the word means *here*, and another graph declaring the same word sees the same claims.
+  """
+  term: Term
+
+  """
+  What this category *means*: a predicate over classification claims (RFC 0007). Null on a primitive category, whose membership is whatever was asserted under its word
+  """
+  definition: CategoryDefinition
+
+  """List of relevant queries that use this category as input"""
+  relevantQueries: [GraphQuery!]!
+
+  """Whether the requesting user has pinned this graph for quick access"""
+  pinned: Boolean!
+
+  """The structure identifier this view mounts, e.g. @mikro/arraylens"""
+  identifier: String!
+}
+
+input StructureCategoryFilter {
+  graph: GraphFilter
+  id: ID
+  label: String
+  AND: StructureCategoryFilter
+  OR: StructureCategoryFilter
+  NOT: StructureCategoryFilter
+  DISTINCT: Boolean
+
+  """Filter by list of IDs"""
+  ids: [ID!]
+
+  """Filter by list of IDs"""
+  pinned: Boolean
+
+  """Filter by list of IDs"""
+  search: String
+
+  """The categories mounting one of these structure identifiers"""
+  identifiers: [String!]
+}
+
+input StructureCategoryOrder @oneOf {
+  label: Ordering
+  id: Ordering
+}
+
+"""Definition of a structure type in the graph schema"""
+input StructureDefinitionInput {
+  """The label of the node participating in the event"""
+  key: String!
+
+  """Description of this node role"""
+  description: String = null
+
+  """Ontology references for this event"""
+  ontologyReferences: [OntologyReferenceInput!]! = []
+
+  """Optional RGBA color for this node role (e.g. [255, 0, 0, 128])"""
+  color: [Int!] = null
+
+  """Optional media store ID for an image representing this node role"""
+  image: String = null
+
+  """
+  Optional human-readable label for this node role (defaults to 'key' if not provided)
+  """
+  label: String = null
+
+  """Whether to pin this node role in the UI"""
+  pin: Boolean = null
+
+  """The structure identifier mounted (e.g. '@mikro/arraylens')"""
+  identifier: String!
+}
+
 """Input type for creating a new graph query"""
 type StructureDescriptor {
   """Default category to link to if no entities match the filters"""
   defaultCategoryKey: String
+
+  """Structure identifiers to filter by (e.g. '@mikro/roi')"""
+  identifiers: [String!]
+
+  """
+  Descriptor constraints this end of the relation pins (e.g. '@mikro/n_space_axes' EQUALS 3): what a datum must be for a claim under this word to make sense here. Stored and served; checked by the client against the datum's own service before it asserts a pair
+  """
+  requires: [DescriptorConstraint!]
 }
 
 """
@@ -6481,6 +7361,11 @@ input StructureDescriptorInput {
 
   """Structure identifiers to filter by (e.g. '@mikro/roi')"""
   identifiers: [String!] = null
+
+  """
+  Descriptor constraints this end of the relation pins (e.g. '@mikro/n_space_axes' EQUALS 3): what a datum must be for a claim under this word to make sense here. Stored and served; checked by the client against the datum's own service before it asserts a pair
+  """
+  requires: [DescriptorConstraintInput!] = null
 }
 
 """Filter options for querying structures"""
@@ -6848,12 +7733,17 @@ input StructureRelationPaginationInput {
   limit: Int = 100
 }
 
-"""The log, as it is written"""
+"""The log, and todo lists, as they are written"""
 type Subscription {
   """
   Each act of claiming in the caller's organization, as its transaction commits. Never an act that rolled back, never another tenant's
   """
   assertionRecorded: Assertion! @auth(required_scopes: ["kraph_read"])
+
+  """
+  Each change to the organization's todo lists and items as its transaction commits; `list` or `item` narrow it to one board or one card
+  """
+  todoChanged(list: ID = null, item: ID = null): TodoChange! @auth(required_scopes: ["kraph_read"])
 }
 
 """Input for superseding a metric value"""
@@ -7079,6 +7969,30 @@ enum TermKind {
   MEASUREMENT
   RELATION
   STRUCTURE_RELATION
+  STRUCTURE
+}
+
+"""
+A todo list or item changed: re-read it, or drop it when it was deleted
+"""
+type TodoChange {
+  """Changed (created, edited, moved, ticked) or deleted"""
+  kind: TodoChangeKind!
+
+  """The list it is on (or the list itself)"""
+  listId: ID!
+
+  """The item, when the change was to one"""
+  itemId: ID
+
+  """The item as it is now; null for a list-only change or a deleted item"""
+  item: TodoItem
+}
+
+"""What happened to a todo list or item"""
+enum TodoChangeKind {
+  CHANGED
+  DELETED
 }
 
 """Input naming one todo list, item or item object"""
@@ -7104,6 +8018,9 @@ type TodoItem @key(fields: "id", resolvable: true) {
   """The item's own assignee (a sub); see `effectiveAssignee`"""
   assignee: ID
 
+  """The item's own due date; see `effectiveDueAt`"""
+  dueAt: DateTime
+
   """When the item was made"""
   createdAt: DateTime!
 
@@ -7114,13 +8031,21 @@ type TodoItem @key(fields: "id", resolvable: true) {
   list: TodoList!
 
   """The objects the item is about"""
-  structures: [TodoItemStructure!]!
+  structures(filters: TodoItemStructureFilter, ordering: [TodoItemStructureOrder!]! = [], pagination: OffsetPaginationInput): [TodoItemStructure!]!
 
   """The board column the item is in"""
   status: TodoStatus!
 
   """Who the item is for: its own assignee, else its list's (a sub)"""
   effectiveAssignee: ID
+
+  """When the item is due: its own date, else its list's"""
+  effectiveDueAt: DateTime
+
+  """
+  The item's objects done, out of all of them; read it instead of counting `structures`
+  """
+  progress: TodoProgress!
 }
 
 input TodoItemFilter {
@@ -7150,11 +8075,38 @@ input TodoItemFilter {
   """Items whose effective assignee is the caller"""
   mine: Boolean
 
-  """Items that carry this object; pair with `object`"""
+  """Items that carry this object; pair with `object` (or use `structure`)"""
   identifier: String
 
-  """Items that carry this object; pair with `identifier`"""
+  """
+  Items that carry this object; pair with `identifier` (or use `structure`)
+  """
   object: ID
+
+  """Items that carry this object (identifier and object together)"""
+  structure: TodoObjectFilter
+
+  """Items not Done yet (true), or only Done ones (false)"""
+  open: Boolean
+
+  """
+  Items that are for somebody, their own assignee or their list's (true), or for nobody (false)
+  """
+  assigned: Boolean
+
+  """Items changed at or after this time"""
+  updatedSince: DateTime
+
+  """Items due (their own date, else their list's) before this time"""
+  dueBefore: DateTime
+
+  """Items past their due date and not Done (true), or not overdue (false)"""
+  overdue: Boolean
+
+  """
+  Items with a due date, their own or their list's (true), or none (false)
+  """
+  hasDue: Boolean
 
   """Search the title and description"""
   search: String
@@ -7164,6 +8116,7 @@ input TodoItemOrder @oneOf {
   position: Ordering
   createdAt: Ordering
   updatedAt: Ordering
+  dueAt: Ordering
 }
 
 """An object a todo item is about, with its own To do / Doing / Done"""
@@ -7202,6 +8155,47 @@ type TodoItemStructure @key(fields: "id", resolvable: true) {
   status: TodoStatus!
 }
 
+input TodoItemStructureFilter {
+  id: ID
+  AND: TodoItemStructureFilter
+  OR: TodoItemStructureFilter
+  NOT: TodoItemStructureFilter
+  DISTINCT: Boolean
+
+  """Filter by list of IDs"""
+  ids: [ID!]
+
+  """This object's rows, one per item it is on; pair with `object`"""
+  identifier: String
+
+  """This object's rows, one per item it is on; pair with `identifier`"""
+  object: ID
+
+  """Objects in any of these states"""
+  status: [TodoStatus!]
+
+  """The objects of one item"""
+  item: ID
+
+  """The objects on one list's items"""
+  list: ID
+
+  """The objects on one project's items"""
+  project: ID
+
+  """Objects on items whose effective assignee is this user (a sub)"""
+  assignee: ID
+
+  """Objects on items whose effective assignee is the caller"""
+  mine: Boolean
+}
+
+input TodoItemStructureOrder @oneOf {
+  position: Ordering
+  createdAt: Ordering
+  doneAt: Ordering
+}
+
 """A list of things to do, usually handed to one person"""
 type TodoList @key(fields: "id", resolvable: true) {
   """Database ID of the list"""
@@ -7215,6 +8209,9 @@ type TodoList @key(fields: "id", resolvable: true) {
 
   """The sub of the user the list is assigned to"""
   assignee: ID
+
+  """When the list is due; its items without a date of their own follow it"""
+  dueAt: DateTime
 
   """When the list was made"""
   createdAt: DateTime!
@@ -7250,6 +8247,9 @@ input TodoListFilter {
   """Lists assigned to the caller, or holding an item assigned to them"""
   mine: Boolean
 
+  """Lists that still hold an item not Done (true), or none (false)"""
+  open: Boolean
+
   """Search the name and description"""
   search: String
 }
@@ -7257,6 +8257,15 @@ input TodoListFilter {
 input TodoListOrder @oneOf {
   name: Ordering
   createdAt: Ordering
+}
+
+"""One object, named the way a comment names one"""
+input TodoObjectFilter {
+  """The object's structure identifier, e.g. @mikro/image"""
+  identifier: String!
+
+  """The object's id within its structure"""
+  object: ID!
 }
 
 """How far along something is: done out of total"""
@@ -7279,6 +8288,29 @@ input TodoStructureInput {
 
   """The object's id within its structure"""
   object: ID!
+}
+
+"""
+Todo items counted by column, and their objects by whether they are done
+"""
+type TodoSummary {
+  """Items in To do"""
+  todo: Int!
+
+  """Items in Doing"""
+  doing: Int!
+
+  """Items in Done"""
+  done: Int!
+
+  """All items"""
+  total: Int!
+
+  """Items past their due date (their own, else their list's) and not Done"""
+  overdue: Int!
+
+  """The objects on those items: done out of total"""
+  objects: TodoProgress!
 }
 
 """Pagination options for a node's drawn edges and neighbours"""
@@ -7360,6 +8392,26 @@ input UpdateGraphInput {
   Replace whose sameness claims this view counts (RFC 0024); an empty rule list means everyone. Omitted means unchanged. Changing it refolds the view's individuals — the projection is rebuilt
   """
   samenessRule: SamenessRuleInput = null
+}
+
+"""
+Input for changing a pairs query. Runs keep the plan they were run with
+"""
+input UpdateGraphPairsQueryInput {
+  """The ID of the pairs query to update"""
+  id: String!
+
+  """Unique key for this query within its graph"""
+  key: String = null
+
+  """Human-readable name"""
+  name: String = null
+
+  """Description of this query"""
+  description: String = null
+
+  """A new plan; omitted means unchanged"""
+  plan: PairsQueryPlanInput = null
 }
 
 """Input for updating a graph table query through builder arguments"""
@@ -7639,6 +8691,35 @@ input UpdateScatterPlotInput {
   id: Int!
 }
 
+"""Input for changing a mounted structure kind"""
+input UpdateStructureCategoryInput {
+  """The ID of the definition to update"""
+  id: String!
+
+  """The label of the node participating in the event"""
+  key: String = null
+
+  """Description of this node role"""
+  description: String = null
+
+  """Ontology references for this event"""
+  ontologyReferences: [OntologyReferenceInput!] = null
+
+  """Optional RGBA color for this node role (e.g. [255, 0, 0, 128])"""
+  color: [Int!] = null
+
+  """Optional media store ID for an image representing this node role"""
+  image: String = null
+
+  """
+  Optional human-readable label for this node role (defaults to 'key' if not provided)
+  """
+  label: String = null
+
+  """Whether to pin this node role in the UI"""
+  pin: Boolean = null
+}
+
 """
 Input for updating an existing structure definition in the graph schema
 """
@@ -7845,7 +8926,7 @@ enum WhereOperator {
 
 scalar _Any
 
-union _Entity = Assertion | Comment | EntityCategory | Graph | GraphTableQuery | Instance | Link | MeasurementCategory | MediaStore | MetricKind | NaturalEventCategory | Project | ProtocolEventCategory | RelationCategory | ScatterPlot | Standing | StructureKind | StructureRelationCategory | Term | TodoItem | TodoItemStructure | TodoList
+union _Entity = Assertion | BigFileStore | Comment | EntityCategory | Graph | GraphPairsQuery | GraphTableQuery | Instance | Link | MeasurementCategory | MediaStore | MetricKind | Model | NaturalEventCategory | PairsQueryRun | PairsQueryRunEntry | Project | ProtocolEventCategory | RelationCategory | ScatterPlot | Standing | StructureCategory | StructureKind | StructureRelationCategory | Term | TodoItem | TodoItemStructure | TodoList
 
 type _Service {
   sdl: String!

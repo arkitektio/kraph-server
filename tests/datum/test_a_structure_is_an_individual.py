@@ -366,6 +366,7 @@ def edge_schema() -> models.GraphDefinitionInput:
                     ],
                 )
             ],
+            structures=[models.StructureDefinitionInput(key="Region", identifier="ROI")],
             structure_relations=[
                 models.StructureRelationDefinitionInput(
                     key="CONTAINS",
@@ -399,13 +400,13 @@ def edge_graph(transactional_db, table_projector, edge_schema, authenticated_con
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_structure_relation_is_an_evidence_row_with_no_projection(
+async def test_structure_relation_is_drawn_between_its_structures(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     edge_graph: core_models.Graph,
     table_projector,
 ) -> None:
-    """The claim is recorded, addressed by its own id, and draws no edge."""
+    """The claim is recorded, addressed by its own id, and drawn where a view mounts its ends (RFC 0027)."""
     category = await core_models.StructureRelationCategory.objects.filter(graph=edge_graph, key="CONTAINS").afirst()
     assert category is not None, "The schema declares a CONTAINS structure relation"
 
@@ -438,7 +439,7 @@ async def test_structure_relation_is_an_evidence_row_with_no_projection(
 
     link_count, edge_count = await links_and_edges()
     assert link_count == 1, "The claim must be recorded as evidence"
-    assert edge_count == 0, "Structures are not vertices, so there is nothing to draw an edge between"
+    assert edge_count == 1, "The view mounts ROI and admits CONTAINS, so the claim is an edge between two drawn structures"
 
 
 @pytest.mark.django_db(transaction=True)

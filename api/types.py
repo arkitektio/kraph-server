@@ -15,7 +15,11 @@ import strawberry
 from strawberry.scalars import JSON
 from asgiref.sync import sync_to_async
 from enum import Enum
-from typing import Annotated, Optional, List, Sequence, Type, TypeVar, Union, cast
+from typing import TYPE_CHECKING, Annotated, Optional, List, Sequence, Type, TypeVar, Union, cast
+
+if TYPE_CHECKING:
+    # Resolved lazily at schema build (`strawberry.lazy`): datasets.types imports this module's package.
+    from datasets.types import PairsQueryRun
 from datetime import datetime
 from api import loaders, order, pagination, filters
 from api import pagination as pagination_module
@@ -222,11 +226,22 @@ class EntityDescriptor:
     default_category_key: Optional[str] = kante.field(default=None, description="Default category to use for this entity if we aim to create a new one based on this descriptor")
 
 
+@kante.pydantic_type(input_models.DescriptorConstraintInput, description="One constraint on an external datum's descriptors, in the shape a rekuest port states its `requires` in")
+class DescriptorConstraint:
+    """One ``{key, operator, value}`` constraint, as stored on a relation word's end."""
+
+    key: str = kante.field(description="The descriptor key, e.g. '@mikro/n_space_axes'")
+    operator: input_models.DescriptorOperator = kante.field(description="How the datum's value is compared. MATCHES is equality, as EQUALS is")
+    value: Optional[JSON] = kante.field(default=None, description="What is compared against")
+
+
 @kante.pydantic_type(input_models.StructureDescriptorInput, description="Input type for creating a new graph query")
 class StructureDescriptor:
     """Descriptor for a structure, used as input for creating new graph queries."""
 
     default_category_key: Optional[str] = kante.field(default=None, description="Default category to use for this structure if we aim to create a new one based on this descriptor")
+    identifiers: Optional[List[str]] = kante.field(default=None, description="The structure identifiers this end accepts (e.g. '@mikro/arraylens'); none means any")
+    requires: Optional[List[DescriptorConstraint]] = kante.field(default=None, description="Descriptor constraints this end pins. Checked by the client against the datum's own service before it asserts a pair")
 
 
 @kante.pydantic_type(input_models.ColumnInput, all_fields=True, description="Input type for defining a graph schema")
@@ -254,6 +269,24 @@ class ReturnStatement:
 @kante.pydantic_type(query_ir.TableQueryPlan, all_fields=True, description="What a saved table query means — matches, wheres, returns, columns — independent of the projection kind that compiles it. The contract a client reads back and rewrites; `query` is its compiled form")
 class TableQueryPlan:
     """The saved-query plan, as read back."""
+
+
+@kante.pydantic_type(input_models.PairEndInput, all_fields=True, description="Which matched node is one end of a pair: a node of one path")
+class PairEnd:
+    """One end of a pairs query."""
+
+
+@kante.pydantic_type(query_ir.PairsQueryPlan, all_fields=True, description="What a pairs query means: a match over the view's drawing, and which two of its nodes are the pair")
+class PairsQueryPlan:
+    """A pairs query's plan, as read back."""
+
+
+@strawberry.type(description="One pair a pairs query answers now, from the view's drawing: two data, as (identifier, object). A drawn instance travels as @kraph/entity")
+class PairsQueryRow:
+    source_identifier: str = strawberry.field(description="The source's structure identifier, e.g. @mikro/arraylens")
+    source_object: strawberry.ID = strawberry.field(description="The source's id within its structure")
+    target_identifier: str = strawberry.field(description="The target's structure identifier")
+    target_object: strawberry.ID = strawberry.field(description="The target's id within its structure")
 
 
 @kante.pydantic_type(input_models.EventRoleInput, all_fields=True, description="Input type for defining roles in an event category")
@@ -321,6 +354,7 @@ class Graph:
     natural_event_categories: List["NaturalEventCategory"] = strawberry.field(default_factory=list, description="List of natural event categories defined in this graph")
     relation_categories: List["RelationCategory"] = strawberry.field(default_factory=list, description="List of relation categories defined in this graph")
     structure_relation_categories: List["StructureRelationCategory"] = strawberry.field(default_factory=list, description="List of structure relation categories defined in this graph")
+    structure_categories: List["StructureCategory"] = strawberry.field(default_factory=list, description="The structure kinds this graph mounts: the vertex labels its structure relations draw their ends under")
 
     # Queries
     queries: List["GraphQuery"] = strawberry.field(default_factory=list, description="List of graph queries defined in this graph")
@@ -480,12 +514,40 @@ class GraphQuery:
     # deferred and touching one is a query — hence `sync_to_async` on each.
     @strawberry.field(description="What this query means: its plan. Null only on a legacy row saved as raw Cypher before plans existed — see `legacy`")
     async def plan(self) -> Optional[TableQueryPlan]:
-        stored = await sync_to_async(lambda: query_ir.TableQueryPlan.from_stored(cast(models.GraphQuery, self).plan))()
+        def read() -> Optional[query_ir.TableQueryPlan]:
+            row = cast(models.GraphQuery, self)
+            # A pairs query's plan is a match and its two ends; read as a table, it is its lowering.
+            if row.kind == enums.GraphQueryKindChoices.PAIRS:
+                pairs = query_ir.PairsQueryPlan.from_stored(row.plan)
+                return pairs.to_table_plan() if pairs is not None else None
+            return query_ir.TableQueryPlan.from_stored(row.plan)
+
+        stored = await sync_to_async(read)()
         return TableQueryPlan.from_pydantic(stored) if stored is not None else None
 
     @strawberry.field(description="True for a row saved as raw Cypher before the plan became the contract. Such a row cannot render — no projection kind executes Cypher — until rebuilt through the builder")
     async def legacy(self) -> bool:
         return await sync_to_async(lambda: cast(models.GraphQuery, self).is_legacy)()
+
+
+@kind_type(models.GraphQuery, enums.GraphQueryKindChoices.PAIRS, filters=filters.GraphPairsQueryFilter, pagination=True, ordering=order.GraphPairsQueryOrder, description="An insight that selects pairs from a view's drawing (an image and its ground truth). Run (`runPairsQuery`), its answer is stored: a training set")
+class GraphPairsQuery(GraphQuery):
+    id: strawberry.ID = strawberry.field(description="Database ID of this saved query")
+
+    @strawberry.field(description="The match and its two ends")
+    async def pairs_plan(self) -> Optional[PairsQueryPlan]:
+        stored = await sync_to_async(lambda: query_ir.PairsQueryPlan.from_stored(cast(models.GraphQuery, self).plan))()
+        return PairsQueryPlan.from_pydantic(stored) if stored is not None else None
+
+    @kante.django_field(description="What the query says about itself, for a port's `requires`: its view, and the identifier each end is constrained to (null when it is not)")
+    def descriptors(self) -> JSON:
+        return cast(models.GraphQuery, self).stored_descriptors or {}
+
+    @kante.django_field(description="The runs of this query: its stored answers, newest first")
+    def runs(self) -> List[Annotated["PairsQueryRun", strawberry.lazy("datasets.types")]]:
+        from datasets import models as dataset_models
+
+        return list(dataset_models.PairsQueryRun.objects.filter(query_id=cast(models.GraphQuery, self).pk).order_by("-created_at"))
 
 
 @kind_type(models.GraphQuery, enums.GraphQueryKindChoices.TABLE, filters=filters.GraphTableQueryFilter, pagination=True, ordering=order.GraphTableQueryOrder, description="Base interface for graph schemas")
@@ -695,6 +757,15 @@ class RelationCategory(EdgeCategory, Category):
         return EntityDescriptor.from_pydantic(cast(models.RelationCategory, cast(models.Category, self).as_kind()).target_definition_model)
 
     pass
+
+
+@kind_type(models.Category, enums.CategoryKindChoices.STRUCTURE, filters=filters.StructureCategoryFilter, pagination=True, ordering=order.StructureCategoryOrder, description="A structure kind mounted into a view (RFC 0027): the vertex label its data are drawn under wherever a structure relation the view admits touches them")
+class StructureCategory(Category):
+    id: strawberry.ID = strawberry.field(description="Database ID of the category")
+
+    @kante.django_field(description="The structure identifier this view mounts, e.g. @mikro/arraylens")
+    def identifier(self) -> str:
+        return str(cast(models.StructureCategory, cast(models.Category, self).as_kind()).identifier)
 
 
 @kind_type(models.Category, enums.CategoryKindChoices.STRUCTURE_RELATION, filters=filters.StructureRelationCategoryFilter, pagination=True, ordering=order.StructureRelationCategoryOrder, description="A relation category definition")
@@ -2702,9 +2773,11 @@ def cast_node_to_graphql_type(node: RetrievedNode) -> NodeSubtype:
             return ProtocolEvent(_value=node)
         # No `ASSERTION` / `ACTIVITY` branch. Both mapped to `Activity`, a type
         # for a vertex the projector has never written; an assertion is served as
-        # the Django row now. No `STRUCTURE` / `METRIC` branch either: `type` is
-        # written from `Instance.Kind`, which has exactly the three values above —
-        # a structure or metric is never a vertex, so those cases were unreachable.
+        # the Django row now. No `STRUCTURE` / `METRIC` branch either: every node
+        # read starts from `Instance` rows, whose kinds are the three above. A
+        # structure *is* drawn where a view mounts it (RFC 0027), but only a query
+        # reaches it (`renderGraphTable`, `renderGraphPairs`): no node read starts
+        # from a structure, and no instance has an edge to one.
         case _:
             raise ValueError(f"Unknown node type: {node.node_type}")
 
@@ -3062,9 +3135,9 @@ class AssertedMeasurement(Asserted):
 
 @strawberry.type(description="An assertion about a structure relation — a claim between two external data")
 class AssertedStructureRelation(Asserted):
-    """No `drawings`: both endpoints are structures, which have no vertex for an
-    edge to run between. Omitted rather than always-empty — see
-    `AssertedMeasurement`."""
+    """No `drawings`. A structure relation is drawn where a view mounts its ends
+    (RFC 0027), but the edge is read through a query on that view
+    (`renderGraphPairs`, `renderGraphTable`), not off the write's result."""
 
     @strawberry.field(description=_CLAIM_DESCRIPTION)
     def link(self) -> Link:

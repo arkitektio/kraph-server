@@ -116,6 +116,7 @@ multi-table-inheritance class names survive as Django **proxies**:
 
 - node categories — `EntityCategory`, `NaturalEventCategory`, `ProtocolEventCategory`
 - edge categories — `RelationCategory`, `MeasurementCategory`, `StructureRelationCategory`
+- `StructureCategory` — a **mount**: a view's vertex label for one `StructureKind` (`structure_kind`), what its structure relations draw their ends under (RFC 0027)
 
 > That proxying matters when writing queryset code: `EntityCategory.objects.all().model.__name__`
 > is `"EntityCategory"`, while `_meta.concrete_model.__name__` is `"Category"`.
@@ -139,6 +140,8 @@ Also `core/models.py`, also graph-scoped. One kind: the **table** query.
 | Table | Means | Where |
 |---|---|---|
 | `GraphQuery` (proxy `GraphTableQuery`) | A saved table query. Its **plan** — `graph_engine.query_ir.TableQueryPlan`: matches, wheres, returns, columns — is the contract a client writes and reads back; each projection kind compiles it (`Projector.render_table`). the `query` read-back field is gone with Cypher; a **legacy** row (plan null, raw Cypher stored) cannot render at all, and `manage.py list_legacy_queries` names it so it can be rebuilt | `core.GraphQuery` |
+| `GraphPairsQuery` | A saved **pairs** query (`GraphQuery` kind `PAIRS`): a match over the drawing and which two of its nodes are the pair (`query_ir.PairsQueryPlan`), lowered to a table plan to compile. An insight whose runs are training sets (RFC 0027) | `core.GraphQuery` |
+| `PairsQueryRun` | A pairs query's **stored answer**: its pairs as `(identifier, object)` entries, the plan as run, and `as_of_seq` (where the drawing stood). What a `TrainedModel` cites | `datasets.PairsQueryRun` |
 | `ScatterPlot` | Chart configuration over one table query's columns | `core.ScatterPlot` |
 
 > `NodeQuery`, `EdgeQuery`, their proxies, and the `NODES` / `PATH` / `PAIRS` kinds
@@ -189,9 +192,11 @@ component — and `ProjectionMember` lists them; `id` is the lowest member.
 |---|---|---|
 | `Instance` (entity, natural event, protocol event) | **yes**, one vertex per **individual** — several instances the view's sameness claims join share one, listed on `ProjectionMember` | |
 | `Link` of kind `RELATION`, `PARTICIPATES_AS_*` | **yes**, a drawn edge | |
-| `Link` of kind `MEASUREMENT`, `STRUCTURE_RELATION` | **no** | endpoints have no vertex, or nothing projects it |
+| `Link` of kind `STRUCTURE_RELATION` | **yes**, where the view mounts both ends' identifiers (RFC 0027) | an edge between two structure vertices |
+| `Link` of kind `MEASUREMENT` | **no** | nothing projects it |
 | `Link` of kind `INFORMS`, `CLASSIFIES`, `SAME_AS`, `DIFFERENT_FROM` | **no** | read from evidence directly |
-| `Structure`, `Metric`, `Assertion`, `Comment` | **no** | evidence rows with no drawn presence at all |
+| `Structure` | **yes**, where an admitted structure relation touches it (RFC 0027) | one vertex of one member, labelled by the view's mount, carrying `identifier` and `object` |
+| `Metric`, `Assertion`, `Comment` | **no** | evidence rows with no drawn presence at all |
 
 ### Vertex properties
 

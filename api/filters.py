@@ -4,7 +4,7 @@ from typing import List, Optional
 import strawberry
 from core import models, enums
 from evidence import models as evidence_models
-from django.db.models import Q
+from django.db.models import Q, QuerySet
 import kante
 from graph_engine import input_models
 from api import inputs
@@ -409,6 +409,13 @@ class StructureKindFilter:
 
 
 @kante.filter_type(models.Category)
+class StructureCategoryFilter(CategoryFilter):
+    @kante.filter_field(description="The categories mounting one of these structure identifiers")
+    def identifiers(self, value: list[str], prefix: str) -> Q:
+        return Q(**{f"{prefix}structure_kind__identifier__in": value})
+
+
+@kante.filter_type(models.Category)
 class StructureRelationCategoryFilter(CategoryFilter):
     pass
 
@@ -457,6 +464,20 @@ class GraphTableQueryFilter(GraphQueryFilter):
     """
 
     pass
+
+
+@kante.filter_type(models.GraphQuery)
+class GraphPairsQueryFilter(GraphQueryFilter):
+    @kante.filter_field(
+        description=(
+            "Filter to the pairs queries satisfying every one of these descriptor constraints: the `requires` of a port, handed on unchanged, so a picker offers what the port accepts "
+            "(e.g. `@kraph/source_identifier` EQUALS `@mikro/arraylens`). Answered in SQL from the descriptors stored on every pairs query. A key a pairs query does not declare is refused rather than ignored"
+        )
+    )
+    def requires(self, info: kante.Info, queryset: QuerySet, value: list[inputs.DescriptorConstraintInput], prefix: str) -> tuple[QuerySet, Q]:
+        from kraph_server.service import service
+
+        return queryset, service.requires(models.GraphPairsQuery, value, prefix)
 
 
 @kante.filter_type(models.ScatterPlot)

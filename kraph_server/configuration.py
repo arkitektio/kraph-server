@@ -24,10 +24,11 @@ class RedisSettings(shared.RedisSettings):
 
 
 class KraphDatalayerSettings(DatalayerSettings):
-    """The datalayer block: kraph stores images of graphs, categories and terms as media."""
+    """The datalayer block: kraph stores images of graphs, categories and terms as media, and model weights as big files."""
 
     session_name: str = Field(default="kraph", description="Prefix of every STS session kraph assumes, so an object store's audit log names it.")
     media: DatalayerBucket = Field(description="Bucket for media / general file storage. Required for this service.")
+    bigfile: DatalayerBucket = Field(description="Bucket for large binary files (BigFileStore): the weights of trained models. Required for this service.")
 
 
 class ProjectionSettings(BaseModel):

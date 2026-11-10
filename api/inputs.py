@@ -216,18 +216,45 @@ class DeleteEntityCategoryInput:
     pass
 
 
+@pydantic.input(model=input_models.DescriptorConstraintInput, all_fields=True, description="One constraint on an external datum's descriptors, in the shape a rekuest port states its `requires` in")
+class DescriptorConstraintInput:
+    """One ``{key, operator, value}`` constraint."""
+
+    value: AnyScalar | None = strawberry.field(default=None, description="What is compared against: a number for GTE/LTE, a list for IN/NOT_IN, true or false for EXISTS, the member looked for with CONTAINS")
+
+
 @pydantic.input(model=input_models.StructureDescriptorInput, all_fields=True, description="Input for creating a new structure relation definition in the graph schema")
 class StructureDescriptorInput:
     """Input for creating a new structure relation definition in the graph schema."""
 
     identifiers: List[str] | None = strawberry.field(default=None, description="The list of ontology terms associated with this entity descriptor")
-
-    pass
+    requires: List[DescriptorConstraintInput] | None = strawberry.field(default=None, description="Descriptor constraints this end pins (e.g. '@mikro/n_space_axes' EQUALS 3). Stored and served; checked by the client against the datum's own service before it asserts a pair")
 
 
 @pydantic.input(model=input_models.CreateStructureRelationCategoryInput, all_fields=True, description="Input for creating a new structure relation definition in the graph schema")
 class CreateStructureRelationCategoryInput:
     """Input for creating a new structure relation definition in the graph schema."""
+
+    pass
+
+
+@pydantic.input(model=input_models.CreateStructureCategoryInput, all_fields=True, description="Input for mounting a structure kind into a graph: the vertex label its data are drawn under (RFC 0027)")
+class CreateStructureCategoryInput:
+    """Mount a structure kind into a graph."""
+
+    identifier: str = strawberry.field(description="The structure identifier mounted (e.g. '@mikro/arraylens')")
+
+
+@pydantic.input(model=input_models.UpdateStructureCategoryInput, all_fields=True, description="Input for changing a mounted structure kind")
+class UpdateStructureCategoryInput:
+    """Change a mounted structure kind."""
+
+    pass
+
+
+@pydantic.input(model=input_models.DeleteStructureCategoryInput, all_fields=True, description="Input for unmounting a structure kind")
+class DeleteStructureCategoryInput:
+    """Unmount a structure kind."""
 
     pass
 
@@ -738,6 +765,26 @@ class UpdateGraphTableQueryInput:
 @pydantic.input(model=input_models.DeleteGraphTableQueryInput, all_fields=True, description="Input for deleting a graph table query")
 class DeleteGraphTableQueryInput:
     id: strawberry.ID = strawberry.field(description="The ID of the graph table query to delete")
+    pass
+
+
+@pydantic.input(model=input_models.PairEndInput, all_fields=True, description="Which matched node is one end of a pair: a node of one path")
+class PairEndInput:
+    pass
+
+
+@pydantic.input(model=input_models.PairsQueryPlanInput, all_fields=True, description="What a pairs query means: a match over the view's drawing, and which two of its nodes are the pair")
+class PairsQueryPlanInput:
+    pass
+
+
+@pydantic.input(model=input_models.CreateGraphPairsQueryInput, all_fields=True, description="Input for saving a pairs query: an insight over one view whose runs are training sets")
+class CreateGraphPairsQueryInput:
+    pass
+
+
+@pydantic.input(model=input_models.UpdateGraphPairsQueryInput, all_fields=True, description="Input for changing a pairs query. Runs keep the plan they were run with")
+class UpdateGraphPairsQueryInput:
     pass
 
 

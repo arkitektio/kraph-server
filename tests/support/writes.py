@@ -514,3 +514,52 @@ SCHEDULE_TODO_LIST = """
         scheduleTodoList(input: $input) { id dueAt }
     }
 """
+
+CREATE_STRUCTURE_RELATION_CATEGORY = """
+    mutation CreateStructureRelationCategory($input: CreateStructureRelationCategoryInput!) {
+        createStructureRelationCategory(input: $input) {
+            id
+            sourceDescriptor { identifiers requires { key operator value } }
+            targetDescriptor { identifiers requires { key operator value } }
+        }
+    }
+"""
+
+CREATE_GRAPH_PAIRS_QUERY = """
+    mutation CreateGraphPairsQuery($input: CreateGraphPairsQueryInput!) {
+        createGraphPairsQuery(input: $input) { id key descriptors pairsPlan { source { path node } target { path node } } }
+    }
+"""
+
+DELETE_GRAPH_PAIRS_QUERY = """
+    mutation DeleteGraphPairsQuery($input: DeleteGraphTableQueryInput!) {
+        deleteGraphPairsQuery(input: $input)
+    }
+"""
+
+RUN_PAIRS_QUERY = """
+    mutation RunPairsQuery($input: RunPairsQueryInput!) {
+        runPairsQuery(input: $input) {
+            id name auto asOfSeq nPairs sourceIdentifier targetIdentifier descriptors
+            entries { position sourceIdentifier sourceObject targetIdentifier targetObject }
+        }
+    }
+"""
+
+DELETE_PAIRS_QUERY_RUN = """
+    mutation DeletePairsQueryRun($input: DeletePairsQueryRunInput!) {
+        deletePairsQueryRun(input: $input)
+    }
+"""
+
+CREATE_MODEL = """
+    mutation CreateModel($input: CreateModelInput!) {
+        createModel(input: $input) { id name framework trainedOn { id auto asOfSeq nPairs } store { id } descriptors }
+    }
+"""
+
+DELETE_MODEL = """
+    mutation DeleteModel($input: DeleteModelInput!) {
+        deleteModel(input: $input)
+    }
+"""

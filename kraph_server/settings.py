@@ -78,6 +78,8 @@ INSTALLED_APPS = [
     "projects",
     # Todo lists: product state (C7), never evidence. See `todos/models.py`.
     "todos",
+    # Paired datasets: a structure-relation word's pairs, read at a seq and stored (C7). See `datasets/models.py`.
+    "datasets",
     # A reader's cursors in other services' change feeds (mikro's metrics: `evidence.ingest`).
     "arkitekt_service.feed",
     "health_check",  # required for health checks

@@ -1,13 +1,14 @@
 """
 Structure relation mutation resolvers.
 
-Structure relations are evidence rows and nothing else. Both endpoints are
-structures, which stopped being AGE vertices in M1, so there is no edge to
-project and no graph in the identifier — the `Link` primary key names the claim
-directly, the same way a structure's id does.
+A structure relation is a claim between two structures. It is drawn as an edge
+between structure vertices in every view that mounts both ends' identifiers and
+admits it (RFC 0027), after the act, like every drawn claim. No graph is in the
+identifier: the `Link` primary key names the claim directly, the same way a
+structure's id does.
 
-Their results therefore always carry an empty `drawings`, structurally: neither
-endpoint has a vertex, so there is nothing for an edge to run between.
+Their results carry no `drawings`: what a pairs query reads is the view's
+drawing, and a claim's edges are read there (`renderGraphPairs`).
 """
 
 from kante.types import Info

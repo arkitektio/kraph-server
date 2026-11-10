@@ -181,12 +181,12 @@ Same default, same meaning. And an optional `confidence`, like every claim.
 | `PARTICIPATES_AS_INPUT` | this entity went into that event, in this role | an edge, entity → event |
 | `PARTICIPATES_AS_OUTPUT` | that event produced this entity, in this role | an edge, event → entity |
 | `MEASUREMENT` | this structure measures that entity, under this term | nothing — the typed form of INFORMS |
-| `STRUCTURE_RELATION` | these two structures are related | nothing — structures are not vertices |
+| `STRUCTURE_RELATION` | these two structures are related | an edge between two structure vertices, where a view mounts both identifiers (RFC 0027) |
 | `DERIVED_FROM` | this claim came from that claim (RFC 0017) | nothing — lineage between claims, read as `derivedFrom`/`derivations` |
 
-Three of these are drawn. The rest are not, and it is not a gap. A structure
-relation has both endpoints organization-scoped, so an edge in one graph's
-projection would be the wrong place to keep it; `INFORMS`/`MEASUREMENT` move
+Four of these are drawn. The rest are not, and it is not a gap. A structure
+relation is drawn only where a view mounts its ends' identifiers (RFC 0027): the
+structures become vertices there, so a pairs query can select them; `INFORMS`/`MEASUREMENT` move
 derived values instead; `CLASSIFIES`, `SAME_AS` and `DIFFERENT_FROM` decide what a
 vertex *is* rather than adding one; and `DERIVED_FROM` relates claims, not the things the
 claims are about — its ends may be a metric, a structure or another link, none

@@ -26,7 +26,7 @@ accepted through `createRelationCategory`. `refuse_edge_properties` closes that
 half.
 """
 
-from django.db.models import ProtectedError
+from django.db.models import ProtectedError, RestrictedError
 
 
 def delete_or_explain(item, *, what: str, instead: str) -> None:
@@ -43,6 +43,13 @@ def delete_or_explain(item, *, what: str, instead: str) -> None:
         detail = ", ".join(str(blocker) for blocker in blockers)
         more = "" if len(blockers) < 5 else " (and more)"
         raise ValueError(f"Cannot delete {what}: evidence still refers to it — {detail}{more}. Evidence is append-only, so the term it was recorded under has to outlive it. {instead}") from error
+    except RestrictedError as error:
+        # The datasets' `RESTRICT`s: a model cites the run it was trained on, and a
+        # view's deletion would cascade through its queries' runs to one.
+        blockers = list(error.restricted_objects)[:5]
+        detail = ", ".join(str(blocker) for blocker in blockers)
+        more = "" if len(blockers) < 5 else " (and more)"
+        raise ValueError(f"Cannot delete {what}: {detail}{more} cite(s) what it holds, as the pairs they were trained on. Delete those first.") from error
 
 
 def refuse_edge_properties(key: str, property_definitions) -> None:

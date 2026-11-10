@@ -157,11 +157,15 @@ def namespace_spec(graph: core_models.Graph) -> NamespaceSpec:
     """
     categories = list(
         core_models.Category.objects.filter(graph=graph)
+        .select_related("structure_kind")
         .prefetch_related("ontology_references")
         .order_by("pk")
     )
-    node_categories = [c for c in categories if c.kind in {str(k) for k in core_enums.NODE_CATEGORY_KINDS}]
+    # Vertex categories: the node kinds, and the STRUCTURE categories a view mounts (RFC 0027).
+    node_categories = [c for c in categories if c.kind in {str(k) for k in core_enums.VERTEX_CATEGORY_KINDS}]
     entity_like = [c for c in node_categories if c.kind in {str(k) for k in _ENTITY_LIKE_KINDS}]
+    # Mounted identifier -> its STRUCTURE category, what a structure relation's ends resolve to.
+    mounted = {str(c.structure_kind.identifier): c for c in categories if c.kind == str(core_enums.CategoryKindChoices.STRUCTURE) and c.structure_kind_id is not None}
 
     participation_labels = {label for labels in _PARTICIPATION.values() for label in labels[:2]}
     vertices: list[VertexElement] = []
@@ -214,7 +218,25 @@ def namespace_spec(graph: core_models.Graph) -> NamespaceSpec:
                         target_pk=target.pk,
                     )
                 )
-        # MEASUREMENT and STRUCTURE_RELATION: nothing draws them — no element tables.
+        elif category.kind == str(core_enums.CategoryKindChoices.STRUCTURE_RELATION):
+            # Its ends name identifiers; each resolves to the view's STRUCTURE category
+            # for it, and an open end to every mounted one (`projector._end_admits`).
+            label = _guard_label(str(category.age_name), category=category)
+            ends = []
+            for definition in (category.source_definition, category.target_definition):
+                named = [str(value) for value in ((definition or {}).get("identifiers") or [])]
+                ends.append([mounted[identifier] for identifier in (named or sorted(mounted)) if identifier in mounted])
+            for source in ends[0]:
+                for target in ends[1]:
+                    edges.append(
+                        EdgeElement(
+                            view_name=f"e{category.pk}_{source.pk}_{target.pk}",
+                            label=label,
+                            source_pk=source.pk,
+                            target_pk=target.pk,
+                        )
+                    )
+        # MEASUREMENT: nothing draws it — no element tables.
 
     total = len(vertices) + len(edges)
     if total > NAMESPACE_MAX_ELEMENT_TABLES:

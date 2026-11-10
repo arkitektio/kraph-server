@@ -28,6 +28,9 @@ datalayer:
     bucket: zarr
   parquet:
     bucket: parquet
+  # Model weights (BigFileStore). The bucket must exist in the store.
+  bigfile:
+    bucket: kraph-bigfile
 redis:
   host: redis
   port: 6379

@@ -405,12 +405,60 @@ class EdgeCategoryManager(CategoryManager[T], Generic[T]):
         return async_to_sync(self.acreate_from_edge_definition)(graph, definition, other_defaults)
 
 
+class StructureCategoryManager(NodeCategoryManager["core_models.StructureCategory"]):
+    """Mounting a structure kind into a view (RFC 0027)."""
+
+    async def acreate_from_structure_definition(
+        self,
+        graph: "core_models.Graph",
+        definition: input_models.StructureDefinitionInput,
+    ) -> "core_models.StructureCategory":
+        """Mount ``definition.identifier`` as the vertex category ``definition.key`` in ``graph``.
+
+        The organization's `StructureKind` is minted if it is new, as any structure write
+        would mint it; its label and description fill in what the definition leaves out.
+        """
+        from evidence import writer as evidence_writer
+
+        organization = await sync_to_async(lambda: graph.organization)()
+        kind = await sync_to_async(evidence_writer.ensure_structure_kind)(organization, str(definition.identifier))
+        return await self.acreate_from_node_definition(
+            graph=graph,
+            definition=definition.model_copy(update={"label": definition.label or kind.label, "description": definition.description or kind.description}),
+            other_defaults={"structure_kind": kind},
+        )
+
+    def create_from_structure_definition(
+        self,
+        graph: "core_models.Graph",
+        definition: input_models.StructureDefinitionInput,
+    ) -> "core_models.StructureCategory":
+        return async_to_sync(self.acreate_from_structure_definition)(graph, definition)
+
+
+def refuse_unmounted_ends(graph: "core_models.Graph", definition: input_models.StructureRelationDefinitionInput) -> None:
+    """A structure relation's ends may only name identifiers the view mounts (RFC 0027).
+
+    Every endpoint the category admits is drawn under the STRUCTURE category of its
+    identifier, so an identifier no category mounts would admit edges with nowhere to
+    draw their ends.
+    """
+    from core import models as core_models
+
+    mounted = set(core_models.mounted_structure_categories(graph))
+    named = {str(identifier) for end in (definition.source, definition.target) for identifier in (end.identifiers or [])}
+    missing = sorted(named - mounted)
+    if missing:
+        raise ValueError(f"{definition.key}: the view mounts no structure {', '.join(missing)}. Mount it first (a STRUCTURE category: `structures` in the graph definition, or createStructureCategory)")
+
+
 class StructureRelationCategoryManager(EdgeCategoryManager["core_models.StructureRelationCategory"]):
     async def acreate_from_structure_relation_definition(
         self,
         graph: "core_models.Graph",
         definition: input_models.StructureRelationDefinitionInput,
     ) -> "core_models.StructureRelationCategory":
+        await sync_to_async(refuse_unmounted_ends)(graph, definition)
         return await super().acreate_from_edge_definition(graph=graph, definition=definition)
 
     def create_from_structure_relation_definition(

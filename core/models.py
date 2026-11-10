@@ -1,6 +1,8 @@
 import random
 import uuid
 from typing import TYPE_CHECKING, Any
+from arkitekt_service.service.described import Described
+from django.contrib.postgres.indexes import GinIndex
 from django.db import models
 from django.contrib.auth import get_user_model
 from kante import Info
@@ -188,6 +190,10 @@ class Graph(models.Model):
     @property
     def structure_relation_categories(self):
         return StructureRelationCategory.objects.filter(graph=self)
+
+    @property
+    def structure_categories(self):
+        return StructureCategory.objects.filter(graph=self)
 
     @property
     def measurement_categories(self):
@@ -446,6 +452,14 @@ class Category(KindDiscriminatedModel):
             "that used it; deleting *this* row is free, and only drops the term from this graph."
         ),
     )
+    structure_kind = models.ForeignKey(
+        "evidence.StructureKind",
+        on_delete=models.PROTECT,
+        related_name="categories",
+        null=True,
+        blank=True,
+        help_text=("For a STRUCTURE category only: the organization's kind of external datum this view mounts (e.g. `@mikro/arraylens`), the way a category mounts a term. Its data are drawn under this category's label wherever a structure relation the view admits touches them (RFC 0027)."),
+    )
     image = models.ForeignKey(
         datalayer_models.MediaStore,
         on_delete=models.SET_NULL,
@@ -576,6 +590,8 @@ class Category(KindDiscriminatedModel):
             # *derivation* (a defined category's clauses naming the word), and
             # those are resolved by admission, never by a term→category map.
             models.UniqueConstraint(fields=["graph", "term"], condition=models.Q(term__isnull=False), name="one_category_per_word_per_view"),
+            # A view mounts a structure kind once: one vertex label per kind of external datum.
+            models.UniqueConstraint(fields=["graph", "structure_kind"], condition=models.Q(structure_kind__isnull=False), name="one_mount_per_structure_kind_per_view"),
         ]
 
     def save(self, *args, **kwargs):
@@ -1074,6 +1090,37 @@ class StructureRelationCategory(EdgeCategory):
         proxy = True
 
 
+class StructureCategory(Category):
+    """A structure kind mounted into a view (RFC 0027): the vertex label its data are drawn under.
+
+    The view's counterpart of rekuest's hosted-structure declaration: an identifier
+    (`@mikro/arraylens`), named in this view by a key (`Image`) with a label and a
+    description, mounted from the organization's `StructureKind` the way any category
+    mounts a `Term`. A structure-relation category's ends name identifiers this view
+    mounts, so every endpoint it admits has a vertex category to be drawn under. A
+    drawn structure is not a `Node`: nodes are drawings of instances (RFC 0025).
+    """
+
+    objects: managers.StructureCategoryManager = managers.StructureCategoryManager()
+
+    KIND = enums.CategoryKindChoices.STRUCTURE
+    KINDS = (enums.CategoryKindChoices.STRUCTURE,)
+
+    @property
+    def identifier(self) -> str | None:
+        """The structure identifier this category mounts, e.g. `@mikro/arraylens`."""
+        kind = self.structure_kind
+        return kind.identifier if kind is not None else None
+
+    class Meta:
+        proxy = True
+
+
+def mounted_structure_categories(graph: "Graph") -> dict[str, "StructureCategory"]:
+    """The structure kinds a view mounts, by identifier."""
+    return {category.structure_kind.identifier: category for category in StructureCategory.objects.filter(graph=graph).select_related("structure_kind")}
+
+
 #: Which proxy class owns each `kind`, for `Category.as_kind()`.
 CATEGORY_PROXIES: dict[str, type[Category]] = {
     enums.CategoryKindChoices.ENTITY: EntityCategory,
@@ -1082,6 +1129,7 @@ CATEGORY_PROXIES: dict[str, type[Category]] = {
     enums.CategoryKindChoices.MEASUREMENT: MeasurementCategory,
     enums.CategoryKindChoices.RELATION: RelationCategory,
     enums.CategoryKindChoices.STRUCTURE_RELATION: StructureRelationCategory,
+    enums.CategoryKindChoices.STRUCTURE: StructureCategory,
 }
 
 
@@ -1097,7 +1145,7 @@ CATEGORY_PROXIES: dict[str, type[Category]] = {
 ARCHIVED_HELP = "Whether this saved query has been put away. Archiving is the reversible alternative to deleting it."
 
 
-class GraphQuery(KindDiscriminatedModel):
+class GraphQuery(Described, KindDiscriminatedModel):
     """A saved query over a graph, in one table.
 
     `kind` was already the discriminator here -- it just used to sit alongside a
@@ -1163,6 +1211,10 @@ class GraphQuery(KindDiscriminatedModel):
 
         default_related_name = "graph_queries"
         unique_together = ("graph", "key")
+        indexes = [
+            # What a port's `requires` reads (kraph_server/service.py: `@kraph/pairsquery`).
+            GinIndex(fields=["stored_descriptors"], name="graph_query_desc_gin", opclasses=["jsonb_path_ops"]),
+        ]
 
 
 class GraphTableQuery(GraphQuery):
@@ -1170,6 +1222,23 @@ class GraphTableQuery(GraphQuery):
 
     KIND = enums.GraphQueryKindChoices.TABLE
     KINDS = (enums.GraphQueryKindChoices.TABLE,)
+    objects = managers.KindedManager()
+
+    class Meta:
+        proxy = True
+
+
+class GraphPairsQuery(GraphQuery):
+    """An insight that selects pairs: a match over the view's drawing, and which two of its nodes are the pair.
+
+    Its plan is a `graph_engine.query_ir.PairsQueryPlan`. Rendered, it answers live from
+    the drawing; run (`datasets.logic.run_pairs_query`), its answer is stored with the
+    drawing's position, because the drawing has no "as of" (RFC 0014) and a training set
+    has to say exactly what it was.
+    """
+
+    KIND = enums.GraphQueryKindChoices.PAIRS
+    KINDS = (enums.GraphQueryKindChoices.PAIRS,)
     objects = managers.KindedManager()
 
     class Meta:

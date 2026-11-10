@@ -18,6 +18,7 @@ from .natural_event import natural_event, natural_events
 from .protocol_event import protocol_event, protocol_events
 from .insights.graph_table import render_graph_table
 from .insights.table_plan import render_table_plan
+from .insights.graph_pairs import render_graph_pairs
 from .node import node, nodes
 from .claim import instance, link, standings
 from .log import assertions, assertion, changes
@@ -78,4 +79,5 @@ __all__ = [
     # Insight render queries
     "render_graph_table",
     "render_table_plan",
+    "render_graph_pairs",
 ]

@@ -782,7 +782,8 @@ class RetrievedEdge:
 class RetrievedStructure(RetrievedNode):
     """A structure, read from the relational evidence base.
 
-    Structures stopped being AGE vertices in M1. This stays a `RetrievedNode`
+    Read from the evidence row, not from a drawing: a view draws a structure only
+    where it mounts its kind (RFC 0027). This stays a `RetrievedNode`
     rather than becoming a strawberry-django type so that `api/types.py` keeps
     working untouched — rewriting that layer is M5's job, and doing it here would
     mean doing it twice.

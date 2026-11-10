@@ -1,9 +1,9 @@
 """Declaring, changing and removing a structure relation category — a view's rule
 for an edge between two structures.
 
-Nothing is drawn for this category: the claim lists read its rules live
-(`links_for_category`) and the vocabulary index follows the category-save signal.
-That is why `rebuild_on_rule_change` is false here and true for relations.
+Its claims are drawn as edges between structure vertices (RFC 0027), so a rule
+change moves which edges exist and rebuilds the view, as it does for relations. Its
+ends may only name identifiers the view mounts (`core.managers.refuse_unmounted_ends`).
 """
 
 from typing import cast
@@ -47,7 +47,7 @@ def update_structure_relation_category(info: Info, input: inputs.UpdateStructure
         models.StructureRelationCategory,
         what="structure relation category",
         node=False,
-        rebuild_on_rule_change=False,
+        rebuild_on_rule_change=True,
     )
     return cast(types.StructureRelationCategory, item)
 

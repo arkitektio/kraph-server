@@ -24,8 +24,8 @@ category has no rules, everything counts, which is the default.
   relations and measurements. It is set in the graph definition at
   `createGraph` (or `createProtocolEventCategory`), and changed with the
   matching `update*Category` mutation. Changing it rebuilds the drawing before
-  the mutation returns where something is drawn; structure relations and
-  measurements are not drawn, so their lists just read the new rules.
+  the mutation returns where something is drawn (structure relations included,
+  RFC 0027); measurements are not drawn, so their lists just read the new rules.
 - `PropertyDefinition.rule.evidence` holds the rules for one derived property.
   It overrides the category's rules for that property's measurements only.
 

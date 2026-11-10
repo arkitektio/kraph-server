@@ -34,7 +34,7 @@ AUTHENTIKATE = {
 # key. Tests that exercise a grant care about its *shape*, not its credentials.
 # No object store in the test stack: grants are never minted here, so the datalayer only needs a
 # media bucket name for the store rows the tests create.
-DATALAYER = {"access_key": "test", "secret_key": "test", "media": {"bucket": "media"}, "allow_unscoped_fallback": True}
+DATALAYER = {"access_key": "test", "secret_key": "test", "media": {"bucket": "media"}, "bigfile": {"bucket": "bigfile"}, "allow_unscoped_fallback": True}
 # The compose stack's redis (tests/integration/docker-compose.yaml); `/ht` pings it.
 REDIS_URL = f"redis://localhost:{os.environ.get('KRAPH_TEST_REDIS_PORT', '6666')}/0"
 # The subscription tests listen through a stub consumer on the process-local layer;
