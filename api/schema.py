@@ -26,6 +26,7 @@ from api.subscriptions import Subscription
 from arkitekt_datalayer import mutations as datalayer_mutations
 from arkitekt_datalayer import scalars as datalayer_scalars
 from arkitekt_datalayer.datalayer import load_config
+from arkitekt_service.graphql import TelemetryExtension
 from authentikate.catch_alls import declare_catch_alls
 from authentikate.strawberry.directives import AuthExtension
 from graph_engine import scalars
@@ -797,6 +798,7 @@ def create_schema(
         Configured Kante schema
     """
     extensions = [
+        TelemetryExtension(),
         QueryDepthLimiter(max_depth=max_depth),
         AuthentikateExtension(),
         # Loaders are per-operation. Left as module-level instances they became a
