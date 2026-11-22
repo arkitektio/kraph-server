@@ -10,9 +10,9 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
+import os
 from pathlib import Path
 
-import os
 from .configuration import Settings
 from .logs import build_logging
 
@@ -42,7 +42,9 @@ USE_X_FORWARDED_HOST = conf.django.use_x_forwarded_host
 # Behind the deployment proxy the request reaches daphne over plain http. Trust the
 # proxy's protocol header exactly when we already trust its host header; a proxy
 # that forwards `X-Forwarded-Proto` must overwrite a client-sent one.
-SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https") if conf.django.use_x_forwarded_host else None
+SECURE_PROXY_SSL_HEADER = (
+    ("HTTP_X_FORWARDED_PROTO", "https") if conf.django.use_x_forwarded_host else None
+)
 
 # TLS termination and HSTS belong to the proxy in front of daphne; local
 # deployments serve plain http on purpose. Secure-cookie warnings (W012/W016) stay
@@ -95,25 +97,53 @@ INSTALLED_APPS = [
 AUTH_USER_MODEL = "authentikate.User"
 
 
-
 DATALAYER = conf.datalayer.model_dump(exclude_none=True) if conf.datalayer else {}
 
 # The hook agent (``kraph_server.hook_agent``): where rekuest is, and this instance's key and the
 # hub trust bundle (``arkitekt_service.trust``) it signs and verifies with -- no shared secrets.
 # The service side (`kraph_server.service`: todo structures and their signals) reaches the same
 # rekuest as the hook agent, under the same name.
-REKUEST_SERVICE = {"REKUEST_URL": conf.rekuest_hook.rekuest_url, "SERVICE": conf.rekuest_hook.agent, "MAX_SKEW": conf.rekuest_hook.max_skew} if conf.rekuest_hook else None
-REKUEST_HOOK = {"REKUEST_URL": conf.rekuest_hook.rekuest_url, "AGENT": conf.rekuest_hook.agent, "MAX_SKEW": conf.rekuest_hook.max_skew} if conf.rekuest_hook else None
-INSTANCE = {"PRIVATE_KEY": conf.instance.private_key, "TRUST_JWKS_URI": conf.instance.trust.jwks_uri, "TRUST_JWKS": conf.instance.trust.jwks} if conf.instance else None
+REKUEST_SERVICE = (
+    {
+        "REKUEST_URL": conf.rekuest_hook.rekuest_url,
+        "SERVICE": conf.rekuest_hook.agent,
+        "MAX_SKEW": conf.rekuest_hook.max_skew,
+    }
+    if conf.rekuest_hook
+    else None
+)
+REKUEST_HOOK = (
+    {
+        "REKUEST_URL": conf.rekuest_hook.rekuest_url,
+        "AGENT": conf.rekuest_hook.agent,
+        "MAX_SKEW": conf.rekuest_hook.max_skew,
+    }
+    if conf.rekuest_hook
+    else None
+)
+INSTANCE = (
+    {
+        "PRIVATE_KEY": conf.instance.private_key,
+        "TRUST_JWKS_URI": conf.instance.trust.jwks_uri,
+        "TRUST_JWKS": conf.instance.trust.jwks,
+    }
+    if conf.instance
+    else None
+)
 # mikro's change feed of metrics: where it is and whom to address.
-MIKRO_FEED = {"URL": conf.mikro.url, "IDENTIFIER": conf.mikro.identifier} if conf.mikro else None
+MIKRO_FEED = (
+    {"URL": conf.mikro.url, "IDENTIFIER": conf.mikro.identifier} if conf.mikro else None
+)
 
 
 CHANNEL_LAYERS = {
     "default": {
         # This example app uses the Redis channel layer implementation channels_redis
         "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {"hosts": [(conf.redis.host, conf.redis.port)], "prefix": conf.redis.channel_prefix},
+        "CONFIG": {
+            "hosts": [(conf.redis.host, conf.redis.port)],
+            "prefix": conf.redis.channel_prefix,
+        },
     },
 }
 

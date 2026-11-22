@@ -7,8 +7,9 @@ from api import inputs, types
 from api.extensions.projection import current_or_default
 from core import models
 from graph_engine import input_models, materialize
-from ._guards import delete_or_explain
+
 from .._scoped import accessible_graph
+from ._guards import delete_or_explain
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,9 @@ def create_graph(
         description=model.description,
         membership=info.context.request.membership,
         backfill=model.backfill,
-        sameness_rule=model.sameness_rule.to_stored() if model.sameness_rule is not None else None,
+        sameness_rule=model.sameness_rule.to_stored()
+        if model.sameness_rule is not None
+        else None,
     )
 
     return graph
@@ -100,7 +103,10 @@ def delete_graph(
     # Check permissions — only the graph's owner or an admin. `graph.owner` does
     # not exist; the field is `user`, so this raised `AttributeError` on every
     # call and no delete ever reached the guard below it.
-    if not info.context.request.user.is_superuser and graph.user != info.context.request.user:
+    if (
+        not info.context.request.user.is_superuser
+        and graph.user != info.context.request.user
+    ):
         raise PermissionError("You do not have permission to delete this graph.")
 
     # `delete_or_explain` cannot protect this one. It is a `try/except
@@ -122,7 +128,11 @@ def delete_graph(
     _refuse_unless_archived(graph)
     _record_what_deletion_destroys(graph)
 
-    delete_or_explain(graph, what=f"graph '{graph.name}'", instead="Archive the graph instead — it keeps the projection out of the way without destroying the evidence other graphs read.")
+    delete_or_explain(
+        graph,
+        what=f"graph '{graph.name}'",
+        instead="Archive the graph instead — it keeps the projection out of the way without destroying the evidence other graphs read.",
+    )
 
     # The projection goes with the row: `graph_engine.apps` drops the namespace
     # on `pre_delete`, for every path that deletes a `Graph` — this mutation, a
@@ -142,7 +152,10 @@ def archive_graph(
     graph = accessible_graph(info, model.id)
 
     # Check permissions - only graph owner or admin can archive
-    if not info.context.request.user.is_superuser and graph.user != info.context.request.user:
+    if (
+        not info.context.request.user.is_superuser
+        and graph.user != info.context.request.user
+    ):
         raise PermissionError("You do not have permission to archive this graph.")
 
     # `is_archived` is a real column as of `core.0003`. It was not before: this
@@ -185,8 +198,13 @@ def update_graph(
         #
         # Renaming and pinning stay tenancy-scoped, matching every other schema
         # mutation: a shared view is the organization's to curate.
-        if not info.context.request.user.is_superuser and graph.user != info.context.request.user:
-            raise PermissionError("You do not have permission to archive this graph — archiving is the step before deletion, so it stays with the owner.")
+        if (
+            not info.context.request.user.is_superuser
+            and graph.user != info.context.request.user
+        ):
+            raise PermissionError(
+                "You do not have permission to archive this graph — archiving is the step before deletion, so it stays with the owner."
+            )
         graph.is_archived = model.archived
     if model.sameness_rule is not None:
         # Identity is the view's function of the log (RFC 0024): a new rule is
@@ -215,7 +233,9 @@ def update_graph(
     return graph
 
 
-def update_graph_visual(info: Info, input: inputs.UpdateGraphVisualInput) -> types.Graph:
+def update_graph_visual(
+    info: Info, input: inputs.UpdateGraphVisualInput
+) -> types.Graph:
     """GraphQL mutation wrapper for updating a graph's visual representation."""
 
     model = input.to_pydantic()  # Validate input with Pydantic models
@@ -233,6 +253,8 @@ def update_graph_visual(info: Info, input: inputs.UpdateGraphVisualInput) -> typ
             width=node_position.width,
             height=node_position.height,
         ):
-            raise ValueError(f"Category {node_position.category} is not a category of graph {graph.pk}")
+            raise ValueError(
+                f"Category {node_position.category} is not a category of graph {graph.pk}"
+            )
 
     return graph

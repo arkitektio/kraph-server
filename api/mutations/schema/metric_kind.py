@@ -10,6 +10,7 @@ from kante.types import Info
 
 from api import context, inputs, types
 from evidence import models as evidence_models
+
 from ._guards import delete_or_explain, refuse_bad_color
 
 
@@ -22,7 +23,9 @@ def _resolve(info: Info, kind_id: str) -> evidence_models.MetricKind:
     return kind
 
 
-def update_metric_kind(info: Info, input: inputs.UpdateMetricKindInput) -> types.MetricKind:
+def update_metric_kind(
+    info: Info, input: inputs.UpdateMetricKindInput
+) -> types.MetricKind:
     """Update a metric kind's presentation.
 
     `value_kind` is deliberately not editable, now for two reasons. It is part of
@@ -46,12 +49,18 @@ def update_metric_kind(info: Info, input: inputs.UpdateMetricKindInput) -> types
     return kind
 
 
-def delete_metric_kind(info: Info, input: inputs.DeleteMetricKindInput) -> strawberry.ID:
+def delete_metric_kind(
+    info: Info, input: inputs.DeleteMetricKindInput
+) -> strawberry.ID:
     """Retire a metric kind nothing has been recorded under.
 
     The FK from `Metric` is `PROTECT`: a kind that has been used can be retired
     only after its metrics are retracted, never by deleting them.
     """
     model = input.to_pydantic()
-    delete_or_explain(_resolve(info, str(model.id)), what="this metric kind", instead="Archive the metrics recorded under it first.")
+    delete_or_explain(
+        _resolve(info, str(model.id)),
+        what="this metric kind",
+        instead="Archive the metrics recorded under it first.",
+    )
     return model.id

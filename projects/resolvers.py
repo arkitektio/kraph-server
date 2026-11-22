@@ -9,7 +9,9 @@ from projects import inputs, models, types
 
 def fetch_project(info: Info, pk: int) -> models.Project:
     """The project ``pk`` of the request's organization, or an error naming it."""
-    project = models.Project.objects.filter(pk=pk, organization=get_active_organization(info)).first()
+    project = models.Project.objects.filter(
+        pk=pk, organization=get_active_organization(info)
+    ).first()
     if project is None:
         raise ValueError(f"No project with id {pk} in this organization")
     return project

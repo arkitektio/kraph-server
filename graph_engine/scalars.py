@@ -4,7 +4,6 @@ GraphQL Scalar types for the API.
 
 from typing import NewType
 
-
 # Scalar for arbitrary JSON-like values on the *output* side (`GraphTableRender.rows`).
 # A saved-query *value* (`WhereClauseInput.value`, `RenderGraphTableFilter.value`) is
 # typed `Any` in pydantic and `strawberry.scalars.JSON` in GraphQL instead — a

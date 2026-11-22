@@ -27,15 +27,26 @@ STANDINGS = """
 """
 
 
-async def node_properties(api_schema: Any, ctx: Any, graph: Any, ref: str) -> dict[str, Any]:
+async def node_properties(
+    api_schema: Any, ctx: Any, graph: Any, ref: str
+) -> dict[str, Any]:
     """The derived properties a view draws for one individual — `{}` when it draws none."""
-    data = await execute(api_schema, ctx, NODE_PROPERTIES, {"id": ref, "graph": str(getattr(graph, "pk", graph))})
+    data = await execute(
+        api_schema,
+        ctx,
+        NODE_PROPERTIES,
+        {"id": ref, "graph": str(getattr(graph, "pk", graph))},
+    )
     return dict(data["node"].get("properties") or {})
 
 
-async def standings_of(api_schema: Any, ctx: Any, claim_id: str) -> list[dict[str, Any]]:
+async def standings_of(
+    api_schema: Any, ctx: Any, claim_id: str
+) -> list[dict[str, Any]]:
     """Every position taken on one claim, newest first."""
-    return list((await execute(api_schema, ctx, STANDINGS, {"id": claim_id}))["standings"])
+    return list(
+        (await execute(api_schema, ctx, STANDINGS, {"id": claim_id}))["standings"]
+    )
 
 
 RELATION = """
@@ -153,7 +164,13 @@ def retrieved_node(properties: dict[str, Any]) -> Any:
     """A drawn record with these properties and nothing else — for the read-side filters."""
     from graph_engine.retrieved import RetrievedNode
 
-    return RetrievedNode(controller=None, graph_name="testgraph", vertex_id=1, label="AIS", properties=properties)  # type: ignore[arg-type]
+    return RetrievedNode(
+        controller=None,
+        graph_name="testgraph",
+        vertex_id=1,
+        label="AIS",
+        properties=properties,
+    )  # type: ignore[arg-type]
 
 
 async def property_of(api_schema: Any, ctx: Any, graph: Any, ref: str, key: str) -> Any:

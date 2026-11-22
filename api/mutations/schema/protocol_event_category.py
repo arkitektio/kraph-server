@@ -16,6 +16,7 @@ from kante.types import Info
 
 from api import inputs, types
 from core import models
+
 from ._category import create_category, delete_category, update_category
 
 
@@ -35,7 +36,9 @@ def create_protocol_event_category(
     return cast(types.ProtocolEventCategory, category)
 
 
-def update_protocol_event_category(info: Info, input: inputs.UpdateProtocolEventCategoryInput) -> types.ProtocolEventCategory:
+def update_protocol_event_category(
+    info: Info, input: inputs.UpdateProtocolEventCategoryInput
+) -> types.ProtocolEventCategory:
     """Change a protocol event category's label, colour, image, pin or rule."""
     model = input.to_pydantic()
     item = update_category(

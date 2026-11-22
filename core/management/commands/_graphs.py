@@ -29,10 +29,14 @@ def select_graph(identifier: str) -> models.Graph:
     """One graph by pk or name; refuses an ambiguous name."""
     found = select_graphs(identifier)
     if not found:
-        raise CommandError(f"No matching graphs: nothing is named {identifier!r}, and no graph has that id.")
+        raise CommandError(
+            f"No matching graphs: nothing is named {identifier!r}, and no graph has that id."
+        )
     if len(found) > 1:
         candidates = ", ".join(describe(graph) for graph in found)
-        raise CommandError(f"{len(found)} graphs are called {identifier!r}: {candidates}. Pass the id.")
+        raise CommandError(
+            f"{len(found)} graphs are called {identifier!r}: {candidates}. Pass the id."
+        )
     return found[0]
 
 

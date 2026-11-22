@@ -12,7 +12,8 @@ reopened (or a new one put) on a Done item moves it back to Doing. Moving a card
 by hand never ticks or unticks anything.
 """
 
-from typing import Iterable, Optional, TypeVar
+from collections.abc import Iterable
+from typing import TypeVar
 
 import strawberry
 import strawberry_django.filters
@@ -42,6 +43,7 @@ def _object_signal():
 
     return object_signal
 
+
 M = TypeVar("M", bound=Model)
 
 
@@ -49,12 +51,14 @@ def _sub(info: Info) -> str:
     return str(info.context.request.user.sub)
 
 
-def _named(sub: Optional[str]) -> Optional[str]:
+def _named(sub: str | None) -> str | None:
     """An assignee as stored: an empty string is nobody."""
     return sub or None
 
 
-def _fetch(info: Info, model: type[M], pk: int, path: str, what: str, *, lock: bool = False) -> M:
+def _fetch(
+    info: Info, model: type[M], pk: int, path: str, what: str, *, lock: bool = False
+) -> M:
     queryset = model.objects.select_for_update() if lock else model.objects.all()
     item = queryset.filter(pk=pk, **{path: get_active_organization(info)}).first()
     if item is None:
@@ -62,14 +66,30 @@ def _fetch(info: Info, model: type[M], pk: int, path: str, what: str, *, lock: b
     return item
 
 
-def _announce(info: Info, item: models.TodoItem, *, deleted: bool = False, objects: Iterable[tuple[str, str]] = ()) -> None:
+def _announce(
+    info: Info,
+    item: models.TodoItem,
+    *,
+    deleted: bool = False,
+    objects: Iterable[tuple[str, str]] = (),
+) -> None:
     """An item changed (or left): its list's board, the object chips and the dashboards follow."""
-    announce(get_active_organization(info), item.list_id, item.pk, deleted=deleted, objects=objects)
+    announce(
+        get_active_organization(info),
+        item.list_id,
+        item.pk,
+        deleted=deleted,
+        objects=objects,
+    )
 
 
 def _objects_of(items: QuerySet[models.TodoItem]) -> list[tuple[str, str]]:
     """The `(identifier, object)` pairs on these items, read before they go."""
-    return list(models.TodoItemStructure.objects.filter(item__in=items).values_list("identifier", "object").distinct())
+    return list(
+        models.TodoItemStructure.objects.filter(item__in=items)
+        .values_list("identifier", "object")
+        .distinct()
+    )
 
 
 def _list(info: Info, pk: int) -> models.TodoList:
@@ -77,15 +97,21 @@ def _list(info: Info, pk: int) -> models.TodoList:
 
 
 def _item(info: Info, pk: int, *, lock: bool = False) -> models.TodoItem:
-    return _fetch(info, models.TodoItem, pk, "list__project__organization", "todo item", lock=lock)
+    return _fetch(
+        info, models.TodoItem, pk, "list__project__organization", "todo item", lock=lock
+    )
 
 
 def _end_of_column(todo_list: models.TodoList, status: str) -> int:
-    last = models.TodoItem.objects.filter(list=todo_list, status=status).aggregate(last=Max("position"))["last"]
+    last = models.TodoItem.objects.filter(list=todo_list, status=status).aggregate(
+        last=Max("position")
+    )["last"]
     return 0 if last is None else last + 1
 
 
-def _attach(item: models.TodoItem, structures: Iterable[inputs.TodoStructureInputModel]) -> None:
+def _attach(
+    item: models.TodoItem, structures: Iterable[inputs.TodoStructureInputModel]
+) -> None:
     """Put objects on an item, after the ones it has, in two queries however many there are. One
     already on it is left as it is (and keeps its place)."""
     last = item.structures.aggregate(last=Max("position"))["last"]
@@ -97,16 +123,27 @@ def _attach(item: models.TodoItem, structures: Iterable[inputs.TodoStructureInpu
         if key in present:
             continue
         present.add(key)
-        fresh.append(models.TodoItemStructure(item=item, identifier=key[0], object=key[1], position=start + len(fresh)))
+        fresh.append(
+            models.TodoItemStructure(
+                item=item, identifier=key[0], object=key[1], position=start + len(fresh)
+            )
+        )
     # A concurrent attach of the same object loses to the unique constraint, quietly.
     models.TodoItemStructure.objects.bulk_create(fresh, ignore_conflicts=True)
     if fresh:
         # A bulk write sends no save signals: describe the new rows and announce each as CREATED.
-        created = models.TodoItemStructure.objects.filter(item=item, position__gte=start).select_related("item__list__project__organization")
+        created = models.TodoItemStructure.objects.filter(
+            item=item, position__gte=start
+        ).select_related("item__list__project__organization")
         service = _service()
         service.restore(created, emit=False)
         for row in created:
-            _object_signal().emit(row.pk, organization=row.item.list.project.organization.identifier, descriptors=row.stored_descriptors, kind="CREATED")
+            _object_signal().emit(
+                row.pk,
+                organization=row.item.list.project.organization.identifier,
+                descriptors=row.stored_descriptors,
+                kind="CREATED",
+            )
         # The item's counts moved.
         service.restore(item)
 
@@ -160,7 +197,9 @@ def update_todo_list(info: Info, input: inputs.UpdateTodoListInput) -> types.Tod
     todo_list.assignee = _named(model.assignee)
     todo_list.save()
     # Items without an assignee of their own follow the list.
-    _service().restore(models.TodoItem.objects.filter(list=todo_list, assignee__isnull=True))
+    _service().restore(
+        models.TodoItem.objects.filter(list=todo_list, assignee__isnull=True)
+    )
     announce(get_active_organization(info), todo_list.pk)
     return todo_list
 
@@ -171,7 +210,9 @@ def assign_todo_list(info: Info, input: inputs.AssignTodoInput) -> types.TodoLis
     todo_list = _list(info, model.id)
     todo_list.assignee = _named(model.assignee)
     todo_list.save(update_fields=["assignee"])
-    _service().restore(models.TodoItem.objects.filter(list=todo_list, assignee__isnull=True))
+    _service().restore(
+        models.TodoItem.objects.filter(list=todo_list, assignee__isnull=True)
+    )
     announce(get_active_organization(info), todo_list.pk)
     return todo_list
 
@@ -254,7 +295,13 @@ def delete_todo_item(info: Info, input: inputs.TodoIdInput) -> strawberry.ID:
     item = _item(info, model.id)
     objects = _objects_of(models.TodoItem.objects.filter(pk=item.pk))
     item.delete()
-    announce(get_active_organization(info), item.list_id, model.id, deleted=True, objects=objects)
+    announce(
+        get_active_organization(info),
+        item.list_id,
+        model.id,
+        deleted=True,
+        objects=objects,
+    )
     return strawberry.ID(str(model.id))
 
 
@@ -281,7 +328,9 @@ def move_todo_item(info: Info, input: inputs.MoveTodoItemInput) -> types.TodoIte
         item.status = model.status.value
         for position, card in enumerate(column):
             card.position = position
-        models.TodoItem.objects.bulk_update([card for card in column if card.pk != item.pk], ["position"])
+        models.TodoItem.objects.bulk_update(
+            [card for card in column if card.pk != item.pk], ["position"]
+        )
         item.save(update_fields=["list", "status", "position", "updated_at", DESCRIBED])
         if moved_lists:
             # Its objects now name another list and project; not news to announce per object.
@@ -290,7 +339,9 @@ def move_todo_item(info: Info, input: inputs.MoveTodoItemInput) -> types.TodoIte
     return item
 
 
-def attach_to_todo_item(info: Info, input: inputs.AttachToTodoItemInput) -> types.TodoItem:
+def attach_to_todo_item(
+    info: Info, input: inputs.AttachToTodoItemInput
+) -> types.TodoItem:
     model = input.to_pydantic()
     with transaction.atomic():
         item = _item(info, model.item, lock=True)
@@ -304,7 +355,13 @@ def detach_from_todo_item(info: Info, input: inputs.TodoIdInput) -> types.TodoIt
     """Take one object off its item. Returns the item."""
     model = input.to_pydantic()
     with transaction.atomic():
-        structure = _fetch(info, models.TodoItemStructure, model.id, "item__list__project__organization", "object on a todo item")
+        structure = _fetch(
+            info,
+            models.TodoItemStructure,
+            model.id,
+            "item__list__project__organization",
+            "object on a todo item",
+        )
         item = _item(info, structure.item_id, lock=True)
         detached = (structure.identifier, structure.object)
         structure.delete()
@@ -314,10 +371,20 @@ def detach_from_todo_item(info: Info, input: inputs.TodoIdInput) -> types.TodoIt
     return item
 
 
-_MOVED_FIELDS = ["status", "started_at", "started_by", "done", "done_at", "done_by", DESCRIBED]
+_MOVED_FIELDS = [
+    "status",
+    "started_at",
+    "started_by",
+    "done",
+    "done_at",
+    "done_by",
+    DESCRIBED,
+]
 
 
-def _move(structure: models.TodoItemStructure, status: models.TodoStatus, now, sub: str) -> None:
+def _move(
+    structure: models.TodoItemStructure, status: models.TodoStatus, now, sub: str
+) -> None:
     """Move one object to ``status`` in memory, keeping `done` and who/when in step (saved by the caller)."""
     if status == models.TodoStatus.TODO:
         structure.started_at = structure.started_by = None
@@ -330,10 +397,19 @@ def _move(structure: models.TodoItemStructure, status: models.TodoStatus, now, s
     structure.done_by = sub if structure.done else None
 
 
-def _set_structure_status(info: Info, id: int, status: models.TodoStatus) -> types.TodoItem:
+def _set_structure_status(
+    info: Info, id: int, status: models.TodoStatus
+) -> types.TodoItem:
     """Move one object to a status, keeping `done` and who/when in step. Returns its item, settled."""
     with transaction.atomic():
-        structure = _fetch(info, models.TodoItemStructure, id, "item__list__project__organization", "object on a todo item", lock=True)
+        structure = _fetch(
+            info,
+            models.TodoItemStructure,
+            id,
+            "item__list__project__organization",
+            "object on a todo item",
+            lock=True,
+        )
         item = _item(info, structure.item_id, lock=True)
         if structure.status != status:
             _move(structure, status, timezone.now(), _sub(info))
@@ -345,19 +421,27 @@ def _set_structure_status(info: Info, id: int, status: models.TodoStatus) -> typ
     return item
 
 
-def set_todo_structure_status(info: Info, input: inputs.SetTodoStructureStatusInput) -> types.TodoItem:
+def set_todo_structure_status(
+    info: Info, input: inputs.SetTodoStructureStatusInput
+) -> types.TodoItem:
     """Move one object on an item to To do, Doing or Done. Returns the item, whose column may have moved."""
     model = input.to_pydantic()
     return _set_structure_status(info, model.id, models.TodoStatus(model.status.value))
 
 
-def set_todo_structure_done(info: Info, input: inputs.SetTodoStructureDoneInput) -> types.TodoItem:
+def set_todo_structure_done(
+    info: Info, input: inputs.SetTodoStructureDoneInput
+) -> types.TodoItem:
     """Tick (Done) or untick (To do) one object on an item. Returns the item, whose column may have moved."""
     model = input.to_pydantic()
-    return _set_structure_status(info, model.id, models.TodoStatus.DONE if model.done else models.TodoStatus.TODO)
+    return _set_structure_status(
+        info, model.id, models.TodoStatus.DONE if model.done else models.TodoStatus.TODO
+    )
 
 
-def set_todo_structures_status(info: Info, input: inputs.SetTodoStructuresStatusInput) -> list[types.TodoItem]:
+def set_todo_structures_status(
+    info: Info, input: inputs.SetTodoStructuresStatusInput
+) -> list[types.TodoItem]:
     """Move several objects to one status at once ("mark all done"): the objects `ids` names and every
     object on the items `items` names. Every id must be of this organization, or nothing changes. Each
     touched item settles once. Returns the touched items."""
@@ -367,18 +451,29 @@ def set_todo_structures_status(info: Info, input: inputs.SetTodoStructuresStatus
     wanted = set(model.ids)
     named_items = set(model.items)
     with transaction.atomic():
-        found_items = set(models.TodoItem.objects.filter(pk__in=named_items, list__project__organization=organization).values_list("pk", flat=True))
+        found_items = set(
+            models.TodoItem.objects.filter(
+                pk__in=named_items, list__project__organization=organization
+            ).values_list("pk", flat=True)
+        )
         missing_items = named_items - found_items
         if missing_items:
-            raise ValueError(f"No todo item with id {min(missing_items)} in this organization")
+            raise ValueError(
+                f"No todo item with id {min(missing_items)} in this organization"
+            )
         rows = list(
             models.TodoItemStructure.objects.select_for_update()
-            .filter(Q(pk__in=wanted) | Q(item_id__in=found_items), item__list__project__organization=organization)
+            .filter(
+                Q(pk__in=wanted) | Q(item_id__in=found_items),
+                item__list__project__organization=organization,
+            )
             .order_by("pk")
         )
         missing = wanted - {row.pk for row in rows}
         if missing:
-            raise ValueError(f"No object on a todo item with id {min(missing)} in this organization")
+            raise ValueError(
+                f"No object on a todo item with id {min(missing)} in this organization"
+            )
         items = {
             item.pk: item
             for item in models.TodoItem.objects.select_for_update()
@@ -393,7 +488,11 @@ def set_todo_structures_status(info: Info, input: inputs.SetTodoStructuresStatus
         models.TodoItemStructure.objects.bulk_update(changed, _MOVED_FIELDS)
         service = _service()
         # A bulk write sends no save signals: each changed object is described and announced here.
-        service.restore(models.TodoItemStructure.objects.filter(pk__in=[row.pk for row in changed]).select_related("item__list"))
+        service.restore(
+            models.TodoItemStructure.objects.filter(
+                pk__in=[row.pk for row in changed]
+            ).select_related("item__list")
+        )
         for item in items.values():
             _settle(item)
             service.restore(item)
@@ -404,12 +503,16 @@ def set_todo_structures_status(info: Info, input: inputs.SetTodoStructuresStatus
 # ---------------------------------------------------------------- reads
 
 
-def todo_summary(info: Info, filters: Optional[types.TodoItemFilter] = None) -> types.TodoSummary:
+def todo_summary(
+    info: Info, filters: types.TodoItemFilter | None = None
+) -> types.TodoSummary:
     """The items ``filters`` selects (the same filter as `todoItems`), counted by column, and their
     objects by whether they are done: two aggregates, whatever the number of items."""
     queryset = strawberry_django.filters.apply(
         filters,
-        models.TodoItem.objects.filter(list__project__organization=get_active_organization(info)),
+        models.TodoItem.objects.filter(
+            list__project__organization=get_active_organization(info)
+        ),
         info=info,
     )
     counts = queryset.aggregate(
@@ -419,7 +522,9 @@ def todo_summary(info: Info, filters: Optional[types.TodoItemFilter] = None) -> 
         doing=Count("id", filter=Q(status=models.TodoStatus.DOING)),
         done=Count("id", filter=Q(status=models.TodoStatus.DONE)),
     )
-    objects = models.TodoItemStructure.objects.filter(item__in=queryset.values("pk")).aggregate(
+    objects = models.TodoItemStructure.objects.filter(
+        item__in=queryset.values("pk")
+    ).aggregate(
         total=Count("id"),
         done=Count("id", filter=Q(done=True)),
     )

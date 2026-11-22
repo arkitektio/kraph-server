@@ -10,8 +10,8 @@ History: under django-polymorphic the optimizer built a filter-path
 import kante
 import pytest
 from asgiref.sync import sync_to_async
-from django.test.utils import CaptureQueriesContext
 from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from kante.context import HttpContext
 
 from core import models as core_models
@@ -57,11 +57,19 @@ async def test_node_categories_interface_resolves_fragments(
     assert categories, "the bio graph schema defines node categories"
 
     typenames = {category["__typename"] for category in categories}
-    assert typenames <= {"EntityCategory", "NaturalEventCategory", "ProtocolEventCategory"}
+    assert typenames <= {
+        "EntityCategory",
+        "NaturalEventCategory",
+        "ProtocolEventCategory",
+    }
     assert "EntityCategory" in typenames
 
     # No edge category may leak into a node-category field.
-    assert not typenames & {"RelationCategory", "MeasurementCategory", "StructureRelationCategory"}
+    assert not typenames & {
+        "RelationCategory",
+        "MeasurementCategory",
+        "StructureRelationCategory",
+    }
 
 
 @pytest.mark.django_db(transaction=True)
@@ -108,7 +116,11 @@ async def test_edge_categories_interface_resolves_fragments(
     assert categories, "the bio graph schema defines edge categories"
 
     typenames = {category["__typename"] for category in categories}
-    assert typenames <= {"RelationCategory", "MeasurementCategory", "StructureRelationCategory"}
+    assert typenames <= {
+        "RelationCategory",
+        "MeasurementCategory",
+        "StructureRelationCategory",
+    }
     assert not typenames & {"EntityCategory"}
 
 
@@ -212,7 +224,13 @@ async def test_interface_fragment_does_not_fan_out_into_queries(
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     assert len(result.data["graphQueries"]) == rows
 
-    selects = [q["sql"] for q in captured.captured_queries if q["sql"].lstrip().upper().startswith("SELECT")]
+    selects = [
+        q["sql"]
+        for q in captured.captured_queries
+        if q["sql"].lstrip().upper().startswith("SELECT")
+    ]
     # Generous, because auth and permission checks share the connection. The point is
     # that it does not scale with `rows`.
-    assert len(selects) < rows, f"the list fanned out into per-row queries: {[sql[:120] for sql in selects]}"
+    assert len(selects) < rows, (
+        f"the list fanned out into per-row queries: {[sql[:120] for sql in selects]}"
+    )

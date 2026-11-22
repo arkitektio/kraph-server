@@ -1,15 +1,13 @@
 """Relation query resolvers."""
 
-from typing import List
-
 import strawberry
 from kante.types import Info
 
-from api import context, types, filters, order, pagination
+from api import context, filters, order, pagination, types
 from api.queries import _edges
+from core import models
 from evidence import models as evidence_models
 from graph_engine import input_models
-from core import models
 
 
 def relation(info: Info, id: strawberry.ID) -> types.Relation:
@@ -30,7 +28,9 @@ def relation(info: Info, id: strawberry.ID) -> types.Relation:
     """
     controller = context.get_controller()
 
-    edge = controller.get_relation_by_id(str(id), info=info, kind=evidence_models.Link.Kind.RELATION)
+    edge = controller.get_relation_by_id(
+        str(id), info=info, kind=evidence_models.Link.Kind.RELATION
+    )
     if edge is None:
         raise ValueError(f"Relation with ID {id} not found")
 
@@ -43,7 +43,7 @@ def relations(
     filters: filters.RelationFilter | None = None,
     ordering: list[order.RelationOrder] | None = None,
     pagination: pagination.RelationPaginationInput | None = None,
-) -> List[types.Relation]:
+) -> list[types.Relation]:
     """Every standing relation claim stated in this category's word.
 
     Read from `evidence.Link`, not from Apache AGE. Relations are the one edge kind
@@ -73,9 +73,16 @@ def relations(
 
     filter_model = filters.to_pydantic() if filters else input_models.RelationFilters()
     ordering_models = [entry.to_pydantic() for entry in ordering] if ordering else []
-    pagination_model = pagination.to_pydantic() if pagination else input_models.RelationPagination()
+    pagination_model = (
+        pagination.to_pydantic() if pagination else input_models.RelationPagination()
+    )
 
-    links = _edges.links_for_category(organization, category, evidence_models.Link.Kind.RELATION)
+    links = _edges.links_for_category(
+        organization, category, evidence_models.Link.Kind.RELATION
+    )
     rows = _edges.narrow(links, filter_model, ordering_models, pagination_model)
 
-    return [types.Relation(_value=controller.retrieved_edge(link, category=category)) for link in rows]
+    return [
+        types.Relation(_value=controller.retrieved_edge(link, category=category))
+        for link in rows
+    ]

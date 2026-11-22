@@ -1,8 +1,9 @@
 from kante.types import Info
-from graph_engine.input_models import ProvenanceContext
+
 from api.extensions.projection import current_projector
-from graph_engine.controller import GraphController
 from core import models
+from graph_engine.controller import GraphController
+from graph_engine.input_models import ProvenanceContext
 
 
 def get_provenance_from_context(info: Info) -> ProvenanceContext:
@@ -37,13 +38,17 @@ def get_active_organization(info: Info):
     """
     request = info.context.request
 
-    organization = getattr(request, "organization", None) or getattr(request, "_organization", None)
+    organization = getattr(request, "organization", None) or getattr(
+        request, "_organization", None
+    )
     if organization is None:
         membership = getattr(request, "membership", None)
         organization = getattr(membership, "organization", None)
 
     if organization is None:
-        raise ValueError("No active organization on the request; cannot resolve evidence scope.")
+        raise ValueError(
+            "No active organization on the request; cannot resolve evidence scope."
+        )
 
     return organization
 
@@ -59,10 +64,16 @@ def assert_can_access_organization(info: Info, organization) -> None:
 
     user = getattr(info.context.request, "user", None)
     if user is None:
-        raise PermissionError("Cannot access organization vocabulary without an authenticated user")
+        raise PermissionError(
+            "Cannot access organization vocabulary without an authenticated user"
+        )
 
-    if not Membership.objects.filter(user=user, organization=organization, blocked=False).exists():
-        raise PermissionError("You are not allowed to access this organization's vocabulary")
+    if not Membership.objects.filter(
+        user=user, organization=organization, blocked=False
+    ).exists():
+        raise PermissionError(
+            "You are not allowed to access this organization's vocabulary"
+        )
 
 
 def get_controller() -> GraphController:
@@ -84,13 +95,17 @@ def get_controller() -> GraphController:
 def _get_request_scopes(info: Info) -> list[str]:
     request = info.context.request
 
-    extension_scopes = request._extensions.get("scopes") if hasattr(request, "_extensions") else None
+    extension_scopes = (
+        request._extensions.get("scopes") if hasattr(request, "_extensions") else None
+    )
     if isinstance(extension_scopes, list):
         return [str(scope) for scope in extension_scopes]
     if isinstance(extension_scopes, str):
         return [scope for scope in extension_scopes.split(" ") if scope]
 
-    token = request._extensions.get("token") if hasattr(request, "_extensions") else None
+    token = (
+        request._extensions.get("token") if hasattr(request, "_extensions") else None
+    )
     token_scopes = getattr(token, "scopes", None)
     if isinstance(token_scopes, list):
         return [str(scope) for scope in token_scopes]
@@ -145,10 +160,14 @@ def get_accessible_graph(
     """
     identifier_str = str(identifier)
     if not identifier_str.isdigit():
-        raise ValueError(f"`graph:` names a graph by its id; {identifier_str!r} is not one. A graph's projection handle is internal and does not address it.")
+        raise ValueError(
+            f"`graph:` names a graph by its id; {identifier_str!r} is not one. A graph's projection handle is internal and does not address it."
+        )
 
     organization = get_active_organization(info)
-    graph = models.Graph.objects.filter(id=int(identifier_str), organization=organization).first()
+    graph = models.Graph.objects.filter(
+        id=int(identifier_str), organization=organization
+    ).first()
 
     if graph is None:
         raise ValueError(f"Graph not found for identifier {identifier}")

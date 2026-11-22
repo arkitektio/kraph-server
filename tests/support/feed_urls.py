@@ -6,6 +6,12 @@ from kraph_server.urls import urlpatterns as kraph_urlpatterns
 from tests.support import feeds
 
 publisher = FeedPublisher("mikro")
-publisher.feed("@mikro/metric", readers=["kraph"], render=lambda entries: {e.object: feeds.BODIES[e.object] for e in entries if e.object in feeds.BODIES})
+publisher.feed(
+    "@mikro/metric",
+    readers=["kraph"],
+    render=lambda entries: {
+        e.object: feeds.BODIES[e.object] for e in entries if e.object in feeds.BODIES
+    },
+)
 
 urlpatterns = [*kraph_urlpatterns, *publisher.urls]

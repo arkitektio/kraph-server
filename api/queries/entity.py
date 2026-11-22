@@ -1,7 +1,5 @@
 """Entity query resolvers."""
 
-from typing import List
-
 import strawberry
 from kante.types import Info
 
@@ -18,7 +16,7 @@ def entities(
     filters: filters.EntityFilter | None = None,
     ordering: list[order.EntityOrder] | None = None,
     pagination: pagination.EntityPaginationInput | None = None,
-) -> List[types.Entity]:
+) -> list[types.Entity]:
     """Every entity this category draws, from the claims.
 
     Read from `evidence.Node`, not from Apache AGE: a node this category's rule
@@ -34,7 +32,9 @@ def entities(
     """
     controller = context.get_controller()
 
-    entity_category = models.EntityCategory.objects.filter(id=entity_category_id).first()
+    entity_category = models.EntityCategory.objects.filter(
+        id=entity_category_id
+    ).first()
     if entity_category is None:
         raise ValueError(f"Entity category {entity_category_id} not found")
 
@@ -47,12 +47,22 @@ def entities(
 
     filter_model = filters.to_pydantic() if filters else input_models.EntityFilters()
     ordering_models = [entry.to_pydantic() for entry in ordering] if ordering else []
-    pagination_model = pagination.to_pydantic() if pagination else input_models.EntityPagination()
+    pagination_model = (
+        pagination.to_pydantic() if pagination else input_models.EntityPagination()
+    )
 
-    rows = _nodes.narrow(_nodes.rows_for_category(entity_category), filter_model, ordering_models, pagination_model)
+    rows = _nodes.narrow(
+        _nodes.rows_for_category(entity_category),
+        filter_model,
+        ordering_models,
+        pagination_model,
+    )
 
     # Dispatched on the claim's kind — see `api/queries/natural_event.py`.
-    return [types.cast_node_to_graphql_type(node) for node in _nodes.retrieved_in(controller, graph, rows)]  # type: ignore[return-value]
+    return [
+        types.cast_node_to_graphql_type(node)
+        for node in _nodes.retrieved_in(controller, graph, rows)
+    ]  # type: ignore[return-value]
 
 
 def entity(info: Info, id: strawberry.ID, graph: strawberry.ID) -> types.Entity:
@@ -65,7 +75,9 @@ def entity(info: Info, id: strawberry.ID, graph: strawberry.ID) -> types.Entity:
     graph_model = context.get_accessible_graph(info, graph)
     instance = controller._resolve_instance(str(id), info)
     if instance.kind != evidence_models.Instance.Kind.ENTITY:
-        raise ValueError(f"Node '{id}' is a {instance.kind}, not an entity. Fetch it with the query matching its kind, or `node(id:, graph:)` for any kind.")
+        raise ValueError(
+            f"Node '{id}' is a {instance.kind}, not an entity. Fetch it with the query matching its kind, or `node(id:, graph:)` for any kind."
+        )
     return types.Entity(_value=_nodes.one_in_graph(controller, graph_model, instance))
 
 

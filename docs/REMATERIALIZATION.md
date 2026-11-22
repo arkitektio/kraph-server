@@ -41,7 +41,7 @@ only in what they know and what they select.
 ```python
 @dataclass(frozen=True)
 class Fingerprint:
-    properties_hash: str          # compute_properties_hash(property_definitions)
+    properties_hash: str  # compute_properties_hash(property_definitions)
     derived_keys: frozenset[str]  # projector.derived_property_keys(category)
 ```
 

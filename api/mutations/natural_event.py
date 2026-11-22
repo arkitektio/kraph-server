@@ -6,7 +6,7 @@ Every one returns a :class:`api.types.AssertedNaturalEvent` — see `api/mutatio
 
 from kante.types import Info
 
-from api import types, inputs, context
+from api import context, inputs, types
 from core import enums
 from evidence import models as evidence_models
 
@@ -34,7 +34,9 @@ def assert_natural_event_exists(
     organization = context.get_active_organization(info)
     context.assert_can_access_organization(info, organization)
 
-    term = controller.ensure_term(organization, enums.CategoryKindChoices.NATURAL_EVENT, natural_event.term)
+    term = controller.ensure_term(
+        organization, enums.CategoryKindChoices.NATURAL_EVENT, natural_event.term
+    )
 
     return types.AssertedNaturalEvent(
         _value=controller.create_event(
@@ -59,7 +61,11 @@ def retract_natural_event(
     # One controller path for every node kind. This used to be an inline copy of
     # the retraction flow with `target_type` hardcoded — which is how the entity
     # and event spellings drifted apart in the first place.
-    return types.AssertedNaturalEvent(_value=controller.retract_node(model.id, info=info, at=model.at, confidence=model.confidence))
+    return types.AssertedNaturalEvent(
+        _value=controller.retract_node(
+            model.id, info=info, at=model.at, confidence=model.confidence
+        )
+    )
 
 
 def attest_natural_event(
@@ -70,4 +76,8 @@ def attest_natural_event(
     controller = context.get_controller()
 
     model = input.to_pydantic()
-    return types.AssertedNaturalEvent(_value=controller.attest_node(model.id, info=info, at=model.at, confidence=model.confidence))
+    return types.AssertedNaturalEvent(
+        _value=controller.attest_node(
+            model.id, info=info, at=model.at, confidence=model.confidence
+        )
+    )

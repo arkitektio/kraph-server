@@ -47,7 +47,9 @@ if TYPE_CHECKING:
 _PRECEDES_EVERY_OPEN_TRANSACTION = 'age("evidence_assertion"."xmin") > age(pg_snapshot_xmin(pg_current_snapshot())::xid)'
 
 
-def before_every_open_transaction(queryset: QuerySet[evidence_models.Assertion]) -> QuerySet[evidence_models.Assertion]:
+def before_every_open_transaction(
+    queryset: QuerySet[evidence_models.Assertion],
+) -> QuerySet[evidence_models.Assertion]:
     """Narrow an ``Assertion`` queryset to rows no open transaction can precede.
 
     The predicate reads the row's ``xmin`` system column, so it applies only to a
@@ -55,7 +57,9 @@ def before_every_open_transaction(queryset: QuerySet[evidence_models.Assertion])
     """
     # `output_field` is what makes the expression *conditional* in Django's eyes;
     # without it `.filter()` refuses a raw predicate outright.
-    return queryset.filter(RawSQL(_PRECEDES_EVERY_OPEN_TRANSACTION, (), output_field=BooleanField()))
+    return queryset.filter(
+        RawSQL(_PRECEDES_EVERY_OPEN_TRANSACTION, (), output_field=BooleanField())
+    )
 
 
 def horizon(queryset: QuerySet[evidence_models.Assertion]) -> int:
@@ -64,4 +68,6 @@ def horizon(queryset: QuerySet[evidence_models.Assertion]) -> int:
     Every assertion at or below it that will ever be visible already is; one above
     it may still be committing.
     """
-    return int(before_every_open_transaction(queryset).aggregate(top=Max("seq"))["top"] or 0)
+    return int(
+        before_every_open_transaction(queryset).aggregate(top=Max("seq"))["top"] or 0
+    )

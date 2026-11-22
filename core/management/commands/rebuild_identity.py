@@ -38,8 +38,13 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser) -> None:
         """Declare the command's arguments."""
-        parser.add_argument("--organization", help="Slug of the organization to work on. Omit with --all.")
-        parser.add_argument("--all", action="store_true", help="Work on every organization.")
+        parser.add_argument(
+            "--organization",
+            help="Slug of the organization to work on. Omit with --all.",
+        )
+        parser.add_argument(
+            "--all", action="store_true", help="Work on every organization."
+        )
         parser.add_argument(
             "--stale",
             action="store_true",
@@ -54,7 +59,9 @@ class Command(BaseCommand):
     def handle(self, *args, **options) -> None:
         """Rebuild, or report."""
         if not options["organization"] and not options["all"]:
-            raise CommandError("Name an organization with --organization, or pass --all.")
+            raise CommandError(
+                "Name an organization with --organization, or pass --all."
+            )
 
         organizations = self._select(options)
         if not organizations:
@@ -65,15 +72,25 @@ class Command(BaseCommand):
                 self._check(organization)
             elif options["stale"]:
                 rebuilt = identity_module.recompute_stale(organization)
-                self.stdout.write(self.style.SUCCESS(f"{organization.identifier}: {rebuilt} flagged component(s) rebuilt"))
+                self.stdout.write(
+                    self.style.SUCCESS(
+                        f"{organization.identifier}: {rebuilt} flagged component(s) rebuilt"
+                    )
+                )
             else:
                 components = identity_module.refold(organization)
-                self.stdout.write(self.style.SUCCESS(f"{organization.identifier}: {components} component(s)"))
+                self.stdout.write(
+                    self.style.SUCCESS(
+                        f"{organization.identifier}: {components} component(s)"
+                    )
+                )
 
     def _select(self, options) -> list[Organization]:
         if options["all"]:
             return list(Organization.objects.all())
-        return list(Organization.objects.filter(identifier=str(options["organization"])))
+        return list(
+            Organization.objects.filter(identifier=str(options["organization"]))
+        )
 
     def _check(self, organization: Organization) -> None:
         """Compare what is stored against what the claims say, and write nothing.
@@ -82,25 +99,46 @@ class Command(BaseCommand):
         the table — so a `--check` on a disagreeing database reports it and leaves
         the disagreement in place to be looked at.
         """
-        stored: dict[str, str] = {str(instance_id): str(canonical_id) for instance_id, canonical_id in evidence_models.InstanceIdentity.objects.for_organization(organization).values_list("instance_id", "canonical_id")}
+        stored: dict[str, str] = {
+            str(instance_id): str(canonical_id)
+            for instance_id, canonical_id in evidence_models.InstanceIdentity.objects.for_organization(
+                organization
+            ).values_list("instance_id", "canonical_id")
+        }
 
         expected = self._expected(organization)
 
         missing = sorted(set(expected) - set(stored))
         extra = sorted(set(stored) - set(expected))
-        moved = sorted(node for node in set(stored) & set(expected) if stored[node] != expected[node])
+        moved = sorted(
+            node
+            for node in set(stored) & set(expected)
+            if stored[node] != expected[node]
+        )
 
         if not (missing or extra or moved):
-            self.stdout.write(self.style.SUCCESS(f"{organization.identifier}: fold agrees with the claims ({len(stored)} row(s))"))
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"{organization.identifier}: fold agrees with the claims ({len(stored)} row(s))"
+                )
+            )
             return
 
-        self.stdout.write(self.style.ERROR(f"{organization.identifier}: fold disagrees with the claims"))
+        self.stdout.write(
+            self.style.ERROR(
+                f"{organization.identifier}: fold disagrees with the claims"
+            )
+        )
         for node in missing:
             self.stdout.write(f"  missing  {node} should be under {expected[node]}")
         for node in extra:
-            self.stdout.write(f"  extra    {node} is under {stored[node]} but is in no component")
+            self.stdout.write(
+                f"  extra    {node} is under {stored[node]} but is in no component"
+            )
         for node in moved:
-            self.stdout.write(f"  moved    {node} is under {stored[node]}, should be {expected[node]}")
+            self.stdout.write(
+                f"  moved    {node} is under {stored[node]}, should be {expected[node]}"
+            )
 
     def _expected(self, organization: Organization) -> dict[str, str]:
         """The fold the standing claims imply, computed without touching the

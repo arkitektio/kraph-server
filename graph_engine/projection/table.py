@@ -40,18 +40,29 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING
 
-from django.db import connection
+from django.db import connection, transaction
+from django.db.models import Q
 
 from evidence.values import JSONValue
-from graph_engine.projection.protocol import LIST_OPERATORS, DrawnEdge, DrawnNode, IncidentEdge, IncidentEdgesSpec, ListDrawnSpec, PropertyPredicate
-from django.db.models import Q
-from django.db import transaction
+from graph_engine.projection.protocol import (
+    LIST_OPERATORS,
+    DrawnEdge,
+    DrawnNode,
+    IncidentEdge,
+    IncidentEdgesSpec,
+    ListDrawnSpec,
+    PropertyPredicate,
+)
 
 if TYPE_CHECKING:
     # Annotations only: `api/schema.py` builds a projector at import time, before
     # the app registry is ready, which is why `self._models` is lazy as well.
     from core.models import Graph
-    from graph_engine.input_models import RenderGraphTableFilter, RenderGraphTableOrder, RenderGraphTablePagination
+    from graph_engine.input_models import (
+        RenderGraphTableFilter,
+        RenderGraphTableOrder,
+        RenderGraphTablePagination,
+    )
     from graph_engine.models import ProjectionVertex
     from graph_engine.namespace import NamespaceSpec
     from graph_engine.query_ir import TableQueryPlan
@@ -83,6 +94,7 @@ def _quote_literal(value: str) -> str:
     if "\x00" in value:
         raise ValueError("literal contains a NUL byte")
     return "'" + value.replace("'", "''") + "'"
+
 
 #: The record keys that live in real columns rather than in the `properties`
 #: jsonb — the identity trio every drawn record carries. `category_ids` is the
@@ -156,7 +168,9 @@ class TableProjector:
         # dropped graph must leave neither rows nor DDL behind, and no FK
         # cascade reaches DDL.
         with connection.cursor() as cursor:
-            cursor.execute(f"DROP SCHEMA IF EXISTS {_quote_ident(str(graph.age_name))} CASCADE")
+            cursor.execute(
+                f"DROP SCHEMA IF EXISTS {_quote_ident(str(graph.age_name))} CASCADE"
+            )
         self._models.ProjectionEdge.objects.filter(graph=graph).delete()
         self._models.ProjectionVertex.objects.filter(graph=graph).delete()
 
@@ -173,27 +187,58 @@ class TableProjector:
 
     def _vertex_for_member(self, graph: Graph, ref: str) -> ProjectionVertex | None:
         """The vertex holding `ref` as a member, or None. Any member addresses the vertex (RFC 0018)."""
-        member = self._models.ProjectionMember.objects.filter(graph=graph, ref=str(ref)).select_related("vertex").first()
+        member = (
+            self._models.ProjectionMember.objects.filter(graph=graph, ref=str(ref))
+            .select_related("vertex")
+            .first()
+        )
         return member.vertex if member is not None else None
 
-    def draw_node(self, graph: Graph, ref: str, categories: Sequence[tuple[str, int]], kind: str, members: Iterable[str]) -> None:
+    def draw_node(
+        self,
+        graph: Graph,
+        ref: str,
+        categories: Sequence[tuple[str, int]],
+        kind: str,
+        members: Iterable[str],
+    ) -> None:
         # Upsert on (graph, ref) — the unique constraint is the convergence the
         # protocol promises. Derived properties survive a redraw, exactly as the
         # Cypher `MERGE … SET` left them; a label move without a prior
         # `erase_nodes` converges here too (the label rows are replaced), where
         # AGE would have minted a duplicate vertex.
-        labels = {(str(label), int(category_id) if category_id is not None else None) for label, category_id in categories}
+        labels = {
+            (str(label), int(category_id) if category_id is not None else None)
+            for label, category_id in categories
+        }
         if not labels:
-            raise ValueError(f"a vertex is drawn under at least one category; {ref} was given none")
+            raise ValueError(
+                f"a vertex is drawn under at least one category; {ref} was given none"
+            )
         members = sorted({str(member) for member in members} | {str(ref)})
-        vertex, _ = self._models.ProjectionVertex.objects.update_or_create(graph=graph, ref=str(ref), defaults={"kind": str(kind)})
+        vertex, _ = self._models.ProjectionVertex.objects.update_or_create(
+            graph=graph, ref=str(ref), defaults={"kind": str(kind)}
+        )
         # Labels: insert the new set **before** deleting the stale one. The
         # `projectionlabel_last_label_deletes_vertex` trigger (migration 0009)
         # takes a vertex the moment its last label goes, so a redraw that
         # deleted first would lose the vertex — and its properties — between
         # the two statements.
-        held_labels = {(row.label, row.category_pk): row for row in self._models.ProjectionLabel.objects.filter(vertex=vertex)}
-        self._models.ProjectionLabel.objects.bulk_create([self._models.ProjectionLabel(graph=graph, vertex=vertex, label=label, category_pk=category_pk) for label, category_pk in sorted(labels, key=lambda pair: (pair[0], pair[1] or 0)) if (label, category_pk) not in held_labels])
+        held_labels = {
+            (row.label, row.category_pk): row
+            for row in self._models.ProjectionLabel.objects.filter(vertex=vertex)
+        }
+        self._models.ProjectionLabel.objects.bulk_create(
+            [
+                self._models.ProjectionLabel(
+                    graph=graph, vertex=vertex, label=label, category_pk=category_pk
+                )
+                for label, category_pk in sorted(
+                    labels, key=lambda pair: (pair[0], pair[1] or 0)
+                )
+                if (label, category_pk) not in held_labels
+            ]
+        )
         stale = [row.pk for key, row in held_labels.items() if key not in labels]
         if stale:
             self._models.ProjectionLabel.objects.filter(pk__in=stale).delete()
@@ -202,11 +247,26 @@ class TableProjector:
         # addressing this vertex. A member another vertex still holds is the
         # caller's ordering mistake — `erase_nodes` first — and the unique
         # constraint refuses it rather than silently re-homing the ref.
-        self._models.ProjectionMember.objects.filter(vertex=vertex).exclude(ref__in=members).delete()
-        held = {str(row) for row in self._models.ProjectionMember.objects.filter(vertex=vertex).values_list("ref", flat=True)}
-        self._models.ProjectionMember.objects.bulk_create([self._models.ProjectionMember(graph=graph, vertex=vertex, ref=member) for member in members if member not in held])
+        self._models.ProjectionMember.objects.filter(vertex=vertex).exclude(
+            ref__in=members
+        ).delete()
+        held = {
+            str(row)
+            for row in self._models.ProjectionMember.objects.filter(
+                vertex=vertex
+            ).values_list("ref", flat=True)
+        }
+        self._models.ProjectionMember.objects.bulk_create(
+            [
+                self._models.ProjectionMember(graph=graph, vertex=vertex, ref=member)
+                for member in members
+                if member not in held
+            ]
+        )
 
-    def write_properties(self, graph: Graph, ref: str, values: Mapping[str, JSONValue]) -> bool:
+    def write_properties(
+        self, graph: Graph, ref: str, values: Mapping[str, JSONValue]
+    ) -> bool:
         if not values:
             return True
         row = self._vertex_for_member(graph, ref)
@@ -222,12 +282,18 @@ class TableProjector:
         row.save(update_fields=["properties"])
         return True
 
-    def clear_properties(self, graph: Graph, label: str, refs: Iterable[str], keys: Iterable[str]) -> None:
+    def clear_properties(
+        self, graph: Graph, label: str, refs: Iterable[str], keys: Iterable[str]
+    ) -> None:
         owned = sorted({self.validate_key(key) for key in keys})
         refs = [str(ref) for ref in refs]
         if not owned or not refs:
             return
-        rows = list(self._models.ProjectionVertex.objects.filter(graph=graph, labels__label=str(label), members__ref__in=refs).distinct())
+        rows = list(
+            self._models.ProjectionVertex.objects.filter(
+                graph=graph, labels__label=str(label), members__ref__in=refs
+            ).distinct()
+        )
         for row in rows:
             for key in owned:
                 row.properties.pop(key, None)
@@ -242,41 +308,76 @@ class TableProjector:
         # caller redraws what remains. Edges go by FK cascade — the `DETACH` the
         # protocol promises. The count is vertices only, matching what the
         # Cypher loop counted.
-        vertex_ids = list(self._models.ProjectionMember.objects.filter(graph=graph, ref__in=refs).values_list("vertex_id", flat=True).distinct())
+        vertex_ids = list(
+            self._models.ProjectionMember.objects.filter(graph=graph, ref__in=refs)
+            .values_list("vertex_id", flat=True)
+            .distinct()
+        )
         if not vertex_ids:
             return 0
-        queryset = self._models.ProjectionVertex.objects.filter(graph=graph, pk__in=vertex_ids)
+        queryset = self._models.ProjectionVertex.objects.filter(
+            graph=graph, pk__in=vertex_ids
+        )
         removed = queryset.count()
         queryset.delete()
         return removed
 
     # ------------------------------------------------------------------ writer: edges
 
-    def _endpoints(self, graph: Graph, source_ref: str, target_ref: str) -> tuple[ProjectionVertex | None, ProjectionVertex | None]:
+    def _endpoints(
+        self, graph: Graph, source_ref: str, target_ref: str
+    ) -> tuple[ProjectionVertex | None, ProjectionVertex | None]:
         """The vertices holding the two refs as members — either may be None."""
-        held = {str(member.ref): member.vertex for member in self._models.ProjectionMember.objects.filter(graph=graph, ref__in=[str(source_ref), str(target_ref)]).select_related("vertex")}
+        held = {
+            str(member.ref): member.vertex
+            for member in self._models.ProjectionMember.objects.filter(
+                graph=graph, ref__in=[str(source_ref), str(target_ref)]
+            ).select_related("vertex")
+        }
         return held.get(str(source_ref)), held.get(str(target_ref))
 
-    def draw_edge(self, graph: Graph, source_ref: str, target_ref: str, label: str, properties: Mapping[str, JSONValue]) -> bool:
+    def draw_edge(
+        self,
+        graph: Graph,
+        source_ref: str,
+        target_ref: str,
+        label: str,
+        properties: Mapping[str, JSONValue],
+    ) -> bool:
         source, target = self._endpoints(graph, source_ref, target_ref)
         if source is None or target is None:
             # An undrawn endpoint means nothing was written — the caller decides
             # whether that is worth a warning.
             return False
-        edge, _ = self._models.ProjectionEdge.objects.get_or_create(graph=graph, source=source, target=target, label=str(label))
+        edge, _ = self._models.ProjectionEdge.objects.get_or_create(
+            graph=graph, source=source, target=target, label=str(label)
+        )
         if properties:
             for key, value in properties.items():
                 edge.properties[self.validate_key(key)] = value
             edge.save(update_fields=["properties"])
         return True
 
-    def erase_edge(self, graph: Graph, source_ref: str, target_ref: str, label: str, match: Mapping[str, JSONValue] | None = None) -> None:
+    def erase_edge(
+        self,
+        graph: Graph,
+        source_ref: str,
+        target_ref: str,
+        label: str,
+        match: Mapping[str, JSONValue] | None = None,
+    ) -> None:
         source, target = self._endpoints(graph, source_ref, target_ref)
         if source is None or target is None:
             return
-        queryset = self._models.ProjectionEdge.objects.filter(graph=graph, source=source, target=target, label=str(label))
+        queryset = self._models.ProjectionEdge.objects.filter(
+            graph=graph, source=source, target=target, label=str(label)
+        )
         if match:
-            queryset = queryset.filter(properties__contains={self.validate_key(key): value for key, value in match.items()})
+            queryset = queryset.filter(
+                properties__contains={
+                    self.validate_key(key): value for key, value in match.items()
+                }
+            )
         queryset.delete()
 
     # ------------------------------------------------------------------ writer: keys
@@ -291,7 +392,14 @@ class TableProjector:
     # ------------------------------------------------------------------ reader
 
     @staticmethod
-    def _record(pk: int, ref: str, kind: str, properties: dict[str, JSONValue] | None, labels: Iterable[tuple[str, int]], members: Iterable[str]) -> DrawnNode:
+    def _record(
+        pk: int,
+        ref: str,
+        kind: str,
+        properties: dict[str, JSONValue] | None,
+        labels: Iterable[tuple[str, int]],
+        members: Iterable[str],
+    ) -> DrawnNode:
         """One drawn vertex as a :class:`DrawnNode` — **the only place one is built**.
 
         `labels` is every (label, category pk) the vertex is drawn under; the
@@ -301,7 +409,9 @@ class TableProjector:
         pairs = sorted((str(label), category_pk) for label, category_pk in labels)
         values: dict[str, JSONValue] = dict(properties or {})
         values["id"] = str(ref)
-        values["category_ids"] = sorted(category_pk for _, category_pk in pairs if category_pk is not None)
+        values["category_ids"] = sorted(
+            category_pk for _, category_pk in pairs if category_pk is not None
+        )
         values["type"] = kind
         names = tuple(label for label, _ in pairs)
         return DrawnNode(
@@ -316,56 +426,113 @@ class TableProjector:
         refs = [str(ref) for ref in refs]
         if not refs:
             return {}
-        held = list(self._models.ProjectionMember.objects.filter(graph=graph, ref__in=refs).select_related("vertex"))
+        held = list(
+            self._models.ProjectionMember.objects.filter(
+                graph=graph, ref__in=refs
+            ).select_related("vertex")
+        )
         vertices = {member.vertex_id: member.vertex for member in held}
         members_by_vertex: dict[int, list[str]] = {}
-        for vertex_id, ref in self._models.ProjectionMember.objects.filter(vertex_id__in=list(vertices)).values_list("vertex_id", "ref"):
+        for vertex_id, ref in self._models.ProjectionMember.objects.filter(
+            vertex_id__in=list(vertices)
+        ).values_list("vertex_id", "ref"):
             members_by_vertex.setdefault(vertex_id, []).append(str(ref))
         labels_by_vertex: dict[int, list[tuple[str, int]]] = {}
-        for vertex_id, label, category_pk in self._models.ProjectionLabel.objects.filter(vertex_id__in=list(vertices)).values_list("vertex_id", "label", "category_pk"):
+        for (
+            vertex_id,
+            label,
+            category_pk,
+        ) in self._models.ProjectionLabel.objects.filter(
+            vertex_id__in=list(vertices)
+        ).values_list("vertex_id", "label", "category_pk"):
             labels_by_vertex.setdefault(vertex_id, []).append((label, category_pk))
-        records = {vertex_id: self._record(vertex.pk, str(vertex.ref), vertex.kind, vertex.properties, labels_by_vertex.get(vertex_id, ()), members_by_vertex.get(vertex_id, ())) for vertex_id, vertex in vertices.items()}
+        records = {
+            vertex_id: self._record(
+                vertex.pk,
+                str(vertex.ref),
+                vertex.kind,
+                vertex.properties,
+                labels_by_vertex.get(vertex_id, ()),
+                members_by_vertex.get(vertex_id, ()),
+            )
+            for vertex_id, vertex in vertices.items()
+        }
         return {str(member.ref): records[member.vertex_id] for member in held}
 
-    def drawn_edges_incident(self, graph: Graph, refs: Iterable[str], spec: IncidentEdgesSpec) -> dict[str, list[IncidentEdge]]:
+    def drawn_edges_incident(
+        self, graph: Graph, refs: Iterable[str], spec: IncidentEdgesSpec
+    ) -> dict[str, list[IncidentEdge]]:
 
         if spec.direction not in ("IN", "OUT", "BOTH"):
-            raise ValueError(f"direction must be IN, OUT or BOTH, not {spec.direction!r}")
+            raise ValueError(
+                f"direction must be IN, OUT or BOTH, not {spec.direction!r}"
+            )
         asked = [str(ref) for ref in refs]
         if not asked:
             return {}
-        held = {str(member.ref): int(member.vertex_id) for member in self._models.ProjectionMember.objects.filter(graph=graph, ref__in=asked)}
+        held = {
+            str(member.ref): int(member.vertex_id)
+            for member in self._models.ProjectionMember.objects.filter(
+                graph=graph, ref__in=asked
+            )
+        }
         vertex_ids = set(held.values())
         if not vertex_ids:
             return {}
 
-        rows = self._models.ProjectionEdge.objects.filter(graph=graph).filter(Q(source_id__in=vertex_ids) | Q(target_id__in=vertex_ids))
+        rows = self._models.ProjectionEdge.objects.filter(graph=graph).filter(
+            Q(source_id__in=vertex_ids) | Q(target_id__in=vertex_ids)
+        )
         if spec.labels:
             rows = rows.filter(label__in=[str(label) for label in spec.labels])
         rows = rows.select_related("source", "target").order_by("id")
 
         by_vertex: dict[int, list[IncidentEdge]] = {}
         for row in rows:
-            edge = IncidentEdge(edge_id=int(row.pk), label=str(row.label), source_id=int(row.source_id), target_id=int(row.target_id), source_ref=str(row.source.ref), target_ref=str(row.target.ref), properties=dict(row.properties or {}))
+            edge = IncidentEdge(
+                edge_id=int(row.pk),
+                label=str(row.label),
+                source_id=int(row.source_id),
+                target_id=int(row.target_id),
+                source_ref=str(row.source.ref),
+                target_ref=str(row.target.ref),
+                properties=dict(row.properties or {}),
+            )
             if spec.direction in ("OUT", "BOTH") and row.source_id in vertex_ids:
                 by_vertex.setdefault(int(row.source_id), []).append(edge)
             # A self-edge is listed once, on the OUT side above.
-            if spec.direction in ("IN", "BOTH") and row.target_id in vertex_ids and row.source_id != row.target_id:
+            if (
+                spec.direction in ("IN", "BOTH")
+                and row.target_id in vertex_ids
+                and row.source_id != row.target_id
+            ):
                 by_vertex.setdefault(int(row.target_id), []).append(edge)
-        return {ref: by_vertex.get(vertex_id, [])[: spec.limit] for ref, vertex_id in held.items()}
+        return {
+            ref: by_vertex.get(vertex_id, [])[: spec.limit]
+            for ref, vertex_id in held.items()
+        }
 
-    def drawn_edge(self, graph: Graph, source_ref: str, target_ref: str, label: str) -> DrawnEdge | None:
+    def drawn_edge(
+        self, graph: Graph, source_ref: str, target_ref: str, label: str
+    ) -> DrawnEdge | None:
         source, target = self._endpoints(graph, source_ref, target_ref)
         if source is None or target is None:
             return None
-        row = self._models.ProjectionEdge.objects.filter(graph=graph, source=source, target=target, label=str(label)).first()
+        row = self._models.ProjectionEdge.objects.filter(
+            graph=graph, source=source, target=target, label=str(label)
+        ).first()
         if row is None:
             return None
-        return DrawnEdge(edge_id=int(row.pk), left_id=int(row.source_id), right_id=int(row.target_id))
+        return DrawnEdge(
+            edge_id=int(row.pk), left_id=int(row.source_id), right_id=int(row.target_id)
+        )
 
     def list_drawn(self, graph: Graph, spec: ListDrawnSpec) -> list[DrawnNode]:
         params: dict[str, object] = {"graph_pk": graph.pk, "label": str(spec.label)}
-        clauses = ["v.graph_id = %(graph_pk)s", f"EXISTS (SELECT 1 FROM {self._label_table()} l WHERE l.vertex_id = v.id AND l.label = %(label)s)"]
+        clauses = [
+            "v.graph_id = %(graph_pk)s",
+            f"EXISTS (SELECT 1 FROM {self._label_table()} l WHERE l.vertex_id = v.id AND l.label = %(label)s)",
+        ]
 
         for index, predicate in enumerate(spec.predicates):
             clauses.append(self._predicate_sql("v", predicate, params, f"p{index}"))
@@ -376,7 +543,9 @@ class TableProjector:
             if order.key == "__internal_id":
                 order_parts.append(f"v.id {direction}")
             else:
-                order_parts.append(f"{self._prop_jsonb('v', order.key, params, f'o{index}')} {direction}")
+                order_parts.append(
+                    f"{self._prop_jsonb('v', order.key, params, f'o{index}')} {direction}"
+                )
 
         params["offset"] = int(spec.offset)
         params["limit"] = int(spec.limit)
@@ -393,26 +562,52 @@ class TableProjector:
             cursor.execute(sql, params)
             rows = cursor.fetchall()
 
-        return [self._record(pk, ref, kind, self._as_dict(properties), zip(labels or (), category_pks or ()), members or ()) for pk, ref, kind, properties, labels, category_pks, members in rows]
+        return [
+            self._record(
+                pk,
+                ref,
+                kind,
+                self._as_dict(properties),
+                zip(labels or (), category_pks or ()),
+                members or (),
+            )
+            for pk, ref, kind, properties, labels, category_pks, members in rows
+        ]
 
     #: How long one rendered table may run. A plan is a k-way join over the
     #: namespace and any member may now render one unsaved (`renderTablePlan`),
     #: so the database, not the client, bounds the cost.
     RENDER_STATEMENT_TIMEOUT_MS = 30_000
 
-    def render_table(self, graph: Graph, plan: TableQueryPlan, *, filters: RenderGraphTableFilter | None = None, order: RenderGraphTableOrder | None = None, pagination: RenderGraphTablePagination | None = None) -> list[dict[str, JSONValue]]:
+    def render_table(
+        self,
+        graph: Graph,
+        plan: TableQueryPlan,
+        *,
+        filters: RenderGraphTableFilter | None = None,
+        order: RenderGraphTableOrder | None = None,
+        pagination: RenderGraphTablePagination | None = None,
+    ) -> list[dict[str, JSONValue]]:
 
-        sql, params = compile_table_plan_sql(self, plan, graph=graph, filters=filters, order=order, pagination=pagination)
+        sql, params = compile_table_plan_sql(
+            self, plan, graph=graph, filters=filters, order=order, pagination=pagination
+        )
         # `SET LOCAL` needs a transaction to be local to; autocommit is the norm
         # elsewhere in this module, so this read opens one of its own.
         with transaction.atomic(), connection.cursor() as cursor:
-            cursor.execute("SET LOCAL statement_timeout = %s", [int(self.RENDER_STATEMENT_TIMEOUT_MS)])
+            cursor.execute(
+                "SET LOCAL statement_timeout = %s",
+                [int(self.RENDER_STATEMENT_TIMEOUT_MS)],
+            )
             cursor.execute(sql, params)
             columns = [col[0] for col in cursor.description]
             # Every returned expression is jsonb, and Django configures the
             # driver with an *identity* json loader — so a cell arrives as JSON
             # text (a stored string keeps its quotes) and one decode is exact.
-            return [{column: self._from_jsonb(value) for column, value in zip(columns, row)} for row in cursor.fetchall()]
+            return [
+                {column: self._from_jsonb(value) for column, value in zip(columns, row)}
+                for row in cursor.fetchall()
+            ]
 
     # ------------------------------------------------------------------ compiling
 
@@ -444,7 +639,9 @@ class TableProjector:
         """The vertex's category pks as a sorted jsonb array — the label rows (RFC 0019)."""
         return f"(SELECT COALESCE(jsonb_agg(l.category_pk ORDER BY l.category_pk), '[]'::jsonb) FROM {self._label_table()} l WHERE l.vertex_id = {var}.id AND l.category_pk IS NOT NULL)"
 
-    def _prop_jsonb(self, var: str, key: str, params: dict[str, object], slot: str) -> str:
+    def _prop_jsonb(
+        self, var: str, key: str, params: dict[str, object], slot: str
+    ) -> str:
         """The jsonb expression for a record property — column-backed for the identity trio."""
         key = self.validate_key(key)
         if key == "id":
@@ -456,7 +653,9 @@ class TableProjector:
         params[f"k_{slot}"] = key
         return f"({var}.properties -> %(k_{slot})s)"
 
-    def _prop_text(self, var: str, key: str, params: dict[str, object], slot: str) -> str:
+    def _prop_text(
+        self, var: str, key: str, params: dict[str, object], slot: str
+    ) -> str:
         """The text expression for a record property, unwrapped (no jsonb quotes)."""
         key = self.validate_key(key)
         if key == "id":
@@ -468,7 +667,13 @@ class TableProjector:
         params[f"k_{slot}"] = key
         return f"({var}.properties ->> %(k_{slot})s)"
 
-    def _predicate_sql(self, var: str, predicate: PropertyPredicate, params: dict[str, object], slot: str) -> str:
+    def _predicate_sql(
+        self,
+        var: str,
+        predicate: PropertyPredicate,
+        params: dict[str, object],
+        slot: str,
+    ) -> str:
         """One `PropertyPredicate` as parameterized SQL over vertex alias `var`."""
         operator = str(getattr(predicate.operator, "value", predicate.operator)).upper()
         if operator not in LIST_OPERATORS:
@@ -484,23 +689,60 @@ class TableProjector:
             # Present-and-not-json-null, which is what `e.key IS NOT NULL` meant.
             return f"(({var}.properties -> %(k_{slot})s) IS NOT NULL AND ({var}.properties -> %(k_{slot})s) <> 'null'::jsonb)"
 
-        if key == "category_ids" and operator in {"EQUALS", "NOT_EQUALS", "IN", "NOT_IN"}:
+        if key == "category_ids" and operator in {
+            "EQUALS",
+            "NOT_EQUALS",
+            "IN",
+            "NOT_IN",
+        }:
             # Membership, not equality: "category_ids = 7" asks whether the
             # vertex is drawn under category 7, which is what every caller of
             # the old scalar `category_id` meant (RFC 0019).
-            values = list(predicate.value) if isinstance(predicate.value, (list, tuple, set)) else [predicate.value]
+            values = (
+                list(predicate.value)
+                if isinstance(predicate.value, (list, tuple, set))
+                else [predicate.value]
+            )
             params[f"v_{slot}"] = [int(value) for value in values]
             clause = f"EXISTS (SELECT 1 FROM {self._label_table()} l WHERE l.vertex_id = {var}.id AND l.category_pk = ANY(%(v_{slot})s))"
             return clause if operator in {"EQUALS", "IN"} else f"NOT ({clause})"
 
-        return self._compare_sql(self._prop_jsonb(var, key, params, slot), self._prop_text(var, key, params, f"{slot}t"), operator, predicate.value, params, slot)
+        return self._compare_sql(
+            self._prop_jsonb(var, key, params, slot),
+            self._prop_text(var, key, params, f"{slot}t"),
+            operator,
+            predicate.value,
+            params,
+            slot,
+        )
 
     @staticmethod
-    def _compare_sql(jsonb_expr: str, text_expr: str, operator: str, value: JSONValue, params: dict[str, object], slot: str) -> str:
+    def _compare_sql(
+        jsonb_expr: str,
+        text_expr: str,
+        operator: str,
+        value: JSONValue,
+        params: dict[str, object],
+        slot: str,
+    ) -> str:
         """One comparison, jsonb-typed for ordering operators and text for the string ones."""
         placeholder = f"%(v_{slot})s"
-        if operator in {"EQUALS", "NOT_EQUALS", "GREATER_THAN", "LESS_THAN", "GREATER_OR_EQUAL", "LESS_OR_EQUAL"}:
-            symbol = {"EQUALS": "=", "NOT_EQUALS": "<>", "GREATER_THAN": ">", "LESS_THAN": "<", "GREATER_OR_EQUAL": ">=", "LESS_OR_EQUAL": "<="}[operator]
+        if operator in {
+            "EQUALS",
+            "NOT_EQUALS",
+            "GREATER_THAN",
+            "LESS_THAN",
+            "GREATER_OR_EQUAL",
+            "LESS_OR_EQUAL",
+        }:
+            symbol = {
+                "EQUALS": "=",
+                "NOT_EQUALS": "<>",
+                "GREATER_THAN": ">",
+                "LESS_THAN": "<",
+                "GREATER_OR_EQUAL": ">=",
+                "LESS_OR_EQUAL": "<=",
+            }[operator]
             params[f"v_{slot}"] = json.dumps(value)
             return f"{jsonb_expr} {symbol} {placeholder}::jsonb"
         if operator in {"IN", "NOT_IN"}:
@@ -556,10 +798,7 @@ def compile_namespace_ddl(projector: TableProjector, spec: NamespaceSpec) -> lis
     # unlabelled pattern variable still binds one (label, category) per row.
     for vertex in spec.vertices:
         statements.append(
-            f"CREATE VIEW {schema}.{_quote_ident(vertex.view_name)} AS "
-            f"SELECT v.id, v.ref, l.label, l.category_pk, v.kind, v.properties "
-            f"FROM {vertex_table} v JOIN {label_table} l ON l.vertex_id = v.id "
-            f"WHERE v.graph_id = {graph_pk} AND l.category_pk = {int(vertex.category_pk)}"
+            f"CREATE VIEW {schema}.{_quote_ident(vertex.view_name)} AS SELECT v.id, v.ref, l.label, l.category_pk, v.kind, v.properties FROM {vertex_table} v JOIN {label_table} l ON l.vertex_id = v.id WHERE v.graph_id = {graph_pk} AND l.category_pk = {int(vertex.category_pk)}"
         )
 
     for edge in spec.edges:
@@ -573,10 +812,11 @@ def compile_namespace_ddl(projector: TableProjector, spec: NamespaceSpec) -> lis
             f"AND s.category_pk = {int(edge.source_pk)} AND t.category_pk = {int(edge.target_pk)}"
         )
 
-    vertex_views = {int(vertex.category_pk): vertex.view_name for vertex in spec.vertices}
+    vertex_views = {
+        int(vertex.category_pk): vertex.view_name for vertex in spec.vertices
+    }
     vertex_clauses = [
-        f"{schema}.{_quote_ident(vertex.view_name)} AS {_quote_ident(vertex.view_name)} KEY (id) "
-        f"LABEL {_quote_ident(vertex.label)} PROPERTIES ({_VERTEX_ELEMENT_PROPERTIES})"
+        f"{schema}.{_quote_ident(vertex.view_name)} AS {_quote_ident(vertex.view_name)} KEY (id) LABEL {_quote_ident(vertex.label)} PROPERTIES ({_VERTEX_ELEMENT_PROPERTIES})"
         for vertex in spec.vertices
     ]
     edge_clauses = [
@@ -610,10 +850,25 @@ def compile_namespace_ddl(projector: TableProjector, spec: NamespaceSpec) -> lis
 #: categories is two rows, each carrying its own label, so a rendered table's
 #: `category_id` is the category the *match* went through, not the vertex's
 #: whole set (that is `category_ids` on the drawn record).
-_NODE_COLUMN_SUFFIXES = ("__vid", "__ref", "__label", "__category_id", "__kind", "__props")
+_NODE_COLUMN_SUFFIXES = (
+    "__vid",
+    "__ref",
+    "__label",
+    "__category_id",
+    "__kind",
+    "__props",
+)
 
 
-def compile_table_plan_sql(projector: TableProjector, plan: TableQueryPlan, *, graph: Graph | None = None, filters: RenderGraphTableFilter | None = None, order: RenderGraphTableOrder | None = None, pagination: RenderGraphTablePagination | None = None) -> tuple[str, dict[str, object]]:
+def compile_table_plan_sql(
+    projector: TableProjector,
+    plan: TableQueryPlan,
+    *,
+    graph: Graph | None = None,
+    filters: RenderGraphTableFilter | None = None,
+    order: RenderGraphTableOrder | None = None,
+    pagination: RenderGraphTablePagination | None = None,
+) -> tuple[str, dict[str, object]]:
     """Compile a `TableQueryPlan` (plus a render-time filter/order/page) to SQL.
 
     The execution path is the graph's **namespace**: each match path becomes one
@@ -668,7 +923,9 @@ def compile_table_plan_sql(projector: TableProjector, plan: TableQueryPlan, *, g
         if "\x00" in label or len(label.encode()) > 63:
             raise ValueError(f"Invalid {what} label {label!r}.")
         if declared is not None and label not in declared:
-            raise ValueError(f"Unknown {what} label {label!r}: this graph declares {', '.join(sorted(declared)) or 'none'}.")
+            raise ValueError(
+                f"Unknown {what} label {label!r}: this graph declares {', '.join(sorted(declared)) or 'none'}."
+            )
         return _quote_ident(label)
 
     path_nodes: dict[str, dict[str, str]] = {}
@@ -686,7 +943,9 @@ def compile_table_plan_sql(projector: TableProjector, plan: TableQueryPlan, *, g
 
         node_vars: list[str] = []
         for node_index, node in enumerate(path.nodes):
-            var_name = sanitize_identifier(f"{path_key}_{node}", f"n_{path_index}_{node_index}")
+            var_name = sanitize_identifier(
+                f"{path_key}_{node}", f"n_{path_index}_{node_index}"
+            )
             node_vars.append(var_name)
             path_nodes[path_key][str(node)] = var_name
             node_home[var_name] = path_alias
@@ -697,24 +956,42 @@ def compile_table_plan_sql(projector: TableProjector, plan: TableQueryPlan, *, g
         for node_index, var in enumerate(node_vars):
             label = labels[node_index] if node_index < len(labels) else None
             if label:
-                pattern_parts.append(f"({var} IS {quote_label(label, vertex_labels, 'node')})")
+                pattern_parts.append(
+                    f"({var} IS {quote_label(label, vertex_labels, 'node')})"
+                )
             else:
                 pattern_parts.append(f"({var})")
             if node_index < len(node_vars) - 1:
                 rel_index = node_index
                 relation = None
-                if path.relations and rel_index < len(path.relations) and path.relations[rel_index]:
+                if (
+                    path.relations
+                    and rel_index < len(path.relations)
+                    and path.relations[rel_index]
+                ):
                     relation = str(path.relations[rel_index])
-                edge = f"[IS {quote_label(relation, edge_labels, 'edge')}]" if relation else "[]"
+                edge = (
+                    f"[IS {quote_label(relation, edge_labels, 'edge')}]"
+                    if relation
+                    else "[]"
+                )
                 direction_out = True
-                if path.relation_directions and rel_index < len(path.relation_directions):
+                if path.relation_directions and rel_index < len(
+                    path.relation_directions
+                ):
                     direction_out = bool(path.relation_directions[rel_index])
                 pattern_parts.append(f"-{edge}->" if direction_out else f"<-{edge}-")
 
-        columns = ", ".join(f'{var}.{suffix} AS "{var}{suffix}"' for var in node_vars for suffix in _NODE_COLUMN_SUFFIXES)
+        columns = ", ".join(
+            f'{var}.{suffix} AS "{var}{suffix}"'
+            for var in node_vars
+            for suffix in _NODE_COLUMN_SUFFIXES
+        )
         graph_table = f"GRAPH_TABLE ({graph_ref} MATCH {''.join(pattern_parts)} COLUMNS ({columns}))"
         if path.optional:
-            join_clauses.append(f"LEFT JOIN (SELECT * FROM {graph_table}) AS {path_alias} ON TRUE")
+            join_clauses.append(
+                f"LEFT JOIN (SELECT * FROM {graph_table}) AS {path_alias} ON TRUE"
+            )
         else:
             join_clauses.append(f"CROSS JOIN {graph_table} AS {path_alias}")
 
@@ -750,7 +1027,9 @@ def compile_table_plan_sql(projector: TableProjector, plan: TableQueryPlan, *, g
         if var is None:
             var = default_path_node.get(path_key)
         if var is None:
-            raise ValueError(f"Unknown path/node reference in {what}: path={path_key}, node={node}")
+            raise ValueError(
+                f"Unknown path/node reference in {what}: path={path_key}, node={node}"
+            )
         return var
 
     for index, where in enumerate(getattr(plan, "wheres", []) or []):
@@ -771,11 +1050,7 @@ def compile_table_plan_sql(projector: TableProjector, plan: TableQueryPlan, *, g
         )
 
     def node_record(var: str) -> str:
-        return (
-            f"jsonb_build_object('id', {column(var, '__vid')}, 'label', {column(var, '__label')}, "
-            f"'properties', coalesce({column(var, '__props')}, '{{}}'::jsonb) || "
-            f"jsonb_build_object('id', {column(var, '__ref')}, 'category_id', {column(var, '__category_id')}, 'type', {column(var, '__kind')}))"
-        )
+        return f"jsonb_build_object('id', {column(var, '__vid')}, 'label', {column(var, '__label')}, 'properties', coalesce({column(var, '__props')}, '{{}}'::jsonb) || jsonb_build_object('id', {column(var, '__ref')}, 'category_id', {column(var, '__category_id')}, 'type', {column(var, '__kind')}))"
 
     return_parts: list[str] = []
     aliases: list[str] = []
@@ -785,10 +1060,17 @@ def compile_table_plan_sql(projector: TableProjector, plan: TableQueryPlan, *, g
         if ret.property:
             if not is_identifier(ret.property):
                 raise ValueError(f"Invalid property key '{ret.property}'.")
-            alias = sanitize_identifier(requested or f"{ret.path}_{ret.node or 'node'}_{ret.property}_{index}", f"c_{index}")
-            return_parts.append(f"{prop_jsonb(var, ret.property, f'r{index}')} AS \"{alias}\"")
+            alias = sanitize_identifier(
+                requested or f"{ret.path}_{ret.node or 'node'}_{ret.property}_{index}",
+                f"c_{index}",
+            )
+            return_parts.append(
+                f'{prop_jsonb(var, ret.property, f"r{index}")} AS "{alias}"'
+            )
         else:
-            alias = sanitize_identifier(requested or f"{ret.path}_{ret.node or 'node'}_{index}", f"node_{index}")
+            alias = sanitize_identifier(
+                requested or f"{ret.path}_{ret.node or 'node'}_{index}", f"node_{index}"
+            )
             return_parts.append(f'{node_record(var)} AS "{alias}"')
         aliases.append(alias)
 
@@ -810,18 +1092,39 @@ def compile_table_plan_sql(projector: TableProjector, plan: TableQueryPlan, *, g
         if not is_identifier(key):
             raise ValueError(f"Invalid property key '{key}'.")
         if key not in aliases:
-            raise ValueError(f"Filter key '{key}' is not a returned alias of this query; returned: {', '.join(aliases)}")
-        operator = str(getattr(getattr(filters, "operator", None) or "EQUALS", "value", getattr(filters, "operator", None) or "EQUALS")).upper()
+            raise ValueError(
+                f"Filter key '{key}' is not a returned alias of this query; returned: {', '.join(aliases)}"
+            )
+        operator = str(
+            getattr(
+                getattr(filters, "operator", None) or "EQUALS",
+                "value",
+                getattr(filters, "operator", None) or "EQUALS",
+            )
+        ).upper()
         lines.append(
             "WHERE "
-            + TableProjector._compare_sql(f'_t."{key}"', f"(_t.\"{key}\" #>> '{{}}')", operator, getattr(filters, "value", None), params, "f")
+            + TableProjector._compare_sql(
+                f'_t."{key}"',
+                f"(_t.\"{key}\" #>> '{{}}')",
+                operator,
+                getattr(filters, "value", None),
+                params,
+                "f",
+            )
         )
 
     if order is not None and getattr(order, "key", None):
         key = str(order.key)
         if key not in aliases:
-            raise ValueError(f"Order key '{key}' is not a returned alias of this query; returned: {', '.join(aliases)}")
-        direction = "DESC" if str(getattr(order, "direction", "asc")).lower() == "desc" else "ASC"
+            raise ValueError(
+                f"Order key '{key}' is not a returned alias of this query; returned: {', '.join(aliases)}"
+            )
+        direction = (
+            "DESC"
+            if str(getattr(order, "direction", "asc")).lower() == "desc"
+            else "ASC"
+        )
         lines.append(f'ORDER BY "{key}" {direction}')
     if pagination is not None:
         offset = getattr(pagination, "offset", None)

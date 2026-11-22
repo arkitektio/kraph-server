@@ -6,20 +6,26 @@ an edit; and every value the datum informs refolds from what still stands.
 """
 
 import uuid
+
 import kante
 import pytest
+from asgiref.sync import sync_to_async
 from kante.context import HttpContext
+
 from core import models as core_models
 from evidence import models as evidence_models
 from graph_engine import input_models
-from asgiref.sync import sync_to_async
 from graph_engine import input_models as models
 from graph_engine.materialize import materialize
 from tests.support import claims, reads, writes
 
 
-async def _prepare_record_metric_categories(graph: core_models.Graph, identifier: str, key: str) -> evidence_models.StructureKind:
-    structure_category = await evidence_models.StructureKind.objects.filter(graph=graph, identifier=identifier).afirst()
+async def _prepare_record_metric_categories(
+    graph: core_models.Graph, identifier: str, key: str
+) -> evidence_models.StructureKind:
+    structure_category = await evidence_models.StructureKind.objects.filter(
+        graph=graph, identifier=identifier
+    ).afirst()
     if structure_category is None:
         structure_category = await evidence_models.StructureKind.objects.acreate_from_structure_definition(
             graph=graph,
@@ -29,7 +35,9 @@ async def _prepare_record_metric_categories(graph: core_models.Graph, identifier
             ),
         )
 
-    metric_category = await evidence_models.MetricKind.objects.filter(graph=graph, key=key, structure_category=structure_category).afirst()
+    metric_category = await evidence_models.MetricKind.objects.filter(
+        graph=graph, key=key, structure_category=structure_category
+    ).afirst()
     if metric_category is None:
         await evidence_models.MetricKind.objects.acreate_from_metric_definition(
             graph=graph,
@@ -84,7 +92,9 @@ async def test_record_metric_creates_the_structure_it_needs(
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     assert result.data["assertMetricValue"]["metric"]["value"] == 12.34
 
-    created = await evidence_models.StructureKind.all_objects.filter(organization=test_graph.organization, identifier=identifier).acount()
+    created = await evidence_models.StructureKind.all_objects.filter(
+        organization=test_graph.organization, identifier=identifier
+    ).acount()
     assert created == 1, "The kind must have been minted by the write that needed it"
 
 
@@ -196,12 +206,18 @@ def edge_schema() -> models.GraphDefinitionInput:
                             type=models.PropertyType.FLOAT,
                             index=True,
                             derivation=models.DerivationType.ROLLUP,
-                            rule=models.DerivationRuleInput(source_node="ROI", key="vector_length", aggregation=models.AggregationFunction.MEAN),
+                            rule=models.DerivationRuleInput(
+                                source_node="ROI",
+                                key="vector_length",
+                                aggregation=models.AggregationFunction.MEAN,
+                            ),
                         )
                     ],
                 )
             ],
-            structures=[models.StructureDefinitionInput(key="Region", identifier="ROI")],
+            structures=[
+                models.StructureDefinitionInput(key="Region", identifier="ROI")
+            ],
             structure_relations=[
                 models.StructureRelationDefinitionInput(
                     key="CONTAINS",
@@ -221,7 +237,9 @@ def edge_schema() -> models.GraphDefinitionInput:
 
 
 @pytest.fixture(scope="function")
-def edge_graph(transactional_db, table_projector, edge_schema, authenticated_context) -> core_models.Graph:
+def edge_graph(
+    transactional_db, table_projector, edge_schema, authenticated_context
+) -> core_models.Graph:
     request = authenticated_context.request
     return materialize(
         edge_schema,
@@ -246,19 +264,33 @@ async def test_measurement_rolls_its_metrics_up(
     typed link would leave the entity deriving nothing at all — the exact
     silent-no-op this codebase treats as a defect.
     """
-    category = await core_models.MeasurementCategory.objects.filter(graph=edge_graph, key="MEASURES").afirst()
+    category = await core_models.MeasurementCategory.objects.filter(
+        graph=edge_graph, key="MEASURES"
+    ).afirst()
     assert category is not None, "The schema declares a MEASURES measurement"
 
-    structure = await writes.create_structure(api_schema, simple_api_context, metrics=[{"key": "vector_length", "value": 42.0, "valueKind": "FLOAT"}])
+    structure = await writes.create_structure(
+        api_schema,
+        simple_api_context,
+        metrics=[{"key": "vector_length", "value": 42.0, "valueKind": "FLOAT"}],
+    )
     entity = await writes.create_entity(api_schema, simple_api_context, "AIS")
 
-    before = await api_schema.execute(reads.NODE_PROPERTIES, variable_values={"id": entity, "graph": str(edge_graph.id)}, context_value=simple_api_context)
+    before = await api_schema.execute(
+        reads.NODE_PROPERTIES,
+        variable_values={"id": entity, "graph": str(edge_graph.id)},
+        context_value=simple_api_context,
+    )
     assert before.errors is None, f"GraphQL errors: {before.errors}"
-    assert before.data["node"]["properties"].get("avg_length") is None, "Nothing may derive before the measurement is asserted"
+    assert before.data["node"]["properties"].get("avg_length") is None, (
+        "Nothing may derive before the measurement is asserted"
+    )
 
     created = await api_schema.execute(
         writes.ASSERT_MEASUREMENT,
-        variable_values={"input": {"term": category.key, "sourceId": structure, "targetId": entity}},
+        variable_values={
+            "input": {"term": category.key, "sourceId": structure, "targetId": entity}
+        },
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
@@ -269,19 +301,33 @@ async def test_measurement_rolls_its_metrics_up(
     assert measurement["source"]["object"], "The structure that did the measuring"
     assert measurement["target"]["id"], "and the entity it is about"
 
-    after = await api_schema.execute(reads.NODE_PROPERTIES, variable_values={"id": entity, "graph": str(edge_graph.id)}, context_value=simple_api_context)
+    after = await api_schema.execute(
+        reads.NODE_PROPERTIES,
+        variable_values={"id": entity, "graph": str(edge_graph.id)},
+        context_value=simple_api_context,
+    )
     assert after.errors is None, f"GraphQL errors: {after.errors}"
-    assert after.data["node"]["properties"].get("avg_length") == pytest.approx(42.0), "Asserting a measurement must move the derived value"
+    assert after.data["node"]["properties"].get("avg_length") == pytest.approx(42.0), (
+        "Asserting a measurement must move the derived value"
+    )
 
     @sync_to_async
     def link_kinds() -> list[str]:
         from evidence import selector as selector_module
 
-        return sorted(evidence_models.Link.objects.for_organization(edge_graph.organization).filter(target_ref__in=selector_module.instance_ids_for(edge_graph)).values_list("kind", flat=True))
+        return sorted(
+            evidence_models.Link.objects.for_organization(edge_graph.organization)
+            .filter(target_ref__in=selector_module.instance_ids_for(edge_graph))
+            .values_list("kind", flat=True)
+        )
 
     kinds = await link_kinds()
-    assert evidence_models.Link.Kind.MEASUREMENT in kinds, "The typed claim names which term of the schema was asserted"
-    assert evidence_models.Link.Kind.INFORMS in kinds, "The plain claim is what dirty() matches, and without it nothing rolls up"
+    assert evidence_models.Link.Kind.MEASUREMENT in kinds, (
+        "The typed claim names which term of the schema was asserted"
+    )
+    assert evidence_models.Link.Kind.INFORMS in kinds, (
+        "The plain claim is what dirty() matches, and without it nothing rolls up"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -309,7 +355,15 @@ async def test_evidence_can_inform_a_claim_rather_than_a_node(
                 "term": "IS_CONNECTED_TO",
                 "sourceId": source,
                 "targetId": target,
-                "supportingEvidence": [{"identifier": "@mikro/roi", "object": "roi-informs-an-edge", "metrics": [{"key": "vector_length", "value": 7.0, "valueKind": "FLOAT"}]}],
+                "supportingEvidence": [
+                    {
+                        "identifier": "@mikro/roi",
+                        "object": "roi-informs-an-edge",
+                        "metrics": [
+                            {"key": "vector_length", "value": 7.0, "valueKind": "FLOAT"}
+                        ],
+                    }
+                ],
             }
         },
         context_value=simple_api_context,
@@ -321,8 +375,14 @@ async def test_evidence_can_inform_a_claim_rather_than_a_node(
     def informs_id() -> str:
         from evidence import models as evidence_models
 
-        link = evidence_models.Link.objects.for_organization(test_graph.organization).filter(kind=evidence_models.Link.Kind.INFORMS, target_ref=relation_id).first()
-        assert link is not None, "The supporting structure informs the relation, not either endpoint"
+        link = (
+            evidence_models.Link.objects.for_organization(test_graph.organization)
+            .filter(kind=evidence_models.Link.Kind.INFORMS, target_ref=relation_id)
+            .first()
+        )
+        assert link is not None, (
+            "The supporting structure informs the relation, not either endpoint"
+        )
         return str(link.pk)
 
     read = await api_schema.execute(
@@ -342,8 +402,12 @@ async def test_evidence_can_inform_a_claim_rather_than_a_node(
     assert read.errors is None, f"GraphQL errors: {read.errors}"
     informs = read.data["link"]
     assert informs["kind"] == "INFORMS"
-    assert informs["source"]["identifier"] == "@mikro/roi", "The structure that justifies the claim"
-    assert informs["target"]["id"] == relation_id, "and the claim it justifies, which is a link rather than a node"
+    assert informs["source"]["identifier"] == "@mikro/roi", (
+        "The structure that justifies the claim"
+    )
+    assert informs["target"]["id"] == relation_id, (
+        "and the claim it justifies, which is a link rather than a node"
+    )
     assert informs["target"]["kind"] == "RELATION"
 
 
@@ -364,7 +428,9 @@ async def _create_structure_row(
             "input": {
                 "identifier": category.identifier,
                 "object": object_id,
-                "metrics": [{"key": "vector_length", "value": 45.2, "valueKind": "FLOAT"}],
+                "metrics": [
+                    {"key": "vector_length", "value": 45.2, "valueKind": "FLOAT"}
+                ],
             }
         },
         context_value=ctx,
@@ -381,7 +447,9 @@ async def test_metrics_for_structure_reads_back_through_sql(
     test_graph: core_models.Graph,
 ) -> None:
     """The metric written alongside a structure is retrievable by structure id."""
-    structure_id = await _create_structure_row(api_schema, simple_api_context, test_graph, f"obj_{uuid.uuid4().hex[:8]}")
+    structure_id = await _create_structure_row(
+        api_schema, simple_api_context, test_graph, f"obj_{uuid.uuid4().hex[:8]}"
+    )
 
     result = await api_schema.execute(
         """
@@ -413,8 +481,12 @@ async def test_link_structure_to_entity_records_the_claim(
     object_id = f"obj_{uuid.uuid4().hex[:8]}"
     await _create_structure_row(api_schema, simple_api_context, test_graph, object_id)
 
-    category = await core_models.EntityCategory.objects.filter(graph=test_graph).afirst()
-    assert category is not None, "The bio schema must materialize at least one entity category"
+    category = await core_models.EntityCategory.objects.filter(
+        graph=test_graph
+    ).afirst()
+    assert category is not None, (
+        "The bio schema must materialize at least one entity category"
+    )
 
     created = await api_schema.execute(
         """
@@ -456,8 +528,12 @@ async def test_link_structure_to_entity_records_the_claim(
     # reads back.
     claim = linked.data["assertInforms"]["link"]
     assert claim["kind"] == "INFORMS", f"Expected an INFORMS claim, got {claim['kind']}"
-    assert claim["targetRef"] == entity_id, "The claim should point at the entity it informs"
-    assert linked.data["assertInforms"]["assertion"]["id"], "The act should be on the record"
+    assert claim["targetRef"] == entity_id, (
+        "The claim should point at the entity it informs"
+    )
+    assert linked.data["assertInforms"]["assertion"]["id"], (
+        "The act should be on the record"
+    )
 
     # And the link is readable from the other end.
     informing = await api_schema.execute(
@@ -476,18 +552,44 @@ async def test_link_structure_to_entity_records_the_claim(
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_retracting_the_informs_claim_stops_the_datum_feeding_the_value(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
+async def test_retracting_the_informs_claim_stops_the_datum_feeding_the_value(
+    api_schema, simple_api_context, test_graph: core_models.Graph
+) -> None:
     """RFC 0023: that a datum informs an individual is a claim, and the fold
     honours its standing. Retract the INFORMS link and the datum's measurements
     stop feeding the derived value; attest it and they feed it again."""
     object_id = f"roi_{uuid.uuid4().hex[:8]}"
-    entity = await writes.create_entity(api_schema, simple_api_context, "AIS", evidence=writes.roi(object_id, 42.0))
-    assert await reads.property_of(api_schema, simple_api_context, test_graph, entity, "avg_length") == pytest.approx(42.0)
+    entity = await writes.create_entity(
+        api_schema, simple_api_context, "AIS", evidence=writes.roi(object_id, 42.0)
+    )
+    assert await reads.property_of(
+        api_schema, simple_api_context, test_graph, entity, "avg_length"
+    ) == pytest.approx(42.0)
 
-    informs = await sync_to_async(lambda: str(evidence_models.Link.objects.for_organization(test_graph.organization).get(kind=evidence_models.Link.Kind.INFORMS, target_ref=entity).pk))()
+    informs = await sync_to_async(
+        lambda: str(
+            evidence_models.Link.objects.for_organization(test_graph.organization)
+            .get(kind=evidence_models.Link.Kind.INFORMS, target_ref=entity)
+            .pk
+        )
+    )()
 
-    await writes.execute(api_schema, simple_api_context, writes.RETRACT_LINKS, {"input": {"ids": [informs]}})
-    assert await reads.property_of(api_schema, simple_api_context, test_graph, entity, "avg_length") is None, "a datum that no longer informs the individual feeds nothing"
+    await writes.execute(
+        api_schema,
+        simple_api_context,
+        writes.RETRACT_LINKS,
+        {"input": {"ids": [informs]}},
+    )
+    assert (
+        await reads.property_of(
+            api_schema, simple_api_context, test_graph, entity, "avg_length"
+        )
+        is None
+    ), "a datum that no longer informs the individual feeds nothing"
 
-    await writes.execute(api_schema, simple_api_context, writes.ATTEST_LINK, {"input": {"id": informs}})
-    assert await reads.property_of(api_schema, simple_api_context, test_graph, entity, "avg_length") == pytest.approx(42.0), "attested, it feeds the value again"
+    await writes.execute(
+        api_schema, simple_api_context, writes.ATTEST_LINK, {"input": {"id": informs}}
+    )
+    assert await reads.property_of(
+        api_schema, simple_api_context, test_graph, entity, "avg_length"
+    ) == pytest.approx(42.0), "attested, it feeds the value again"

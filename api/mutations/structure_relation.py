@@ -17,7 +17,9 @@ from api import context, inputs, types
 from core import enums
 
 
-def assert_structure_relation_exists(info: Info, input: inputs.AssertStructureRelationExistsInput) -> types.AssertedStructureRelation:
+def assert_structure_relation_exists(
+    info: Info, input: inputs.AssertStructureRelationExistsInput
+) -> types.AssertedStructureRelation:
     """Assert a relation between two structures, under one of the organization's words.
 
     Names a term. Both endpoints were already organization-scoped and there is no
@@ -29,7 +31,9 @@ def assert_structure_relation_exists(info: Info, input: inputs.AssertStructureRe
     organization = context.get_active_organization(info)
     context.assert_can_access_organization(info, organization)
 
-    term = controller.ensure_term(organization, enums.CategoryKindChoices.STRUCTURE_RELATION, payload.term)
+    term = controller.ensure_term(
+        organization, enums.CategoryKindChoices.STRUCTURE_RELATION, payload.term
+    )
 
     return types.AssertedStructureRelation(
         _value=controller.create_structure_relation(
@@ -41,7 +45,9 @@ def assert_structure_relation_exists(info: Info, input: inputs.AssertStructureRe
     )
 
 
-def supersede_structure_relation(info: Info, input: inputs.SupersedeStructureRelationInput) -> types.AssertedStructureRelation:
+def supersede_structure_relation(
+    info: Info, input: inputs.SupersedeStructureRelationInput
+) -> types.AssertedStructureRelation:
     """Replace a structure relation, keeping the old assertion on the record.
 
     Two assertions are recorded and the result reports the second — see
@@ -68,7 +74,9 @@ def supersede_structure_relation(info: Info, input: inputs.SupersedeStructureRel
     )
 
 
-def retract_structure_relation(info: Info, input: inputs.RetractStructureRelationInput) -> types.AssertedStructureRelation:
+def retract_structure_relation(
+    info: Info, input: inputs.RetractStructureRelationInput
+) -> types.AssertedStructureRelation:
     """Retract a structure relation assertion without destroying it."""
     model = input.to_pydantic()
     controller = context.get_controller()
@@ -76,4 +84,11 @@ def retract_structure_relation(info: Info, input: inputs.RetractStructureRelatio
     link = controller.resolve_edge_link(str(model.id), info)
     context.assert_can_access_organization(info, link.organization)
 
-    return types.AssertedStructureRelation(_value=controller.retract_relation(relation_id=str(model.id), info=info, at=model.at, confidence=model.confidence))
+    return types.AssertedStructureRelation(
+        _value=controller.retract_relation(
+            relation_id=str(model.id),
+            info=info,
+            at=model.at,
+            confidence=model.confidence,
+        )
+    )

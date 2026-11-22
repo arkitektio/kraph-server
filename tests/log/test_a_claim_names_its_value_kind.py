@@ -8,16 +8,18 @@ History: while the write path guessed the kind, a mismatch surfaced as
 `could not convert string to float` from inside `float()`, naming neither.
 """
 
+import uuid
+from datetime import UTC, datetime
+
+import kante
 import pytest
 from authentikate.models import Organization
+from kante.context import HttpContext
+
+from core import models as core_models
 from core.enums import ValueKind
 from evidence import models as evidence_models
 from evidence import writer
-import uuid
-import kante
-from kante.context import HttpContext
-from core import models as core_models
-from datetime import datetime, timezone
 from tests.support import claims
 
 
@@ -27,15 +29,28 @@ def test_a_string_under_a_float_term_names_all_three(
     assertion: evidence_models.Assertion,
 ) -> None:
     """The key, the declared kind, and the value that did not fit."""
-    structure = writer.ensure_structure(organization, roi_kind, "roi-mismatch", assertion)
-    term = writer.ensure_metric_kind(organization, roi_kind, "vector_length", ValueKind.FLOAT)
+    structure = writer.ensure_structure(
+        organization, roi_kind, "roi-mismatch", assertion
+    )
+    term = writer.ensure_metric_kind(
+        organization, roi_kind, "vector_length", ValueKind.FLOAT
+    )
 
     with pytest.raises(ValueError) as excinfo:
-        writer.record_metric(organization, structure, term, key="vector_length", value="high", assertion=assertion)
+        writer.record_metric(
+            organization,
+            structure,
+            term,
+            key="vector_length",
+            value="high",
+            assertion=assertion,
+        )
 
     message = str(excinfo.value)
     assert "vector_length" in message, "…so a failure inside a batch can be located"
-    assert "FLOAT" in message, "…so the caller can see which declaration is being enforced"
+    assert "FLOAT" in message, (
+        "…so the caller can see which declaration is being enforced"
+    )
     assert "high" in message, "…and which value broke it"
 
 
@@ -54,9 +69,18 @@ def test_the_underlying_cause_is_kept(
     term = writer.ensure_metric_kind(organization, roi_kind, "count", ValueKind.INT)
 
     with pytest.raises(ValueError) as excinfo:
-        writer.record_metric(organization, structure, term, key="count", value="not a number", assertion=assertion)
+        writer.record_metric(
+            organization,
+            structure,
+            term,
+            key="count",
+            value="not a number",
+            assertion=assertion,
+        )
 
-    assert excinfo.value.__cause__ is not None, "The coercion error must survive as __cause__"
+    assert excinfo.value.__cause__ is not None, (
+        "The coercion error must survive as __cause__"
+    )
 
 
 def test_a_value_that_does_fit_is_untouched(
@@ -72,14 +96,22 @@ def test_a_value_that_does_fit_is_untouched(
     """
     structure = writer.ensure_structure(organization, roi_kind, "roi-fits", assertion)
 
-    as_text = writer.ensure_metric_kind(organization, roi_kind, "label", ValueKind.STRING)
-    recorded = writer.record_metric(organization, structure, as_text, key="label", value=12.5, assertion=assertion)
+    as_text = writer.ensure_metric_kind(
+        organization, roi_kind, "label", ValueKind.STRING
+    )
+    recorded = writer.record_metric(
+        organization, structure, as_text, key="label", value=12.5, assertion=assertion
+    )
     assert recorded.value == "12.5", "A STRING term stores a number as its text"
 
     as_int = writer.ensure_metric_kind(organization, roi_kind, "count", ValueKind.INT)
-    counted = writer.record_metric(organization, structure, as_int, key="count", value=3, assertion=assertion)
+    counted = writer.record_metric(
+        organization, structure, as_int, key="count", value=3, assertion=assertion
+    )
     assert counted.value == 3
-    assert type(counted.value) is int, "INT shares value_num with FLOAT and has to narrow back on the way out"
+    assert type(counted.value) is int, (
+        "INT shares value_num with FLOAT and has to narrow back on the way out"
+    )
 
 
 RECORD = """
@@ -89,8 +121,12 @@ mutation RecordMetric($input: AssertMetricValueInput!) {
 """
 
 
-async def _record(api_schema: kante.Schema, context: HttpContext, **fields: object) -> object:
-    result = await api_schema.execute(RECORD, variable_values={"input": fields}, context_value=context)
+async def _record(
+    api_schema: kante.Schema, context: HttpContext, **fields: object
+) -> object:
+    result = await api_schema.execute(
+        RECORD, variable_values={"input": fields}, context_value=context
+    )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     return result
 
@@ -120,12 +156,21 @@ async def test_a_declared_string_beats_a_float_looking_value(
         valueKind="STRING",
     )
 
-    kind = await evidence_models.StructureKind.all_objects.filter(identifier=identifier).afirst()
+    kind = await evidence_models.StructureKind.all_objects.filter(
+        identifier=identifier
+    ).afirst()
     assert kind is not None
 
-    terms = [term async for term in evidence_models.MetricKind.all_objects.filter(structure_kind=kind, key="confidence")]
+    terms = [
+        term
+        async for term in evidence_models.MetricKind.all_objects.filter(
+            structure_kind=kind, key="confidence"
+        )
+    ]
     assert len(terms) == 1
-    assert terms[0].value_kind == "STRING", "The declaration decides the term, not type(value)"
+    assert terms[0].value_kind == "STRING", (
+        "The declaration decides the term, not type(value)"
+    )
 
     metric = await evidence_models.Metric.all_objects.filter(kind=terms[0]).afirst()
     assert metric is not None
@@ -149,13 +194,36 @@ async def test_two_declarations_of_one_key_coexist(
     """
     identifier = f"@test/coexist_{uuid.uuid4().hex[:6]}"
 
-    await _record(api_schema, simple_api_context, identifier=identifier, object="obj-1", key="confidence", value=0.9, valueKind="FLOAT")
-    await _record(api_schema, simple_api_context, identifier=identifier, object="obj-1", key="confidence", value="high", valueKind="STRING")
+    await _record(
+        api_schema,
+        simple_api_context,
+        identifier=identifier,
+        object="obj-1",
+        key="confidence",
+        value=0.9,
+        valueKind="FLOAT",
+    )
+    await _record(
+        api_schema,
+        simple_api_context,
+        identifier=identifier,
+        object="obj-1",
+        key="confidence",
+        value="high",
+        valueKind="STRING",
+    )
 
-    kind = await evidence_models.StructureKind.all_objects.filter(identifier=identifier).afirst()
+    kind = await evidence_models.StructureKind.all_objects.filter(
+        identifier=identifier
+    ).afirst()
     assert kind is not None
 
-    terms = {term.value_kind async for term in evidence_models.MetricKind.all_objects.filter(structure_kind=kind, key="confidence")}
+    terms = {
+        term.value_kind
+        async for term in evidence_models.MetricKind.all_objects.filter(
+            structure_kind=kind, key="confidence"
+        )
+    }
     assert terms == {"FLOAT", "STRING"}
 
 
@@ -174,26 +242,52 @@ async def test_the_lowercase_input_spelling_is_normalised(
     """
     identifier = f"@test/spelling_{uuid.uuid4().hex[:6]}"
 
-    await _record(api_schema, simple_api_context, identifier=identifier, object="obj-1", key="area", value=3.5, valueKind="FLOAT")
+    await _record(
+        api_schema,
+        simple_api_context,
+        identifier=identifier,
+        object="obj-1",
+        key="area",
+        value=3.5,
+        valueKind="FLOAT",
+    )
 
-    kind = await evidence_models.StructureKind.all_objects.filter(identifier=identifier).afirst()
-    terms = [term async for term in evidence_models.MetricKind.all_objects.filter(structure_kind=kind, key="area")]
+    kind = await evidence_models.StructureKind.all_objects.filter(
+        identifier=identifier
+    ).afirst()
+    terms = [
+        term
+        async for term in evidence_models.MetricKind.all_objects.filter(
+            structure_kind=kind, key="area"
+        )
+    ]
 
     assert len(terms) == 1
-    assert terms[0].value_kind == "FLOAT", "…in the canonical vocabulary, not the input spelling"
+    assert terms[0].value_kind == "FLOAT", (
+        "…in the canonical vocabulary, not the input spelling"
+    )
 
 
-MEASUREMENT_INPUTS = ["MetricInput", "AssertMetricValueInput", "MetricValueInput", "SupersedeMetricValueInput"]
+MEASUREMENT_INPUTS = [
+    "MetricInput",
+    "AssertMetricValueInput",
+    "MetricValueInput",
+    "SupersedeMetricValueInput",
+]
 
 
 @pytest.mark.parametrize("type_name", MEASUREMENT_INPUTS)
-def test_the_input_requires_a_value_kind(api_schema: kante.Schema, type_name: str) -> None:
+def test_the_input_requires_a_value_kind(
+    api_schema: kante.Schema, type_name: str
+) -> None:
     """Non-null, on every input that carries a measurement."""
     graphql_type = api_schema._schema.type_map[type_name]
     field = graphql_type.fields.get("valueKind")
 
     assert field is not None, f"{type_name} must name a value kind"
-    assert str(field.type).endswith("!"), f"{type_name}.valueKind is {field.type}, which lets a caller omit it again"
+    assert str(field.type).endswith("!"), (
+        f"{type_name}.valueKind is {field.type}, which lets a caller omit it again"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -210,26 +304,54 @@ async def test_a_key_with_several_terms_stays_writable(
     for kind, value in (("FLOAT", 0.9), ("STRING", "high")):
         recorded = await api_schema.execute(
             RECORD,
-            variable_values={"input": {"identifier": identifier, "object": object_id, "key": "confidence", "value": value, "valueKind": kind}},
+            variable_values={
+                "input": {
+                    "identifier": identifier,
+                    "object": object_id,
+                    "key": "confidence",
+                    "value": value,
+                    "valueKind": kind,
+                }
+            },
             context_value=simple_api_context,
         )
         assert recorded.errors is None, f"GraphQL errors: {recorded.errors}"
 
-    structure = await evidence_models.Structure.all_objects.filter(object=object_id, identifier=identifier).afirst()
+    structure = await evidence_models.Structure.all_objects.filter(
+        object=object_id, identifier=identifier
+    ).afirst()
     assert structure is not None
 
     created = await api_schema.execute(
         RECORD,
-        variable_values={"input": {"identifier": identifier, "object": object_id, "key": "confidence", "value": "medium", "valueKind": "STRING"}},
+        variable_values={
+            "input": {
+                "identifier": identifier,
+                "object": object_id,
+                "key": "confidence",
+                "value": "medium",
+                "valueKind": "STRING",
+            }
+        },
         context_value=simple_api_context,
     )
 
-    assert created.errors is None, f"A key with several terms must stay writable: {created.errors}"
+    assert created.errors is None, (
+        f"A key with several terms must stay writable: {created.errors}"
+    )
     assert created.data["assertMetricValue"]["metric"]["value"] == "medium"
 
-    metric = await evidence_models.Metric.all_objects.filter(structure=structure, key="confidence", value_txt="medium").select_related("kind").afirst()
+    metric = (
+        await evidence_models.Metric.all_objects.filter(
+            structure=structure, key="confidence", value_txt="medium"
+        )
+        .select_related("kind")
+        .afirst()
+    )
     assert metric is not None
-    assert metric.value_kind == "STRING", "…the term it named, not whichever one was found first"
+    assert metric.value_kind == "STRING", (
+        "…the term it named, not whichever one was found first"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -249,28 +371,59 @@ async def test_the_declared_kind_selects_the_term(
 
     recorded = await api_schema.execute(
         RECORD,
-        variable_values={"input": {"identifier": identifier, "object": "obj-1", "key": "area", "value": 1.0, "valueKind": "FLOAT"}},
+        variable_values={
+            "input": {
+                "identifier": identifier,
+                "object": "obj-1",
+                "key": "area",
+                "value": 1.0,
+                "valueKind": "FLOAT",
+            }
+        },
         context_value=simple_api_context,
     )
     assert recorded.errors is None, f"GraphQL errors: {recorded.errors}"
 
     # `select_related`: `structure.kind` below is a lazy FK, and touching it in
     # an async test raises SynchronousOnlyOperation rather than querying.
-    structure = await evidence_models.Structure.all_objects.filter(object="obj-1", identifier=identifier).select_related("kind").afirst()
+    structure = (
+        await evidence_models.Structure.all_objects.filter(
+            object="obj-1", identifier=identifier
+        )
+        .select_related("kind")
+        .afirst()
+    )
     assert structure is not None
 
     created = await api_schema.execute(
         RECORD,
-        variable_values={"input": {"identifier": identifier, "object": "obj-1", "key": "area", "value": 12.5, "valueKind": "STRING"}},
+        variable_values={
+            "input": {
+                "identifier": identifier,
+                "object": "obj-1",
+                "key": "area",
+                "value": 12.5,
+                "valueKind": "STRING",
+            }
+        },
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
 
-    kinds = {term.value_kind async for term in evidence_models.MetricKind.all_objects.filter(structure_kind=structure.kind, key="area")}
+    kinds = {
+        term.value_kind
+        async for term in evidence_models.MetricKind.all_objects.filter(
+            structure_kind=structure.kind, key="area"
+        )
+    }
     assert kinds == {"FLOAT", "STRING"}
 
-    metric = await evidence_models.Metric.all_objects.filter(structure=structure, value_txt="12.5").afirst()
-    assert metric is not None, "The declared STRING term must have received it, filed in value_txt"
+    metric = await evidence_models.Metric.all_objects.filter(
+        structure=structure, value_txt="12.5"
+    ).afirst()
+    assert metric is not None, (
+        "The declared STRING term must have received it, filed in value_txt"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -289,16 +442,23 @@ async def test_supporting_evidence_can_name_a_kind_too(
     graphql_type = api_schema._schema.type_map["StructureReferenceInput"]
     metrics_field = graphql_type.fields["metrics"]
 
-    assert "MetricInput" in str(metrics_field.type), f"Supporting evidence must carry MetricInput, got {metrics_field.type}"
+    assert "MetricInput" in str(metrics_field.type), (
+        f"Supporting evidence must carry MetricInput, got {metrics_field.type}"
+    )
 
 
-LAST_YEAR = datetime(2025, 3, 1, 9, 0, tzinfo=timezone.utc)
+LAST_YEAR = datetime(2025, 3, 1, 9, 0, tzinfo=UTC)
 
 
-TODAY = datetime(2026, 8, 11, 9, 0, tzinfo=timezone.utc)
+TODAY = datetime(2026, 8, 11, 9, 0, tzinfo=UTC)
 
 
-def test_value_kind_selects_the_value_column(organization: Organization, roi_category_a: evidence_models.StructureKind, length_category: evidence_models.MetricKind, assertion: evidence_models.Assertion) -> None:
+def test_value_kind_selects_the_value_column(
+    organization: Organization,
+    roi_category_a: evidence_models.StructureKind,
+    length_category: evidence_models.MetricKind,
+    assertion: evidence_models.Assertion,
+) -> None:
     """Each ValueKind reads back through the column its kind designates.
 
     The typed-column split is what keeps numeric aggregation in the database
@@ -332,4 +492,6 @@ def test_value_kind_selects_the_value_column(organization: Organization, roi_cat
         assert metric.value == expected, f"{kind.value} did not round-trip"
         # `==` is not enough for INT: it shares `value_num` with FLOAT, and
         # `3.0 == 3` would let an integer metric silently come back as a float.
-        assert type(metric.value) is type(expected), f"{kind.value} round-tripped as {type(metric.value).__name__}"
+        assert type(metric.value) is type(expected), (
+            f"{kind.value} round-tripped as {type(metric.value).__name__}"
+        )

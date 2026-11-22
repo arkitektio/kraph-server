@@ -14,7 +14,9 @@ STATIC_ORG_IDENTIFIER = "static_issuer#static_org"
 
 def static_identity() -> tuple[User, Organization, Membership]:
     """The user, organization and membership the static test token authenticates as."""
-    user, _ = User.objects.get_or_create(username=STATIC_USERNAME, defaults={"sub": "1", "iss": "static_issuer"})
+    user, _ = User.objects.get_or_create(
+        username=STATIC_USERNAME, defaults={"sub": "1", "iss": "static_issuer"}
+    )
     org, _ = Organization.objects.get_or_create(identifier=STATIC_ORG_IDENTIFIER)
     membership, _ = Membership.objects.get_or_create(user=user, organization=org)
     return user, org, membership

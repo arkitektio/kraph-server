@@ -2,14 +2,12 @@
 Structure query resolvers.
 """
 
-from typing import List
-from kante.types import Info
 import strawberry
+from kante.types import Info
 
-from api import types, context, filters, order, pagination
+from api import context, filters, order, pagination, types
 from evidence import models as evidence_models
-from graph_engine import scalars
-from graph_engine import input_models
+from graph_engine import input_models, scalars
 
 
 def structure_by_identifier(
@@ -71,7 +69,7 @@ def structures(
     filters: filters.StructureFilter | None = None,
     ordering: list[order.StructureOrder] | None = None,
     pagination: pagination.StructurePaginationInput | None = None,
-) -> List[types.Structure]:
+) -> list[types.Structure]:
     """List structures in the organization, optionally narrowed to one kind.
 
     `structure_kind_id` is optional now. Structures belong to the organization,
@@ -84,13 +82,19 @@ def structures(
 
     filter_model = filters.to_pydantic() if filters else input_models.StructureFilters()
     if structure_kind_id is not None:
-        kind = evidence_models.StructureKind.objects.for_organization(organization).filter(id=structure_kind_id).first()
+        kind = (
+            evidence_models.StructureKind.objects.for_organization(organization)
+            .filter(id=structure_kind_id)
+            .first()
+        )
         if kind is None:
             raise ValueError(f"Structure kind {structure_kind_id} not found")
         filter_model.kind_identifier = kind.identifier
 
     ordering_models = [order.to_pydantic() for order in ordering] if ordering else []
-    pagination_model = pagination.to_pydantic() if pagination else input_models.StructurePagination()
+    pagination_model = (
+        pagination.to_pydantic() if pagination else input_models.StructurePagination()
+    )
 
     result = controller.list_structures(
         organization=organization,
@@ -106,7 +110,7 @@ def structures(
 def informing_structures(
     info: Info,
     entity_id: str,
-) -> List[types.Structure]:
+) -> list[types.Structure]:
     """
     Fetch all structures that inform a given entity.
 

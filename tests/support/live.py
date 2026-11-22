@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 from asgiref.sync import sync_to_async
 from authentikate.models import Client
@@ -29,7 +30,9 @@ class StubConsumer:
         self.channel_name = await self.channel_layer.new_channel()
 
     @contextlib.asynccontextmanager
-    async def listen_to_channel(self, type: str, *, timeout: float | None = None, groups: Any = ()) -> AsyncIterator[Any]:
+    async def listen_to_channel(
+        self, type: str, *, timeout: float | None = None, groups: Any = ()
+    ) -> AsyncIterator[Any]:
         for group in groups:
             await self.channel_layer.group_add(group, self.channel_name)
 
@@ -46,17 +49,29 @@ class StubConsumer:
                 await self.channel_layer.group_discard(group, self.channel_name)
 
 
-async def subscribe(api_schema, document: str, room: str, variables: dict | None = None) -> tuple[asyncio.Task, asyncio.Queue]:
+async def subscribe(
+    api_schema, document: str, room: str, variables: dict | None = None
+) -> tuple[asyncio.Task, asyncio.Queue]:
     """Start the subscription; return once its room is registered on the layer, so a write made right after is heard."""
     user, org, membership = await sync_to_async(static_identity)()
     client, _ = await Client.objects.aget_or_create(client_id="oinsoins")
     consumer = StubConsumer()
     await consumer.open()
-    ctx = build_ws_context(consumer=consumer, user=user, organization=org, client=client, membership=membership, token="test", connection_params={"token": "test"})
+    ctx = build_ws_context(
+        consumer=consumer,
+        user=user,
+        organization=org,
+        client=client,
+        membership=membership,
+        token="test",
+        connection_params={"token": "test"},
+    )
     received: asyncio.Queue[Any] = asyncio.Queue()
 
     async def run() -> None:
-        stream = await api_schema.subscribe(document, variable_values=variables or {}, context_value=ctx)
+        stream = await api_schema.subscribe(
+            document, variable_values=variables or {}, context_value=ctx
+        )
         if not hasattr(stream, "__anext__"):
             await received.put(stream)
             return
@@ -69,7 +84,9 @@ async def subscribe(api_schema, document: str, room: str, variables: dict | None
         if task.done() or room in getattr(consumer.channel_layer, "groups", {}):
             break
     if task.done():
-        raise AssertionError(f"subscription did not start: {task.exception() or received.get_nowait()}")
+        raise AssertionError(
+            f"subscription did not start: {task.exception() or received.get_nowait()}"
+        )
     return task, received
 
 

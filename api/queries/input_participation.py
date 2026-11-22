@@ -1,11 +1,9 @@
 """InputParticipation query resolvers."""
 
-from typing import List
-
 import strawberry
 from kante.types import Info
 
-from api import context, types, filters, order, pagination
+from api import context, filters, order, pagination, types
 from api.queries import _edges
 from evidence import models as evidence_models
 from graph_engine import input_models
@@ -29,7 +27,9 @@ def input_participation(info: Info, id: strawberry.ID) -> types.InputParticipati
     """
     controller = context.get_controller()
 
-    edge = controller.get_relation_by_id(str(id), info=info, kind=evidence_models.Link.Kind.PARTICIPATES_AS_INPUT)
+    edge = controller.get_relation_by_id(
+        str(id), info=info, kind=evidence_models.Link.Kind.PARTICIPATES_AS_INPUT
+    )
     if edge is None:
         raise ValueError(f"Input participation edge with ID {id} not found")
 
@@ -42,7 +42,7 @@ def input_participations(
     filters: filters.ParticipationFilter | None = None,
     ordering: list[order.ParticipationOrder] | None = None,
     pagination: pagination.ParticipationPaginationInput | None = None,
-) -> List[types.InputParticipation]:
+) -> list[types.InputParticipation]:
     """Every standing inputparticipation claim about an event this graph contains.
 
     Read from `evidence.Link`, not from Apache AGE. This returned nothing at all
@@ -59,9 +59,18 @@ def input_participations(
 
     filter_model = filters.to_pydantic() if filters else input_models.RelationFilters()
     ordering_models = [entry.to_pydantic() for entry in ordering] if ordering else []
-    pagination_model = pagination.to_pydantic() if pagination else input_models.RelationPagination()
+    pagination_model = (
+        pagination.to_pydantic() if pagination else input_models.RelationPagination()
+    )
 
-    links = _edges.links_in_graph(graph_model, evidence_models.Link.Kind.PARTICIPATES_AS_INPUT, ref_field="target_ref")
+    links = _edges.links_in_graph(
+        graph_model,
+        evidence_models.Link.Kind.PARTICIPATES_AS_INPUT,
+        ref_field="target_ref",
+    )
     rows = _edges.narrow(links, filter_model, ordering_models, pagination_model)
 
-    return [types.InputParticipation(_value=controller.retrieved_edge(link)) for link in rows]
+    return [
+        types.InputParticipation(_value=controller.retrieved_edge(link))
+        for link in rows
+    ]

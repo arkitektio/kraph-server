@@ -12,11 +12,13 @@ claim it made and every view that draws the edge afterwards.
 
 from kante.types import Info
 
-from api import types, inputs, context
+from api import context, inputs, types
 from core import enums
 
 
-def assert_relation_exists(info: Info, input: inputs.AssertRelationExistsInput) -> types.AssertedRelation:
+def assert_relation_exists(
+    info: Info, input: inputs.AssertRelationExistsInput
+) -> types.AssertedRelation:
     """Assert a relation between two entities, under one of the organization's words.
 
     Names a term — so the edge is drawn in every view declaring the word, and the
@@ -30,7 +32,9 @@ def assert_relation_exists(info: Info, input: inputs.AssertRelationExistsInput) 
     organization = context.get_active_organization(info)
     context.assert_can_access_organization(info, organization)
 
-    term = controller.ensure_term(organization, enums.CategoryKindChoices.RELATION, payload.term)
+    term = controller.ensure_term(
+        organization, enums.CategoryKindChoices.RELATION, payload.term
+    )
 
     return types.AssertedRelation(
         _value=controller.create_relation(
@@ -42,7 +46,9 @@ def assert_relation_exists(info: Info, input: inputs.AssertRelationExistsInput) 
     )
 
 
-def supersede_relation(info: Info, input: inputs.SupersedeRelationInput) -> types.AssertedRelation:
+def supersede_relation(
+    info: Info, input: inputs.SupersedeRelationInput
+) -> types.AssertedRelation:
     """Replace a relation with a new assertion, keeping the old one on the record.
 
     Keeps the name `update`, unlike `supersedeMetricValue`: the retraction here is
@@ -79,7 +85,9 @@ def supersede_relation(info: Info, input: inputs.SupersedeRelationInput) -> type
     )
 
 
-def retract_relation(info: Info, input: inputs.RetractRelationInput) -> types.AssertedRelation:
+def retract_relation(
+    info: Info, input: inputs.RetractRelationInput
+) -> types.AssertedRelation:
     """Retract a relation assertion without destroying it.
 
     The edge survives wherever another live assertion still states the same
@@ -93,4 +101,11 @@ def retract_relation(info: Info, input: inputs.RetractRelationInput) -> types.As
     link = controller.resolve_edge_link(str(model.id), info)
     context.assert_can_access_organization(info, link.organization)
 
-    return types.AssertedRelation(_value=controller.retract_relation(relation_id=str(model.id), info=info, at=model.at, confidence=model.confidence))
+    return types.AssertedRelation(
+        _value=controller.retract_relation(
+            relation_id=str(model.id),
+            info=info,
+            at=model.at,
+            confidence=model.confidence,
+        )
+    )

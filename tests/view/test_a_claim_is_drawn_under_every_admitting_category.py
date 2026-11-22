@@ -13,11 +13,11 @@ import kante
 import pytest
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
+
 from core import models as core_models
 from graph_engine import projector as projector_module
 from graph_engine import reports
 from tests.support import claims, drawing, graphs, reads, rules, writes
-
 
 JOHANNES = "johannes"
 CHRISTIAN = "christian"
@@ -26,8 +26,21 @@ ENTITIES = """
         entities(entityCategoryId: $category) { id }
     }
 """
+
+
 def _rollup(key: str, aggregation: str) -> dict:
-    return {"key": key, "value_kind": "FLOAT", "derivation": "ROLLUP", "rule": {"source_node": "ROI", "key": "vector_length", "aggregation": aggregation}}
+    return {
+        "key": key,
+        "value_kind": "FLOAT",
+        "derivation": "ROLLUP",
+        "rule": {
+            "source_node": "ROI",
+            "key": "vector_length",
+            "aggregation": aggregation,
+        },
+    }
+
+
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_node_two_categories_admit_is_drawn_once_under_both(
@@ -43,25 +56,42 @@ async def test_a_node_two_categories_admit_is_drawn_once_under_both(
     @sync_to_async
     def both_admit_it() -> tuple[str, dict]:
         node = claims.only_instance(test_graph)
-        ais = graphs.define_entity(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"), rules.by(JOHANNES))))
-        graphs.define_entity(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"), rules.by(CHRISTIAN))))
+        ais = graphs.define_entity(
+            test_graph,
+            "AIS",
+            rules.definition(rules.rule(rules.word("AIS"), rules.by(JOHANNES))),
+        )
+        graphs.define_entity(
+            test_graph,
+            "Excitatory",
+            rules.definition(rules.rule(rules.word("AIS"), rules.by(CHRISTIAN))),
+        )
         claims.retract_classifications(test_graph, node.ref)
         claims.classify(test_graph, node.ref, ais, JOHANNES)
         claims.classify(test_graph, node.ref, ais, CHRISTIAN)
         return str(node.ref), graphs.rebuild(test_graph, table_projector)
 
     ref, result = await both_admit_it()
-    assert result.nodes == 1, "The node is drawn — a second admitting category is not an ambiguity"
+    assert result.nodes == 1, (
+        "The node is drawn — a second admitting category is not an ambiguity"
+    )
     assert result.unclassified == 0
 
     @sync_to_async
     def drawn() -> tuple[int, set[str], int, int]:
-        return drawing.vertices_with_ref(test_graph, ref), drawing.labels_of(test_graph, ref), drawing.vertex_count(test_graph, "ais"), drawing.vertex_count(test_graph, "excitatory")
+        return (
+            drawing.vertices_with_ref(test_graph, ref),
+            drawing.labels_of(test_graph, ref),
+            drawing.vertex_count(test_graph, "ais"),
+            drawing.vertex_count(test_graph, "excitatory"),
+        )
 
     vertices, labels, ais_count, excitatory_count = await drawn()
     assert vertices == 1, "one individual, one vertex"
     assert labels == {"ais", "excitatory"}
     assert ais_count == 1 and excitatory_count == 1, "and it counts under each label"
+
+
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_it_is_listed_under_each_category_and_in_each_namespace_view(
@@ -79,15 +109,23 @@ async def test_it_is_listed_under_each_category_and_in_each_namespace_view(
 
     @sync_to_async
     def both_admit_it() -> tuple[int, int]:
-        ais = graphs.define_entity(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"))))
-        excitatory = graphs.define_entity(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"))))
+        ais = graphs.define_entity(
+            test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS")))
+        )
+        excitatory = graphs.define_entity(
+            test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS")))
+        )
         graphs.rebuild(test_graph, table_projector)
         return ais.pk, excitatory.pk
 
     ais_pk, excitatory_pk = await both_admit_it()
 
     for pk in (ais_pk, excitatory_pk):
-        listed = await api_schema.execute(ENTITIES, variable_values={"category": str(pk)}, context_value=simple_api_context)
+        listed = await api_schema.execute(
+            ENTITIES,
+            variable_values={"category": str(pk)},
+            context_value=simple_api_context,
+        )
         assert listed.errors is None, f"GraphQL errors: {listed.errors}"
         assert [row["id"] for row in listed.data["entities"]] == [ref]
 
@@ -96,11 +134,15 @@ async def test_it_is_listed_under_each_category_and_in_each_namespace_view(
         found = {}
         with connection.cursor() as cursor:
             for label in ("ais", "excitatory"):
-                cursor.execute(f'SELECT ref FROM GRAPH_TABLE ("{test_graph.age_name}".graph MATCH (a IS "{label}") COLUMNS (a.__ref AS ref))')
+                cursor.execute(
+                    f'SELECT ref FROM GRAPH_TABLE ("{test_graph.age_name}".graph MATCH (a IS "{label}") COLUMNS (a.__ref AS ref))'
+                )
                 found[label] = [row[0] for row in cursor.fetchall()]
         return found
 
     assert await in_property_graph() == {"ais": [ref], "excitatory": [ref]}
+
+
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_properties_are_the_union_over_the_categories(
@@ -115,10 +157,24 @@ async def test_properties_are_the_union_over_the_categories(
 
     @sync_to_async
     def measure_and_rebuild() -> dict:
-        graphs.define_entity(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"))))
-        graphs.define_entity(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"))), properties=[_rollup("max_length", "MAX")])
+        graphs.define_entity(
+            test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS")))
+        )
+        graphs.define_entity(
+            test_graph,
+            "Excitatory",
+            rules.definition(rules.rule(rules.word("AIS"))),
+            properties=[_rollup("max_length", "MAX")],
+        )
         for obj, value in (("roi-1", 2.0), ("roi-2", 4.0)):
-            claims.measure(test_graph.organization, ref, obj=obj, key="vector_length", value=value, subject=JOHANNES)
+            claims.measure(
+                test_graph.organization,
+                ref,
+                obj=obj,
+                key="vector_length",
+                value=value,
+                subject=JOHANNES,
+            )
         graphs.rebuild(test_graph, table_projector)
         return drawing.vertex_properties(test_graph, ref)
 
@@ -126,10 +182,18 @@ async def test_properties_are_the_union_over_the_categories(
     assert properties["avg_length"] == 3.0, "AIS's rule"
     assert properties["max_length"] == 4.0, "Excitatory's rule, on the same vertex"
 
-    read = await api_schema.execute(reads.ENTITY, variable_values={"id": ref, "graph": str(test_graph.pk)}, context_value=simple_api_context)
+    read = await api_schema.execute(
+        reads.ENTITY,
+        variable_values={"id": ref, "graph": str(test_graph.pk)},
+        context_value=simple_api_context,
+    )
     assert read.errors is None, f"GraphQL errors: {read.errors}"
     rich = {row["key"]: row["value"] for row in read.data["entity"]["richProperties"]}
-    assert rich["avg_length"] == 3.0 and rich["max_length"] == 4.0, "richProperties declares the keys of every category"
+    assert rich["avg_length"] == 3.0 and rich["max_length"] == 4.0, (
+        "richProperties declares the keys of every category"
+    )
+
+
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_key_two_categories_define_differently_is_refused_naming_both(
@@ -146,10 +210,19 @@ async def test_a_key_two_categories_define_differently_is_refused_naming_both(
 
     @sync_to_async
     def conflict() -> tuple[dict, dict[str, str]]:
-        graphs.define_entity(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"))))
-        graphs.define_entity(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"))), properties=[_rollup("avg_length", "MAX")])
+        graphs.define_entity(
+            test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS")))
+        )
+        graphs.define_entity(
+            test_graph,
+            "Excitatory",
+            rules.definition(rules.rule(rules.word("AIS"))),
+            properties=[_rollup("avg_length", "MAX")],
+        )
         result = graphs.rebuild(test_graph, table_projector)
-        _, skipped = projector_module.resolve_categories(test_graph, [claims.only_instance(test_graph)])
+        _, skipped = projector_module.resolve_categories(
+            test_graph, [claims.only_instance(test_graph)]
+        )
         return result, skipped
 
     result, skipped = await conflict()
@@ -160,11 +233,23 @@ async def test_a_key_two_categories_define_differently_is_refused_naming_both(
     @sync_to_async
     def agree() -> reports.DrawCounts:
         # The same rule on both is not a conflict: there is one answer.
-        graphs.define_entity(test_graph, "Excitatory", rules.definition(rules.rule(rules.word("AIS"))), properties=[_rollup("avg_length", "MEAN")])
-        graphs.define_entity(test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS"))), properties=[_rollup("avg_length", "MEAN")])
+        graphs.define_entity(
+            test_graph,
+            "Excitatory",
+            rules.definition(rules.rule(rules.word("AIS"))),
+            properties=[_rollup("avg_length", "MEAN")],
+        )
+        graphs.define_entity(
+            test_graph,
+            "AIS",
+            rules.definition(rules.rule(rules.word("AIS"))),
+            properties=[_rollup("avg_length", "MEAN")],
+        )
         return graphs.rebuild(test_graph, table_projector)
 
     assert (await agree()).nodes == 1
+
+
 RELATE = """
     mutation Relate($input: AssertRelationExistsInput!) {
         assertRelationExists(input: $input) { link { id } drawings { category { id } } }
@@ -175,9 +260,13 @@ RETRACT_RELATION = """
         retractRelation(input: $input) { assertion { id } }
     }
 """
+
+
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_an_edge_two_relation_categories_admit_is_drawn_under_both(api_schema, simple_api_context, test_graph, table_projector) -> None:
+async def test_an_edge_two_relation_categories_admit_is_drawn_under_both(
+    api_schema, simple_api_context, test_graph, table_projector
+) -> None:
     """The edge-side twin of RFC 0019 (RFC 0021).
 
     Two defined relation categories both derive from the word `touches`. The old
@@ -205,27 +294,50 @@ async def test_an_edge_two_relation_categories_admit_is_drawn_under_both(api_sch
     a = await writes.create_entity(api_schema, simple_api_context, "Cell")
     b = await writes.create_entity(api_schema, simple_api_context, "Cell")
 
-    result = await api_schema.execute(RELATE, variable_values={"input": {"term": "touches", "sourceId": a, "targetId": b, "supportingEvidence": []}}, context_value=simple_api_context)
+    result = await api_schema.execute(
+        RELATE,
+        variable_values={
+            "input": {
+                "term": "touches",
+                "sourceId": a,
+                "targetId": b,
+                "supportingEvidence": [],
+            }
+        },
+        context_value=simple_api_context,
+    )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     link_id = result.data["assertRelationExists"]["link"]["id"]
-    assert len(result.data["assertRelationExists"]["drawings"]) == 2, "one drawing per admitting category"
+    assert len(result.data["assertRelationExists"]["drawings"]) == 2, (
+        "one drawing per admitting category"
+    )
 
     @sync_to_async
     def drawn() -> tuple[int, int]:
-        return drawing.edges_between(test_graph, a, b, "CURATED"), drawing.edges_between(test_graph, a, b, "LOOSE")
+        return drawing.edges_between(
+            test_graph, a, b, "CURATED"
+        ), drawing.edges_between(test_graph, a, b, "LOOSE")
 
     assert await drawn() == (1, 1)
 
     @sync_to_async
     def rebuilt() -> tuple[int, int]:
         graphs.rebuild(test_graph, table_projector)
-        return drawing.edges_between(test_graph, a, b, "CURATED"), drawing.edges_between(test_graph, a, b, "LOOSE")
+        return drawing.edges_between(
+            test_graph, a, b, "CURATED"
+        ), drawing.edges_between(test_graph, a, b, "LOOSE")
 
     assert await rebuilt() == (1, 1), "a rebuild draws the same two edges"
 
-    retracted = await api_schema.execute(RETRACT_RELATION, variable_values={"input": {"id": link_id}}, context_value=simple_api_context)
+    retracted = await api_schema.execute(
+        RETRACT_RELATION,
+        variable_values={"input": {"id": link_id}},
+        context_value=simple_api_context,
+    )
     assert retracted.errors is None, f"GraphQL errors: {retracted.errors}"
     assert await drawn() == (0, 0), "no claim holds either edge up"
+
+
 @pytest.mark.django_db(transaction=True)
 def test_a_view_has_one_category_per_declared_word(test_graph) -> None:
     """`(graph, term)` is unique on `Category` (RFC 0021): the invariant the deleted
@@ -237,4 +349,10 @@ def test_a_view_has_one_category_per_declared_word(test_graph) -> None:
     term = writer.ensure_term(test_graph.organization, "ENTITY", "Cell")
     with pytest.raises(IntegrityError):
         with transaction.atomic():
-            core_models.EntityCategory.objects.create(graph=test_graph, key="Cell2", age_name="Cell2", label="Cell2", term=term)
+            core_models.EntityCategory.objects.create(
+                graph=test_graph,
+                key="Cell2",
+                age_name="Cell2",
+                label="Cell2",
+                term=term,
+            )

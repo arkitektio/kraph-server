@@ -36,8 +36,13 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser) -> None:
         """Declare the command's arguments."""
-        parser.add_argument("--organization", help="Slug of the organization to work on. Omit with --all.")
-        parser.add_argument("--all", action="store_true", help="Work on every organization.")
+        parser.add_argument(
+            "--organization",
+            help="Slug of the organization to work on. Omit with --all.",
+        )
+        parser.add_argument(
+            "--all", action="store_true", help="Work on every organization."
+        )
         parser.add_argument(
             "--check",
             action="store_true",
@@ -47,9 +52,17 @@ class Command(BaseCommand):
     def handle(self, *args, **options) -> None:
         """Rebuild, or report."""
         if not options["organization"] and not options["all"]:
-            raise CommandError("Name an organization with --organization, or pass --all.")
+            raise CommandError(
+                "Name an organization with --organization, or pass --all."
+            )
 
-        organizations = list(Organization.objects.all()) if options["all"] else list(Organization.objects.filter(identifier=str(options["organization"])))
+        organizations = (
+            list(Organization.objects.all())
+            if options["all"]
+            else list(
+                Organization.objects.filter(identifier=str(options["organization"]))
+            )
+        )
         if not organizations:
             raise CommandError("No matching organizations.")
 
@@ -58,7 +71,11 @@ class Command(BaseCommand):
                 self._check(organization)
             else:
                 written = asserted_terms.refold(organization)
-                self.stdout.write(self.style.SUCCESS(f"{organization.identifier}: {written} asserted-term row(s)"))
+                self.stdout.write(
+                    self.style.SUCCESS(
+                        f"{organization.identifier}: {written} asserted-term row(s)"
+                    )
+                )
 
     def _check(self, organization: Organization) -> None:
         """Compare the index against the definitions, and write nothing.
@@ -74,11 +91,23 @@ class Command(BaseCommand):
         extra = sorted(stored - expected, key=lambda pair: (str(pair[0]), pair[1]))
 
         if not (missing or extra):
-            self.stdout.write(self.style.SUCCESS(f"{organization.identifier}: index agrees with the definitions ({len(stored)} row(s))"))
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"{organization.identifier}: index agrees with the definitions ({len(stored)} row(s))"
+                )
+            )
             return
 
-        self.stdout.write(self.style.ERROR(f"{organization.identifier}: index disagrees with the definitions"))
+        self.stdout.write(
+            self.style.ERROR(
+                f"{organization.identifier}: index disagrees with the definitions"
+            )
+        )
         for category_id, key in missing:
-            self.stdout.write(f"  missing  category {category_id} derives from {key!r} and is not indexed")
+            self.stdout.write(
+                f"  missing  category {category_id} derives from {key!r} and is not indexed"
+            )
         for category_id, key in extra:
-            self.stdout.write(f"  extra    category {category_id} is indexed under {key!r} and no longer derives from it")
+            self.stdout.write(
+                f"  extra    category {category_id} is indexed under {key!r} and no longer derives from it"
+            )

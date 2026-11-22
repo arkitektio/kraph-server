@@ -1,10 +1,9 @@
 """Metric query resolvers."""
 
-from typing import List
 import strawberry
 from kante.types import Info
 
-from api import types, context, pagination
+from api import context, pagination, types
 
 
 def metric(
@@ -39,7 +38,7 @@ def metric(
 def metrics(
     info: Info,
     metric_kind_id: strawberry.ID,
-) -> List[types.Metric]:
+) -> list[types.Metric]:
     """Every un-retracted metric recorded under one metric kind.
 
     The argument used to be `metric_category_id`. **There is no metric
@@ -74,13 +73,16 @@ def metrics(
 
     # No pagination argument (see above), but not unbounded either: the same
     # ceiling every paged list has.
-    return [types.Metric(_value=RetrievedMetric.from_row(controller, row)) for row in list(writer.standing_metrics_for_kind(kind))[: pagination.MAX_LIMIT]]
+    return [
+        types.Metric(_value=RetrievedMetric.from_row(controller, row))
+        for row in list(writer.standing_metrics_for_kind(kind))[: pagination.MAX_LIMIT]
+    ]
 
 
 def metrics_for_structure(
     info: Info,
     structure_id: strawberry.ID,
-) -> List[types.Metric]:
+) -> list[types.Metric]:
     """
     Fetch all measurements attached to a structure.
 
@@ -100,7 +102,7 @@ def metrics_for_structure(
 def metrics_for_assertion(
     info: Info,
     assertion_id: strawberry.ID,
-) -> List[types.Metric]:
+) -> list[types.Metric]:
     """
     Fetch all metrics that were recorded under a given assertion.
 

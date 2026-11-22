@@ -14,10 +14,19 @@ from django.db import models
 class Project(models.Model):
     """One piece of work in an organization, e.g. one study or one round of annotation."""
 
-    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="projects")
+    organization = models.ForeignKey(
+        Organization, on_delete=models.CASCADE, related_name="projects"
+    )
     name = models.CharField(max_length=1000, help_text="The name of the project")
-    description = models.TextField(null=True, blank=True, help_text="What the project is about")
-    creator = models.ForeignKey(get_user_model(), on_delete=models.CASCADE, related_name="projects", help_text="Who made the project")
+    description = models.TextField(
+        null=True, blank=True, help_text="What the project is about"
+    )
+    creator = models.ForeignKey(
+        get_user_model(),
+        on_delete=models.CASCADE,
+        related_name="projects",
+        help_text="Who made the project",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

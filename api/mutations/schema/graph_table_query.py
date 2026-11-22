@@ -35,7 +35,9 @@ def create_graph_table_query_through_builder(
             "kind": "TABLE",
             "plan": plan.to_stored(),
             "query": None,
-            "columns": [column.model_dump(mode="json") for column in model.column_input],
+            "columns": [
+                column.model_dump(mode="json") for column in model.column_input
+            ],
         },
     )
 

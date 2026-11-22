@@ -79,7 +79,9 @@ _PROPERTY_TYPE_TO_VALUE_KIND: dict[str, str] = {
 #: and `45.2` under one key from becoming an INT term and a FLOAT one.
 
 
-def value_columns(value: JSONValue, value_kind: str, key: str = "?") -> dict[str, JSONValue]:
+def value_columns(
+    value: JSONValue, value_kind: str, key: str = "?"
+) -> dict[str, JSONValue]:
     """Map a value onto the single typed column its kind designates.
 
     Raises rather than silently dropping the value, because a metric that
@@ -94,7 +96,9 @@ def value_columns(value: JSONValue, value_kind: str, key: str = "?") -> dict[str
     """
     column = _COLUMN_FOR_KIND.get(value_kind)
     if column is None:
-        raise ValueError(f"Unknown value_kind {value_kind!r}; expected one of {sorted(_COLUMN_FOR_KIND)}")
+        raise ValueError(
+            f"Unknown value_kind {value_kind!r}; expected one of {sorted(_COLUMN_FOR_KIND)}"
+        )
 
     try:
         if value_kind in _VECTOR_KINDS:
@@ -107,21 +111,31 @@ def value_columns(value: JSONValue, value_kind: str, key: str = "?") -> dict[str
             return {column: str(value)}
         return {column: value}
     except (TypeError, ValueError) as error:
-        raise ValueError(f"'{key}' is declared {value_kind}, but {value!r} is not a {value_kind} value ({error}). Declare the kind that matches what you are recording.") from error
+        raise ValueError(
+            f"'{key}' is declared {value_kind}, but {value!r} is not a {value_kind} value ({error}). Declare the kind that matches what you are recording."
+        ) from error
 
 
-def as_datetime(value: JSONValue | datetime.datetime, default: datetime.datetime) -> datetime.datetime:
+def as_datetime(
+    value: JSONValue | datetime.datetime, default: datetime.datetime
+) -> datetime.datetime:
     """Accept the ms-epoch ints the GraphQL surface still speaks."""
     if value is None:
         return default
     if isinstance(value, datetime.datetime):
-        return value if timezone.is_aware(value) else timezone.make_aware(value, datetime.timezone.utc)
+        return (
+            value
+            if timezone.is_aware(value)
+            else timezone.make_aware(value, datetime.UTC)
+        )
     if isinstance(value, (int, float)):
-        return datetime.datetime.fromtimestamp(value / 1000, tz=datetime.timezone.utc)
+        return datetime.datetime.fromtimestamp(value / 1000, tz=datetime.UTC)
     raise TypeError(f"Cannot interpret {value!r} as a timestamp")
 
 
-def ensure_structure_kind(organization: Organization, identifier: str) -> evidence_models.StructureKind:
+def ensure_structure_kind(
+    organization: Organization, identifier: str
+) -> evidence_models.StructureKind:
     """Get or create the organization's term for a kind of external datum.
 
     Always allowed. Refusing to record a measurement because no graph had
@@ -136,7 +150,9 @@ def ensure_structure_kind(organization: Organization, identifier: str) -> eviden
     return kind
 
 
-def ensure_term(organization: Organization, kind: evidence_models.Instance.Kind | str, key: str) -> evidence_models.Term:
+def ensure_term(
+    organization: Organization, kind: evidence_models.Instance.Kind | str, key: str
+) -> evidence_models.Term:
     """Get or create the organization's word for a kind of thing.
 
     Always allowed, for the same reason :func:`ensure_structure_kind` is: refusing
@@ -167,7 +183,9 @@ def canonical_value_kind(value_kind: ValueKind | str | None) -> str | None:
     declared = getattr(value_kind, "value", value_kind)
     declared = _PROPERTY_TYPE_TO_VALUE_KIND.get(declared, declared)
     if declared not in _COLUMN_FOR_KIND:
-        raise ValueError(f"Unknown value kind {value_kind!r}; expected one of {sorted(_COLUMN_FOR_KIND)}")
+        raise ValueError(
+            f"Unknown value kind {value_kind!r}; expected one of {sorted(_COLUMN_FOR_KIND)}"
+        )
     return declared
 
 
@@ -196,7 +214,9 @@ def ensure_metric_kind(
     """
     declared = canonical_value_kind(value_kind)
     if declared is None:
-        raise ValueError(f"Cannot record '{structure_kind.identifier}'.{key} without a value kind: it decides which column the value is stored in and which term it is recorded under, and nothing infers it.")
+        raise ValueError(
+            f"Cannot record '{structure_kind.identifier}'.{key} without a value kind: it decides which column the value is stored in and which term it is recorded under, and nothing infers it."
+        )
 
     kind, _ = evidence_models.MetricKind.all_objects.get_or_create(
         organization=organization,
@@ -248,11 +268,18 @@ def ensure_structure(
     does not re-assert their existence. An explicit second existence claim is
     the caller's to record as a standing; see `GraphController.create_structure`.
     """
-    structure, _ = evidence_models.Structure.objects.for_organization(organization).get_or_create(
+    structure, _ = evidence_models.Structure.objects.for_organization(
+        organization
+    ).get_or_create(
         organization=organization,
         identifier=kind.identifier,
         object=object,
-        defaults={"kind": kind, "assertion": assertion, "observed_at": observed_at, "confidence": confidence},
+        defaults={
+            "kind": kind,
+            "assertion": assertion,
+            "observed_at": observed_at,
+            "confidence": confidence,
+        },
     )
     return structure
 
@@ -322,7 +349,9 @@ def record_comment(
     from evidence import comments as comments_module
 
     if parent is not None and parent.structure_id != structure.pk:
-        raise ValueError(f"Comment '{parent.pk}' is about structure '{parent.structure_id}', not '{structure.pk}'. A reply stays on its parent's thread.")
+        raise ValueError(
+            f"Comment '{parent.pk}' is about structure '{parent.structure_id}', not '{structure.pk}'. A reply stays on its parent's thread."
+        )
 
     validated = comments_module.validate_descendants(descendants)
 
@@ -389,10 +418,18 @@ def create_instance(
     happened. Left ``None``, the row takes the assertion's time on save.
     ``confidence`` is stored as given, null when not (RFC 0016).
     """
-    fields: dict[str, object] = {"kind": kind, "term": term, "assertion": assertion, "observed_at": observed_at, "confidence": confidence}
+    fields: dict[str, object] = {
+        "kind": kind,
+        "term": term,
+        "assertion": assertion,
+        "observed_at": observed_at,
+        "confidence": confidence,
+    }
     if id is not None:
         fields["id"] = id
-    return evidence_models.Instance.objects.create_for_organization(organization=organization, **fields)
+    return evidence_models.Instance.objects.create_for_organization(
+        organization=organization, **fields
+    )
 
 
 #: Which claim target type each evidence row is. There is no longer a companion
@@ -489,7 +526,9 @@ def record_standing(
     """
     target_type = _TARGET_TYPES.get(type(target))
     if target_type is None:
-        raise TypeError(f"{type(target).__name__} is not something a claim can be about")
+        raise TypeError(
+            f"{type(target).__name__} is not something a claim can be about"
+        )
 
     written = record_standing_for_ref(
         organization,
@@ -516,7 +555,14 @@ def retract(
     confidence: float | None = None,
 ) -> StandingResult:
     """Claim that a target no longer stands. Named for what it does to the record."""
-    return record_standing(organization, target, stands=False, assertion=assertion, at=at, confidence=confidence)
+    return record_standing(
+        organization,
+        target,
+        stands=False,
+        assertion=assertion,
+        at=at,
+        confidence=confidence,
+    )
 
 
 def attest(
@@ -527,10 +573,19 @@ def attest(
     confidence: float | None = None,
 ) -> StandingResult:
     """Claim that a target stands — new evidence, not the undoing of a retraction."""
-    return record_standing(organization, target, stands=True, assertion=assertion, at=at, confidence=confidence)
+    return record_standing(
+        organization,
+        target,
+        stands=True,
+        assertion=assertion,
+        at=at,
+        confidence=confidence,
+    )
 
 
-def standing_metrics_for_kind(kind: evidence_models.MetricKind) -> QuerySet[evidence_models.Metric]:
+def standing_metrics_for_kind(
+    kind: evidence_models.MetricKind,
+) -> QuerySet[evidence_models.Metric]:
     """Every un-retracted metric recorded under one metric kind.
 
     Sibling of :func:`active_metrics_for_structures` — same standing filter, a
@@ -539,7 +594,9 @@ def standing_metrics_for_kind(kind: evidence_models.MetricKind) -> QuerySet[evid
     arrived.
     """
     standing = claims_module.standing(
-        evidence_models.Metric.objects.for_organization(kind.organization).filter(kind=kind),
+        evidence_models.Metric.objects.for_organization(kind.organization).filter(
+            kind=kind
+        ),
         "metric",
     )
     return standing.order_by("observed_at")
@@ -558,11 +615,15 @@ def active_metrics_for_structures(
     # The datum's own standing counts too (RFC 0023): a retracted structure's
     # measurements are not evidence for anything until somebody attests it again.
     standing_structures = claims_module.standing(
-        evidence_models.Structure.objects.for_organization(organization).filter(pk__in=list(structure_ids)),
+        evidence_models.Structure.objects.for_organization(organization).filter(
+            pk__in=list(structure_ids)
+        ),
         "structure",
     )
     standing = claims_module.standing(
-        evidence_models.Metric.objects.for_organization(organization).filter(structure__in=standing_structures),
+        evidence_models.Metric.objects.for_organization(organization).filter(
+            structure__in=standing_structures
+        ),
         "metric",
     )
     return standing.order_by("observed_at")

@@ -11,11 +11,9 @@ later. Both authorize the way every other evidence read does — the client name
 primary key and never a tenant, so the check comes from the row.
 """
 
-from typing import Optional
-
-from kante.types import Info
 import strawberry
 import strawberry_django
+from kante.types import Info
 
 from api import context, types
 from api import filters as api_filters
@@ -48,9 +46,9 @@ def link(info: Info, id: strawberry.ID) -> types.Link:
 
 def standings(
     info: Info,
-    id: Optional[strawberry.ID] = None,
-    filters: Optional[api_filters.StandingFilter] = None,
-    pagination: Optional[api_pagination.LogPaginationInput] = None,
+    id: strawberry.ID | None = None,
+    filters: api_filters.StandingFilter | None = None,
+    pagination: api_pagination.LogPaginationInput | None = None,
 ) -> list[types.Standing]:
     """Positions on claims, newest first — on one claim, or across the log.
 
@@ -66,7 +64,11 @@ def standings(
     organization = context.get_active_organization(info)
     context.assert_can_access_organization(info, organization)
 
-    rows = evidence_models.Standing.objects.for_organization(organization).select_related("assertion").order_by("-at", "-assertion__seq")
+    rows = (
+        evidence_models.Standing.objects.for_organization(organization)
+        .select_related("assertion")
+        .order_by("-at", "-assertion__seq")
+    )
     if id is not None:
         rows = rows.filter(target_id=str(id))
     rows = strawberry_django.filters.apply(filters, rows, info)

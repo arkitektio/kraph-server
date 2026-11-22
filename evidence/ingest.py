@@ -76,7 +76,9 @@ class FedMetric:
 
     @property
     def value_kind(self) -> str:
-        return ValueKind.CATEGORY.value if self.code is not None else ValueKind.FLOAT.value
+        return (
+            ValueKind.CATEGORY.value if self.code is not None else ValueKind.FLOAT.value
+        )
 
     def stated(self) -> StatedMetric:
         """This metric as the write takes it: observed when mikro recorded it."""
@@ -123,7 +125,11 @@ def parse(entry: RemoteEntry) -> FedMetric | None:
         return None
     if not isinstance(body, dict) or entry.uuid is None:
         raise Poison(f"entry {entry.xid}:{entry.id} has no metric body or no uuid")
-    target, producer, task = body.get("target"), body.get("producer") or {}, body.get("task")
+    target, producer, task = (
+        body.get("target"),
+        body.get("producer") or {},
+        body.get("task"),
+    )
     if not isinstance(target, dict) or not isinstance(producer, dict):
         raise Poison(f"entry {entry.xid}:{entry.id} has no target or producer")
     magnitude, code = body.get("magnitude"), body.get("code")
@@ -132,8 +138,14 @@ def parse(entry: RemoteEntry) -> FedMetric | None:
     if magnitude is not None and not isinstance(magnitude, (int, float)):
         raise Poison(f"metric {entry.uuid} has a magnitude of {magnitude!r}")
     try:
-        created_at = datetime.datetime.fromisoformat(_str(body.get("created_at"), "created_at"))
-        supersedes = None if body.get("supersedes") is None else uuid.UUID(_str(body.get("supersedes"), "supersedes"))
+        created_at = datetime.datetime.fromisoformat(
+            _str(body.get("created_at"), "created_at")
+        )
+        supersedes = (
+            None
+            if body.get("supersedes") is None
+            else uuid.UUID(_str(body.get("supersedes"), "supersedes"))
+        )
     except ValueError as error:
         raise Poison(f"metric {entry.uuid}: {error}") from error
     return FedMetric(
@@ -151,7 +163,9 @@ def parse(entry: RemoteEntry) -> FedMetric | None:
             app=_optional_str(producer.get("app"), "producer.app"),
             version=_optional_str(producer.get("version"), "producer.version"),
             client=_optional_str(producer.get("client"), "producer.client"),
-            task=_optional_str(task.get("task_id"), "task.task_id") if isinstance(task, dict) else None,
+            task=_optional_str(task.get("task_id"), "task.task_id")
+            if isinstance(task, dict)
+            else None,
         ),
         created_at=created_at,
     )
@@ -168,18 +182,38 @@ def acts(entries: Sequence[RemoteEntry]) -> list[Act]:
                 act.created.append(metric)
         elif entry.kind == "DELETED":
             if entry.uuid is None:
-                raise Poison(f"DELETED entry {entry.xid}:{entry.id} names no metric uuid")
+                raise Poison(
+                    f"DELETED entry {entry.xid}:{entry.id} names no metric uuid"
+                )
             act.deleted.append(entry.uuid)
         else:
-            raise Poison(f"entry {entry.xid}:{entry.id} is {entry.kind!r}: a metric is created or deleted, never updated")
+            raise Poison(
+                f"entry {entry.xid}:{entry.id} is {entry.kind!r}: a metric is created or deleted, never updated"
+            )
     return list(grouped.values())
 
 
 def outstanding(organization: Organization, act: Act) -> Act:
     """The part of ``act`` not recorded yet: metrics not ingested before, withdrawals of ones that were."""
-    already = set(evidence_models.Metric.all_objects.filter(source_uuid__in=[m.source_uuid for m in act.created]).values_list("source_uuid", flat=True))
-    known = set(evidence_models.Metric.all_objects.filter(organization=organization, source_uuid__in=act.deleted).values_list("source_uuid", flat=True)) if act.deleted else set()
-    return Act(act.xid, [m for m in act.created if m.source_uuid not in already], [d for d in act.deleted if d in known])
+    already = set(
+        evidence_models.Metric.all_objects.filter(
+            source_uuid__in=[m.source_uuid for m in act.created]
+        ).values_list("source_uuid", flat=True)
+    )
+    known = (
+        set(
+            evidence_models.Metric.all_objects.filter(
+                organization=organization, source_uuid__in=act.deleted
+            ).values_list("source_uuid", flat=True)
+        )
+        if act.deleted
+        else set()
+    )
+    return Act(
+        act.xid,
+        [m for m in act.created if m.source_uuid not in already],
+        [d for d in act.deleted if d in known],
+    )
 
 
 def local_user_id(producer: Producer) -> str | None:
@@ -192,7 +226,13 @@ def local_user_id(producer: Producer) -> str | None:
         return None
     user = User.objects.filter(sub=producer.user, iss=producer.issuer).first()
     if user is None:
-        user = User(sub=producer.user, iss=producer.issuer, username=re.sub(r"[^\w.@+-]", "_", f"{producer.issuer}_{producer.user}")[:150])
+        user = User(
+            sub=producer.user,
+            iss=producer.issuer,
+            username=re.sub(r"[^\w.@+-]", "_", f"{producer.issuer}_{producer.user}")[
+                :150
+            ],
+        )
         user.set_unusable_password()
         try:
             with transaction.atomic():
@@ -210,12 +250,23 @@ def local_client_id(producer: Producer) -> str | None:
     return str(client.id)
 
 
-def record(organization: Organization, act: Act, assertion: evidence_models.Assertion) -> Recorded:
+def record(
+    organization: Organization, act: Act, assertion: evidence_models.Assertion
+) -> Recorded:
     """Write one act's outstanding claims (:func:`outstanding`) under ``assertion``. Inside the page's transaction; draws nothing."""
     recorded = Recorded()
     if act.created:
-        metric_batch.record_into(organization, [metric.stated() for metric in act.created], assertion, recorded)
+        metric_batch.record_into(
+            organization,
+            [metric.stated() for metric in act.created],
+            assertion,
+            recorded,
+        )
     if act.deleted:
-        withdrawn = list(evidence_models.Metric.all_objects.filter(organization=organization, source_uuid__in=act.deleted).select_related("structure"))
+        withdrawn = list(
+            evidence_models.Metric.all_objects.filter(
+                organization=organization, source_uuid__in=act.deleted
+            ).select_related("structure")
+        )
         metric_batch.retract(organization, withdrawn, assertion, recorded)
     return recorded

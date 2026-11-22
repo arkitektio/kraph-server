@@ -33,8 +33,16 @@ class Command(BaseCommand):
             type=int,
             help="Schema index to diff from. Defaults to the version before the active one.",
         )
-        parser.add_argument("--to-version", type=int, help="Schema index to diff to. Defaults to the active one.")
-        parser.add_argument("--dry-run", action="store_true", help="Report the work set without doing it.")
+        parser.add_argument(
+            "--to-version",
+            type=int,
+            help="Schema index to diff to. Defaults to the active one.",
+        )
+        parser.add_argument(
+            "--dry-run",
+            action="store_true",
+            help="Report the work set without doing it.",
+        )
 
     def handle(self, *args, **options) -> None:
         """Diff two schema versions and re-derive what changed."""
@@ -46,14 +54,22 @@ class Command(BaseCommand):
         self.stdout.write(f"{graph.name}: v{before.index} -> v{after.index}")
         for change in difference.changes:
             marker = "work" if change.needs_reprojection else "free"
-            self.stdout.write(f"  [{marker}] {change.category_key}.{change.property_key}: {change.kind}")
+            self.stdout.write(
+                f"  [{marker}] {change.category_key}.{change.property_key}: {change.kind}"
+            )
 
         if difference.is_free:
-            self.stdout.write(self.style.SUCCESS("  nothing to backfill — the change is answerable from the statistics already held"))
+            self.stdout.write(
+                self.style.SUCCESS(
+                    "  nothing to backfill — the change is answerable from the statistics already held"
+                )
+            )
             return
 
         if options["dry_run"]:
-            self.stdout.write(f"  would re-derive: {sorted(difference.categories_needing_reprojection)}")
+            self.stdout.write(
+                f"  would re-derive: {sorted(difference.categories_needing_reprojection)}"
+            )
             return
 
         projected = self._reproject(graph, difference.categories_needing_reprojection)
@@ -62,10 +78,16 @@ class Command(BaseCommand):
     def _graph(self, identifier: str) -> models.Graph:
         return _graphs.select_graph(identifier)
 
-    def _versions(self, graph: models.Graph, options) -> tuple[models.GraphSchema, models.GraphSchema]:
+    def _versions(
+        self, graph: models.Graph, options
+    ) -> tuple[models.GraphSchema, models.GraphSchema]:
         schemas = models.GraphSchema.objects.filter(graph=graph).order_by("index")
 
-        after = schemas.filter(index=options["to_version"]).first() if options["to_version"] else models.GraphSchema.active_for(graph)
+        after = (
+            schemas.filter(index=options["to_version"]).first()
+            if options["to_version"]
+            else models.GraphSchema.active_for(graph)
+        )
         if after is None:
             raise CommandError("No target schema. Has this graph been materialized?")
 
@@ -75,7 +97,9 @@ class Command(BaseCommand):
             before = schemas.filter(index__lt=after.index).order_by("-index").first()
 
         if before is None:
-            raise CommandError(f"No earlier schema to diff against (target is v{after.index}). A graph's first schema has nothing to backfill from.")
+            raise CommandError(
+                f"No earlier schema to diff against (target is v{after.index}). A graph's first schema has nothing to backfill from."
+            )
         return before, after
 
     def _reproject(self, graph: models.Graph, category_keys: set[str]) -> int:
@@ -96,6 +120,10 @@ class Command(BaseCommand):
 
         controller = GraphController(projector=current_or_default())
 
-        refs = [str(node_id) for node_id in selector_module.instances_for(graph).filter(term__key__in=list(category_keys)).values_list("id", flat=True)]
+        refs = [
+            str(node_id)
+            for node_id in selector_module.instances_for(graph)
+            .filter(term__key__in=list(category_keys))
+            .values_list("id", flat=True)
+        ]
         return controller.project_entities(graph, refs)
-

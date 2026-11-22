@@ -105,7 +105,9 @@ def _parse_window(window: object) -> tuple[object, object]:
         return window.get("from"), window.get("to")
     if isinstance(window, (list, tuple)) and len(window) == 2:
         return window[0], window[1]
-    raise ValueError(f"observed_window must be a [from, to] pair or a {{from, to}} object, got {window!r}")
+    raise ValueError(
+        f"observed_window must be a [from, to] pair or a {{from, to}} object, got {window!r}"
+    )
 
 
 #: How each identity field reaches the database, shared by every compiler below
@@ -144,10 +146,19 @@ def _rules(definition: Definition | None) -> list[dict[str, object]]:
 
 
 def _conditions(container: Mapping[str, object]) -> list[dict[str, object]]:
-    return [condition for condition in (container.get("when") or []) if isinstance(condition, dict)]
+    return [
+        condition
+        for condition in (container.get("when") or [])
+        if isinstance(condition, dict)
+    ]
 
 
-def _condition_q(condition: Mapping[str, object], *, asserted_at_column: str, observed_at_column: str = "observed_at") -> Q | None:
+def _condition_q(
+    condition: Mapping[str, object],
+    *,
+    asserted_at_column: str,
+    observed_at_column: str = "observed_at",
+) -> Q | None:
     """One (field, operator, value) condition as a predicate, or None to skip it.
 
     WORD is handled by the callers (`classification_filter` includes it,
@@ -216,15 +227,28 @@ def _condition_q(condition: Mapping[str, object], *, asserted_at_column: str, ob
     return None
 
 
-def _rule_trust_q(rule: Mapping[str, object], *, asserted_at_column: str, observed_at_column: str = "observed_at", include_metric_fields: bool = False) -> Q:
+def _rule_trust_q(
+    rule: Mapping[str, object],
+    *,
+    asserted_at_column: str,
+    observed_at_column: str = "observed_at",
+    include_metric_fields: bool = False,
+) -> Q:
     """One rule's who-and-when predicate: AND of `when` (WORD skipped, the
     metric-only fields skipped unless the predicate targets metric rows),
     minus any `unless` group (each group an AND of its conditions)."""
     predicate = Q()
     for condition in _conditions(rule):
-        if not include_metric_fields and str(condition.get("field")) in _METRIC_ONLY_FIELDS:
+        if (
+            not include_metric_fields
+            and str(condition.get("field")) in _METRIC_ONLY_FIELDS
+        ):
             continue
-        compiled = _condition_q(condition, asserted_at_column=asserted_at_column, observed_at_column=observed_at_column)
+        compiled = _condition_q(
+            condition,
+            asserted_at_column=asserted_at_column,
+            observed_at_column=observed_at_column,
+        )
         if compiled is not None:
             predicate &= compiled
 
@@ -233,9 +257,16 @@ def _rule_trust_q(rule: Mapping[str, object], *, asserted_at_column: str, observ
             continue
         blocked = Q()
         for condition in _conditions(group):
-            if not include_metric_fields and str(condition.get("field")) in _METRIC_ONLY_FIELDS:
+            if (
+                not include_metric_fields
+                and str(condition.get("field")) in _METRIC_ONLY_FIELDS
+            ):
                 continue
-            compiled = _condition_q(condition, asserted_at_column=asserted_at_column, observed_at_column=observed_at_column)
+            compiled = _condition_q(
+                condition,
+                asserted_at_column=asserted_at_column,
+                observed_at_column=observed_at_column,
+            )
             if compiled is not None:
                 blocked &= compiled
         if blocked.children:
@@ -258,7 +289,14 @@ def _rule_words(rule: Mapping[str, object]) -> list[str]:
     return words
 
 
-def trust_filter(definition: Definition | None, *, kind: str, asserted_at_column: str = "assertion__asserted_at", observed_at_column: str = "observed_at", include_metric_fields: bool = False) -> Q:
+def trust_filter(
+    definition: Definition | None,
+    *,
+    kind: str,
+    asserted_at_column: str = "assertion__asserted_at",
+    observed_at_column: str = "observed_at",
+    include_metric_fields: bool = False,
+) -> Q:
     """Whose claims of one **kind** count for things of this category.
 
     ``kind`` is required (a `ClaimKind` value — RFC 0011): only the rules whose
@@ -288,7 +326,15 @@ def trust_filter(definition: Definition | None, *, kind: str, asserted_at_column
     if not applicable:
         return Q(pk__in=[])
 
-    predicates = [_rule_trust_q(rule, asserted_at_column=asserted_at_column, observed_at_column=observed_at_column, include_metric_fields=include_metric_fields) for rule in applicable]
+    predicates = [
+        _rule_trust_q(
+            rule,
+            asserted_at_column=asserted_at_column,
+            observed_at_column=observed_at_column,
+            include_metric_fields=include_metric_fields,
+        )
+        for rule in applicable
+    ]
     if any(not predicate.children for predicate in predicates):
         return Q()
 
@@ -342,10 +388,19 @@ def rule_metric_filter(rule: PropertyRule | None) -> Q:
     rules = _evidence_rules(rule)
     if rules is None:
         return Q()
-    return _union([_rule_trust_q(entry, asserted_at_column="asserted_at", include_metric_fields=True) for entry in rules])
+    return _union(
+        [
+            _rule_trust_q(
+                entry, asserted_at_column="asserted_at", include_metric_fields=True
+            )
+            for entry in rules
+        ]
+    )
 
 
-def metric_scope(definition: Definition | None, rule: PropertyRule | None) -> tuple[Q, Q | None]:
+def metric_scope(
+    definition: Definition | None, rule: PropertyRule | None
+) -> tuple[Q, Q | None]:
     """(claim predicate, standing predicate) for the metrics one property folds.
 
     **Replacement with a default, not intersection.** When the rule carries
@@ -366,12 +421,24 @@ def metric_scope(definition: Definition | None, rule: PropertyRule | None) -> tu
     rules = _evidence_rules(rule)
     if rules is not None:
         claim = rule_metric_filter(rule)
-        halves = [_rule_trust_q(entry, asserted_at_column="assertion__asserted_at", observed_at_column="at") for entry in rules]
+        halves = [
+            _rule_trust_q(
+                entry,
+                asserted_at_column="assertion__asserted_at",
+                observed_at_column="at",
+            )
+            for entry in rules
+        ]
         if any(not half.children for half in halves):
             return claim, None
         return claim, _union(halves)
 
-    claim = trust_filter(definition, kind="MEASUREMENT", asserted_at_column="asserted_at", include_metric_fields=True)
+    claim = trust_filter(
+        definition,
+        kind="MEASUREMENT",
+        asserted_at_column="asserted_at",
+        include_metric_fields=True,
+    )
     return claim, trust_predicate(definition, kind="MEASUREMENT")
 
 
@@ -419,7 +486,9 @@ def admits_own_word(category: Category) -> bool:
     Own-word claims fold at organization grain, exactly as a primitive category's
     do — a primitive category is the case where the rules name nothing.
     """
-    return not category.definition or category.key not in asserted_as_keys(category.definition)
+    return not category.definition or category.key not in asserted_as_keys(
+        category.definition
+    )
 
 
 def classification_filter(definition: Definition | None) -> Q:
@@ -467,7 +536,6 @@ def classification_filter(definition: Definition | None) -> Q:
     return combined
 
 
-
 # `claim_filter` / `view_predicate` are gone with `Graph.selector` (RFC 0009).
 # Whose claims and standings count is the *category's* rule now: use
 # `trust_filter` / `trust_predicate` with the category's definition, and
@@ -505,7 +573,13 @@ def term_ids_for(graph: Graph) -> set[uuid.UUID]:
     from core import asserted_terms
     from core import models as core_models
 
-    declared: set[uuid.UUID] = {term_id for term_id in core_models.Category.objects.filter(graph=graph).values_list("term_id", flat=True) if term_id is not None}
+    declared: set[uuid.UUID] = {
+        term_id
+        for term_id in core_models.Category.objects.filter(graph=graph).values_list(
+            "term_id", flat=True
+        )
+        if term_id is not None
+    }
 
     # The derived half is matched on **key and kind**, not key alone. A `Term`'s
     # identity is `(organization, kind, key)` — "Mitosis" the natural-event word
@@ -518,7 +592,11 @@ def term_ids_for(graph: Graph) -> set[uuid.UUID]:
     for key, kind in asserted_terms.keys_and_kinds_for_graph(graph):
         derived |= Q(key=key, kind=kind)
     if derived:
-        declared.update(evidence_models.Term.objects.for_organization(graph.organization).filter(derived).values_list("id", flat=True))
+        declared.update(
+            evidence_models.Term.objects.for_organization(graph.organization)
+            .filter(derived)
+            .values_list("id", flat=True)
+        )
 
     return declared
 
@@ -541,7 +619,9 @@ def instances_for(graph: Graph) -> QuerySet[evidence_models.Instance]:
     names a term; whether *this* view has anything to say about that word is what
     decides membership, and it is why one node can now be in two graphs.
     """
-    return evidence_models.Instance.objects.for_organization(graph.organization).filter(term__in=term_ids_for(graph))
+    return evidence_models.Instance.objects.for_organization(graph.organization).filter(
+        term__in=term_ids_for(graph)
+    )
 
 
 def instance_refs_for(graph: Graph) -> QuerySet[evidence_models.Instance]:
@@ -554,7 +634,11 @@ def instance_refs_for(graph: Graph) -> QuerySet[evidence_models.Instance]:
     inlines every node id in the graph into an `IN (...)` on every call, and
     `_structure_ids_informing` is called once per derived property per entity.
     """
-    return instances_for(graph).annotate(ref_str=Cast("id", CharField(max_length=1000))).values("ref_str")
+    return (
+        instances_for(graph)
+        .annotate(ref_str=Cast("id", CharField(max_length=1000)))
+        .values("ref_str")
+    )
 
 
 def instance_ids_for(graph: Graph) -> list[str]:
@@ -563,7 +647,9 @@ def instance_ids_for(graph: Graph) -> list[str]:
     Prefer :func:`instance_refs_for` inside a query. This exists for the callers that
     genuinely need the values in Python.
     """
-    return [str(node_id) for node_id in instances_for(graph).values_list("id", flat=True)]
+    return [
+        str(node_id) for node_id in instances_for(graph).values_list("id", flat=True)
+    ]
 
 
 def _graph_ids_by_term(organization: Organization) -> dict[uuid.UUID, list[int]]:
@@ -595,7 +681,11 @@ def _graph_ids_by_term(organization: Organization) -> dict[uuid.UUID, list[int]]
     # whichever kind it was minted under.
     derived = asserted_terms.graph_ids_by_key(organization)
     if derived:
-        for term_id, key in evidence_models.Term.objects.for_organization(organization).filter(key__in=list(derived)).values_list("id", "key"):
+        for term_id, key in (
+            evidence_models.Term.objects.for_organization(organization)
+            .filter(key__in=list(derived))
+            .values_list("id", "key")
+        ):
             for graph_id in derived[str(key)]:
                 if graph_id not in declared.setdefault(term_id, []):
                     declared[term_id].append(graph_id)
@@ -603,7 +693,9 @@ def _graph_ids_by_term(organization: Organization) -> dict[uuid.UUID, list[int]]
     return declared
 
 
-def core_categories(organization: Organization) -> QuerySet[Category, tuple[int, uuid.UUID | None]]:
+def core_categories(
+    organization: Organization,
+) -> QuerySet[Category, tuple[int, uuid.UUID | None]]:
     """Every category in the organization, as `(graph_id, term_id)`.
 
     Split out so :func:`_graph_ids_by_term` reads as the mapping it builds, and so
@@ -615,10 +707,14 @@ def core_categories(organization: Organization) -> QuerySet[Category, tuple[int,
     """
     from core import models as core_models
 
-    return core_models.Category.objects.filter(graph__organization=organization).values_list("graph_id", "term_id")
+    return core_models.Category.objects.filter(
+        graph__organization=organization
+    ).values_list("graph_id", "term_id")
 
 
-def graph_ids_for_instance_ids(organization: Organization, refs: Iterable[evidence_models.Ref]) -> list[tuple[str, int]]:
+def graph_ids_for_instance_ids(
+    organization: Organization, refs: Iterable[evidence_models.Ref]
+) -> list[tuple[str, int]]:
     """Which graphs each of these nodes belongs to — the inverse of :func:`instances_for`.
 
     **Pairs, not a mapping, because a node can be in more than one graph.** That is
@@ -649,7 +745,11 @@ def graph_ids_for_instance_ids(organization: Organization, refs: Iterable[eviden
         return []
 
     pairs: list[tuple[str, int]] = []
-    for node_id, term_id in evidence_models.Instance.objects.for_organization(organization).filter(id__in=[str(ref) for ref in refs]).values_list("id", "term_id"):
+    for node_id, term_id in (
+        evidence_models.Instance.objects.for_organization(organization)
+        .filter(id__in=[str(ref) for ref in refs])
+        .values_list("id", "term_id")
+    ):
         for graph_id in sorted(graph_ids_by_term.get(term_id, ())):
             pairs.append((str(node_id), graph_id))
 
@@ -709,10 +809,14 @@ def metrics_for(graph: Graph) -> QuerySet[evidence_models.Metric]:
         evidence_models.Metric.objects.for_organization(graph.organization),
         "metric",
     )
-    return standing.select_related("structure", "structure__kind", "assertion").order_by("observed_at")
+    return standing.select_related(
+        "structure", "structure__kind", "assertion"
+    ).order_by("observed_at")
 
 
-def informs_links_for(graph: Graph, *, definition: Definition | None = None) -> QuerySet[evidence_models.Link]:
+def informs_links_for(
+    graph: Graph, *, definition: Definition | None = None
+) -> QuerySet[evidence_models.Link]:
     """Every active INFORMS link whose target is a node of this graph.
 
     Membership comes from :func:`instances_for`, not from a prefix on the ref.
@@ -742,11 +846,18 @@ def informs_links_for(graph: Graph, *, definition: Definition | None = None) -> 
     )
 
 
-def instance_refs_informed_by(graph: Graph, structure_ids: list[evidence_models.Ref]) -> list[str]:
+def instance_refs_informed_by(
+    graph: Graph, structure_ids: list[evidence_models.Ref]
+) -> list[str]:
     """Which of this graph's entities the given structures are evidence for.
 
     The fan-out a new metric triggers, and the reason dirty tracking is cheap:
     one indexed lookup on `(organization, kind, source_ref)` rather than a
     traversal.
     """
-    return list(informs_links_for(graph).filter(source_ref__in=[str(structure_id) for structure_id in structure_ids]).values_list("target_ref", flat=True).distinct())
+    return list(
+        informs_links_for(graph)
+        .filter(source_ref__in=[str(structure_id) for structure_id in structure_ids])
+        .values_list("target_ref", flat=True)
+        .distinct()
+    )

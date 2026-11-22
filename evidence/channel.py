@@ -45,5 +45,11 @@ def room(organization: Organization | int) -> str:
 
 def announce(assertion: evidence_models.Assertion) -> None:
     """Broadcast ``assertion`` to its organization's room once its transaction commits."""
-    message = AssertionRecorded(id=str(assertion.id), seq=int(assertion.seq), organization=int(assertion.organization_id))
-    assertion_channel.broadcast_on_commit(message, groups=[room(assertion.organization_id)])
+    message = AssertionRecorded(
+        id=str(assertion.id),
+        seq=int(assertion.seq),
+        organization=int(assertion.organization_id),
+    )
+    assertion_channel.broadcast_on_commit(
+        message, groups=[room(assertion.organization_id)]
+    )

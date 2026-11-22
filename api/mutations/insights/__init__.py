@@ -9,10 +9,10 @@ and no execution path anywhere; they went with the contract becoming a plan.
 from .graph import (
     archive_graph_table_query,
     create_graph_pairs_query,
-    delete_graph_pairs_query,
-    update_graph_pairs_query,
     create_graph_table_query,
+    delete_graph_pairs_query,
     delete_graph_table_query,
+    update_graph_pairs_query,
     update_graph_table_query,
 )
 from .plots import (

@@ -6,12 +6,13 @@ their spread, their provenance and their observation window.
 """
 
 import uuid
+
 import kante
 import pytest
 from kante.context import HttpContext
+
 from core import models as core_models
 from tests.support import reads, writes
-
 
 THE_SENTENCE = """
     query Explain($id: ID!, $graph: ID!) {
@@ -42,7 +43,9 @@ async def _entity_with_measurements(
     test_graph: core_models.Graph,
     values: list[float],
 ) -> str:
-    category = await core_models.EntityCategory.objects.filter(graph=test_graph, key="AIS").afirst()
+    category = await core_models.EntityCategory.objects.filter(
+        graph=test_graph, key="AIS"
+    ).afirst()
     assert category is not None
     object_id = f"roi_{uuid.uuid4().hex[:8]}"
 
@@ -55,7 +58,15 @@ async def _entity_with_measurements(
                     {
                         "identifier": "ROI",
                         "object": object_id,
-                        "metrics": [{"key": "vector_length", "value": values[0], "valueKind": "FLOAT", "unit": "um", "confidence": 0.98}],
+                        "metrics": [
+                            {
+                                "key": "vector_length",
+                                "value": values[0],
+                                "valueKind": "FLOAT",
+                                "unit": "um",
+                                "confidence": 0.98,
+                            }
+                        ],
                     }
                 ],
             }
@@ -92,9 +103,15 @@ async def test_a_derived_value_can_explain_itself(
     test_graph: core_models.Graph,
 ) -> None:
     """Value, evidence count, spread, sources and window — in one round trip."""
-    entity_id = await _entity_with_measurements(api_schema, simple_api_context, test_graph, [40.0, 50.0, 45.0])
+    entity_id = await _entity_with_measurements(
+        api_schema, simple_api_context, test_graph, [40.0, 50.0, 45.0]
+    )
 
-    result = await api_schema.execute(THE_SENTENCE, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
+    result = await api_schema.execute(
+        THE_SENTENCE,
+        variable_values={"id": entity_id, "graph": str(test_graph.id)},
+        context_value=simple_api_context,
+    )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
 
     properties = {p["key"]: p for p in result.data["node"]["richProperties"]}
@@ -115,12 +132,20 @@ async def test_supporting_evidence_is_no_longer_an_empty_list(
     test_graph: core_models.Graph,
 ) -> None:
     """The measurements behind the number are retrievable, with their units."""
-    entity_id = await _entity_with_measurements(api_schema, simple_api_context, test_graph, [40.0, 50.0])
+    entity_id = await _entity_with_measurements(
+        api_schema, simple_api_context, test_graph, [40.0, 50.0]
+    )
 
-    result = await api_schema.execute(THE_SENTENCE, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
+    result = await api_schema.execute(
+        THE_SENTENCE,
+        variable_values={"id": entity_id, "graph": str(test_graph.id)},
+        context_value=simple_api_context,
+    )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
 
-    avg = next(p for p in result.data["node"]["richProperties"] if p["key"] == "avg_length")
+    avg = next(
+        p for p in result.data["node"]["richProperties"] if p["key"] == "avg_length"
+    )
     evidence = avg["supportingEvidence"]
 
     assert len(evidence) == 2
@@ -136,12 +161,20 @@ async def test_the_value_names_who_asserted_it(
     test_graph: core_models.Graph,
 ) -> None:
     """Provenance reaches the API, not just the database."""
-    entity_id = await _entity_with_measurements(api_schema, simple_api_context, test_graph, [40.0])
+    entity_id = await _entity_with_measurements(
+        api_schema, simple_api_context, test_graph, [40.0]
+    )
 
-    result = await api_schema.execute(THE_SENTENCE, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
+    result = await api_schema.execute(
+        THE_SENTENCE,
+        variable_values={"id": entity_id, "graph": str(test_graph.id)},
+        context_value=simple_api_context,
+    )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
 
-    avg = next(p for p in result.data["node"]["richProperties"] if p["key"] == "avg_length")
+    avg = next(
+        p for p in result.data["node"]["richProperties"] if p["key"] == "avg_length"
+    )
     assertions = avg["contributingAssertions"]
 
     assert assertions, "A derived value must name the assertions behind it"
@@ -161,13 +194,21 @@ async def test_validity_is_the_observation_window(
     nothing ever wrote them. They are `observed_at` bounds — when the world was
     looked at — not when somebody got round to saying so.
     """
-    entity_id = await _entity_with_measurements(api_schema, simple_api_context, test_graph, [40.0, 50.0])
+    entity_id = await _entity_with_measurements(
+        api_schema, simple_api_context, test_graph, [40.0, 50.0]
+    )
 
-    result = await api_schema.execute(THE_SENTENCE, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
+    result = await api_schema.execute(
+        THE_SENTENCE,
+        variable_values={"id": entity_id, "graph": str(test_graph.id)},
+        context_value=simple_api_context,
+    )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
 
     node = result.data["node"]
-    assert node["validFrom"] is not None, "An entity with evidence has an observation window"
+    assert node["validFrom"] is not None, (
+        "An entity with evidence has an observation window"
+    )
     assert node["validTo"] is not None
 
 
@@ -179,7 +220,9 @@ async def test_a_property_with_no_evidence_reports_nothing_rather_than_zero(
     test_graph: core_models.Graph,
 ) -> None:
     """Absence of evidence must not read as a measured zero."""
-    category = await core_models.EntityCategory.objects.filter(graph=test_graph, key="AIS").afirst()
+    category = await core_models.EntityCategory.objects.filter(
+        graph=test_graph, key="AIS"
+    ).afirst()
     created = await api_schema.execute(
         writes.ASSERT_ENTITY_EXISTS,
         variable_values={"input": {"term": category.key}},
@@ -189,7 +232,10 @@ async def test_a_property_with_no_evidence_reports_nothing_rather_than_zero(
 
     result = await api_schema.execute(
         THE_SENTENCE,
-        variable_values={"id": created.data["assertEntityExists"]["instance"]["id"], "graph": str(test_graph.id)},
+        variable_values={
+            "id": created.data["assertEntityExists"]["instance"]["id"],
+            "graph": str(test_graph.id),
+        },
         context_value=simple_api_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
@@ -217,7 +263,9 @@ def test_rich_property_definition_resolves_from_the_category_schema() -> None:
         im.PropertyDefinitionInput(key="name", type=im.PropertyType.STRING),
     ]
     # Unsaved instance: property_map reads the JSON field, so no database is involved.
-    category = core_models.EntityCategory(property_definitions=[d.model_dump(mode="json") for d in definitions])
+    category = core_models.EntityCategory(
+        property_definitions=[d.model_dump(mode="json") for d in definitions]
+    )
 
     entity = reads.retrieved_node({"avg_length": 45.2})
     prop = RichProperty(_entity=entity, _key="avg_length", _category=category)
@@ -236,6 +284,8 @@ def test_rich_property_definition_is_none_for_an_undeclared_key() -> None:
     from core import models as core_models
 
     category = core_models.EntityCategory(property_definitions=[])
-    prop = RichProperty(_entity=reads.retrieved_node({"stray": 1}), _key="stray", _category=category)
+    prop = RichProperty(
+        _entity=reads.retrieved_node({"stray": 1}), _key="stray", _category=category
+    )
 
     assert asyncio.run(prop.definition()) is None

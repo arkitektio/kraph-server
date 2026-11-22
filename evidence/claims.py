@@ -27,12 +27,11 @@ import uuid
 from collections.abc import Iterable
 
 from authentikate.models import Organization
-from django.db.models import Model, Q, QuerySet
+from django.db import transaction
+from django.db.models import CharField, Model, OuterRef, Q, QuerySet, Subquery
+from django.db.models.functions import Cast
 
 from evidence import models as evidence_models
-from django.db.models import CharField, OuterRef, Subquery
-from django.db.models.functions import Cast
-from django.db import transaction
 
 #: A claim's primary key as callers hold it: the uuid, or its text.
 Ref = str | uuid.UUID
@@ -94,7 +93,9 @@ def stands_for(
         return {}
 
     winner: dict[str, bool] = {}
-    for claim in standings_about(organization, target_type, wanted, predicate).values_list("target_id", "stands", named=True):
+    for claim in standings_about(
+        organization, target_type, wanted, predicate
+    ).values_list("target_id", "stands", named=True):
         # Ordered newest first, so the first claim seen for a target is the one
         # that wins and every later row about it is history.
         winner.setdefault(str(claim.target_id), claim.stands)
@@ -109,7 +110,13 @@ def retracted_ids(
     predicate: Q | None = None,
 ) -> set[str]:
     """Which of these targets do *not* stand. The inverse of :func:`stands_for`."""
-    return {target_id for target_id, standing in stands_for(organization, target_type, target_ids, predicate).items() if not standing}
+    return {
+        target_id
+        for target_id, standing in stands_for(
+            organization, target_type, target_ids, predicate
+        ).items()
+        if not standing
+    }
 
 
 # ===================================================================
@@ -132,7 +139,9 @@ def retracted_ids(
 CACHED_TARGETS = ("node", "structure", "metric", "link", "comment")
 
 
-def standing[Claim: Model](queryset: QuerySet[Claim], target_type: str, predicate: Q | None = None) -> QuerySet[Claim]:
+def standing[Claim: Model](
+    queryset: QuerySet[Claim], target_type: str, predicate: Q | None = None
+) -> QuerySet[Claim]:
     """Narrow a queryset of log rows to the ones that currently stand.
 
     The replacement for `.filter(stands=True)`, which used to read a boolean on
@@ -154,25 +163,46 @@ def standing[Claim: Model](queryset: QuerySet[Claim], target_type: str, predicat
     """
 
     if predicate is None:
-        retracted = evidence_models.CurrentStanding.all_objects.filter(target_type=target_type, stands=False).values("target_id")
+        retracted = evidence_models.CurrentStanding.all_objects.filter(
+            target_type=target_type, stands=False
+        ).values("target_id")
         return queryset.exclude(pk__in=retracted)
 
-    latest = evidence_models.Standing.all_objects.filter(target_type=target_type, target_id=Cast(OuterRef("pk"), output_field=CharField())).filter(predicate).order_by(*_LATEST).values("stands")[:1]
+    latest = (
+        evidence_models.Standing.all_objects.filter(
+            target_type=target_type,
+            target_id=Cast(OuterRef("pk"), output_field=CharField()),
+        )
+        .filter(predicate)
+        .order_by(*_LATEST)
+        .values("stands")[:1]
+    )
     # NULL (no position this view counts) is not False: unmentioned rows stand.
     # Spelled as a filter, not `exclude(_view_stands=False)` — under SQL's
     # three-valued logic `NOT (NULL = FALSE)` is NULL, which would silently
     # drop every undisputed row.
-    return queryset.annotate(_view_stands=Subquery(latest)).filter(Q(_view_stands=True) | Q(_view_stands__isnull=True))
+    return queryset.annotate(_view_stands=Subquery(latest)).filter(
+        Q(_view_stands=True) | Q(_view_stands__isnull=True)
+    )
 
 
 def current(organization: Organization, target_type: str, target_id: Ref) -> bool:
     """The cached answer for one target. Organization-wide, unscoped by any view."""
 
-    row = evidence_models.CurrentStanding.objects.for_organization(organization).filter(target_type=target_type, target_id=str(target_id)).first()
+    row = (
+        evidence_models.CurrentStanding.objects.for_organization(organization)
+        .filter(target_type=target_type, target_id=str(target_id))
+        .first()
+    )
     return True if row is None else row.stands
 
 
-def record_current(organization: Organization, target_type: str, target_id: Ref, standing: evidence_models.Standing) -> bool:
+def record_current(
+    organization: Organization,
+    target_type: str,
+    target_id: Ref,
+    standing: evidence_models.Standing,
+) -> bool:
     """Point the cached answer at this standing, and say whether it moved.
 
     **The return value is the transition, and callers depend on it.**
@@ -230,11 +260,18 @@ def refold_current(organization: Organization) -> int:
 
         written = 0
         for target_type in CACHED_TARGETS:
-            targets = evidence_models.Standing.objects.for_organization(organization).filter(target_type=target_type).values_list("target_id", flat=True).distinct()
+            targets = (
+                evidence_models.Standing.objects.for_organization(organization)
+                .filter(target_type=target_type)
+                .values_list("target_id", flat=True)
+                .distinct()
+            )
             folded = stands_for(organization, target_type, list(targets))
 
             winners = {}
-            for standing in standings_about(organization, target_type, list(targets)).only("id", "target_id", "stands"):
+            for standing in standings_about(
+                organization, target_type, list(targets)
+            ).only("id", "target_id", "stands"):
                 winners.setdefault(str(standing.target_id), standing)
 
             # `all_objects`, because `bulk_create` goes through the manager's

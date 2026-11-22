@@ -10,14 +10,18 @@ the suite's own fixture shipped one.
 """
 
 import pytest
+from pydantic import ValidationError
+
+from core import models as core_models
 from graph_engine import input_models as models
 from graph_engine.materialize import materialize
-from pydantic import ValidationError
-from core import models as core_models
 from tests.support.writes import CREATE_GRAPH
 
-
-RULE = models.DerivationRuleInput(source_node="ROI", key="centroid", aggregation=models.AggregationFunction.EUCLIDEAN_RANGE)
+RULE = models.DerivationRuleInput(
+    source_node="ROI",
+    key="centroid",
+    aggregation=models.AggregationFunction.EUCLIDEAN_RANGE,
+)
 
 
 def _schema(extensions: models.GraphExtensionsInput) -> models.GraphDefinitionInput:
@@ -30,13 +34,22 @@ def _schema(extensions: models.GraphExtensionsInput) -> models.GraphDefinitionIn
     [
         pytest.param(
             models.GraphExtensionsInput(
-                entities=[models.EntityDefinitionInput(key="Cell", property_definitions=[])],
+                entities=[
+                    models.EntityDefinitionInput(key="Cell", property_definitions=[])
+                ],
                 relations=[
                     models.RelationDefinitionInput(
                         key="IS_CONNECTED_TO",
                         source=models.EntityDescriptorInput(keys=["Cell"]),
                         target=models.EntityDescriptorInput(keys=["Cell"]),
-                        properties=[models.PropertyDefinitionInput(key="distance", type=models.PropertyType.FLOAT, derivation=models.DerivationType.ROLLUP, rule=RULE)],
+                        properties=[
+                            models.PropertyDefinitionInput(
+                                key="distance",
+                                type=models.PropertyType.FLOAT,
+                                derivation=models.DerivationType.ROLLUP,
+                                rule=RULE,
+                            )
+                        ],
                     )
                 ],
             ),
@@ -44,13 +57,22 @@ def _schema(extensions: models.GraphExtensionsInput) -> models.GraphDefinitionIn
         ),
         pytest.param(
             models.GraphExtensionsInput(
-                entities=[models.EntityDefinitionInput(key="Cell", property_definitions=[])],
+                entities=[
+                    models.EntityDefinitionInput(key="Cell", property_definitions=[])
+                ],
                 structure_relations=[
                     models.StructureRelationDefinitionInput(
                         key="DEPICTS",
                         source=models.StructureDescriptorInput(identifiers=["ROI"]),
                         target=models.StructureDescriptorInput(identifiers=["Mask"]),
-                        properties=[models.PropertyDefinitionInput(key="overlap", type=models.PropertyType.FLOAT, derivation=models.DerivationType.ROLLUP, rule=RULE)],
+                        properties=[
+                            models.PropertyDefinitionInput(
+                                key="overlap",
+                                type=models.PropertyType.FLOAT,
+                                derivation=models.DerivationType.ROLLUP,
+                                rule=RULE,
+                            )
+                        ],
                     )
                 ],
             ),
@@ -58,7 +80,9 @@ def _schema(extensions: models.GraphExtensionsInput) -> models.GraphDefinitionIn
         ),
     ],
 )
-def test_a_schema_declaring_edge_properties_is_refused(extensions, table_projector, authenticated_context) -> None:
+def test_a_schema_declaring_edge_properties_is_refused(
+    extensions, table_projector, authenticated_context
+) -> None:
     """Refused before any category exists, naming the fix.
 
     Same shape as the existing refusal of a rule-less node property: the schema
@@ -93,14 +117,39 @@ def test_events_keep_their_properties(table_projector, authenticated_context) ->
     graph = materialize(
         _schema(
             models.GraphExtensionsInput(
-                entities=[models.EntityDefinitionInput(key="Cell", property_definitions=[])],
+                entities=[
+                    models.EntityDefinitionInput(key="Cell", property_definitions=[])
+                ],
                 events=[
                     models.EventDefinitionInput(
                         key="Mitosis",
                         kind=models.EventKind.INTRINSIC,
-                        inputs=[models.EventRoleInput(key="Cell", role="a", descriptor=models.EntityDescriptorInput(keys=["Cell"]))],
-                        outputs=[models.EventRoleInput(key="Cell", role="b", descriptor=models.EntityDescriptorInput(keys=["Cell"]))],
-                        properties=[models.PropertyDefinitionInput(key="cell_count", type=models.PropertyType.INTEGER, derivation=models.DerivationType.ROLLUP, rule=models.DerivationRuleInput(source_node="ROI", key="cell_marker", aggregation=models.AggregationFunction.COUNT))],
+                        inputs=[
+                            models.EventRoleInput(
+                                key="Cell",
+                                role="a",
+                                descriptor=models.EntityDescriptorInput(keys=["Cell"]),
+                            )
+                        ],
+                        outputs=[
+                            models.EventRoleInput(
+                                key="Cell",
+                                role="b",
+                                descriptor=models.EntityDescriptorInput(keys=["Cell"]),
+                            )
+                        ],
+                        properties=[
+                            models.PropertyDefinitionInput(
+                                key="cell_count",
+                                type=models.PropertyType.INTEGER,
+                                derivation=models.DerivationType.ROLLUP,
+                                rule=models.DerivationRuleInput(
+                                    source_node="ROI",
+                                    key="cell_marker",
+                                    aggregation=models.AggregationFunction.COUNT,
+                                ),
+                            )
+                        ],
                     )
                 ],
             )
@@ -113,12 +162,16 @@ def test_events_keep_their_properties(table_projector, authenticated_context) ->
     )
 
     category = core_models.NaturalEventCategory.objects.get(graph=graph, key="Mitosis")
-    assert [prop["key"] for prop in category.property_definitions] == ["cell_count"], "An event is a node; its properties materialize"
+    assert [prop["key"] for prop in category.property_definitions] == ["cell_count"], (
+        "An event is a node; its properties materialize"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_the_single_category_mutation_refuses_it_too(api_schema, simple_api_context, test_graph) -> None:
+async def test_the_single_category_mutation_refuses_it_too(
+    api_schema, simple_api_context, test_graph
+) -> None:
     """The path that bypasses `validate_derivation_rules` entirely.
 
     `createRelationCategory` takes one definition and writes one row; it never
@@ -143,19 +196,34 @@ async def test_the_single_category_mutation_refuses_it_too(api_schema, simple_ap
             "input": {
                 "graph": str(test_graph.id),
                 "key": "SITS_BESIDE",
-                "propertyDefinitions": [{"key": "distance", "valueKind": "FLOAT", "derivation": "ROLLUP", "rule": {"sourceNode": "ROI", "key": "centroid", "aggregation": "EUCLIDEAN_RANGE"}}],
+                "propertyDefinitions": [
+                    {
+                        "key": "distance",
+                        "valueKind": "FLOAT",
+                        "derivation": "ROLLUP",
+                        "rule": {
+                            "sourceNode": "ROI",
+                            "key": "centroid",
+                            "aggregation": "EUCLIDEAN_RANGE",
+                        },
+                    }
+                ],
             }
         },
         context_value=simple_api_context,
     )
 
-    assert result.errors, "Declaring a property on a relation must be an error, not an empty property"
+    assert result.errors, (
+        "Declaring a property on a relation must be an error, not an empty property"
+    )
     assert "an edge carries no derived properties" in str(result.errors[0])
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_creating_a_relation_category_without_properties_works(api_schema, simple_api_context, test_graph) -> None:
+async def test_creating_a_relation_category_without_properties_works(
+    api_schema, simple_api_context, test_graph
+) -> None:
     """The mutation had never worked at all, so the refusal needs a control.
 
     Without this, `test_the_single_category_mutation_refuses_it_too` would pass
@@ -201,13 +269,21 @@ def test_validation_logic_works() -> None:
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_create_graph_refuses_a_view_level_trust_input(api_schema, simple_api_context) -> None:
+async def test_create_graph_refuses_a_view_level_trust_input(
+    api_schema, simple_api_context
+) -> None:
     """A view-level trust input is refused by name: trust lives in the definition (RFC 0009)."""
     made = await api_schema.execute(
         CREATE_GRAPH,
-        variable_values={"input": {"name": "no-selectors", "definition": {"extensions": {"entities": [{"key": "X"}]}}, "selector": {"assertionFilter": {"subjects": ["peter"]}}}},  # retired
+        variable_values={
+            "input": {
+                "name": "no-selectors",
+                "definition": {"extensions": {"entities": [{"key": "X"}]}},
+                "selector": {"assertionFilter": {"subjects": ["peter"]}},
+            }
+        },  # retired
         context_value=simple_api_context,
     )
-    assert made.errors is not None, "a retired input must be refused, not silently dropped"
-
-
+    assert made.errors is not None, (
+        "a retired input must be refused, not silently dropped"
+    )

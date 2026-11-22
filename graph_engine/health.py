@@ -30,23 +30,44 @@ class ProjectionLagHealthCheck(BaseHealthCheckBackend):
         from graph_engine.models import Projection
 
         threshold = int(getattr(settings, "PROJECTION_LAG_THRESHOLD", 1000))
-        graphs = list(core_models.Graph.objects.select_related("organization").order_by("pk"))
+        graphs = list(
+            core_models.Graph.objects.select_related("organization").order_by("pk")
+        )
         if not graphs:
             return
         positions = watermark.positions(graphs)
-        names = {graph.pk: f"{graph.organization.identifier}/{graph.name}" for graph in graphs}
+        names = {
+            graph.pk: f"{graph.organization.identifier}/{graph.name}"
+            for graph in graphs
+        }
 
-        behind = [(names[pk], where.lag) for pk, where in positions.items() if where.status == Projection.Status.CONSISTENT and where.lag > threshold]
+        behind = [
+            (names[pk], where.lag)
+            for pk, where in positions.items()
+            if where.status == Projection.Status.CONSISTENT and where.lag > threshold
+        ]
         if behind:
             listed = ", ".join(f"{name} ({lag} behind)" for name, lag in behind[:5])
             more = "" if len(behind) <= 5 else f" and {len(behind) - 5} more"
-            self.add_error(ServiceWarning(f"{len(behind)} view(s) more than {threshold} acts behind the log: {listed}{more}"))
+            self.add_error(
+                ServiceWarning(
+                    f"{len(behind)} view(s) more than {threshold} acts behind the log: {listed}{more}"
+                )
+            )
 
         # Not lag: a view nobody has drawn yet, or a rebuild that has not finished
         # (or died). Reported separately so an operator can tell the two apart.
-        unsettled = [f"{names[pk]} ({where.status})" for pk, where in positions.items() if where.status != Projection.Status.CONSISTENT]
+        unsettled = [
+            f"{names[pk]} ({where.status})"
+            for pk, where in positions.items()
+            if where.status != Projection.Status.CONSISTENT
+        ]
         if unsettled:
-            self.add_error(ServiceWarning(f"{len(unsettled)} view(s) not consistent: {', '.join(unsettled[:5])}"))
+            self.add_error(
+                ServiceWarning(
+                    f"{len(unsettled)} view(s) not consistent: {', '.join(unsettled[:5])}"
+                )
+            )
 
     def identifier(self) -> str:
         return "Projection lag"

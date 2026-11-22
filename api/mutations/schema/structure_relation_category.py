@@ -13,6 +13,7 @@ from kante.types import Info
 
 from api import inputs, types
 from core import models
+
 from ._category import create_category, delete_category, update_category
 from ._guards import refuse_edge_properties
 
@@ -38,7 +39,9 @@ def create_structure_relation_category(
     return cast(types.StructureRelationCategory, category)
 
 
-def update_structure_relation_category(info: Info, input: inputs.UpdateStructureRelationCategoryInput) -> types.StructureRelationCategory:
+def update_structure_relation_category(
+    info: Info, input: inputs.UpdateStructureRelationCategoryInput
+) -> types.StructureRelationCategory:
     """Change a structure relation category's label, colour, image, pin or rule."""
     model = input.to_pydantic()
     item = update_category(

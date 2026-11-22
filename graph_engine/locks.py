@@ -39,7 +39,9 @@ def _key(organization: Organization | int) -> int:
 
 
 @contextlib.contextmanager
-def organization_projection_lock(organization: Organization, *, wait: bool) -> Iterator[bool]:
+def organization_projection_lock(
+    organization: Organization, *, wait: bool
+) -> Iterator[bool]:
     """Hold the organization's projection lock for the block.
 
     `wait=True` blocks until it is free and always yields True. `wait=False`
@@ -60,7 +62,9 @@ def organization_projection_lock(organization: Organization, *, wait: bool) -> I
     finally:
         if held:
             with connection.cursor() as cursor:
-                cursor.execute("SELECT pg_advisory_unlock(%s, %s)", [LOCK_NAMESPACE, key])
+                cursor.execute(
+                    "SELECT pg_advisory_unlock(%s, %s)", [LOCK_NAMESPACE, key]
+                )
 
 
 def is_locked(organization: Organization) -> bool:

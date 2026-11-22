@@ -68,10 +68,15 @@ DIFFERENT_FROM = evidence_models.Link.Kind.DIFFERENT_FROM
 IDENTITY_KINDS: tuple[evidence_models.Link.Kind, ...] = (SAME_AS, DIFFERENT_FROM)
 
 
-def _standing_identity(organization: Organization, kinds: Sequence[evidence_models.Link.Kind] = IDENTITY_KINDS) -> QuerySet[IdentityLink]:
+def _standing_identity(
+    organization: Organization,
+    kinds: Sequence[evidence_models.Link.Kind] = IDENTITY_KINDS,
+) -> QuerySet[IdentityLink]:
     """Every sameness and difference claim that still stands in this organization."""
     return claims_module.standing(
-        evidence_models.Link.objects.for_organization(organization).filter(kind__in=list(kinds)),
+        evidence_models.Link.objects.for_organization(organization).filter(
+            kind__in=list(kinds)
+        ),
         "link",
     )
 
@@ -91,7 +96,9 @@ def admitted_sameness(links: Iterable[IdentityLink]) -> list[IdentityLink]:
     the standing, trusted set for whatever scope is folding."""
     links = list(links)
     vetoed = vetoed_pairs(links)
-    return [link for link in links if link.kind == SAME_AS and _pair(link) not in vetoed]
+    return [
+        link for link in links if link.kind == SAME_AS and _pair(link) not in vetoed
+    ]
 
 
 def _adjacency(links: Iterable[IdentityLink]) -> dict[str, set[str]]:
@@ -108,7 +115,9 @@ def standing_adjacency(organization: Organization) -> dict[str, set[str]]:
     """The organization's whole sameness graph, vetoes applied — what
     :func:`refold` writes and what `manage.py rebuild_identity --check`
     compares the cache against. One query."""
-    return _adjacency(_standing_identity(organization).only("id", "kind", "source_ref", "target_ref"))
+    return _adjacency(
+        _standing_identity(organization).only("id", "kind", "source_ref", "target_ref")
+    )
 
 
 def canonical_for(organization: Organization, node_ref: str) -> str:
@@ -121,20 +130,28 @@ def canonical_for(organization: Organization, node_ref: str) -> str:
     return canonical_for_many(organization, [node_ref])[str(node_ref)]
 
 
-def canonical_for_many(organization: Organization, node_refs: Iterable[str]) -> dict[str, str]:
+def canonical_for_many(
+    organization: Organization, node_refs: Iterable[str]
+) -> dict[str, str]:
     """Representatives for many nodes at once. One query.
 
     Batched because the panel asks about a page of structures, and asking per
     node is how a read that should be one seek becomes N.
     """
     refs = [str(ref) for ref in node_refs]
-    rows = evidence_models.InstanceIdentity.objects.for_organization(organization).filter(instance_id__in=refs).values_list("instance_id", "canonical_id")
+    rows = (
+        evidence_models.InstanceIdentity.objects.for_organization(organization)
+        .filter(instance_id__in=refs)
+        .values_list("instance_id", "canonical_id")
+    )
 
     found = {str(instance_id): str(canonical_id) for instance_id, canonical_id in rows}
     return {ref: found.get(ref, ref) for ref in refs}
 
 
-def component_refs(organization: Organization, node_refs: Iterable[str]) -> dict[str, list[str]]:
+def component_refs(
+    organization: Organization, node_refs: Iterable[str]
+) -> dict[str, list[str]]:
     """Every node in the component of each given node, keyed by the node asked about.
 
     Two queries regardless of how many nodes are asked about: one to find the
@@ -145,7 +162,11 @@ def component_refs(organization: Organization, node_refs: Iterable[str]) -> dict
     canonical = canonical_for_many(organization, refs)
 
     members: dict[str, list[str]] = defaultdict(list)
-    rows = evidence_models.InstanceIdentity.objects.for_organization(organization).filter(canonical_id__in=set(canonical.values())).values_list("canonical_id", "instance_id")
+    rows = (
+        evidence_models.InstanceIdentity.objects.for_organization(organization)
+        .filter(canonical_id__in=set(canonical.values()))
+        .values_list("canonical_id", "instance_id")
+    )
     for canonical_id, instance_id in rows:
         members[str(canonical_id)].append(str(instance_id))
 
@@ -154,7 +175,9 @@ def component_refs(organization: Organization, node_refs: Iterable[str]) -> dict
     return {ref: sorted(members.get(canonical[ref], [ref])) for ref in refs}
 
 
-def _trusted_in_view(graph: Graph, links: list[IdentityLink], resolved: Resolved) -> list[IdentityLink]:
+def _trusted_in_view(
+    graph: Graph, links: list[IdentityLink], resolved: Resolved
+) -> list[IdentityLink]:
     """The identity claims among `links` a view counts, given which endpoints it admits.
 
     RFC 0024: identity is the **view's**. A claim counts when both endpoints are
@@ -171,7 +194,12 @@ def _trusted_in_view(graph: Graph, links: list[IdentityLink], resolved: Resolved
     from evidence import selector as selector_module
 
     admitted_refs = {str(ref) for ref, categories in resolved.items() if categories}
-    candidates = [link for link in links if str(link.source_ref) in admitted_refs and str(link.target_ref) in admitted_refs]
+    candidates = [
+        link
+        for link in links
+        if str(link.source_ref) in admitted_refs
+        and str(link.target_ref) in admitted_refs
+    ]
     if not candidates:
         return []
 
@@ -185,7 +213,13 @@ def _trusted_in_view(graph: Graph, links: list[IdentityLink], resolved: Resolved
             predicate=selector_module.trust_predicate(rule, kind="SAMENESS"),
         )
     )
-def view_identity_links(graph: Graph, refs: Iterable[str], kinds: Sequence[evidence_models.Link.Kind] = IDENTITY_KINDS) -> list[IdentityLink]:
+
+
+def view_identity_links(
+    graph: Graph,
+    refs: Iterable[str],
+    kinds: Sequence[evidence_models.Link.Kind] = IDENTITY_KINDS,
+) -> list[IdentityLink]:
     """The sameness and difference claims a view counts that touch these refs
     — one hop, both ends admitted and trusted under the view's rule
     (:func:`_trusted_in_view`).
@@ -197,13 +231,23 @@ def view_identity_links(graph: Graph, refs: Iterable[str], kinds: Sequence[evide
     if not wanted:
         return []
 
-    touching = evidence_models.Link.objects.for_organization(graph.organization).filter(kind__in=list(kinds)).filter(Q(source_ref__in=wanted) | Q(target_ref__in=wanted))
+    touching = (
+        evidence_models.Link.objects.for_organization(graph.organization)
+        .filter(kind__in=list(kinds))
+        .filter(Q(source_ref__in=wanted) | Q(target_ref__in=wanted))
+    )
     links = list(touching.only("id", "kind", "source_ref", "target_ref"))
     if not links:
         return []
 
-    endpoint_refs = {str(link.source_ref) for link in links} | {str(link.target_ref) for link in links}
-    nodes = list(evidence_models.Instance.objects.for_organization(graph.organization).filter(id__in=endpoint_refs).select_related("term"))
+    endpoint_refs = {str(link.source_ref) for link in links} | {
+        str(link.target_ref) for link in links
+    }
+    nodes = list(
+        evidence_models.Instance.objects.for_organization(graph.organization)
+        .filter(id__in=endpoint_refs)
+        .select_related("term")
+    )
     resolved, _ = projector_module.resolve_categories(graph, nodes)
     return _trusted_in_view(graph, links, resolved)
 
@@ -220,7 +264,9 @@ def view_difference_links(graph: Graph, refs: Iterable[str]) -> list[IdentityLin
     return view_identity_links(graph, refs, kinds=(DIFFERENT_FROM,))
 
 
-def component_refs_for_view(graph: Graph, node_refs: Iterable[str]) -> dict[str, list[str]]:
+def component_refs_for_view(
+    graph: Graph, node_refs: Iterable[str]
+) -> dict[str, list[str]]:
     """One view's components: sameness folded under the view's rule (RFC 0024).
 
     The frontier loop `recompute` uses, but each hop keeps only the claims
@@ -270,7 +316,11 @@ def view_components(graph: Graph, resolved: Resolved) -> dict[str, list[str]]:
     if not refs:
         return {}
 
-    links = list(evidence_models.Link.objects.for_organization(graph.organization).filter(kind__in=list(IDENTITY_KINDS), source_ref__in=refs, target_ref__in=refs).only("id", "kind", "source_ref", "target_ref"))
+    links = list(
+        evidence_models.Link.objects.for_organization(graph.organization)
+        .filter(kind__in=list(IDENTITY_KINDS), source_ref__in=refs, target_ref__in=refs)
+        .only("id", "kind", "source_ref", "target_ref")
+    )
 
     parent: dict[str, str] = {ref: ref for ref in refs}
 
@@ -289,7 +339,10 @@ def view_components(graph: Graph, resolved: Resolved) -> dict[str, list[str]]:
     components: dict[str, list[str]] = defaultdict(list)
     for ref in refs:
         components[find(ref)].append(ref)
-    return {representative: sorted(members) for representative, members in components.items()}
+    return {
+        representative: sorted(members)
+        for representative, members in components.items()
+    }
 
 
 @transaction.atomic
@@ -309,10 +362,20 @@ def merge(organization: Organization, left_ref: str, right_ref: str) -> str:
     current = canonical_for_many(organization, [left, right])
     left_canonical, right_canonical = current[left], current[right]
 
-    if _standing_identity(organization, kinds=(DIFFERENT_FROM,)).filter(Q(source_ref=left, target_ref=right) | Q(source_ref=right, target_ref=left)).exists():
+    if (
+        _standing_identity(organization, kinds=(DIFFERENT_FROM,))
+        .filter(
+            Q(source_ref=left, target_ref=right) | Q(source_ref=right, target_ref=left)
+        )
+        .exists()
+    ):
         return left_canonical
 
-    members = set(component_members(organization, left_canonical)) | set(component_members(organization, right_canonical)) | {left, right}
+    members = (
+        set(component_members(organization, left_canonical))
+        | set(component_members(organization, right_canonical))
+        | {left, right}
+    )
     canonical = min(members)
 
     _write_component(organization, members, canonical)
@@ -321,10 +384,19 @@ def merge(organization: Organization, left_ref: str, right_ref: str) -> str:
 
 def component_members(organization: Organization, canonical_ref: str) -> list[str]:
     """Every node currently recorded under this representative."""
-    return [str(instance_id) for instance_id in evidence_models.InstanceIdentity.objects.for_organization(organization).filter(canonical_id=str(canonical_ref)).values_list("instance_id", flat=True)]
+    return [
+        str(instance_id)
+        for instance_id in evidence_models.InstanceIdentity.objects.for_organization(
+            organization
+        )
+        .filter(canonical_id=str(canonical_ref))
+        .values_list("instance_id", flat=True)
+    ]
 
 
-def _write_component(organization: Organization, members: set[str], canonical: str) -> None:
+def _write_component(
+    organization: Organization, members: set[str], canonical: str
+) -> None:
     """Point every member at one representative, replacing whatever was there.
 
     Deletes first rather than updating in place: a union can absorb rows that
@@ -332,7 +404,9 @@ def _write_component(organization: Organization, members: set[str], canonical: s
     delete-then-create is both simpler and correct where an `update` would have
     to know which rows it was allowed to touch.
     """
-    evidence_models.InstanceIdentity.objects.for_organization(organization).filter(instance_id__in=members).delete()
+    evidence_models.InstanceIdentity.objects.for_organization(organization).filter(
+        instance_id__in=members
+    ).delete()
 
     if len(members) < 2:
         # A component of one is the absence of a row. Nothing is merged, so there
@@ -365,7 +439,9 @@ def retract(organization: Organization, link: evidence_models.Link) -> None:
     here would be a second implementation of the same question.
     """
     canonical = canonical_for(organization, str(link.source_ref))
-    evidence_models.InstanceIdentity.objects.for_organization(organization).filter(canonical_id=canonical).update(needs_recompute=True)
+    evidence_models.InstanceIdentity.objects.for_organization(organization).filter(
+        canonical_id=canonical
+    ).update(needs_recompute=True)
 
 
 @transaction.atomic
@@ -383,7 +459,9 @@ def separate(organization: Organization, left_ref: str, right_ref: str) -> list[
     current = canonical_for_many(organization, [left, right])
     if current[left] != current[right]:
         return []
-    evidence_models.InstanceIdentity.objects.for_organization(organization).filter(canonical_id=current[left]).update(needs_recompute=True)
+    evidence_models.InstanceIdentity.objects.for_organization(organization).filter(
+        canonical_id=current[left]
+    ).update(needs_recompute=True)
     return recompute(organization, current[left])
 
 
@@ -399,7 +477,9 @@ def recompute(organization: Organization, canonical_ref: str) -> list[str]:
     Walks only the claims touching this component's members, not the whole
     organization — a retraction somewhere else has not moved anything here.
     """
-    members = set(component_members(organization, str(canonical_ref))) or {str(canonical_ref)}
+    members = set(component_members(organization, str(canonical_ref))) or {
+        str(canonical_ref)
+    }
 
     # Grow the working set until it closes: a claim may reach a node that was not
     # recorded under this representative, and dropping it would silently split a
@@ -408,7 +488,11 @@ def recompute(organization: Organization, canonical_ref: str) -> list[str]:
     seen: set[str] = set()
     frontier = set(members)
     while frontier:
-        links = _standing_identity(organization).filter(Q(source_ref__in=frontier) | Q(target_ref__in=frontier)).only("id", "kind", "source_ref", "target_ref")
+        links = (
+            _standing_identity(organization)
+            .filter(Q(source_ref__in=frontier) | Q(target_ref__in=frontier))
+            .only("id", "kind", "source_ref", "target_ref")
+        )
         seen |= frontier
         discovered: set[str] = set()
         for source, neighbours in _adjacency(links).items():
@@ -448,7 +532,12 @@ def _reachable(start: str, adjacency: dict[str, set[str]]) -> set[str]:
 
 def recompute_stale(organization: Organization, limit: int | None = None) -> int:
     """Rebuild every component a retraction left flagged. Returns how many were rebuilt."""
-    stale = evidence_models.InstanceIdentity.objects.for_organization(organization).filter(needs_recompute=True).values_list("canonical_id", flat=True).distinct()
+    stale = (
+        evidence_models.InstanceIdentity.objects.for_organization(organization)
+        .filter(needs_recompute=True)
+        .values_list("canonical_id", flat=True)
+        .distinct()
+    )
     canonicals = [str(canonical) for canonical in stale]
     if limit is not None:
         canonicals = canonicals[:limit]

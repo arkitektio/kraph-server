@@ -19,7 +19,9 @@ from graph_engine.projection.protocol import Projector
 
 #: Defaults to ``None`` rather than raising `LookupError`, so a caller has to test
 #: the value — not just catch — to know whether an operation bound one.
-current_projector: ContextVar[Projector | None] = ContextVar("current_projector", default=None)
+current_projector: ContextVar[Projector | None] = ContextVar(
+    "current_projector", default=None
+)
 
 
 def get_current_projector() -> Projector | None:

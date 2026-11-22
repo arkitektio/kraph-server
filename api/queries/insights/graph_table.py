@@ -1,10 +1,9 @@
 """Rendering a saved graph table query."""
 
-from typing import Optional
-from kante.types import Info
 import strawberry
+from kante.types import Info
 
-from api import types, context, inputs
+from api import context, inputs, types
 from api.mutations._scoped import scoped
 from core import models
 
@@ -15,7 +14,7 @@ def render_graph_table(
     filters: inputs.RenderGraphTableFilter | None = None,
     pagination: inputs.RenderGraphTablePagination | None = None,
     order: inputs.RenderGraphTableOrder | None = None,
-) -> Optional[types.GraphTableRender]:
+) -> types.GraphTableRender | None:
     """Run a saved table query and return its rows.
 
     Fetched through `scoped`, which is what the saved-query *mutations* use. This
@@ -42,6 +41,12 @@ def render_graph_table(
     pagination_model = pagination.to_pydantic() if pagination else None
     order_model = order.to_pydantic() if order else None
 
-    response = controller.render_graph_table_query(graph_query, filters=filters_model, pagination=pagination_model, order=order_model, info=info)
+    response = controller.render_graph_table_query(
+        graph_query,
+        filters=filters_model,
+        pagination=pagination_model,
+        order=order_model,
+        info=info,
+    )
 
     return types.GraphTableRender(_value=response)

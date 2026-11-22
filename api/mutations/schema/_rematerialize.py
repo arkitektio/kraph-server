@@ -103,12 +103,18 @@ def rematerialize_if_moved(category: core_models.Category, before: Fingerprint) 
         # version as it was under the old one — say so, or a relabel would leave
         # the graph reading as stale until somebody redrew everything for nothing.
         if before.projection_current:
-            watermark.record_schema_hash(category.graph, watermark.active_schema_hash(category.graph))
+            watermark.record_schema_hash(
+                category.graph, watermark.active_schema_hash(category.graph)
+            )
         return 0
 
-    redrawn = context.get_controller().rematerialize_category(category, retired_keys=before.derived_keys - after.derived_keys)
+    redrawn = context.get_controller().rematerialize_category(
+        category, retired_keys=before.derived_keys - after.derived_keys
+    )
     # This category's vertices now carry the new rules; the graph as a whole is
     # current under the new schema only if it was current under the old one.
     if before.projection_current:
-        watermark.record_schema_hash(category.graph, watermark.active_schema_hash(category.graph))
+        watermark.record_schema_hash(
+            category.graph, watermark.active_schema_hash(category.graph)
+        )
     return redrawn

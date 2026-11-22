@@ -10,35 +10,39 @@ replays, the full rebuild and the incremental one.
 """
 
 import uuid
-import kante
-import pytest
-from kante.context import HttpContext
-from core import enums
-from core import models as core_models
-from evidence import models as evidence_models
-from graph_engine.controller import GraphController
-from datetime import datetime, timezone
-from asgiref.sync import sync_to_async
-from evidence import state as state_module
-from graph_engine import projector
+from datetime import UTC, datetime
 from io import StringIO
 
+import kante
+import pytest
+from asgiref.sync import sync_to_async
 from django.core.management import call_command
+from kante.context import HttpContext
 
+from core import enums
+from core import models as core_models
 from evidence import claims as claims_module
+from evidence import models as evidence_models
+from evidence import state as state_module
 from evidence import writer
-from graph_engine import watermark
+from graph_engine import projector, watermark
+from graph_engine.controller import GraphController
 from tests.support import drawing, graphs, reads, rules, writes
-
 
 RECORD_METRIC = """
     mutation RecordMetric($input: AssertMetricValueInput!) {
         assertMetricValue(input: $input) { metric { id value } }
     }
 """
+
+
 async def _ais_category(test_graph: core_models.Graph) -> core_models.EntityCategory:
-    category = await core_models.EntityCategory.objects.filter(graph=test_graph, key="AIS").afirst()
-    assert category is not None, "The bio schema declares an AIS entity with a MEAN over ROI"
+    category = await core_models.EntityCategory.objects.filter(
+        graph=test_graph, key="AIS"
+    ).afirst()
+    assert category is not None, (
+        "The bio schema declares an AIS entity with a MEAN over ROI"
+    )
     return category
 
 
@@ -57,7 +61,19 @@ async def _build_measured_entity(
         variable_values={
             "input": {
                 "term": category.key,
-                "supportingEvidence": [{"identifier": "ROI", "object": object_id, "metrics": [{"key": "vector_length", "value": values[0], "valueKind": "FLOAT"}]}],
+                "supportingEvidence": [
+                    {
+                        "identifier": "ROI",
+                        "object": object_id,
+                        "metrics": [
+                            {
+                                "key": "vector_length",
+                                "value": values[0],
+                                "valueKind": "FLOAT",
+                            }
+                        ],
+                    }
+                ],
             }
         },
         context_value=ctx,
@@ -94,13 +110,21 @@ async def test_reproject_reproduces_the_projection(
 ) -> None:
     """Drop the drawing, replay from the log, compare properties."""
 
-    entity_id = await _build_measured_entity(api_schema, simple_api_context, test_graph, [10.0, 30.0, 20.0])
+    entity_id = await _build_measured_entity(
+        api_schema, simple_api_context, test_graph, [10.0, 30.0, 20.0]
+    )
 
-    before = await api_schema.execute(reads.NODE_PROPERTIES, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
+    before = await api_schema.execute(
+        reads.NODE_PROPERTIES,
+        variable_values={"id": entity_id, "graph": str(test_graph.id)},
+        context_value=simple_api_context,
+    )
     assert before.errors is None, f"GraphQL errors: {before.errors}"
     properties_before = before.data["node"]["properties"]
 
-    assert properties_before.get("avg_length") == pytest.approx(20.0), "The MEAN must have produced a value before we test rebuilding it"
+    assert properties_before.get("avg_length") == pytest.approx(20.0), (
+        "The MEAN must have produced a value before we test rebuilding it"
+    )
 
     @sync_to_async
     def rebuild() -> dict:
@@ -111,14 +135,20 @@ async def test_reproject_reproduces_the_projection(
     assert result.nodes >= 1
     assert result.projected >= 1
 
-    after = await api_schema.execute(reads.NODE_PROPERTIES, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
+    after = await api_schema.execute(
+        reads.NODE_PROPERTIES,
+        variable_values={"id": entity_id, "graph": str(test_graph.id)},
+        context_value=simple_api_context,
+    )
     assert after.errors is None, f"GraphQL errors: {after.errors}"
     properties_after = after.data["node"]["properties"]
 
     # `__last_derived` is a wall-clock stamp and is expected to move; everything
     # else must be identical. Comparing it would test the clock, not the rebuild.
     volatile = {"__last_derived"}
-    assert {k: v for k, v in properties_after.items() if k not in volatile} == {k: v for k, v in properties_before.items() if k not in volatile}
+    assert {k: v for k, v in properties_after.items() if k not in volatile} == {
+        k: v for k, v in properties_before.items() if k not in volatile
+    }
 
 
 @pytest.mark.django_db(transaction=True)
@@ -136,7 +166,9 @@ async def test_rebuild_survives_the_namespace_being_destroyed(
     empty. This is what distinguishes a genuine rebuild from a refresh.
     """
 
-    await _build_measured_entity(api_schema, simple_api_context, test_graph, [5.0, 15.0])
+    await _build_measured_entity(
+        api_schema, simple_api_context, test_graph, [5.0, 15.0]
+    )
 
     @sync_to_async
     def drop_then_rebuild() -> dict:
@@ -168,12 +200,18 @@ async def test_instance_refs_survive_a_rebuild(
     than idempotent.
     """
 
-    entity_id = await _build_measured_entity(api_schema, simple_api_context, test_graph, [1.0])
+    entity_id = await _build_measured_entity(
+        api_schema, simple_api_context, test_graph, [1.0]
+    )
 
     @sync_to_async
     def refs_and_rebuild() -> tuple[list[str], dict]:
         controller = GraphController(projector=table_projector)
-        refs = list(evidence_models.Link.objects.for_organization(test_graph.organization).filter(kind=evidence_models.Link.Kind.INFORMS).values_list("target_ref", flat=True))
+        refs = list(
+            evidence_models.Link.objects.for_organization(test_graph.organization)
+            .filter(kind=evidence_models.Link.Kind.INFORMS)
+            .values_list("target_ref", flat=True)
+        )
         return refs, controller.rebuild_projection(test_graph)
 
     refs, result = await refs_and_rebuild()
@@ -185,7 +223,11 @@ async def test_instance_refs_survive_a_rebuild(
         uuid.UUID(ref)
     assert result.projected == 1
 
-    after = await api_schema.execute(reads.NODE_PROPERTIES, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
+    after = await api_schema.execute(
+        reads.NODE_PROPERTIES,
+        variable_values={"id": entity_id, "graph": str(test_graph.id)},
+        context_value=simple_api_context,
+    )
     assert after.errors is None, f"GraphQL errors: {after.errors}"
 
 
@@ -195,12 +237,16 @@ RECORD_METRIC_ID = """
     }
 """
 WINDOW = ["2026-01-01T00:00:00Z", "2100-01-01T00:00:00Z"]
-LONG_AGO = datetime(2025, 1, 1, tzinfo=timezone.utc)
+LONG_AGO = datetime(2025, 1, 1, tzinfo=UTC)
 
 
-async def _ais_with_roi(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph, value: float) -> tuple[str, str]:
+async def _ais_with_roi(
+    api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph, value: float
+) -> tuple[str, str]:
     """An AIS informed by one ROI carrying one measurement, observed now."""
-    category = await core_models.EntityCategory.objects.filter(graph=graph, key="AIS").afirst()
+    category = await core_models.EntityCategory.objects.filter(
+        graph=graph, key="AIS"
+    ).afirst()
     assert category is not None, "The bio schema declares an AIS with a MEAN over ROI"
 
     object_id = f"roi_{uuid.uuid4().hex[:8]}"
@@ -209,7 +255,19 @@ async def _ais_with_roi(api_schema: kante.Schema, ctx: HttpContext, graph: core_
         variable_values={
             "input": {
                 "term": category.key,
-                "supportingEvidence": [{"identifier": "ROI", "object": object_id, "metrics": [{"key": "vector_length", "value": value, "valueKind": "FLOAT"}]}],
+                "supportingEvidence": [
+                    {
+                        "identifier": "ROI",
+                        "object": object_id,
+                        "metrics": [
+                            {
+                                "key": "vector_length",
+                                "value": value,
+                                "valueKind": "FLOAT",
+                            }
+                        ],
+                    }
+                ],
             }
         },
         context_value=ctx,
@@ -218,20 +276,26 @@ async def _ais_with_roi(api_schema: kante.Schema, ctx: HttpContext, graph: core_
     return created.data["assertEntityExists"]["instance"]["id"], object_id
 
 
-def _record_observed_at(graph: core_models.Graph, object_id: str, value: float, observed_at: datetime) -> None:
+def _record_observed_at(
+    graph: core_models.Graph, object_id: str, value: float, observed_at: datetime
+) -> None:
     """Append a measurement observed at a given time, through the incremental path.
 
     Exactly what `controller._record_metric` does — write the metric, then fold it
     into the statistics of everything the structure informs. Written at the
     writer level so the test says nothing about the API's shape of `observedAt`.
     """
-    from evidence import writer
     from evidence import state as state_module
+    from evidence import writer
     from graph_engine import projector
 
     organization = graph.organization
-    structure = evidence_models.Structure.objects.for_organization(organization).get(identifier="ROI", object=object_id)
-    kind = evidence_models.MetricKind.objects.for_organization(organization).get(structure_kind=structure.kind, key="vector_length", value_kind="FLOAT")
+    structure = evidence_models.Structure.objects.for_organization(organization).get(
+        identifier="ROI", object=object_id
+    )
+    kind = evidence_models.MetricKind.objects.for_organization(organization).get(
+        structure_kind=structure.kind, key="vector_length", value_kind="FLOAT"
+    )
 
     metric = writer.record_metric(
         organization,
@@ -273,8 +337,16 @@ async def test_a_scoped_graph_reads_the_same_value_before_and_after_a_rebuild(
                     "rules": [
                         {
                             "when": [
-                                {"field": "OBSERVED_AT", "operator": "SINCE", "value": WINDOW[0]},
-                                {"field": "OBSERVED_AT", "operator": "BEFORE", "value": WINDOW[1]},
+                                {
+                                    "field": "OBSERVED_AT",
+                                    "operator": "SINCE",
+                                    "value": WINDOW[0],
+                                },
+                                {
+                                    "field": "OBSERVED_AT",
+                                    "operator": "BEFORE",
+                                    "value": WINDOW[1],
+                                },
                             ]
                         }
                     ]
@@ -283,11 +355,17 @@ async def test_a_scoped_graph_reads_the_same_value_before_and_after_a_rebuild(
 
     await scope_to_window()
 
-    entity_id, object_id = await _ais_with_roi(api_schema, simple_api_context, test_graph, 10.0)
+    entity_id, object_id = await _ais_with_roi(
+        api_schema, simple_api_context, test_graph, 10.0
+    )
     await sync_to_async(_record_observed_at)(test_graph, object_id, 1000.0, LONG_AGO)
 
-    incremental = await reads.property_of(api_schema, simple_api_context, test_graph, entity_id, "avg_length")
-    assert incremental == pytest.approx(10.0), "Only the measurement observed inside the window may count"
+    incremental = await reads.property_of(
+        api_schema, simple_api_context, test_graph, entity_id, "avg_length"
+    )
+    assert incremental == pytest.approx(10.0), (
+        "Only the measurement observed inside the window may count"
+    )
 
     @sync_to_async
     def rebuild() -> dict:
@@ -295,8 +373,12 @@ async def test_a_scoped_graph_reads_the_same_value_before_and_after_a_rebuild(
 
     await rebuild()
 
-    rebuilt = await reads.property_of(api_schema, simple_api_context, test_graph, entity_id, "avg_length")
-    assert rebuilt == pytest.approx(incremental), "A replay must produce the value the ingest did"
+    rebuilt = await reads.property_of(
+        api_schema, simple_api_context, test_graph, entity_id, "avg_length"
+    )
+    assert rebuilt == pytest.approx(incremental), (
+        "A replay must produce the value the ingest did"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -327,8 +409,16 @@ async def test_a_retraction_after_a_rebuild_does_not_widen_the_scope(
                     "rules": [
                         {
                             "when": [
-                                {"field": "OBSERVED_AT", "operator": "SINCE", "value": WINDOW[0]},
-                                {"field": "OBSERVED_AT", "operator": "BEFORE", "value": WINDOW[1]},
+                                {
+                                    "field": "OBSERVED_AT",
+                                    "operator": "SINCE",
+                                    "value": WINDOW[0],
+                                },
+                                {
+                                    "field": "OBSERVED_AT",
+                                    "operator": "BEFORE",
+                                    "value": WINDOW[1],
+                                },
                             ]
                         }
                     ]
@@ -339,24 +429,38 @@ async def test_a_retraction_after_a_rebuild_does_not_widen_the_scope(
 
     # One measurement outside the window and two inside, so retracting one still
     # leaves the mean something to be right about.
-    entity_id, object_id = await _ais_with_roi(api_schema, simple_api_context, test_graph, 10.0)
+    entity_id, object_id = await _ais_with_roi(
+        api_schema, simple_api_context, test_graph, 10.0
+    )
     await sync_to_async(_record_observed_at)(test_graph, object_id, 1000.0, LONG_AGO)
 
     recorded = await api_schema.execute(
         RECORD_METRIC_ID,
-        variable_values={"input": {"identifier": "ROI", "object": object_id, "key": "vector_length", "value": 20.0, "valueKind": "FLOAT"}},
+        variable_values={
+            "input": {
+                "identifier": "ROI",
+                "object": object_id,
+                "key": "vector_length",
+                "value": 20.0,
+                "valueKind": "FLOAT",
+            }
+        },
         context_value=simple_api_context,
     )
     assert recorded.errors is None, f"GraphQL errors: {recorded.errors}"
 
-    assert await reads.property_of(api_schema, simple_api_context, test_graph, entity_id, "avg_length") == pytest.approx(15.0)
+    assert await reads.property_of(
+        api_schema, simple_api_context, test_graph, entity_id, "avg_length"
+    ) == pytest.approx(15.0)
 
     @sync_to_async
     def rebuild() -> dict:
         return GraphController(projector=table_projector).rebuild_projection(test_graph)
 
     await rebuild()
-    assert await reads.property_of(api_schema, simple_api_context, test_graph, entity_id, "avg_length") == pytest.approx(15.0)
+    assert await reads.property_of(
+        api_schema, simple_api_context, test_graph, entity_id, "avg_length"
+    ) == pytest.approx(15.0)
 
     # Now retract one in-window metric, then materialize. The read below is a
     # traversal, so it shows what the last materialization wrote — a retraction
@@ -368,19 +472,33 @@ async def test_a_retraction_after_a_rebuild_does_not_widen_the_scope(
     def retract_one_and_materialize() -> None:
         from evidence import writer
 
-        metric = evidence_models.Metric.objects.for_organization(test_graph.organization).filter(structure__identifier="ROI", value_num=20.0).first()
+        metric = (
+            evidence_models.Metric.objects.for_organization(test_graph.organization)
+            .filter(structure__identifier="ROI", value_num=20.0)
+            .first()
+        )
         assert metric is not None
         controller = GraphController(projector=table_projector)
-        instance_refs = projector.refs_informed_by(test_graph.organization, [metric.structure_id])
+        instance_refs = projector.refs_informed_by(
+            test_graph.organization, [metric.structure_id]
+        )
         writer.retract(test_graph.organization, metric, metric.assertion)
         state_module.retract(metric, instance_refs)
-        controller.project_from_structures(test_graph.organization, [metric.structure_id])
+        controller.project_from_structures(
+            test_graph.organization, [metric.structure_id]
+        )
 
     await retract_one_and_materialize()
 
-    after = await reads.property_of(api_schema, simple_api_context, test_graph, entity_id, "avg_length")
-    assert after == pytest.approx(10.0), "The surviving in-window measurement, and nothing the selector excludes"
-    assert after != pytest.approx(505.0), "The out-of-window measurement must not be re-admitted by the recompute"
+    after = await reads.property_of(
+        api_schema, simple_api_context, test_graph, entity_id, "avg_length"
+    )
+    assert after == pytest.approx(10.0), (
+        "The surviving in-window measurement, and nothing the selector excludes"
+    )
+    assert after != pytest.approx(505.0), (
+        "The out-of-window measurement must not be re-admitted by the recompute"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -401,14 +519,22 @@ async def test_edge_state_survives_a_rebuild(
     them by construction, and this is what says so.
     """
 
-    relation_category = await core_models.RelationCategory.objects.filter(graph=test_graph, key="IS_CONNECTED_TO").afirst()
+    relation_category = await core_models.RelationCategory.objects.filter(
+        graph=test_graph, key="IS_CONNECTED_TO"
+    ).afirst()
     assert relation_category is not None
 
-    cell_category = await core_models.EntityCategory.objects.filter(graph=test_graph, key="Cell").afirst()
+    cell_category = await core_models.EntityCategory.objects.filter(
+        graph=test_graph, key="Cell"
+    ).afirst()
     assert cell_category is not None
 
-    source = await writes.create_entity(api_schema, simple_api_context, cell_category.key)
-    target = await writes.create_entity(api_schema, simple_api_context, cell_category.key)
+    source = await writes.create_entity(
+        api_schema, simple_api_context, cell_category.key
+    )
+    target = await writes.create_entity(
+        api_schema, simple_api_context, cell_category.key
+    )
 
     created = await api_schema.execute(
         """
@@ -425,7 +551,9 @@ async def test_edge_state_survives_a_rebuild(
                     {
                         "identifier": "ROI",
                         "object": f"roi_{uuid.uuid4().hex[:8]}",
-                        "metrics": [{"key": "vector_length", "value": 7.0, "valueKind": "FLOAT"}],
+                        "metrics": [
+                            {"key": "vector_length", "value": 7.0, "valueKind": "FLOAT"}
+                        ],
                     }
                 ],
             }
@@ -437,10 +565,16 @@ async def test_edge_state_survives_a_rebuild(
 
     @sync_to_async
     def edge_state() -> list[tuple[int, float | None]]:
-        return sorted(evidence_models.State.objects.for_organization(test_graph.organization).filter(claim_ref=edge_id).values_list("n", "sum"))
+        return sorted(
+            evidence_models.State.objects.for_organization(test_graph.organization)
+            .filter(claim_ref=edge_id)
+            .values_list("n", "sum")
+        )
 
     before = await edge_state()
-    assert before, "A relation with supporting evidence must fold statistics against its own ref"
+    assert before, (
+        "A relation with supporting evidence must fold statistics against its own ref"
+    )
 
     @sync_to_async
     def rebuild() -> dict:
@@ -448,18 +582,28 @@ async def test_edge_state_survives_a_rebuild(
 
     await rebuild()
 
-    assert await edge_state() == before, "The rebuild must reproduce edge-keyed state, not skip it"
+    assert await edge_state() == before, (
+        "The rebuild must reproduce edge-keyed state, not skip it"
+    )
 
 
 async def _cell_category(test_graph: core_models.Graph) -> core_models.EntityCategory:
-    category = await core_models.EntityCategory.objects.filter(graph=test_graph, key="Cell").afirst()
+    category = await core_models.EntityCategory.objects.filter(
+        graph=test_graph, key="Cell"
+    ).afirst()
     assert category is not None, "The bio schema declares a Cell entity"
     return category
 
 
-async def _connected_to_category(test_graph: core_models.Graph) -> core_models.RelationCategory:
-    category = await core_models.RelationCategory.objects.filter(graph=test_graph, key="IS_CONNECTED_TO").afirst()
-    assert category is not None, "The bio schema declares IS_CONNECTED_TO between two Cells"
+async def _connected_to_category(
+    test_graph: core_models.Graph,
+) -> core_models.RelationCategory:
+    category = await core_models.RelationCategory.objects.filter(
+        graph=test_graph, key="IS_CONNECTED_TO"
+    ).afirst()
+    assert category is not None, (
+        "The bio schema declares IS_CONNECTED_TO between two Cells"
+    )
     return category
 
 
@@ -479,15 +623,29 @@ async def test_relation_survives_a_rebuild(
     entity_category = await _cell_category(test_graph)
     relation_category = await _connected_to_category(test_graph)
 
-    source = await writes.create_entity(api_schema, simple_api_context, entity_category.key, evidence=writes.roi(f"roi_{uuid.uuid4().hex[:8]}", None))
-    target = await writes.create_entity(api_schema, simple_api_context, entity_category.key, evidence=writes.roi(f"roi_{uuid.uuid4().hex[:8]}", None))
-    await writes.create_relation(api_schema, simple_api_context, relation_category.key, source, target)
+    source = await writes.create_entity(
+        api_schema,
+        simple_api_context,
+        entity_category.key,
+        evidence=writes.roi(f"roi_{uuid.uuid4().hex[:8]}", None),
+    )
+    target = await writes.create_entity(
+        api_schema,
+        simple_api_context,
+        entity_category.key,
+        evidence=writes.roi(f"roi_{uuid.uuid4().hex[:8]}", None),
+    )
+    await writes.create_relation(
+        api_schema, simple_api_context, relation_category.key, source, target
+    )
 
     @sync_to_async
     def edges_before() -> int:
         return drawing.edge_count(test_graph, relation_category.age_name)
 
-    assert await edges_before() == 1, "Asserting a relation must project an edge in the first place"
+    assert await edges_before() == 1, (
+        "Asserting a relation must project an edge in the first place"
+    )
 
     @sync_to_async
     def drop_then_rebuild() -> dict:
@@ -499,13 +657,17 @@ async def test_relation_survives_a_rebuild(
     result = await drop_then_rebuild()
 
     assert result.nodes == 2
-    assert result.edges == 1, "The relation must be reconstructed from evidence.Link alone"
+    assert result.edges == 1, (
+        "The relation must be reconstructed from evidence.Link alone"
+    )
 
     @sync_to_async
     def edges_after() -> int:
         return drawing.edge_count(test_graph, relation_category.age_name)
 
-    assert await edges_after() == 1, "The edge must be drawn after the replay, not merely counted"
+    assert await edges_after() == 1, (
+        "The edge must be drawn after the replay, not merely counted"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -525,11 +687,27 @@ async def test_retracting_the_last_claim_removes_the_edge_and_the_replay_agrees(
     entity_category = await _cell_category(test_graph)
     relation_category = await _connected_to_category(test_graph)
 
-    source = await writes.create_entity(api_schema, simple_api_context, entity_category.key, evidence=writes.roi(f"roi_{uuid.uuid4().hex[:8]}", None))
-    target = await writes.create_entity(api_schema, simple_api_context, entity_category.key, evidence=writes.roi(f"roi_{uuid.uuid4().hex[:8]}", None))
-    relation = await writes.create_relation(api_schema, simple_api_context, relation_category.key, source, target)
+    source = await writes.create_entity(
+        api_schema,
+        simple_api_context,
+        entity_category.key,
+        evidence=writes.roi(f"roi_{uuid.uuid4().hex[:8]}", None),
+    )
+    target = await writes.create_entity(
+        api_schema,
+        simple_api_context,
+        entity_category.key,
+        evidence=writes.roi(f"roi_{uuid.uuid4().hex[:8]}", None),
+    )
+    relation = await writes.create_relation(
+        api_schema, simple_api_context, relation_category.key, source, target
+    )
 
-    archived = await api_schema.execute(writes.RETRACT_RELATION, variable_values={"input": {"id": relation}}, context_value=simple_api_context)
+    archived = await api_schema.execute(
+        writes.RETRACT_RELATION,
+        variable_values={"input": {"id": relation}},
+        context_value=simple_api_context,
+    )
     assert archived.errors is None, f"GraphQL errors: {archived.errors}"
 
     @sync_to_async
@@ -569,7 +747,13 @@ async def test_participation_survives_a_rebuild(
     """
     source = await writes.create_entity(api_schema, simple_api_context, "Cell")
     target = await writes.create_entity(api_schema, simple_api_context, "Cell")
-    await writes.create_event(api_schema, simple_api_context, "Mitosis", inputs=[{"role": "a", "entityId": source}], outputs=[{"role": "b", "entityId": target}])
+    await writes.create_event(
+        api_schema,
+        simple_api_context,
+        "Mitosis",
+        inputs=[{"role": "a", "entityId": source}],
+        outputs=[{"role": "b", "entityId": target}],
+    )
 
     @sync_to_async
     def drop_then_rebuild() -> dict:
@@ -579,13 +763,17 @@ async def test_participation_survives_a_rebuild(
         return controller.rebuild_projection(test_graph)
 
     result = await drop_then_rebuild()
-    assert result.participations == 2, "Both participations must be reconstructed from evidence.Link alone"
+    assert result.participations == 2, (
+        "Both participations must be reconstructed from evidence.Link alone"
+    )
 
     @sync_to_async
     def edges() -> list[tuple[str, str]]:
         return drawing.participations(test_graph)
 
-    assert await edges() == [("CAME_OUT_OF", "b"), ("WENT_THROUGH", "a")], "And be drawn afterwards, not merely counted"
+    assert await edges() == [("CAME_OUT_OF", "b"), ("WENT_THROUGH", "a")], (
+        "And be drawn afterwards, not merely counted"
+    )
 
 
 # ===========================================================================
@@ -598,7 +786,21 @@ async def test_participation_survives_a_rebuild(
 
 async def _scenario_measured_entity(api_schema, ctx, graph, table_projector) -> None:
     """An entity with two measurements: derived properties over a datum."""
-    await writes.create_entity(api_schema, ctx, "AIS", evidence=[{"identifier": "ROI", "object": f"roi-{uuid.uuid4().hex[:8]}", "metrics": [{"key": "vector_length", "value": 12.0, "valueKind": "FLOAT"}, {"key": "vector_length", "value": 18.0, "valueKind": "FLOAT"}]}])
+    await writes.create_entity(
+        api_schema,
+        ctx,
+        "AIS",
+        evidence=[
+            {
+                "identifier": "ROI",
+                "object": f"roi-{uuid.uuid4().hex[:8]}",
+                "metrics": [
+                    {"key": "vector_length", "value": 12.0, "valueKind": "FLOAT"},
+                    {"key": "vector_length", "value": 18.0, "valueKind": "FLOAT"},
+                ],
+            }
+        ],
+    )
 
 
 async def _scenario_two_labels(api_schema, ctx, graph, table_projector) -> None:
@@ -609,8 +811,34 @@ async def _scenario_two_labels(api_schema, ctx, graph, table_projector) -> None:
 
 async def _scenario_members(api_schema, ctx, graph, table_projector) -> None:
     """Two observations claimed to be one thing: one vertex, two members (RFC 0018)."""
-    a = await writes.create_entity(api_schema, ctx, "AIS", evidence=[{"identifier": "ROI", "object": f"roi-{uuid.uuid4().hex[:8]}", "metrics": [{"key": "vector_length", "value": 10.0, "valueKind": "FLOAT"}]}])
-    b = await writes.create_entity(api_schema, ctx, "AIS", evidence=[{"identifier": "ROI", "object": f"roi-{uuid.uuid4().hex[:8]}", "metrics": [{"key": "vector_length", "value": 30.0, "valueKind": "FLOAT"}]}])
+    a = await writes.create_entity(
+        api_schema,
+        ctx,
+        "AIS",
+        evidence=[
+            {
+                "identifier": "ROI",
+                "object": f"roi-{uuid.uuid4().hex[:8]}",
+                "metrics": [
+                    {"key": "vector_length", "value": 10.0, "valueKind": "FLOAT"}
+                ],
+            }
+        ],
+    )
+    b = await writes.create_entity(
+        api_schema,
+        ctx,
+        "AIS",
+        evidence=[
+            {
+                "identifier": "ROI",
+                "object": f"roi-{uuid.uuid4().hex[:8]}",
+                "metrics": [
+                    {"key": "vector_length", "value": 30.0, "valueKind": "FLOAT"}
+                ],
+            }
+        ],
+    )
     await writes.merge(api_schema, ctx, [a, b])
 
 
@@ -622,13 +850,26 @@ async def _scenario_relation_twice(api_schema, ctx, graph, table_projector) -> N
     await writes.create_relation(api_schema, ctx, "IS_CONNECTED_TO", a, b)
 
 
-async def _scenario_edge_under_two_categories(api_schema, ctx, graph, table_projector) -> None:
+async def _scenario_edge_under_two_categories(
+    api_schema, ctx, graph, table_projector
+) -> None:
     """A relation claim two defined relation categories admit: two edges (RFC 0021)."""
 
     @sync_to_async
     def declare() -> None:
         for key, label in (("curated_touch", "CURATED"), ("loose_touch", "LOOSE")):
-            core_models.RelationCategory.objects.create(graph=graph, key=key, age_name=label, label=key, term=writer.ensure_term(graph.organization, enums.CategoryKindChoices.RELATION, key), source_definition={}, target_definition={}, definition=rules.definition(rules.rule(rules.word("touches"))))
+            core_models.RelationCategory.objects.create(
+                graph=graph,
+                key=key,
+                age_name=label,
+                label=key,
+                term=writer.ensure_term(
+                    graph.organization, enums.CategoryKindChoices.RELATION, key
+                ),
+                source_definition={},
+                target_definition={},
+                definition=rules.definition(rules.rule(rules.word("touches"))),
+            )
 
     await declare()
     a = await writes.create_entity(api_schema, ctx, "Cell")
@@ -636,14 +877,36 @@ async def _scenario_edge_under_two_categories(api_schema, ctx, graph, table_proj
     await writes.create_relation(api_schema, ctx, "touches", a, b)
 
 
-async def _scenario_own_word_of_a_defined_category(api_schema, ctx, graph, table_projector) -> None:
+async def _scenario_own_word_of_a_defined_category(
+    api_schema, ctx, graph, table_projector
+) -> None:
     """Claims under a defined category's own word, node and edge: drawn under it (RFC 0026)."""
 
     @sync_to_async
     def declare() -> None:
         organization = graph.organization
-        core_models.EntityCategory.objects.create(graph=graph, key="CuratedAIS", age_name="CuratedAIS", label="CuratedAIS", term=writer.ensure_term(organization, enums.CategoryKindChoices.ENTITY, "CuratedAIS"), definition=rules.definition(rules.rule(rules.word("AIS"))))
-        core_models.RelationCategory.objects.create(graph=graph, key="curated_touch", age_name="CURATED", label="curated_touch", term=writer.ensure_term(organization, enums.CategoryKindChoices.RELATION, "curated_touch"), source_definition={}, target_definition={}, definition=rules.definition(rules.rule(rules.word("touches"))))
+        core_models.EntityCategory.objects.create(
+            graph=graph,
+            key="CuratedAIS",
+            age_name="CuratedAIS",
+            label="CuratedAIS",
+            term=writer.ensure_term(
+                organization, enums.CategoryKindChoices.ENTITY, "CuratedAIS"
+            ),
+            definition=rules.definition(rules.rule(rules.word("AIS"))),
+        )
+        core_models.RelationCategory.objects.create(
+            graph=graph,
+            key="curated_touch",
+            age_name="CURATED",
+            label="curated_touch",
+            term=writer.ensure_term(
+                organization, enums.CategoryKindChoices.RELATION, "curated_touch"
+            ),
+            source_definition={},
+            target_definition={},
+            definition=rules.definition(rules.rule(rules.word("touches"))),
+        )
 
     await declare()
     curated = await writes.create_entity(api_schema, ctx, "CuratedAIS")
@@ -657,7 +920,16 @@ async def _scenario_participation(api_schema, ctx, graph, table_projector) -> No
     mother = await writes.create_entity(api_schema, ctx, "Cell")
     daughter = await writes.create_entity(api_schema, ctx, "Cell")
     sister = await writes.create_entity(api_schema, ctx, "Cell")
-    await writes.create_event(api_schema, ctx, "Mitosis", inputs=[{"role": "a", "entityId": mother}], outputs=[{"role": "a", "entityId": daughter}, {"role": "b", "entityId": sister}])
+    await writes.create_event(
+        api_schema,
+        ctx,
+        "Mitosis",
+        inputs=[{"role": "a", "entityId": mother}],
+        outputs=[
+            {"role": "a", "entityId": daughter},
+            {"role": "b", "entityId": sister},
+        ],
+    )
 
 
 async def _scenario_retracted_node(api_schema, ctx, graph, table_projector) -> None:
@@ -665,15 +937,43 @@ async def _scenario_retracted_node(api_schema, ctx, graph, table_projector) -> N
     a = await writes.create_entity(api_schema, ctx, "Cell")
     b = await writes.create_entity(api_schema, ctx, "Cell")
     await writes.create_relation(api_schema, ctx, "IS_CONNECTED_TO", a, b)
-    await writes.execute(api_schema, ctx, "mutation R($id: ID!) { retractEntity(input: {id: $id}) { assertion { id } } }", {"id": b})
+    await writes.execute(
+        api_schema,
+        ctx,
+        "mutation R($id: ID!) { retractEntity(input: {id: $id}) { assertion { id } } }",
+        {"id": b},
+    )
 
 
 async def _scenario_retracted_datum(api_schema, ctx, graph, table_projector) -> None:
     """A retracted datum stops feeding the values it informed (RFC 0023)."""
     object_id = f"roi-{uuid.uuid4().hex[:8]}"
-    await writes.create_entity(api_schema, ctx, "AIS", evidence=[{"identifier": "ROI", "object": object_id, "metrics": [{"key": "vector_length", "value": 42.0, "valueKind": "FLOAT"}]}])
-    found = await writes.execute(api_schema, ctx, "query S($identifier: StructureIdentifier!, $object: StructureObject!) { structureByIdentifier(identifier: $identifier, object: $object) { id } }", {"identifier": "ROI", "object": object_id})
-    await writes.execute(api_schema, ctx, "mutation R($input: RetractStructureInput!) { retractStructure(input: $input) { assertion { id } } }", {"input": {"id": found["structureByIdentifier"]["id"]}})
+    await writes.create_entity(
+        api_schema,
+        ctx,
+        "AIS",
+        evidence=[
+            {
+                "identifier": "ROI",
+                "object": object_id,
+                "metrics": [
+                    {"key": "vector_length", "value": 42.0, "valueKind": "FLOAT"}
+                ],
+            }
+        ],
+    )
+    found = await writes.execute(
+        api_schema,
+        ctx,
+        "query S($identifier: StructureIdentifier!, $object: StructureObject!) { structureByIdentifier(identifier: $identifier, object: $object) { id } }",
+        {"identifier": "ROI", "object": object_id},
+    )
+    await writes.execute(
+        api_schema,
+        ctx,
+        "mutation R($input: RetractStructureInput!) { retractStructure(input: $input) { assertion { id } } }",
+        {"input": {"id": found["structureByIdentifier"]["id"]}},
+    )
 
 
 SCENARIOS = {
@@ -700,16 +1000,25 @@ def _replay_from_scratch(graph, table_projector) -> None:
     `reproject --incremental` applies what the outbox says is outstanding.
     """
     table_projector.erase_nodes(graph, list(drawing.snapshot(graph)))
-    for assertion in evidence_models.Assertion.objects.for_organization(graph.organization).order_by("seq"):
+    for assertion in evidence_models.Assertion.objects.for_organization(
+        graph.organization
+    ).order_by("seq"):
         watermark.expect(assertion)
-    call_command("reproject", incremental=True, organization=graph.organization.identifier, stdout=StringIO())
+    call_command(
+        "reproject",
+        incremental=True,
+        organization=graph.organization.identifier,
+        stdout=StringIO(),
+    )
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["rebuild", "incremental"])
 @pytest.mark.parametrize("scenario", sorted(SCENARIOS))
-async def test_the_write_path_and_a_replay_draw_the_same(api_schema, api_context, test_graph, table_projector, scenario, mode) -> None:
+async def test_the_write_path_and_a_replay_draw_the_same(
+    api_schema, api_context, test_graph, table_projector, scenario, mode
+) -> None:
     """C2: the drawing is a function of the log. What the write path drew and what a
     replay draws from the log alone must be identical — labels, members,
     properties, edges and their counts — for every kind of thing a view draws."""
@@ -723,24 +1032,44 @@ async def test_the_write_path_and_a_replay_draw_the_same(api_schema, api_context
         await sync_to_async(_replay_from_scratch)(test_graph, table_projector)
 
     replayed = await sync_to_async(_drawn)(test_graph)
-    assert replayed == written, f"{scenario}: the {mode} drew something the write path did not, or the reverse"
+    assert replayed == written, (
+        f"{scenario}: the {mode} drew something the write path did not, or the reverse"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_the_standing_cache_survives_a_rebuild_for_every_kind(api_schema, api_context, test_graph, table_projector) -> None:
+async def test_the_standing_cache_survives_a_rebuild_for_every_kind(
+    api_schema, api_context, test_graph, table_projector
+) -> None:
     """`CurrentStanding` is total over claim kinds (RFC 0024) and a rebuild refolds it
     from the log for every kind, the instance included."""
     a = await writes.create_entity(api_schema, api_context, "Cell")
     b = await writes.create_entity(api_schema, api_context, "Cell")
-    link = await writes.create_relation(api_schema, api_context, "IS_CONNECTED_TO", a, b)
-    await writes.execute(api_schema, api_context, "mutation R($id: ID!) { retractEntity(input: {id: $id}) { assertion { id } } }", {"id": b})
-    await writes.execute(api_schema, api_context, "mutation R($input: RetractLinksInput!) { retractLinks(input: $input) { assertion { id } } }", {"input": {"ids": [link]}})
+    link = await writes.create_relation(
+        api_schema, api_context, "IS_CONNECTED_TO", a, b
+    )
+    await writes.execute(
+        api_schema,
+        api_context,
+        "mutation R($id: ID!) { retractEntity(input: {id: $id}) { assertion { id } } }",
+        {"id": b},
+    )
+    await writes.execute(
+        api_schema,
+        api_context,
+        "mutation R($input: RetractLinksInput!) { retractLinks(input: $input) { assertion { id } } }",
+        {"input": {"ids": [link]}},
+    )
 
     @sync_to_async
     def folded() -> dict[str, bool]:
         organization = test_graph.organization
-        return {"node": claims_module.current(organization, "node", b), "link": claims_module.current(organization, "link", link), "other": claims_module.current(organization, "node", a)}
+        return {
+            "node": claims_module.current(organization, "node", b),
+            "link": claims_module.current(organization, "link", link),
+            "other": claims_module.current(organization, "node", a),
+        }
 
     before = await folded()
     assert before == {"node": False, "link": False, "other": True}

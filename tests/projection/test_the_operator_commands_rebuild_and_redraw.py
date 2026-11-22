@@ -6,9 +6,11 @@ one that worked, so each is checked for what it changed and what it printed.
 """
 
 from io import StringIO
+
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
+
 from core import models as core_models
 
 
@@ -17,13 +19,19 @@ def test_reproject_requires_a_target(table_projector) -> None:
     """Refusing to guess is the point: --all is destructive across every graph."""
     with pytest.raises(CommandError, match="--graph"):
         call_command("reproject", stdout=StringIO())
+
+
 @pytest.mark.django_db(transaction=True)
 def test_reproject_refuses_an_unknown_graph(table_projector) -> None:
     """A typo in the graph name must not report a successful rebuild of nothing."""
     with pytest.raises(CommandError, match="No matching graphs"):
         call_command("reproject", graph="does-not-exist", stdout=StringIO())
+
+
 @pytest.mark.django_db(transaction=True)
-def test_dry_run_touches_nothing(test_graph: core_models.Graph, table_projector) -> None:
+def test_dry_run_touches_nothing(
+    test_graph: core_models.Graph, table_projector
+) -> None:
     """--dry-run reports the plan without dropping the projection."""
     out = StringIO()
     call_command("reproject", graph=test_graph.name, dry_run=True, stdout=out)
@@ -31,9 +39,15 @@ def test_dry_run_touches_nothing(test_graph: core_models.Graph, table_projector)
     output = out.getvalue()
     assert "would rebuild" in output
     assert f"#{test_graph.pk}" in output
-    assert test_graph.age_name not in output, "the namespace handle is internal; the command names a graph by name and id"
+    assert test_graph.age_name not in output, (
+        "the namespace handle is internal; the command names a graph by name and id"
+    )
+
+
 @pytest.mark.django_db(transaction=True)
-def test_rebuilds_by_name_and_reports_what_it_did(test_graph: core_models.Graph, table_projector) -> None:
+def test_rebuilds_by_name_and_reports_what_it_did(
+    test_graph: core_models.Graph, table_projector
+) -> None:
     """The counts in the output are the evidence that it ran."""
     out = StringIO()
     call_command("reproject", graph=test_graph.name, stdout=out)
@@ -58,21 +72,29 @@ def test_rematerialize_refuses_an_unknown_graph(table_projector) -> None:
 
 
 @pytest.mark.django_db(transaction=True)
-def test_dry_run_names_the_categories_it_would_redraw(test_graph: core_models.Graph, table_projector) -> None:
+def test_dry_run_names_the_categories_it_would_redraw(
+    test_graph: core_models.Graph, table_projector
+) -> None:
     """Node categories only — an edge carries nothing derived to go stale."""
     out = StringIO()
     call_command("rematerialize", graph=test_graph.name, dry_run=True, stdout=out)
 
     output = out.getvalue()
     assert f"would redraw {test_graph.name} (#{test_graph.pk}).AIS" in output
-    assert "IS_CONNECTED_TO" not in output, "Relations are edges; `project_edges` derives nothing onto them"
+    assert "IS_CONNECTED_TO" not in output, (
+        "Relations are edges; `project_edges` derives nothing onto them"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
-def test_a_single_category_can_be_named(test_graph: core_models.Graph, table_projector) -> None:
+def test_a_single_category_can_be_named(
+    test_graph: core_models.Graph, table_projector
+) -> None:
     """Because the whole-graph sweep is the expensive thing this avoids."""
     out = StringIO()
-    call_command("rematerialize", graph=test_graph.name, category="AIS", dry_run=True, stdout=out)
+    call_command(
+        "rematerialize", graph=test_graph.name, category="AIS", dry_run=True, stdout=out
+    )
 
     output = out.getvalue()
     assert "AIS" in output
@@ -80,7 +102,9 @@ def test_a_single_category_can_be_named(test_graph: core_models.Graph, table_pro
 
 
 @pytest.mark.django_db(transaction=True)
-def test_stale_finds_nothing_in_a_freshly_projected_graph(test_graph: core_models.Graph, table_projector) -> None:
+def test_stale_finds_nothing_in_a_freshly_projected_graph(
+    test_graph: core_models.Graph, table_projector
+) -> None:
     """The check has to be able to say "no work", or it is not a check.
 
     `materialize` projects as it builds, so every vertex carries the active
@@ -93,13 +117,17 @@ def test_stale_finds_nothing_in_a_freshly_projected_graph(test_graph: core_model
     correct: such a vertex really has not been derived under any schema.
     """
     out = StringIO()
-    call_command("rematerialize", graph=test_graph.name, stale=True, dry_run=True, stdout=out)
+    call_command(
+        "rematerialize", graph=test_graph.name, stale=True, dry_run=True, stdout=out
+    )
 
     assert out.getvalue() == "", "A projection level with its schema owes no redraw"
 
 
 @pytest.mark.django_db(transaction=True)
-def test_it_redraws_and_says_how_much(test_graph: core_models.Graph, table_projector) -> None:
+def test_it_redraws_and_says_how_much(
+    test_graph: core_models.Graph, table_projector
+) -> None:
     """The count in the output is the evidence that it ran."""
     out = StringIO()
     call_command("rematerialize", graph=test_graph.name, category="AIS", stdout=out)
@@ -115,13 +143,29 @@ def test_the_runner_flags_go_with_incremental(table_projector) -> None:
     with pytest.raises(CommandError, match="--loop goes with --incremental"):
         call_command("reproject", all=True, loop=True, stdout=StringIO())
     with pytest.raises(CommandError, match="--interval goes with --loop"):
-        call_command("reproject", incremental=True, all=True, interval=5, stdout=StringIO())
+        call_command(
+            "reproject", incremental=True, all=True, interval=5, stdout=StringIO()
+        )
     with pytest.raises(CommandError, match="Pick one"):
-        call_command("reproject", incremental=True, all=True, loop=True, dry_run=True, stdout=StringIO())
+        call_command(
+            "reproject",
+            incremental=True,
+            all=True,
+            loop=True,
+            dry_run=True,
+            stdout=StringIO(),
+        )
 
 
 @pytest.mark.django_db(transaction=True)
-def test_the_manual_incremental_pass_reports_an_idle_organization(test_graph: core_models.Graph, table_projector) -> None:
+def test_the_manual_incremental_pass_reports_an_idle_organization(
+    test_graph: core_models.Graph, table_projector
+) -> None:
     out = StringIO()
-    call_command("reproject", incremental=True, organization=test_graph.organization.identifier, stdout=out)
+    call_command(
+        "reproject",
+        incremental=True,
+        organization=test_graph.organization.identifier,
+        stdout=out,
+    )
     assert "nothing owed" in out.getvalue()

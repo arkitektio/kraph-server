@@ -1,15 +1,13 @@
 """StructureRelation query resolvers."""
 
-from typing import List
-
 import strawberry
 from kante.types import Info
 
-from api import context, types, filters, order, pagination
+from api import context, filters, order, pagination, types
 from api.queries import _edges
+from core import models
 from evidence import models as evidence_models
 from graph_engine import input_models
-from core import models
 
 
 def structure_relation(info: Info, id: strawberry.ID) -> types.StructureRelation:
@@ -30,7 +28,9 @@ def structure_relation(info: Info, id: strawberry.ID) -> types.StructureRelation
     """
     controller = context.get_controller()
 
-    edge = controller.get_relation_by_id(str(id), info=info, kind=evidence_models.Link.Kind.STRUCTURE_RELATION)
+    edge = controller.get_relation_by_id(
+        str(id), info=info, kind=evidence_models.Link.Kind.STRUCTURE_RELATION
+    )
     if edge is None:
         raise ValueError(f"Structure relation with ID {id} not found")
 
@@ -43,7 +43,7 @@ def structure_relations(
     filters: filters.StructureRelationFilter | None = None,
     ordering: list[order.StructureRelationOrder] | None = None,
     pagination: pagination.StructureRelationPaginationInput | None = None,
-) -> List[types.StructureRelation]:
+) -> list[types.StructureRelation]:
     """Every standing structurerelation claim stated in this category's word.
 
     Read from `evidence.Link`, not from Apache AGE. This returned nothing at all
@@ -59,18 +59,35 @@ def structure_relations(
     """
     controller = context.get_controller()
 
-    category = models.StructureRelationCategory.objects.filter(id=structure_relation_category_id).first()
+    category = models.StructureRelationCategory.objects.filter(
+        id=structure_relation_category_id
+    ).first()
     if category is None:
-        raise ValueError(f"StructureRelation category {structure_relation_category_id} not found")
+        raise ValueError(
+            f"StructureRelation category {structure_relation_category_id} not found"
+        )
 
     organization = category.graph.organization
     context.assert_can_access_organization(info, organization)
 
-    filter_model = filters.to_pydantic() if filters else input_models.StructureRelationFilters()
+    filter_model = (
+        filters.to_pydantic() if filters else input_models.StructureRelationFilters()
+    )
     ordering_models = [entry.to_pydantic() for entry in ordering] if ordering else []
-    pagination_model = pagination.to_pydantic() if pagination else input_models.StructureRelationPagination()
+    pagination_model = (
+        pagination.to_pydantic()
+        if pagination
+        else input_models.StructureRelationPagination()
+    )
 
-    links = _edges.links_for_category(organization, category, evidence_models.Link.Kind.STRUCTURE_RELATION)
+    links = _edges.links_for_category(
+        organization, category, evidence_models.Link.Kind.STRUCTURE_RELATION
+    )
     rows = _edges.narrow(links, filter_model, ordering_models, pagination_model)
 
-    return [types.StructureRelation(_value=controller.retrieved_edge(link, category=category)) for link in rows]
+    return [
+        types.StructureRelation(
+            _value=controller.retrieved_edge(link, category=category)
+        )
+        for link in rows
+    ]

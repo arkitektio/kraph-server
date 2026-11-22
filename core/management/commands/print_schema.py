@@ -34,7 +34,11 @@ class Command(BaseCommand):
     requires_system_checks: list = []
 
     def add_arguments(self, parser) -> None:
-        parser.add_argument("--check", action="store_true", help=f"Exit 1 when {SNAPSHOT} differs from the live schema.")
+        parser.add_argument(
+            "--check",
+            action="store_true",
+            help=f"Exit 1 when {SNAPSHOT} differs from the live schema.",
+        )
 
     def handle(self, *args, **options) -> None:
         sdl = render_sdl()
@@ -42,7 +46,9 @@ class Command(BaseCommand):
             path = snapshot_path()
             current = path.read_text() if path.exists() else ""
             if current.strip() != sdl.strip():
-                raise CommandError(f"{SNAPSHOT} is stale; regenerate with `python manage.py print_schema > {SNAPSHOT}` and read the diff")
+                raise CommandError(
+                    f"{SNAPSHOT} is stale; regenerate with `python manage.py print_schema > {SNAPSHOT}` and read the diff"
+                )
             self.stdout.write(f"{SNAPSHOT} matches the schema")
             return
         self.stdout.write(sdl, ending="")

@@ -10,16 +10,17 @@ reproject.
 """
 
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from asgiref.sync import sync_to_async
 from authentikate.models import Organization
+
 from core import models as core_models
 from evidence import models as evidence_models
+from evidence import state as state_module
 from evidence import writer
 from graph_engine import projector
-from datetime import datetime, timedelta, timezone
-from evidence import state as state_module
 from tests.support import reads, writes
 
 
@@ -35,7 +36,9 @@ def shared_across_two_graphs(
     assertion: evidence_models.Assertion,
 ) -> tuple[evidence_models.Structure, str, str]:
     """One structure, informing an entity in each of two graphs."""
-    structure = writer.ensure_structure(organization, roi_kind, "roi-shared-fanout", assertion)
+    structure = writer.ensure_structure(
+        organization, roi_kind, "roi-shared-fanout", assertion
+    )
 
     ref_a = make_node(entity_category_a)
     ref_b = make_node(entity_category_b)
@@ -119,7 +122,9 @@ def test_recording_a_metric_folds_state_for_both_graphs(
 
     state_module.merge(metric, projector.refs_informed_by(organization, [structure.pk]))
 
-    states = evidence_models.State.objects.for_organization(organization).filter(key="vector_length")
+    states = evidence_models.State.objects.for_organization(organization).filter(
+        key="vector_length"
+    )
     assert {state.claim_ref for state in states} == {ref_a, ref_b}
     assert all(state.n == 1 and state.sum == pytest.approx(42.0) for state in states)
 
@@ -148,7 +153,9 @@ def test_a_graph_with_no_informed_entity_is_not_in_the_fan_out(
         assertion=assertion,
     )
 
-    grouped = projector.graphs_for_refs(organization, projector.refs_informed_by(organization, [structure.pk]))
+    grouped = projector.graphs_for_refs(
+        organization, projector.refs_informed_by(organization, [structure.pk])
+    )
 
     assert {graph.pk for graph in grouped} == {graph_a.pk}
     assert graph_b.pk not in {graph.pk for graph in grouped}
@@ -191,20 +198,48 @@ async def test_one_recorded_metric_moves_both_projections(
     object_id = f"roi_{uuid.uuid4().hex[:8]}"
 
     # Both views declare AIS with a MEAN over ROI; the write names the word, not a view.
-    entity_ids = {str(graph.pk): await writes.create_entity(api_schema, simple_api_context, "AIS", evidence=writes.roi(object_id, 40.0)) for graph in (test_graph, second_graph)}
+    entity_ids = {
+        str(graph.pk): await writes.create_entity(
+            api_schema, simple_api_context, "AIS", evidence=writes.roi(object_id, 40.0)
+        )
+        for graph in (test_graph, second_graph)
+    }
 
-    structures = await sync_to_async(lambda: evidence_models.Structure.objects.for_organization(test_graph.organization).filter(object=object_id).count())()
+    structures = await sync_to_async(
+        lambda: (
+            evidence_models.Structure.objects.for_organization(test_graph.organization)
+            .filter(object=object_id)
+            .count()
+        )
+    )()
     assert structures == 1, "Both graphs must be informed by the *same* structure row"
 
     # One measurement, no graph named anywhere.
-    await writes.execute(api_schema, simple_api_context, writes.ASSERT_METRIC_VALUE, {"input": {"identifier": "ROI", "object": object_id, "key": "vector_length", "value": 60.0, "valueKind": "FLOAT"}})
+    await writes.execute(
+        api_schema,
+        simple_api_context,
+        writes.ASSERT_METRIC_VALUE,
+        {
+            "input": {
+                "identifier": "ROI",
+                "object": object_id,
+                "key": "vector_length",
+                "value": 60.0,
+                "valueKind": "FLOAT",
+            }
+        },
+    )
 
     for graph_id, entity_id in entity_ids.items():
-        avg = await reads.property_of(api_schema, simple_api_context, graph_id, entity_id, "avg_length")
-        assert avg == pytest.approx(50.0), f"graph #{graph_id} still reads {avg}: mean of 40 and 60 is 50. A projection that did not move is the stale-second-graph bug."
+        avg = await reads.property_of(
+            api_schema, simple_api_context, graph_id, entity_id, "avg_length"
+        )
+        assert avg == pytest.approx(50.0), (
+            f"graph #{graph_id} still reads {avg}: mean of 40 and 60 is 50. A projection that did not move is the stale-second-graph bug."
+        )
 
 
-BASE_TIME = datetime(2026, 1, 1, tzinfo=timezone.utc)
+BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
 
 
 @pytest.fixture
@@ -217,7 +252,9 @@ def two_entities_one_structure(
     assertion: evidence_models.Assertion,
 ) -> tuple[evidence_models.Structure, list[str]]:
     """One ROI that is evidence for two different entities."""
-    structure = writer.ensure_structure(organization, roi_category_a, "roi-fanout", assertion)
+    structure = writer.ensure_structure(
+        organization, roi_category_a, "roi-fanout", assertion
+    )
     refs = [make_node(entity_category_a), make_node(entity_category_a)]
 
     for ref in refs:
@@ -283,7 +320,11 @@ def test_dirty_excludes_retracted_links(
     cell being recomputed from evidence it no longer accepts.
     """
     structure, refs = two_entities_one_structure
-    link = evidence_models.Link.objects.for_organization(organization).filter(target_ref=refs[0]).first()
+    link = (
+        evidence_models.Link.objects.for_organization(organization)
+        .filter(target_ref=refs[0])
+        .first()
+    )
     writer.retract(organization, link, assertion)
 
     assert projector.dirty(graph_a, [structure.pk]) == [refs[1]]
@@ -304,7 +345,9 @@ def test_bulk_ingest_folds_per_metric_but_projects_once(
     set. Under the old scheme this was a hundred recalculations, each re-reading
     the whole history.
     """
-    structure = writer.ensure_structure(organization, roi_category_a, "roi-bulk", assertion)
+    structure = writer.ensure_structure(
+        organization, roi_category_a, "roi-bulk", assertion
+    )
     claim_ref = make_node(entity_category_a)
     writer.create_link(
         organization,
@@ -326,8 +369,12 @@ def test_bulk_ingest_folds_per_metric_but_projects_once(
         )
         state_module.merge(metric, [claim_ref])
 
-    states = evidence_models.State.objects.for_organization(organization).filter(claim_ref=claim_ref)
-    assert states.count() == 1, "A hundred metrics fold into one state row, not a hundred"
+    states = evidence_models.State.objects.for_organization(organization).filter(
+        claim_ref=claim_ref
+    )
+    assert states.count() == 1, (
+        "A hundred metrics fold into one state row, not a hundred"
+    )
 
     state = states.get()
     assert state.n == 100

@@ -12,10 +12,10 @@ import kante
 import pytest
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
+
 from core import models as core_models
 from core.models import Graph
 from tests.support import writes
-
 
 UPDATE_GRAPH = """
     mutation UpdateGraph($input: UpdateGraphInput!) {
@@ -37,12 +37,18 @@ async def test_archiving_a_graph_persists(
     would have passed before the column existed, because the resolver hands back
     the in-memory object it just set the attribute on.
     """
-    result = await api_schema.execute(writes.ARCHIVE_GRAPH, variable_values={"input": {"id": str(test_graph.id)}}, context_value=authenticated_context)
+    result = await api_schema.execute(
+        writes.ARCHIVE_GRAPH,
+        variable_values={"input": {"id": str(test_graph.id)}},
+        context_value=authenticated_context,
+    )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     assert result.data["archiveGraph"]["isArchived"] is True
 
     reloaded = await core_models.Graph.objects.aget(pk=test_graph.pk)
-    assert reloaded.is_archived is True, "The archived state must survive the request that set it"
+    assert reloaded.is_archived is True, (
+        "The archived state must survive the request that set it"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -58,7 +64,11 @@ async def test_archiving_is_reversible(
     `unarchiveGraph` — so if this did not work, archiving would be an
     irreversible hide, which is a delete with extra steps.
     """
-    await api_schema.execute(writes.ARCHIVE_GRAPH, variable_values={"input": {"id": str(test_graph.id)}}, context_value=authenticated_context)
+    await api_schema.execute(
+        writes.ARCHIVE_GRAPH,
+        variable_values={"input": {"id": str(test_graph.id)}},
+        context_value=authenticated_context,
+    )
 
     result = await api_schema.execute(
         UPDATE_GRAPH,
@@ -86,7 +96,11 @@ async def test_an_archived_graph_is_still_reachable_by_id(
     default exclusion would hide the row from the only mutation that can bring it
     back.
     """
-    await api_schema.execute(writes.ARCHIVE_GRAPH, variable_values={"input": {"id": str(test_graph.id)}}, context_value=authenticated_context)
+    await api_schema.execute(
+        writes.ARCHIVE_GRAPH,
+        variable_values={"input": {"id": str(test_graph.id)}},
+        context_value=authenticated_context,
+    )
 
     result = await api_schema.execute(
         "query Graph($id: ID!) { graph(id: $id) { id isArchived } }",
@@ -129,7 +143,12 @@ async def test_archiving_a_saved_query_persists(
 
     @sync_to_async
     def make() -> int:
-        item = model.objects.create(graph=test_graph, key=f"k_{mutation}", label=mutation, query="MATCH (n) RETURN n")
+        item = model.objects.create(
+            graph=test_graph,
+            key=f"k_{mutation}",
+            label=mutation,
+            query="MATCH (n) RETURN n",
+        )
         assert item.archived is False, "A saved query starts live"
         return item.pk
 
@@ -145,9 +164,13 @@ async def test_archiving_a_saved_query_persists(
         context_value=authenticated_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
-    assert result.data[mutation]["archived"] is True, f"{mutation} must report the state it just set"
+    assert result.data[mutation]["archived"] is True, (
+        f"{mutation} must report the state it just set"
+    )
 
-    assert await archived(pk) is True, f"{mutation} must persist the flag, not set an attribute and drop it"
+    assert await archived(pk) is True, (
+        f"{mutation} must persist the flag, not set an attribute and drop it"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -156,7 +179,9 @@ def test_deleting_an_image_does_not_delete_the_view(test_graph: Graph) -> None:
     a picture deleted the view, its categories and its whole projection."""
     from arkitekt_datalayer.models import MediaStore
 
-    store = MediaStore.objects.create(organization=test_graph.organization, key="graph.png", bucket="media")
+    store = MediaStore.objects.create(
+        organization=test_graph.organization, key="graph.png", bucket="media"
+    )
     test_graph.image = store
     test_graph.save(update_fields=["image"])
     category = test_graph.categories.first()
@@ -173,7 +198,9 @@ def test_deleting_an_image_does_not_delete_the_view(test_graph: Graph) -> None:
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_moving_a_box_runs_no_ddl(api_schema, simple_api_context, test_graph, table_projector, monkeypatch) -> None:
+async def test_moving_a_box_runs_no_ddl(
+    api_schema, simple_api_context, test_graph, table_projector, monkeypatch
+) -> None:
     """Layout is presentation. `updateGraphVisual` used to `save()` each category,
     and the category-write signal then dropped and recreated the graph's whole
     Postgres schema once per moved box."""
@@ -186,10 +213,19 @@ async def test_moving_a_box_runs_no_ddl(api_schema, simple_api_context, test_gra
 
     monkeypatch.setattr(table_module.TableProjector, "refresh_namespace", refuse)
 
-    category = await sync_to_async(core_models.Category.objects.get)(graph=test_graph, key="AIS")
+    category = await sync_to_async(core_models.Category.objects.get)(
+        graph=test_graph, key="AIS"
+    )
     result = await api_schema.execute(
         writes.UPDATE_GRAPH_VISUAL,
-        variable_values={"input": {"id": str(test_graph.pk), "nodePositions": [{"category": str(category.pk), "positionX": 3.0, "positionY": 4.0}]}},
+        variable_values={
+            "input": {
+                "id": str(test_graph.pk),
+                "nodePositions": [
+                    {"category": str(category.pk), "positionX": 3.0, "positionY": 4.0}
+                ],
+            }
+        },
         context_value=simple_api_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
@@ -200,7 +236,9 @@ async def test_moving_a_box_runs_no_ddl(api_schema, simple_api_context, test_gra
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_a_malformed_colour_is_refused_with_a_message(api_schema, simple_api_context, test_graph) -> None:
+async def test_a_malformed_colour_is_refused_with_a_message(
+    api_schema, simple_api_context, test_graph
+) -> None:
     """A colour is three or four integers in [0, 255]; anything else is refused by name, not by `assert`.
 
     History: fifteen `assert len(color) in (3, 4)` sites — stripped under `python -O`,
@@ -208,9 +246,29 @@ async def test_a_malformed_colour_is_refused_with_a_message(api_schema, simple_a
     """
     import uuid
 
-    refused = await api_schema.execute(writes.CREATE_TERM, variable_values={"input": {"kind": "ENTITY", "key": f"Colour_{uuid.uuid4().hex[:6]}", "color": [1, 2]}}, context_value=simple_api_context)
+    refused = await api_schema.execute(
+        writes.CREATE_TERM,
+        variable_values={
+            "input": {
+                "kind": "ENTITY",
+                "key": f"Colour_{uuid.uuid4().hex[:6]}",
+                "color": [1, 2],
+            }
+        },
+        context_value=simple_api_context,
+    )
     assert refused.errors, "two values is neither RGB nor RGBA"
     assert "RGB" in str(refused.errors[0])
 
-    accepted = await api_schema.execute(writes.CREATE_TERM, variable_values={"input": {"kind": "ENTITY", "key": f"Colour_{uuid.uuid4().hex[:6]}", "color": [10, 20, 30, 40]}}, context_value=simple_api_context)
+    accepted = await api_schema.execute(
+        writes.CREATE_TERM,
+        variable_values={
+            "input": {
+                "kind": "ENTITY",
+                "key": f"Colour_{uuid.uuid4().hex[:6]}",
+                "color": [10, 20, 30, 40],
+            }
+        },
+        context_value=simple_api_context,
+    )
     assert accepted.errors is None, f"GraphQL errors: {accepted.errors}"

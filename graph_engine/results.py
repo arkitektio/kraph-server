@@ -146,7 +146,9 @@ class Asserted:
     def subject(self) -> evidence_models.Claim:
         """The single subject, for the writes that have exactly one."""
         if len(self.subjects) != 1:
-            raise ValueError(f"This assertion has {len(self.subjects)} subjects; use `subjects`.")
+            raise ValueError(
+                f"This assertion has {len(self.subjects)} subjects; use `subjects`."
+            )
         return self.subjects[0]
 
     @classmethod
@@ -157,6 +159,8 @@ class Asserted:
         drawings: tuple[Drawing, ...] = (),
         *,
         pending: bool = False,
-    ) -> "Asserted":
+    ) -> Asserted:
         """Build a result for a write with one subject."""
-        return cls(assertion=assertion, subjects=(subject,), drawings=drawings, pending=pending)
+        return cls(
+            assertion=assertion, subjects=(subject,), drawings=drawings, pending=pending
+        )

@@ -13,7 +13,9 @@ from core import models as core_models
 from datasets import inputs, logic, models, types
 
 
-def run_pairs_query(info: Info, input: inputs.RunPairsQueryInput) -> types.PairsQueryRun:
+def run_pairs_query(
+    info: Info, input: inputs.RunPairsQueryInput
+) -> types.PairsQueryRun:
     """Run a pairs query: its answer from the view's drawing, stored with where the drawing stood.
 
     `scoped` before anything is read: the query id arrives from the client, and the caller
@@ -21,20 +23,33 @@ def run_pairs_query(info: Info, input: inputs.RunPairsQueryInput) -> types.Pairs
     """
     model = input.to_pydantic()
     query = scoped(info, core_models.GraphPairsQuery, model.query, what="pairs query")
-    return logic.run_pairs_query(get_controller(), query, name=model.name, description=model.description, creator=info.context.request.user, info=info)
+    return logic.run_pairs_query(
+        get_controller(),
+        query,
+        name=model.name,
+        description=model.description,
+        creator=info.context.request.user,
+        info=info,
+    )
 
 
-def delete_pairs_query_run(info: Info, input: inputs.DeletePairsQueryRunInput) -> strawberry.ID:
+def delete_pairs_query_run(
+    info: Info, input: inputs.DeletePairsQueryRunInput
+) -> strawberry.ID:
     """Delete a run. A run a model was trained on stays: the model's provenance would point at nothing."""
     model = input.to_pydantic()
-    run = models.PairsQueryRun.objects.filter(id=model.id, organization=get_active_organization(info)).first()
+    run = models.PairsQueryRun.objects.filter(
+        id=model.id, organization=get_active_organization(info)
+    ).first()
     if run is None:
         raise ValueError(f"Run {model.id} not found")
     try:
         run.delete()
     except RestrictedError as error:
         trained = sorted(str(row) for row in error.restricted_objects)
-        raise ValueError(f"Run {model.id} cannot be deleted: {', '.join(trained)} were trained on it. Delete those models first") from error
+        raise ValueError(
+            f"Run {model.id} cannot be deleted: {', '.join(trained)} were trained on it. Delete those models first"
+        ) from error
     return strawberry.ID(str(model.id))
 
 
@@ -49,22 +64,35 @@ def create_model(info: Info, input: inputs.CreateModelInput) -> types.Model:
     model = input.to_pydantic()
     organization = get_active_organization(info)
     if model.trained_on is not None and model.trained_on_query is not None:
-        raise ValueError("A model is trained on a run or on a pairs query, not both: give `trainedOn` or `trainedOnQuery`")
+        raise ValueError(
+            "A model is trained on a run or on a pairs query, not both: give `trainedOn` or `trainedOnQuery`"
+        )
 
-    store = BigFileStore.objects.filter(id=model.store, organization=organization).first()
+    store = BigFileStore.objects.filter(
+        id=model.store, organization=organization
+    ).first()
     if store is None:
         raise ValueError(f"Big file store {model.store} not found")
     if not store.populated:
-        raise ValueError(f"Big file store {model.store} is not finished: finish its upload before registering a model with it")
+        raise ValueError(
+            f"Big file store {model.store} is not finished: finish its upload before registering a model with it"
+        )
 
     with transaction.atomic():
         trained_on = None
         if model.trained_on is not None:
-            trained_on = models.PairsQueryRun.objects.filter(id=model.trained_on, organization=organization).first()
+            trained_on = models.PairsQueryRun.objects.filter(
+                id=model.trained_on, organization=organization
+            ).first()
             if trained_on is None:
                 raise ValueError(f"Run {model.trained_on} not found")
         elif model.trained_on_query is not None:
-            query = scoped(info, core_models.GraphPairsQuery, model.trained_on_query, what="pairs query")
+            query = scoped(
+                info,
+                core_models.GraphPairsQuery,
+                model.trained_on_query,
+                what="pairs query",
+            )
             trained_on = logic.run_pairs_query(
                 get_controller(),
                 query,
@@ -96,7 +124,9 @@ def delete_model(info: Info, input: inputs.DeleteModelInput) -> strawberry.ID:
     nothing references a store before it removes the bytes.
     """
     model = input.to_pydantic()
-    found = models.TrainedModel.objects.filter(id=model.id, organization=get_active_organization(info)).first()
+    found = models.TrainedModel.objects.filter(
+        id=model.id, organization=get_active_organization(info)
+    ).first()
     if found is None:
         raise ValueError(f"Model {model.id} not found")
     with transaction.atomic():

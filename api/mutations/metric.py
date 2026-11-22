@@ -14,7 +14,7 @@ metric into the drawing either, so :class:`api.types.AssertedMetric` carries no
 
 from kante.types import Info
 
-from api import types, inputs, context
+from api import context, inputs, types
 
 
 def assert_metric_value(
@@ -62,7 +62,11 @@ def assert_metric_values(
     never from the input: a caller cannot name a task it was not called in.
     """
     model = input.to_pydantic()
-    return types.AssertedMetricValues(_value=context.get_controller().assert_metric_values(context.get_active_organization(info), model.metrics, info))
+    return types.AssertedMetricValues(
+        _value=context.get_controller().assert_metric_values(
+            context.get_active_organization(info), model.metrics, info
+        )
+    )
 
 
 def supersede_metric_value(
@@ -82,7 +86,9 @@ def supersede_metric_value(
     controller = context.get_controller()
 
     model = input.to_pydantic()
-    return types.AssertedMetric(_value=controller.update_metric(payload=model, info=info))
+    return types.AssertedMetric(
+        _value=controller.update_metric(payload=model, info=info)
+    )
 
 
 def attest_metric(
@@ -97,7 +103,11 @@ def attest_metric(
     controller = context.get_controller()
 
     model = input.to_pydantic()
-    return types.AssertedMetric(_value=controller.attest_metric(str(model.id), info=info, at=model.at, confidence=model.confidence))
+    return types.AssertedMetric(
+        _value=controller.attest_metric(
+            str(model.id), info=info, at=model.at, confidence=model.confidence
+        )
+    )
 
 
 def retract_metric(
@@ -112,4 +122,8 @@ def retract_metric(
     controller = context.get_controller()
 
     model = input.to_pydantic()
-    return types.AssertedMetric(_value=controller.retract_metric(metric_id=str(model.id), info=info, at=model.at, confidence=model.confidence))
+    return types.AssertedMetric(
+        _value=controller.retract_metric(
+            metric_id=str(model.id), info=info, at=model.at, confidence=model.confidence
+        )
+    )

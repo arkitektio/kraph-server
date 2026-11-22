@@ -36,7 +36,7 @@ Today `GraphController.node_result` does this:
 
 ```python
 try:
-    return self.projected_node(node)   # every graph declaring the term, in pk order
+    return self.projected_node(node)  # every graph declaring the term, in pk order
 except ValueError:
     return retrieved.RetrievedNode.from_row(self, node)
 ```

@@ -19,11 +19,25 @@ class Command(BaseCommand):
     help = "List saved table queries that still store raw Cypher and have no plan."
 
     def handle(self, *args, **options) -> None:
-        legacy = list(models.GraphTableQuery.objects.filter(plan__isnull=True).select_related("graph").order_by("graph_id", "id"))
+        legacy = list(
+            models.GraphTableQuery.objects.filter(plan__isnull=True)
+            .select_related("graph")
+            .order_by("graph_id", "id")
+        )
         if not legacy:
-            self.stdout.write(self.style.SUCCESS("No legacy saved queries: every table query has a plan."))
+            self.stdout.write(
+                self.style.SUCCESS(
+                    "No legacy saved queries: every table query has a plan."
+                )
+            )
             return
-        self.stdout.write(f"{len(legacy)} legacy saved quer{'y' if len(legacy) == 1 else 'ies'} (raw Cypher, no plan):")
+        self.stdout.write(
+            f"{len(legacy)} legacy saved quer{'y' if len(legacy) == 1 else 'ies'} (raw Cypher, no plan):"
+        )
         for row in legacy:
-            self.stdout.write(f"  #{row.pk} {row.key!r} in graph {row.graph.name} (#{row.graph_id}) — {len(row.query or '')} chars of Cypher")
-        self.stdout.write("Rebuild each through the builder; see docs/VOCABULARY.md §3.")
+            self.stdout.write(
+                f"  #{row.pk} {row.key!r} in graph {row.graph.name} (#{row.graph_id}) — {len(row.query or '')} chars of Cypher"
+            )
+        self.stdout.write(
+            "Rebuild each through the builder; see docs/VOCABULARY.md §3."
+        )

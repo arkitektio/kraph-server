@@ -14,6 +14,7 @@ from kante.types import Info
 
 from api import inputs, types
 from core import models
+
 from ._category import create_category, delete_category, update_category
 
 
@@ -44,7 +45,9 @@ def create_entity_category(
     return cast(types.EntityCategory, category)
 
 
-def update_entity_category(info: Info, input: inputs.UpdateEntityCategoryInput) -> types.EntityCategory:
+def update_entity_category(
+    info: Info, input: inputs.UpdateEntityCategoryInput
+) -> types.EntityCategory:
     """Change an entity category's label, colour, image, pin, properties or rule."""
     model = input.to_pydantic()
     item = update_category(

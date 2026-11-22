@@ -1,6 +1,7 @@
-from django.db.models import TextChoices
-import strawberry
 from enum import Enum
+
+import strawberry
+from django.db.models import TextChoices
 
 
 class CategoryKindChoices(TextChoices):
@@ -147,7 +148,9 @@ class ValueKind(str, Enum):
     N_VECTOR = "N_VECTOR"
 
 
-@strawberry.enum(description="The kind of a comment descendant — how one node of the rich-text tree renders")
+@strawberry.enum(
+    description="The kind of a comment descendant — how one node of the rich-text tree renders"
+)
 class DescendantKind(str, Enum):
     """One node of a comment's rich-text tree.
 

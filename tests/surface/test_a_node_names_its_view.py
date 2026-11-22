@@ -9,13 +9,13 @@ vertex label against five fixed words, so every drawn event reported as an
 entity, and membership from what the view had drawn.
 """
 
-import pytest
 import kante
+import pytest
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
+
 from core import models as core_models
 from tests.support import drawing, writes
-
 
 NODE_BY_ID = """
     query GetNode($id: ID!, $graph: ID!) {
@@ -44,10 +44,16 @@ async def test_a_drawn_event_is_typed_as_an_event(
     """`node(id:, graph:)` on a natural event answers `NaturalEvent`, not `Entity`."""
     event_id = await writes.create_event(api_schema, simple_api_context, "Mitosis")
 
-    read = await api_schema.execute(NODE_BY_ID, variable_values={"id": event_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
+    read = await api_schema.execute(
+        NODE_BY_ID,
+        variable_values={"id": event_id, "graph": str(test_graph.id)},
+        context_value=simple_api_context,
+    )
 
     assert read.errors is None, f"GraphQL errors: {read.errors}"
-    assert read.data["node"]["__typename"] == "NaturalEvent", "The kind comes from the claim; the label is the view's rename of a word"
+    assert read.data["node"]["__typename"] == "NaturalEvent", (
+        "The kind comes from the claim; the label is the view's rename of a word"
+    )
     assert read.data["node"]["id"] == event_id
 
 
@@ -68,7 +74,11 @@ async def test_a_claim_the_projection_has_not_drawn_is_still_listed(
     entity_id = await writes.create_entity(api_schema, simple_api_context, "AIS")
     category = await test_graph.aget_entity_def("AIS")
 
-    listed_before = await api_schema.execute(ENTITIES, variable_values={"id": str(category.pk)}, context_value=simple_api_context)
+    listed_before = await api_schema.execute(
+        ENTITIES,
+        variable_values={"id": str(category.pk)},
+        context_value=simple_api_context,
+    )
     assert listed_before.errors is None, f"GraphQL errors: {listed_before.errors}"
     assert entity_id in {entity["id"] for entity in listed_before.data["entities"]}
 
@@ -79,9 +89,15 @@ async def test_a_claim_the_projection_has_not_drawn_is_still_listed(
 
     assert await undraw() == 0, "The vertex is gone, and no claim was withdrawn"
 
-    listed_after = await api_schema.execute(ENTITIES, variable_values={"id": str(category.pk)}, context_value=simple_api_context)
+    listed_after = await api_schema.execute(
+        ENTITIES,
+        variable_values={"id": str(category.pk)},
+        context_value=simple_api_context,
+    )
     assert listed_after.errors is None, f"GraphQL errors: {listed_after.errors}"
-    assert entity_id in {entity["id"] for entity in listed_after.data["entities"]}, "The claim is what the category admits; the vertex is only how this view draws it"
+    assert entity_id in {entity["id"] for entity in listed_after.data["entities"]}, (
+        "The claim is what the category admits; the vertex is only how this view draws it"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -108,12 +124,17 @@ async def test_property_filters_are_refused_rather_than_ignored(
 
     refused = await api_schema.execute(
         ENTITIES,
-        variable_values={"id": str(category.pk), "filters": {"hasProperty": "avg_length"}},
+        variable_values={
+            "id": str(category.pk),
+            "filters": {"hasProperty": "avg_length"},
+        },
         context_value=simple_api_context,
     )
 
     assert refused.errors, "A property filter over a claim list must be refused"
-    assert "hasProperty" in str(refused.errors[0]), f"Refused for the wrong reason: {refused.errors[0]}"
+    assert "hasProperty" in str(refused.errors[0]), (
+        f"Refused for the wrong reason: {refused.errors[0]}"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -132,12 +153,18 @@ async def test_nodes_in_a_graph_are_not_only_entities(
     entity_id = await writes.create_entity(api_schema, simple_api_context, "Cell")
     event_id = await writes.create_event(api_schema, simple_api_context, "Mitosis")
 
-    listed = await api_schema.execute(NODES_IN_GRAPH, variable_values={"graph": str(test_graph.pk)}, context_value=simple_api_context)
+    listed = await api_schema.execute(
+        NODES_IN_GRAPH,
+        variable_values={"graph": str(test_graph.pk)},
+        context_value=simple_api_context,
+    )
 
     assert listed.errors is None, f"GraphQL errors: {listed.errors}"
     by_id = {node["id"]: node["__typename"] for node in listed.data["nodes"]}
     assert by_id.get(entity_id) == "Entity"
-    assert by_id.get(event_id) == "NaturalEvent", "An event in the view is one of the view's nodes"
+    assert by_id.get(event_id) == "NaturalEvent", (
+        "An event in the view is one of the view's nodes"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -158,25 +185,39 @@ async def test_listing_another_tenants_category_is_refused(
 
     @sync_to_async
     def foreign_category() -> int:
-        other, _ = Organization.objects.get_or_create(identifier="static_issuer#a-tenant-next-door")
+        other, _ = Organization.objects.get_or_create(
+            identifier="static_issuer#a-tenant-next-door"
+        )
         membership = Membership.objects.filter(organization=other).first()
         if membership is None:
-            membership = Membership.objects.create(user=test_graph.membership.user, organization=other)
+            membership = Membership.objects.create(
+                user=test_graph.membership.user, organization=other
+            )
         graph = core_models.Graph.objects.create(
             name="NextDoor",
             membership=membership,
             organization=other,
             user=test_graph.user,
         )
-        category = core_models.EntityCategory.objects.create(graph=graph, key="AIS", label="AIS", age_name="AIS")
+        category = core_models.EntityCategory.objects.create(
+            graph=graph, key="AIS", label="AIS", age_name="AIS"
+        )
         return category.pk
 
     category_id = await foreign_category()
 
-    refused = await api_schema.execute(ENTITIES, variable_values={"id": str(category_id)}, context_value=simple_api_context)
+    refused = await api_schema.execute(
+        ENTITIES,
+        variable_values={"id": str(category_id)},
+        context_value=simple_api_context,
+    )
 
-    assert refused.errors, "Listing a category belonging to another organization must be refused"
-    assert "not allowed" in str(refused.errors[0]).lower(), f"Refused for the wrong reason: {refused.errors[0]}"
+    assert refused.errors, (
+        "Listing a category belonging to another organization must be refused"
+    )
+    assert "not allowed" in str(refused.errors[0]).lower(), (
+        f"Refused for the wrong reason: {refused.errors[0]}"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -240,7 +281,9 @@ async def test_search_finds_a_claim_the_projection_has_not_drawn(
     )
 
     assert listed.errors is None, f"GraphQL errors: {listed.errors}"
-    assert cell_id in {node["id"] for node in listed.data["nodes"]}, "The word is the claim's, not the drawing's"
+    assert cell_id in {node["id"] for node in listed.data["nodes"]}, (
+        "The word is the claim's, not the drawing's"
+    )
 
 
 NODE = """
@@ -289,18 +332,36 @@ async def test_a_view_that_does_not_admit_the_node_refuses_it(
 
     other_view = await person_graph()
 
-    held = await api_schema.execute(NODE, variable_values={"id": entity_id, "graph": str(test_graph.id)}, context_value=simple_api_context)
+    held = await api_schema.execute(
+        NODE,
+        variable_values={"id": entity_id, "graph": str(test_graph.id)},
+        context_value=simple_api_context,
+    )
     assert held.errors is None, f"GraphQL errors: {held.errors}"
     assert held.data["node"]["__typename"] == "Entity"
-    assert held.data["node"]["drawnIn"], "The write drew it, so this view answers with the drawing"
+    assert held.data["node"]["drawnIn"], (
+        "The write drew it, so this view answers with the drawing"
+    )
 
-    refused = await api_schema.execute(NODE, variable_values={"id": entity_id, "graph": str(other_view.id)}, context_value=simple_api_context)
-    assert refused.errors, "A view declaring no category for the word must refuse the node, not borrow another view's drawing"
-    assert "does not hold" in str(refused.errors[0]), f"Refused for the wrong reason: {refused.errors[0]}"
+    refused = await api_schema.execute(
+        NODE,
+        variable_values={"id": entity_id, "graph": str(other_view.id)},
+        context_value=simple_api_context,
+    )
+    assert refused.errors, (
+        "A view declaring no category for the word must refuse the node, not borrow another view's drawing"
+    )
+    assert "does not hold" in str(refused.errors[0]), (
+        f"Refused for the wrong reason: {refused.errors[0]}"
+    )
 
-    claim = await api_schema.execute(INSTANCE, variable_values={"id": entity_id}, context_value=simple_api_context)
+    claim = await api_schema.execute(
+        INSTANCE, variable_values={"id": entity_id}, context_value=simple_api_context
+    )
     assert claim.errors is None, f"GraphQL errors: {claim.errors}"
-    assert claim.data["instance"]["term"]["key"] == "AIS", "The claim is view-independent and stays readable"
+    assert claim.data["instance"]["term"]["key"] == "AIS", (
+        "The claim is view-independent and stays readable"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -323,7 +384,9 @@ async def test_the_typed_fetchers_guard_the_kind(
         context_value=simple_api_context,
     )
     assert read.errors, "An event read through the entity fetcher must be refused"
-    assert "not an entity" in str(read.errors[0]), f"Refused for the wrong reason: {read.errors[0]}"
+    assert "not an entity" in str(read.errors[0]), (
+        f"Refused for the wrong reason: {read.errors[0]}"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -341,6 +404,7 @@ async def test_stats_answer_and_stay_inside_the_organization(
     seven core models. They take a required `scope` now.
     """
     from authentikate.models import Membership, Organization
+
     from evidence import models as evidence_models
 
     # A structure kind in our organization, minted the way ingest mints one.
@@ -348,12 +412,18 @@ async def test_stats_answer_and_stay_inside_the_organization(
 
     @sync_to_async
     def foreign_rows() -> None:
-        other, _ = Organization.objects.get_or_create(identifier="static_issuer#a-tenant-next-door")
+        other, _ = Organization.objects.get_or_create(
+            identifier="static_issuer#a-tenant-next-door"
+        )
         membership = Membership.objects.filter(organization=other).first()
         if membership is None:
-            membership = Membership.objects.create(user=test_graph.membership.user, organization=other)
+            membership = Membership.objects.create(
+                user=test_graph.membership.user, organization=other
+            )
         # `all_objects` because crossing tenants is the point of the fixture.
-        evidence_models.StructureKind.all_objects.get_or_create(organization=other, identifier="ForeignROI")
+        evidence_models.StructureKind.all_objects.get_or_create(
+            organization=other, identifier="ForeignROI"
+        )
         core_models.Graph.objects.get_or_create(
             name="NextDoorGraph",
             defaults=dict(
@@ -380,8 +450,12 @@ async def test_stats_answer_and_stay_inside_the_organization(
         context_value=simple_api_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
-    assert result.data["structureKindStats"]["count"] == own_kinds, "The evidence-kind stats answer, scoped to the caller's organization"
-    assert result.data["graphStats"]["count"] == own_graphs, "The graph next door is not in this tenant's count"
+    assert result.data["structureKindStats"]["count"] == own_kinds, (
+        "The evidence-kind stats answer, scoped to the caller's organization"
+    )
+    assert result.data["graphStats"]["count"] == own_graphs, (
+        "The graph next door is not in this tenant's count"
+    )
 
 
 ENTITIES_BY_CATEGORY = """
@@ -393,7 +467,9 @@ ENTITIES_BY_CATEGORY = """
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_plural_lists_dispatch_on_the_claims_kind(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
+async def test_plural_lists_dispatch_on_the_claims_kind(
+    api_schema, simple_api_context, test_graph: core_models.Graph
+) -> None:
     """Even if a rule admitted a node of another kind, the list would type it by its claim."""
     entity_id = await writes.create_entity(api_schema, simple_api_context, "AIS")
 
@@ -401,6 +477,12 @@ async def test_plural_lists_dispatch_on_the_claims_kind(api_schema, simple_api_c
     def ais_category():
         return core_models.EntityCategory.objects.get(graph=test_graph, key="AIS").pk
 
-    listed = await api_schema.execute(ENTITIES_BY_CATEGORY, variable_values={"category": str(await ais_category())}, context_value=simple_api_context)
+    listed = await api_schema.execute(
+        ENTITIES_BY_CATEGORY,
+        variable_values={"category": str(await ais_category())},
+        context_value=simple_api_context,
+    )
     assert listed.errors is None, f"GraphQL errors: {listed.errors}"
-    assert {node["id"]: node["__typename"] for node in listed.data["entities"]}[entity_id] == "Entity"
+    assert {node["id"]: node["__typename"] for node in listed.data["entities"]}[
+        entity_id
+    ] == "Entity"

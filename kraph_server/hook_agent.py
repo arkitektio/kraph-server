@@ -22,7 +22,10 @@ from evidence import ingest
 from graph_engine.controller import GraphController
 from graph_engine.projection.context import current_or_default
 
-agent = HookAgent("kraph", description="kraph: records what other services observed as claims.")
+agent = HookAgent(
+    "kraph", description="kraph: records what other services observed as claims."
+)
+
 
 class FeedHalted(RuntimeError):
     """The organization's feed stopped for good (a restore, a poison entry): a run fails until it is resumed."""
@@ -39,11 +42,27 @@ def mikro_reader() -> FeedReader | None:
     feed = getattr(settings, "MIKRO_FEED", None)
     if not feed:
         return None
-    return FeedReader(url=feed["URL"], producer=feed["IDENTIFIER"], feed=ingest.FEED, issuer=agent.signing_identifier())
+    return FeedReader(
+        url=feed["URL"],
+        producer=feed["IDENTIFIER"],
+        feed=ingest.FEED,
+        issuer=agent.signing_identifier(),
+    )
 
 
-@agent.action(args=[StructurePort("metric", ingest.FEED, description="The metric a trigger fired for. A nudge: everything new is read either way.", nullable=True)])
-def ingest_metrics(organization: str, metric: StructureRef | None = None) -> dict[str, str | int | None]:
+@agent.action(
+    args=[
+        StructurePort(
+            "metric",
+            ingest.FEED,
+            description="The metric a trigger fired for. A nudge: everything new is read either way.",
+            nullable=True,
+        )
+    ]
+)
+def ingest_metrics(
+    organization: str, metric: StructureRef | None = None
+) -> dict[str, str | int | None]:
     """Ingest metrics
 
     Reads mikro's change feed of metrics after this organization's cursor and records every new
@@ -57,8 +76,16 @@ def ingest_metrics(organization: str, metric: StructureRef | None = None) -> dic
     # authenticates in it -- which a schedule may well run before.
     org, _ = Organization.objects.get_or_create(identifier=organization)
     controller = GraphController(projector=current_or_default())
-    outcome = apply_pages(reader, organization, lambda entries: controller.ingest_metric_page(org, entries), budget_s=BUDGET_SECONDS, limit=PAGE)
+    outcome = apply_pages(
+        reader,
+        organization,
+        lambda entries: controller.ingest_metric_page(org, entries),
+        budget_s=BUDGET_SECONDS,
+        limit=PAGE,
+    )
     if outcome.ended == Ended.HALTED:
         # A failed run, where the organization's automation shows it -- not a green one.
-        raise FeedHalted(f"Reading mikro's metrics for {organization} is halted until someone resumes it: {outcome.halted}")
+        raise FeedHalted(
+            f"Reading mikro's metrics for {organization} is halted until someone resumes it: {outcome.halted}"
+        )
     return outcome.report()

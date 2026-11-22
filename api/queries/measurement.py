@@ -1,15 +1,13 @@
 """Measurement query resolvers."""
 
-from typing import List
-
 import strawberry
 from kante.types import Info
 
-from api import context, types, filters, order, pagination
+from api import context, filters, order, pagination, types
 from api.queries import _edges
+from core import models
 from evidence import models as evidence_models
 from graph_engine import input_models
-from core import models
 
 
 def measurement(info: Info, id: strawberry.ID) -> types.Measurement:
@@ -30,7 +28,9 @@ def measurement(info: Info, id: strawberry.ID) -> types.Measurement:
     """
     controller = context.get_controller()
 
-    edge = controller.get_relation_by_id(str(id), info=info, kind=evidence_models.Link.Kind.MEASUREMENT)
+    edge = controller.get_relation_by_id(
+        str(id), info=info, kind=evidence_models.Link.Kind.MEASUREMENT
+    )
     if edge is None:
         raise ValueError(f"Measurement with ID {id} not found")
 
@@ -43,7 +43,7 @@ def measurements(
     filters: filters.MeasurementFilter | None = None,
     ordering: list[order.MeasurementOrder] | None = None,
     pagination: pagination.MeasurementPaginationInput | None = None,
-) -> List[types.Measurement]:
+) -> list[types.Measurement]:
     """Every standing measurement claim stated in this category's word.
 
     Read from `evidence.Link`, not from Apache AGE. This returned nothing at all
@@ -60,18 +60,29 @@ def measurements(
     """
     controller = context.get_controller()
 
-    category = models.MeasurementCategory.objects.filter(id=measurement_category_id).first()
+    category = models.MeasurementCategory.objects.filter(
+        id=measurement_category_id
+    ).first()
     if category is None:
         raise ValueError(f"Measurement category {measurement_category_id} not found")
 
     organization = category.graph.organization
     context.assert_can_access_organization(info, organization)
 
-    filter_model = filters.to_pydantic() if filters else input_models.MeasurementFilters()
+    filter_model = (
+        filters.to_pydantic() if filters else input_models.MeasurementFilters()
+    )
     ordering_models = [entry.to_pydantic() for entry in ordering] if ordering else []
-    pagination_model = pagination.to_pydantic() if pagination else input_models.MeasurementPagination()
+    pagination_model = (
+        pagination.to_pydantic() if pagination else input_models.MeasurementPagination()
+    )
 
-    links = _edges.links_for_category(organization, category, evidence_models.Link.Kind.MEASUREMENT)
+    links = _edges.links_for_category(
+        organization, category, evidence_models.Link.Kind.MEASUREMENT
+    )
     rows = _edges.narrow(links, filter_model, ordering_models, pagination_model)
 
-    return [types.Measurement(_value=controller.retrieved_edge(link, category=category)) for link in rows]
+    return [
+        types.Measurement(_value=controller.retrieved_edge(link, category=category))
+        for link in rows
+    ]

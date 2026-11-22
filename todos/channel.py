@@ -10,7 +10,8 @@ The broadcast is `transaction.on_commit`: a write that rolls back announces noth
 
 from __future__ import annotations
 
-from typing import Iterable, Literal, Optional
+from collections.abc import Iterable
+from typing import Literal
 
 from authentikate.models import Organization
 from kante.channel import build_channel
@@ -22,7 +23,7 @@ class TodoChanged(BaseModel):
 
     kind: Literal["CHANGED", "DELETED"]
     list: str
-    item: Optional[str] = None
+    item: str | None = None
     organization: int
     objects: list[tuple[str, str]] = []
     """`(identifier, object)` pairs the change took away: an object detached, or every object of a
@@ -56,6 +57,8 @@ def announce(
         list=str(todo_list),
         item=None if item is None else str(item),
         organization=organization_id,
-        objects=sorted({(str(identifier), str(object_id)) for identifier, object_id in objects}),
+        objects=sorted(
+            {(str(identifier), str(object_id)) for identifier, object_id in objects}
+        ),
     )
     todo_channel.broadcast_on_commit(message, groups=[room(organization_id)])

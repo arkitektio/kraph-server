@@ -9,12 +9,13 @@ instances from the schema definition.
 import hashlib
 import json
 import logging
-from typing import Optional
+
+from authentikate.models import Membership, Organization, User
+
+from core import models
 
 from .input_models import DerivationType, EventKind, GraphDefinitionInput
 from .projection import Projector
-from core import models
-from authentikate.models import Organization, Membership, User
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,9 @@ def compute_definition_hash(definition: "GraphDefinitionInput | dict") -> str:
     if hasattr(definition, "model_dump_json"):
         json_str = definition.model_dump_json(exclude_none=True)
     else:
-        json_str = json.dumps(_strip_none(definition), sort_keys=True, separators=(",", ":"))
+        json_str = json.dumps(
+            _strip_none(definition), sort_keys=True, separators=(",", ":")
+        )
     return hashlib.sha256(json_str.encode()).hexdigest()[:16]
 
 
@@ -78,7 +81,10 @@ def edge_property_problems(owner: str, property_definitions: list | None) -> lis
     if not property_definitions:
         return []
 
-    return [f"{owner}.{prop.key}: an edge carries no derived properties. `project_edges` writes only `category_id` and `__assertion_count`, so a rule declared here would never run. Roll the value up onto one of the endpoints instead." for prop in property_definitions]
+    return [
+        f"{owner}.{prop.key}: an edge carries no derived properties. `project_edges` writes only `category_id` and `__assertion_count`, so a rule declared here would never run. Roll the value up onto one of the endpoints instead."
+        for prop in property_definitions
+    ]
 
 
 def validate_derivation_rules(definition: GraphDefinitionInput) -> None:
@@ -113,8 +119,12 @@ def validate_derivation_rules(definition: GraphDefinitionInput) -> None:
             # `indexed_property_keys` still admitted it to the filterable set and
             # let a Cypher predicate against it match silently. `id` is exempt:
             # it is the node's identity, written by `create_entity` itself.
-            if prop.key != "id" and (prop.rule is None or not getattr(prop.rule, "source_node", None)):
-                problems.append(f"{owner}.{prop.key}: a property needs a `rule` naming a `source_node` to be computable. Nothing writes a property directly — record a metric against a structure that informs this node and give the property a rule that rolls it up.")
+            if prop.key != "id" and (
+                prop.rule is None or not getattr(prop.rule, "source_node", None)
+            ):
+                problems.append(
+                    f"{owner}.{prop.key}: a property needs a `rule` naming a `source_node` to be computable. Nothing writes a property directly — record a metric against a structure that informs this node and give the property a rule that rolls it up."
+                )
                 continue
             if prop.derivation != DerivationType.ROLLUP or prop.rule is None:
                 continue
@@ -164,7 +174,10 @@ def validate_derivation_rules(definition: GraphDefinitionInput) -> None:
         check_edge(measurement.key, measurement.properties)
 
     if problems:
-        raise ValueError("Schema has derivation rules that cannot be computed:\n  - " + "\n  - ".join(problems))
+        raise ValueError(
+            "Schema has derivation rules that cannot be computed:\n  - "
+            + "\n  - ".join(problems)
+        )
 
 
 def materialize(
@@ -173,10 +186,10 @@ def materialize(
     user: User | None = None,
     organization: Organization | None = None,
     membership: Membership | None = None,
-    name: Optional[str] = None,
-    description: Optional[str] = None,
+    name: str | None = None,
+    description: str | None = None,
     backfill: bool = False,
-    sameness_rule: Optional[dict] = None,
+    sameness_rule: dict | None = None,
 ) -> models.Graph:
     """
     Materialize a graph based on the provided graph definition.
@@ -210,7 +223,6 @@ def materialize(
     # cannot be computed.
     validate_derivation_rules(definition)
 
-
     # Compute schema hash for versioning
     schema_hash = compute_definition_hash(definition)
 
@@ -218,11 +230,33 @@ def materialize(
     if name is None:
         name = f"graph_{schema_hash}"
 
-    return _materialize_atomically(definition, projector, user, organization, membership, name, description, backfill, schema_hash, sameness_rule or {})
+    return _materialize_atomically(
+        definition,
+        projector,
+        user,
+        organization,
+        membership,
+        name,
+        description,
+        backfill,
+        schema_hash,
+        sameness_rule or {},
+    )
 
 
 @__import__("django").db.transaction.atomic
-def _materialize_atomically(definition, projector, user, organization, membership, name, description, backfill, schema_hash, sameness_rule):
+def _materialize_atomically(
+    definition,
+    projector,
+    user,
+    organization,
+    membership,
+    name,
+    description,
+    backfill,
+    schema_hash,
+    sameness_rule,
+):
     """One transaction for the whole bring-up.
 
     A `NamespaceSpecError` from `refresh_namespace` used to leave a committed
@@ -235,7 +269,8 @@ def _materialize_atomically(definition, projector, user, organization, membershi
     # name nor accepted from anyone.
     graph = models.Graph.objects.create(
         name=name,
-        description=description or f"Graph materialized from schema v{definition.system_version}",
+        description=description
+        or f"Graph materialized from schema v{definition.system_version}",
         user=user,
         organization=organization,
         membership=membership,
@@ -277,7 +312,11 @@ def _materialize_atomically(definition, projector, user, organization, membershi
 
     admits_history = selector_module.instances_for(graph).exists()
     if backfill or not admits_history:
-        watermark.mark_consistent(graph, through_seq=watermark.max_seq(organization), schema_hash=watermark.active_schema_hash(graph))
+        watermark.mark_consistent(
+            graph,
+            through_seq=watermark.max_seq(organization),
+            schema_hash=watermark.active_schema_hash(graph),
+        )
     else:
         watermark.projection_for(graph)  # created in its default state: NEEDS_BACKFILL
 
@@ -287,13 +326,14 @@ def _materialize_atomically(definition, projector, user, organization, membershi
         # `refold_state(organization)`, which re-folds every metric in the
         # organization — not something one new view is entitled to do to statistics
         # its siblings are reading.
+        from graph_engine import locks
         from graph_engine import projector as projector_module
         from graph_engine.controller import GraphController
 
-        from graph_engine import locks
-
         with locks.organization_projection_lock(organization, wait=True):
-            counts = projector_module.project_all(GraphController(projector=projector), graph)
+            counts = projector_module.project_all(
+                GraphController(projector=projector), graph
+            )
         # `unclassified` too: a backfill that drew nothing and one whose every
         # candidate was refused by a definition are indistinguishable from the
         # `Graph` row this returns, and the second is the one worth knowing about.
@@ -366,7 +406,9 @@ def _materialize_categories(graph, definition: GraphDefinitionInput, user) -> No
     # kind, which `snapshot_definition` then could not see.
     for event_def in definition.extensions.events:
         extrinsic = event_def.kind == EventKind.EXTRINSIC
-        event_model = models.ProtocolEventCategory if extrinsic else models.NaturalEventCategory
+        event_model = (
+            models.ProtocolEventCategory if extrinsic else models.NaturalEventCategory
+        )
         event_model.objects.create_from_event_definition(
             graph=graph,
             definition=event_def,

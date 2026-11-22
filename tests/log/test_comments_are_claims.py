@@ -6,8 +6,8 @@ itself can never be edited; a reply is a claim about a claim.
 History: lok's komment model kept all of this as mutable state.
 """
 
-import pytest
 import kante
+import pytest
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 
@@ -74,10 +74,19 @@ def _body(text: str, mention: str | None = None) -> list[dict]:
     return [{"kind": "PARAGRAPH", "size": "normal", "children": children}]
 
 
-async def _comment(api_schema: kante.Schema, ctx: HttpContext, object_id: str, text: str, **extra) -> dict:
+async def _comment(
+    api_schema: kante.Schema, ctx: HttpContext, object_id: str, text: str, **extra
+) -> dict:
     result = await api_schema.execute(
         COMMENT,
-        variable_values={"input": {"identifier": "@mikro/roi", "object": object_id, "descendants": _body(text, extra.pop("mention", None)), **extra}},
+        variable_values={
+            "input": {
+                "identifier": "@mikro/roi",
+                "object": object_id,
+                "descendants": _body(text, extra.pop("mention", None)),
+                **extra,
+            }
+        },
         context_value=ctx,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
@@ -96,12 +105,18 @@ async def test_a_comment_mints_its_structure_and_folds_its_body(
     append-only, so there is no after-the-fact to derive them in, which is where
     lok did it.
     """
-    payload = await _comment(api_schema, simple_api_context, "roi_c1", "looks off", mention="reviewer-7")
+    payload = await _comment(
+        api_schema, simple_api_context, "roi_c1", "looks off", mention="reviewer-7"
+    )
     comment = payload["comment"]
 
-    assert comment["structure"]["identifier"] == "@mikro/roi", "Commenting on an unseen datum minted its structure"
+    assert comment["structure"]["identifier"] == "@mikro/roi", (
+        "Commenting on an unseen datum minted its structure"
+    )
     assert comment["structure"]["object"] == "roi_c1"
-    assert comment["text"] == "looks off@reviewer-7", "The plain text is the folded leaves"
+    assert comment["text"] == "looks off@reviewer-7", (
+        "The plain text is the folded leaves"
+    )
     assert comment["mentions"] == ["reviewer-7"], "Mentions are extracted from the tree"
     assert comment["resolved"] is False, "Nobody has taken a position, so it stands"
     assert comment["parent"] is None
@@ -111,9 +126,15 @@ async def test_a_comment_mints_its_structure_and_folds_its_body(
     assert tree[0]["children"][0] == {"kind": "LEAF", "text": "looks off", "bold": True}
     assert tree[0]["children"][1] == {"kind": "MENTION", "subject": "reviewer-7"}
 
-    listed = await api_schema.execute(READ_FOR, variable_values={"identifier": "@mikro/roi", "object": "roi_c1"}, context_value=simple_api_context)
+    listed = await api_schema.execute(
+        READ_FOR,
+        variable_values={"identifier": "@mikro/roi", "object": "roi_c1"},
+        context_value=simple_api_context,
+    )
     assert listed.errors is None, f"GraphQL errors: {listed.errors}"
-    assert [row["id"] for row in listed.data["commentsFor"]] == [comment["id"]], "The thread reads back by the datum's address"
+    assert [row["id"] for row in listed.data["commentsFor"]] == [comment["id"]], (
+        "The thread reads back by the datum's address"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -127,23 +148,46 @@ async def test_a_reply_stays_on_its_parents_thread(
     A reply naming a parent from a different datum's thread is refused: it would
     fork one conversation across two data.
     """
-    first = await _comment(api_schema, simple_api_context, "roi_thread", "is this segmented right?")
-    reply = await _comment(api_schema, simple_api_context, "roi_thread", "yes, checked it", parent=first["comment"]["id"])
+    first = await _comment(
+        api_schema, simple_api_context, "roi_thread", "is this segmented right?"
+    )
+    reply = await _comment(
+        api_schema,
+        simple_api_context,
+        "roi_thread",
+        "yes, checked it",
+        parent=first["comment"]["id"],
+    )
 
     assert reply["comment"]["parent"]["id"] == first["comment"]["id"]
 
-    listed = await api_schema.execute(READ_FOR, variable_values={"identifier": "@mikro/roi", "object": "roi_thread"}, context_value=simple_api_context)
+    listed = await api_schema.execute(
+        READ_FOR,
+        variable_values={"identifier": "@mikro/roi", "object": "roi_thread"},
+        context_value=simple_api_context,
+    )
     assert listed.errors is None
     by_id = {row["id"]: row for row in listed.data["commentsFor"]}
-    assert [child["text"] for child in by_id[first["comment"]["id"]]["replies"]] == ["yes, checked it"]
+    assert [child["text"] for child in by_id[first["comment"]["id"]]["replies"]] == [
+        "yes, checked it"
+    ]
 
     other = await api_schema.execute(
         COMMENT,
-        variable_values={"input": {"identifier": "@mikro/roi", "object": "roi_elsewhere", "descendants": _body("crossing threads"), "parent": first["comment"]["id"]}},
+        variable_values={
+            "input": {
+                "identifier": "@mikro/roi",
+                "object": "roi_elsewhere",
+                "descendants": _body("crossing threads"),
+                "parent": first["comment"]["id"],
+            }
+        },
         context_value=simple_api_context,
     )
     assert other.errors, "A reply must stay on its parent's thread"
-    assert "thread" in str(other.errors[0]), f"Refused for the wrong reason: {other.errors[0]}"
+    assert "thread" in str(other.errors[0]), (
+        f"Refused for the wrong reason: {other.errors[0]}"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -161,18 +205,30 @@ async def test_resolving_is_a_standing_and_reopening_is_more_evidence(
     created = await _comment(api_schema, simple_api_context, "roi_resolve", "artifact?")
     comment_id = created["comment"]["id"]
 
-    resolved = await api_schema.execute(RETRACT, variable_values={"input": {"id": comment_id}}, context_value=simple_api_context)
+    resolved = await api_schema.execute(
+        RETRACT,
+        variable_values={"input": {"id": comment_id}},
+        context_value=simple_api_context,
+    )
     assert resolved.errors is None, f"GraphQL errors: {resolved.errors}"
     after = resolved.data["retractComment"]["comment"]
     assert after["resolved"] is True
     assert [row["stands"] for row in after["standings"]] == [False]
-    assert after["standings"][0]["assertion"]["subject"], "Who resolved it is the standing's own assertion — lok's resolved_by, as provenance"
+    assert after["standings"][0]["assertion"]["subject"], (
+        "Who resolved it is the standing's own assertion — lok's resolved_by, as provenance"
+    )
 
-    reopened = await api_schema.execute(ATTEST, variable_values={"input": {"id": comment_id}}, context_value=simple_api_context)
+    reopened = await api_schema.execute(
+        ATTEST,
+        variable_values={"input": {"id": comment_id}},
+        context_value=simple_api_context,
+    )
     assert reopened.errors is None, f"GraphQL errors: {reopened.errors}"
     again = reopened.data["attestComment"]["comment"]
     assert again["resolved"] is False
-    assert [row["stands"] for row in again["standings"]] == [True, False], "Newest first, and the resolution stays on the record"
+    assert [row["stands"] for row in again["standings"]] == [True, False], (
+        "Newest first, and the resolution stays on the record"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -186,7 +242,9 @@ async def test_the_comment_log_is_append_only(
     The same trigger that guards the other six log tables — lok edits rows in
     place, and the whole point of carrying comments here is that nothing does.
     """
-    created = await _comment(api_schema, simple_api_context, "roi_immutable", "original wording")
+    created = await _comment(
+        api_schema, simple_api_context, "roi_immutable", "original wording"
+    )
     comment_id = created["comment"]["id"]
 
     @sync_to_async
@@ -195,13 +253,18 @@ async def test_the_comment_log_is_append_only(
 
         try:
             with connection.cursor() as cursor:
-                cursor.execute("UPDATE evidence_comment SET text = 'revised wording' WHERE id = %s", [comment_id])
+                cursor.execute(
+                    "UPDATE evidence_comment SET text = 'revised wording' WHERE id = %s",
+                    [comment_id],
+                )
             return ""
         except Exception as error:  # noqa: BLE001 — the message is the assertion
             return str(error)
 
     refusal = await try_to_edit()
-    assert "append-only" in refusal, f"An UPDATE on a comment must be refused by the trigger, got: {refusal!r}"
+    assert "append-only" in refusal, (
+        f"An UPDATE on a comment must be refused by the trigger, got: {refusal!r}"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -215,9 +278,13 @@ async def test_my_mentions_finds_the_caller_by_subject(
     await _comment(api_schema, simple_api_context, "roi_mention", "ping", mention=me)
     await _comment(api_schema, simple_api_context, "roi_mention", "no ping here")
 
-    result = await api_schema.execute("query { myMentions { text mentions } }", context_value=simple_api_context)
+    result = await api_schema.execute(
+        "query { myMentions { text mentions } }", context_value=simple_api_context
+    )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
-    assert [row["mentions"] for row in result.data["myMentions"]] == [[me]], "Only the remark that mentions the caller"
+    assert [row["mentions"] for row in result.data["myMentions"]] == [[me]], (
+        "Only the remark that mentions the caller"
+    )
 
 
 MENTIONS = """
@@ -237,28 +304,46 @@ async def test_resolving_a_mention_clears_it_from_the_inbox_and_the_badge(
 ) -> None:
     """`resolved: false` is the inbox and its count is the badge; a resolved remark leaves both, and stays in the history."""
     me = str(simple_api_context.request.user.id)
-    first = await _comment(api_schema, simple_api_context, "roi_inbox", "first", mention=me)
-    second = await _comment(api_schema, simple_api_context, "roi_inbox", "second", mention=me)
-    third = await _comment(api_schema, simple_api_context, "roi_inbox", "third", mention=me)
-    first_id, second_id, third_id = (row["comment"]["id"] for row in (first, second, third))
+    first = await _comment(
+        api_schema, simple_api_context, "roi_inbox", "first", mention=me
+    )
+    second = await _comment(
+        api_schema, simple_api_context, "roi_inbox", "second", mention=me
+    )
+    third = await _comment(
+        api_schema, simple_api_context, "roi_inbox", "third", mention=me
+    )
+    first_id, second_id, third_id = (
+        row["comment"]["id"] for row in (first, second, third)
+    )
 
-    resolved = await api_schema.execute(RETRACT, variable_values={"input": {"id": first_id}}, context_value=simple_api_context)
+    resolved = await api_schema.execute(
+        RETRACT,
+        variable_values={"input": {"id": first_id}},
+        context_value=simple_api_context,
+    )
     assert resolved.errors is None, f"GraphQL errors: {resolved.errors}"
 
     async def read(variables: dict) -> dict:
-        result = await api_schema.execute(MENTIONS, variable_values=variables, context_value=simple_api_context)
+        result = await api_schema.execute(
+            MENTIONS, variable_values=variables, context_value=simple_api_context
+        )
         assert result.errors is None, f"GraphQL errors: {result.errors}"
         return result.data
 
     inbox = await read({"resolved": False})
     assert [row["id"] for row in inbox["myMentions"]] == [third_id, second_id]
-    assert (inbox["open"], inbox["all"]) == (2, 3), "The badge counts open remarks past any page"
+    assert (inbox["open"], inbox["all"]) == (2, 3), (
+        "The badge counts open remarks past any page"
+    )
 
     done = await read({"resolved": True})
     assert [row["id"] for row in done["myMentions"]] == [first_id]
 
     page = await read({"pagination": {"limit": 1, "offset": 1}})
-    assert [row["id"] for row in page["myMentions"]] == [second_id], "Pages walk the whole history, newest first"
+    assert [row["id"] for row in page["myMentions"]] == [second_id], (
+        "Pages walk the whole history, newest first"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -270,7 +355,13 @@ async def test_an_unknown_descendant_kind_is_refused_at_the_door(
     """A stored tree is forever, so the shape is enforced where it can still be fixed."""
     result = await api_schema.execute(
         COMMENT,
-        variable_values={"input": {"identifier": "@mikro/roi", "object": "roi_bad", "descendants": [{"kind": "TABLE"}]}},
+        variable_values={
+            "input": {
+                "identifier": "@mikro/roi",
+                "object": "roi_bad",
+                "descendants": [{"kind": "TABLE"}],
+            }
+        },
         context_value=simple_api_context,
     )
     assert result.errors, "An unknown kind must be refused, not stored"
@@ -288,9 +379,15 @@ async def test_the_resolution_cache_replays_from_the_log(
     The honesty test every projection gets: destroy the cache, replay it from
     the log, and the fold must not change.
     """
-    created = await _comment(api_schema, simple_api_context, "roi_refold", "to be resolved")
+    created = await _comment(
+        api_schema, simple_api_context, "roi_refold", "to be resolved"
+    )
     comment_id = created["comment"]["id"]
-    await api_schema.execute(RETRACT, variable_values={"input": {"id": comment_id}}, context_value=simple_api_context)
+    await api_schema.execute(
+        RETRACT,
+        variable_values={"input": {"id": comment_id}},
+        context_value=simple_api_context,
+    )
 
     @sync_to_async
     def destroy_and_refold() -> bool:
@@ -298,11 +395,15 @@ async def test_the_resolution_cache_replays_from_the_log(
         from evidence import models as evidence_models
 
         organization = test_graph.organization
-        evidence_models.CurrentStanding.objects.for_organization(organization).filter(target_type="comment").delete()
+        evidence_models.CurrentStanding.objects.for_organization(organization).filter(
+            target_type="comment"
+        ).delete()
         claims_module.refold_current(organization)
         return claims_module.current(organization, "comment", comment_id)
 
-    assert await destroy_and_refold() is False, "The replayed fold must still say the remark is resolved"
+    assert await destroy_and_refold() is False, (
+        "The replayed fold must still say the remark is resolved"
+    )
 
 
 READ_PAGE = """
@@ -323,7 +424,16 @@ async def test_a_discussion_reads_in_pages_newest_first(
         await _comment(api_schema, simple_api_context, "roi_paged", text)
 
     async def page(offset: int) -> list[str]:
-        result = await api_schema.execute(READ_PAGE, variable_values={"identifier": "@mikro/roi", "object": "roi_paged", "limit": 2, "offset": offset}, context_value=simple_api_context)
+        result = await api_schema.execute(
+            READ_PAGE,
+            variable_values={
+                "identifier": "@mikro/roi",
+                "object": "roi_paged",
+                "limit": 2,
+                "offset": offset,
+            },
+            context_value=simple_api_context,
+        )
         assert result.errors is None, f"GraphQL errors: {result.errors}"
         return [row["text"] for row in result.data["commentsFor"]]
 

@@ -48,7 +48,14 @@ def retract_comment(
     """
     controller = context.get_controller()
     model = input.to_pydantic()
-    return types.AssertedComment(_value=controller.retract_comment(comment_id=str(model.id), info=info, at=model.at, confidence=model.confidence))
+    return types.AssertedComment(
+        _value=controller.retract_comment(
+            comment_id=str(model.id),
+            info=info,
+            at=model.at,
+            confidence=model.confidence,
+        )
+    )
 
 
 def attest_comment(
@@ -62,4 +69,11 @@ def attest_comment(
     """
     controller = context.get_controller()
     model = input.to_pydantic()
-    return types.AssertedComment(_value=controller.attest_comment(comment_id=str(model.id), info=info, at=model.at, confidence=model.confidence))
+    return types.AssertedComment(
+        _value=controller.attest_comment(
+            comment_id=str(model.id),
+            info=info,
+            at=model.at,
+            confidence=model.confidence,
+        )
+    )

@@ -1,7 +1,7 @@
 import os
 
 from .settings import *  # noqa
-from .settings import DATABASES, AUTHENTIKATE
+from .settings import AUTHENTIKATE, DATABASES
 
 # The test stack publishes postgres and redis on *ephemeral* host ports: docker picks
 # them per run, and `tests/conftest.py`'s `django_db_modify_db_settings` overwrites
@@ -9,7 +9,14 @@ from .settings import DATABASES, AUTHENTIKATE
 # database. These values are only the fallback for running a `manage.py` command
 # against a stack started by hand: set KRAPH_TEST_DB_PORT / KRAPH_TEST_REDIS_PORT to
 # what `docker compose port db 5432` / `port redis 6379` report for it.
-DATABASES["default"] = {**DATABASES["default"], "NAME": "testdb", "PORT": os.environ.get("KRAPH_TEST_DB_PORT", "5555"), "HOST": "localhost", "USER": "test", "PASSWORD": "test"}
+DATABASES["default"] = {
+    **DATABASES["default"],
+    "NAME": "testdb",
+    "PORT": os.environ.get("KRAPH_TEST_DB_PORT", "5555"),
+    "HOST": "localhost",
+    "USER": "test",
+    "PASSWORD": "test",
+}
 # Django forces DEBUG=False under the test runner, and authentikate 3.0 refuses static
 # tokens when DEBUG is False. These are deliberate test fixtures, so opt in explicitly.
 #: What a test token is unless it says otherwise: kraph's admin, through an app granted all of kraph.
@@ -34,7 +41,13 @@ AUTHENTIKATE = {
 # key. Tests that exercise a grant care about its *shape*, not its credentials.
 # No object store in the test stack: grants are never minted here, so the datalayer only needs a
 # media bucket name for the store rows the tests create.
-DATALAYER = {"access_key": "test", "secret_key": "test", "media": {"bucket": "media"}, "bigfile": {"bucket": "bigfile"}, "allow_unscoped_fallback": True}
+DATALAYER = {
+    "access_key": "test",
+    "secret_key": "test",
+    "media": {"bucket": "media"},
+    "bigfile": {"bucket": "bigfile"},
+    "allow_unscoped_fallback": True,
+}
 # The compose stack's redis (tests/integration/docker-compose.yaml); `/ht` pings it.
 REDIS_URL = f"redis://localhost:{os.environ.get('KRAPH_TEST_REDIS_PORT', '6666')}/0"
 # The subscription tests listen through a stub consumer on the process-local layer;

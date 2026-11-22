@@ -6,8 +6,6 @@ tenant the client names. `commentsFor` and `myMentions` mirror lok's komment
 queries so a lok client can move over field-for-field.
 """
 
-from typing import List, Optional
-
 import strawberry
 from django.db.models import QuerySet
 from kante.types import Info
@@ -28,8 +26,8 @@ def comments_for(
     info: Info,
     identifier: str,
     object: strawberry.ID,
-    pagination: Optional[api_pagination.LogPaginationInput] = None,
-) -> List[types.Comment]:
+    pagination: api_pagination.LogPaginationInput | None = None,
+) -> list[types.Comment]:
     """Every remark about one external datum, newest first, resolved ones included.
 
     `pagination` reads one page; without it the newest `MAX_LIMIT` are the answer, as before.
@@ -41,15 +39,24 @@ def comments_for(
     rather than an error.
     """
     organization = context.get_active_organization(info)
-    structure = evidence_models.Structure.objects.for_organization(organization).filter(identifier=identifier, object=str(object)).first()
+    structure = (
+        evidence_models.Structure.objects.for_organization(organization)
+        .filter(identifier=identifier, object=str(object))
+        .first()
+    )
     if structure is None:
         return []
-    queryset = evidence_models.Comment.objects.for_organization(organization).filter(structure=structure).select_related("assertion").order_by("-created_at", "-pk")
+    queryset = (
+        evidence_models.Comment.objects.for_organization(organization)
+        .filter(structure=structure)
+        .select_related("assertion")
+        .order_by("-created_at", "-pk")
+    )
     offset, limit = api_pagination.window(pagination, default=api_pagination.MAX_LIMIT)
     return list(queryset[offset : offset + limit])  # type: ignore[arg-type]
 
 
-def _mentions(info: Info, resolved: Optional[bool]) -> QuerySet[evidence_models.Comment]:
+def _mentions(info: Info, resolved: bool | None) -> QuerySet[evidence_models.Comment]:
     """The remarks mentioning the caller, narrowed by whether they were resolved.
 
     Matched on the caller's subject id — the same string the write path put into
@@ -60,7 +67,9 @@ def _mentions(info: Info, resolved: Optional[bool]) -> QuerySet[evidence_models.
     """
     organization = context.get_active_organization(info)
     subject = str(info.context.request.user.id)
-    mentioning = evidence_models.Comment.objects.for_organization(organization).filter(mentions__contains=[subject])
+    mentioning = evidence_models.Comment.objects.for_organization(organization).filter(
+        mentions__contains=[subject]
+    )
     if resolved is None:
         return mentioning
     open_ones = claims.standing(mentioning, "comment")
@@ -71,14 +80,16 @@ def _mentions(info: Info, resolved: Optional[bool]) -> QuerySet[evidence_models.
 
 def my_mentions(
     info: Info,
-    resolved: Optional[bool] = None,
-    pagination: Optional[api_pagination.LogPaginationInput] = None,
-) -> List[types.Comment]:
+    resolved: bool | None = None,
+    pagination: api_pagination.LogPaginationInput | None = None,
+) -> list[types.Comment]:
     """Every remark that mentions the caller, newest first. `resolved: false` is the inbox."""
-    queryset = _mentions(info, resolved).select_related("assertion").order_by("-created_at")
+    queryset = (
+        _mentions(info, resolved).select_related("assertion").order_by("-created_at")
+    )
     return api_pagination.slice_window(queryset, pagination)  # type: ignore[return-value]
 
 
-def my_mention_count(info: Info, resolved: Optional[bool] = None) -> int:
+def my_mention_count(info: Info, resolved: bool | None = None) -> int:
     """How many remarks mention the caller — past any page. `resolved: false` is the badge."""
     return _mentions(info, resolved).count()

@@ -19,7 +19,6 @@ import pytest
 from core import models as core_models
 from tests.support import graphs
 
-
 CREATE_PROTOCOL_EVENT = """
     mutation C($input: CreateProtocolEventCategoryInput!) {
         createProtocolEventCategory(input: $input) { id inputs { key role } outputs { key role } }
@@ -35,8 +34,12 @@ CREATE_NATURAL_EVENT = """
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_a_protocol_event_category_keeps_the_roles_it_was_created_with(api_schema, simple_api_context) -> None:
-    graph_id = await graphs.graph_declaring(api_schema, simple_api_context, "Cell", name="protocol-roles")
+async def test_a_protocol_event_category_keeps_the_roles_it_was_created_with(
+    api_schema, simple_api_context
+) -> None:
+    graph_id = await graphs.graph_declaring(
+        api_schema, simple_api_context, "Cell", name="protocol-roles"
+    )
 
     made = await api_schema.execute(
         CREATE_PROTOCOL_EVENT,
@@ -46,8 +49,12 @@ async def test_a_protocol_event_category_keeps_the_roles_it_was_created_with(api
                 "key": "Staining",
                 "protocol": "staining-v1",
                 "kind": "EXTRINSIC",
-                "inputs": [{"key": "Cell", "role": "subject", "descriptor": {"keys": ["Cell"]}}],
-                "outputs": [{"key": "Cell", "role": "stained", "descriptor": {"keys": ["Cell"]}}],
+                "inputs": [
+                    {"key": "Cell", "role": "subject", "descriptor": {"keys": ["Cell"]}}
+                ],
+                "outputs": [
+                    {"key": "Cell", "role": "stained", "descriptor": {"keys": ["Cell"]}}
+                ],
             }
         },
         context_value=simple_api_context,
@@ -55,11 +62,15 @@ async def test_a_protocol_event_category_keeps_the_roles_it_was_created_with(api
     assert made.errors is None, f"GraphQL errors: {made.errors}"
 
     payload = made.data["createProtocolEventCategory"]
-    assert [role["role"] for role in payload["inputs"]] == ["subject"], "the roles a category was declared with are the roles it reports"
+    assert [role["role"] for role in payload["inputs"]] == ["subject"], (
+        "the roles a category was declared with are the roles it reports"
+    )
     assert [role["role"] for role in payload["outputs"]] == ["stained"]
 
     category = await core_models.ProtocolEventCategory.objects.aget(pk=payload["id"])
-    assert category.source_entity_roles, "a declared input role is a stored role; an empty list admits every entity category (`namespace._role_endpoints`)"
+    assert category.source_entity_roles, (
+        "a declared input role is a stored role; an empty list admits every entity category (`namespace._role_endpoints`)"
+    )
     assert category.target_entity_roles, "and so is a declared output role"
     assert [role["role"] for role in category.source_entity_roles] == ["subject"]
     assert [role["role"] for role in category.target_entity_roles] == ["stained"]
@@ -67,10 +78,14 @@ async def test_a_protocol_event_category_keeps_the_roles_it_was_created_with(api
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_a_natural_event_category_keeps_the_roles_it_was_created_with(api_schema, simple_api_context) -> None:
+async def test_a_natural_event_category_keeps_the_roles_it_was_created_with(
+    api_schema, simple_api_context
+) -> None:
     """The same property, asserted for the other event kind, because the two
     mutations were copies of one module and a field could go missing from one alone."""
-    graph_id = await graphs.graph_declaring(api_schema, simple_api_context, "Cell", name="natural-roles")
+    graph_id = await graphs.graph_declaring(
+        api_schema, simple_api_context, "Cell", name="natural-roles"
+    )
 
     made = await api_schema.execute(
         CREATE_NATURAL_EVENT,
@@ -79,14 +94,24 @@ async def test_a_natural_event_category_keeps_the_roles_it_was_created_with(api_
                 "graph": graph_id,
                 "key": "Mitosis",
                 "kind": "INTRINSIC",
-                "inputs": [{"key": "Cell", "role": "mother", "descriptor": {"keys": ["Cell"]}}],
-                "outputs": [{"key": "Cell", "role": "daughter", "descriptor": {"keys": ["Cell"]}}],
+                "inputs": [
+                    {"key": "Cell", "role": "mother", "descriptor": {"keys": ["Cell"]}}
+                ],
+                "outputs": [
+                    {
+                        "key": "Cell",
+                        "role": "daughter",
+                        "descriptor": {"keys": ["Cell"]},
+                    }
+                ],
             }
         },
         context_value=simple_api_context,
     )
     assert made.errors is None, f"GraphQL errors: {made.errors}"
 
-    category = await core_models.NaturalEventCategory.objects.aget(pk=made.data["createNaturalEventCategory"]["id"])
+    category = await core_models.NaturalEventCategory.objects.aget(
+        pk=made.data["createNaturalEventCategory"]["id"]
+    )
     assert [role["role"] for role in category.source_entity_roles] == ["mother"]
     assert [role["role"] for role in category.target_entity_roles] == ["daughter"]

@@ -11,13 +11,12 @@ import uuid
 
 import kante
 import pytest
-
-from tests.support import reads, rules, writes
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 
 from core import models as core_models
 from evidence import models as evidence_models
+from tests.support import reads, rules, writes
 
 CLASSIFY_NODES = """
     mutation ClassifyNodes($input: ClassifyNodesInput!) {
@@ -50,7 +49,9 @@ PANEL = """
 """
 
 
-async def _structure(api_schema: kante.Schema, ctx: HttpContext, metrics: list[dict] | None = None) -> tuple[str, str]:
+async def _structure(
+    api_schema: kante.Schema, ctx: HttpContext, metrics: list[dict] | None = None
+) -> tuple[str, str]:
     """A structure, as `(id, object)`.
 
     Both, because a structure is addressed by its primary key on the read side and
@@ -61,18 +62,40 @@ async def _structure(api_schema: kante.Schema, ctx: HttpContext, metrics: list[d
     object_id = f"roi-{uuid.uuid4().hex[:8]}"
     result = await api_schema.execute(
         writes.ASSERT_STRUCTURE,
-        variable_values={"input": {"identifier": "@mikro/roi", "object": object_id, "metrics": metrics or []}},
+        variable_values={
+            "input": {
+                "identifier": "@mikro/roi",
+                "object": object_id,
+                "metrics": metrics or [],
+            }
+        },
         context_value=ctx,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     return result.data["assertStructureExists"]["structure"]["id"], object_id
 
 
-async def _entity(api_schema: kante.Schema, ctx: HttpContext, term: str, evidence_object: str | None = None, same_as: list[str] | None = None) -> str:
-    evidence = [{"identifier": "@mikro/roi", "object": evidence_object, "metrics": []}] if evidence_object else []
+async def _entity(
+    api_schema: kante.Schema,
+    ctx: HttpContext,
+    term: str,
+    evidence_object: str | None = None,
+    same_as: list[str] | None = None,
+) -> str:
+    evidence = (
+        [{"identifier": "@mikro/roi", "object": evidence_object, "metrics": []}]
+        if evidence_object
+        else []
+    )
     result = await api_schema.execute(
         writes.ASSERT_ENTITY_EXISTS,
-        variable_values={"input": {"term": term, "supportingEvidence": evidence, "sameAs": same_as or []}},
+        variable_values={
+            "input": {
+                "term": term,
+                "supportingEvidence": evidence,
+                "sameAs": same_as or [],
+            }
+        },
         context_value=ctx,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
@@ -80,7 +103,9 @@ async def _entity(api_schema: kante.Schema, ctx: HttpContext, term: str, evidenc
 
 
 async def _panel(api_schema: kante.Schema, ctx: HttpContext, structure_id: str) -> dict:
-    result = await api_schema.execute(PANEL, variable_values={"id": structure_id}, context_value=ctx)
+    result = await api_schema.execute(
+        PANEL, variable_values={"id": structure_id}, context_value=ctx
+    )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     return result.data["structure"]
 
@@ -98,7 +123,11 @@ async def test_a_structures_measurements_are_no_longer_silently_empty(
     `metricsForStructure(structureId:)` answered the same question correctly at the
     top level. A field that lies is worse than one that is absent.
     """
-    structure_id, _ = await _structure(api_schema, simple_api_context, metrics=[{"key": "length", "value": 42.0, "valueKind": "FLOAT"}])
+    structure_id, _ = await _structure(
+        api_schema,
+        simple_api_context,
+        metrics=[{"key": "length", "value": 42.0, "valueKind": "FLOAT"}],
+    )
 
     panel = await _panel(api_schema, simple_api_context, structure_id)
 
@@ -107,7 +136,9 @@ async def test_a_structures_measurements_are_no_longer_silently_empty(
     assert panel["metrics"][0]["__typename"] == "Metric"
     # `RetrievedMetric.from_row` used to drop the row, so a measurement could say
     # when it was claimed and never by whom.
-    assert panel["metrics"][0]["assertion"]["subject"], "Who measured this has to be answerable"
+    assert panel["metrics"][0]["assertion"]["subject"], (
+        "Who measured this has to be answerable"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -125,12 +156,16 @@ async def test_the_panel_reaches_labels_through_what_the_structure_informs(
     panel takes one hop to get there.
     """
     structure_id, object_id = await _structure(api_schema, simple_api_context)
-    entity_id = await _entity(api_schema, simple_api_context, "AIS", evidence_object=object_id)
+    entity_id = await _entity(
+        api_schema, simple_api_context, "AIS", evidence_object=object_id
+    )
 
     panel = await _panel(api_schema, simple_api_context, structure_id)
 
     assert [node["id"] for node in panel["informs"]] == [entity_id]
-    assert panel["informs"][0]["__typename"] == "Instance", "what a datum informs is the claim, as the log has it (RFC 0025)"
+    assert panel["informs"][0]["__typename"] == "Instance", (
+        "what a datum informs is the claim, as the log has it (RFC 0025)"
+    )
     assert [label["term"]["key"] for label in panel["informs"][0]["labels"]] == ["AIS"]
 
 
@@ -149,11 +184,20 @@ async def test_agreement_is_counted_and_disagreement_is_shown(
     picked a winner would be answering a question nobody asked.
     """
     structure_id, object_id = await _structure(api_schema, simple_api_context)
-    entity_id = await _entity(api_schema, simple_api_context, "AIS", evidence_object=object_id)
+    entity_id = await _entity(
+        api_schema, simple_api_context, "AIS", evidence_object=object_id
+    )
 
     concurring = await api_schema.execute(
         CLASSIFY_NODES,
-        variable_values={"input": {"classifications": [{"node": entity_id, "term": "AIS"}, {"node": entity_id, "term": "Soma"}]}},
+        variable_values={
+            "input": {
+                "classifications": [
+                    {"node": entity_id, "term": "AIS"},
+                    {"node": entity_id, "term": "Soma"},
+                ]
+            }
+        },
         context_value=simple_api_context,
     )
     assert concurring.errors is None, f"GraphQL errors: {concurring.errors}"
@@ -161,9 +205,13 @@ async def test_agreement_is_counted_and_disagreement_is_shown(
     panel = await _panel(api_schema, simple_api_context, structure_id)
     labels = {label["term"]["key"]: label for label in panel["informs"][0]["labels"]}
 
-    assert labels["AIS"]["assertionCount"] == 2, "Concurrence is countable — the log records a claim that restates a position already held"
+    assert labels["AIS"]["assertionCount"] == 2, (
+        "Concurrence is countable — the log records a claim that restates a position already held"
+    )
     assert labels["Soma"]["assertionCount"] == 1
-    assert labels["AIS"]["latestAssertion"] is not None, "Who says so, for the claim that currently stands"
+    assert labels["AIS"]["latestAssertion"] is not None, (
+        "Who says so, for the claim that currently stands"
+    )
     assert labels["AIS"]["__typename"] == "Label"
 
 
@@ -183,18 +231,26 @@ async def test_a_retracted_label_does_not_appear(
     its docstring promised "every *live* claim".
     """
     structure_id, object_id = await _structure(api_schema, simple_api_context)
-    entity_id = await _entity(api_schema, simple_api_context, "AIS", evidence_object=object_id)
+    entity_id = await _entity(
+        api_schema, simple_api_context, "AIS", evidence_object=object_id
+    )
 
     added = await api_schema.execute(
         CLASSIFY_NODES,
-        variable_values={"input": {"classifications": [{"node": entity_id, "term": "Soma"}]}},
+        variable_values={
+            "input": {"classifications": [{"node": entity_id, "term": "Soma"}]}
+        },
         context_value=simple_api_context,
     )
     assert added.errors is None, f"GraphQL errors: {added.errors}"
 
     @sync_to_async
     def soma_claim_id() -> str:
-        link = evidence_models.Link.all_objects.filter(kind=evidence_models.Link.Kind.CLASSIFIES, source_ref=entity_id, term__key="Soma").first()
+        link = evidence_models.Link.all_objects.filter(
+            kind=evidence_models.Link.Kind.CLASSIFIES,
+            source_ref=entity_id,
+            term__key="Soma",
+        ).first()
         assert link is not None
         return str(link.pk)
 
@@ -224,22 +280,36 @@ async def test_everything_is_unioned_over_the_component(
     for both — otherwise a merge would be a claim with no consequence.
     """
     first_structure, first_object = await _structure(api_schema, simple_api_context)
-    first = await _entity(api_schema, simple_api_context, "AIS", evidence_object=first_object)
+    first = await _entity(
+        api_schema, simple_api_context, "AIS", evidence_object=first_object
+    )
 
     second_structure, second_object = await _structure(api_schema, simple_api_context)
-    second = await _entity(api_schema, simple_api_context, "AIS", evidence_object=second_object, same_as=[first])
+    second = await _entity(
+        api_schema,
+        simple_api_context,
+        "AIS",
+        evidence_object=second_object,
+        same_as=[first],
+    )
 
     panel = await _panel(api_schema, simple_api_context, first_structure)
     node = panel["informs"][0]
 
-    assert sorted(node["component"]) == sorted([first, second]), "Asking about either instance answers for both"
+    assert sorted(node["component"]) == sorted([first, second]), (
+        "Asking about either instance answers for both"
+    )
     assert len(node["sameAs"]) == 1
-    assert node["sameAs"][0]["__typename"] == "Link", "reached as a claim, the sameness is a Link (RFC 0025)"
+    assert node["sameAs"][0]["__typename"] == "Link", (
+        "reached as a claim, the sameness is a Link (RFC 0025)"
+    )
 
     # Both observations' INFORMS claims, reachable from either end of the merge.
     informing = {connection["kind"] for connection in node["connections"]}
     assert informing == {"INFORMS"}, f"Only the INFORMS claims here, got {informing}"
-    assert len(node["connections"]) == 2, "One per observation — the merge is what makes the second one visible from here"
+    assert len(node["connections"]) == 2, (
+        "One per observation — the merge is what makes the second one visible from here"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -256,11 +326,15 @@ async def test_labels_and_merges_are_not_reported_as_connections(
     own labels as things it is connected to.
     """
     structure_id, object_id = await _structure(api_schema, simple_api_context)
-    first = await _entity(api_schema, simple_api_context, "AIS", evidence_object=object_id)
+    first = await _entity(
+        api_schema, simple_api_context, "AIS", evidence_object=object_id
+    )
     await _entity(api_schema, simple_api_context, "AIS", same_as=[first])
 
     panel = await _panel(api_schema, simple_api_context, structure_id)
-    kinds = {connection["__typename"] for connection in panel["informs"][0]["connections"]}
+    kinds = {
+        connection["__typename"] for connection in panel["informs"][0]["connections"]
+    }
 
     assert "Classification" not in kinds
     assert "Sameness" not in kinds
@@ -286,7 +360,9 @@ async def test_drawn_in_reports_the_views_that_actually_draw_it(
     drawings = panel["informs"][0]["drawnIn"]
 
     assert [drawing["graph"]["id"] for drawing in drawings] == [str(test_graph.pk)]
-    assert drawings[0]["category"]["id"], "A drawing says which category the view draws it under"
+    assert drawings[0]["category"]["id"], (
+        "A drawing says which category the view draws it under"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -312,9 +388,13 @@ async def test_a_view_that_declares_the_word_but_refuses_the_node_is_not_listed(
 
     @sync_to_async
     def define_ais_narrowly() -> None:
-        category = core_models.EntityCategory.objects.filter(graph=test_graph, key="AIS").first()
+        category = core_models.EntityCategory.objects.filter(
+            graph=test_graph, key="AIS"
+        ).first()
         assert category is not None, "The bio schema declares AIS"
-        category.definition = rules.definition(rules.rule(rules.word("AIS"), rules.by("somebody-else-entirely")))
+        category.definition = rules.definition(
+            rules.rule(rules.word("AIS"), rules.by("somebody-else-entirely"))
+        )
         category.save()
 
     await define_ais_narrowly()
@@ -323,8 +403,12 @@ async def test_a_view_that_declares_the_word_but_refuses_the_node_is_not_listed(
 
     panel = await _panel(api_schema, simple_api_context, structure_id)
 
-    assert panel["informs"][0]["drawnIn"] == [], "The graph declares the word, but its definition refuses this node"
-    assert [label["term"]["key"] for label in panel["informs"][0]["labels"]] == ["AIS"], "The claim itself is untouched — a definition narrows a view, not the log"
+    assert panel["informs"][0]["drawnIn"] == [], (
+        "The graph declares the word, but its definition refuses this node"
+    )
+    assert [label["term"]["key"] for label in panel["informs"][0]["labels"]] == [
+        "AIS"
+    ], "The claim itself is untouched — a definition narrows a view, not the log"
 
 
 @pytest.mark.django_db(transaction=True)
@@ -348,7 +432,11 @@ async def test_the_panel_does_not_scale_with_the_number_of_subjects(
 
     structures = []
     for index in range(5):
-        structure_id, object_id = await _structure(api_schema, simple_api_context, metrics=[{"key": "length", "value": float(index), "valueKind": "FLOAT"}])
+        structure_id, object_id = await _structure(
+            api_schema,
+            simple_api_context,
+            metrics=[{"key": "length", "value": float(index), "valueKind": "FLOAT"}],
+        )
         await _entity(api_schema, simple_api_context, "AIS", evidence_object=object_id)
         structures.append(structure_id)
 
@@ -387,7 +475,9 @@ async def test_the_panel_does_not_scale_with_the_number_of_subjects(
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     assert len(result.data["structures"]) == 5
 
-    assert len(batches) == 1, f"Five subjects, one batched read of the panel — got {len(batches)}"
+    assert len(batches) == 1, (
+        f"Five subjects, one batched read of the panel — got {len(batches)}"
+    )
     assert len(batches[0]) == 5, "and every subject in it"
 
 
@@ -405,22 +495,41 @@ async def test_each_member_of_a_component_shows_its_own_evidence(
     """
     _, first_object = await _structure(api_schema, simple_api_context)
     _, second_object = await _structure(api_schema, simple_api_context)
-    first = await _entity(api_schema, simple_api_context, "AIS", evidence_object=first_object)
-    second = await _entity(api_schema, simple_api_context, "AIS", evidence_object=second_object, same_as=[first])
+    first = await _entity(
+        api_schema, simple_api_context, "AIS", evidence_object=first_object
+    )
+    second = await _entity(
+        api_schema,
+        simple_api_context,
+        "AIS",
+        evidence_object=second_object,
+        same_as=[first],
+    )
     bare = await _entity(api_schema, simple_api_context, "AIS", same_as=[first])
 
-    result = await api_schema.execute(reads.MEMBERS_EVIDENCE, variable_values={"id": first}, context_value=simple_api_context)
+    result = await api_schema.execute(
+        reads.MEMBERS_EVIDENCE,
+        variable_values={"id": first},
+        context_value=simple_api_context,
+    )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     instance = result.data["instance"]
 
-    assert [row["object"] for row in instance["evidence"]] == [first_object], "Not unioned over the component"
-    by_member = {member["id"]: [row["object"] for row in member["evidence"]] for member in instance["members"]}
+    assert [row["object"] for row in instance["evidence"]] == [first_object], (
+        "Not unioned over the component"
+    )
+    by_member = {
+        member["id"]: [row["object"] for row in member["evidence"]]
+        for member in instance["members"]
+    }
     assert by_member == {first: [first_object], second: [second_object], bare: []}
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_connections_read_in_pages_that_add_up_to_the_whole(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
+async def test_connections_read_in_pages_that_add_up_to_the_whole(
+    api_schema, simple_api_context, test_graph: core_models.Graph
+) -> None:
     """`connections(pagination:)` and `connectionCount`, on the claim and on its drawing.
 
     History: `connections` had no page, so a thing informed by a thousand datums
@@ -429,16 +538,27 @@ async def test_connections_read_in_pages_that_add_up_to_the_whole(api_schema, si
     hub = await writes.create_entity(api_schema, simple_api_context, "Cell")
     for _ in range(3):
         spoke = await writes.create_entity(api_schema, simple_api_context, "Cell")
-        await writes.create_relation(api_schema, simple_api_context, "IS_CONNECTED_TO", hub, spoke)
+        await writes.create_relation(
+            api_schema, simple_api_context, "IS_CONNECTED_TO", hub, spoke
+        )
 
     async def page(offset: int) -> dict:
-        return await writes.execute(api_schema, simple_api_context, reads.CONNECTIONS_PAGE, {"id": hub, "graph": str(test_graph.pk), "limit": 2, "offset": offset})
+        return await writes.execute(
+            api_schema,
+            simple_api_context,
+            reads.CONNECTIONS_PAGE,
+            {"id": hub, "graph": str(test_graph.pk), "limit": 2, "offset": offset},
+        )
 
     first, second = await page(0), await page(2)
     everything = sorted(row["id"] for row in first["all"]["connections"])
     assert len(everything) == 3
     for grain in ("instance", "node"):
         assert first[grain]["connectionCount"] == 3, "the count is past any page"
-        ids = [row["id"] for row in first[grain]["connections"]] + [row["id"] for row in second[grain]["connections"]]
+        ids = [row["id"] for row in first[grain]["connections"]] + [
+            row["id"] for row in second[grain]["connections"]
+        ]
         assert len(first[grain]["connections"]) == 2
-        assert sorted(ids) == everything, "two pages are the whole list, each connection once"
+        assert sorted(ids) == everything, (
+            "two pages are the whole list, each connection once"
+        )

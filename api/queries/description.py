@@ -38,7 +38,9 @@ def description(info: Info, id: strawberry.ID) -> types.Description:
     """
     controller = context.get_controller()
 
-    edge = controller.get_relation_by_id(str(id), info=info, kind=evidence_models.Link.Kind.INFORMS)
+    edge = controller.get_relation_by_id(
+        str(id), info=info, kind=evidence_models.Link.Kind.INFORMS
+    )
     if edge is None:
         raise ValueError(f"Description edge with ID {id} not found")
 

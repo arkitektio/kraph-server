@@ -11,19 +11,20 @@ on A's permissions, with any auto-created metric category filed where B could
 not see it. The old tests pinned that as expected behaviour.
 """
 
+import uuid
+
+import kante
 import pytest
+from asgiref.sync import sync_to_async
 from authentikate.models import Organization
+from kante.context import HttpContext
+
+from api.schema import schema
+from core import models as core_models
 from core.enums import ValueKind
+from core.models import Graph
 from evidence import models as evidence_models
 from evidence import writer
-from typing import Set
-from asgiref.sync import sync_to_async
-from kante.context import HttpContext
-from api.schema import schema
-from core.models import Graph
-import uuid
-import kante
-from core import models as core_models
 from tests.support import reads
 
 
@@ -37,7 +38,9 @@ def shared_structure(
     return writer.ensure_structure(organization, roi_kind, "roi-shared", assertion)
 
 
-def test_resolving_the_same_identifier_twice_returns_one_kind(organization: Organization) -> None:
+def test_resolving_the_same_identifier_twice_returns_one_kind(
+    organization: Organization,
+) -> None:
     """The term is the organization's, so resolving it twice returns one row.
 
     No graph fixtures, because no graph is involved — which is the point. This
@@ -48,7 +51,12 @@ def test_resolving_the_same_identifier_twice_returns_one_kind(organization: Orga
     from_b = writer.ensure_structure_kind(organization, "@mikro/roi")
 
     assert from_a.pk == from_b.pk
-    assert evidence_models.StructureKind.objects.for_organization(organization).filter(identifier="@mikro/roi").count() == 1
+    assert (
+        evidence_models.StructureKind.objects.for_organization(organization)
+        .filter(identifier="@mikro/roi")
+        .count()
+        == 1
+    )
 
 
 def test_a_structure_reached_from_either_graph_is_the_same_row(
@@ -76,8 +84,12 @@ def test_a_measurement_recorded_by_either_graph_uses_one_term(
     same organization-level term — so the second graph can see what the first
     recorded, which is the whole reason evidence is shared.
     """
-    from_a = writer.ensure_metric_kind(organization, roi_kind, "vector_length", ValueKind.FLOAT)
-    from_b = writer.ensure_metric_kind(organization, roi_kind, "vector_length", ValueKind.FLOAT)
+    from_a = writer.ensure_metric_kind(
+        organization, roi_kind, "vector_length", ValueKind.FLOAT
+    )
+    from_b = writer.ensure_metric_kind(
+        organization, roi_kind, "vector_length", ValueKind.FLOAT
+    )
 
     assert from_a.pk == from_b.pk
 
@@ -109,15 +121,29 @@ def test_a_contradicting_value_kind_makes_a_second_term(
     The raise that remains is a different one, on the *undeclared* path: see
     `test_metric_kind_identity`.
     """
-    as_float = writer.ensure_metric_kind(organization, roi_kind, "vector_length", ValueKind.FLOAT)
-    as_string = writer.ensure_metric_kind(organization, roi_kind, "vector_length", ValueKind.STRING)
+    as_float = writer.ensure_metric_kind(
+        organization, roi_kind, "vector_length", ValueKind.FLOAT
+    )
+    as_string = writer.ensure_metric_kind(
+        organization, roi_kind, "vector_length", ValueKind.STRING
+    )
 
     assert as_float.pk != as_string.pk, "Each declaration gets its own term"
-    assert evidence_models.MetricKind.objects.for_organization(organization).filter(structure_kind=roi_kind, key="vector_length").count() == 2
+    assert (
+        evidence_models.MetricKind.objects.for_organization(organization)
+        .filter(structure_kind=roi_kind, key="vector_length")
+        .count()
+        == 2
+    )
 
     # And re-declaring either is still idempotent — the identity is the whole
     # four-tuple, so this is a lookup and not a third term.
-    assert writer.ensure_metric_kind(organization, roi_kind, "vector_length", ValueKind.FLOAT).pk == as_float.pk
+    assert (
+        writer.ensure_metric_kind(
+            organization, roi_kind, "vector_length", ValueKind.FLOAT
+        ).pk
+        == as_float.pk
+    )
 
 
 def test_the_same_key_on_different_structures_is_a_different_term(
@@ -134,7 +160,9 @@ def test_the_same_key_on_different_structures_is_a_different_term(
     mask_kind = writer.ensure_structure_kind(organization, "@mikro/mask")
 
     on_roi = writer.ensure_metric_kind(organization, roi_kind, "area", ValueKind.FLOAT)
-    on_mask = writer.ensure_metric_kind(organization, mask_kind, "area", ValueKind.FLOAT)
+    on_mask = writer.ensure_metric_kind(
+        organization, mask_kind, "area", ValueKind.FLOAT
+    )
 
     assert on_roi.pk != on_mask.pk
 
@@ -147,9 +175,22 @@ def test_kinds_never_cross_organizations(
     writer.ensure_structure_kind(organization, "@mikro/roi")
     writer.ensure_structure_kind(other_organization, "@mikro/roi")
 
-    assert evidence_models.StructureKind.objects.for_organization(organization).count() == 1
-    assert evidence_models.StructureKind.objects.for_organization(other_organization).count() == 1
-    assert evidence_models.StructureKind.all_objects.filter(identifier="@mikro/roi").count() == 2
+    assert (
+        evidence_models.StructureKind.objects.for_organization(organization).count()
+        == 1
+    )
+    assert (
+        evidence_models.StructureKind.objects.for_organization(
+            other_organization
+        ).count()
+        == 1
+    )
+    assert (
+        evidence_models.StructureKind.all_objects.filter(
+            identifier="@mikro/roi"
+        ).count()
+        == 2
+    )
 
 
 def test_a_declaration_is_never_refused(
@@ -157,8 +198,12 @@ def test_a_declaration_is_never_refused(
     roi_kind: evidence_models.StructureKind,
 ) -> None:
     """Both declarations land. Neither caller is told to go away."""
-    as_float = writer.ensure_metric_kind(organization, roi_kind, "confidence", ValueKind.FLOAT)
-    as_category = writer.ensure_metric_kind(organization, roi_kind, "confidence", ValueKind.CATEGORY)
+    as_float = writer.ensure_metric_kind(
+        organization, roi_kind, "confidence", ValueKind.FLOAT
+    )
+    as_category = writer.ensure_metric_kind(
+        organization, roi_kind, "confidence", ValueKind.CATEGORY
+    )
 
     assert as_float.pk != as_category.pk
     assert as_float.value_kind == ValueKind.FLOAT.value
@@ -170,11 +215,20 @@ def test_a_declaration_is_idempotent(
     roi_kind: evidence_models.StructureKind,
 ) -> None:
     """Declaring the same thing twice is a lookup, not a second term."""
-    first = writer.ensure_metric_kind(organization, roi_kind, "confidence", ValueKind.FLOAT)
-    again = writer.ensure_metric_kind(organization, roi_kind, "confidence", ValueKind.FLOAT)
+    first = writer.ensure_metric_kind(
+        organization, roi_kind, "confidence", ValueKind.FLOAT
+    )
+    again = writer.ensure_metric_kind(
+        organization, roi_kind, "confidence", ValueKind.FLOAT
+    )
 
     assert first.pk == again.pk
-    assert evidence_models.MetricKind.objects.for_organization(organization).filter(key="confidence").count() == 1
+    assert (
+        evidence_models.MetricKind.objects.for_organization(organization)
+        .filter(key="confidence")
+        .count()
+        == 1
+    )
 
 
 def test_the_property_type_spelling_is_accepted(
@@ -187,7 +241,9 @@ def test_the_property_type_spelling_is_accepted(
     and the lowercase one would carry a `value_kind` no column mapping
     recognises — `writer.value_columns` rejects it outright.
     """
-    canonical = writer.ensure_metric_kind(organization, roi_kind, "confidence", ValueKind.FLOAT)
+    canonical = writer.ensure_metric_kind(
+        organization, roi_kind, "confidence", ValueKind.FLOAT
+    )
     lowercase = writer.ensure_metric_kind(organization, roi_kind, "confidence", "float")
 
     assert canonical.pk == lowercase.pk
@@ -223,12 +279,31 @@ def test_a_key_with_several_terms_is_writable(
     Two terms for one key used to make an undeclared write impossible. Naming the
     kind resolves it exactly, and neither existing term is disturbed.
     """
-    as_float = writer.ensure_metric_kind(organization, roi_kind, "confidence", ValueKind.FLOAT)
-    as_string = writer.ensure_metric_kind(organization, roi_kind, "confidence", ValueKind.STRING)
+    as_float = writer.ensure_metric_kind(
+        organization, roi_kind, "confidence", ValueKind.FLOAT
+    )
+    as_string = writer.ensure_metric_kind(
+        organization, roi_kind, "confidence", ValueKind.STRING
+    )
 
-    assert writer.ensure_metric_kind(organization, roi_kind, "confidence", ValueKind.STRING).pk == as_string.pk
-    assert writer.ensure_metric_kind(organization, roi_kind, "confidence", ValueKind.FLOAT).pk == as_float.pk
-    assert evidence_models.MetricKind.objects.for_organization(organization).filter(key="confidence").count() == 2
+    assert (
+        writer.ensure_metric_kind(
+            organization, roi_kind, "confidence", ValueKind.STRING
+        ).pk
+        == as_string.pk
+    )
+    assert (
+        writer.ensure_metric_kind(
+            organization, roi_kind, "confidence", ValueKind.FLOAT
+        ).pk
+        == as_float.pk
+    )
+    assert (
+        evidence_models.MetricKind.objects.for_organization(organization)
+        .filter(key="confidence")
+        .count()
+        == 2
+    )
 
 
 def test_nothing_infers_a_value_kind(
@@ -245,11 +320,20 @@ def test_nothing_infers_a_value_kind(
     """
     assert not hasattr(writer, "infer_value_kind")
 
-    first = writer.ensure_metric_kind(organization, roi_kind, "vector_length", ValueKind.FLOAT)
-    second = writer.ensure_metric_kind(organization, roi_kind, "vector_length", ValueKind.FLOAT)
+    first = writer.ensure_metric_kind(
+        organization, roi_kind, "vector_length", ValueKind.FLOAT
+    )
+    second = writer.ensure_metric_kind(
+        organization, roi_kind, "vector_length", ValueKind.FLOAT
+    )
 
     assert first.pk == second.pk
-    assert evidence_models.MetricKind.objects.for_organization(organization).filter(key="vector_length").count() == 1
+    assert (
+        evidence_models.MetricKind.objects.for_organization(organization)
+        .filter(key="vector_length")
+        .count()
+        == 1
+    )
 
 
 def test_an_unknown_value_kind_is_rejected(
@@ -274,10 +358,17 @@ def test_terms_never_cross_organizations(
     other_roi = writer.ensure_structure_kind(other_organization, "@mikro/roi")
 
     writer.ensure_metric_kind(organization, roi_kind, "confidence", ValueKind.FLOAT)
-    writer.ensure_metric_kind(other_organization, other_roi, "confidence", ValueKind.FLOAT)
+    writer.ensure_metric_kind(
+        other_organization, other_roi, "confidence", ValueKind.FLOAT
+    )
 
-    assert evidence_models.MetricKind.objects.for_organization(organization).count() == 1
-    assert evidence_models.MetricKind.objects.for_organization(other_organization).count() == 1
+    assert (
+        evidence_models.MetricKind.objects.for_organization(organization).count() == 1
+    )
+    assert (
+        evidence_models.MetricKind.objects.for_organization(other_organization).count()
+        == 1
+    )
 
 
 def test_the_term_names_its_value_kind(
@@ -289,8 +380,12 @@ def test_the_term_names_its_value_kind(
     The admin list and `ensure_metric_kind`'s own ambiguity error are exactly
     where telling them apart matters.
     """
-    as_float = writer.ensure_metric_kind(organization, roi_kind, "confidence", ValueKind.FLOAT)
-    as_string = writer.ensure_metric_kind(organization, roi_kind, "confidence", ValueKind.STRING)
+    as_float = writer.ensure_metric_kind(
+        organization, roi_kind, "confidence", ValueKind.FLOAT
+    )
+    as_string = writer.ensure_metric_kind(
+        organization, roi_kind, "confidence", ValueKind.STRING
+    )
 
     assert str(as_float) != str(as_string)
     assert "FLOAT" in str(as_float)
@@ -311,31 +406,43 @@ def _seed(organization: Organization) -> None:
 
 @sync_to_async
 def _seed_other_organization() -> Organization:
-    other, _ = Organization.objects.get_or_create(identifier="static_issuer#a-different-tenant")
+    other, _ = Organization.objects.get_or_create(
+        identifier="static_issuer#a-different-tenant"
+    )
     writer.ensure_structure_kind(other, "@secret/thing")
     return other
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_structure_kinds_lists_the_organizations_vocabulary(test_graph: Graph, authenticated_context: HttpContext) -> None:
+async def test_structure_kinds_lists_the_organizations_vocabulary(
+    test_graph: Graph, authenticated_context: HttpContext
+) -> None:
     """Both kinds, with no graph named anywhere in the query."""
     await _seed(test_graph.organization)
 
-    result = await schema.execute(reads.STRUCTURE_KINDS, context_value=authenticated_context)
+    result = await schema.execute(
+        reads.STRUCTURE_KINDS, context_value=authenticated_context
+    )
 
     assert result.errors is None, result.errors
-    identifiers: Set[str] = {item["identifier"] for item in result.data["structureKinds"]}
+    identifiers: set[str] = {
+        item["identifier"] for item in result.data["structureKinds"]
+    }
     assert {"@mikro/roi", "@mikro/nucleus"} <= identifiers
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_metric_kinds_name_the_structure_they_describe(test_graph: Graph, authenticated_context: HttpContext) -> None:
+async def test_metric_kinds_name_the_structure_they_describe(
+    test_graph: Graph, authenticated_context: HttpContext
+) -> None:
     """A measurement term is meaningless without the thing it measures."""
     await _seed(test_graph.organization)
 
-    result = await schema.execute(reads.METRIC_KINDS, context_value=authenticated_context)
+    result = await schema.execute(
+        reads.METRIC_KINDS, context_value=authenticated_context
+    )
 
     assert result.errors is None, result.errors
     kinds = {item["key"]: item for item in result.data["metricKinds"]}
@@ -346,7 +453,9 @@ async def test_metric_kinds_name_the_structure_they_describe(test_graph: Graph, 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_another_organizations_kinds_are_not_returned(test_graph: Graph, authenticated_context: HttpContext) -> None:
+async def test_another_organizations_kinds_are_not_returned(
+    test_graph: Graph, authenticated_context: HttpContext
+) -> None:
     """The check that matters.
 
     Removing `CategoryFilter.graph` removed the only thing that had ever scoped
@@ -356,12 +465,23 @@ async def test_another_organizations_kinds_are_not_returned(test_graph: Graph, a
     await _seed(test_graph.organization)
     await _seed_other_organization()
 
-    result = await schema.execute(reads.STRUCTURE_KINDS, context_value=authenticated_context)
+    result = await schema.execute(
+        reads.STRUCTURE_KINDS, context_value=authenticated_context
+    )
 
     assert result.errors is None, result.errors
-    identifiers: Set[str] = {item["identifier"] for item in result.data["structureKinds"]}
-    assert "@secret/thing" not in identifiers, "Another organization's vocabulary must never appear"
-    assert await evidence_models.StructureKind.all_objects.filter(identifier="@secret/thing").acount() == 1
+    identifiers: set[str] = {
+        item["identifier"] for item in result.data["structureKinds"]
+    }
+    assert "@secret/thing" not in identifiers, (
+        "Another organization's vocabulary must never appear"
+    )
+    assert (
+        await evidence_models.StructureKind.all_objects.filter(
+            identifier="@secret/thing"
+        ).acount()
+        == 1
+    )
 
 
 INGEST_INPUTS = ["AssertMetricValueInput", "AssertStructureExistsInput"]
@@ -375,10 +495,14 @@ def test_the_input_has_no_graph_field(api_schema: kante.Schema, type_name: str) 
 
 
 @pytest.mark.parametrize("type_name", INGEST_INPUTS)
-def test_the_input_names_a_structure_identifier(api_schema: kante.Schema, type_name: str) -> None:
+def test_the_input_names_a_structure_identifier(
+    api_schema: kante.Schema, type_name: str
+) -> None:
     """What replaced it: the identifier of the datum being measured."""
     graphql_type = api_schema._schema.type_map[type_name]
-    assert "identifier" in graphql_type.fields, f"{type_name} must identify the datum it describes"
+    assert "identifier" in graphql_type.fields, (
+        f"{type_name} must identify the datum it describes"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -414,9 +538,14 @@ async def test_a_measurement_round_trips_with_no_graph_anywhere(
     assert recorded.data["assertMetricValue"]["metric"]["value"] == 45.2
     assert recorded.data["assertMetricValue"]["metric"]["unit"] == "um"
 
-    structure = await evidence_models.Structure.all_objects.filter(object=object_id).afirst()
+    structure = await evidence_models.Structure.all_objects.filter(
+        object=object_id
+    ).afirst()
     assert structure is not None
-    assert await evidence_models.Metric.all_objects.filter(structure=structure).acount() == 1
+    assert (
+        await evidence_models.Metric.all_objects.filter(structure=structure).acount()
+        == 1
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -454,10 +583,16 @@ async def test_the_kind_is_minted_by_the_write_that_needs_it(
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
 
-    kind = await evidence_models.StructureKind.all_objects.filter(identifier=identifier).afirst()
+    kind = await evidence_models.StructureKind.all_objects.filter(
+        identifier=identifier
+    ).afirst()
     assert kind is not None, "The structure kind must be created by the write"
     assert kind.organization_id == test_graph.organization_id
 
-    metric_kind = await evidence_models.MetricKind.all_objects.filter(structure_kind=kind, key="brightness").afirst()
+    metric_kind = await evidence_models.MetricKind.all_objects.filter(
+        structure_kind=kind, key="brightness"
+    ).afirst()
     assert metric_kind is not None, "So must the metric kind"
-    assert metric_kind.value_kind == "FLOAT", "…in the canonical vocabulary, not the input spelling"
+    assert metric_kind.value_kind == "FLOAT", (
+        "…in the canonical vocabulary, not the input spelling"
+    )

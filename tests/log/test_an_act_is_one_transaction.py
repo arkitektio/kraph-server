@@ -6,30 +6,32 @@ calls records N acts, and nothing can put them back together.
 """
 
 from __future__ import annotations
+
+import asyncio
+import contextlib
+import datetime
+import uuid
+from collections.abc import AsyncIterator
+from typing import Any
+
 import kante
 import pytest
 from asgiref.sync import sync_to_async
-from kante.context import HttpContext
-from core import models as core_models
-from evidence import models as evidence_models
-import asyncio
-import contextlib
-from typing import Any, AsyncIterator
 from authentikate.models import Client
 from channels.layers import get_channel_layer
 from django.db import transaction
+from kante.context import HttpContext
 from kante.testing import build_ws_context
-from evidence import channel, writer
+
+from core import models as core_models
+from evidence import channel, identity, writer
+from evidence import models as evidence_models
+from graph_engine import watermark
 from graph_engine.controller import GraphController
 from graph_engine.input_models import ProvenanceContext
-from tests.support.identity import static_identity as _static_identity
-import datetime
 from tests.support import drawing, writes
-from evidence import identity
+from tests.support.identity import static_identity as _static_identity
 from tests.support.writes import ASSERT_SAME
-import uuid
-from graph_engine import watermark
-
 
 ASSERT_PARTICIPATION = """
     mutation AssertParticipation($input: AssertParticipationInput!) {
@@ -50,7 +52,9 @@ CLASSIFY_NODES = """
 
 @sync_to_async
 def _assertion_count(graph: core_models.Graph) -> int:
-    return evidence_models.Assertion.objects.for_organization(graph.organization).count()
+    return evidence_models.Assertion.objects.for_organization(
+        graph.organization
+    ).count()
 
 
 @pytest.mark.django_db(transaction=True)
@@ -62,7 +66,10 @@ async def test_a_batch_of_participations_is_one_assertion(
 ) -> None:
     """Three participants asserted together are one act, so one assertion."""
     event = await writes.create_event(api_schema, simple_api_context, "Mitosis")
-    entities = [await writes.create_entity(api_schema, simple_api_context, "Cell") for _ in range(3)]
+    entities = [
+        await writes.create_entity(api_schema, simple_api_context, "Cell")
+        for _ in range(3)
+    ]
 
     before = await _assertion_count(test_graph)
 
@@ -71,7 +78,10 @@ async def test_a_batch_of_participations_is_one_assertion(
         variable_values={
             "input": {
                 "event": event,
-                "participants": [{"entity": entity, "role": f"r{index}", "isInput": True} for index, entity in enumerate(entities)],
+                "participants": [
+                    {"entity": entity, "role": f"r{index}", "isInput": True}
+                    for index, entity in enumerate(entities)
+                ],
             }
         },
         context_value=simple_api_context,
@@ -92,7 +102,9 @@ async def test_a_batch_of_participations_is_one_assertion(
 
     @sync_to_async
     def links_share_it() -> int:
-        links = evidence_models.Link.objects.for_organization(test_graph.organization).filter(kind=evidence_models.Link.Kind.PARTICIPATES_AS_INPUT)
+        links = evidence_models.Link.objects.for_organization(
+            test_graph.organization
+        ).filter(kind=evidence_models.Link.Kind.PARTICIPATES_AS_INPUT)
         return len({link.assertion_id for link in links})
 
     assert await links_share_it() == 1, "And every claim in the batch points at it"
@@ -111,14 +123,24 @@ async def test_the_same_work_one_at_a_time_is_three_assertions(
     acts, and no field ties them back together.
     """
     event = await writes.create_event(api_schema, simple_api_context, "Mitosis")
-    entities = [await writes.create_entity(api_schema, simple_api_context, "Cell") for _ in range(3)]
+    entities = [
+        await writes.create_entity(api_schema, simple_api_context, "Cell")
+        for _ in range(3)
+    ]
 
     before = await _assertion_count(test_graph)
 
     for index, entity in enumerate(entities):
         one = await api_schema.execute(
             ASSERT_PARTICIPATION,
-            variable_values={"input": {"event": event, "entity": entity, "role": f"r{index}", "isInput": True}},
+            variable_values={
+                "input": {
+                    "event": event,
+                    "entity": entity,
+                    "role": f"r{index}",
+                    "isInput": True,
+                }
+            },
             context_value=simple_api_context,
         )
         assert one.errors is None, f"GraphQL errors: {one.errors}"
@@ -149,7 +171,11 @@ async def test_a_bad_id_in_the_batch_writes_nothing(
 
     @sync_to_async
     def link_count() -> int:
-        return evidence_models.Link.objects.for_organization(test_graph.organization).filter(kind=evidence_models.Link.Kind.PARTICIPATES_AS_INPUT).count()
+        return (
+            evidence_models.Link.objects.for_organization(test_graph.organization)
+            .filter(kind=evidence_models.Link.Kind.PARTICIPATES_AS_INPUT)
+            .count()
+        )
 
     links_before = await link_count()
 
@@ -160,16 +186,26 @@ async def test_a_bad_id_in_the_batch_writes_nothing(
                 "event": event,
                 "participants": [
                     {"entity": good, "role": "a", "isInput": True},
-                    {"entity": f"{test_graph.age_name}-999999999", "role": "b", "isInput": True},
+                    {
+                        "entity": f"{test_graph.age_name}-999999999",
+                        "role": "b",
+                        "isInput": True,
+                    },
                 ],
             }
         },
         context_value=simple_api_context,
     )
 
-    assert result.errors is not None, "A batch naming an entity that does not exist must fail"
-    assert await _assertion_count(test_graph) == before, "And must not have minted an assertion"
-    assert await link_count() == links_before, "Nor written the half of the batch that was valid"
+    assert result.errors is not None, (
+        "A batch naming an entity that does not exist must fail"
+    )
+    assert await _assertion_count(test_graph) == before, (
+        "And must not have minted an assertion"
+    )
+    assert await link_count() == links_before, (
+        "Nor written the half of the batch that was valid"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -185,18 +221,29 @@ async def test_classifying_several_nodes_is_one_assertion(
     way to say "this is actually a Soma" was the in-place entity update, which
     archived the node and minted a new uuid.
     """
-    entities = [await writes.create_entity(api_schema, simple_api_context, "Cell") for _ in range(2)]
+    entities = [
+        await writes.create_entity(api_schema, simple_api_context, "Cell")
+        for _ in range(2)
+    ]
 
     @sync_to_async
     def soma_id() -> str:
-        return str(core_models.EntityCategory.objects.get(graph=test_graph, key="Soma").pk)
+        return str(
+            core_models.EntityCategory.objects.get(graph=test_graph, key="Soma").pk
+        )
 
     soma = await soma_id()
     before = await _assertion_count(test_graph)
 
     result = await api_schema.execute(
         CLASSIFY_NODES,
-        variable_values={"input": {"classifications": [{"node": entity, "term": "Soma"} for entity in entities]}},
+        variable_values={
+            "input": {
+                "classifications": [
+                    {"node": entity, "term": "Soma"} for entity in entities
+                ]
+            }
+        },
         context_value=simple_api_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
@@ -210,8 +257,12 @@ async def test_classifying_several_nodes_is_one_assertion(
         # be read by any view declaring the same word, which is why binding it to
         # one view's row was wrong in the first place.
         term_id = core_models.Category.objects.get(pk=soma).term_id
-        rows = evidence_models.Link.objects.for_organization(test_graph.organization).filter(kind=evidence_models.Link.Kind.CLASSIFIES, target_ref=str(term_id))
-        nodes = evidence_models.Instance.objects.for_organization(test_graph.organization).count()
+        rows = evidence_models.Link.objects.for_organization(
+            test_graph.organization
+        ).filter(kind=evidence_models.Link.Kind.CLASSIFIES, target_ref=str(term_id))
+        nodes = evidence_models.Instance.objects.for_organization(
+            test_graph.organization
+        ).count()
         return rows.count(), nodes
 
     claim_count, node_count = await claims()
@@ -249,7 +300,11 @@ async def test_retracting_claims_reports_them_as_one_act(
 
     @sync_to_async
     def classification_id() -> str:
-        link = evidence_models.Link.objects.for_organization(test_graph.organization).filter(kind=evidence_models.Link.Kind.CLASSIFIES, source_ref=entity).first()
+        link = (
+            evidence_models.Link.objects.for_organization(test_graph.organization)
+            .filter(kind=evidence_models.Link.Kind.CLASSIFIES, source_ref=entity)
+            .first()
+        )
         assert link is not None, "Asserting an entity writes a CLASSIFIES claim"
         return str(link.pk)
 
@@ -264,10 +319,14 @@ async def test_retracting_claims_reports_them_as_one_act(
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     payload = result.data["retractLinks"]
 
-    assert payload["assertion"]["id"], "Retracting is itself a claim, and the batch is one act"
+    assert payload["assertion"]["id"], (
+        "Retracting is itself a claim, and the batch is one act"
+    )
     assert len(payload["links"]) == 1
     assert payload["links"][0]["id"] == claim_id
-    assert payload["links"][0]["kind"] == "CLASSIFIES", "A classification claim is its own kind of thing — it runs node → word, not node → node"
+    assert payload["links"][0]["kind"] == "CLASSIFIES", (
+        "A classification claim is its own kind of thing — it runs node → word, not node → node"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -297,6 +356,8 @@ SUBSCRIPTION = """
         assertionRecorded { id seq subject instances { id } }
     }
 """
+
+
 class _StubConsumer:
     """The three things `Channel.listen` reads off a consumer."""
 
@@ -308,7 +369,9 @@ class _StubConsumer:
         self.channel_name = await self.channel_layer.new_channel()
 
     @contextlib.asynccontextmanager
-    async def listen_to_channel(self, type: str, *, timeout: float | None = None, groups: Any = ()) -> AsyncIterator[Any]:
+    async def listen_to_channel(
+        self, type: str, *, timeout: float | None = None, groups: Any = ()
+    ) -> AsyncIterator[Any]:
         for group in groups:
             await self.channel_layer.group_add(group, self.channel_name)
 
@@ -337,7 +400,15 @@ async def _subscribe(api_schema, organization=None):
     client, _ = await Client.objects.aget_or_create(client_id="oinsoins")
     consumer = _StubConsumer()
     await consumer.open()
-    ctx = build_ws_context(consumer=consumer, user=user, organization=organization or org, client=client, membership=membership, token="test", connection_params={"token": "test"})
+    ctx = build_ws_context(
+        consumer=consumer,
+        user=user,
+        organization=organization or org,
+        client=client,
+        membership=membership,
+        token="test",
+        connection_params={"token": "test"},
+    )
     received: asyncio.Queue[Any] = asyncio.Queue()
 
     async def run() -> None:
@@ -355,7 +426,9 @@ async def _subscribe(api_schema, organization=None):
         if task.done() or room in getattr(consumer.channel_layer, "groups", {}):
             break
     if task.done():
-        raise AssertionError(f"subscription did not start: {task.exception() or received.get_nowait()}")
+        raise AssertionError(
+            f"subscription did not start: {task.exception() or received.get_nowait()}"
+        )
     return task, received
 
 
@@ -367,10 +440,16 @@ async def _close(task: asyncio.Task) -> None:
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_a_committed_write_is_announced(api_schema, simple_api_context, test_graph) -> None:
+async def test_a_committed_write_is_announced(
+    api_schema, simple_api_context, test_graph
+) -> None:
     task, received = await _subscribe(api_schema)
     try:
-        result = await api_schema.execute(writes.ASSERT_ENTITY, variable_values={"input": {"term": "AIS", "supportingEvidence": []}}, context_value=simple_api_context)
+        result = await api_schema.execute(
+            writes.ASSERT_ENTITY,
+            variable_values={"input": {"term": "AIS", "supportingEvidence": []}},
+            context_value=simple_api_context,
+        )
         assert result.errors is None, f"GraphQL errors: {result.errors}"
         written = result.data["assertEntityExists"]
 
@@ -379,14 +458,18 @@ async def test_a_committed_write_is_announced(api_schema, simple_api_context, te
         act = announced.data["assertionRecorded"]
         assert act["id"] == written["assertion"]["id"]
         assert act["seq"] == written["assertion"]["seq"]
-        assert [row["id"] for row in act["instances"]] == [written["instance"]["id"]], "the announced row is the full act, claims and all"
+        assert [row["id"] for row in act["instances"]] == [written["instance"]["id"]], (
+            "the announced row is the full act, claims and all"
+        )
     finally:
         await _close(task)
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_a_rolled_back_write_is_not_announced(api_schema, simple_api_context, test_graph) -> None:
+async def test_a_rolled_back_write_is_not_announced(
+    api_schema, simple_api_context, test_graph
+) -> None:
     """The broadcast is on commit. An assertion recorded inside a transaction that
     then fails was never part of the log, and nobody hears about it."""
     organization = simple_api_context.request._organization
@@ -398,7 +481,9 @@ async def test_a_rolled_back_write_is_not_announced(api_schema, simple_api_conte
             controller = GraphController()
             with pytest.raises(RuntimeError):
                 with transaction.atomic():
-                    controller._create_assertion(organization, ProvenanceContext(subject="1", app_id="test"))
+                    controller._create_assertion(
+                        organization, ProvenanceContext(subject="1", app_id="test")
+                    )
                     raise RuntimeError("something after the assertion failed")
 
         await sync_to_async(write_then_fail)()
@@ -412,7 +497,9 @@ async def test_a_rolled_back_write_is_not_announced(api_schema, simple_api_conte
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_an_act_whose_claims_fail_is_not_recorded(api_schema, simple_api_context, test_graph, monkeypatch) -> None:
+async def test_an_act_whose_claims_fail_is_not_recorded(
+    api_schema, simple_api_context, test_graph, monkeypatch
+) -> None:
     """The act is one transaction. A failure while writing the claims takes the
     assertion and its outbox row with it: the log never held an act that said
     nothing, and nobody hears about it."""
@@ -427,11 +514,19 @@ async def test_an_act_whose_claims_fail_is_not_recorded(api_schema, simple_api_c
     monkeypatch.setattr(writer, "create_instance", refuse)
     task, received = await _subscribe(api_schema)
     try:
-        result = await api_schema.execute(writes.ASSERT_ENTITY, variable_values={"input": {"term": "AIS"}}, context_value=simple_api_context)
+        result = await api_schema.execute(
+            writes.ASSERT_ENTITY,
+            variable_values={"input": {"term": "AIS"}},
+            context_value=simple_api_context,
+        )
         assert result.errors, "the write fails"
 
-        assert await evidence_models.Assertion.all_objects.acount() == before, "no act was recorded"
-        assert await projection_models.PendingProjection.objects.acount() == pending_before, "and nothing is owed to the projection"
+        assert await evidence_models.Assertion.all_objects.acount() == before, (
+            "no act was recorded"
+        )
+        assert (
+            await projection_models.PendingProjection.objects.acount() == pending_before
+        ), "and nothing is owed to the projection"
 
         with pytest.raises(asyncio.TimeoutError):
             await asyncio.wait_for(received.get(), timeout=1)
@@ -441,13 +536,17 @@ async def test_an_act_whose_claims_fail_is_not_recorded(api_schema, simple_api_c
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_another_tenants_write_is_not_heard(api_schema, simple_api_context, test_graph, other_organization) -> None:  # noqa: F811
+async def test_another_tenants_write_is_not_heard(
+    api_schema, simple_api_context, test_graph, other_organization
+) -> None:  # noqa: F811
     task, received = await _subscribe(api_schema)
     try:
 
         def foreign_write() -> None:
             with transaction.atomic():
-                assertion = writer.create_assertion(other_organization, subject="stranger", app_id="test")
+                assertion = writer.create_assertion(
+                    other_organization, subject="stranger", app_id="test"
+                )
                 channel.announce(assertion)
 
         await sync_to_async(foreign_write)()
@@ -478,8 +577,8 @@ class _Token:
         self.aud = ["kraph"]
         self.sub = "caller-sub"
         self.act = _Actor()
-        self.iat = datetime.datetime(2026, 8, 14, tzinfo=datetime.timezone.utc)
-        self.exp = datetime.datetime(2026, 8, 15, tzinfo=datetime.timezone.utc)
+        self.iat = datetime.datetime(2026, 8, 14, tzinfo=datetime.UTC)
+        self.exp = datetime.datetime(2026, 8, 15, tzinfo=datetime.UTC)
         self.jti = "token-id-once"
         self.tsk = "assignation-42"
         self.ptk = "assignation-41"
@@ -516,7 +615,11 @@ async def test_an_unprovenanced_write_still_records_a_claim(
 
     @sync_to_async
     def assertion_for() -> evidence_models.Assertion:
-        node = evidence_models.Instance.objects.for_organization(test_graph.organization).select_related("assertion").get(pk=entity_id)
+        node = (
+            evidence_models.Instance.objects.for_organization(test_graph.organization)
+            .select_related("assertion")
+            .get(pk=entity_id)
+        )
         return node.assertion
 
     assertion = await assertion_for()
@@ -542,12 +645,18 @@ async def test_a_provenanced_write_records_the_run(
 
     @sync_to_async
     def assertion_for() -> evidence_models.Assertion:
-        node = evidence_models.Instance.objects.for_organization(test_graph.organization).select_related("assertion").get(pk=entity_id)
+        node = (
+            evidence_models.Instance.objects.for_organization(test_graph.organization)
+            .select_related("assertion")
+            .get(pk=entity_id)
+        )
         return node.assertion
 
     assertion = await assertion_for()
 
-    assert assertion.action_id == "assignation-42", "The assignation is what identifies the run"
+    assert assertion.action_id == "assignation-42", (
+        "The assignation is what identifies the run"
+    )
     assert assertion.action_args["args_hash"] == "sha256-of-the-canonical-args"
     assert assertion.action_args["args_hash_algorithm"] == "canonical/v1"
 
@@ -572,10 +681,16 @@ async def test_the_raw_token_is_never_stored(
 
     @sync_to_async
     def stored() -> str:
-        node = evidence_models.Instance.objects.for_organization(test_graph.organization).select_related("assertion").get(pk=entity_id)
+        node = (
+            evidence_models.Instance.objects.for_organization(test_graph.organization)
+            .select_related("assertion")
+            .get(pk=entity_id)
+        )
         return repr(node.assertion.action_args)
 
-    assert "eyJ0aGlzIjoiaXMgYSBjcmVkZW50aWFsIn0" not in await stored(), "The raw token must not be persisted"
+    assert "eyJ0aGlzIjoiaXMgYSBjcmVkZW50aWFsIn0" not in await stored(), (
+        "The raw token must not be persisted"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -596,7 +711,9 @@ async def test_a_rule_can_filter_by_the_run(
 
     @sync_to_async
     def counts() -> tuple[int, int]:
-        assertions = evidence_models.Assertion.objects.for_organization(test_graph.organization)
+        assertions = evidence_models.Assertion.objects.for_organization(
+            test_graph.organization
+        )
         return (
             assertions.filter(action_id="assignation-42").count(),
             assertions.filter(action_name__isnull=False).count(),
@@ -604,7 +721,9 @@ async def test_a_rule_can_filter_by_the_run(
 
     by_run, named = await counts()
     assert by_run >= 1, "Evidence is attributable to the run that produced it"
-    assert named == 0, "And nothing carries an action name, because nothing supplies one"
+    assert named == 0, (
+        "And nothing carries an action name, because nothing supplies one"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -624,9 +743,13 @@ async def test_this_is_ais_6_is_one_act(
     """
     established = await writes.assert_entity(api_schema, simple_api_context, "AIS")
 
-    observed = await writes.assert_entity(api_schema, simple_api_context, "AIS", same_as=[established["instance"]["id"]])
+    observed = await writes.assert_entity(
+        api_schema, simple_api_context, "AIS", same_as=[established["instance"]["id"]]
+    )
 
-    assert observed["instance"]["id"] != established["instance"]["id"], "The observation mints its own instance rather than reusing one"
+    assert observed["instance"]["id"] != established["instance"]["id"], (
+        "The observation mints its own instance rather than reusing one"
+    )
 
     @sync_to_async
     def claims_under(assertion_id: str) -> dict[str, int]:
@@ -638,14 +761,20 @@ async def test_this_is_ais_6_is_one_act(
 
     counted = await claims_under(observed["assertion"]["id"])
     assert counted.get("classifies") == 1, "The instance is classified under the word"
-    assert counted.get("same_as") == 1, "and claimed the same as the one already known — under the same assertion"
+    assert counted.get("same_as") == 1, (
+        "and claimed the same as the one already known — under the same assertion"
+    )
 
     @sync_to_async
     def component() -> list[str]:
         organization = test_graph.organization
-        return identity.component_refs(organization, [observed["instance"]["id"]])[observed["instance"]["id"]]
+        return identity.component_refs(organization, [observed["instance"]["id"]])[
+            observed["instance"]["id"]
+        ]
 
-    assert sorted(await component()) == sorted([observed["instance"]["id"], established["instance"]["id"]])
+    assert sorted(await component()) == sorted(
+        [observed["instance"]["id"], established["instance"]["id"]]
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -661,7 +790,12 @@ async def test_three_instances_claimed_together_are_one_assertion(
     sameness has no primary — making the first argument the hub would let identity
     depend on argument order.
     """
-    entities = [(await writes.assert_entity(api_schema, simple_api_context, "AIS"))["instance"]["id"] for _ in range(3)]
+    entities = [
+        (await writes.assert_entity(api_schema, simple_api_context, "AIS"))["instance"][
+            "id"
+        ]
+        for _ in range(3)
+    ]
 
     result = await api_schema.execute(
         ASSERT_SAME,
@@ -670,11 +804,15 @@ async def test_three_instances_claimed_together_are_one_assertion(
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
 
-    assert len({claim["id"] for claim in result.data["assertSameInstance"]["links"]}) == 2, "n instances need n-1 claims to connect"
+    assert (
+        len({claim["id"] for claim in result.data["assertSameInstance"]["links"]}) == 2
+    ), "n instances need n-1 claims to connect"
 
     @sync_to_async
     def component() -> list[str]:
-        return identity.component_refs(test_graph.organization, [entities[0]])[entities[0]]
+        return identity.component_refs(test_graph.organization, [entities[0]])[
+            entities[0]
+        ]
 
     assert sorted(await component()) == sorted(entities)
 
@@ -732,20 +870,33 @@ async def test_a_protocol_event_with_inputs_succeeds_and_is_recorded_as_one(
 
     @sync_to_async
     def participation_edges() -> list[str]:
-        return [str(role) for role in drawing.edge_property_values(test_graph, "SUBJECTED_IN", "role")]
+        return [
+            str(role)
+            for role in drawing.edge_property_values(test_graph, "SUBJECTED_IN", "role")
+        ]
 
-    assert await participation_edges() == ["a"], "A protocol event takes the labels its own docstring describes, not a natural event's"
+    assert await participation_edges() == ["a"], (
+        "A protocol event takes the labels its own docstring describes, not a natural event's"
+    )
 
     @sync_to_async
     def kinds() -> list[str]:
-        return list(evidence_models.Instance.objects.for_organization(test_graph.organization).filter(term=category.term).values_list("kind", flat=True))
+        return list(
+            evidence_models.Instance.objects.for_organization(test_graph.organization)
+            .filter(term=category.term)
+            .values_list("kind", flat=True)
+        )
 
-    assert await kinds() == ["protocol_event"], "A protocol event must be recorded as one"
+    assert await kinds() == ["protocol_event"], (
+        "A protocol event must be recorded as one"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_an_event_naming_a_missing_participant_writes_nothing(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
+async def test_an_event_naming_a_missing_participant_writes_nothing(
+    api_schema, simple_api_context, test_graph: core_models.Graph
+) -> None:
     """A1 on the event path: the event, its participations and the act are one
     transaction, so an event naming a participant that does not exist leaves no
     assertion, no instance, no participation and no outbox row behind."""
@@ -754,19 +905,33 @@ async def test_an_event_naming_a_missing_participant_writes_nothing(api_schema, 
 
     @sync_to_async
     def counts() -> tuple[int, int, int, int]:
-        participations = (evidence_models.Link.Kind.PARTICIPATES_AS_INPUT, evidence_models.Link.Kind.PARTICIPATES_AS_OUTPUT)
+        participations = (
+            evidence_models.Link.Kind.PARTICIPATES_AS_INPUT,
+            evidence_models.Link.Kind.PARTICIPATES_AS_OUTPUT,
+        )
         return (
             evidence_models.Assertion.objects.for_organization(organization).count(),
             evidence_models.Instance.objects.for_organization(organization).count(),
-            evidence_models.Link.objects.for_organization(organization).filter(kind__in=participations).count(),
+            evidence_models.Link.objects.for_organization(organization)
+            .filter(kind__in=participations)
+            .count(),
             watermark.pending_count(organization),
         )
 
     before = await counts()
     failed = await api_schema.execute(
         writes.ASSERT_NATURAL_EVENT_EXISTS,
-        variable_values={"input": {"term": "Mitosis", "inputs": [{"role": "a", "entityId": mother}], "outputs": [{"role": "a", "entityId": str(uuid.uuid4())}], "supportingEvidence": []}},
+        variable_values={
+            "input": {
+                "term": "Mitosis",
+                "inputs": [{"role": "a", "entityId": mother}],
+                "outputs": [{"role": "a", "entityId": str(uuid.uuid4())}],
+                "supportingEvidence": [],
+            }
+        },
         context_value=simple_api_context,
     )
     assert failed.errors, "a participant that names no node is refused"
-    assert await counts() == before, "and the refusal left nothing behind: not the act, not the event, not the one good participation"
+    assert await counts() == before, (
+        "and the refusal left nothing behind: not the act, not the event, not the one good participation"
+    )

@@ -10,23 +10,30 @@ never fire and the call was an unconditional destruction wearing a refusal's
 clothes.
 """
 
+import uuid
+
 import kante
 import pytest
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
+
 from core import models as core_models
-import uuid
 from evidence import models as evidence_models
 from tests.support import writes
-
 
 DELETE_GRAPH = """
     mutation DeleteGraph($input: DeleteGraphInput!) {
         deleteGraph(input: $input)
     }
 """
+
+
 async def _delete(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph):
-    return await api_schema.execute(DELETE_GRAPH, variable_values={"input": {"id": str(graph.id)}}, context_value=ctx)
+    return await api_schema.execute(
+        DELETE_GRAPH,
+        variable_values={"input": {"id": str(graph.id)}},
+        context_value=ctx,
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -47,7 +54,9 @@ async def test_a_live_graph_cannot_be_deleted(
     assert result.errors, "A live graph must not be deletable"
     assert "archive it first" in str(result.errors[0])
 
-    assert await core_models.Graph.objects.filter(pk=test_graph.pk).aexists(), "And the refusal must actually refuse"
+    assert await core_models.Graph.objects.filter(pk=test_graph.pk).aexists(), (
+        "And the refusal must actually refuse"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -86,18 +95,28 @@ async def test_an_archived_graph_holding_nodes_is_still_deletable(
 
     @sync_to_async
     def node_count() -> int:
-        return evidence_models.Instance.objects.for_organization(test_graph.organization).count()
+        return evidence_models.Instance.objects.for_organization(
+            test_graph.organization
+        ).count()
 
     before = await node_count()
     assert before >= 1
 
-    await api_schema.execute(writes.ARCHIVE_GRAPH, variable_values={"input": {"id": str(test_graph.id)}}, context_value=authenticated_context)
+    await api_schema.execute(
+        writes.ARCHIVE_GRAPH,
+        variable_values={"input": {"id": str(test_graph.id)}},
+        context_value=authenticated_context,
+    )
 
     result = await _delete(api_schema, authenticated_context, test_graph)
     assert result.errors is None, f"A used view is still deletable: {result.errors}"
 
-    assert not await core_models.Graph.objects.filter(pk=test_graph.pk).aexists(), "The view goes"
-    assert await node_count() == before, "And every node survives it — evidence is the organization's, not the view's"
+    assert not await core_models.Graph.objects.filter(pk=test_graph.pk).aexists(), (
+        "The view goes"
+    )
+    assert await node_count() == before, (
+        "And every node survives it — evidence is the organization's, not the view's"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -120,7 +139,9 @@ async def test_an_empty_archived_graph_is_deletable(
     @sync_to_async
     def make() -> core_models.Graph:
         graph = materialize(
-            input_models.GraphDefinitionInput(system_version="1.0.0", extensions=input_models.GraphExtensionsInput()),
+            input_models.GraphDefinitionInput(
+                system_version="1.0.0", extensions=input_models.GraphExtensionsInput()
+            ),
             table_projector,
             user=request._user,
             organization=request._organization,
@@ -136,7 +157,9 @@ async def test_an_empty_archived_graph_is_deletable(
     result = await _delete(api_schema, authenticated_context, graph)
     assert result.errors is None, f"GraphQL errors: {result.errors}"
 
-    assert not await core_models.Graph.objects.filter(pk=graph.pk).aexists(), "An empty archived graph really goes"
+    assert not await core_models.Graph.objects.filter(pk=graph.pk).aexists(), (
+        "An empty archived graph really goes"
+    )
 
 
 DELETE_ENTITY_CATEGORY = """
@@ -153,8 +176,12 @@ DELETE_STRUCTURE_KIND = """
 """
 
 
-async def _an_entity(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph) -> tuple[str, core_models.EntityCategory]:
-    category = await core_models.EntityCategory.objects.filter(graph=graph, key="AIS").afirst()
+async def _an_entity(
+    api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph
+) -> tuple[str, core_models.EntityCategory]:
+    category = await core_models.EntityCategory.objects.filter(
+        graph=graph, key="AIS"
+    ).afirst()
     assert category is not None
     created = await api_schema.execute(
         writes.ASSERT_ENTITY_EXISTS,
@@ -198,13 +225,19 @@ async def test_deleting_a_used_entity_category_is_allowed_and_the_evidence_survi
     @sync_to_async
     def survivors() -> tuple[int, int, int]:
         return (
-            evidence_models.Instance.objects.for_organization(test_graph.organization).filter(term_id=term_id).count(),
+            evidence_models.Instance.objects.for_organization(test_graph.organization)
+            .filter(term_id=term_id)
+            .count(),
             core_models.EntityCategory.objects.filter(pk=category.pk).count(),
-            evidence_models.Term.objects.for_organization(test_graph.organization).filter(pk=term_id).count(),
+            evidence_models.Term.objects.for_organization(test_graph.organization)
+            .filter(pk=term_id)
+            .count(),
         )
 
     nodes, categories, terms = await survivors()
-    assert nodes == 1, "The evidence is organization-scoped and outlives any view built from it"
+    assert nodes == 1, (
+        "The evidence is organization-scoped and outlives any view built from it"
+    )
     assert categories == 0, "The view's rule is gone"
     assert terms == 1, "And the word it declared is still the organization's"
 
@@ -228,7 +261,9 @@ async def test_deleting_a_used_term_is_refused(
         from django.db.models import ProtectedError
 
         try:
-            evidence_models.Term.objects.for_organization(test_graph.organization).get(pk=category.term_id).delete()
+            evidence_models.Term.objects.for_organization(test_graph.organization).get(
+                pk=category.term_id
+            ).delete()
         except ProtectedError as error:
             return str(error)
         return ""
@@ -260,7 +295,9 @@ async def test_deleting_a_graph_leaves_the_evidence_standing(
 
     @sync_to_async
     def node_count() -> int:
-        return evidence_models.Instance.objects.for_organization(test_graph.organization).count()
+        return evidence_models.Instance.objects.for_organization(
+            test_graph.organization
+        ).count()
 
     before = await node_count()
     assert before >= 1
@@ -287,7 +324,9 @@ async def test_deleting_a_graph_leaves_the_evidence_standing(
     @sync_to_async
     def survivors() -> tuple[int, int]:
         return (
-            evidence_models.Instance.objects.for_organization(test_graph.organization).count(),
+            evidence_models.Instance.objects.for_organization(
+                test_graph.organization
+            ).count(),
             core_models.Graph.objects.filter(pk=test_graph.pk).count(),
         )
 
@@ -311,14 +350,22 @@ async def test_deleting_a_used_structure_kind_is_refused(
     """
     created = await api_schema.execute(
         writes.ASSERT_STRUCTURE,
-        variable_values={"input": {"identifier": "ROI", "object": f"roi_{uuid.uuid4().hex[:8]}", "metrics": []}},
+        variable_values={
+            "input": {
+                "identifier": "ROI",
+                "object": f"roi_{uuid.uuid4().hex[:8]}",
+                "metrics": [],
+            }
+        },
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
 
     @sync_to_async
     def the_kind() -> evidence_models.StructureKind:
-        return evidence_models.StructureKind.objects.for_organization(test_graph.organization).get(identifier="ROI")
+        return evidence_models.StructureKind.objects.for_organization(
+            test_graph.organization
+        ).get(identifier="ROI")
 
     kind = await the_kind()
 
@@ -332,6 +379,10 @@ async def test_deleting_a_used_structure_kind_is_refused(
 
     @sync_to_async
     def structures() -> int:
-        return evidence_models.Structure.objects.for_organization(test_graph.organization).filter(kind=kind).count()
+        return (
+            evidence_models.Structure.objects.for_organization(test_graph.organization)
+            .filter(kind=kind)
+            .count()
+        )
 
     assert await structures() == 1

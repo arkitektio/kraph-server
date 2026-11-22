@@ -22,6 +22,10 @@ def test_makemigrations_has_nothing_to_write(django_db_blocker) -> None:
     with django_db_blocker.unblock(), warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         try:
-            call_command("makemigrations", "--check", "--dry-run", stdout=out, stderr=out)
+            call_command(
+                "makemigrations", "--check", "--dry-run", stdout=out, stderr=out
+            )
         except SystemExit as exc:  # --check exits 1 when a migration is pending
-            raise AssertionError(f"Model changes with no migration:\n{out.getvalue()}") from exc
+            raise AssertionError(
+                f"Model changes with no migration:\n{out.getvalue()}"
+            ) from exc

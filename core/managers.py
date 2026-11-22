@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Generic, Iterable, Optional, TYPE_CHECKING, TypeVar
-
-from asgiref.sync import sync_to_async, async_to_sync
-from django.db import models
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Generic, TypeVar
 
 from arkitekt_datalayer import models as datalayer_models
+from asgiref.sync import async_to_sync, sync_to_async
+from django.db import models
+
 from graph_engine import input_models
 
 if TYPE_CHECKING:
@@ -47,11 +48,19 @@ class KindedManager[Row: models.Model](models.Manager):
     def create(self, **kwargs: object) -> Row:
         return super().create(**self._stamped(kwargs))
 
-    def get_or_create(self, defaults: Optional[dict[str, object]] = None, **kwargs: object) -> tuple[Row, bool]:
-        return super().get_or_create(defaults=self._stamped(dict(defaults or {})), **kwargs)
+    def get_or_create(
+        self, defaults: dict[str, object] | None = None, **kwargs: object
+    ) -> tuple[Row, bool]:
+        return super().get_or_create(
+            defaults=self._stamped(dict(defaults or {})), **kwargs
+        )
 
-    def update_or_create(self, defaults: Optional[dict[str, object]] = None, **kwargs: object) -> tuple[Row, bool]:
-        return super().update_or_create(defaults=self._stamped(dict(defaults or {})), **kwargs)
+    def update_or_create(
+        self, defaults: dict[str, object] | None = None, **kwargs: object
+    ) -> tuple[Row, bool]:
+        return super().update_or_create(
+            defaults=self._stamped(dict(defaults or {})), **kwargs
+        )
 
 
 class CategoryManager(KindedManager["core_models.Category"], Generic[T]):
@@ -61,7 +70,7 @@ class CategoryManager(KindedManager["core_models.Category"], Generic[T]):
         """Convert a category key to an AGE-compatible name by converting to lowercase and replacing spaces with underscores."""
         return key.lower().replace(" ", "_")
 
-    def _term_for(self, graph: "core_models.Graph", key: str):
+    def _term_for(self, graph: core_models.Graph, key: str):
         """The organization's word this category declares, minted if it is new.
 
         The join the evidence log names. Every path that creates a category comes
@@ -76,7 +85,9 @@ class CategoryManager(KindedManager["core_models.Category"], Generic[T]):
 
         return evidence_writer.ensure_term(graph.organization, self.model.KIND, key)
 
-    def _resolve_store_id(self, image: datalayer_models.MediaStore | str | None, graph_id: int) -> str | None:
+    def _resolve_store_id(
+        self, image: datalayer_models.MediaStore | str | None, graph_id: int
+    ) -> str | None:
         """The id of the media store ``image`` names, refused unless it belongs to the graph's organization.
 
         A store is an organization's: naming another organization's store id would hand
@@ -84,15 +95,27 @@ class CategoryManager(KindedManager["core_models.Category"], Generic[T]):
         """
         if image is None:
             return None
-        store_id = str(image.id) if isinstance(image, datalayer_models.MediaStore) else str(image)
+        store_id = (
+            str(image.id)
+            if isinstance(image, datalayer_models.MediaStore)
+            else str(image)
+        )
         from core.models import Graph
 
-        organization_id = Graph.objects.values_list("organization_id", flat=True).get(pk=graph_id)
-        if not datalayer_models.MediaStore.objects.filter(id=store_id, organization_id=organization_id).exists():
-            raise PermissionError(f"No media store {store_id} in this graph's organization.")
+        organization_id = Graph.objects.values_list("organization_id", flat=True).get(
+            pk=graph_id
+        )
+        if not datalayer_models.MediaStore.objects.filter(
+            id=store_id, organization_id=organization_id
+        ).exists():
+            raise PermissionError(
+                f"No media store {store_id} in this graph's organization."
+            )
         return store_id
 
-    def _apply_pin(self, category: "core_models.Category", user, pin: Optional[bool]) -> None:
+    def _apply_pin(
+        self, category: core_models.Category, user, pin: bool | None
+    ) -> None:
         """Add or remove this user's pin. `None` means the caller said nothing about it.
 
         Pinning is per-user and lives on a many-to-many, so it cannot ride in
@@ -110,8 +133,8 @@ class CategoryManager(KindedManager["core_models.Category"], Generic[T]):
 
     async def _apply_ontology_references(
         self,
-        category: "core_models.Category",
-        references: Optional[Iterable[input_models.OntologyReferenceInput]],
+        category: core_models.Category,
+        references: Iterable[input_models.OntologyReferenceInput] | None,
     ) -> None:
         """Record the ontology terms this category was declared against.
 
@@ -133,9 +156,13 @@ class CategoryManager(KindedManager["core_models.Category"], Generic[T]):
             return
         from core import models as core_models
 
-        await sync_to_async(core_models.OntologyReference.objects.filter(category=category).delete)()
+        await sync_to_async(
+            core_models.OntologyReference.objects.filter(category=category).delete
+        )()
         for reference in references:
-            ontology, _ = await sync_to_async(core_models.GraphOntology.objects.get_or_create)(
+            ontology, _ = await sync_to_async(
+                core_models.GraphOntology.objects.get_or_create
+            )(
                 graph=category.graph,
                 name=reference.prefix,
                 defaults={"url": reference.uri, "description": None},
@@ -157,9 +184,9 @@ class NodeCategoryManager(CategoryManager[T], Generic[T]):
 
     async def acreate_from_node_definition(
         self,
-        graph: "core_models.Graph",
+        graph: core_models.Graph,
         definition: input_models.NodeDefinitionInput,
-        other_defaults: Optional[dict[str, object]] = None,
+        other_defaults: dict[str, object] | None = None,
     ) -> T:
         resolved_age_name = self.key_to_age_name(definition.key)
         label = definition.label or definition.key
@@ -176,7 +203,9 @@ class NodeCategoryManager(CategoryManager[T], Generic[T]):
             **(other_defaults or {}),
         }
 
-        store_id = await sync_to_async(self._resolve_store_id)(definition.image, graph.pk)
+        store_id = await sync_to_async(self._resolve_store_id)(
+            definition.image, graph.pk
+        )
         if store_id is not None:
             # `image_id`, not `store_id`. `Category` has an `image` FK and no
             # `store` field at all, so `defaults["store_id"]` named a column that
@@ -204,10 +233,14 @@ class NodeCategoryManager(CategoryManager[T], Generic[T]):
 class EntityCategoryManager(NodeCategoryManager["core_models.EntityCategory"]):
     async def acreate_from_entity_definition(
         self,
-        graph: "core_models.Graph",
+        graph: core_models.Graph,
         definition: input_models.EntityDefinitionInput,
-    ) -> "core_models.EntityCategory":
-        property_defs = [p.model_dump(mode="json") for p in definition.property_definitions] if definition.property_definitions else []
+    ) -> core_models.EntityCategory:
+        property_defs = (
+            [p.model_dump(mode="json") for p in definition.property_definitions]
+            if definition.property_definitions
+            else []
+        )
 
         category = await self.acreate_from_node_definition(
             graph=graph,
@@ -216,7 +249,9 @@ class EntityCategoryManager(NodeCategoryManager["core_models.EntityCategory"]):
                 "instance_kind": definition.instance_kind,
                 "property_definitions": property_defs,
                 # The category's *meaning* (RFC 0007). Empty means primitive.
-                "definition": definition.definition.to_stored() if definition.definition else {},
+                "definition": definition.definition.to_stored()
+                if definition.definition
+                else {},
             },
         )
 
@@ -224,24 +259,28 @@ class EntityCategoryManager(NodeCategoryManager["core_models.EntityCategory"]):
 
     def create_from_entity_definition(
         self,
-        graph: "core_models.Graph",
+        graph: core_models.Graph,
         definition: input_models.EntityDefinitionInput,
-    ) -> "core_models.EntityCategory":
+    ) -> core_models.EntityCategory:
         return async_to_sync(self.acreate_from_entity_definition)(graph, definition)
 
     def update_from_entity_definition(
         self,
-        category: "core_models.EntityCategory",
+        category: core_models.EntityCategory,
         definition: input_models.EntityDefinitionInput,
-    ) -> "core_models.EntityCategory":
+    ) -> core_models.EntityCategory:
         return async_to_sync(self.aupdate_from_entity_definition)(category, definition)
 
     async def aupdate_from_entity_definition(
         self,
-        category: "core_models.EntityCategory",
+        category: core_models.EntityCategory,
         definition: input_models.EntityDefinitionInput,
-    ) -> "core_models.EntityCategory":
-        property_defs = [p.model_dump(mode="json") for p in definition.property_definitions] if definition.property_definitions else []
+    ) -> core_models.EntityCategory:
+        property_defs = (
+            [p.model_dump(mode="json") for p in definition.property_definitions]
+            if definition.property_definitions
+            else []
+        )
 
         category.label = definition.label or category.label
         category.description = definition.description or category.description
@@ -256,7 +295,9 @@ class EntityCategoryManager(NodeCategoryManager["core_models.EntityCategory"]):
         elif getattr(definition, "definition", None) is not None:
             category.definition = definition.definition.to_stored()
 
-        store_id = await sync_to_async(self._resolve_store_id)(definition.image, category.graph_id)
+        store_id = await sync_to_async(self._resolve_store_id)(
+            definition.image, category.graph_id
+        )
         if store_id is not None:
             category.image_id = store_id
         if definition.color is not None:
@@ -283,43 +324,55 @@ class EventCategoryManager(NodeCategoryManager[T], Generic[T]):
 
     async def acreate_from_event_definition(
         self,
-        graph: "core_models.Graph",
+        graph: core_models.Graph,
         definition: input_models.EventDefinitionInput,
     ) -> T:
         return await self.acreate_from_node_definition(
             graph=graph,
             definition=definition,
             other_defaults={
-                "property_definitions": [prop.model_dump(mode="json") for prop in definition.properties],
+                "property_definitions": [
+                    prop.model_dump(mode="json") for prop in definition.properties
+                ],
                 # The category's complete rule (RFC 0009). Empty means primitive.
                 # Absent from `create_natural_event_category`'s hand-written
                 # defaults, so a natural event category declared with a rule
                 # stored none and folded as primitive ever after.
-                "definition": definition.definition.to_stored() if definition.definition else {},
+                "definition": definition.definition.to_stored()
+                if definition.definition
+                else {},
                 # Who may take part, and under which role name. An **empty list
                 # admits everything** (`namespace._role_endpoints`), so dropping
                 # these did not lose a label — it silently widened every event
                 # category created through the API to every entity-like category
                 # in the view, while the same category created by `materialize`
                 # carried the declared roles.
-                "source_entity_roles": [role.model_dump(mode="json") for role in definition.inputs],
-                "target_entity_roles": [role.model_dump(mode="json") for role in definition.outputs],
+                "source_entity_roles": [
+                    role.model_dump(mode="json") for role in definition.inputs
+                ],
+                "target_entity_roles": [
+                    role.model_dump(mode="json") for role in definition.outputs
+                ],
             },
         )
 
     def create_from_event_definition(
         self,
-        graph: "core_models.Graph",
+        graph: core_models.Graph,
         definition: input_models.EventDefinitionInput,
     ) -> T:
         return async_to_sync(self.acreate_from_event_definition)(graph, definition)
 
 
-class NaturalEventCategoryManager(EventCategoryManager["core_models.NaturalEventCategory"]):
+class NaturalEventCategoryManager(
+    EventCategoryManager["core_models.NaturalEventCategory"]
+):
     pass
 
 
-class ProtocolEventCategoryManager(EventCategoryManager["core_models.ProtocolEventCategory"]):
+class ProtocolEventCategoryManager(
+    EventCategoryManager["core_models.ProtocolEventCategory"]
+):
     pass
 
 
@@ -331,9 +384,9 @@ class EdgeCategoryManager(CategoryManager[T], Generic[T]):
 
     async def acreate_from_edge_definition(
         self,
-        graph: "core_models.Graph",
+        graph: core_models.Graph,
         definition: input_models.EdgeDefinitionInput,
-        other_defaults: Optional[dict[str, object]] = None,
+        other_defaults: dict[str, object] | None = None,
     ) -> T:
         resolved_age_name = self.key_to_age_name(definition.key)
         label = definition.label or definition.key
@@ -344,7 +397,9 @@ class EdgeCategoryManager(CategoryManager[T], Generic[T]):
             "description": definition.description,
             "age_name": resolved_age_name,
             # The category's complete rule (RFC 0012). Empty means primitive.
-            "definition": definition.definition.to_stored() if getattr(definition, "definition", None) else {},
+            "definition": definition.definition.to_stored()
+            if getattr(definition, "definition", None)
+            else {},
             # See `NodeCategoryManager._term_for` — the same reasoning for edges.
             "term": await sync_to_async(self._term_for)(graph, definition.key),
             **(other_defaults or {}),
@@ -370,9 +425,13 @@ class EdgeCategoryManager(CategoryManager[T], Generic[T]):
             defaults["target_definition"] = target.model_dump(mode="json")
 
         if property_definitions is not None:
-            defaults["property_definitions"] = [prop.model_dump(mode="json") for prop in property_definitions]
+            defaults["property_definitions"] = [
+                prop.model_dump(mode="json") for prop in property_definitions
+            ]
 
-        store_id = await sync_to_async(self._resolve_store_id)(definition.image, graph.pk)
+        store_id = await sync_to_async(self._resolve_store_id)(
+            definition.image, graph.pk
+        )
         if store_id is not None:
             # `image_id`, not `store_id`. `Category` has an `image` FK and no
             # `store` field at all, so `defaults["store_id"]` named a column that
@@ -398,11 +457,13 @@ class EdgeCategoryManager(CategoryManager[T], Generic[T]):
 
     def create_from_edge_definition(
         self,
-        graph: "core_models.Graph",
+        graph: core_models.Graph,
         definition: input_models.EdgeDefinitionInput,
-        other_defaults: Optional[dict[str, object]] = None,
+        other_defaults: dict[str, object] | None = None,
     ) -> T:
-        return async_to_sync(self.acreate_from_edge_definition)(graph, definition, other_defaults)
+        return async_to_sync(self.acreate_from_edge_definition)(
+            graph, definition, other_defaults
+        )
 
 
 class StructureCategoryManager(NodeCategoryManager["core_models.StructureCategory"]):
@@ -410,9 +471,9 @@ class StructureCategoryManager(NodeCategoryManager["core_models.StructureCategor
 
     async def acreate_from_structure_definition(
         self,
-        graph: "core_models.Graph",
+        graph: core_models.Graph,
         definition: input_models.StructureDefinitionInput,
-    ) -> "core_models.StructureCategory":
+    ) -> core_models.StructureCategory:
         """Mount ``definition.identifier`` as the vertex category ``definition.key`` in ``graph``.
 
         The organization's `StructureKind` is minted if it is new, as any structure write
@@ -421,22 +482,31 @@ class StructureCategoryManager(NodeCategoryManager["core_models.StructureCategor
         from evidence import writer as evidence_writer
 
         organization = await sync_to_async(lambda: graph.organization)()
-        kind = await sync_to_async(evidence_writer.ensure_structure_kind)(organization, str(definition.identifier))
+        kind = await sync_to_async(evidence_writer.ensure_structure_kind)(
+            organization, str(definition.identifier)
+        )
         return await self.acreate_from_node_definition(
             graph=graph,
-            definition=definition.model_copy(update={"label": definition.label or kind.label, "description": definition.description or kind.description}),
+            definition=definition.model_copy(
+                update={
+                    "label": definition.label or kind.label,
+                    "description": definition.description or kind.description,
+                }
+            ),
             other_defaults={"structure_kind": kind},
         )
 
     def create_from_structure_definition(
         self,
-        graph: "core_models.Graph",
+        graph: core_models.Graph,
         definition: input_models.StructureDefinitionInput,
-    ) -> "core_models.StructureCategory":
+    ) -> core_models.StructureCategory:
         return async_to_sync(self.acreate_from_structure_definition)(graph, definition)
 
 
-def refuse_unmounted_ends(graph: "core_models.Graph", definition: input_models.StructureRelationDefinitionInput) -> None:
+def refuse_unmounted_ends(
+    graph: core_models.Graph, definition: input_models.StructureRelationDefinitionInput
+) -> None:
     """A structure relation's ends may only name identifiers the view mounts (RFC 0027).
 
     Every endpoint the category admits is drawn under the STRUCTURE category of its
@@ -446,35 +516,47 @@ def refuse_unmounted_ends(graph: "core_models.Graph", definition: input_models.S
     from core import models as core_models
 
     mounted = set(core_models.mounted_structure_categories(graph))
-    named = {str(identifier) for end in (definition.source, definition.target) for identifier in (end.identifiers or [])}
+    named = {
+        str(identifier)
+        for end in (definition.source, definition.target)
+        for identifier in (end.identifiers or [])
+    }
     missing = sorted(named - mounted)
     if missing:
-        raise ValueError(f"{definition.key}: the view mounts no structure {', '.join(missing)}. Mount it first (a STRUCTURE category: `structures` in the graph definition, or createStructureCategory)")
+        raise ValueError(
+            f"{definition.key}: the view mounts no structure {', '.join(missing)}. Mount it first (a STRUCTURE category: `structures` in the graph definition, or createStructureCategory)"
+        )
 
 
-class StructureRelationCategoryManager(EdgeCategoryManager["core_models.StructureRelationCategory"]):
+class StructureRelationCategoryManager(
+    EdgeCategoryManager["core_models.StructureRelationCategory"]
+):
     async def acreate_from_structure_relation_definition(
         self,
-        graph: "core_models.Graph",
+        graph: core_models.Graph,
         definition: input_models.StructureRelationDefinitionInput,
-    ) -> "core_models.StructureRelationCategory":
+    ) -> core_models.StructureRelationCategory:
         await sync_to_async(refuse_unmounted_ends)(graph, definition)
-        return await super().acreate_from_edge_definition(graph=graph, definition=definition)
+        return await super().acreate_from_edge_definition(
+            graph=graph, definition=definition
+        )
 
     def create_from_structure_relation_definition(
         self,
-        graph: "core_models.Graph",
+        graph: core_models.Graph,
         definition: input_models.StructureRelationDefinitionInput,
-    ) -> "core_models.StructureRelationCategory":
-        return async_to_sync(self.acreate_from_structure_relation_definition)(graph, definition)
+    ) -> core_models.StructureRelationCategory:
+        return async_to_sync(self.acreate_from_structure_relation_definition)(
+            graph, definition
+        )
 
 
 class RelationCategoryManager(EdgeCategoryManager["core_models.RelationCategory"]):
     async def acreate_from_relation_definition(
         self,
-        graph: "core_models.Graph",
+        graph: core_models.Graph,
         definition: input_models.RelationDefinitionInput,
-    ) -> "core_models.RelationCategory":
+    ) -> core_models.RelationCategory:
         category = await super().acreate_from_edge_definition(
             graph=graph,
             definition=definition,
@@ -484,18 +566,20 @@ class RelationCategoryManager(EdgeCategoryManager["core_models.RelationCategory"
 
     def create_from_relation_definition(
         self,
-        graph: "core_models.Graph",
+        graph: core_models.Graph,
         definition: input_models.RelationDefinitionInput,
-    ) -> "core_models.RelationCategory":
+    ) -> core_models.RelationCategory:
         return async_to_sync(self.acreate_from_relation_definition)(graph, definition)
 
 
-class MeasurementCategoryManager(EdgeCategoryManager["core_models.MeasurementCategory"]):
+class MeasurementCategoryManager(
+    EdgeCategoryManager["core_models.MeasurementCategory"]
+):
     async def acreate_from_measurement_definition(
         self,
-        graph: "core_models.Graph",
+        graph: core_models.Graph,
         definition: input_models.MeasurementDefinitionInput,
-    ) -> "core_models.MeasurementCategory":
+    ) -> core_models.MeasurementCategory:
         return await super().acreate_from_edge_definition(
             graph=graph,
             definition=definition,
@@ -503,7 +587,9 @@ class MeasurementCategoryManager(EdgeCategoryManager["core_models.MeasurementCat
 
     def create_from_measurement_definition(
         self,
-        graph: "core_models.Graph",
+        graph: core_models.Graph,
         definition: input_models.MeasurementDefinitionInput,
-    ) -> "core_models.MeasurementCategory":
-        return async_to_sync(self.acreate_from_measurement_definition)(graph, definition)
+    ) -> core_models.MeasurementCategory:
+        return async_to_sync(self.acreate_from_measurement_definition)(
+            graph, definition
+        )

@@ -42,14 +42,18 @@ def delete_or_explain(item, *, what: str, instead: str) -> None:
         blockers = list(error.protected_objects)[:5]
         detail = ", ".join(str(blocker) for blocker in blockers)
         more = "" if len(blockers) < 5 else " (and more)"
-        raise ValueError(f"Cannot delete {what}: evidence still refers to it — {detail}{more}. Evidence is append-only, so the term it was recorded under has to outlive it. {instead}") from error
+        raise ValueError(
+            f"Cannot delete {what}: evidence still refers to it — {detail}{more}. Evidence is append-only, so the term it was recorded under has to outlive it. {instead}"
+        ) from error
     except RestrictedError as error:
         # The datasets' `RESTRICT`s: a model cites the run it was trained on, and a
         # view's deletion would cascade through its queries' runs to one.
         blockers = list(error.restricted_objects)[:5]
         detail = ", ".join(str(blocker) for blocker in blockers)
         more = "" if len(blockers) < 5 else " (and more)"
-        raise ValueError(f"Cannot delete {what}: {detail}{more} cite(s) what it holds, as the pairs they were trained on. Delete those first.") from error
+        raise ValueError(
+            f"Cannot delete {what}: {detail}{more} cite(s) what it holds, as the pairs they were trained on. Delete those first."
+        ) from error
 
 
 def refuse_edge_properties(key: str, property_definitions) -> None:
@@ -76,5 +80,10 @@ def refuse_bad_color(color) -> None:
     if not color:
         return
     values = list(color)
-    if len(values) not in (3, 4) or any(not isinstance(c, int) or isinstance(c, bool) or not 0 <= c <= 255 for c in values):
-        raise ValueError(f"Color must be three or four integers in [0, 255] (RGB or RGBA), got {values!r}")
+    if len(values) not in (3, 4) or any(
+        not isinstance(c, int) or isinstance(c, bool) or not 0 <= c <= 255
+        for c in values
+    ):
+        raise ValueError(
+            f"Color must be three or four integers in [0, 255] (RGB or RGBA), got {values!r}"
+        )

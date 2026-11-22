@@ -1,22 +1,23 @@
 import random
 import uuid
 from typing import TYPE_CHECKING, Any
+
+from arkitekt_datalayer import models as datalayer_models
 from arkitekt_service.service.described import Described
+from authentikate.models import Membership, Organization
+from django.contrib.auth import get_user_model
 from django.contrib.postgres.indexes import GinIndex
 from django.db import models
-from django.contrib.auth import get_user_model
-from kante import Info
-from core import enums
-from core import managers
-from koherent.fields import ProvenanceField
-from arkitekt_datalayer import models as datalayer_models
-from authentikate.models import Organization, Membership
-from kraph_server.contract import ADMIN, CURATOR
 from django.db.models import Q, QuerySet
 from django.db.models.functions import Now
-# Create your models here.
+from kante import Info
+from koherent.fields import ProvenanceField
 
+from core import enums, managers
+
+# Create your models here.
 from graph_engine.input_models import EntityDescriptorInput, StructureDescriptorInput
+from kraph_server.contract import ADMIN, CURATOR
 
 if TYPE_CHECKING:
     # Only ever an annotation here. The descriptor methods below are typed
@@ -94,8 +95,12 @@ class Graph(models.Model):
     drawn into one projection namespace.
     """
 
-    membership = models.ForeignKey(Membership, on_delete=models.CASCADE, related_name="graphs")
-    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="graphs")
+    membership = models.ForeignKey(
+        Membership, on_delete=models.CASCADE, related_name="graphs"
+    )
+    organization = models.ForeignKey(
+        Organization, on_delete=models.CASCADE, related_name="graphs"
+    )
     user = models.ForeignKey(
         get_user_model(),
         on_delete=models.CASCADE,
@@ -110,7 +115,9 @@ class Graph(models.Model):
         help_text="The store of the image if associated with the category",
     )
     name = models.CharField(max_length=1000, help_text="The name of the entity group")
-    purl = models.CharField(max_length=1000, help_text="The name of the entity group", null=True, blank=True)
+    purl = models.CharField(
+        max_length=1000, help_text="The name of the entity group", null=True, blank=True
+    )
     description = models.CharField(
         max_length=2000,
         help_text="The description of the entity group",
@@ -121,9 +128,7 @@ class Graph(models.Model):
         blank=True,
         db_default=Now(),
         help_text=(
-            "When the view was created. Assigned by the database, so a release that predates "
-            "the column still stamps the graphs it creates. Null for a graph made before the "
-            "column existed whose creation the history does not record."
+            "When the view was created. Assigned by the database, so a release that predates the column still stamps the graphs it creates. Null for a graph made before the column existed whose creation the history does not record."
         ),
     )
     provenance = ProvenanceField()
@@ -256,9 +261,15 @@ class Graph(models.Model):
         if user is not None and self.user_id == getattr(user, "id", None):
             return
         membership = getattr(request, "membership", None)
-        if membership is not None and getattr(membership, "organization_id", None) == self.organization_id and {ADMIN, CURATOR} & set(getattr(membership, "roles", None) or []):
+        if (
+            membership is not None
+            and getattr(membership, "organization_id", None) == self.organization_id
+            and {ADMIN, CURATOR} & set(getattr(membership, "roles", None) or [])
+        ):
             return
-        raise PermissionError(f"Changing graph '{self.name}' needs its owner, a curator or Kraph's admin — the schema is the view's contract, and tenancy alone does not grant rewriting it.")
+        raise PermissionError(
+            f"Changing graph '{self.name}' needs its owner, a curator or Kraph's admin — the schema is the view's contract, and tenancy alone does not grant rewriting it."
+        )
 
     def validate_accessible(self, membership: Membership, scopes: list[str]):
         """Validate if the graph is accessible for a given membership and scopes."""
@@ -322,7 +333,9 @@ class GraphSchema(models.Model):
         max_length=64,
         default="",
         db_index=True,
-        help_text=("Content hash of `definition`. This is the identity a projected node stamps as its `__schema_version`, so a derived value can be told apart from one computed under an older schema."),
+        help_text=(
+            "Content hash of `definition`. This is the identity a projected node stamps as its `__schema_version`, so a derived value can be told apart from one computed under an older schema."
+        ),
     )
 
     class Meta:
@@ -353,7 +366,9 @@ class GraphSchema(models.Model):
     def save(self, *args, **kwargs) -> None:
         """Assign the next index and content hash before saving."""
         if self.index is None:
-            last_schema = GraphSchema.objects.filter(graph=self.graph).order_by("-index").first()
+            last_schema = (
+                GraphSchema.objects.filter(graph=self.graph).order_by("-index").first()
+            )
             self.index = (last_schema.index + 1) if last_schema else 1
         if not self.hash and self.definition:
             from graph_engine.materialize import compute_definition_hash
@@ -368,7 +383,9 @@ class GraphSchema(models.Model):
         required by the partial unique constraint above — writing `is_active=True`
         directly on a second schema is a database error, which is the point.
         """
-        GraphSchema.objects.filter(graph=self.graph).exclude(pk=self.pk).update(is_active=False)
+        GraphSchema.objects.filter(graph=self.graph).exclude(pk=self.pk).update(
+            is_active=False
+        )
         self.is_active = True
         self.save(update_fields=["is_active"])
 
@@ -469,7 +486,9 @@ class Category(KindDiscriminatedModel):
         related_name="categories",
         null=True,
         blank=True,
-        help_text=("For a STRUCTURE category only: the organization's kind of external datum this view mounts (e.g. `@mikro/arraylens`), the way a category mounts a term. Its data are drawn under this category's label wherever a structure relation the view admits touches them (RFC 0027)."),
+        help_text=(
+            "For a STRUCTURE category only: the organization's kind of external datum this view mounts (e.g. `@mikro/arraylens`), the way a category mounts a term. Its data are drawn under this category's label wherever a structure relation the view admits touches them (RFC 0027)."
+        ),
     )
     image = models.ForeignKey(
         datalayer_models.MediaStore,
@@ -552,7 +571,9 @@ class Category(KindDiscriminatedModel):
         help_text="The width of the  node class in the graph (if a node)",
         null=True,
     )
-    property_definitions = models.JSONField(default=list, help_text="The property definitions of this")
+    property_definitions = models.JSONField(
+        default=list, help_text="The property definitions of this"
+    )
 
     # --- shared by every edge kind (the former EdgeCategory) ---
     source_definition = models.JSONField(
@@ -593,16 +614,26 @@ class Category(KindDiscriminatedModel):
             # category *of its own graph* (graph_engine migration
             # 0005_vertex_category_fk). That FK is the write-side enforcement of
             # "only declared categories end up in a graph" — RFC 0006.
-            models.UniqueConstraint(fields=["graph", "id"], name="category_graph_and_id"),
+            models.UniqueConstraint(
+                fields=["graph", "id"], name="category_graph_and_id"
+            ),
             # One category per declared word per view (RFC 0021). `(graph, key)`
             # implies it today because a category's term is minted from its key,
             # but the invariant deserves stating where the database enforces it:
             # several categories for one word in one view arise only by
             # *derivation* (a defined category's clauses naming the word), and
             # those are resolved by admission, never by a term→category map.
-            models.UniqueConstraint(fields=["graph", "term"], condition=models.Q(term__isnull=False), name="one_category_per_word_per_view"),
+            models.UniqueConstraint(
+                fields=["graph", "term"],
+                condition=models.Q(term__isnull=False),
+                name="one_category_per_word_per_view",
+            ),
             # A view mounts a structure kind once: one vertex label per kind of external datum.
-            models.UniqueConstraint(fields=["graph", "structure_kind"], condition=models.Q(structure_kind__isnull=False), name="one_mount_per_structure_kind_per_view"),
+            models.UniqueConstraint(
+                fields=["graph", "structure_kind"],
+                condition=models.Q(structure_kind__isnull=False),
+                name="one_mount_per_structure_kind_per_view",
+            ),
         ]
 
     def save(self, *args, **kwargs):
@@ -622,7 +653,9 @@ class Category(KindDiscriminatedModel):
         if self.term_id is None and self.key and self.graph_id:
             from evidence import writer as evidence_writer
 
-            self.term = evidence_writer.ensure_term(self.graph.organization, self.kind, self.key)
+            self.term = evidence_writer.ensure_term(
+                self.graph.organization, self.kind, self.key
+            )
             super().save(update_fields=["term"])
 
     def as_kind(self) -> "Category":
@@ -647,7 +680,11 @@ class Category(KindDiscriminatedModel):
     def defined_properties(self):
         from graph_engine.input_models import PropertyDefinitionInput
 
-        return [PropertyDefinitionInput(**p) for p in self.property_definitions] if self.property_definitions else []
+        return (
+            [PropertyDefinitionInput(**p) for p in self.property_definitions]
+            if self.property_definitions
+            else []
+        )
 
     @property
     def property_map(self):
@@ -723,7 +760,9 @@ class CategoryAssertedTerm(models.Model):
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=["category", "key"], name="unique_asserted_term_per_category"),
+            models.UniqueConstraint(
+                fields=["category", "key"], name="unique_asserted_term_per_category"
+            ),
         ]
         indexes = [
             # The panel's read: which graphs derive from these words.
@@ -787,7 +826,9 @@ class EdgeCategory(Category):
 
 
 class NaturalEventCategory(NodeCategory):
-    objects: managers.NaturalEventCategoryManager = managers.NaturalEventCategoryManager()
+    objects: managers.NaturalEventCategoryManager = (
+        managers.NaturalEventCategoryManager()
+    )
     """A natural event class is a class that describes a natural event that happened
     to some bioenties (e.g. a cell division, a cell death, etc.). Natural events are
     used to describe the natural events that happen to a bioentity and are not
@@ -842,7 +883,9 @@ class NaturalEventCategory(NodeCategory):
 
 
 class ProtocolEventCategory(NodeCategory):
-    objects: managers.ProtocolEventCategoryManager = managers.ProtocolEventCategoryManager()
+    objects: managers.ProtocolEventCategoryManager = (
+        managers.ProtocolEventCategoryManager()
+    )
     """A protocol event class is a node that describes a protocol event that some
     entities were subjected to using, creating or altering them.
 
@@ -982,7 +1025,9 @@ class MeasurementCategory(EdgeCategory):
 
     def get_matching_source_structures(self) -> QuerySet["StructureKind"]:
         """Structure kinds this edge category's source definition selects."""
-        return _matching_structure_kinds(self.graph.organization, self.source_definition_model)
+        return _matching_structure_kinds(
+            self.graph.organization, self.source_definition_model
+        )
 
     def get_matching_target_entities(self) -> QuerySet["EntityCategory"]:
         """Get all entities in the graph that match the target definition of this edge category."""
@@ -990,7 +1035,9 @@ class MeasurementCategory(EdgeCategory):
         if self.target_definition_model.keys:
             kwargs["key__in"] = self.target_definition_model.keys
         if self.target_definition_model.ontology_terms:
-            kwargs["ontology_references__name__in"] = self.target_definition_model.ontology_terms
+            kwargs["ontology_references__name__in"] = (
+                self.target_definition_model.ontology_terms
+            )
 
         return self.graph.entity_categories.filter(**kwargs).distinct()
 
@@ -1029,7 +1076,9 @@ class RelationCategory(EdgeCategory):
         if self.source_definition_model.keys:
             kwargs["key__in"] = self.source_definition_model.keys
         if self.source_definition_model.ontology_terms:
-            kwargs["ontology_references__name__in"] = self.source_definition_model.ontology_terms
+            kwargs["ontology_references__name__in"] = (
+                self.source_definition_model.ontology_terms
+            )
 
         return self.graph.entity_categories.filter(**kwargs).distinct()
 
@@ -1039,7 +1088,9 @@ class RelationCategory(EdgeCategory):
         if self.target_definition_model.keys:
             kwargs["key__in"] = self.target_definition_model.keys
         if self.target_definition_model.ontology_terms:
-            kwargs["ontology_references__name__in"] = self.target_definition_model.ontology_terms
+            kwargs["ontology_references__name__in"] = (
+                self.target_definition_model.ontology_terms
+            )
 
         return self.graph.entity_categories.filter(**kwargs).distinct()
 
@@ -1062,7 +1113,9 @@ class RelationCategory(EdgeCategory):
 class StructureRelationCategory(EdgeCategory):
     """A Relation class is a class that describes a relation between two entities without a value"""
 
-    objects: managers.StructureRelationCategoryManager = managers.StructureRelationCategoryManager()
+    objects: managers.StructureRelationCategoryManager = (
+        managers.StructureRelationCategoryManager()
+    )
 
     KIND = enums.CategoryKindChoices.STRUCTURE_RELATION
     KINDS = (enums.CategoryKindChoices.STRUCTURE_RELATION,)
@@ -1085,11 +1138,15 @@ class StructureRelationCategory(EdgeCategory):
 
     def get_matching_source_structures(self) -> QuerySet["StructureKind"]:
         """Structure kinds this edge category's source definition selects."""
-        return _matching_structure_kinds(self.graph.organization, self.source_definition_model)
+        return _matching_structure_kinds(
+            self.graph.organization, self.source_definition_model
+        )
 
     def get_matching_target_structures(self) -> QuerySet["StructureKind"]:
         """Structure kinds this edge category's target definition selects."""
-        return _matching_structure_kinds(self.graph.organization, self.target_definition_model)
+        return _matching_structure_kinds(
+            self.graph.organization, self.target_definition_model
+        )
 
     def get_age_edge_name(self):
         return self.age_name
@@ -1129,7 +1186,12 @@ class StructureCategory(Category):
 
 def mounted_structure_categories(graph: "Graph") -> dict[str, "StructureCategory"]:
     """The structure kinds a view mounts, by identifier."""
-    return {category.structure_kind.identifier: category for category in StructureCategory.objects.filter(graph=graph).select_related("structure_kind")}
+    return {
+        category.structure_kind.identifier: category
+        for category in StructureCategory.objects.filter(graph=graph).select_related(
+            "structure_kind"
+        )
+    }
 
 
 #: Which proxy class owns each `kind`, for `Category.as_kind()`.
@@ -1183,9 +1245,20 @@ class GraphQuery(Described, KindDiscriminatedModel):
     # existed. A legacy row has `plan = NULL` and cannot render at all — no
     # projection kind executes Cypher — so `manage.py list_legacy_queries`
     # names them to be rebuilt through the builder.
-    plan = models.JSONField(null=True, blank=True, help_text="The saved query as a `TableQueryPlan` (matches, wheres, returns, columns). Null only on a legacy row that stores raw Cypher.")
-    query = models.CharField(max_length=7000, null=True, blank=True, help_text="Legacy: raw Cypher saved before plans existed. Read-only; never accepted any more.")
-    label = models.CharField(max_length=1000, help_text="The name of the materialized graph")
+    plan = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="The saved query as a `TableQueryPlan` (matches, wheres, returns, columns). Null only on a legacy row that stores raw Cypher.",
+    )
+    query = models.CharField(
+        max_length=7000,
+        null=True,
+        blank=True,
+        help_text="Legacy: raw Cypher saved before plans existed. Read-only; never accepted any more.",
+    )
+    label = models.CharField(
+        max_length=1000, help_text="The name of the materialized graph"
+    )
     description = models.CharField(
         max_length=1000,
         help_text="The description of the materialized graph",
@@ -1224,7 +1297,11 @@ class GraphQuery(Described, KindDiscriminatedModel):
         unique_together = ("graph", "key")
         indexes = [
             # What a port's `requires` reads (kraph_server/service.py: `@kraph/pairsquery`).
-            GinIndex(fields=["stored_descriptors"], name="graph_query_desc_gin", opclasses=["jsonb_path_ops"]),
+            GinIndex(
+                fields=["stored_descriptors"],
+                name="graph_query_desc_gin",
+                opclasses=["jsonb_path_ops"],
+            ),
         ]
 
 
@@ -1277,17 +1354,29 @@ class ScatterPlot(models.Model):
         max_length=1000,
         help_text="The column that assigns the row_id (could be an edge, a node, etc.)",
     )
-    x_column = models.CharField(max_length=1000, help_text="The column that assigns the x value", null=True)
-    x_id_column = models.CharField(max_length=1000, help_text="The column that assigns the x_id value", null=True)
-    y_column = models.CharField(max_length=1000, help_text="The column that assigns the y value", null=True)
+    x_column = models.CharField(
+        max_length=1000, help_text="The column that assigns the x value", null=True
+    )
+    x_id_column = models.CharField(
+        max_length=1000, help_text="The column that assigns the x_id value", null=True
+    )
+    y_column = models.CharField(
+        max_length=1000, help_text="The column that assigns the y value", null=True
+    )
     y_id_column = models.CharField(
         max_length=1000,
         help_text="The column that assigns an ID to the y value",
         null=True,
     )
-    color_column = models.CharField(max_length=1000, help_text="The column that assigns the color value", null=True)
-    size_column = models.CharField(max_length=1000, help_text="The column that assigns the size value", null=True)
-    shape_column = models.CharField(max_length=1000, help_text="The column that assigns the shape value", null=True)
+    color_column = models.CharField(
+        max_length=1000, help_text="The column that assigns the color value", null=True
+    )
+    size_column = models.CharField(
+        max_length=1000, help_text="The column that assigns the size value", null=True
+    )
+    shape_column = models.CharField(
+        max_length=1000, help_text="The column that assigns the shape value", null=True
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     creator = models.ForeignKey(
         get_user_model(),

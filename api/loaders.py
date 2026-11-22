@@ -22,9 +22,11 @@ erroring the query.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Awaitable, Callable, Iterable
 from contextvars import ContextVar
 
+from asgiref.sync import sync_to_async
 from django.db.models import Model, QuerySet
 from strawberry.dataloader import DataLoader
 from strawberry.extensions import SchemaExtension
@@ -32,8 +34,6 @@ from strawberry.extensions import SchemaExtension
 from core import models
 from evidence import models as evidence_models
 from evidence import panel
-from collections import defaultdict
-from asgiref.sync import sync_to_async
 
 PKType = int | str
 
@@ -44,10 +44,14 @@ PKType = int | str
 #: heterogeneous callables cannot be given one exact element type.
 type Narrow = Callable[[QuerySet[Model]], QuerySet[Model]]
 
-_loaders: ContextVar[dict[str, DataLoader[PKType, object]] | None] = ContextVar("api_loaders", default=None)
+_loaders: ContextVar[dict[str, DataLoader[PKType, object]] | None] = ContextVar(
+    "api_loaders", default=None
+)
 
 
-def _batch_by_pk[Row: Model](model: type[Row], field: str = "id") -> Callable[[list[PKType]], Awaitable[list[Row | None]]]:
+def _batch_by_pk[Row: Model](
+    model: type[Row], field: str = "id"
+) -> Callable[[list[PKType]], Awaitable[list[Row | None]]]:
     """A load function that fetches every requested row in one query.
 
     Returns results in the order asked for, with `None` where a row is missing —
@@ -69,7 +73,9 @@ def _batch_by_pk[Row: Model](model: type[Row], field: str = "id") -> Callable[[l
     return load
 
 
-def _batch_grouped_by[Row: Model](model: type[Row], field: str, narrow: Narrow | None = None) -> Callable[[list[PKType]], Awaitable[list[list[Row]]]]:
+def _batch_grouped_by[Row: Model](
+    model: type[Row], field: str, narrow: Narrow | None = None
+) -> Callable[[list[PKType]], Awaitable[list[list[Row]]]]:
     """A load function for a **one-to-many** relation: every row per key, in one query.
 
     The sibling `_batch_by_pk` cannot do this and fails silently if asked to:
@@ -153,7 +159,13 @@ def _standing_lineage(queryset: QuerySet[Model]) -> QuerySet[Model]:
     """
     from evidence import claims as claims_module
 
-    return claims_module.standing(queryset.filter(kind=evidence_models.Link.Kind.DERIVED_FROM), "link").select_related("assertion").order_by("assertion__seq")
+    return (
+        claims_module.standing(
+            queryset.filter(kind=evidence_models.Link.Kind.DERIVED_FROM), "link"
+        )
+        .select_related("assertion")
+        .order_by("assertion__seq")
+    )
 
 
 def _by_pk(queryset: QuerySet[Model]) -> QuerySet[Model]:
@@ -174,8 +186,16 @@ _GROUPED_LOADER_SPECS: dict[str, tuple[type[Model], str, Narrow]] = {
     # Deliberately not narrowed by standing, unlike `metrics_by_structure`: a
     # resolved remark is shown as resolved, not hidden — hiding it would make
     # `Comment.resolved` unreachable exactly where it answers.
-    "comments_by_structure": (evidence_models.Comment, "structure_id", lambda queryset: queryset.select_related("assertion").order_by("-created_at")),
-    "replies_by_comment": (evidence_models.Comment, "parent_id", lambda queryset: queryset.select_related("assertion").order_by("created_at")),
+    "comments_by_structure": (
+        evidence_models.Comment,
+        "structure_id",
+        lambda queryset: queryset.select_related("assertion").order_by("-created_at"),
+    ),
+    "replies_by_comment": (
+        evidence_models.Comment,
+        "parent_id",
+        lambda queryset: queryset.select_related("assertion").order_by("created_at"),
+    ),
     # A claim's citations run from the claim (`source_ref`) to what it came from
     # (`target_ref`), so `derivedFrom` is keyed on the source and `derivations` —
     # what was concluded from this claim — on the target. Either end may be any
@@ -191,11 +211,17 @@ _GROUPED_LOADER_SPECS: dict[str, tuple[type[Model], str, Narrow]] = {
     "metrics_by_assertion": (evidence_models.Metric, "assertion_id", _by_pk),
     "structures_by_assertion": (evidence_models.Structure, "assertion_id", _by_pk),
     "standings_by_assertion": (evidence_models.Standing, "assertion_id", _by_pk),
-    "comments_by_assertion": (evidence_models.Comment, "assertion_id", lambda queryset: queryset.order_by("created_at", "pk")),
+    "comments_by_assertion": (
+        evidence_models.Comment,
+        "assertion_id",
+        lambda queryset: queryset.order_by("created_at", "pk"),
+    ),
 }
 
 
-def _batch_known_about_nodes() -> Callable[[list[PKType]], Awaitable[list[panel.Known]]]:
+def _batch_known_about_nodes() -> Callable[
+    [list[PKType]], Awaitable[list[panel.Known]]
+]:
     """The panel: everything the log says about each node, over its component.
 
     One load function for four fields rather than four loaders, because all four
@@ -211,21 +237,31 @@ def _batch_known_about_nodes() -> Callable[[list[PKType]], Awaitable[list[panel.
     primary key; the projection handle is never an address (RFC 0006).
     """
 
-
     async def load(keys: list[PKType]) -> list[panel.Known]:
         from core import models as core_models
 
-        normalized = [(int(key[0]) if key[0] is not None else None, str(key[1])) for key in keys]  # type: ignore[index]
+        normalized = [
+            (int(key[0]) if key[0] is not None else None, str(key[1])) for key in keys
+        ]  # type: ignore[index]
 
         def work() -> dict[tuple[int | None, str], panel.Known]:
             refs_by_graph: dict[int | None, list[str]] = defaultdict(list)
             for graph_id, ref in normalized:
                 if ref not in refs_by_graph[graph_id]:
                     refs_by_graph[graph_id].append(ref)
-            graphs = {graph.pk: graph for graph in core_models.Graph.objects.filter(pk__in=[graph_id for graph_id in refs_by_graph if graph_id is not None])}
+            graphs = {
+                graph.pk: graph
+                for graph in core_models.Graph.objects.filter(
+                    pk__in=[
+                        graph_id for graph_id in refs_by_graph if graph_id is not None
+                    ]
+                )
+            }
             answers: dict[tuple[int | None, str], panel.Known] = {}
             for graph_id, refs in refs_by_graph.items():
-                for ref, known in zip(refs, panel.known_about(refs, graph=graphs.get(graph_id))):
+                for ref, known in zip(
+                    refs, panel.known_about(refs, graph=graphs.get(graph_id))
+                ):
                     answers[(graph_id, ref)] = known
             return answers
 
@@ -235,7 +271,9 @@ def _batch_known_about_nodes() -> Callable[[list[PKType]], Awaitable[list[panel.
     return load
 
 
-def _batch_informed_nodes() -> Callable[[list[PKType]], Awaitable[list[list[evidence_models.Instance]]]]:
+def _batch_informed_nodes() -> Callable[
+    [list[PKType]], Awaitable[list[list[evidence_models.Instance]]]
+]:
     """The nodes each structure is evidence for.
 
     Batched even though the underlying read is simple, because it is the hop the
@@ -250,11 +288,15 @@ def _batch_informed_nodes() -> Callable[[list[PKType]], Awaitable[list[list[evid
     return load
 
 
-def _batch_informing_structures() -> Callable[[list[PKType]], Awaitable[list[list[evidence_models.Structure]]]]:
+def _batch_informing_structures() -> Callable[
+    [list[PKType]], Awaitable[list[list[evidence_models.Structure]]]
+]:
     """The structures each instance is evidence-backed by — `informed_nodes_by_structure` reversed."""
 
     async def load(keys: list[PKType]) -> list[list[evidence_models.Structure]]:
-        return await sync_to_async(panel.informing_structures)([str(key) for key in keys])
+        return await sync_to_async(panel.informing_structures)(
+            [str(key) for key in keys]
+        )
 
     return load
 
@@ -265,7 +307,9 @@ def _batch_informing_structures() -> Callable[[list[PKType]], Awaitable[list[lis
 #: Neither of these authorizes: they are keyed on the primary key of a row the
 #: resolver has already resolved and checked, exactly as `_batch_by_pk` is. A
 #: tenant check here would be a second, weaker copy of one that already happened.
-_CUSTOM_LOADER_FACTORIES: dict[str, Callable[[], Callable[[list[PKType]], Awaitable[list[object]]]]] = {
+_CUSTOM_LOADER_FACTORIES: dict[
+    str, Callable[[], Callable[[list[PKType]], Awaitable[list[object]]]]
+] = {
     "known_about_node": _batch_known_about_nodes,
     "informed_nodes_by_structure": _batch_informed_nodes,
     "informing_structures_by_instance": _batch_informing_structures,
@@ -274,14 +318,29 @@ _CUSTOM_LOADER_FACTORIES: dict[str, Callable[[], Callable[[list[PKType]], Awaita
 
 def all_loader_names() -> set[str]:
     """Every loader name, of any shape. What `build_loaders` produces."""
-    return set(_LOADER_SPECS) | set(_GROUPED_LOADER_SPECS) | set(_CUSTOM_LOADER_FACTORIES)
+    return (
+        set(_LOADER_SPECS) | set(_GROUPED_LOADER_SPECS) | set(_CUSTOM_LOADER_FACTORIES)
+    )
 
 
 def build_loaders() -> dict[str, DataLoader]:
     """A fresh set of loaders for one operation."""
-    built = {name: DataLoader(load_fn=_batch_by_pk(model, field)) for name, (model, field) in _LOADER_SPECS.items()}
-    built.update({name: DataLoader(load_fn=_batch_grouped_by(model, field, narrow)) for name, (model, field, narrow) in _GROUPED_LOADER_SPECS.items()})
-    built.update({name: DataLoader(load_fn=factory()) for name, factory in _CUSTOM_LOADER_FACTORIES.items()})
+    built = {
+        name: DataLoader(load_fn=_batch_by_pk(model, field))
+        for name, (model, field) in _LOADER_SPECS.items()
+    }
+    built.update(
+        {
+            name: DataLoader(load_fn=_batch_grouped_by(model, field, narrow))
+            for name, (model, field, narrow) in _GROUPED_LOADER_SPECS.items()
+        }
+    )
+    built.update(
+        {
+            name: DataLoader(load_fn=factory())
+            for name, factory in _CUSTOM_LOADER_FACTORIES.items()
+        }
+    )
     return built
 
 
@@ -376,4 +435,6 @@ standings_by_assertion_loader = _LoaderProxy("standings_by_assertion")
 comments_by_assertion_loader = _LoaderProxy("comments_by_assertion")
 known_about_node_loader = _LoaderProxy("known_about_node")
 informed_nodes_by_structure_loader = _LoaderProxy("informed_nodes_by_structure")
-informing_structures_by_instance_loader = _LoaderProxy("informing_structures_by_instance")
+informing_structures_by_instance_loader = _LoaderProxy(
+    "informing_structures_by_instance"
+)

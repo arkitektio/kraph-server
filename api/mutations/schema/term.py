@@ -23,11 +23,12 @@ learned it yesterday. A word nobody wants offered any more is *hidden* — picke
 stop showing it and `terms` lists it only when asked — and can be shown again.
 """
 
+from arkitekt_datalayer import models as datalayer_models
 from kante.types import Info
 
 from api import context, inputs, types
-from arkitekt_datalayer import models as datalayer_models
 from evidence import models as evidence_models
+
 from ._guards import refuse_bad_color
 
 
@@ -45,7 +46,9 @@ def _media_store(image: str | None, organization) -> datalayer_models.MediaStore
     if not image:
         return None
     try:
-        return datalayer_models.MediaStore.objects.get(id=image, organization=organization)
+        return datalayer_models.MediaStore.objects.get(
+            id=image, organization=organization
+        )
     except datalayer_models.MediaStore.DoesNotExist:
         raise PermissionError(f"No media store {image} in your organization.") from None
 

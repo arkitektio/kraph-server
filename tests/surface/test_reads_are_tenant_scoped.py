@@ -10,10 +10,11 @@ tenants by guessing a sequential primary key.
 """
 
 import pytest
-from authentikate.models import Membership, User
-from core import models as core_models
 from asgiref.sync import sync_to_async
+from authentikate.models import Membership, User
 from kante.context import HttpContext
+
+from core import models as core_models
 from graph_engine import input_models as models
 from graph_engine.materialize import materialize
 
@@ -29,7 +30,9 @@ def foreign_graph(transactional_db, other_organization) -> core_models.Graph:
         username="a_stranger",
         defaults={"sub": "999", "iss": "static_issuer"},
     )
-    membership, _ = Membership.objects.get_or_create(user=user, organization=other_organization)
+    membership, _ = Membership.objects.get_or_create(
+        user=user, organization=other_organization
+    )
 
     return core_models.Graph.objects.create(
         name="Foreign Graph",
@@ -42,7 +45,9 @@ def foreign_graph(transactional_db, other_organization) -> core_models.Graph:
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_graphs_does_not_list_another_tenants_graph(api_schema, simple_api_context, foreign_graph):
+async def test_graphs_does_not_list_another_tenants_graph(
+    api_schema, simple_api_context, foreign_graph
+):
     """The list form is scoped."""
     result = await api_schema.execute(
         "query { graphs { id name } }",
@@ -51,12 +56,16 @@ async def test_graphs_does_not_list_another_tenants_graph(api_schema, simple_api
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     ids = [g["id"] for g in result.data["graphs"]]
-    assert str(foreign_graph.pk) not in ids, "`graphs` handed back a graph belonging to another organization"
+    assert str(foreign_graph.pk) not in ids, (
+        "`graphs` handed back a graph belonging to another organization"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_graph_by_id_refuses_another_tenants_graph(api_schema, simple_api_context, foreign_graph):
+async def test_graph_by_id_refuses_another_tenants_graph(
+    api_schema, simple_api_context, foreign_graph
+):
     """The singular form is scoped too — the pk is a sequential integer, so guessing it is trivial.
 
     `get_queryset` is applied by strawberry-django to pk lookups as well as root
@@ -68,12 +77,16 @@ async def test_graph_by_id_refuses_another_tenants_graph(api_schema, simple_api_
         context_value=simple_api_context,
     )
 
-    assert result.errors is not None or result.data.get("graph") is None, "`graph(id:)` returned another organization's graph"
+    assert result.errors is not None or result.data.get("graph") is None, (
+        "`graph(id:)` returned another organization's graph"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_entity_categories_does_not_list_another_tenants_category(api_schema, simple_api_context, foreign_graph, test_graph):
+async def test_entity_categories_does_not_list_another_tenants_category(
+    api_schema, simple_api_context, foreign_graph, test_graph
+):
     """Category types are `kind_type`s, so their fence rides on `_kind_dispatch`.
 
     That override filtered on `kind` alone — it narrowed a shared table to one
@@ -93,12 +106,16 @@ async def test_entity_categories_does_not_list_another_tenants_category(api_sche
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     ids = [c["id"] for c in result.data["entityCategories"]]
-    assert str(foreign.pk) not in ids, "`entityCategories` handed back a category from another organization"
+    assert str(foreign.pk) not in ids, (
+        "`entityCategories` handed back a category from another organization"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_the_callers_own_graph_is_still_visible(api_schema, simple_api_context, test_graph):
+async def test_the_callers_own_graph_is_still_visible(
+    api_schema, simple_api_context, test_graph
+):
     """The fence must not be a blanket refusal — the caller's own rows still resolve."""
     result = await api_schema.execute(
         "query { graphs { id } }",
@@ -112,7 +129,9 @@ async def test_the_callers_own_graph_is_still_visible(api_schema, simple_api_con
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_saved_queries_do_not_list_another_tenants_row(api_schema, simple_api_context, foreign_graph):
+async def test_saved_queries_do_not_list_another_tenants_row(
+    api_schema, simple_api_context, foreign_graph
+):
     """The twelve saved-query families are proxies over `GraphQuery`/`NodeQuery`/`EdgeQuery`.
 
     Worth its own test because the fence looks these up by model name, and a proxy
@@ -136,7 +155,9 @@ async def test_saved_queries_do_not_list_another_tenants_row(api_schema, simple_
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     ids = [q["id"] for q in result.data["graphTableQueries"]]
-    assert str(foreign.pk) not in ids, "`graphTableQueries` handed back a saved query from another organization"
+    assert str(foreign.pk) not in ids, (
+        "`graphTableQueries` handed back a saved query from another organization"
+    )
 
 
 @pytest.fixture(scope="session")
@@ -160,12 +181,18 @@ def edge_schema() -> models.GraphDefinitionInput:
                             type=models.PropertyType.FLOAT,
                             index=True,
                             derivation=models.DerivationType.ROLLUP,
-                            rule=models.DerivationRuleInput(source_node="ROI", key="vector_length", aggregation=models.AggregationFunction.MEAN),
+                            rule=models.DerivationRuleInput(
+                                source_node="ROI",
+                                key="vector_length",
+                                aggregation=models.AggregationFunction.MEAN,
+                            ),
                         )
                     ],
                 )
             ],
-            structures=[models.StructureDefinitionInput(key="Region", identifier="ROI")],
+            structures=[
+                models.StructureDefinitionInput(key="Region", identifier="ROI")
+            ],
             structure_relations=[
                 models.StructureRelationDefinitionInput(
                     key="CONTAINS",
@@ -185,7 +212,9 @@ def edge_schema() -> models.GraphDefinitionInput:
 
 
 @pytest.fixture(scope="function")
-def edge_graph(transactional_db, table_projector, edge_schema, authenticated_context) -> core_models.Graph:
+def edge_graph(
+    transactional_db, table_projector, edge_schema, authenticated_context
+) -> core_models.Graph:
     request = authenticated_context.request
     return materialize(
         edge_schema,
@@ -222,10 +251,16 @@ async def test_resolving_an_edge_endpoint_checks_the_endpoint_s_own_tenant(
 
     @sync_to_async
     def foreign_structure() -> str:
-        other, _ = Organization.objects.get_or_create(identifier="static_issuer#an-unrelated-tenant")
-        assertion = evidence_writer.create_assertion(other, subject="someone-else", app_id="elsewhere")
+        other, _ = Organization.objects.get_or_create(
+            identifier="static_issuer#an-unrelated-tenant"
+        )
+        assertion = evidence_writer.create_assertion(
+            other, subject="someone-else", app_id="elsewhere"
+        )
         kind = evidence_writer.ensure_structure_kind(other, "@mikro/roi")
-        structure = evidence_writer.ensure_structure(other, kind=kind, object="not-yours", assertion=assertion)
+        structure = evidence_writer.ensure_structure(
+            other, kind=kind, object="not-yours", assertion=assertion
+        )
         return str(structure.pk)
 
     ref = await foreign_structure()

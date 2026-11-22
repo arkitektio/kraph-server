@@ -83,10 +83,14 @@ def merge_many(
     (entity, kind, key) it touches rather than one per metric and entity. ``informed`` maps a
     structure's id (as text) to the refs it is standing evidence for. Returns the rows folded.
     """
-    grouped: dict[tuple[str, uuid.UUID, str, str], list[evidence_models.Metric]] = defaultdict(list)
+    grouped: dict[tuple[str, uuid.UUID, str, str], list[evidence_models.Metric]] = (
+        defaultdict(list)
+    )
     for metric in metrics:
         for claim_ref in informed.get(str(metric.structure_id), ()):
-            grouped[(claim_ref, metric.structure.kind_id, metric.key, metric.value_kind)].append(metric)
+            grouped[
+                (claim_ref, metric.structure.kind_id, metric.key, metric.value_kind)
+            ].append(metric)
 
     for (claim_ref, source_kind_id, key, value_kind), folded in grouped.items():
         state, _ = evidence_models.State.all_objects.select_for_update().get_or_create(
@@ -169,7 +173,9 @@ def retract(
     return touched
 
 
-def fold(metrics: QuerySet[evidence_models.Metric], into: evidence_models.State) -> evidence_models.State:
+def fold(
+    metrics: QuerySet[evidence_models.Metric], into: evidence_models.State
+) -> evidence_models.State:
     """Fold a set of metrics into a state vector, in place. Does not save.
 
     The batch counterpart of :func:`merge`, and the one place the statistics are
@@ -177,7 +183,9 @@ def fold(metrics: QuerySet[evidence_models.Metric], into: evidence_models.State)
     :func:`graph_engine.projector.derive_properties` uses it **unsaved** to answer
     a selector-scoped read without keeping a second row per view.
     """
-    aggregates = metrics.aggregate(total=Sum("value_num"), lowest=Min("value_num"), highest=Max("value_num"))
+    aggregates = metrics.aggregate(
+        total=Sum("value_num"), lowest=Min("value_num"), highest=Max("value_num")
+    )
     ordered = list(metrics.order_by("observed_at"))
 
     into.n = len(ordered)
@@ -257,13 +265,19 @@ def _structures_informing(state: evidence_models.State) -> list[uuid.UUID]:
         return []
     return list(
         claims_module.standing(
-            evidence_models.Structure.objects.for_organization(state.organization).filter(pk__in=structure_ids),
+            evidence_models.Structure.objects.for_organization(
+                state.organization
+            ).filter(pk__in=structure_ids),
             "structure",
         ).values_list("pk", flat=True)
     )
 
 
-def refold(organization: Organization, claim_refs: Iterable[str], source_kind: evidence_models.StructureKind) -> int:
+def refold(
+    organization: Organization,
+    claim_refs: Iterable[str],
+    source_kind: evidence_models.StructureKind,
+) -> int:
     """Recompute every row of these individuals fed by one kind of datum.
 
     The correction a datum's standing needs (RFC 0023): when a structure is
@@ -271,7 +285,11 @@ def refold(organization: Organization, claim_refs: Iterable[str], source_kind: e
     delta-corrected — `retract` takes one metric — so they are rebuilt from the
     metrics that still count. Returns how many rows were refolded.
     """
-    rows = evidence_models.State.all_objects.filter(organization=organization, claim_ref__in=[str(ref) for ref in claim_refs], source_kind=source_kind)
+    rows = evidence_models.State.all_objects.filter(
+        organization=organization,
+        claim_ref__in=[str(ref) for ref in claim_refs],
+        source_kind=source_kind,
+    )
     count = 0
     for state in list(rows):
         recompute(state)
@@ -281,7 +299,9 @@ def refold(organization: Organization, claim_refs: Iterable[str], source_kind: e
 
 def recompute_stale(organization: Organization, limit: int | None = None) -> int:
     """Rebuild every row a retraction left stale. Returns how many were fixed."""
-    stale = evidence_models.State.objects.for_organization(organization).filter(needs_recompute=True)
+    stale = evidence_models.State.objects.for_organization(organization).filter(
+        needs_recompute=True
+    )
     if limit is not None:
         stale = stale[:limit]
 
@@ -336,7 +356,16 @@ def state_for_many(
     Unsaved result; callers read it and must not save it.
     """
     refs = [str(ref) for ref in claim_refs]
-    states = list(evidence_models.State.objects.for_organization(organization).filter(claim_ref__in=refs, source_kind=source_kind, key=key, value_kind__in=list(value_kinds)).order_by("claim_ref", "value_kind"))
+    states = list(
+        evidence_models.State.objects.for_organization(organization)
+        .filter(
+            claim_ref__in=refs,
+            source_kind=source_kind,
+            key=key,
+            value_kind__in=list(value_kinds),
+        )
+        .order_by("claim_ref", "value_kind")
+    )
 
     for state in states:
         if state.needs_recompute:
@@ -381,9 +410,13 @@ def combine(states: Iterable[evidence_models.State]) -> evidence_models.State | 
     # is "latest" in a combined read is the same one that would be latest had the
     # metrics never split across terms.
     for state in states:
-        if state.first_ts is not None and (merged.first_ts is None or state.first_ts < merged.first_ts):
+        if state.first_ts is not None and (
+            merged.first_ts is None or state.first_ts < merged.first_ts
+        ):
             merged.first_ts, merged.first_value = state.first_ts, state.first_value
-        if state.last_ts is not None and (merged.last_ts is None or state.last_ts >= merged.last_ts):
+        if state.last_ts is not None and (
+            merged.last_ts is None or state.last_ts >= merged.last_ts
+        ):
             merged.last_ts, merged.last_value = state.last_ts, state.last_value
 
     return merged

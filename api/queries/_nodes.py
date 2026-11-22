@@ -41,8 +41,7 @@ from typing import TYPE_CHECKING
 from django.db.models import Q, QuerySet
 
 from evidence import models as evidence_models
-from graph_engine import projector
-from graph_engine import input_models
+from graph_engine import input_models, projector
 from graph_engine.input_models import ClaimFilterModel, ClaimOrderModel, PageModel
 from graph_engine.retrieved import RetrievedNode
 
@@ -56,13 +55,19 @@ if TYPE_CHECKING:
 _DRAWING_ONLY_FILTERS = ("has_property", "matches")
 
 
-def refuse_drawing_filters(filter_model: ClaimFilterModel, ordering_models: Iterable[ClaimOrderModel] = ()) -> None:
+def refuse_drawing_filters(
+    filter_model: ClaimFilterModel, ordering_models: Iterable[ClaimOrderModel] = ()
+) -> None:
     """Reject filters and orderings that only apply to a view's drawing."""
-    offending = [name for name in _DRAWING_ONLY_FILTERS if getattr(filter_model, name, None)]
+    offending = [
+        name for name in _DRAWING_ONLY_FILTERS if getattr(filter_model, name, None)
+    ]
     if any(getattr(order_model, "property", None) for order_model in ordering_models):
         offending.append("property ordering")
     if offending:
-        raise ValueError(f"{', '.join(offending)} asks about properties of a projected vertex. Nodes are listed from the evidence log now, and a claim carries no derived properties — a node that no view has drawn has none at all. Filter on `ids`, or ask the drawing through a graph-scoped query.")
+        raise ValueError(
+            f"{', '.join(offending)} asks about properties of a projected vertex. Nodes are listed from the evidence log now, and a claim carries no derived properties — a node that no view has drawn has none at all. Filter on `ids`, or ask the drawing through a graph-scoped query."
+        )
 
 
 def rows_for_category(category: Category) -> QuerySet[evidence_models.Instance]:
@@ -76,7 +81,11 @@ def rows_for_category(category: Category) -> QuerySet[evidence_models.Instance]:
     """
     graph = category.graph
     refs = projector.representatives_admitted_by(category)
-    return evidence_models.Instance.objects.for_organization(graph.organization).filter(id__in=refs).select_related("term")
+    return (
+        evidence_models.Instance.objects.for_organization(graph.organization)
+        .filter(id__in=refs)
+        .select_related("term")
+    )
 
 
 def rows_in_graph(graph: Graph) -> QuerySet[evidence_models.Instance]:
@@ -89,10 +98,19 @@ def rows_in_graph(graph: Graph) -> QuerySet[evidence_models.Instance]:
     the same row.
     """
     refs = projector.representatives_in_graph(graph)
-    return evidence_models.Instance.objects.for_organization(graph.organization).filter(id__in=refs).select_related("term")
+    return (
+        evidence_models.Instance.objects.for_organization(graph.organization)
+        .filter(id__in=refs)
+        .select_related("term")
+    )
 
 
-def narrow(rows: QuerySet[evidence_models.Instance], filter_model: ClaimFilterModel, ordering_models: Iterable[ClaimOrderModel], pagination_model: PageModel | None) -> list[evidence_models.Instance]:
+def narrow(
+    rows: QuerySet[evidence_models.Instance],
+    filter_model: ClaimFilterModel,
+    ordering_models: Iterable[ClaimOrderModel],
+    pagination_model: PageModel | None,
+) -> list[evidence_models.Instance]:
     """Apply the ids and search filters, the ordering and the page. Returns rows.
 
     Filtering and ordering are both over the log's own columns. `created_at` is when
@@ -111,7 +129,9 @@ def narrow(rows: QuerySet[evidence_models.Instance], filter_model: ClaimFilterMo
     if search:
         # `Term.label` is nullable decoration and `key` is the word itself, so a
         # match on either is a match on how the organization writes this claim down.
-        rows = rows.filter(Q(term__key__icontains=search) | Q(term__label__icontains=search))
+        rows = rows.filter(
+            Q(term__key__icontains=search) | Q(term__label__icontains=search)
+        )
 
     order_by: list[str] = []
     for order_model in ordering_models:
@@ -127,11 +147,16 @@ def narrow(rows: QuerySet[evidence_models.Instance], filter_model: ClaimFilterMo
     if not order_by:
         order_by = ["-assertion__seq", "-id"]
 
-    offset, limit = input_models.clamp_window(getattr(pagination_model, "offset", None), getattr(pagination_model, "limit", None))
+    offset, limit = input_models.clamp_window(
+        getattr(pagination_model, "offset", None),
+        getattr(pagination_model, "limit", None),
+    )
     return list(rows.order_by(*order_by)[offset : offset + limit])
 
 
-def one_in_graph(controller: GraphController, graph: Graph, instance: evidence_models.Instance) -> RetrievedNode:
+def one_in_graph(
+    controller: GraphController, graph: Graph, instance: evidence_models.Instance
+) -> RetrievedNode:
     """One node, as the named view holds it — the singular form of `rows_in_graph`.
 
     Refuses a node the view's rule does not admit, so `node(id:, graph:)` succeeds
@@ -146,11 +171,17 @@ def one_in_graph(controller: GraphController, graph: Graph, instance: evidence_m
     # Any member names its individual (RFC 0018): the answer is the
     # representative's row, whose id may differ from the one asked for.
     representative = projector.representative_in_graph(graph, str(instance.pk))
-    row = evidence_models.Instance.objects.for_organization(graph.organization).select_related("term").get(pk=representative)
+    row = (
+        evidence_models.Instance.objects.for_organization(graph.organization)
+        .select_related("term")
+        .get(pk=representative)
+    )
     return retrieved_in(controller, graph, [row])[0]
 
 
-def retrieved_in(controller: GraphController, graph: Graph, rows: list[evidence_models.Instance]) -> list[RetrievedNode]:
+def retrieved_in(
+    controller: GraphController, graph: Graph, rows: list[evidence_models.Instance]
+) -> list[RetrievedNode]:
     """The nodes as this view holds them, falling back to the log where it holds none.
 
     One Cypher round-trip for the page, not one per node. A row with no vertex comes
@@ -169,9 +200,13 @@ def retrieved_in(controller: GraphController, graph: Graph, rows: list[evidence_
     resolved, _ = projector.resolve_categories(graph, rows)
     nodes = []
     for row in rows:
-        node = drawn.get(str(row.pk)) or RetrievedNode.from_row(controller, row, graph_name=graph.age_name)
+        node = drawn.get(str(row.pk)) or RetrievedNode.from_row(
+            controller, row, graph_name=graph.age_name
+        )
         node.graph_id = graph.pk
-        node.rule_category_ids = tuple(sorted(str(category.pk) for category in resolved.get(str(row.pk), [])))
+        node.rule_category_ids = tuple(
+            sorted(str(category.pk) for category in resolved.get(str(row.pk), []))
+        )
         nodes.append(node)
     return nodes
 

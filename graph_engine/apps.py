@@ -1,5 +1,6 @@
-from django.apps import AppConfig
 import logging
+
+from django.apps import AppConfig
 
 
 class GraphEngineConfig(AppConfig):
@@ -77,7 +78,11 @@ def connect_projection_lifecycle() -> None:
         try:
             current_or_default().drop_namespace(instance)
         except Exception:  # noqa: BLE001 - the row is going regardless; see the docstring
-            logger.warning("Deleting graph #%s but could not drop its projection namespace %r; drop it by hand.", instance.pk, instance.age_name)
+            logger.warning(
+                "Deleting graph #%s but could not drop its projection namespace %r; drop it by hand.",
+                instance.pk,
+                instance.age_name,
+            )
 
     def on_graph_deleting(sender, instance, **kwargs) -> None:
         _deleting_graphs.add(int(instance.pk))
@@ -96,8 +101,18 @@ def connect_projection_lifecycle() -> None:
     # that happened to keep a strong reference. The first honest `DEBUG = False`
     # exposed it: category writes stopped refreshing the namespace and deleting
     # a graph tripped the schema-version FK. `tests/guards/test_the_projection_signals_survive_garbage_collection.py`.
-    pre_delete.connect(on_graph_deleting, sender=core_models.Graph, weak=False, dispatch_uid="projection_namespace_drop")
-    post_delete.connect(on_graph_deleted, sender=core_models.Graph, weak=False, dispatch_uid="projection_namespace_drop_final")
+    pre_delete.connect(
+        on_graph_deleting,
+        sender=core_models.Graph,
+        weak=False,
+        dispatch_uid="projection_namespace_drop",
+    )
+    post_delete.connect(
+        on_graph_deleted,
+        sender=core_models.Graph,
+        weak=False,
+        dispatch_uid="projection_namespace_drop_final",
+    )
 
     def on_category_changed(sender, instance, **kwargs) -> None:
         from graph_engine import versioning
@@ -121,5 +136,15 @@ def connect_projection_lifecycle() -> None:
         *core_models.CATEGORY_PROXIES.values(),
     }
     for model in category_classes:
-        post_save.connect(on_category_changed, sender=model, weak=False, dispatch_uid=f"projection_namespace_{model.__name__}_save")
-        post_delete.connect(on_category_changed, sender=model, weak=False, dispatch_uid=f"projection_namespace_{model.__name__}_delete")
+        post_save.connect(
+            on_category_changed,
+            sender=model,
+            weak=False,
+            dispatch_uid=f"projection_namespace_{model.__name__}_save",
+        )
+        post_delete.connect(
+            on_category_changed,
+            sender=model,
+            weak=False,
+            dispatch_uid=f"projection_namespace_{model.__name__}_delete",
+        )

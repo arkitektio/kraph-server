@@ -30,10 +30,9 @@ that decide how this file reads:
 
 from django.core.management.base import BaseCommand, CommandError
 
-from core.management.commands import _graphs
-
 from api.extensions.projection import current_or_default
 from core import models
+from core.management.commands import _graphs
 from graph_engine import watermark
 from graph_engine.controller import GraphController
 
@@ -45,9 +44,14 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser) -> None:
         """Declare the command's arguments."""
-        parser.add_argument("--graph", help="Name or id of the graph to work on. Omit with --all.")
+        parser.add_argument(
+            "--graph", help="Name or id of the graph to work on. Omit with --all."
+        )
         parser.add_argument("--all", action="store_true", help="Work on every graph.")
-        parser.add_argument("--category", help="Redraw only this category key, within the selected graphs.")
+        parser.add_argument(
+            "--category",
+            help="Redraw only this category key, within the selected graphs.",
+        )
         parser.add_argument(
             "--stale",
             action="store_true",
@@ -76,10 +80,14 @@ class Command(BaseCommand):
                     continue
 
                 if options["dry_run"]:
-                    self.stdout.write(f"would redraw {_graphs.describe(graph)}.{category.key}")
+                    self.stdout.write(
+                        f"would redraw {_graphs.describe(graph)}.{category.key}"
+                    )
                     continue
 
-                self.stdout.write(f"redrawing {_graphs.describe(graph)}.{category.key}…")
+                self.stdout.write(
+                    f"redrawing {_graphs.describe(graph)}.{category.key}…"
+                )
                 # No `retired_keys`: nothing versions the previous definition, so
                 # out of band there is no way to know which keys a *former*
                 # property owned. What the category owns now is swept and
@@ -123,7 +131,12 @@ class Command(BaseCommand):
             categories.extend(queryset.order_by("key"))
         return categories
 
-    def _is_stale(self, controller: GraphController, graph: models.Graph, category: models.Category) -> bool:
+    def _is_stale(
+        self,
+        controller: GraphController,
+        graph: models.Graph,
+        category: models.Category,
+    ) -> bool:
         """Was this graph's drawing last fully derived under a schema that is no longer active?
 
         Answered from Postgres — `Projection.schema_hash` against

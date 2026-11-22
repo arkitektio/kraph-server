@@ -53,10 +53,14 @@ class OrganizationScopedManager[Row: models.Model](models.Manager):
             f"comment saying why."
         )
 
-    def for_organization(self, organization: "Organization | int") -> models.QuerySet[Row]:
+    def for_organization(
+        self, organization: Organization | int
+    ) -> models.QuerySet[Row]:
         """The only supported entry point for reading evidence."""
         return super().get_queryset().filter(organization=organization)
 
-    def create_for_organization(self, organization: "Organization", **kwargs: object) -> Row:
+    def create_for_organization(
+        self, organization: Organization, **kwargs: object
+    ) -> Row:
         """Create a row with the organization bound explicitly."""
         return super().get_queryset().create(organization=organization, **kwargs)

@@ -1,21 +1,20 @@
-from enum import Enum
+import re
 from collections import Counter
 from collections.abc import Mapping
-from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
-from pydantic.fields import FieldInfo
-from typing import List, Dict, Optional, Any, Protocol
-
-from evidence.values import JSONValue
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from enum import Enum
+from typing import Any, Optional, Protocol
 from uuid import UUID
-import re
 
 import strawberry
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic.fields import FieldInfo
 from strawberry_django import Ordering
 
-from evidence.comments import DescendantNode
-from graph_engine import scalars
 from core import enums
+from evidence.comments import DescendantNode
+from evidence.values import JSONValue
+from graph_engine import scalars
 
 #: The list window every read shares: first hundred by default, never more than a
 #: thousand per page. `api/pagination.py` re-exports these; the controller clamps
@@ -24,12 +23,17 @@ DEFAULT_LIMIT = 100
 MAX_LIMIT = 1000
 
 
-def clamp_window(offset: int | None, limit: int | None, *, default: int = DEFAULT_LIMIT, maximum: int = MAX_LIMIT) -> tuple[int, int]:
+def clamp_window(
+    offset: int | None,
+    limit: int | None,
+    *,
+    default: int = DEFAULT_LIMIT,
+    maximum: int = MAX_LIMIT,
+) -> tuple[int, int]:
     """`(offset, limit)` clamped to `offset >= 0`, `1 <= limit <= maximum`."""
     off = max(0, int(offset or 0))
     lim = int(limit if limit is not None else default)
     return off, max(1, min(lim, maximum))
-
 
 
 # On the five `value: Any` fields below (`PropertyMatch`, `MetricInput`,
@@ -216,7 +220,7 @@ NUMERIC_TYPES = {
 }
 
 # Map aggregation -> required source types (None means any type allowed)
-AGGREGATION_SOURCE_TYPES: Dict[AggregationFunction, Optional[set]] = {
+AGGREGATION_SOURCE_TYPES: dict[AggregationFunction, set | None] = {
     AggregationFunction.MEAN: NUMERIC_TYPES,
     AggregationFunction.SUM: NUMERIC_TYPES,
     AggregationFunction.MIN: NUMERIC_TYPES | {PropertyType.DATETIME},
@@ -231,7 +235,7 @@ AGGREGATION_SOURCE_TYPES: Dict[AggregationFunction, Optional[set]] = {
 # What each aggregation produces, in the canonical vocabulary. `None` means "the
 # same kind as the values it reads" — SUM of integers is an integer, LATEST of a
 # string is a string.
-AGGREGATION_RESULT_TYPES: Dict[AggregationFunction, Optional[enums.ValueKind]] = {
+AGGREGATION_RESULT_TYPES: dict[AggregationFunction, enums.ValueKind | None] = {
     AggregationFunction.MEAN: enums.ValueKind.FLOAT,
     AggregationFunction.SUM: None,
     AggregationFunction.MIN: None,
@@ -250,13 +254,17 @@ class DerivationRule(StrictModel):
     Configuration for how to calculate a value if derivation != LATEST.
     """
 
-    source_node: Optional[str] = Field(..., description="The label of the the describing structure to read from.")
-    key: Optional[str] = Field(..., description="The property key on the source node.")
-    source_value_kind: Optional[enums.ValueKind] = Field(
-        default=None,
-        description=("Which value kind of the source key to read, when the key has terms in more than one. Distinct from the property's own `value_kind`, which is the aggregation's result type: COUNT yields INT over STRING sources. Leave unset when the key is unambiguous."),
+    source_node: str | None = Field(
+        ..., description="The label of the the describing structure to read from."
     )
-    aggregation: Optional[AggregationFunction] = None
+    key: str | None = Field(..., description="The property key on the source node.")
+    source_value_kind: enums.ValueKind | None = Field(
+        default=None,
+        description=(
+            "Which value kind of the source key to read, when the key has terms in more than one. Distinct from the property's own `value_kind`, which is the aggregation's result type: COUNT yields INT over STRING sources. Leave unset when the key is unambiguous."
+        ),
+    )
+    aggregation: AggregationFunction | None = None
 
 
 # =======================
@@ -265,9 +273,16 @@ class DerivationRule(StrictModel):
 
 
 class RenderGraphTableFilter(StrictModel):
-    key: str = Field(..., description="A returned alias of the plan — what `columns[].key` names")
-    operator: WhereOperator = Field(default=WhereOperator.EQUALS, description="How to compare")
-    value: Any = Field(..., description="The value to compare against; bound as a parameter, never interpolated")
+    key: str = Field(
+        ..., description="A returned alias of the plan — what `columns[].key` names"
+    )
+    operator: WhereOperator = Field(
+        default=WhereOperator.EQUALS, description="How to compare"
+    )
+    value: Any = Field(
+        ...,
+        description="The value to compare against; bound as a parameter, never interpolated",
+    )
 
 
 class RenderGraphTablePagination(StrictModel):
@@ -294,17 +309,29 @@ class PropertyMatch(StrictModel):
 
 
 class EntityFilters(StrictModel):
-    graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
-    category: Optional[str] = Field(default=None, description="Filter by entity kind/type")
-    ids: Optional[List[str]] = Field(default=None, description="Filter by specific entity IDs")
-    has_property: Optional[str] = Field(default=None, description="Filter entities that have a specific property")
-    search: Optional[str] = Field(default=None, description="Substring match on the claim's term key or label. A column of the log, not a derived property")
-    matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter entities that match specific property conditions")
+    graph: strawberry.ID | None = Field(default=None, description="Filter by graph ID")
+    category: str | None = Field(default=None, description="Filter by entity kind/type")
+    ids: list[str] | None = Field(
+        default=None, description="Filter by specific entity IDs"
+    )
+    has_property: str | None = Field(
+        default=None, description="Filter entities that have a specific property"
+    )
+    search: str | None = Field(
+        default=None,
+        description="Substring match on the claim's term key or label. A column of the log, not a derived property",
+    )
+    matches: list[PropertyMatch] | None = Field(
+        default=None,
+        description="Filter entities that match specific property conditions",
+    )
 
 
 class EntityPagination(StrictModel):
-    offset: Optional[int] = Field(default=0, description="Number of items to skip")
-    limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
+    offset: int | None = Field(default=0, description="Number of items to skip")
+    limit: int | None = Field(
+        default=100, description="Maximum number of items to return"
+    )
 
 
 # The four node families below — Entity, Node, NaturalEvent, ProtocolEvent —
@@ -330,10 +357,10 @@ class ClaimFilterModel(Protocol):
     modules for why the asymmetry is real.
     """
 
-    ids: Optional[List[str]]
-    has_property: Optional[str]
-    search: Optional[str]
-    matches: Optional[List["PropertyMatch"]]
+    ids: list[str] | None
+    has_property: str | None
+    search: str | None
+    matches: list["PropertyMatch"] | None
 
 
 class ClaimOrderModel(Protocol):
@@ -344,31 +371,42 @@ class ClaimOrderModel(Protocol):
     `getattr` precisely because it is not part of this contract.
     """
 
-    created_at: Optional[Ordering]
-    seq: Optional[Ordering]
-    observed_at: Optional[Ordering]
-    id: Optional[Ordering]
+    created_at: Ordering | None
+    seq: Ordering | None
+    observed_at: Ordering | None
+    id: Ordering | None
 
 
 class PageModel(Protocol):
     """One page of a list. `clamp_window` is what turns it into a slice."""
 
-    offset: Optional[int]
-    limit: Optional[int]
+    offset: int | None
+    limit: int | None
 
 
 class NodeFilters(StrictModel):
-    graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
-    category: Optional[str] = Field(default=None, description="Filter by node kind/type")
-    ids: Optional[List[str]] = Field(default=None, description="Filter by specific node IDs")
-    has_property: Optional[str] = Field(default=None, description="Filter nodes that have a specific property")
-    search: Optional[str] = Field(default=None, description="Substring match on the claim's term key or label. A column of the log, not a derived property")
-    matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter nodes that match specific property conditions")
+    graph: strawberry.ID | None = Field(default=None, description="Filter by graph ID")
+    category: str | None = Field(default=None, description="Filter by node kind/type")
+    ids: list[str] | None = Field(
+        default=None, description="Filter by specific node IDs"
+    )
+    has_property: str | None = Field(
+        default=None, description="Filter nodes that have a specific property"
+    )
+    search: str | None = Field(
+        default=None,
+        description="Substring match on the claim's term key or label. A column of the log, not a derived property",
+    )
+    matches: list[PropertyMatch] | None = Field(
+        default=None, description="Filter nodes that match specific property conditions"
+    )
 
 
 class NodePagination(StrictModel):
-    offset: Optional[int] = Field(default=0, description="Number of items to skip")
-    limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
+    offset: int | None = Field(default=0, description="Number of items to skip")
+    limit: int | None = Field(
+        default=100, description="Maximum number of items to return"
+    )
 
 
 class StructureFilters(StrictModel):
@@ -377,22 +415,40 @@ class StructureFilters(StrictModel):
     # `controller._apply_structure_filters` never looks at this field. Kept only
     # because removing a field from a `StrictModel` an internal caller may set is
     # a separate change from correcting the API surface, which exposes neither.
-    graph: Optional[strawberry.ID] = Field(default=None, description="Unused. A structure is organization-scoped and belongs to no graph")
+    graph: strawberry.ID | None = Field(
+        default=None,
+        description="Unused. A structure is organization-scoped and belongs to no graph",
+    )
     # Named `kind_identifier`, and it was `category`. It addresses a
     # `StructureKind.identifier` — `_apply_structure_filters` turns it into
     # `queryset.filter(identifier=...)` — and `Category` is a different concept
     # entirely: one view's rule for a word. `api/queries/structure.py` sets it
     # from `kind.identifier`.
-    kind_identifier: Optional[str] = Field(default=None, description="Filter by a structure kind's identifier, e.g. '@mikro/roi'")
-    ids: Optional[List[str]] = Field(default=None, description="Filter by specific structure IDs")
-    has_property: Optional[str] = Field(default=None, description="Filter structures that have a metric under this key")
-    search: Optional[str] = Field(default=None, description="Substring match on the structure's `object`, not its properties")
-    matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter structures whose metrics match these conditions")
+    kind_identifier: str | None = Field(
+        default=None,
+        description="Filter by a structure kind's identifier, e.g. '@mikro/roi'",
+    )
+    ids: list[str] | None = Field(
+        default=None, description="Filter by specific structure IDs"
+    )
+    has_property: str | None = Field(
+        default=None, description="Filter structures that have a metric under this key"
+    )
+    search: str | None = Field(
+        default=None,
+        description="Substring match on the structure's `object`, not its properties",
+    )
+    matches: list[PropertyMatch] | None = Field(
+        default=None,
+        description="Filter structures whose metrics match these conditions",
+    )
 
 
 class StructurePagination(StrictModel):
-    offset: Optional[int] = Field(default=0, description="Number of items to skip")
-    limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
+    offset: int | None = Field(default=0, description="Number of items to skip")
+    limit: int | None = Field(
+        default=100, description="Maximum number of items to return"
+    )
 
 
 class PropertyOrder(StrictModel):
@@ -406,25 +462,55 @@ class EntityOrder(StrictModel):
     # `GraphController.list_entities_for_category`, which no GraphQL field is
     # built on. The other orderings below carry no `property` because nothing
     # consumes one anywhere.
-    created_at: Optional[Ordering] = Field(default=None, description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order")
-    seq: Optional[Ordering] = Field(default=None, description="Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)")
-    observed_at: Optional[Ordering] = Field(default=None, description="Order by world time — when the claim says the world was so (RFC 0015)")
-    id: Optional[Ordering] = Field(default=None, description="Order by entity ID")
-    property: Optional[PropertyOrder] = Field(default=None, description="Order by a specific derived property value — drawing-scoped reads only")
+    created_at: Ordering | None = Field(
+        default=None,
+        description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order",
+    )
+    seq: Ordering | None = Field(
+        default=None,
+        description="Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)",
+    )
+    observed_at: Ordering | None = Field(
+        default=None,
+        description="Order by world time — when the claim says the world was so (RFC 0015)",
+    )
+    id: Ordering | None = Field(default=None, description="Order by entity ID")
+    property: PropertyOrder | None = Field(
+        default=None,
+        description="Order by a specific derived property value — drawing-scoped reads only",
+    )
 
 
 class NodeOrder(StrictModel):
-    created_at: Optional[Ordering] = Field(default=None, description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order")
-    seq: Optional[Ordering] = Field(default=None, description="Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)")
-    observed_at: Optional[Ordering] = Field(default=None, description="Order by world time — when the claim says the world was so (RFC 0015)")
-    id: Optional[Ordering] = Field(default=None, description="Order by node ID")
+    created_at: Ordering | None = Field(
+        default=None,
+        description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order",
+    )
+    seq: Ordering | None = Field(
+        default=None,
+        description="Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)",
+    )
+    observed_at: Ordering | None = Field(
+        default=None,
+        description="Order by world time — when the claim says the world was so (RFC 0015)",
+    )
+    id: Ordering | None = Field(default=None, description="Order by node ID")
 
 
 class StructureOrder(StrictModel):
-    created_at: Optional[Ordering] = Field(default=None, description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order")
-    seq: Optional[Ordering] = Field(default=None, description="Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)")
-    observed_at: Optional[Ordering] = Field(default=None, description="Order by world time — when the claim says the world was so (RFC 0015)")
-    id: Optional[Ordering] = Field(default=None, description="Order by structure ID")
+    created_at: Ordering | None = Field(
+        default=None,
+        description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order",
+    )
+    seq: Ordering | None = Field(
+        default=None,
+        description="Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)",
+    )
+    observed_at: Ordering | None = Field(
+        default=None,
+        description="Order by world time — when the claim says the world was so (RFC 0015)",
+    )
+    id: Ordering | None = Field(default=None, description="Order by structure ID")
 
 
 # `MetricFilters`, `MetricPagination` and `MetricOrder` used to sit here. No
@@ -434,111 +520,226 @@ class StructureOrder(StrictModel):
 
 
 class NaturalEventFilters(StrictModel):
-    graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
-    category: Optional[str] = Field(default=None, description="Filter by natural event category ID")
-    ids: Optional[List[str]] = Field(default=None, description="Filter by specific natural event IDs")
-    has_property: Optional[str] = Field(default=None, description="Filter natural events that have a specific property")
-    search: Optional[str] = Field(default=None, description="Substring match on the claim's term key or label. A column of the log, not a derived property")
-    matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter natural events that match specific property conditions")
+    graph: strawberry.ID | None = Field(default=None, description="Filter by graph ID")
+    category: str | None = Field(
+        default=None, description="Filter by natural event category ID"
+    )
+    ids: list[str] | None = Field(
+        default=None, description="Filter by specific natural event IDs"
+    )
+    has_property: str | None = Field(
+        default=None, description="Filter natural events that have a specific property"
+    )
+    search: str | None = Field(
+        default=None,
+        description="Substring match on the claim's term key or label. A column of the log, not a derived property",
+    )
+    matches: list[PropertyMatch] | None = Field(
+        default=None,
+        description="Filter natural events that match specific property conditions",
+    )
 
 
 class NaturalEventPagination(StrictModel):
-    offset: Optional[int] = Field(default=0, description="Number of items to skip")
-    limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
+    offset: int | None = Field(default=0, description="Number of items to skip")
+    limit: int | None = Field(
+        default=100, description="Maximum number of items to return"
+    )
 
 
 class NaturalEventOrder(StrictModel):
-    created_at: Optional[Ordering] = Field(default=None, description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order")
-    seq: Optional[Ordering] = Field(default=None, description="Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)")
-    observed_at: Optional[Ordering] = Field(default=None, description="Order by world time — when the claim says the world was so (RFC 0015)")
-    id: Optional[Ordering] = Field(default=None, description="Order by natural event ID")
+    created_at: Ordering | None = Field(
+        default=None,
+        description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order",
+    )
+    seq: Ordering | None = Field(
+        default=None,
+        description="Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)",
+    )
+    observed_at: Ordering | None = Field(
+        default=None,
+        description="Order by world time — when the claim says the world was so (RFC 0015)",
+    )
+    id: Ordering | None = Field(default=None, description="Order by natural event ID")
 
 
 class ProtocolEventFilters(StrictModel):
-    graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
-    category: Optional[str] = Field(default=None, description="Filter by protocol event category ID")
-    ids: Optional[List[str]] = Field(default=None, description="Filter by specific protocol event IDs")
-    has_property: Optional[str] = Field(default=None, description="Filter protocol events that have a specific property")
-    search: Optional[str] = Field(default=None, description="Substring match on the claim's term key or label. A column of the log, not a derived property")
-    matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter protocol events that match specific property conditions")
+    graph: strawberry.ID | None = Field(default=None, description="Filter by graph ID")
+    category: str | None = Field(
+        default=None, description="Filter by protocol event category ID"
+    )
+    ids: list[str] | None = Field(
+        default=None, description="Filter by specific protocol event IDs"
+    )
+    has_property: str | None = Field(
+        default=None, description="Filter protocol events that have a specific property"
+    )
+    search: str | None = Field(
+        default=None,
+        description="Substring match on the claim's term key or label. A column of the log, not a derived property",
+    )
+    matches: list[PropertyMatch] | None = Field(
+        default=None,
+        description="Filter protocol events that match specific property conditions",
+    )
 
 
 class ProtocolEventPagination(StrictModel):
-    offset: Optional[int] = Field(default=0, description="Number of items to skip")
-    limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
+    offset: int | None = Field(default=0, description="Number of items to skip")
+    limit: int | None = Field(
+        default=100, description="Maximum number of items to return"
+    )
 
 
 class ProtocolEventOrder(StrictModel):
-    created_at: Optional[Ordering] = Field(default=None, description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order")
-    seq: Optional[Ordering] = Field(default=None, description="Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)")
-    observed_at: Optional[Ordering] = Field(default=None, description="Order by world time — when the claim says the world was so (RFC 0015)")
-    id: Optional[Ordering] = Field(default=None, description="Order by protocol event ID")
+    created_at: Ordering | None = Field(
+        default=None,
+        description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order",
+    )
+    seq: Ordering | None = Field(
+        default=None,
+        description="Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)",
+    )
+    observed_at: Ordering | None = Field(
+        default=None,
+        description="Order by world time — when the claim says the world was so (RFC 0015)",
+    )
+    id: Ordering | None = Field(default=None, description="Order by protocol event ID")
 
 
 class MeasurementFilters(StrictModel):
-    graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
-    category: Optional[str] = Field(default=None, description="Filter by measurement category ID")
-    ids: Optional[List[str]] = Field(default=None, description="Filter by specific measurement IDs")
-    has_property: Optional[str] = Field(default=None, description="Filter measurements that have a specific property")
-    search: Optional[str] = Field(default=None, description="Full-text search over measurement properties")
-    matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter measurements that match specific property conditions")
+    graph: strawberry.ID | None = Field(default=None, description="Filter by graph ID")
+    category: str | None = Field(
+        default=None, description="Filter by measurement category ID"
+    )
+    ids: list[str] | None = Field(
+        default=None, description="Filter by specific measurement IDs"
+    )
+    has_property: str | None = Field(
+        default=None, description="Filter measurements that have a specific property"
+    )
+    search: str | None = Field(
+        default=None, description="Full-text search over measurement properties"
+    )
+    matches: list[PropertyMatch] | None = Field(
+        default=None,
+        description="Filter measurements that match specific property conditions",
+    )
 
 
 class MeasurementPagination(StrictModel):
-    offset: Optional[int] = Field(default=0, description="Number of items to skip")
-    limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
+    offset: int | None = Field(default=0, description="Number of items to skip")
+    limit: int | None = Field(
+        default=100, description="Maximum number of items to return"
+    )
 
 
 class MeasurementOrder(StrictModel):
-    created_at: Optional[Ordering] = Field(default=None, description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order")
-    seq: Optional[Ordering] = Field(default=None, description="Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)")
-    observed_at: Optional[Ordering] = Field(default=None, description="Order by world time — when the claim says the world was so (RFC 0015)")
-    id: Optional[Ordering] = Field(default=None, description="Order by measurement ID")
+    created_at: Ordering | None = Field(
+        default=None,
+        description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order",
+    )
+    seq: Ordering | None = Field(
+        default=None,
+        description="Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)",
+    )
+    observed_at: Ordering | None = Field(
+        default=None,
+        description="Order by world time — when the claim says the world was so (RFC 0015)",
+    )
+    id: Ordering | None = Field(default=None, description="Order by measurement ID")
 
 
 class StructureRelationFilters(StrictModel):
-    graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
-    category: Optional[str] = Field(default=None, description="Filter by structure relation category ID")
-    ids: Optional[List[str]] = Field(default=None, description="Filter by specific structure relation IDs")
-    has_property: Optional[str] = Field(default=None, description="Filter structure relations that have a specific property")
-    search: Optional[str] = Field(default=None, description="Full-text search over structure relation properties")
-    matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter structure relations that match specific property conditions")
+    graph: strawberry.ID | None = Field(default=None, description="Filter by graph ID")
+    category: str | None = Field(
+        default=None, description="Filter by structure relation category ID"
+    )
+    ids: list[str] | None = Field(
+        default=None, description="Filter by specific structure relation IDs"
+    )
+    has_property: str | None = Field(
+        default=None,
+        description="Filter structure relations that have a specific property",
+    )
+    search: str | None = Field(
+        default=None, description="Full-text search over structure relation properties"
+    )
+    matches: list[PropertyMatch] | None = Field(
+        default=None,
+        description="Filter structure relations that match specific property conditions",
+    )
 
 
 class StructureRelationPagination(StrictModel):
-    offset: Optional[int] = Field(default=0, description="Number of items to skip")
-    limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
+    offset: int | None = Field(default=0, description="Number of items to skip")
+    limit: int | None = Field(
+        default=100, description="Maximum number of items to return"
+    )
 
 
 class StructureRelationOrder(StrictModel):
-    created_at: Optional[Ordering] = Field(default=None, description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order")
-    seq: Optional[Ordering] = Field(default=None, description="Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)")
-    observed_at: Optional[Ordering] = Field(default=None, description="Order by world time — when the claim says the world was so (RFC 0015)")
-    id: Optional[Ordering] = Field(default=None, description="Order by structure relation ID")
+    created_at: Ordering | None = Field(
+        default=None,
+        description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order",
+    )
+    seq: Ordering | None = Field(
+        default=None,
+        description="Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)",
+    )
+    observed_at: Ordering | None = Field(
+        default=None,
+        description="Order by world time — when the claim says the world was so (RFC 0015)",
+    )
+    id: Ordering | None = Field(
+        default=None, description="Order by structure relation ID"
+    )
 
 
 class RelationFilters(StrictModel):
-    graph: Optional[strawberry.ID] = Field(default=None, description="Filter by graph ID")
-    category: Optional[str] = Field(default=None, description="Filter by relation category ID")
-    ids: Optional[List[str]] = Field(default=None, description="Filter by specific relation IDs")
-    has_property: Optional[str] = Field(default=None, description="Filter relations that have a specific property")
-    search: Optional[str] = Field(default=None, description="Full-text search over relation properties")
-    matches: Optional[List[PropertyMatch]] = Field(default=None, description="Filter relations that match specific property conditions")
+    graph: strawberry.ID | None = Field(default=None, description="Filter by graph ID")
+    category: str | None = Field(
+        default=None, description="Filter by relation category ID"
+    )
+    ids: list[str] | None = Field(
+        default=None, description="Filter by specific relation IDs"
+    )
+    has_property: str | None = Field(
+        default=None, description="Filter relations that have a specific property"
+    )
+    search: str | None = Field(
+        default=None, description="Full-text search over relation properties"
+    )
+    matches: list[PropertyMatch] | None = Field(
+        default=None,
+        description="Filter relations that match specific property conditions",
+    )
 
 
 class RelationPagination(StrictModel):
-    offset: Optional[int] = Field(default=0, description="Number of items to skip")
-    limit: Optional[int] = Field(default=100, description="Maximum number of items to return")
+    offset: int | None = Field(default=0, description="Number of items to skip")
+    limit: int | None = Field(
+        default=100, description="Maximum number of items to return"
+    )
 
 
 class RelationOrder(StrictModel):
-    created_at: Optional[Ordering] = Field(default=None, description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order")
-    seq: Optional[Ordering] = Field(default=None, description="Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)")
-    observed_at: Optional[Ordering] = Field(default=None, description="Order by world time — when the claim says the world was so (RFC 0015)")
-    id: Optional[Ordering] = Field(default=None, description="Order by relation ID")
+    created_at: Ordering | None = Field(
+        default=None,
+        description="Order by when the row was stored — arrival time. Prefer `seq`, the log's order",
+    )
+    seq: Ordering | None = Field(
+        default=None,
+        description="Order by the act's position in the log (`Assertion.seq`) — the log's own total order (RFC 0025)",
+    )
+    observed_at: Ordering | None = Field(
+        default=None,
+        description="Order by world time — when the claim says the world was so (RFC 0015)",
+    )
+    id: Ordering | None = Field(default=None, description="Order by relation ID")
 
 
-def parse_observed_at(value: JSONValue | datetime) -> Optional[datetime]:
+def parse_observed_at(value: JSONValue | datetime) -> datetime | None:
     """Accept an ISO string, a datetime, or a unix-ms int as a world time.
 
     Tolerant on the way in because clients used to send unix milliseconds
@@ -550,17 +751,17 @@ def parse_observed_at(value: JSONValue | datetime) -> Optional[datetime]:
     if value is None:
         return None
     if isinstance(value, datetime):
-        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
     if isinstance(value, bool):
         raise ValueError(f"Unsupported observed_at type: {type(value)}")
     if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(value / 1000, tz=timezone.utc)
+        return datetime.fromtimestamp(value / 1000, tz=UTC)
     if isinstance(value, str):
         try:
             parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         except ValueError:
             raise ValueError(f"Invalid observed_at format: {value}")
-        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
     raise ValueError(f"Unsupported observed_at type: {type(value)}")
 
 
@@ -586,39 +787,67 @@ class MetricInput(StrictModel):
             "What type of value this is. Required: it decides which column the value is stored in and which measurement term it is recorded under, and nothing infers it. Two callers may declare the same key differently — a float `confidence` and a category-label `confidence` are two terms, and both are recorded."
         ),
     )
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
-    confidence_type: Optional[str] = Field(default=None, description="What kind of number `confidence` is — a method's own score, a p-value. Measurement-only")
-    unit: Optional[str] = None
-    observed_at: Optional[datetime] = Field(None, description="When the world was observed. Defaults to when it was claimed.")
-    derived_from: List[str] = _derived_from_field()
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
+    confidence_type: str | None = Field(
+        default=None,
+        description="What kind of number `confidence` is — a method's own score, a p-value. Measurement-only",
+    )
+    unit: str | None = None
+    observed_at: datetime | None = Field(
+        None,
+        description="When the world was observed. Defaults to when it was claimed.",
+    )
+    derived_from: list[str] = _derived_from_field()
 
     @field_validator("observed_at", mode="before")
     @classmethod
-    def _parse_observed_at(cls, value: JSONValue | datetime) -> Optional[datetime]:
+    def _parse_observed_at(cls, value: JSONValue | datetime) -> datetime | None:
         return parse_observed_at(value)
 
 
-def create_max_confidence_metric(key: str, value: JSONValue, unit: Optional[str] = None, observed_at: JSONValue | datetime = None) -> MetricInput:
+def create_max_confidence_metric(
+    key: str,
+    value: JSONValue,
+    unit: str | None = None,
+    observed_at: JSONValue | datetime = None,
+) -> MetricInput:
     """Helper to create a measurement with max confidence"""
-    return MetricInput(key=key, value=value, confidence=1.0, confidence_type="max", unit=unit, observed_at=observed_at)
+    return MetricInput(
+        key=key,
+        value=value,
+        confidence=1.0,
+        confidence_type="max",
+        unit=unit,
+        observed_at=observed_at,
+    )
 
 
 class StructureReferenceInput(StrictModel):
-    identifier: scalars.StructureIdentifier = Field(..., description="Schema identifier, e.g. '@mikro/roi'")
-    object: scalars.StructureObject = Field(..., description="The unique ID of the object this structure references")
-    metrics: List[MetricInput] = []
+    identifier: scalars.StructureIdentifier = Field(
+        ..., description="Schema identifier, e.g. '@mikro/roi'"
+    )
+    object: scalars.StructureObject = Field(
+        ..., description="The unique ID of the object this structure references"
+    )
+    metrics: list[MetricInput] = []
 
 
-def create_told_you_so(metrics: List[MetricInput], object: str) -> StructureReferenceInput:
-    return StructureReferenceInput(identifier="told_you_so", object=object, metrics=metrics)
+def create_told_you_so(
+    metrics: list[MetricInput], object: str
+) -> StructureReferenceInput:
+    return StructureReferenceInput(
+        identifier="told_you_so", object=object, metrics=metrics
+    )
 
 
 class ProvenanceContext(StrictModel):
     subject: str = Field(..., description="User ID")
     app_id: str = Field(..., description="Client ID")
-    action_id: Optional[str] = None
-    action_name: Optional[str] = None
-    action_args: Optional[Dict[str, Any]] = None
+    action_id: str | None = None
+    action_name: str | None = None
+    action_args: dict[str, Any] | None = None
 
     @classmethod
     def bland(cls) -> "ProvenanceContext":
@@ -643,7 +872,9 @@ SEMVER_REGEX = re.compile(
 def validate_semver(version: str) -> str:
     """Validate that a string is a valid semantic version."""
     if not SEMVER_REGEX.match(version):
-        raise ValueError(f"'{version}' is not a valid semantic version. Expected format: MAJOR.MINOR.PATCH (e.g., '1.0.0', '2.1.3-beta.1')")
+        raise ValueError(
+            f"'{version}' is not a valid semantic version. Expected format: MAJOR.MINOR.PATCH (e.g., '1.0.0', '2.1.3-beta.1')"
+        )
     return version
 
 
@@ -664,7 +895,10 @@ class SemanticVersion(str):
 class OntologyReferenceInput(StrictModel):
     """Input for an ontology reference."""
 
-    prefix: str = Field(..., description="The ontology prefix (e.g. 'OBI'). Must be defined in graph prefixes.")
+    prefix: str = Field(
+        ...,
+        description="The ontology prefix (e.g. 'OBI'). Must be defined in graph prefixes.",
+    )
     uri: str = Field(..., description="The full URI for the ontology term")
 
 
@@ -694,7 +928,9 @@ class ClaimKind(str, Enum):
     CLASSIFICATION = "CLASSIFICATION"  #: which claims admit/label — the whole-rule reading, WORD included
     EXISTENCE = "EXISTENCE"  #: whose standings count — retraction/attest of nodes, and of an edge category's links
     SAMENESS = "SAMENESS"  #: whose SAME_AS / DIFFERENT_FROM count — the **view's** rule (`Graph.samenessRule`, RFC 0024), never a category's
-    EVIDENCE = "EVIDENCE"  #: whose INFORMS may route evidence under this category's nodes
+    EVIDENCE = (
+        "EVIDENCE"  #: whose INFORMS may route evidence under this category's nodes
+    )
     MEASUREMENT = "MEASUREMENT"  #: the default metric scope, when a property has no `rule.evidence`
 
 
@@ -711,7 +947,9 @@ def rule_covers(stored_rule: Mapping[str, object] | None, kind: str) -> bool:
     are skipped (read-side tolerance — the write path refuses them).
     """
     kind = str(kind)
-    for condition in (stored_rule.get("when") or []) if isinstance(stored_rule, dict) else []:
+    for condition in (
+        (stored_rule.get("when") or []) if isinstance(stored_rule, dict) else []
+    ):
         if not isinstance(condition, dict) or str(condition.get("field")) != "KIND":
             continue
         operator = str(condition.get("operator"))
@@ -738,14 +976,24 @@ class ClaimOperator(str, Enum):
     BELOW = "BELOW"  #: number < value (RFC 0016)
 
 
-_IDENTITY_FIELDS = frozenset({ClaimField.WORD, ClaimField.SUBJECT, ClaimField.APP, ClaimField.ACTION, ClaimField.KEY})
+_IDENTITY_FIELDS = frozenset(
+    {
+        ClaimField.WORD,
+        ClaimField.SUBJECT,
+        ClaimField.APP,
+        ClaimField.ACTION,
+        ClaimField.KEY,
+    }
+)
 _TIME_FIELDS = frozenset({ClaimField.ASSERTED_AT, ClaimField.OBSERVED_AT})
 _NUMERIC_FIELDS = frozenset({ClaimField.CONFIDENCE})
 #: Only a metric row has these: legal in a property's `rule.evidence` and in
 #: the `when` of a MEASUREMENT-only definition rule, nowhere else (RFC 0014).
 #: OBSERVED_AT was here until every claim gained one (RFC 0015).
 _METRIC_ONLY_FIELDS = frozenset({ClaimField.KEY})
-_IDENTITY_OPERATORS = frozenset({ClaimOperator.IS, ClaimOperator.IN, ClaimOperator.NOT_IN})
+_IDENTITY_OPERATORS = frozenset(
+    {ClaimOperator.IS, ClaimOperator.IN, ClaimOperator.NOT_IN}
+)
 _TIME_OPERATORS = frozenset({ClaimOperator.BEFORE, ClaimOperator.SINCE})
 _NUMERIC_OPERATORS = frozenset({ClaimOperator.AT_LEAST, ClaimOperator.BELOW})
 
@@ -758,89 +1006,151 @@ class ClaimConditionInput(StrictModel):
     """
 
     field: ClaimField = Field(..., description="What this condition looks at")
-    operator: ClaimOperator = Field(..., description="How it compares. BEFORE/SINCE are inclusive")
-    value: Any = Field(..., description="One string for IS, a non-empty string list for IN/NOT_IN, a datetime for BEFORE/SINCE, a number in [0, 1] for AT_LEAST/BELOW. For field KIND: kinds from CLASSIFICATION, EXISTENCE, SAMENESS, EVIDENCE, MEASUREMENT. For field KEY: metric keys")
+    operator: ClaimOperator = Field(
+        ..., description="How it compares. BEFORE/SINCE are inclusive"
+    )
+    value: Any = Field(
+        ...,
+        description="One string for IS, a non-empty string list for IN/NOT_IN, a datetime for BEFORE/SINCE, a number in [0, 1] for AT_LEAST/BELOW. For field KIND: kinds from CLASSIFICATION, EXISTENCE, SAMENESS, EVIDENCE, MEASUREMENT. For field KEY: metric keys",
+    )
 
     @model_validator(mode="after")
     def value_fits_field_and_operator(self) -> "ClaimConditionInput":
         if self.field in _NUMERIC_FIELDS:
             if self.operator not in _NUMERIC_OPERATORS:
-                raise ValueError(f"{self.field.value} takes AT_LEAST or BELOW, not {self.operator.value}.")
+                raise ValueError(
+                    f"{self.field.value} takes AT_LEAST or BELOW, not {self.operator.value}."
+                )
             # bool is an int in Python; "CONFIDENCE AT_LEAST true" is nonsense, not 1.0.
             if isinstance(self.value, bool) or not isinstance(self.value, (int, float)):
-                raise ValueError(f"{self.field.value} {self.operator.value} needs a number in [0, 1], got {self.value!r}.")
+                raise ValueError(
+                    f"{self.field.value} {self.operator.value} needs a number in [0, 1], got {self.value!r}."
+                )
             if not 0 <= self.value <= 1:
-                raise ValueError(f"{self.field.value} {self.operator.value} needs a number in [0, 1], got {self.value!r}.")
+                raise ValueError(
+                    f"{self.field.value} {self.operator.value} needs a number in [0, 1], got {self.value!r}."
+                )
             self.value = float(self.value)
             return self
 
         if self.operator in _NUMERIC_OPERATORS:
-            raise ValueError(f"{self.field.value} takes no numeric operator; {self.operator.value} is for CONFIDENCE.")
+            raise ValueError(
+                f"{self.field.value} takes no numeric operator; {self.operator.value} is for CONFIDENCE."
+            )
 
         if self.field in _TIME_FIELDS:
             if self.operator not in _TIME_OPERATORS:
-                raise ValueError(f"{self.field.value} takes BEFORE or SINCE, not {self.operator.value}.")
+                raise ValueError(
+                    f"{self.field.value} takes BEFORE or SINCE, not {self.operator.value}."
+                )
             if isinstance(self.value, str):
                 try:
-                    self.value = datetime.fromisoformat(self.value.replace("Z", "+00:00"))
+                    self.value = datetime.fromisoformat(
+                        self.value.replace("Z", "+00:00")
+                    )
                 except ValueError as error:
-                    raise ValueError(f"{self.field.value} {self.operator.value} needs a datetime, got {self.value!r}.") from error
+                    raise ValueError(
+                        f"{self.field.value} {self.operator.value} needs a datetime, got {self.value!r}."
+                    ) from error
             if not isinstance(self.value, datetime):
-                raise ValueError(f"{self.field.value} {self.operator.value} needs a datetime, got {type(self.value).__name__}.")
+                raise ValueError(
+                    f"{self.field.value} {self.operator.value} needs a datetime, got {type(self.value).__name__}."
+                )
             return self
 
         if self.operator not in _IDENTITY_OPERATORS:
-            raise ValueError(f"{self.field.value} takes IS, IN or NOT_IN, not {self.operator.value}.")
+            raise ValueError(
+                f"{self.field.value} takes IS, IN or NOT_IN, not {self.operator.value}."
+            )
         if self.field == ClaimField.KIND:
-            values = [self.value] if isinstance(self.value, str) else (self.value if isinstance(self.value, list) else [])
-            bad = [entry for entry in values if entry not in _CLAIM_KIND_VALUES] or (["(none)"] if not values else [])
+            values = (
+                [self.value]
+                if isinstance(self.value, str)
+                else (self.value if isinstance(self.value, list) else [])
+            )
+            bad = [entry for entry in values if entry not in _CLAIM_KIND_VALUES] or (
+                ["(none)"] if not values else []
+            )
             if bad:
                 raise ValueError(f"KIND takes {sorted(_CLAIM_KIND_VALUES)}, got {bad}.")
             if self.operator == ClaimOperator.IS and not isinstance(self.value, str):
                 raise ValueError("KIND IS takes one kind; use IN for several.")
-            if self.operator in (ClaimOperator.IN, ClaimOperator.NOT_IN) and not isinstance(self.value, list):
+            if self.operator in (
+                ClaimOperator.IN,
+                ClaimOperator.NOT_IN,
+            ) and not isinstance(self.value, list):
                 raise ValueError(f"KIND {self.operator.value} takes a list of kinds.")
             return self
         if self.field == ClaimField.WORD and self.operator == ClaimOperator.NOT_IN:
-            raise ValueError("WORD takes IS or IN: a definition names the words it derives from, it does not exclude them.")
+            raise ValueError(
+                "WORD takes IS or IN: a definition names the words it derives from, it does not exclude them."
+            )
         if self.operator == ClaimOperator.IS:
             if not isinstance(self.value, str) or not self.value:
-                raise ValueError(f"{self.field.value} IS needs one non-empty string, got {self.value!r}.")
+                raise ValueError(
+                    f"{self.field.value} IS needs one non-empty string, got {self.value!r}."
+                )
         else:
-            if not isinstance(self.value, list) or not self.value or not all(isinstance(entry, str) and entry for entry in self.value):
-                raise ValueError(f"{self.field.value} {self.operator.value} needs a non-empty list of strings, got {self.value!r}.")
+            if (
+                not isinstance(self.value, list)
+                or not self.value
+                or not all(isinstance(entry, str) and entry for entry in self.value)
+            ):
+                raise ValueError(
+                    f"{self.field.value} {self.operator.value} needs a non-empty list of strings, got {self.value!r}."
+                )
         return self
 
-    def to_stored(self) -> Dict[str, JSONValue]:
-        value = self.value.isoformat() if isinstance(self.value, datetime) else self.value
-        return {"field": self.field.value, "operator": self.operator.value, "value": value}
+    def to_stored(self) -> dict[str, JSONValue]:
+        value = (
+            self.value.isoformat() if isinstance(self.value, datetime) else self.value
+        )
+        return {
+            "field": self.field.value,
+            "operator": self.operator.value,
+            "value": value,
+        }
 
 
 class ClaimConditionGroupInput(StrictModel):
     """One exception: a conjunction that, when it holds whole, blocks its rule."""
 
-    when: List[ClaimConditionInput] = Field(..., min_length=1, description="All of these must hold for the exception to apply")
+    when: list[ClaimConditionInput] = Field(
+        ...,
+        min_length=1,
+        description="All of these must hold for the exception to apply",
+    )
 
-    def to_stored(self) -> Dict[str, JSONValue]:
+    def to_stored(self) -> dict[str, JSONValue]:
         return {"when": [condition.to_stored() for condition in self.when]}
 
 
 class ClaimRuleInput(StrictModel):
     """One rule: matches when ALL `when` conditions hold and NO `unless` group does."""
 
-    when: List[ClaimConditionInput] = Field(..., min_length=1, description="All of these must hold")
-    unless: Optional[List[ClaimConditionGroupInput]] = Field(default=None, min_length=1, description="Exceptions: the rule does not match when any group holds whole")
+    when: list[ClaimConditionInput] = Field(
+        ..., min_length=1, description="All of these must hold"
+    )
+    unless: list[ClaimConditionGroupInput] | None = Field(
+        default=None,
+        min_length=1,
+        description="Exceptions: the rule does not match when any group holds whole",
+    )
 
     @model_validator(mode="after")
     def unless_carries_no_kind(self) -> "ClaimRuleInput":
         for group in self.unless or []:
             for condition in group.when:
                 if condition.field == ClaimField.KIND:
-                    raise ValueError("KIND belongs in `when` — to exclude a kind from a rule, use KIND NOT_IN there, not an exception group.")
+                    raise ValueError(
+                        "KIND belongs in `when` — to exclude a kind from a rule, use KIND NOT_IN there, not an exception group."
+                    )
         return self
 
-    def to_stored(self) -> Dict[str, JSONValue]:
-        stored: Dict[str, JSONValue] = {"when": [condition.to_stored() for condition in self.when]}
+    def to_stored(self) -> dict[str, JSONValue]:
+        stored: dict[str, JSONValue] = {
+            "when": [condition.to_stored() for condition in self.when]
+        }
         if self.unless:
             stored["unless"] = [group.to_stored() for group in self.unless]
         return stored
@@ -852,7 +1162,9 @@ class MetricEvidenceInput(StrictModel):
     subtracts — minus WORD (a metric names no word) and KIND (a metric row has
     no kind), plus KEY, OBSERVED_AT and CONFIDENCE anywhere, `unless` included."""
 
-    rules: List[ClaimRuleInput] = Field(..., min_length=1, description="A metric counts when any rule matches")
+    rules: list[ClaimRuleInput] = Field(
+        ..., min_length=1, description="A metric counts when any rule matches"
+    )
 
     @model_validator(mode="after")
     def rules_are_metric_shaped(self) -> "MetricEvidenceInput":
@@ -861,12 +1173,16 @@ class MetricEvidenceInput(StrictModel):
             for conditions in groups:
                 for condition in conditions:
                     if condition.field == ClaimField.WORD:
-                        raise ValueError(f"rules[{index}]: a metric names no WORD — evidence conditions take SUBJECT, APP, ACTION, KEY, ASSERTED_AT, OBSERVED_AT or CONFIDENCE.")
+                        raise ValueError(
+                            f"rules[{index}]: a metric names no WORD — evidence conditions take SUBJECT, APP, ACTION, KEY, ASSERTED_AT, OBSERVED_AT or CONFIDENCE."
+                        )
                     if condition.field == ClaimField.KIND:
-                        raise ValueError(f"rules[{index}]: a metric row has no KIND to test — evidence conditions take SUBJECT, APP, ACTION, KEY, ASSERTED_AT, OBSERVED_AT or CONFIDENCE.")
+                        raise ValueError(
+                            f"rules[{index}]: a metric row has no KIND to test — evidence conditions take SUBJECT, APP, ACTION, KEY, ASSERTED_AT, OBSERVED_AT or CONFIDENCE."
+                        )
         return self
 
-    def to_stored(self) -> Dict[str, JSONValue]:
+    def to_stored(self) -> dict[str, JSONValue]:
         return {"rules": [rule.to_stored() for rule in self.rules]}
 
 
@@ -877,7 +1193,10 @@ class SamenessRuleInput(StrictModel):
     minus WORD (a sameness claim names no word), KIND (it is one kind) and KEY.
     An empty list means everyone, which is the default."""
 
-    rules: List[ClaimRuleInput] = Field(default_factory=list, description="A sameness claim counts when any rule matches; no rules means every claim counts")
+    rules: list[ClaimRuleInput] = Field(
+        default_factory=list,
+        description="A sameness claim counts when any rule matches; no rules means every claim counts",
+    )
 
     @model_validator(mode="after")
     def rules_are_identity_shaped(self) -> "SamenessRuleInput":
@@ -885,17 +1204,31 @@ class SamenessRuleInput(StrictModel):
             groups = [rule.when] + [group.when for group in rule.unless or []]
             for conditions in groups:
                 for condition in conditions:
-                    if condition.field in (ClaimField.WORD, ClaimField.KIND, ClaimField.KEY):
-                        raise ValueError(f"rules[{index}]: a sameness rule takes SUBJECT, APP, ACTION, ASSERTED_AT, OBSERVED_AT or CONFIDENCE — not {condition.field.value}.")
+                    if condition.field in (
+                        ClaimField.WORD,
+                        ClaimField.KIND,
+                        ClaimField.KEY,
+                    ):
+                        raise ValueError(
+                            f"rules[{index}]: a sameness rule takes SUBJECT, APP, ACTION, ASSERTED_AT, OBSERVED_AT or CONFIDENCE — not {condition.field.value}."
+                        )
         return self
 
-    def to_stored(self) -> Dict[str, JSONValue]:
+    def to_stored(self) -> dict[str, JSONValue]:
         """The exact JSON `Graph.sameness_rule` stores; `{}` for everyone."""
-        return {"rules": [rule.to_stored() for rule in self.rules]} if self.rules else {}
+        return (
+            {"rules": [rule.to_stored() for rule in self.rules]} if self.rules else {}
+        )
 
     @classmethod
-    def from_stored(cls, stored: Mapping[str, JSONValue] | None) -> Optional["SamenessRuleInput"]:
-        if not isinstance(stored, dict) or not isinstance(stored.get("rules"), list) or not stored["rules"]:
+    def from_stored(
+        cls, stored: Mapping[str, JSONValue] | None
+    ) -> Optional["SamenessRuleInput"]:
+        if (
+            not isinstance(stored, dict)
+            or not isinstance(stored.get("rules"), list)
+            or not stored["rules"]
+        ):
             return None
         try:
             return cls.model_validate(stored)
@@ -906,17 +1239,24 @@ class SamenessRuleInput(StrictModel):
 class DerivationRuleInput(StrictModel):
     """Input for a derivation rule configuration."""
 
-    source_node: Optional[str] = Field(default=None, description="The label of the describing structure to read from")
-    key: Optional[str] = Field(default=None, description="The property key on the source node")
-    source_value_kind: Optional[enums.ValueKind] = Field(
+    source_node: str | None = Field(
+        default=None, description="The label of the describing structure to read from"
+    )
+    key: str | None = Field(
+        default=None, description="The property key on the source node"
+    )
+    source_value_kind: enums.ValueKind | None = Field(
         default=None,
         description=(
             "Which value kind of the source key to read, when the key has terms in more than one. Distinct from the property's own `value_kind`, which is the aggregation's result type: COUNT yields INT over STRING sources. Leave unset when the key is unambiguous. INT and FLOAT are read together either way."
         ),
     )
-    aggregation: Optional[AggregationFunction] = Field(default=None, description="Aggregation function (MEAN, SUM, MAX, MIN, COUNT, etc.)")
+    aggregation: AggregationFunction | None = Field(
+        default=None,
+        description="Aggregation function (MEAN, SUM, MAX, MIN, COUNT, etc.)",
+    )
 
-    evidence: Optional[MetricEvidenceInput] = Field(
+    evidence: MetricEvidenceInput | None = Field(
         default=None,
         description=(
             "This property's own metric rule: a rule list over SUBJECT/APP/ACTION/KEY/"
@@ -927,11 +1267,13 @@ class DerivationRuleInput(StrictModel):
             "absent, the category's MEASUREMENT rules apply, and a primitive category folds everything."
         ),
     )
-    subject_priority: List[str] = Field(
+    subject_priority: list[str] = Field(
         default_factory=list,
-        description=("Subjects in descending order of trust, for PRIORITY_LATEST. The first subject with any measurement wins; subjects not listed are considered only if none of the listed ones have measured."),
+        description=(
+            "Subjects in descending order of trust, for PRIORITY_LATEST. The first subject with any measurement wins; subjects not listed are considered only if none of the listed ones have measured."
+        ),
     )
-    tool_priority: List[str] = Field(
+    tool_priority: list[str] = Field(
         default_factory=list,
         description="App ids in descending order of trust, for LATEST_ASSERTION_TOOL.",
     )
@@ -939,80 +1281,164 @@ class DerivationRuleInput(StrictModel):
     @model_validator(mode="after")
     def evidence_needs_a_source(self) -> "DerivationRuleInput":
         if self.evidence is not None and not self.source_node:
-            raise ValueError("An evidence filter needs a `source_node`: a rule that names no source reads no metrics, so the filter would be silently inert.")
+            raise ValueError(
+                "An evidence filter needs a `source_node`: a rule that names no source reads no metrics, so the filter would be silently inert."
+            )
         return self
 
 
 class ColumnInput(StrictModel):
-    kind: ColumnKind = Field(..., description="The kind of column (e.g., 'property', 'id', 'metadata', 'derived')")
-    key: str = Field(..., description="The property key for this column (inside the table query result)")
-    type: str = Field(..., description="The property type for this column (e.g., STRING, FLOAT)")
-    label: Optional[str] = Field(default=None, description="Optional human-readable label for this column (defaults to 'key' if not provided)")
-    value_kind: Optional[enums.ValueKind] = Field(default=None, description="Whether this column represents a raw property value, a derived value, or a metric")
-    unit: Optional[str] = Field(default=None, description="Unit of measurement if applicable")
-    description: str | None = Field(default=None, description="Optional description for this column")
-    category_key: Optional[str] = Field(default=None, description="Optional category/key for this column, used for grouping or filtering in the UI")
-    searchable: bool = Field(default=False, description="Whether this column should be full-text searchable")
-    is_id_for_key: Optional[str] = Field(default=None, description="If this column represents an ID that can be used to link to another table, specify the target table name here")
-    prefer_hidden: bool = Field(default=False, description="Whether this column should be hidden by default in the UI, even if it's not an ID or metadata column")
+    kind: ColumnKind = Field(
+        ...,
+        description="The kind of column (e.g., 'property', 'id', 'metadata', 'derived')",
+    )
+    key: str = Field(
+        ...,
+        description="The property key for this column (inside the table query result)",
+    )
+    type: str = Field(
+        ..., description="The property type for this column (e.g., STRING, FLOAT)"
+    )
+    label: str | None = Field(
+        default=None,
+        description="Optional human-readable label for this column (defaults to 'key' if not provided)",
+    )
+    value_kind: enums.ValueKind | None = Field(
+        default=None,
+        description="Whether this column represents a raw property value, a derived value, or a metric",
+    )
+    unit: str | None = Field(
+        default=None, description="Unit of measurement if applicable"
+    )
+    description: str | None = Field(
+        default=None, description="Optional description for this column"
+    )
+    category_key: str | None = Field(
+        default=None,
+        description="Optional category/key for this column, used for grouping or filtering in the UI",
+    )
+    searchable: bool = Field(
+        default=False, description="Whether this column should be full-text searchable"
+    )
+    is_id_for_key: str | None = Field(
+        default=None,
+        description="If this column represents an ID that can be used to link to another table, specify the target table name here",
+    )
+    prefer_hidden: bool = Field(
+        default=False,
+        description="Whether this column should be hidden by default in the UI, even if it's not an ID or metadata column",
+    )
 
 
 class MatchPathInput(StrictModel):
     nodes: list[str] = Field(..., description="List of node IDs to match")
-    relations: list[str] = Field(..., description="List of node IDs representing the path")
-    optional: bool = Field(default=False, description="Whether the path match is optional")
+    relations: list[str] = Field(
+        ..., description="List of node IDs representing the path"
+    )
+    optional: bool = Field(
+        default=False, description="Whether the path match is optional"
+    )
     title: str | None = Field(default=None, description="Title for the matched path")
-    color: list[float] | None = Field(default=None, description="Color for the matched path as RGB values")
+    color: list[float] | None = Field(
+        default=None, description="Color for the matched path as RGB values"
+    )
     relation_directions: list[bool] | None = Field(
         default=None,
         description="List of booleans indicating the direction of each relationship in the path (True for outgoing, False for incoming)",
     )
-    node_categories: list[str | None] | None = Field(default=None, description="Optional category key per node (parallel to `nodes`), constraining that node of the pattern to a category; null leaves it unconstrained")
+    node_categories: list[str | None] | None = Field(
+        default=None,
+        description="Optional category key per node (parallel to `nodes`), constraining that node of the pattern to a category; null leaves it unconstrained",
+    )
 
 
 class WhereClauseInput(StrictModel):
     path: str
     node: str | None = None
     property: str = Field(..., description="The property name to filter on")
-    operator: WhereOperator = Field(..., description="The operator to use for filtering")
-    value: Any = Field(..., description="The value to compare against. A typed value bound as a parameter, never a Cypher literal")
+    operator: WhereOperator = Field(
+        ..., description="The operator to use for filtering"
+    )
+    value: Any = Field(
+        ...,
+        description="The value to compare against. A typed value bound as a parameter, never a Cypher literal",
+    )
 
 
 class ReturnStatementInput(StrictModel):
     path: str = Field(..., description="The path ID to return")
     node: str | None = Field(default=None, description="The node ID to return")
-    property: str | None = Field(default=None, description="The property name to return")
-    alias: str | None = Field(default=None, description="The column alias this value is returned under — what `columns[].key`, a render filter and a render order name. Generated from path/node/property when omitted")
+    property: str | None = Field(
+        default=None, description="The property name to return"
+    )
+    alias: str | None = Field(
+        default=None,
+        description="The column alias this value is returned under — what `columns[].key`, a render filter and a render order name. Generated from path/node/property when omitted",
+    )
 
 
 class BuilderArgsInput(StrictModel):
     """The builder's spelling of a plan. Kept for `createGraphTableQueryThroughBuilder`; `TableQueryPlanInput` is the contract."""
 
-    where_clauses: Optional[List[WhereClauseInput]] = Field(default=None, description="Optional filtering conditions for the graph query")
-    match_paths: Optional[List[MatchPathInput]] = Field(default=None, description="Optional patterns to match in the graph for this query")
-    return_statements: Optional[List[ReturnStatementInput]] = Field(default=None, description="The values to return for each matched pattern in the graph query")
+    where_clauses: list[WhereClauseInput] | None = Field(
+        default=None, description="Optional filtering conditions for the graph query"
+    )
+    match_paths: list[MatchPathInput] | None = Field(
+        default=None,
+        description="Optional patterns to match in the graph for this query",
+    )
+    return_statements: list[ReturnStatementInput] | None = Field(
+        default=None,
+        description="The values to return for each matched pattern in the graph query",
+    )
 
 
 class TableQueryPlanInput(StrictModel):
     """What a saved table query means — the contract, compiled per projection kind (`graph_engine/query_ir.py`)."""
 
-    matches: List[MatchPathInput] = Field(..., description="The paths to match; the first node of the first path is the default subject")
-    wheres: List[WhereClauseInput] = Field(default_factory=list, description="Predicates over matched nodes' properties")
-    returns: List[ReturnStatementInput] = Field(default_factory=list, description="What to return, each under an alias a column can name")
+    matches: list[MatchPathInput] = Field(
+        ...,
+        description="The paths to match; the first node of the first path is the default subject",
+    )
+    wheres: list[WhereClauseInput] = Field(
+        default_factory=list, description="Predicates over matched nodes' properties"
+    )
+    returns: list[ReturnStatementInput] = Field(
+        default_factory=list,
+        description="What to return, each under an alias a column can name",
+    )
 
 
 class PropertyDefinitionInput(StrictModel):
     """Input for a property definition on a node or relation."""
 
-    label: Optional[str] = Field(default=None, description="Optional human-readable label for this property (defaults to 'key' if not provided)")
+    label: str | None = Field(
+        default=None,
+        description="Optional human-readable label for this property (defaults to 'key' if not provided)",
+    )
     key: str = Field(..., description="Property key/name")
-    value_kind: enums.ValueKind = strawberry.field(description="What type of value, (taking from the universe) 'QUANTITATIVE', 'QUALITATIVE', 'BOOLEAN'")
-    unit: Optional[str] = Field(default=None, description="Unit of measurement")
-    description: Optional[str] = Field(default=None, description="Description of this property")
-    derivation: DerivationType = Field(default=DerivationType.LATEST, description="Derivation type: LATEST, PRIORITY_LATEST, ROLLUP, LATEST_ASSERTION_TOOL")
-    rule: Optional[DerivationRuleInput] = Field(default=None, description="Rule configuration for ROLLUP derivation")
-    index: bool = Field(default=False, description="Whether to create an index on this property for faster queries")
-    searchable: bool = Field(default=False, description="Whether this property should be full-text searchable")
+    value_kind: enums.ValueKind = strawberry.field(
+        description="What type of value, (taking from the universe) 'QUANTITATIVE', 'QUALITATIVE', 'BOOLEAN'"
+    )
+    unit: str | None = Field(default=None, description="Unit of measurement")
+    description: str | None = Field(
+        default=None, description="Description of this property"
+    )
+    derivation: DerivationType = Field(
+        default=DerivationType.LATEST,
+        description="Derivation type: LATEST, PRIORITY_LATEST, ROLLUP, LATEST_ASSERTION_TOOL",
+    )
+    rule: DerivationRuleInput | None = Field(
+        default=None, description="Rule configuration for ROLLUP derivation"
+    )
+    index: bool = Field(
+        default=False,
+        description="Whether to create an index on this property for faster queries",
+    )
+    searchable: bool = Field(
+        default=False,
+        description="Whether this property should be full-text searchable",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -1068,16 +1494,25 @@ class PropertyDefinitionInput(StrictModel):
     @field_validator("derivation")
     @classmethod
     def validate_derivation(cls, v: str) -> str:
-        valid_derivations = {"LATEST", "PRIORITY_LATEST", "ROLLUP", "LATEST_ASSERTION_TOOL"}
+        valid_derivations = {
+            "LATEST",
+            "PRIORITY_LATEST",
+            "ROLLUP",
+            "LATEST_ASSERTION_TOOL",
+        }
         if v.upper() not in valid_derivations:
-            raise ValueError(f"Invalid derivation type '{v}'. Must be one of: {', '.join(valid_derivations)}")
+            raise ValueError(
+                f"Invalid derivation type '{v}'. Must be one of: {', '.join(valid_derivations)}"
+            )
         return v.upper()
 
     @model_validator(mode="after")
     def validate_rule_presence(self):
         """If using ROLLUP, a rule definition is mandatory."""
         if self.derivation == DerivationType.ROLLUP and not self.rule:
-            raise ValueError("Property with derivation 'ROLLUP' must have a 'rule' configuration.")
+            raise ValueError(
+                "Property with derivation 'ROLLUP' must have a 'rule' configuration."
+            )
         return self
 
     @model_validator(mode="after")
@@ -1090,7 +1525,11 @@ class PropertyDefinitionInput(StrictModel):
         - COUNT always produces INTEGER, so property type must be INTEGER
         - EUCLIDEAN_RANGE produces FLOAT (distance)
         """
-        if self.derivation != DerivationType.ROLLUP or not self.rule or not self.rule.aggregation:
+        if (
+            self.derivation != DerivationType.ROLLUP
+            or not self.rule
+            or not self.rule.aggregation
+        ):
             return self
 
         aggregation = self.rule.aggregation
@@ -1100,31 +1539,71 @@ class PropertyDefinitionInput(StrictModel):
         # PropertyType first, which is a lossier vocabulary — CATEGORY and STRING
         # collapse together there, and every vector kind but 3D has no
         # representation at all — so the check was weaker than it looked.
-        if expected_result_type is not None and self.value_kind is not None and self.value_kind != expected_result_type:
-            raise ValueError(f"Aggregation '{aggregation.value}' produces {expected_result_type.value}, but the property is declared as {self.value_kind.value}. Declare it as {expected_result_type.value}.")
+        if (
+            expected_result_type is not None
+            and self.value_kind is not None
+            and self.value_kind != expected_result_type
+        ):
+            raise ValueError(
+                f"Aggregation '{aggregation.value}' produces {expected_result_type.value}, but the property is declared as {self.value_kind.value}. Declare it as {expected_result_type.value}."
+            )
 
         return self
 
 
 class DefinitionInput(StrictModel):
-    key: str = Field(..., description="The label of the node participating in the event")
-    description: Optional[str] = Field(default=None, description="Description of this node role")
-    ontology_references: List[OntologyReferenceInput] = Field(default_factory=list, description="Ontology references for this event")
-    color: Optional[List[int]] = Field(default=None, description="Optional RGBA color for this node role (e.g. [255, 0, 0, 128])")
-    image: Optional[str] = Field(default=None, description="Optional media store ID for an image representing this node role")
-    label: Optional[str] = Field(default=None, description="Optional human-readable label for this node role (defaults to 'key' if not provided)")
-    pin: Optional[bool] = Field(default=None, description="Whether to pin this node role in the UI")
+    key: str = Field(
+        ..., description="The label of the node participating in the event"
+    )
+    description: str | None = Field(
+        default=None, description="Description of this node role"
+    )
+    ontology_references: list[OntologyReferenceInput] = Field(
+        default_factory=list, description="Ontology references for this event"
+    )
+    color: list[int] | None = Field(
+        default=None,
+        description="Optional RGBA color for this node role (e.g. [255, 0, 0, 128])",
+    )
+    image: str | None = Field(
+        default=None,
+        description="Optional media store ID for an image representing this node role",
+    )
+    label: str | None = Field(
+        default=None,
+        description="Optional human-readable label for this node role (defaults to 'key' if not provided)",
+    )
+    pin: bool | None = Field(
+        default=None, description="Whether to pin this node role in the UI"
+    )
 
 
 class UpdateDefinitionInput(StrictModel):
     id: str = Field(..., description="The ID of the definition to update")
-    key: Optional[str] = Field(default=None, description="The label of the node participating in the event")
-    description: Optional[str] = Field(default=None, description="Description of this node role")
-    ontology_references: Optional[List[OntologyReferenceInput]] = Field(default=None, description="Ontology references for this event")
-    color: Optional[List[int]] = Field(default=None, description="Optional RGBA color for this node role (e.g. [255, 0, 0, 128])")
-    image: Optional[str] = Field(default=None, description="Optional media store ID for an image representing this node role")
-    label: Optional[str] = Field(default=None, description="Optional human-readable label for this node role (defaults to 'key' if not provided)")
-    pin: Optional[bool] = Field(default=None, description="Whether to pin this node role in the UI")
+    key: str | None = Field(
+        default=None, description="The label of the node participating in the event"
+    )
+    description: str | None = Field(
+        default=None, description="Description of this node role"
+    )
+    ontology_references: list[OntologyReferenceInput] | None = Field(
+        default=None, description="Ontology references for this event"
+    )
+    color: list[int] | None = Field(
+        default=None,
+        description="Optional RGBA color for this node role (e.g. [255, 0, 0, 128])",
+    )
+    image: str | None = Field(
+        default=None,
+        description="Optional media store ID for an image representing this node role",
+    )
+    label: str | None = Field(
+        default=None,
+        description="Optional human-readable label for this node role (defaults to 'key' if not provided)",
+    )
+    pin: bool | None = Field(
+        default=None, description="Whether to pin this node role in the UI"
+    )
 
 
 class NodeDefinitionInput(DefinitionInput):
@@ -1145,13 +1624,17 @@ class StructureDefinitionInput(NodeDefinitionInput):
     The view's counterpart of a service's hosted-structure declaration. Label and description
     default to the organization's `StructureKind`."""
 
-    identifier: scalars.StructureIdentifier = Field(description="The structure identifier mounted (e.g. '@mikro/arraylens')")
+    identifier: scalars.StructureIdentifier = Field(
+        description="The structure identifier mounted (e.g. '@mikro/arraylens')"
+    )
 
 
 class CreateStructureCategoryInput(StructureDefinitionInput):
     """Mount a structure kind into a graph."""
 
-    graph: str = Field(..., description="The graph id the structure kind is mounted into")
+    graph: str = Field(
+        ..., description="The graph id the structure kind is mounted into"
+    )
 
 
 class UpdateStructureCategoryInput(UpdateNodeDefinitionInput):
@@ -1167,8 +1650,12 @@ class DeleteStructureCategoryInput(StrictModel):
 class MetricDefinitionInput(NodeDefinitionInput):
     """Input for a structure definition within an event."""
 
-    value_kind: PropertyType = Field(description="Optional schema identifier for this structure (e.g. '@mikro/roi')")
-    structure: scalars.StructureIdentifier = Field(description="The label of the describing structure to read from")
+    value_kind: PropertyType = Field(
+        description="Optional schema identifier for this structure (e.g. '@mikro/roi')"
+    )
+    structure: scalars.StructureIdentifier = Field(
+        description="The label of the describing structure to read from"
+    )
 
     pass
 
@@ -1184,49 +1671,81 @@ class CategoryDefinitionInput(StrictModel):
     expressed by omitting the definition, never by an empty one.
     """
 
-    rules: List[ClaimRuleInput] = Field(..., min_length=1, description="A claim counts when any rule matches")
+    rules: list[ClaimRuleInput] = Field(
+        ..., min_length=1, description="A claim counts when any rule matches"
+    )
 
     @model_validator(mode="after")
     def rules_are_definition_shaped(self) -> "CategoryDefinitionInput":
         for index, rule in enumerate(self.rules):
             stored = rule.to_stored()
             covers_classification = rule_covers(stored, ClaimKind.CLASSIFICATION.value)
-            measurement_only = rule_covers(stored, ClaimKind.MEASUREMENT.value) and not any(rule_covers(stored, kind.value) for kind in ClaimKind if kind != ClaimKind.MEASUREMENT)
+            measurement_only = rule_covers(
+                stored, ClaimKind.MEASUREMENT.value
+            ) and not any(
+                rule_covers(stored, kind.value)
+                for kind in ClaimKind
+                if kind != ClaimKind.MEASUREMENT
+            )
 
-            has_word = any(condition.field == ClaimField.WORD for condition in rule.when)
+            has_word = any(
+                condition.field == ClaimField.WORD for condition in rule.when
+            )
             if covers_classification and not has_word:
-                raise ValueError(f"rules[{index}]: a rule covering CLASSIFICATION must name the word(s) it derives from — add a WORD condition, or scope the rule with KIND.")
+                raise ValueError(
+                    f"rules[{index}]: a rule covering CLASSIFICATION must name the word(s) it derives from — add a WORD condition, or scope the rule with KIND."
+                )
             if not covers_classification and has_word:
-                raise ValueError(f"rules[{index}]: a WORD condition means nothing on a rule that does not cover CLASSIFICATION — a standing or a SAME_AS claim names no word.")
+                raise ValueError(
+                    f"rules[{index}]: a WORD condition means nothing on a rule that does not cover CLASSIFICATION — a standing or a SAME_AS claim names no word."
+                )
 
             for condition in rule.when:
                 if condition.field == ClaimField.KIND:
-                    named = [condition.value] if isinstance(condition.value, str) else list(condition.value or [])
+                    named = (
+                        [condition.value]
+                        if isinstance(condition.value, str)
+                        else list(condition.value or [])
+                    )
                     if ClaimKind.SAMENESS.value in named:
-                        raise ValueError(f"rules[{index}]: KIND SAMENESS is not a category's to rule on — sameness trust is the view's (`Graph.samenessRule`, RFC 0024). A category decides what a word means and whose claims exist; the view decides how many things there are.")
+                        raise ValueError(
+                            f"rules[{index}]: KIND SAMENESS is not a category's to rule on — sameness trust is the view's (`Graph.samenessRule`, RFC 0024). A category decides what a word means and whose claims exist; the view decides how many things there are."
+                        )
             for condition in rule.when:
                 if condition.field in _METRIC_ONLY_FIELDS and not measurement_only:
-                    raise ValueError(f"rules[{index}]: {condition.field.value} is meaningful only on a rule covering MEASUREMENT alone — other claims have no metric key.")
+                    raise ValueError(
+                        f"rules[{index}]: {condition.field.value} is meaningful only on a rule covering MEASUREMENT alone — other claims have no metric key."
+                    )
             for group in rule.unless or []:
                 for condition in group.when:
                     if condition.field == ClaimField.WORD:
-                        raise ValueError(f"rules[{index}]: an `unless` group may not name a WORD — exceptions are about who and when, not vocabulary.")
+                        raise ValueError(
+                            f"rules[{index}]: an `unless` group may not name a WORD — exceptions are about who and when, not vocabulary."
+                        )
                     if condition.field in _METRIC_ONLY_FIELDS:
-                        raise ValueError(f"rules[{index}]: a claim has no metric key — {condition.field.value} belongs in `when` of a MEASUREMENT-only rule, or in a property's `rule.evidence`.")
+                        raise ValueError(
+                            f"rules[{index}]: a claim has no metric key — {condition.field.value} belongs in `when` of a MEASUREMENT-only rule, or in a property's `rule.evidence`."
+                        )
         return self
 
-    def to_stored(self) -> Dict[str, JSONValue]:
+    def to_stored(self) -> dict[str, JSONValue]:
         """The exact JSON `Category.definition` stores."""
         return {"rules": [rule.to_stored() for rule in self.rules]}
 
     @classmethod
-    def from_stored(cls, stored: Mapping[str, JSONValue] | None) -> Optional["CategoryDefinitionInput"]:
+    def from_stored(
+        cls, stored: Mapping[str, JSONValue] | None
+    ) -> Optional["CategoryDefinitionInput"]:
         """The stored JSON as a model, tolerantly: non-dict garbage and shapes
         this cannot spell read back as None (primitive), never as an error —
         this is the read side. The old clause shape is NOT read: RFC 0010 was a
         clean break, and `core/migrations/0017` cleared what stored it.
         """
-        if not stored or not isinstance(stored, dict) or not isinstance(stored.get("rules"), list):
+        if (
+            not stored
+            or not isinstance(stored, dict)
+            or not isinstance(stored.get("rules"), list)
+        ):
             return None
         try:
             return cls.model_validate({"rules": stored["rules"]})
@@ -1237,18 +1756,30 @@ class CategoryDefinitionInput(StrictModel):
 class EntityDefinitionInput(NodeDefinitionInput):
     """Input for an entity definition."""
 
-    instance_kind: Optional[str] = Field(default=None, description="Optional instance kind for this entity category (e.g. 'neuron', 'synapse', 'behavior'). This is used for further categorization and filtering of entities within the graph.")
-    property_definitions: List[PropertyDefinitionInput] = Field(default_factory=list, description="Property definitions")
-    definition: Optional[CategoryDefinitionInput] = Field(default=None, description="What this category *means*: a predicate over classification claims (RFC 0007). Omitted means primitive — membership is whatever was asserted under this word")
+    instance_kind: str | None = Field(
+        default=None,
+        description="Optional instance kind for this entity category (e.g. 'neuron', 'synapse', 'behavior'). This is used for further categorization and filtering of entities within the graph.",
+    )
+    property_definitions: list[PropertyDefinitionInput] = Field(
+        default_factory=list, description="Property definitions"
+    )
+    definition: CategoryDefinitionInput | None = Field(
+        default=None,
+        description="What this category *means*: a predicate over classification claims (RFC 0007). Omitted means primitive — membership is whatever was asserted under this word",
+    )
 
     @field_validator("property_definitions")
     @classmethod
-    def validate_property_definitions(cls, v: List[PropertyDefinitionInput]) -> List[PropertyDefinitionInput]:
+    def validate_property_definitions(
+        cls, v: list[PropertyDefinitionInput]
+    ) -> list[PropertyDefinitionInput]:
         """Validate that property keys are unique within this entity definition."""
         keys = set()
         for prop in v:
             if prop.key in keys:
-                raise ValueError(f"Duplicate property key '{prop.key}' in entity definition")
+                raise ValueError(
+                    f"Duplicate property key '{prop.key}' in entity definition"
+                )
             keys.add(prop.key)
 
         return v
@@ -1257,10 +1788,21 @@ class EntityDefinitionInput(NodeDefinitionInput):
 class UpdateEntityCategoryInput(UpdateDefinitionInput):
     """Input for updating an existing entity definition."""
 
-    instance_kind: Optional[str] = Field(default=None, description="Optional instance kind for this entity category (e.g. 'neuron', 'synapse', 'behavior'). This is used for further categorization and filtering of entities within the graph.")
-    property_definitions: Optional[List[PropertyDefinitionInput]] = Field(default=None, description="Property definitions")
-    definition: Optional[CategoryDefinitionInput] = Field(default=None, description="New meaning for this category (RFC 0007). Omitted means unchanged; to make the category primitive again, use clearDefinition")
-    clear_definition: bool = Field(default=False, description="Reset the category to primitive — membership becomes whatever was asserted under its word")
+    instance_kind: str | None = Field(
+        default=None,
+        description="Optional instance kind for this entity category (e.g. 'neuron', 'synapse', 'behavior'). This is used for further categorization and filtering of entities within the graph.",
+    )
+    property_definitions: list[PropertyDefinitionInput] | None = Field(
+        default=None, description="Property definitions"
+    )
+    definition: CategoryDefinitionInput | None = Field(
+        default=None,
+        description="New meaning for this category (RFC 0007). Omitted means unchanged; to make the category primitive again, use clearDefinition",
+    )
+    clear_definition: bool = Field(
+        default=False,
+        description="Reset the category to primitive — membership becomes whatever was asserted under its word",
+    )
 
     @model_validator(mode="after")
     def definition_and_clear_are_exclusive(self) -> "UpdateEntityCategoryInput":
@@ -1270,14 +1812,18 @@ class UpdateEntityCategoryInput(UpdateDefinitionInput):
 
     @field_validator("property_definitions")
     @classmethod
-    def validate_properties(cls, v: Optional[List[PropertyDefinitionInput]]) -> Optional[List[PropertyDefinitionInput]]:
+    def validate_properties(
+        cls, v: list[PropertyDefinitionInput] | None
+    ) -> list[PropertyDefinitionInput] | None:
         """Validate that property keys are unique within this entity definition."""
         if v is None:
             return v
         keys = set()
         for prop in v:
             if prop.key in keys:
-                raise ValueError(f"Duplicate property key '{prop.key}' in entity definition")
+                raise ValueError(
+                    f"Duplicate property key '{prop.key}' in entity definition"
+                )
             keys.add(prop.key)
 
         return v
@@ -1307,7 +1853,10 @@ class UpdateStructureKindInput(UpdateDefinitionInput):
     graph level", which named two concepts it has nothing to do with.
     """
 
-    identifier: Optional[scalars.StructureIdentifier] = Field(default=None, description="Read by nothing: `(organization, identifier)` is a structure kind's identity and cannot be reassigned. `update_structure_kind` writes label, description and colour only")
+    identifier: scalars.StructureIdentifier | None = Field(
+        default=None,
+        description="Read by nothing: `(organization, identifier)` is a structure kind's identity and cannot be reassigned. `update_structure_kind` writes label, description and colour only",
+    )
 
 
 class DeleteStructureKindInput(StrictModel):
@@ -1330,13 +1879,20 @@ class CreateTermInput(StrictModel):
     curator to declare in advance.
     """
 
-    kind: enums.TermKind = Field(..., description="What sort of thing this word names. Part of its identity.")
+    kind: enums.TermKind = Field(
+        ..., description="What sort of thing this word names. Part of its identity."
+    )
     key: str = Field(..., description="The word itself, e.g. 'AIS'")
-    label: Optional[str] = Field(default=None, description="Human-readable name")
-    description: Optional[str] = Field(default=None, description="What this word means")
-    purl: Optional[str] = Field(default=None, description="Persistent URL, where this corresponds to a published ontology term")
-    color: Optional[List[int]] = Field(default=None, description="Optional RGBA colour")
-    image: Optional[str] = Field(default=None, description="Optional media store ID for an illustrative image")
+    label: str | None = Field(default=None, description="Human-readable name")
+    description: str | None = Field(default=None, description="What this word means")
+    purl: str | None = Field(
+        default=None,
+        description="Persistent URL, where this corresponds to a published ontology term",
+    )
+    color: list[int] | None = Field(default=None, description="Optional RGBA colour")
+    image: str | None = Field(
+        default=None, description="Optional media store ID for an illustrative image"
+    )
 
 
 class UpdateTermInput(StrictModel):
@@ -1348,18 +1904,29 @@ class UpdateTermInput(StrictModel):
     """
 
     id: str = Field(..., description="The ID of the term to update")
-    label: Optional[str] = Field(default=None, description="Human-readable name")
-    description: Optional[str] = Field(default=None, description="What this word means")
-    purl: Optional[str] = Field(default=None, description="Persistent URL, where this corresponds to a published ontology term")
-    color: Optional[List[int]] = Field(default=None, description="Optional RGBA colour")
-    image: Optional[str] = Field(default=None, description="Optional media store ID for an illustrative image")
-    hidden: Optional[bool] = Field(default=None, description="Put the word away (true) or offer it again (false). A word is never deleted; omitted leaves it as it is")
+    label: str | None = Field(default=None, description="Human-readable name")
+    description: str | None = Field(default=None, description="What this word means")
+    purl: str | None = Field(
+        default=None,
+        description="Persistent URL, where this corresponds to a published ontology term",
+    )
+    color: list[int] | None = Field(default=None, description="Optional RGBA colour")
+    image: str | None = Field(
+        default=None, description="Optional media store ID for an illustrative image"
+    )
+    hidden: bool | None = Field(
+        default=None,
+        description="Put the word away (true) or offer it again (false). A word is never deleted; omitted leaves it as it is",
+    )
 
 
 class UpdateMetricKindInput(UpdateDefinitionInput):
     """Input for updating one of the organization's metric kinds. See `UpdateStructureKindInput`."""
 
-    identifier: Optional[str] = Field(default=None, description="Read by nothing: a metric kind is identified by `(organization, structure_kind, key, value_kind)`. `update_metric_kind` writes label, description and colour only")
+    identifier: str | None = Field(
+        default=None,
+        description="Read by nothing: a metric kind is identified by `(organization, structure_kind, key, value_kind)`. `update_metric_kind` writes label, description and colour only",
+    )
 
 
 class DeleteMetricKindInput(StrictModel):
@@ -1387,7 +1954,7 @@ class EntityCategoryProtocol(Protocol):
     """Protocol for entity categories to provide source definition for event linking."""
 
     key: str
-    ontology_references: List[OntologyReferenceInput]
+    ontology_references: list[OntologyReferenceInput]
 
 
 class StructureCategoryProtocol(Protocol):
@@ -1395,7 +1962,7 @@ class StructureCategoryProtocol(Protocol):
 
     key: str
     identifier: scalars.StructureIdentifier
-    ontology_references: List[OntologyReferenceInput]
+    ontology_references: list[OntologyReferenceInput]
 
 
 class EntityDescriptorInput(StrictModel):
@@ -1411,15 +1978,25 @@ class EntityDescriptorInput(StrictModel):
     # (`StructureDescriptorInput` below does carry such placeholders. Those
     # predate this and record a *different* removal — structures becoming
     # organization vocabulary — so they are left where they are.)
-    keys: Optional[List[str]] = Field(default=None, description="Filter by entity key/label")
-    ontology_terms: Optional[List[str]] = Field(default=None, description="Filter by ontology references on the entity (format: 'PREFIX:TERM_ID')")
-    default_category_key: Optional[str] = Field(default=None, description="Default category to link to if no entities match the filters")
+    keys: list[str] | None = Field(
+        default=None, description="Filter by entity key/label"
+    )
+    ontology_terms: list[str] | None = Field(
+        default=None,
+        description="Filter by ontology references on the entity (format: 'PREFIX:TERM_ID')",
+    )
+    default_category_key: str | None = Field(
+        default=None,
+        description="Default category to link to if no entities match the filters",
+    )
 
     def matches(self, entity: EntityCategoryProtocol) -> bool:
         """Check if a given entity matches this descriptor."""
         if self.keys and entity.key not in self.keys:
             return False
-        if self.ontology_terms and not set(self.ontology_terms).issubset(set(map(lambda x: x.uri, entity.ontology_references))):
+        if self.ontology_terms and not set(self.ontology_terms).issubset(
+            set(map(lambda x: x.uri, entity.ontology_references))
+        ):
             return False
         return True
 
@@ -1454,18 +2031,32 @@ class DescriptorConstraintInput(StrictModel):
     asks that service before asserting a pair.
     """
 
-    key: str = Field(..., min_length=1, description="The descriptor key, e.g. '@mikro/n_space_axes'")
-    operator: DescriptorOperator = Field(..., description="How the datum's value is compared with `value`. MATCHES is equality, as EQUALS is")
-    value: Any = Field(default=None, description="What is compared against: a number for GTE/LTE, a list for IN/NOT_IN, true or false for EXISTS, the member looked for with CONTAINS")
+    key: str = Field(
+        ..., min_length=1, description="The descriptor key, e.g. '@mikro/n_space_axes'"
+    )
+    operator: DescriptorOperator = Field(
+        ...,
+        description="How the datum's value is compared with `value`. MATCHES is equality, as EQUALS is",
+    )
+    value: Any = Field(
+        default=None,
+        description="What is compared against: a number for GTE/LTE, a list for IN/NOT_IN, true or false for EXISTS, the member looked for with CONTAINS",
+    )
 
 
 class StructureDescriptorInput(StrictModel):
     """Input for filtering entities when linking to a structure. This only contains relativ fields
     that can be used for filtering, not absolute references like 'id'."""
 
-    default_category_key: Optional[str] = Field(default=None, description="Default category to link to if no entities match the filters")
-    identifiers: Optional[list[scalars.StructureIdentifier]] = Field(default=None, description="Structure identifiers to filter by (e.g. '@mikro/roi')")
-    requires: Optional[list[DescriptorConstraintInput]] = Field(
+    default_category_key: str | None = Field(
+        default=None,
+        description="Default category to link to if no entities match the filters",
+    )
+    identifiers: list[scalars.StructureIdentifier] | None = Field(
+        default=None,
+        description="Structure identifiers to filter by (e.g. '@mikro/roi')",
+    )
+    requires: list[DescriptorConstraintInput] | None = Field(
         default=None,
         description="Descriptor constraints this end of the relation pins (e.g. '@mikro/n_space_axes' EQUALS 3): what a datum must be for a claim under this word to make sense here. Stored and served; checked by the client against the datum's own service before it asserts a pair",
     )
@@ -1480,20 +2071,41 @@ class StructureDescriptorInput(StrictModel):
 class EventRoleInput(StrictModel):
     """Input for a role of a node in an event (input or output)."""
 
-    key: str = Field(..., description="The label of the node participating in the event")
-    role: str = Field(..., description="What type of role does this node play in the event")
-    descriptor: EntityDescriptorInput = Field(..., description="Optional filters to apply when linking entities to structures for this role")
-    ontology_references: List[OntologyReferenceInput] = Field(default_factory=list, description="Ontology references for this role")
+    key: str = Field(
+        ..., description="The label of the node participating in the event"
+    )
+    role: str = Field(
+        ..., description="What type of role does this node play in the event"
+    )
+    descriptor: EntityDescriptorInput = Field(
+        ...,
+        description="Optional filters to apply when linking entities to structures for this role",
+    )
+    ontology_references: list[OntologyReferenceInput] = Field(
+        default_factory=list, description="Ontology references for this role"
+    )
 
 
 class EventDefinitionInput(NodeDefinitionInput):
     """Input for an event definition."""
 
-    kind: EventKind = Field(..., description="Whether the event arises in the system itself (INTRINSIC, e.g. mitosis) or is applied from outside (EXTRINSIC, e.g. a protocol step)")
-    inputs: List[EventRoleInput] = Field(default_factory=list, description="Input node roles")
-    outputs: List[EventRoleInput] = Field(default_factory=list, description="Output node roles")
-    properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Property definitions")
-    definition: Optional[CategoryDefinitionInput] = Field(default=None, description="This event category's complete rule (RFC 0009): which classification claims admit an event, whose existence standings count, and whose participation claims draw its edges. Omitted means primitive")
+    kind: EventKind = Field(
+        ...,
+        description="Whether the event arises in the system itself (INTRINSIC, e.g. mitosis) or is applied from outside (EXTRINSIC, e.g. a protocol step)",
+    )
+    inputs: list[EventRoleInput] = Field(
+        default_factory=list, description="Input node roles"
+    )
+    outputs: list[EventRoleInput] = Field(
+        default_factory=list, description="Output node roles"
+    )
+    properties: list[PropertyDefinitionInput] = Field(
+        default_factory=list, description="Property definitions"
+    )
+    definition: CategoryDefinitionInput | None = Field(
+        default=None,
+        description="This event category's complete rule (RFC 0009): which classification claims admit an event, whose existence standings count, and whose participation claims draw its edges. Omitted means primitive",
+    )
 
 
 class NaturalEventDefinitionInput(EventDefinitionInput):
@@ -1503,7 +2115,9 @@ class NaturalEventDefinitionInput(EventDefinitionInput):
 
 
 class ProtocolEventDefinitionInput(EventDefinitionInput):
-    protocol: str = Field(..., description="The protocol this event definition belongs to")
+    protocol: str = Field(
+        ..., description="The protocol this event definition belongs to"
+    )
 
 
 class CreateNaturalEventCategoryInput(NaturalEventDefinitionInput):
@@ -1527,8 +2141,14 @@ class UpdateNaturalEventCategoryInput(UpdateDefinitionInput):
     worse than one that is refused, and these were required as well as discarded.
     """
 
-    definition: Optional[CategoryDefinitionInput] = Field(default=None, description="New rule for this category (RFC 0009). Omitted means unchanged; to make it primitive again, use clearDefinition")
-    clear_definition: bool = Field(default=False, description="Reset the category to primitive — any claim naming its word counts, standings organization grain")
+    definition: CategoryDefinitionInput | None = Field(
+        default=None,
+        description="New rule for this category (RFC 0009). Omitted means unchanged; to make it primitive again, use clearDefinition",
+    )
+    clear_definition: bool = Field(
+        default=False,
+        description="Reset the category to primitive — any claim naming its word counts, standings organization grain",
+    )
 
     @model_validator(mode="after")
     def definition_and_clear_are_exclusive(self):
@@ -1566,8 +2186,14 @@ class UpdateProtocolEventCategoryInput(UpdateDefinitionInput):
     worse than one that is refused, and these were required as well as discarded.
     """
 
-    definition: Optional[CategoryDefinitionInput] = Field(default=None, description="New rule for this category (RFC 0012). Omitted means unchanged; to make it primitive again, use clearDefinition")
-    clear_definition: bool = Field(default=False, description="Reset the category to primitive — any claim naming its word counts, standings organization grain")
+    definition: CategoryDefinitionInput | None = Field(
+        default=None,
+        description="New rule for this category (RFC 0012). Omitted means unchanged; to make it primitive again, use clearDefinition",
+    )
+    clear_definition: bool = Field(
+        default=False,
+        description="Reset the category to primitive — any claim naming its word counts, standings organization grain",
+    )
 
     @model_validator(mode="after")
     def definition_and_clear_are_exclusive(self):
@@ -1593,32 +2219,48 @@ class Cardinality(str, Enum):
 class EdgeDefinitionInput(DefinitionInput):
     """Input for a relation definition."""
 
-    ontology_references: List[OntologyReferenceInput] = Field(default_factory=list, description="Ontology references for this event")
+    ontology_references: list[OntologyReferenceInput] = Field(
+        default_factory=list, description="Ontology references for this event"
+    )
     key: str = Field(..., description="Relation type name/key")
     source: EntityDescriptorInput = Field(..., description="Source entity type(s)")
     target: EntityDescriptorInput = Field(..., description="Target entity type(s)")
-    cardinality: Cardinality = Field(default=Cardinality.ONE_TO_ONE, description="Relation cardinality")
+    cardinality: Cardinality = Field(
+        default=Cardinality.ONE_TO_ONE, description="Relation cardinality"
+    )
 
 
 class RelationDefinitionInput(EdgeDefinitionInput):
     """Input for a relation definition."""
 
-    properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Derived property definitions")
-    definition: Optional[CategoryDefinitionInput] = Field(
-        default=None, description="This relation category's complete rule (RFC 0009): which relation claims draw its edges — by word, annotator, app and window — and whose standings count for them. Omitted means primitive: any claim naming its word draws"
+    properties: list[PropertyDefinitionInput] = Field(
+        default_factory=list, description="Derived property definitions"
+    )
+    definition: CategoryDefinitionInput | None = Field(
+        default=None,
+        description="This relation category's complete rule (RFC 0009): which relation claims draw its edges — by word, annotator, app and window — and whose standings count for them. Omitted means primitive: any claim naming its word draws",
     )
 
 
 class StructureRelationDefinitionInput(DefinitionInput):
     """Input for a relation definition."""
 
-    properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Derived property definitions")
-    ontology_references: List[OntologyReferenceInput] = Field(default_factory=list, description="Ontology references for this event")
+    properties: list[PropertyDefinitionInput] = Field(
+        default_factory=list, description="Derived property definitions"
+    )
+    ontology_references: list[OntologyReferenceInput] = Field(
+        default_factory=list, description="Ontology references for this event"
+    )
     key: str = Field(..., description="Relation type name/key")
     source: StructureDescriptorInput = Field(..., description="Source entity type(s)")
     target: StructureDescriptorInput = Field(..., description="Target entity type(s)")
-    cardinality: Cardinality = Field(default=Cardinality.ONE_TO_ONE, description="Relation cardinality")
-    definition: Optional[CategoryDefinitionInput] = Field(default=None, description="This structure-relation category's complete rule (RFC 0012): which structure-relation claims count — by word, annotator, app and window — and whose standings fold. Omitted means primitive")
+    cardinality: Cardinality = Field(
+        default=Cardinality.ONE_TO_ONE, description="Relation cardinality"
+    )
+    definition: CategoryDefinitionInput | None = Field(
+        default=None,
+        description="This structure-relation category's complete rule (RFC 0012): which structure-relation claims count — by word, annotator, app and window — and whose standings fold. Omitted means primitive",
+    )
 
 
 class MeasurementDefinitionInput(EdgeDefinitionInput):
@@ -1626,42 +2268,78 @@ class MeasurementDefinitionInput(EdgeDefinitionInput):
 
     source: StructureDescriptorInput = Field(..., description="Source entity type(s)")
     target: EntityDescriptorInput = Field(..., description="Target entity type(s)")
-    properties: List[PropertyDefinitionInput] = Field(default_factory=list, description="Derived property definitions")
-    definition: Optional[CategoryDefinitionInput] = Field(default=None, description="This measurement category's complete rule (RFC 0012): which measurement claims count and whose standings fold. Omitted means primitive")
+    properties: list[PropertyDefinitionInput] = Field(
+        default_factory=list, description="Derived property definitions"
+    )
+    definition: CategoryDefinitionInput | None = Field(
+        default=None,
+        description="This measurement category's complete rule (RFC 0012): which measurement claims count and whose standings fold. Omitted means primitive",
+    )
 
 
 class CreateGraphTableQueryInput(StrictModel):
     """A saved table query, as a plan. There is no raw-Cypher form any more."""
 
-    graph: strawberry.ID = Field(..., description="The graph id this table query will belong to")
-    key: str = Field(..., description="Unique key for this query within its graph, used for referencing in the UI")
-    name: Optional[str] = Field(default=None, description="Human-readable name (defaults to `key`)")
-    description: Optional[str] = Field(default=None, description="Description of this query")
-    plan: TableQueryPlanInput = Field(..., description="What the query means; compiled by each projection kind")
-    column_input: List[ColumnInput] = Field(default_factory=list, description="How the returned aliases are presented")
+    graph: strawberry.ID = Field(
+        ..., description="The graph id this table query will belong to"
+    )
+    key: str = Field(
+        ...,
+        description="Unique key for this query within its graph, used for referencing in the UI",
+    )
+    name: str | None = Field(
+        default=None, description="Human-readable name (defaults to `key`)"
+    )
+    description: str | None = Field(
+        default=None, description="Description of this query"
+    )
+    plan: TableQueryPlanInput = Field(
+        ..., description="What the query means; compiled by each projection kind"
+    )
+    column_input: list[ColumnInput] = Field(
+        default_factory=list, description="How the returned aliases are presented"
+    )
 
 
 class UpdateGraphTableQueryInput(StrictModel):
-    id: strawberry.ID = Field(..., description="The ID of the graph table query to update")
-    key: Optional[str] = Field(default=None, description="Unique key for this query within its graph")
-    name: Optional[str] = Field(default=None, description="Human-readable name")
-    description: Optional[str] = Field(default=None, description="Description of this query")
-    plan: Optional[TableQueryPlanInput] = Field(default=None, description="A new plan; omitted means unchanged")
-    column_input: Optional[List[ColumnInput]] = Field(default=None, description="Definitions for the columns returned by this graph query")
+    id: strawberry.ID = Field(
+        ..., description="The ID of the graph table query to update"
+    )
+    key: str | None = Field(
+        default=None, description="Unique key for this query within its graph"
+    )
+    name: str | None = Field(default=None, description="Human-readable name")
+    description: str | None = Field(
+        default=None, description="Description of this query"
+    )
+    plan: TableQueryPlanInput | None = Field(
+        default=None, description="A new plan; omitted means unchanged"
+    )
+    column_input: list[ColumnInput] | None = Field(
+        default=None,
+        description="Definitions for the columns returned by this graph query",
+    )
 
 
 class PairEndInput(StrictModel):
     """Which matched node is one end of a pair: a node of one path."""
 
-    path: str = Field(..., description="The path the node is matched in: its `title`, or `path_<i>` for the i-th path")
+    path: str = Field(
+        ...,
+        description="The path the node is matched in: its `title`, or `path_<i>` for the i-th path",
+    )
     node: str = Field(..., description="The node's name within that path")
 
 
 class PairsQueryPlanInput(StrictModel):
     """What a pairs query means: a match over the view's drawing, and which two nodes of it are the pair."""
 
-    matches: List[MatchPathInput] = Field(..., description="The paths to match, as a table query's are")
-    wheres: List[WhereClauseInput] = Field(default_factory=list, description="Predicates over matched nodes' properties")
+    matches: list[MatchPathInput] = Field(
+        ..., description="The paths to match, as a table query's are"
+    )
+    wheres: list[WhereClauseInput] = Field(
+        default_factory=list, description="Predicates over matched nodes' properties"
+    )
     source: PairEndInput = Field(..., description="The node every pair starts from")
     target: PairEndInput = Field(..., description="The node every pair ends at")
 
@@ -1669,32 +2347,56 @@ class PairsQueryPlanInput(StrictModel):
 class CreateGraphPairsQueryInput(StrictModel):
     """Save a pairs query: an insight over one view whose runs are training sets."""
 
-    graph: strawberry.ID = Field(..., description="The graph id this pairs query will belong to")
+    graph: strawberry.ID = Field(
+        ..., description="The graph id this pairs query will belong to"
+    )
     key: str = Field(..., description="Unique key for this query within its graph")
-    name: Optional[str] = Field(default=None, description="Human-readable name (defaults to `key`)")
-    description: Optional[str] = Field(default=None, description="Description of this query")
-    plan: PairsQueryPlanInput = Field(..., description="What the query means: the match and its two ends")
+    name: str | None = Field(
+        default=None, description="Human-readable name (defaults to `key`)"
+    )
+    description: str | None = Field(
+        default=None, description="Description of this query"
+    )
+    plan: PairsQueryPlanInput = Field(
+        ..., description="What the query means: the match and its two ends"
+    )
 
 
 class UpdateGraphPairsQueryInput(StrictModel):
     """Change a saved pairs query. Runs keep the plan they were run with."""
 
     id: strawberry.ID = Field(..., description="The ID of the pairs query to update")
-    key: Optional[str] = Field(default=None, description="Unique key for this query within its graph")
-    name: Optional[str] = Field(default=None, description="Human-readable name")
-    description: Optional[str] = Field(default=None, description="Description of this query")
-    plan: Optional[PairsQueryPlanInput] = Field(default=None, description="A new plan; omitted means unchanged")
+    key: str | None = Field(
+        default=None, description="Unique key for this query within its graph"
+    )
+    name: str | None = Field(default=None, description="Human-readable name")
+    description: str | None = Field(
+        default=None, description="Description of this query"
+    )
+    plan: PairsQueryPlanInput | None = Field(
+        default=None, description="A new plan; omitted means unchanged"
+    )
 
 
 class CreateGraphTableQueryThroughBuilderInput(StrictModel):
     """The builder's spelling of `CreateGraphTableQueryInput` — `builder_args` instead of `plan`. Upserts on `(graph, key)`."""
 
-    graph: strawberry.ID = Field(..., description="The graph id this table query will belong to")
+    graph: strawberry.ID = Field(
+        ..., description="The graph id this table query will belong to"
+    )
     key: str = Field(..., description="Unique key for this query within its graph")
-    name: Optional[str] = Field(default=None, description="Human-readable name (defaults to `key`)")
-    description: Optional[str] = Field(default=None, description="Description of this query")
-    builder_args: BuilderArgsInput = Field(description="The builder arguments; stored as the query's plan")
-    column_input: List[ColumnInput] = Field(default_factory=list, description="How the returned aliases are presented")
+    name: str | None = Field(
+        default=None, description="Human-readable name (defaults to `key`)"
+    )
+    description: str | None = Field(
+        default=None, description="Description of this query"
+    )
+    builder_args: BuilderArgsInput = Field(
+        description="The builder arguments; stored as the query's plan"
+    )
+    column_input: list[ColumnInput] = Field(
+        default_factory=list, description="How the returned aliases are presented"
+    )
 
 
 class DeleteGraphTableQueryInput(StrictModel):
@@ -1726,8 +2428,14 @@ class UpdateRelationCategoryInput(UpdateDefinitionInput):
     worse than one that is refused, and these were required as well as discarded.
     """
 
-    definition: Optional[CategoryDefinitionInput] = Field(default=None, description="New rule for this category (RFC 0009). Omitted means unchanged; to make it primitive again, use clearDefinition")
-    clear_definition: bool = Field(default=False, description="Reset the category to primitive — any claim naming its word counts, standings organization grain")
+    definition: CategoryDefinitionInput | None = Field(
+        default=None,
+        description="New rule for this category (RFC 0009). Omitted means unchanged; to make it primitive again, use clearDefinition",
+    )
+    clear_definition: bool = Field(
+        default=False,
+        description="Reset the category to primitive — any claim naming its word counts, standings organization grain",
+    )
 
     @model_validator(mode="after")
     def definition_and_clear_are_exclusive(self):
@@ -1747,7 +2455,9 @@ class DeleteRelationCategoryInput(StrictModel):
 class CreateMeasurementCategoryInput(MeasurementDefinitionInput):
     """Input for a measurement definition at the graph level."""
 
-    graph: str = Field(..., description="The graph id this measurement category will belong to")
+    graph: str = Field(
+        ..., description="The graph id this measurement category will belong to"
+    )
 
 
 class UpdateMeasurementCategoryInput(UpdateDefinitionInput):
@@ -1761,8 +2471,14 @@ class UpdateMeasurementCategoryInput(UpdateDefinitionInput):
     worse than one that is refused, and these were required as well as discarded.
     """
 
-    definition: Optional[CategoryDefinitionInput] = Field(default=None, description="New rule for this category (RFC 0012). Omitted means unchanged; to make it primitive again, use clearDefinition")
-    clear_definition: bool = Field(default=False, description="Reset the category to primitive — any claim naming its word counts, standings organization grain")
+    definition: CategoryDefinitionInput | None = Field(
+        default=None,
+        description="New rule for this category (RFC 0012). Omitted means unchanged; to make it primitive again, use clearDefinition",
+    )
+    clear_definition: bool = Field(
+        default=False,
+        description="Reset the category to primitive — any claim naming its word counts, standings organization grain",
+    )
 
     @model_validator(mode="after")
     def definition_and_clear_are_exclusive(self):
@@ -1796,8 +2512,14 @@ class UpdateStructureRelationCategoryInput(UpdateDefinitionInput):
     worse than one that is refused, and these were required as well as discarded.
     """
 
-    definition: Optional[CategoryDefinitionInput] = Field(default=None, description="New rule for this category (RFC 0012). Omitted means unchanged; to make it primitive again, use clearDefinition")
-    clear_definition: bool = Field(default=False, description="Reset the category to primitive — any claim naming its word counts, standings organization grain")
+    definition: CategoryDefinitionInput | None = Field(
+        default=None,
+        description="New rule for this category (RFC 0012). Omitted means unchanged; to make it primitive again, use clearDefinition",
+    )
+    clear_definition: bool = Field(
+        default=False,
+        description="Reset the category to primitive — any claim naming its word counts, standings organization grain",
+    )
 
     @model_validator(mode="after")
     def definition_and_clear_are_exclusive(self):
@@ -1805,13 +2527,17 @@ class UpdateStructureRelationCategoryInput(UpdateDefinitionInput):
             raise ValueError("Pass a new `definition` or `clearDefinition`, not both.")
         return self
 
-    id: str = Field(..., description="The ID of the structure relation category to update")
+    id: str = Field(
+        ..., description="The ID of the structure relation category to update"
+    )
 
 
 class DeleteStructureRelationCategoryInput(StrictModel):
     """Input for deleting an existing structure relation definition at the graph level."""
 
-    id: str = Field(..., description="The ID of the structure relation category to delete")
+    id: str = Field(
+        ..., description="The ID of the structure relation category to delete"
+    )
 
 
 class RestoreStructureRelationDefinitionInput(StrictModel):
@@ -1826,19 +2552,34 @@ class RoleMappingInput(StrictModel):
     """
 
     role: str = Field(..., description="The role name")
-    entity_id: str = Field(..., description="The ID of the entity assigned to this role")
+    entity_id: str = Field(
+        ..., description="The ID of the entity assigned to this role"
+    )
 
 
 class EventInput(StrictModel):
     """Input for creating a new event instance."""
 
     term: str = Field(..., description=TERM_FIELD_DESCRIPTION)
-    inputs: List[RoleMappingInput] = Field(default_factory=list, description="List of entity IDs that are inputs to this event")
-    outputs: List[RoleMappingInput] = Field(default_factory=list, description="List of entity IDs that are outputs of this event")
-    supporting_evidence: List[StructureReferenceInput] = Field(default_factory=list, description="List of evidence structures with measurements")
-    observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
-    derived_from: List[str] = _derived_from_field()
+    inputs: list[RoleMappingInput] = Field(
+        default_factory=list,
+        description="List of entity IDs that are inputs to this event",
+    )
+    outputs: list[RoleMappingInput] = Field(
+        default_factory=list,
+        description="List of entity IDs that are outputs of this event",
+    )
+    supporting_evidence: list[StructureReferenceInput] = Field(
+        default_factory=list,
+        description="List of evidence structures with measurements",
+    )
+    observed_at: datetime | None = Field(
+        default=None, description=OBSERVED_AT_FIELD_DESCRIPTION
+    )
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
+    derived_from: list[str] = _derived_from_field()
 
 
 class NaturalEventInput(EventInput):
@@ -1863,30 +2604,54 @@ class AssertParticipationInput(StrictModel):
 
     event: str = Field(..., description="The ID of the event the entity took part in")
     entity: str = Field(..., description="The ID of the entity that took part")
-    role: str = Field(..., description="Which role the entity played — the caller's own word; the write names no graph and no category")
-    is_input: bool = Field(default=True, description="True if the entity went into the event, False if it came out of it")
-    observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
-    derived_from: List[str] = _derived_from_field()
+    role: str = Field(
+        ...,
+        description="Which role the entity played — the caller's own word; the write names no graph and no category",
+    )
+    is_input: bool = Field(
+        default=True,
+        description="True if the entity went into the event, False if it came out of it",
+    )
+    observed_at: datetime | None = Field(
+        default=None, description=OBSERVED_AT_FIELD_DESCRIPTION
+    )
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
+    derived_from: list[str] = _derived_from_field()
 
 
 class RetractParticipationInput(StrictModel):
     """Input for retracting one claim that an entity took part in an event."""
 
-    id: str = Field(..., description="The evidence ID of the participation claim to retract")
-    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    id: str = Field(
+        ..., description="The evidence ID of the participation claim to retract"
+    )
+    at: datetime | None = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
 
 
 class ParticipantInput(StrictModel):
     """One entity's part in an event, inside a batch."""
 
     entity: str = Field(..., description="The ID of the entity that took part")
-    role: str = Field(..., description="Which role the entity played — the caller's own word; the write names no graph and no category")
-    is_input: bool = Field(default=True, description="True if the entity went into the event, False if it came out of it")
-    observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
-    derived_from: List[str] = _derived_from_field()
+    role: str = Field(
+        ...,
+        description="Which role the entity played — the caller's own word; the write names no graph and no category",
+    )
+    is_input: bool = Field(
+        default=True,
+        description="True if the entity went into the event, False if it came out of it",
+    )
+    observed_at: datetime | None = Field(
+        default=None, description=OBSERVED_AT_FIELD_DESCRIPTION
+    )
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
+    derived_from: list[str] = _derived_from_field()
 
 
 class AssertParticipationsInput(StrictModel):
@@ -1898,7 +2663,9 @@ class AssertParticipationsInput(StrictModel):
     """
 
     event: str = Field(..., description="The event the entities took part in")
-    participants: List[ParticipantInput] = Field(..., description="Everyone who took part, and how")
+    participants: list[ParticipantInput] = Field(
+        ..., description="Everyone who took part, and how"
+    )
 
 
 class ClassificationInput(StrictModel):
@@ -1906,9 +2673,13 @@ class ClassificationInput(StrictModel):
 
     node: str = Field(..., description="The node being classified")
     term: str = Field(..., description=TERM_FIELD_DESCRIPTION)
-    observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
-    derived_from: List[str] = _derived_from_field()
+    observed_at: datetime | None = Field(
+        default=None, description=OBSERVED_AT_FIELD_DESCRIPTION
+    )
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
+    derived_from: list[str] = _derived_from_field()
 
 
 class ClassifyNodesInput(StrictModel):
@@ -1919,15 +2690,21 @@ class ClassifyNodesInput(StrictModel):
     whichever of its categories carry a definition.
     """
 
-    classifications: List[ClassificationInput] = Field(..., description="The claims to record")
+    classifications: list[ClassificationInput] = Field(
+        ..., description="The claims to record"
+    )
 
 
 class RetractLinksInput(StrictModel):
     """Input for retracting several link claims as one act."""
 
-    ids: List[str] = Field(..., description="The `Link` primary keys of the claims to retract")
-    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    ids: list[str] = Field(
+        ..., description="The `Link` primary keys of the claims to retract"
+    )
+    at: datetime | None = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
 
 
 class CommentOnStructureInput(StrictModel):
@@ -1941,34 +2718,49 @@ class CommentOnStructureInput(StrictModel):
     flag that does nothing is the silent no-op this API keeps removing.
     """
 
-    identifier: str = Field(..., description="The structure identifier of the datum, e.g. '@mikro/roi'")
+    identifier: str = Field(
+        ..., description="The structure identifier of the datum, e.g. '@mikro/roi'"
+    )
     object: str = Field(..., description="The id of the external object on its service")
-    descendants: List[DescendantNode] = Field(..., min_length=1, description="The rich body of the remark — a tree of LEAF/MENTION/PARAGRAPH nodes")
-    parent: Optional[str] = Field(default=None, description="The comment this replies to. Must be on the same structure's thread")
+    descendants: list[DescendantNode] = Field(
+        ...,
+        min_length=1,
+        description="The rich body of the remark — a tree of LEAF/MENTION/PARAGRAPH nodes",
+    )
+    parent: str | None = Field(
+        default=None,
+        description="The comment this replies to. Must be on the same structure's thread",
+    )
 
 
 class RetractCommentInput(StrictModel):
     """Input for claiming a remark no longer stands — withdrawn or resolved; the assertion records whose position it is."""
 
     id: str = Field(..., description="The ID of the comment to retract")
-    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    at: datetime | None = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
 
 
 class AttestCommentInput(StrictModel):
     """Input for claiming a remark stands again — reopening, as new evidence."""
 
     id: str = Field(..., description="The ID of the comment to attest")
-    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    at: datetime | None = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
 
 
 class RetractNaturalEventInput(StrictModel):
     """Input for retracting a natural event claim — a Standing(stands=False), not a deletion."""
 
     id: str = Field(..., description="The ID of the natural event to retract")
-    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    at: datetime | None = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
 
 
 class ProtocolEventInput(EventInput):
@@ -1987,24 +2779,33 @@ class RetractProtocolEventInput(StrictModel):
     """Input for retracting a protocol event claim — a Standing(stands=False), not a deletion."""
 
     id: str = Field(..., description="The ID of the protocol event to retract")
-    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    at: datetime | None = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
 
 
 class EntityInput(StrictModel):
     """Input for creating a new entity instance."""
 
     term: str = Field(..., description=TERM_FIELD_DESCRIPTION)
-    supporting_evidence: List[StructureReferenceInput] = Field(default_factory=list, description="List of evidence structures with measurements")
-    observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
-    derived_from: List[str] = _derived_from_field()
+    supporting_evidence: list[StructureReferenceInput] = Field(
+        default_factory=list,
+        description="List of evidence structures with measurements",
+    )
+    observed_at: datetime | None = Field(
+        default=None, description=OBSERVED_AT_FIELD_DESCRIPTION
+    )
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
+    derived_from: list[str] = _derived_from_field()
 
 
 class AssertEntityExistsInput(EntityInput):
     """Input for claiming that an entity exists."""
 
-    same_as: List[str] = Field(
+    same_as: list[str] = Field(
         default_factory=list,
         description=(
             'Instances this new one is the same as. Saying "this is AIS 6" mints a fresh '
@@ -2018,43 +2819,55 @@ class AssertEntityExistsInput(EntityInput):
 class AssertSameInstanceInput(StrictModel):
     """Input for claiming two instances already recorded are one thing."""
 
-    instances: List[str] = Field(
+    instances: list[str] = Field(
         ...,
         min_length=2,
         description="Two or more instance ids that name the same thing — entities or events alike. Every pair among them is claimed, under one assertion.",
     )
-    observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
-    derived_from: List[str] = _derived_from_field()
+    observed_at: datetime | None = Field(
+        default=None, description=OBSERVED_AT_FIELD_DESCRIPTION
+    )
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
+    derived_from: list[str] = _derived_from_field()
 
 
 class RetractSameInstanceInput(StrictModel):
     """Input for withdrawing one sameness claim."""
 
     id: str = Field(..., description="The id of the sameness claim to retract")
-    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    at: datetime | None = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
 
 
 class AssertDifferentInstanceInput(StrictModel):
     """Input for claiming that several recorded instances are distinct things (RFC 0019)."""
 
-    instances: List[str] = Field(
+    instances: list[str] = Field(
         ...,
         min_length=2,
         description="Two or more instance ids that are not one thing. Every pair among them is claimed, under one assertion — difference is not transitive, so each pair is its own claim.",
     )
-    observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
-    derived_from: List[str] = _derived_from_field()
+    observed_at: datetime | None = Field(
+        default=None, description=OBSERVED_AT_FIELD_DESCRIPTION
+    )
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
+    derived_from: list[str] = _derived_from_field()
 
 
 class RetractDifferentInstanceInput(StrictModel):
     """Input for withdrawing one difference claim."""
 
     id: str = Field(..., description="The id of the difference claim to retract")
-    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    at: datetime | None = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
 
 
 class CategoryNodePositionInput(StrictModel):
@@ -2063,23 +2876,33 @@ class CategoryNodePositionInput(StrictModel):
     category: strawberry.ID = Field(..., description="The category of the node")
     position_x: float = Field(..., description="The x-coordinate of the node position")
     position_y: float = Field(..., description="The y-coordinate of the node position")
-    width: Optional[float] = Field(default=None, description="Optional width for the node (for visualization purposes)")
-    height: Optional[float] = Field(default=None, description="Optional height for the node (for visualization purposes)")
+    width: float | None = Field(
+        default=None,
+        description="Optional width for the node (for visualization purposes)",
+    )
+    height: float | None = Field(
+        default=None,
+        description="Optional height for the node (for visualization purposes)",
+    )
 
 
 class UpdateGraphVisuals(StrictModel):
     """Input for updating the visual properties of a graph element (node or edge)."""
 
     id: str = Field(..., description="The ID of the graph element to update")
-    node_positions: list[CategoryNodePositionInput] = Field(default_factory=list, description="List of node positions to update")
+    node_positions: list[CategoryNodePositionInput] = Field(
+        default_factory=list, description="List of node positions to update"
+    )
 
 
 class RetractEntityInput(StrictModel):
     """Input for retracting an entity claim — a Standing(stands=False), not a deletion."""
 
     id: str = Field(..., description="The ID of the entity to retract")
-    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    at: datetime | None = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
 
 
 class AttestNodeInput(StrictModel):
@@ -2091,9 +2914,14 @@ class AttestNodeInput(StrictModel):
     graph believes is decided by its selector.
     """
 
-    id: str = Field(..., description="The uuid of the node being attested. The same id `retract*` returns, so the two round-trip.")
-    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    id: str = Field(
+        ...,
+        description="The uuid of the node being attested. The same id `retract*` returns, so the two round-trip.",
+    )
+    at: datetime | None = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
 
 
 class AttestStructureInput(StrictModel):
@@ -2104,17 +2932,27 @@ class AttestStructureInput(StrictModel):
     participation or sameness had no counterpart and was one-way through the API.
     """
 
-    id: str = Field(..., description="The ID of the structure to attest — a bare uuid, its evidence primary key")
-    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    id: str = Field(
+        ...,
+        description="The ID of the structure to attest — a bare uuid, its evidence primary key",
+    )
+    at: datetime | None = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
 
 
 class AttestMetricInput(StrictModel):
     """Input for claiming that a measurement still stands. See `AttestStructureInput`."""
 
-    id: str = Field(..., description="The ID of the metric to attest — a bare uuid, its evidence primary key")
-    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    id: str = Field(
+        ...,
+        description="The ID of the metric to attest — a bare uuid, its evidence primary key",
+    )
+    at: datetime | None = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
 
 
 class AttestLinkInput(StrictModel):
@@ -2124,9 +2962,13 @@ class AttestLinkInput(StrictModel):
     differ by kind, and the row says which kind it is.
     """
 
-    id: str = Field(..., description="The ID of the claim to attest — its `Link` primary key")
-    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    id: str = Field(
+        ..., description="The ID of the claim to attest — its `Link` primary key"
+    )
+    at: datetime | None = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
 
 
 class AttestEntityInput(AttestNodeInput):
@@ -2154,9 +2996,14 @@ class StructureInput(StrictModel):
     which is the whole reason these models are `extra="forbid"`.
     """
 
-    object: str = Field(..., description="The unique ID of the object this structure references")
-    metrics: List["MetricInput"] = Field(default_factory=list, description="List of measurements associated with this structure")
-    derived_from: List[str] = _derived_from_field()
+    object: str = Field(
+        ..., description="The unique ID of the object this structure references"
+    )
+    metrics: list["MetricInput"] = Field(
+        default_factory=list,
+        description="List of measurements associated with this structure",
+    )
+    derived_from: list[str] = _derived_from_field()
 
 
 class AssertStructureExistsInput(StructureInput):
@@ -2168,17 +3015,28 @@ class AssertStructureExistsInput(StructureInput):
     a datum already on the record is agreement, recorded as a standing.
     """
 
-    identifier: scalars.StructureIdentifier = Field(..., description="The structure identifier, e.g. '@mikro/roi'")
-    observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    identifier: scalars.StructureIdentifier = Field(
+        ..., description="The structure identifier, e.g. '@mikro/roi'"
+    )
+    observed_at: datetime | None = Field(
+        default=None, description=OBSERVED_AT_FIELD_DESCRIPTION
+    )
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
 
 
 class RetractStructureInput(StrictModel):
     """Input for retracting a structure claim. Not a soft delete: the row and its metrics survive, and the retraction is its own assertion on the record."""
 
-    id: str = Field(..., description="The ID of the structure to retract — a bare uuid, its evidence primary key")
-    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    id: str = Field(
+        ...,
+        description="The ID of the structure to retract — a bare uuid, its evidence primary key",
+    )
+    at: datetime | None = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
 
 
 class AssertMetricValueInput(MetricInput):
@@ -2189,8 +3047,13 @@ class AssertMetricValueInput(MetricInput):
     not by the writer.
     """
 
-    identifier: scalars.StructureIdentifier = Field(..., description="The schema identifier for this metric (e.g. '@mikro/roi_volume')")
-    object: scalars.StructureObject = Field(..., description="The unique ID of the object this metric references")
+    identifier: scalars.StructureIdentifier = Field(
+        ...,
+        description="The schema identifier for this metric (e.g. '@mikro/roi_volume')",
+    )
+    object: scalars.StructureObject = Field(
+        ..., description="The unique ID of the object this metric references"
+    )
 
 
 #: The most metrics one act may hold.
@@ -2200,33 +3063,61 @@ MAX_METRIC_VALUES = 5000
 class MetricValueInput(MetricInput):
     """One value about one external datum, inside a batch."""
 
-    uuid: Optional[UUID] = Field(default=None, description="Optional: a uuid for this metric that stays the same across retries, so a retried batch records nothing twice. Left out, one is minted, and rerunning records the value again")
-    identifier: scalars.StructureIdentifier = Field(..., description="The structure identifier of the datum this value is about, e.g. '@mikro/annotation'")
-    object: scalars.StructureObject = Field(..., description="The id of the datum this value is about")
-    value_kind: enums.ValueKind = Field(..., description="What type of value this is. Required: it decides the storage column and the measurement term")
-    supersedes: Optional[UUID] = Field(default=None, description="The uuid of an earlier metric of this API that this value corrects: that one is retracted and cited, under this act")
+    uuid: UUID | None = Field(
+        default=None,
+        description="Optional: a uuid for this metric that stays the same across retries, so a retried batch records nothing twice. Left out, one is minted, and rerunning records the value again",
+    )
+    identifier: scalars.StructureIdentifier = Field(
+        ...,
+        description="The structure identifier of the datum this value is about, e.g. '@mikro/annotation'",
+    )
+    object: scalars.StructureObject = Field(
+        ..., description="The id of the datum this value is about"
+    )
+    value_kind: enums.ValueKind = Field(
+        ...,
+        description="What type of value this is. Required: it decides the storage column and the measurement term",
+    )
+    supersedes: UUID | None = Field(
+        default=None,
+        description="The uuid of an earlier metric of this API that this value corrects: that one is retracted and cited, under this act",
+    )
 
 
 class AssertMetricValuesInput(StrictModel):
     """Input for recording many metrics, about any number of data, as one act."""
 
-    metrics: List[MetricValueInput] = Field(..., min_length=1, max_length=MAX_METRIC_VALUES, description=f"The values to record, at most {MAX_METRIC_VALUES} in one act")
+    metrics: list[MetricValueInput] = Field(
+        ...,
+        min_length=1,
+        max_length=MAX_METRIC_VALUES,
+        description=f"The values to record, at most {MAX_METRIC_VALUES} in one act",
+    )
 
     @model_validator(mode="after")
     def each_uuid_names_one_metric(self) -> "AssertMetricValuesInput":
-        counts = Counter(metric.uuid for metric in self.metrics if metric.uuid is not None)
+        counts = Counter(
+            metric.uuid for metric in self.metrics if metric.uuid is not None
+        )
         repeated = [source for source, count in counts.items() if count > 1]
         if repeated:
-            raise ValueError(f"A uuid names one metric, and these appear more than once in this batch: {sorted(str(source) for source in repeated)}")
+            raise ValueError(
+                f"A uuid names one metric, and these appear more than once in this batch: {sorted(str(source) for source in repeated)}"
+            )
         return self
 
 
 class RetractMetricInput(StrictModel):
     """Input for retracting a measurement. Not a soft delete: it stays readable, because a derived value that dropped it still has to be explainable."""
 
-    id: str = Field(..., description="The ID of the metric to retract — a bare uuid, its evidence primary key")
-    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    id: str = Field(
+        ...,
+        description="The ID of the metric to retract — a bare uuid, its evidence primary key",
+    )
+    at: datetime | None = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
 
 
 class RelationInput(StrictModel):
@@ -2234,10 +3125,17 @@ class RelationInput(StrictModel):
 
     source_id: str = Field(..., description="The ID of the source entity/structure")
     target_id: str = Field(..., description="The ID of the target entity/structure")
-    supporting_evidence: List[StructureReferenceInput] = Field(default_factory=list, description="List of evidence structures with measurements")
-    observed_at: Optional[datetime] = Field(default=None, description=OBSERVED_AT_FIELD_DESCRIPTION)
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
-    derived_from: List[str] = _derived_from_field()
+    supporting_evidence: list[StructureReferenceInput] = Field(
+        default_factory=list,
+        description="List of evidence structures with measurements",
+    )
+    observed_at: datetime | None = Field(
+        default=None, description=OBSERVED_AT_FIELD_DESCRIPTION
+    )
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
+    derived_from: list[str] = _derived_from_field()
 
 
 class AssertRelationExistsInput(RelationInput):
@@ -2255,9 +3153,14 @@ class SupersedeRelationInput(RelationInput):
 class RetractRelationInput(StrictModel):
     """Input for retracting a relation claim. Not a soft delete: the edge survives wherever another live assertion still states the same proposition."""
 
-    id: str = Field(..., description="The ID of the relation claim to retract — its `Link` primary key")
-    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    id: str = Field(
+        ...,
+        description="The ID of the relation claim to retract — its `Link` primary key",
+    )
+    at: datetime | None = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
 
 
 class AssertStructureRelationExistsInput(RelationInput):
@@ -2275,9 +3178,14 @@ class SupersedeStructureRelationInput(RelationInput):
 class RetractStructureRelationInput(StrictModel):
     """Input for retracting a structure relation claim. Not a soft delete — see `RetractRelationInput`."""
 
-    id: str = Field(..., description="The ID of the structure relation claim to retract — its `Link` primary key")
-    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    id: str = Field(
+        ...,
+        description="The ID of the structure relation claim to retract — its `Link` primary key",
+    )
+    at: datetime | None = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
 
 
 class AssertMeasurementExistsInput(RelationInput):
@@ -2289,25 +3197,48 @@ class AssertMeasurementExistsInput(RelationInput):
 class RetractMeasurementInput(StrictModel):
     """Input for retracting a measurement claim. Not a soft delete — see `RetractRelationInput`."""
 
-    id: str = Field(..., description="The ID of the measurement claim to retract — its `Link` primary key")
-    at: Optional[datetime] = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
-    confidence: Optional[float] = Field(default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION)
+    id: str = Field(
+        ...,
+        description="The ID of the measurement claim to retract — its `Link` primary key",
+    )
+    at: datetime | None = Field(default=None, description=STANDING_AT_FIELD_DESCRIPTION)
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description=CONFIDENCE_FIELD_DESCRIPTION
+    )
 
 
 class ScatterPlotMutationInput(StrictModel):
     """Base input for scatter plot mutations."""
 
     name: str = Field(..., description="The display name of the scatter plot")
-    description: Optional[str] = Field(default=None, description="Optional description of the scatter plot")
-    graph_query_id: int = Field(..., description="The graph table query this scatter plot is drawn from")
+    description: str | None = Field(
+        default=None, description="Optional description of the scatter plot"
+    )
+    graph_query_id: int = Field(
+        ..., description="The graph table query this scatter plot is drawn from"
+    )
     id_column: str = Field(..., description="Column key used for point identifiers")
-    x_column: Optional[str] = Field(default=None, description="Column key used for x-axis values")
-    x_id_column: Optional[str] = Field(default=None, description="Column key used for x-axis identifiers")
-    y_column: Optional[str] = Field(default=None, description="Column key used for y-axis values")
-    y_id_column: Optional[str] = Field(default=None, description="Column key used for y-axis identifiers")
-    color_column: Optional[str] = Field(default=None, description="Optional column key used for point color")
-    size_column: Optional[str] = Field(default=None, description="Optional column key used for point size")
-    shape_column: Optional[str] = Field(default=None, description="Optional column key used for point shape")
+    x_column: str | None = Field(
+        default=None, description="Column key used for x-axis values"
+    )
+    x_id_column: str | None = Field(
+        default=None, description="Column key used for x-axis identifiers"
+    )
+    y_column: str | None = Field(
+        default=None, description="Column key used for y-axis values"
+    )
+    y_id_column: str | None = Field(
+        default=None, description="Column key used for y-axis identifiers"
+    )
+    color_column: str | None = Field(
+        default=None, description="Optional column key used for point color"
+    )
+    size_column: str | None = Field(
+        default=None, description="Optional column key used for point size"
+    )
+    shape_column: str | None = Field(
+        default=None, description="Optional column key used for point shape"
+    )
 
 
 class CreateScatterPlotInput(ScatterPlotMutationInput):
@@ -2340,12 +3271,25 @@ class GraphExtensionsInput(StrictModel):
     dynamically from the structure identifier at write time.
     """
 
-    structures: List[StructureDefinitionInput] = Field(default_factory=list, description="Structure kinds the view mounts (RFC 0027): the vertex labels structure relations draw their ends under")
-    entities: List[EntityDefinitionInput] = Field(default_factory=list, description="Entity definitions")
-    relations: List[RelationDefinitionInput] = Field(default_factory=list, description="Relation definitions")
-    structure_relations: List[StructureRelationDefinitionInput] = Field(default_factory=list, description="Structure relation definitions")
-    measurements: List[MeasurementDefinitionInput] = Field(default_factory=list, description="Measurement definitions")
-    events: List[EventDefinitionInput] = Field(default_factory=list, description="Event definitions")
+    structures: list[StructureDefinitionInput] = Field(
+        default_factory=list,
+        description="Structure kinds the view mounts (RFC 0027): the vertex labels structure relations draw their ends under",
+    )
+    entities: list[EntityDefinitionInput] = Field(
+        default_factory=list, description="Entity definitions"
+    )
+    relations: list[RelationDefinitionInput] = Field(
+        default_factory=list, description="Relation definitions"
+    )
+    structure_relations: list[StructureRelationDefinitionInput] = Field(
+        default_factory=list, description="Structure relation definitions"
+    )
+    measurements: list[MeasurementDefinitionInput] = Field(
+        default_factory=list, description="Measurement definitions"
+    )
+    events: list[EventDefinitionInput] = Field(
+        default_factory=list, description="Event definitions"
+    )
 
 
 class GraphDefinitionInput(StrictModel):
@@ -2356,8 +3300,14 @@ class GraphDefinitionInput(StrictModel):
     and events for a knowledge graph.
     """
 
-    system_version: str = Field(default="0.0.1", description="Semantic version for this schema definition (e.g., '1.0.0')")
-    extensions: GraphExtensionsInput = Field(default_factory=lambda: GraphExtensionsInput(), description="The graph extensions containing all type definitions")
+    system_version: str = Field(
+        default="0.0.1",
+        description="Semantic version for this schema definition (e.g., '1.0.0')",
+    )
+    extensions: GraphExtensionsInput = Field(
+        default_factory=lambda: GraphExtensionsInput(),
+        description="The graph extensions containing all type definitions",
+    )
 
     @field_validator("system_version")
     @classmethod
@@ -2369,8 +3319,11 @@ class GraphInput(StrictModel):
     """Input for creating or updating a graph."""
 
     name: str = Field(..., description="Name of the graph")
-    description: Optional[str] = Field(None, description="Description of the graph")
-    definition: GraphDefinitionInput = Field(default_factory=lambda: GraphDefinitionInput(), description="The complete graph schema definition")
+    description: str | None = Field(None, description="Description of the graph")
+    definition: GraphDefinitionInput = Field(
+        default_factory=lambda: GraphDefinitionInput(),
+        description="The complete graph schema definition",
+    )
 
 
 # `SetSchemaPayload` / `SetSchemaResult` are gone: they were wired to no
@@ -2381,9 +3334,15 @@ class CreateGraphFromSchema(StrictModel):
     """Input for creating a new graph from a schema definition."""
 
     name: str = Field(..., description="Name of the graph")
-    description: Optional[str] = Field(None, description="Description of the graph")
-    definition: Optional[GraphDefinitionInput] = Field(default_factory=lambda: GraphDefinitionInput(), description="The complete graph schema definition")
-    sameness_rule: Optional[SamenessRuleInput] = Field(default=None, description="Whose sameness claims this view counts (RFC 0024). Omitted means everyone")
+    description: str | None = Field(None, description="Description of the graph")
+    definition: GraphDefinitionInput | None = Field(
+        default_factory=lambda: GraphDefinitionInput(),
+        description="The complete graph schema definition",
+    )
+    sameness_rule: SamenessRuleInput | None = Field(
+        default=None,
+        description="Whose sameness claims this view counts (RFC 0024). Omitted means everyone",
+    )
     backfill: bool = Field(
         default=False,
         description=(
@@ -2401,11 +3360,19 @@ class UpdateGraphInput(StrictModel):
     """Input for updating an existing graph."""
 
     id: strawberry.ID = Field(..., description="The ID of the graph to update")
-    name: Optional[str] = Field(default=None, description="New graph name")
-    description: Optional[str] = Field(default=None, description="New graph description")
-    archived: Optional[bool] = Field(default=None, description="Optional archived flag update")
-    pin: Optional[bool] = Field(default=None, description="Optional pin flag update for the user making the request")
-    sameness_rule: Optional[SamenessRuleInput] = Field(default=None, description="Replace whose sameness claims this view counts (RFC 0024); an empty rule list means everyone. Omitted means unchanged. Changing it refolds the view's individuals — the projection is rebuilt")
+    name: str | None = Field(default=None, description="New graph name")
+    description: str | None = Field(default=None, description="New graph description")
+    archived: bool | None = Field(
+        default=None, description="Optional archived flag update"
+    )
+    pin: bool | None = Field(
+        default=None,
+        description="Optional pin flag update for the user making the request",
+    )
+    sameness_rule: SamenessRuleInput | None = Field(
+        default=None,
+        description="Replace whose sameness claims this view counts (RFC 0024); an empty rule list means everyone. Omitted means unchanged. Changing it refolds the view's individuals — the projection is rebuilt",
+    )
 
 
 class DeleteGraphInput(StrictModel):

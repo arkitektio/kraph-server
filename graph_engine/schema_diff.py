@@ -25,8 +25,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from evidence.values import JSONValue
 import jsonpatch
+
+from evidence.values import JSONValue
 
 if TYPE_CHECKING:
     from core.models import GraphSchema
@@ -89,12 +90,18 @@ class SchemaDiff:
         return bool(self.changes)
 
 
-def _properties_by_category(definition: Definition) -> dict[str, dict[str, PropertyDefinition]]:
+def _properties_by_category(
+    definition: Definition,
+) -> dict[str, dict[str, PropertyDefinition]]:
     """Index a definition as {category_key: {property_key: property_definition}}."""
     extensions = definition.get("extensions") or {}
     indexed: dict[str, dict[str, PropertyDefinition]] = {}
 
-    for section, property_field in (("entities", "property_definitions"), ("relations", "properties"), ("events", "properties")):
+    for section, property_field in (
+        ("entities", "property_definitions"),
+        ("relations", "properties"),
+        ("events", "properties"),
+    ):
         for item in extensions.get(section) or []:
             key = item.get("key")
             if not key:
@@ -140,11 +147,23 @@ def diff(before: Definition, after: Definition) -> SchemaDiff:
             new = after_props.get(property_key)
 
             if old is None:
-                changes.append(PropertyChange(category_key, property_key, "added", after=new))
+                changes.append(
+                    PropertyChange(category_key, property_key, "added", after=new)
+                )
             elif new is None:
-                changes.append(PropertyChange(category_key, property_key, "removed", before=old))
+                changes.append(
+                    PropertyChange(category_key, property_key, "removed", before=old)
+                )
             elif old != new:
-                changes.append(PropertyChange(category_key, property_key, _classify(old, new), before=old, after=new))
+                changes.append(
+                    PropertyChange(
+                        category_key,
+                        property_key,
+                        _classify(old, new),
+                        before=old,
+                        after=new,
+                    )
+                )
 
     return SchemaDiff(changes=changes)
 

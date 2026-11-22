@@ -13,18 +13,16 @@ null — the id is a uuid nobody could have guessed, so "not found" and "not
 yours" are the same answer and the error says which table it looked in.
 """
 
-from typing import List, Optional
-
-from kante.types import Info
 import strawberry
 import strawberry_django
+from kante.types import Info
 
 from api import context, filters, pagination, types
 from evidence import log
 from evidence import models as evidence_models
 
 
-def _page(queryset, page: Optional[pagination.LogPaginationInput]) -> list:
+def _page(queryset, page: pagination.LogPaginationInput | None) -> list:
     """The offset/limit window — first hundred by default, clamped at `pagination.MAX_LIMIT`."""
     return pagination.slice_window(queryset, page)
 
@@ -38,11 +36,13 @@ def _scoped(info: Info):
 
 def assertions(
     info: Info,
-    filters: Optional[filters.AssertionFilter] = None,
-    pagination: Optional[pagination.LogPaginationInput] = None,
-) -> List[types.Assertion]:
+    filters: filters.AssertionFilter | None = None,
+    pagination: pagination.LogPaginationInput | None = None,
+) -> list[types.Assertion]:
     """The acts of claiming, newest first, by who made them and when."""
-    queryset = strawberry_django.filters.apply(filters, _scoped(info).order_by("-seq"), info)
+    queryset = strawberry_django.filters.apply(
+        filters, _scoped(info).order_by("-seq"), info
+    )
     return _page(queryset, pagination)
 
 
@@ -65,6 +65,12 @@ def changes(info: Info, after_seq: int, limit: int = 100) -> types.Changes:
     """
     scoped = _scoped(info)
     limit = max(1, min(int(limit), pagination.MAX_LIMIT))
-    rows = list(log.before_every_open_transaction(scoped.filter(seq__gt=int(after_seq)).order_by("seq"))[:limit])
+    rows = list(
+        log.before_every_open_transaction(
+            scoped.filter(seq__gt=int(after_seq)).order_by("seq")
+        )[:limit]
+    )
     next_seq = int(rows[-1].seq) if rows else int(after_seq)
-    return types.Changes(assertions=rows, next_seq=next_seq, horizon=log.horizon(scoped))  # type: ignore[arg-type]
+    return types.Changes(
+        assertions=rows, next_seq=next_seq, horizon=log.horizon(scoped)
+    )  # type: ignore[arg-type]

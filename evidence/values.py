@@ -18,7 +18,9 @@ import uuid
 #: What a claim's stored value can be — whatever JSONB holds. A `Metric.value`
 #: is a number *or* a string *or* a flag, and every fold has to decide which,
 #: which is exactly the obligation `Any` used to hide.
-type JSONValue = str | int | float | bool | None | list[JSONValue] | dict[str, JSONValue]
+type JSONValue = (
+    str | int | float | bool | None | list[JSONValue] | dict[str, JSONValue]
+)
 
 #: A claim's primary key as callers hold it: the uuid, or its text. Both are in
 #: the wild because `Link.source_ref` is a CharField — it addresses four tables,

@@ -11,6 +11,7 @@ from kante.types import Info
 
 from api import context, inputs, types
 from evidence import models as evidence_models
+
 from ._guards import delete_or_explain, refuse_bad_color
 
 
@@ -23,7 +24,9 @@ def _resolve(info: Info, kind_id: str) -> evidence_models.StructureKind:
     return kind
 
 
-def update_structure_kind(info: Info, input: inputs.UpdateStructureKindInput) -> types.StructureKind:
+def update_structure_kind(
+    info: Info, input: inputs.UpdateStructureKindInput
+) -> types.StructureKind:
     """Update a structure kind's presentation.
 
     Only descriptive fields. `identifier` is the kind's identity within the
@@ -44,7 +47,9 @@ def update_structure_kind(info: Info, input: inputs.UpdateStructureKindInput) ->
     return kind
 
 
-def delete_structure_kind(info: Info, input: inputs.DeleteStructureKindInput) -> strawberry.ID:
+def delete_structure_kind(
+    info: Info, input: inputs.DeleteStructureKindInput
+) -> strawberry.ID:
     """Retire a structure kind that nothing has been recorded under.
 
     This used to cascade to the structures and metrics recorded under it, and
@@ -53,5 +58,9 @@ def delete_structure_kind(info: Info, input: inputs.DeleteStructureKindInput) ->
     `PROTECT` now and a kind in use cannot be removed at all.
     """
     model = input.to_pydantic()
-    delete_or_explain(_resolve(info, str(model.id)), what="this structure kind", instead="Archive the structures recorded under it first.")
+    delete_or_explain(
+        _resolve(info, str(model.id)),
+        what="this structure kind",
+        instead="Archive the structures recorded under it first.",
+    )
     return model.id

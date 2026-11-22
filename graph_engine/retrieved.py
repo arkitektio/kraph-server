@@ -12,14 +12,15 @@ claim's uuid — is the only field that means anything in every case.
 
 import builtins
 from dataclasses import dataclass, field
-from typing import Dict, List, Literal, Optional, Type, TypeVar, TYPE_CHECKING
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Literal, TypeVar
+
 from evidence.values import JSONValue
 
 if TYPE_CHECKING:
-    from evidence.models import Link, Metric, Structure
-    from evidence.models import Instance as InstanceRow
     from core.models import Category
+    from evidence.models import Instance as InstanceRow
+    from evidence.models import Link, Metric, Structure
     from graph_engine.controller import GraphController
     from graph_engine.projection.protocol import DrawnNode
     from graph_engine.query_ir import TableQueryPlan
@@ -54,7 +55,7 @@ RESERVED_PROPERTY_KEYS = frozenset(
 INTERNAL_PROPERTY_PREFIX = "__"
 
 
-def _as_datetime(value: JSONValue) -> Optional[datetime]:
+def _as_datetime(value: JSONValue) -> datetime | None:
     """Read a validity bound out of a node property.
 
     Handles both spellings because both are in the wild: the projector writes ISO
@@ -67,7 +68,7 @@ def _as_datetime(value: JSONValue) -> Optional[datetime]:
     if isinstance(value, datetime):
         return value
     if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(float(value), tz=timezone.utc)
+        return datetime.fromtimestamp(float(value), tz=UTC)
     try:
         return datetime.fromisoformat(str(value))
     except ValueError:
@@ -170,8 +171,8 @@ class RetrievedNode:
     vertex_id: int
     label: str
     """The first of `labels`, for a reader that shows one — or the word itself when undrawn."""
-    properties: Dict[str, JSONValue] = field(default_factory=dict)
-    row_id: Optional[str] = None
+    properties: dict[str, JSONValue] = field(default_factory=dict)
+    row_id: str | None = None
     """Primary key when this node is backed by a relational evidence row.
 
     Structures, metrics and assertions live in Postgres, not in AGE, so they have
@@ -188,14 +189,14 @@ class RetrievedNode:
     both. Empty for a row-backed shape: a claim read outside any view is drawn
     as nothing there, and `label` is then the word.
     """
-    graph_id: Optional[int] = None
+    graph_id: int | None = None
     """The view this node was read through — its `Graph` primary key (RFC 0025).
 
     Every `Node` the API serves is built inside a view: `nodes(graph:)`,
     `node(id:, graph:)`, a write's `drawings`. A reading with no view is a
     *claim*, served as `Instance`, never as a `Node`.
     """
-    rule_category_ids: Optional[tuple[str, ...]] = None
+    rule_category_ids: tuple[str, ...] | None = None
     """Every category the view's **rule** admits this node under (RFC 0019, 0025).
 
     Set by the view-scoped readers from `projector.resolve_categories`, so the
@@ -249,7 +250,9 @@ class RetrievedNode:
             return self.row_id
         node_uuid = self.properties.get("id")
         if node_uuid is None:
-            raise ValueError(f"Node {self.label!r} in graph {self.graph_name!r} carries no 'id' property, so it has no durable identity. Every vertex `projector.create_vertex` draws has one.")
+            raise ValueError(
+                f"Node {self.label!r} in graph {self.graph_name!r} carries no 'id' property, so it has no durable identity. Every vertex `projector.create_vertex` draws has one."
+            )
         return str(node_uuid)
 
     # `lifecycle` and `lifecycle_status` are gone, and there is nothing left to
@@ -276,7 +279,12 @@ class RetrievedNode:
     # is reassigned by every reproject. `unique_id` is the identity.
 
     @classmethod
-    def from_row(cls: Type[T], controller: "GraphController", row: "InstanceRow", graph_name: str = "") -> T:
+    def from_row(
+        cls: type[T],
+        controller: "GraphController",
+        row: "InstanceRow",
+        graph_name: str = "",
+    ) -> T:
         """Adapt an `evidence.models.Node` row to the node-shaped API surface.
 
         The claim as **the log has it**, with no view's opinion mixed in. It
@@ -378,7 +386,9 @@ class RetrievedNode:
         """
         node_type = self.properties.get("type")
         if node_type is None:
-            raise ValueError(f"Node {self.label!r} in graph {self.graph_name!r} carries no 'type' property, so nothing says what kind of thing it is. Every vertex `projector.create_vertex` draws has one — run `manage.py reproject` to redraw one that does not.")
+            raise ValueError(
+                f"Node {self.label!r} in graph {self.graph_name!r} carries no 'type' property, so nothing says what kind of thing it is. Every vertex `projector.create_vertex` draws has one — run `manage.py reproject` to redraw one that does not."
+            )
         return node_type
 
     @property
@@ -394,19 +404,21 @@ class RetrievedNode:
         return self.label
 
     @property
-    def external_id(self) -> Optional[str]:
+    def external_id(self) -> str | None:
         """External ID if set (from properties)."""
         return self.properties.get("external_id")
 
     # === Versioning Properties ===
     @property
-    def schema_version(self) -> Optional[str]:
+    def schema_version(self) -> str | None:
         """Schema version used to derive this node's properties."""
         # Check both prefixed and non-prefixed keys
-        return self.properties.get("__schema_version") or self.properties.get("schema_version")
+        return self.properties.get("__schema_version") or self.properties.get(
+            "schema_version"
+        )
 
     @property
-    def last_derived(self) -> Optional[int]:
+    def last_derived(self) -> int | None:
         """Always ``None``. Kept only so the deprecated `Node.lastDerived` field resolves.
 
         `projector.project` used to stamp `__last_derived` — a wall-clock
@@ -423,24 +435,24 @@ class RetrievedNode:
     # === Validity Properties ===
 
     @property
-    def valid_from(self) -> Optional[datetime]:
+    def valid_from(self) -> datetime | None:
         """Start of the observation window this node's evidence covers."""
         return _as_datetime(self.properties.get("valid_from"))
 
     @property
-    def valid_to(self) -> Optional[datetime]:
+    def valid_to(self) -> datetime | None:
         """End of the observation window this node's evidence covers."""
         return _as_datetime(self.properties.get("valid_to"))
 
     # === Structure Properties (when node_type == 'STRUCTURE') ===
 
     @property
-    def identifier(self) -> Optional[str]:
+    def identifier(self) -> str | None:
         """Structure schema identifier (e.g., '@mikro/roi')."""
         return self.properties.get("identifier")
 
     @property
-    def object(self) -> Optional[str]:
+    def object(self) -> str | None:
         """External object ID the structure references."""
         return self.properties.get("object")
 
@@ -451,12 +463,14 @@ class RetrievedNode:
         return self.cleaned_properties.get(key, default)
 
     @property
-    def cleaned_properties(self) -> Dict[str, JSONValue]:
+    def cleaned_properties(self) -> dict[str, JSONValue]:
         """
         Get properties with reserved keys filtered out.
         These are the user-facing properties.
         """
-        return {k: v for k, v in self.properties.items() if not is_internal_property_key(k)}
+        return {
+            k: v for k, v in self.properties.items() if not is_internal_property_key(k)
+        }
 
     # === Hash/Equality ===
 
@@ -483,7 +497,12 @@ class RetrievedNode:
         return self.graph_name == other.graph_name and self.unique_id == other.unique_id
 
     @classmethod
-    def from_node(cls: Type[T], controller: "GraphController", node: "DrawnNode", graph_name: str = "default_graph") -> T:
+    def from_node(
+        cls: type[T],
+        controller: "GraphController",
+        node: "DrawnNode",
+        graph_name: str = "default_graph",
+    ) -> T:
         """Build one from a drawn record, as `Projector.drawn_nodes` returns it.
 
         The record used to be a `dict[str, Any]`, and four of these five fields
@@ -526,37 +545,37 @@ class RetrievedEdge:
     label: str
     left_id: int
     right_id: int
-    properties: Dict[str, JSONValue] = field(default_factory=dict)
+    properties: dict[str, JSONValue] = field(default_factory=dict)
 
     #: Set when this edge came from an `evidence.Link` row. Mirrors
     #: `RetrievedNode.row_id`: an edge is a claim first and a projection second,
     #: and structure relations and measurements are *only* claims — neither has
     #: an AGE edge to carry a vertex id, because structures stopped being
     #: vertices in M1.
-    row_id: Optional[str] = None
+    row_id: str | None = None
     #: The endpoints as evidence names them. Durable across a rebuild, unlike
     #: `left_id`/`right_id`, which are AGE vertex ids reassigned on every replay.
-    source_ref: Optional[str] = None
-    target_ref: Optional[str] = None
-    created_at: Optional[datetime] = None
+    source_ref: str | None = None
+    target_ref: str | None = None
+    created_at: datetime | None = None
     #: When the world was in the state this link claims (RFC 0015). World time,
     #: distinct from the assertion's `asserted_at`; None only for an edge no row
     #: backs, which nothing builds any more.
-    observed_at: Optional[datetime] = None
+    observed_at: datetime | None = None
     #: How sure the claimant was, 0 to 1 (RFC 0016). None when they gave no
     #: number — which is what the log stores, not a default.
-    confidence: Optional[float] = None
+    confidence: float | None = None
     #: Which role the source plays, for participation edges. `InputParticipation`
     #: and `OutputParticipation` both read it and neither could have worked —
     #: `RetrievedEdge` had no such attribute, which went unnoticed because
     #: nothing ever built one of those types.
-    role: Optional[str] = None
+    role: str | None = None
     #: Who claimed this, as an id rather than a row. An edge read out of Apache
     #: AGE has no assertion at all — the projection does not carry provenance —
     #: so this is None there and the API reports null. An id and not the object
     #: because resolving it eagerly would be a query per edge on every listing,
     #: and a synchronous one inside an async resolver; `api/loaders.py` batches it.
-    assertion_id: Optional[str] = None
+    assertion_id: str | None = None
 
     # === Core ID Properties ===
 
@@ -580,7 +599,9 @@ class RetrievedEdge:
         could not be fed back to the singular fetchers.
         """
         if self.row_id is None:
-            raise ValueError(f"Edge {self.label!r} in graph {self.graph_name!r} has no claim behind it, so it has no identity. Edges are read from `evidence.Link`; see `api/queries/_edges.py`.")
+            raise ValueError(
+                f"Edge {self.label!r} in graph {self.graph_name!r} has no claim behind it, so it has no identity. Edges are read from `evidence.Link`; see `api/queries/_edges.py`."
+            )
         return self.row_id
 
     @classmethod
@@ -673,12 +694,12 @@ class RetrievedEdge:
         return self.label
 
     @property
-    def edge_type(self) -> Optional[str]:
+    def edge_type(self) -> str | None:
         """Get the edge type from properties."""
         return self.properties.get("type")
 
     @property
-    def category_id(self) -> Optional[str]:
+    def category_id(self) -> str | None:
         """This edge's category in the view it was read through, if there is one.
 
         `None` is an ordinary answer, for the reason `RetrievedNode.category_id`
@@ -691,7 +712,7 @@ class RetrievedEdge:
     # === Measurement Properties (when edge_type == 'MEASUREMENT') ===
 
     @property
-    def key(self) -> Optional[str]:
+    def key(self) -> str | None:
         """The measurement key/name."""
         return self.properties.get("key")
 
@@ -701,7 +722,7 @@ class RetrievedEdge:
         return self.properties.get("value")
 
     @property
-    def unit(self) -> Optional[str]:
+    def unit(self) -> str | None:
         """The measurement unit (if any)."""
         return self.properties.get("unit")
 
@@ -721,7 +742,7 @@ class RetrievedEdge:
     # === Validity Properties ===
 
     @property
-    def valid_from(self) -> Optional[datetime]:
+    def valid_from(self) -> datetime | None:
         """When this edge became valid."""
         val = self.properties.get("valid_from")
         if val is None:
@@ -731,7 +752,7 @@ class RetrievedEdge:
         return val
 
     @property
-    def valid_to(self) -> Optional[datetime]:
+    def valid_to(self) -> datetime | None:
         """When this edge stopped being valid."""
         val = self.properties.get("valid_to")
         if val is None:
@@ -747,12 +768,14 @@ class RetrievedEdge:
         return self.cleaned_properties.get(key, default)
 
     @property
-    def cleaned_properties(self) -> Dict[str, JSONValue]:
+    def cleaned_properties(self) -> dict[str, JSONValue]:
         """
         Get properties with reserved keys filtered out.
         These are the user-facing properties.
         """
-        return {k: v for k, v in self.properties.items() if not is_internal_property_key(k)}
+        return {
+            k: v for k, v in self.properties.items() if not is_internal_property_key(k)
+        }
 
     # === Hash/Equality ===
 
@@ -790,12 +813,18 @@ class RetrievedStructure(RetrievedNode):
     """
 
     @property
-    def category_id(self) -> Optional[str]:
+    def category_id(self) -> str | None:
         """The structure kind's id: what `Structure.kindId` and `Structure.kind` read."""
         return self.properties.get("category_id")
 
     @classmethod
-    def from_row(cls, controller: "GraphController", row: "Structure", graph_name: str = "", stands: Optional[bool] = None) -> "RetrievedStructure":
+    def from_row(
+        cls,
+        controller: "GraphController",
+        row: "Structure",
+        graph_name: str = "",
+        stands: bool | None = None,
+    ) -> "RetrievedStructure":
         """Adapt an `evidence.models.Structure` row to the node-shaped API surface.
 
         ``stands`` is passed in rather than looked up. It used to be read off a
@@ -811,7 +840,7 @@ class RetrievedStructure(RetrievedNode):
         working; whether a structure still stands is a claims question, answered
         by `evidence.claims`.
         """
-        properties: Dict[str, JSONValue] = {
+        properties: dict[str, JSONValue] = {
             "identifier": row.identifier,
             "object": row.object,
             "category_id": str(row.kind_id),
@@ -859,7 +888,7 @@ class RetrievedMeasurement(RetrievedEdge):
     pass
 
     @property
-    def role(self) -> Optional[str]:
+    def role(self) -> str | None:
         """The measurement role (i.e as input to a structure, as a property of an entity, etc)."""
         return self.properties.get("role")
 
@@ -869,7 +898,7 @@ class RetrievedMetric(RetrievedNode):
     """A metric, read from the relational evidence base."""
 
     @property
-    def category_id(self) -> Optional[str]:
+    def category_id(self) -> str | None:
         """The metric kind's id: what `Metric.kindId` and `Metric.kind` read."""
         return self.properties.get("category_id")
 
@@ -879,23 +908,29 @@ class RetrievedMetric(RetrievedNode):
         return self.properties.get("value")
 
     @property
-    def observed_at(self) -> Optional[datetime]:
+    def observed_at(self) -> datetime | None:
         """When the world was observed."""
         return self.properties.get("__observed_at")
 
     @property
-    def asserted_at(self) -> Optional[datetime]:
+    def asserted_at(self) -> datetime | None:
         """When this measurement was claimed."""
         return self.properties.get("__asserted_at")
 
     @classmethod
-    def from_row(cls, controller: "GraphController", row: "Metric", graph_name: str = "", stands: Optional[bool] = None) -> "RetrievedMetric":
+    def from_row(
+        cls,
+        controller: "GraphController",
+        row: "Metric",
+        graph_name: str = "",
+        stands: bool | None = None,
+    ) -> "RetrievedMetric":
         """Adapt an `evidence.models.Metric` row to the node-shaped API surface.
 
         ``stands`` is accepted and ignored, for the same reason it is on
         `RetrievedStructure.from_row`.
         """
-        properties: Dict[str, JSONValue] = {
+        properties: dict[str, JSONValue] = {
             "key": row.key,
             "value": row.value,
             "category_id": str(row.kind_id),
@@ -945,7 +980,7 @@ class RetrievedGraphTableRender:
     graph_name: str
     graph_id: int
     graph_query_id: int
-    rows: List[Dict[str, JSONValue]]
+    rows: list[dict[str, JSONValue]]
 
 
 @dataclass
@@ -954,7 +989,7 @@ class RetrievedTablePlanRender:
 
     graph_id: int
     plan: "TableQueryPlan"
-    rows: List[Dict[str, JSONValue]]
+    rows: list[dict[str, JSONValue]]
 
 
 # The nodes / path / pairs render shapes and `RetrievedNodePathRender` /

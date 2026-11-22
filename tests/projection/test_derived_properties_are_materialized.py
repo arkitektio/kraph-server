@@ -8,24 +8,36 @@ History: only `index=True` properties reached the graph and the rest were
 folded from the state vector on read, N × (1 + 3P) round-trips per list.
 """
 
-import pytest
-from core import models as core_models
-from graph_engine import projector
-from graph_engine.controller import GraphController
-import uuid
-import kante
-from kante.context import HttpContext
 import logging
+import uuid
+
+import kante
+import pytest
 from authentikate.models import Organization
+from kante.context import HttpContext
+
+from core import models as core_models
 from core.enums import ValueKind
 from evidence import models as evidence_models
 from evidence import state as state_module
 from evidence import writer
+from graph_engine import projector
+from graph_engine.controller import GraphController
 from tests.support import reads, writes
 
-
-INDEXED = {"key": "indexed_length", "value_kind": "FLOAT", "derivation": "ROLLUP", "index": True, "rule": {"source_node": "ROI", "key": "vector_length", "aggregation": "MEAN"}}
-NOT_INDEXED = {"key": "quiet_length", "value_kind": "FLOAT", "derivation": "ROLLUP", "rule": {"source_node": "ROI", "key": "vector_length", "aggregation": "MAX"}}
+INDEXED = {
+    "key": "indexed_length",
+    "value_kind": "FLOAT",
+    "derivation": "ROLLUP",
+    "index": True,
+    "rule": {"source_node": "ROI", "key": "vector_length", "aggregation": "MEAN"},
+}
+NOT_INDEXED = {
+    "key": "quiet_length",
+    "value_kind": "FLOAT",
+    "derivation": "ROLLUP",
+    "rule": {"source_node": "ROI", "key": "vector_length", "aggregation": "MAX"},
+}
 
 
 @pytest.fixture
@@ -40,7 +52,9 @@ def category_with_both(test_graph: core_models.Graph) -> core_models.EntityCateg
 
 
 @pytest.fixture
-def measured_ref(test_graph: core_models.Graph, category_with_both: core_models.EntityCategory) -> str:
+def measured_ref(
+    test_graph: core_models.Graph, category_with_both: core_models.EntityCategory
+) -> str:
     """An entity ref with real measurements behind it.
 
     Both declared properties read the same metric key through different
@@ -55,7 +69,9 @@ def measured_ref(test_graph: core_models.Graph, category_with_both: core_models.
     organization = test_graph.organization
     assertion = writer.create_assertion(organization, subject="tester", app_id="pytest")
     roi = writer.ensure_structure_kind(organization, "ROI")
-    metric_category = writer.ensure_metric_kind(organization, roi, "vector_length", ValueKind.FLOAT)
+    metric_category = writer.ensure_metric_kind(
+        organization, roi, "vector_length", ValueKind.FLOAT
+    )
 
     structure = writer.ensure_structure(organization, roi, "roi-indexed", assertion)
     ref = f"{test_graph.age_name}:11111111-0000-0000-0000-000000000001"
@@ -68,7 +84,14 @@ def measured_ref(test_graph: core_models.Graph, category_with_both: core_models.
     )
 
     for value in (10.0, 30.0):
-        metric = writer.record_metric(organization, structure, metric_category, key="vector_length", value=value, assertion=assertion)
+        metric = writer.record_metric(
+            organization,
+            structure,
+            metric_category,
+            key="vector_length",
+            value=value,
+            assertion=assertion,
+        )
         state_module.merge(metric, [ref])
 
     return ref
@@ -86,10 +109,17 @@ def test_every_derived_property_is_materialized(
     version of this test ran with no evidence and ended up asserting `{} == {}`
     — the same vacuous-pass shape this whole transition has been removing.
     """
-    everything = projector.derive_properties(test_graph, measured_ref, category_with_both)
+    everything = projector.derive_properties(
+        test_graph, measured_ref, category_with_both
+    )
 
-    assert everything == {"indexed_length": pytest.approx(20.0), "quiet_length": pytest.approx(30.0)}, "Both properties must derive: MEAN of 10 and 30 is 20, MAX is 30"
-    assert not hasattr(projector, "split_properties"), "The indexed/on-read split is gone, not merely unused"
+    assert everything == {
+        "indexed_length": pytest.approx(20.0),
+        "quiet_length": pytest.approx(30.0),
+    }, "Both properties must derive: MEAN of 10 and 30 is 20, MAX is 30"
+    assert not hasattr(projector, "split_properties"), (
+        "The indexed/on-read split is gone, not merely unused"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -103,10 +133,16 @@ def test_the_statistics_are_materialized_beside_the_value(
     `RichProperty` used to read these off the `State` row per property per node,
     which is the same read-time computation the value itself no longer does.
     """
-    statistics = projector._property_statistics(test_graph, measured_ref, category_with_both)
+    statistics = projector._property_statistics(
+        test_graph, measured_ref, category_with_both
+    )
 
-    assert statistics[projector.statistic_key("indexed_length", "n")] == 2, "Two measurements stand behind the mean"
-    assert statistics[projector.statistic_key("indexed_length", "spread")] == pytest.approx(20.0), "30 - 10"
+    assert statistics[projector.statistic_key("indexed_length", "n")] == 2, (
+        "Two measurements stand behind the mean"
+    )
+    assert statistics[
+        projector.statistic_key("indexed_length", "spread")
+    ] == pytest.approx(20.0), "30 - 10"
     assert projector.statistic_key("indexed_length", "from") in statistics
     assert projector.statistic_key("indexed_length", "to") in statistics
 
@@ -165,7 +201,11 @@ def test_sorting_a_property_without_index_is_allowed(
 
     results = controller.list_entities_for_category(
         category_with_both,
-        ordering=[input_models.EntityOrder(property=input_models.PropertyOrder(key="quiet_length", direction="ASC"))],
+        ordering=[
+            input_models.EntityOrder(
+                property=input_models.PropertyOrder(key="quiet_length", direction="ASC")
+            )
+        ],
     )
     assert results == []
 
@@ -188,7 +228,10 @@ def test_a_rule_less_property_is_not_filterable(test_graph: core_models.Graph) -
         graph=test_graph,
         key="Direct",
         age_name="direct",
-        property_definitions=[{"key": "nickname", "value_kind": "STRING", "derivation": "LATEST"}, {"key": "plain", "value_kind": "STRING"}],
+        property_definitions=[
+            {"key": "nickname", "value_kind": "STRING", "derivation": "LATEST"},
+            {"key": "plain", "value_kind": "STRING"},
+        ],
     )
 
     controller = GraphController(projector=None)
@@ -199,7 +242,9 @@ def test_a_rule_less_property_is_not_filterable(test_graph: core_models.Graph) -
 
 
 @pytest.mark.django_db(transaction=True)
-def test_materialize_refuses_a_rule_less_property(table_projector, authenticated_context) -> None:
+def test_materialize_refuses_a_rule_less_property(
+    table_projector, authenticated_context
+) -> None:
     """Declaring an uncomputable property fails loudly, naming the fix.
 
     Same shape as the existing refusal of a derivation over an entity source: the
@@ -215,7 +260,11 @@ def test_materialize_refuses_a_rule_less_property(table_projector, authenticated
             entities=[
                 models.EntityDefinitionInput(
                     key="Person",
-                    property_definitions=[models.PropertyDefinitionInput(key="nickname", type=models.PropertyType.STRING)],
+                    property_definitions=[
+                        models.PropertyDefinitionInput(
+                            key="nickname", type=models.PropertyType.STRING
+                        )
+                    ],
                 )
             ]
         ),
@@ -234,7 +283,9 @@ def test_materialize_refuses_a_rule_less_property(table_projector, authenticated
 
 
 @pytest.mark.django_db(transaction=True)
-def test_an_unknown_sort_direction_is_rejected(test_graph: core_models.Graph, table_projector) -> None:
+def test_an_unknown_sort_direction_is_rejected(
+    test_graph: core_models.Graph, table_projector
+) -> None:
     """Directions are interpolated into Cypher, so `.upper()` is not validation.
 
     The direction arrives from a GraphQL variable and lands in the query text.
@@ -250,8 +301,14 @@ def test_an_unknown_sort_direction_is_rejected(test_graph: core_models.Graph, ta
     assert controller._validate_direction("DESC") == "DESC"
 
 
-async def _properties(api_schema: kante.Schema, ctx: HttpContext, entity_id: str, graph) -> dict:
-    result = await api_schema.execute(reads.NODE_PROPERTIES, variable_values={"id": entity_id, "graph": str(graph.id)}, context_value=ctx)
+async def _properties(
+    api_schema: kante.Schema, ctx: HttpContext, entity_id: str, graph
+) -> dict:
+    result = await api_schema.execute(
+        reads.NODE_PROPERTIES,
+        variable_values={"id": entity_id, "graph": str(graph.id)},
+        context_value=ctx,
+    )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     return result.data["node"]["properties"]
 
@@ -264,7 +321,9 @@ async def test_recording_a_metric_updates_the_derived_value(
     test_graph: core_models.Graph,
 ) -> None:
     """Record a measurement; the entity's MEAN moves. No recalculate call."""
-    category = await core_models.EntityCategory.objects.filter(graph=test_graph, key="AIS").afirst()
+    category = await core_models.EntityCategory.objects.filter(
+        graph=test_graph, key="AIS"
+    ).afirst()
     assert category is not None
     object_id = f"roi_{uuid.uuid4().hex[:8]}"
 
@@ -273,7 +332,19 @@ async def test_recording_a_metric_updates_the_derived_value(
         variable_values={
             "input": {
                 "term": category.key,
-                "supportingEvidence": [{"identifier": "ROI", "object": object_id, "metrics": [{"key": "vector_length", "value": 40.0, "valueKind": "FLOAT"}]}],
+                "supportingEvidence": [
+                    {
+                        "identifier": "ROI",
+                        "object": object_id,
+                        "metrics": [
+                            {
+                                "key": "vector_length",
+                                "value": 40.0,
+                                "valueKind": "FLOAT",
+                            }
+                        ],
+                    }
+                ],
             }
         },
         context_value=simple_api_context,
@@ -281,7 +352,9 @@ async def test_recording_a_metric_updates_the_derived_value(
     assert created.errors is None, f"GraphQL errors: {created.errors}"
     entity_id = created.data["assertEntityExists"]["instance"]["id"]
 
-    assert (await _properties(api_schema, simple_api_context, entity_id, test_graph))["avg_length"] == pytest.approx(40.0)
+    assert (await _properties(api_schema, simple_api_context, entity_id, test_graph))[
+        "avg_length"
+    ] == pytest.approx(40.0)
 
     # A second measurement, recorded against the structure — not the entity.
     recorded = await api_schema.execute(
@@ -300,7 +373,9 @@ async def test_recording_a_metric_updates_the_derived_value(
     assert recorded.errors is None, f"GraphQL errors: {recorded.errors}"
 
     after = await _properties(api_schema, simple_api_context, entity_id, test_graph)
-    assert after["avg_length"] == pytest.approx(45.0), "The entity's MEAN must reflect the new measurement without an explicit recalculate"
+    assert after["avg_length"] == pytest.approx(45.0), (
+        "The entity's MEAN must reflect the new measurement without an explicit recalculate"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -315,7 +390,9 @@ async def test_the_projection_carries_its_schema_version(
     Without this, a value cannot be told apart from one derived under an older
     schema — which is the staleness the whole versioning story rests on.
     """
-    category = await core_models.EntityCategory.objects.filter(graph=test_graph, key="AIS").afirst()
+    category = await core_models.EntityCategory.objects.filter(
+        graph=test_graph, key="AIS"
+    ).afirst()
     assert category is not None
 
     created = await api_schema.execute(
@@ -331,21 +408,33 @@ async def test_the_projection_carries_its_schema_version(
             node(id: $id, graph: $graph) { asOfSeq graph { id } ... on Entity { id } }
         }
         """,
-        variable_values={"id": created.data["assertEntityExists"]["instance"]["id"], "graph": str(test_graph.id)},
+        variable_values={
+            "id": created.data["assertEntityExists"]["instance"]["id"],
+            "graph": str(test_graph.id),
+        },
         context_value=simple_api_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
-    assert result.data["node"]["graph"]["id"] == str(test_graph.id) and result.data["node"]["asOfSeq"] >= 0, "A projected entity names the view and the position it is as of"
+    assert (
+        result.data["node"]["graph"]["id"] == str(test_graph.id)
+        and result.data["node"]["asOfSeq"] >= 0
+    ), "A projected entity names the view and the position it is as of"
 
 
 def _property(source_value_kind: str | None = None, aggregation: str = "MEAN") -> dict:
-    rule: dict = {"source_node": "@mikro/roi", "key": "confidence", "aggregation": aggregation}
+    rule: dict = {
+        "source_node": "@mikro/roi",
+        "key": "confidence",
+        "aggregation": aggregation,
+    }
     if source_value_kind is not None:
         rule["source_value_kind"] = source_value_kind
     return {"key": "score", "value_kind": "FLOAT", "derivation": "ROLLUP", "rule": rule}
 
 
-def _category(graph: core_models.Graph, source_value_kind: str | None = None) -> core_models.EntityCategory:
+def _category(
+    graph: core_models.Graph, source_value_kind: str | None = None
+) -> core_models.EntityCategory:
     return core_models.EntityCategory.objects.create(
         graph=graph,
         key=f"Scored{source_value_kind or 'Any'}",
@@ -374,10 +463,26 @@ def measured(
     return ref
 
 
-def _record(organization: Organization, roi_kind: evidence_models.StructureKind, assertion: evidence_models.Assertion, ref: str, value: object, value_kind: ValueKind) -> None:
-    structure = evidence_models.Structure.objects.for_organization(organization).get(object="roi-family")
+def _record(
+    organization: Organization,
+    roi_kind: evidence_models.StructureKind,
+    assertion: evidence_models.Assertion,
+    ref: str,
+    value: object,
+    value_kind: ValueKind,
+) -> None:
+    structure = evidence_models.Structure.objects.for_organization(organization).get(
+        object="roi-family"
+    )
     term = writer.ensure_metric_kind(organization, roi_kind, "confidence", value_kind)
-    metric = writer.record_metric(organization, structure, term, key="confidence", value=value, assertion=assertion)
+    metric = writer.record_metric(
+        organization,
+        structure,
+        term,
+        key="confidence",
+        value=value,
+        assertion=assertion,
+    )
     state_module.merge(metric, [ref])
 
 
@@ -441,7 +546,9 @@ def test_a_declared_rule_reads_only_its_own_family(
     category = _category(graph_a, source_value_kind="FLOAT")
     derived = projector.derive_properties(graph_a, measured, category)
 
-    assert derived["score"] == pytest.approx(50.0), "MEAN of 40 and 60, with the label excluded"
+    assert derived["score"] == pytest.approx(50.0), (
+        "MEAN of 40 and 60, with the label excluded"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -472,8 +579,12 @@ def test_an_ambiguous_key_warns_and_does_not_derive(
     messages = [record.getMessage() for record in caplog.records]
     ambiguity = [message for message in messages if "source_value_kind" in message]
     assert ambiguity, f"The warning must say how to fix it; got {messages}"
-    assert "FLOAT" in ambiguity[0] and "STRING" in ambiguity[0], "…and name the terms it could not choose between"
-    assert "INT" not in ambiguity[0], "Only terms that exist — FLOAT widening to INT is not a term anybody declared"
+    assert "FLOAT" in ambiguity[0] and "STRING" in ambiguity[0], (
+        "…and name the terms it could not choose between"
+    )
+    assert "INT" not in ambiguity[0], (
+        "Only terms that exist — FLOAT widening to INT is not a term anybody declared"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -496,4 +607,6 @@ def test_a_key_with_no_evidence_derives_nothing_quietly(
     # No value, spelled as `None`: the projector hands the writer every key so a
     # key whose evidence went away is cleared from the drawing (RFC 0023).
     assert derived.get("score") is None
-    assert not [record for record in caplog.records if "source_value_kind" in str(record.msg)]
+    assert not [
+        record for record in caplog.records if "source_value_kind" in str(record.msg)
+    ]

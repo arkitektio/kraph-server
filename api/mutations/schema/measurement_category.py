@@ -13,6 +13,7 @@ from kante.types import Info
 
 from api import inputs, types
 from core import models
+
 from ._category import create_category, delete_category, update_category
 from ._guards import refuse_edge_properties
 
@@ -38,7 +39,9 @@ def create_measurement_category(
     return cast(types.MeasurementCategory, category)
 
 
-def update_measurement_category(info: Info, input: inputs.UpdateMeasurementCategoryInput) -> types.MeasurementCategory:
+def update_measurement_category(
+    info: Info, input: inputs.UpdateMeasurementCategoryInput
+) -> types.MeasurementCategory:
     """Change a measurement category's label, colour, image, pin or rule."""
     model = input.to_pydantic()
     item = update_category(

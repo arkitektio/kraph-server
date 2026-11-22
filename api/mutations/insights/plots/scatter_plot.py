@@ -1,5 +1,5 @@
-from kante.types import Info
 import strawberry
+from kante.types import Info
 
 from api import inputs, types
 from api.mutations._scoped import scoped
@@ -14,7 +14,9 @@ def _resolve_plot_query(info: Info, model) -> models.GraphTableQuery:
     could be built over another tenant's saved query and would then render that
     tenant's data through `render_graph_table`.
     """
-    return scoped(info, models.GraphTableQuery, model.graph_query_id, what="graph table query")
+    return scoped(
+        info, models.GraphTableQuery, model.graph_query_id, what="graph table query"
+    )
 
 
 def _own_plot(info: Info, pk) -> models.ScatterPlot:
@@ -30,12 +32,16 @@ def _own_plot(info: Info, pk) -> models.ScatterPlot:
 
     user = info.context.request.user
     if not user.is_superuser and plot.creator_id != user.id:
-        raise PermissionError("You do not have permission to change this scatter plot — it belongs to somebody else.")
+        raise PermissionError(
+            "You do not have permission to change this scatter plot — it belongs to somebody else."
+        )
 
     return plot
 
 
-def create_scatter_plot(info: Info, input: inputs.CreateScatterPlotInput) -> types.ScatterPlot:
+def create_scatter_plot(
+    info: Info, input: inputs.CreateScatterPlotInput
+) -> types.ScatterPlot:
     model = input.to_pydantic()
     graph_query = _resolve_plot_query(info, model)
 
@@ -55,7 +61,9 @@ def create_scatter_plot(info: Info, input: inputs.CreateScatterPlotInput) -> typ
     )
 
 
-def update_scatter_plot(info: Info, input: inputs.UpdateScatterPlotInput) -> types.ScatterPlot:
+def update_scatter_plot(
+    info: Info, input: inputs.UpdateScatterPlotInput
+) -> types.ScatterPlot:
     model = input.to_pydantic()
     scatter_plot = _own_plot(info, model.id)
     scatter_plot.graph_query = _resolve_plot_query(info, model)
@@ -74,10 +82,10 @@ def update_scatter_plot(info: Info, input: inputs.UpdateScatterPlotInput) -> typ
     return scatter_plot
 
 
-def delete_scatter_plot(info: Info, input: inputs.DeleteScatterPlotInput) -> strawberry.ID:
+def delete_scatter_plot(
+    info: Info, input: inputs.DeleteScatterPlotInput
+) -> strawberry.ID:
     model = input.to_pydantic()
     item = _own_plot(info, model.id)
     item.delete()
     return strawberry.ID(str(model.id))
-
-

@@ -32,14 +32,15 @@ Three things below look like they could be parameters and are deliberately not:
   default.
 """
 
-from typing import Callable, Optional
+from collections.abc import Callable
 
 import strawberry
 
 from api import context
+
+from .._scoped import schema_graph, schema_scoped
 from ._guards import delete_or_explain, refuse_bad_color
 from ._rematerialize import fingerprint, rematerialize_if_moved
-from .._scoped import schema_graph, schema_scoped
 
 
 def _patch_fields(item, model, manager) -> bool:
@@ -98,7 +99,9 @@ def create_category(info, model, proxy, creator: Callable, *, node: bool):
 
     category = creator(graph, model)
 
-    proxy.objects._apply_pin(category, info.context.request.user, getattr(model, "pin", None))
+    proxy.objects._apply_pin(
+        category, info.context.request.user, getattr(model, "pin", None)
+    )
 
     if getattr(model, "backfill", False):
         context.get_controller().backfill_category(category)
@@ -120,7 +123,7 @@ def update_category(
     what: str,
     node: bool,
     rebuild_on_rule_change: bool,
-    patch: Optional[Callable] = None,
+    patch: Callable | None = None,
 ):
     """Patch a category, then settle what the change owes the projection."""
     item = schema_scoped(info, proxy, model.id, what=what)
@@ -134,7 +137,9 @@ def update_category(
 
     persisted = (patch or _patch_fields)(item, model, proxy.objects)
 
-    proxy.objects._apply_pin(item, info.context.request.user, getattr(model, "pin", None))
+    proxy.objects._apply_pin(
+        item, info.context.request.user, getattr(model, "pin", None)
+    )
 
     if not persisted:
         item.save()

@@ -10,7 +10,8 @@ materialized is what decides whether that claim is drawn, and asking for one her
 would put the coupling back in the tests after removing it from the API.
 """
 
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 import kante
 from kante.context import HttpContext
@@ -114,30 +115,78 @@ CREATE_GRAPH = """
 """
 
 
-async def execute(api_schema: kante.Schema, ctx: HttpContext, document: str, variables: dict[str, Any] | None = None) -> Any:
+async def execute(
+    api_schema: kante.Schema,
+    ctx: HttpContext,
+    document: str,
+    variables: dict[str, Any] | None = None,
+) -> Any:
     """Run one document and hand back its data; a GraphQL error is a failed test."""
-    result = await api_schema.execute(document, variable_values=variables or {}, context_value=ctx)
+    result = await api_schema.execute(
+        document, variable_values=variables or {}, context_value=ctx
+    )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     return result.data
 
 
-async def _mutate(api_schema: kante.Schema, ctx: HttpContext, document: str, field: str, payload: dict[str, Any]) -> Any:
+async def _mutate(
+    api_schema: kante.Schema,
+    ctx: HttpContext,
+    document: str,
+    field: str,
+    payload: dict[str, Any],
+) -> Any:
     return (await execute(api_schema, ctx, document, {"input": payload}))[field]
 
 
-async def assert_entity(api_schema: kante.Schema, ctx: HttpContext, term: str, *, same_as: Iterable[str] | None = None, evidence: Iterable[dict[str, Any]] | None = None) -> dict[str, Any]:
+async def assert_entity(
+    api_schema: kante.Schema,
+    ctx: HttpContext,
+    term: str,
+    *,
+    same_as: Iterable[str] | None = None,
+    evidence: Iterable[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Claim that an entity of this word exists, optionally as one thing with others. Returns the whole payload."""
-    return await _mutate(api_schema, ctx, ASSERT_ENTITY, "assertEntityExists", {"term": term, "supportingEvidence": list(evidence or []), "sameAs": list(same_as or [])})
+    return await _mutate(
+        api_schema,
+        ctx,
+        ASSERT_ENTITY,
+        "assertEntityExists",
+        {
+            "term": term,
+            "supportingEvidence": list(evidence or []),
+            "sameAs": list(same_as or []),
+        },
+    )
 
 
 async def merge(api_schema: kante.Schema, ctx: HttpContext, refs: Iterable[str]) -> str:
     """Claim that these instances are one thing. Returns the first sameness claim's id."""
-    return (await _mutate(api_schema, ctx, ASSERT_SAME, "assertSameInstance", {"instances": list(refs)}))["links"][0]["id"]
+    return (
+        await _mutate(
+            api_schema,
+            ctx,
+            ASSERT_SAME,
+            "assertSameInstance",
+            {"instances": list(refs)},
+        )
+    )["links"][0]["id"]
 
 
-async def differ(api_schema: kante.Schema, ctx: HttpContext, refs: Iterable[str]) -> str:
+async def differ(
+    api_schema: kante.Schema, ctx: HttpContext, refs: Iterable[str]
+) -> str:
     """Claim that these instances are two things. Returns the difference claim's id."""
-    return (await _mutate(api_schema, ctx, ASSERT_DIFFERENT, "assertDifferentInstance", {"instances": list(refs)}))["links"][0]["id"]
+    return (
+        await _mutate(
+            api_schema,
+            ctx,
+            ASSERT_DIFFERENT,
+            "assertDifferentInstance",
+            {"instances": list(refs)},
+        )
+    )["links"][0]["id"]
 
 
 async def create_entity(
@@ -205,12 +254,19 @@ async def create_relation(
             ctx,
             ASSERT_RELATION_EXISTS,
             "assertRelationExists",
-            {"term": term, "sourceId": source, "targetId": target, "supportingEvidence": []},
+            {
+                "term": term,
+                "sourceId": source,
+                "targetId": target,
+                "supportingEvidence": [],
+            },
         )
     )["link"]["id"]
 
 
-async def classify(api_schema: kante.Schema, ctx: HttpContext, pairs: Iterable[tuple[str, str]]) -> list[str]:
+async def classify(
+    api_schema: kante.Schema, ctx: HttpContext, pairs: Iterable[tuple[str, str]]
+) -> list[str]:
     """Claim, as one act, that each of these nodes is of the paired word."""
     classified = await _mutate(
         api_schema,
@@ -421,19 +477,38 @@ ASSERT_ENTITY_DRAWN = """
 
 def roi(obj: str, length: float | None) -> list[dict[str, Any]]:
     """One ROI as supporting evidence, measured once when `length` is given."""
-    metrics = [] if length is None else [{"key": "vector_length", "value": length, "valueKind": "FLOAT"}]
+    metrics = (
+        []
+        if length is None
+        else [{"key": "vector_length", "value": length, "valueKind": "FLOAT"}]
+    )
     return [{"identifier": "ROI", "object": obj, "metrics": metrics}]
 
 
-async def create_structure(api_schema: kante.Schema, ctx: HttpContext, *, identifier: str = "ROI", object: str | None = None, metrics: Iterable[dict[str, Any]] | None = None) -> str:
+async def create_structure(
+    api_schema: kante.Schema,
+    ctx: HttpContext,
+    *,
+    identifier: str = "ROI",
+    object: str | None = None,
+    metrics: Iterable[dict[str, Any]] | None = None,
+) -> str:
     """Claim that an external datum exists, with any measurements of it. Returns its id.
 
     The kind is minted on demand — kinds are the organization's vocabulary and a
     write may name one nobody has used yet (RFC 0023)."""
     import uuid
 
-    payload = {"identifier": identifier, "object": object or f"roi_{uuid.uuid4().hex[:8]}", "metrics": list(metrics or [])}
-    return (await _mutate(api_schema, ctx, ASSERT_STRUCTURE, "assertStructureExists", payload))["structure"]["id"]
+    payload = {
+        "identifier": identifier,
+        "object": object or f"roi_{uuid.uuid4().hex[:8]}",
+        "metrics": list(metrics or []),
+    }
+    return (
+        await _mutate(
+            api_schema, ctx, ASSERT_STRUCTURE, "assertStructureExists", payload
+        )
+    )["structure"]["id"]
 
 
 # Todo lists (product state, `todos/`).

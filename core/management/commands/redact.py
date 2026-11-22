@@ -27,11 +27,11 @@ so nothing breaks, and "somebody claimed this and later withdrew it" remains
 answerable after the thing itself has left.
 """
 
+from authentikate.models import Organization
 from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, transaction
 
 from api.extensions.projection import current_or_default
-from authentikate.models import Organization
 from core import models
 from evidence import models as evidence_models
 from evidence import writer
@@ -45,21 +45,44 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser) -> None:
         """Declare the command's arguments."""
-        parser.add_argument("--organization", required=True, help="Slug of the organization owning the evidence.")
-        parser.add_argument("--structure", help="Primary key of a structure to erase, with every metric describing it.")
+        parser.add_argument(
+            "--organization",
+            required=True,
+            help="Slug of the organization owning the evidence.",
+        )
+        parser.add_argument(
+            "--structure",
+            help="Primary key of a structure to erase, with every metric describing it.",
+        )
         parser.add_argument("--entity", help="Uuid of an entity or event to erase.")
-        parser.add_argument("--subject", default="redaction", help="Who is accountable for this erasure. Recorded on the assertion.")
-        parser.add_argument("--dry-run", action="store_true", help="Report what would be destroyed without destroying it.")
-        parser.add_argument("--yes", action="store_true", help="Skip the confirmation prompt. Required for non-interactive use.")
+        parser.add_argument(
+            "--subject",
+            default="redaction",
+            help="Who is accountable for this erasure. Recorded on the assertion.",
+        )
+        parser.add_argument(
+            "--dry-run",
+            action="store_true",
+            help="Report what would be destroyed without destroying it.",
+        )
+        parser.add_argument(
+            "--yes",
+            action="store_true",
+            help="Skip the confirmation prompt. Required for non-interactive use.",
+        )
 
     def handle(self, *args, **options) -> None:
         """Erase the named target."""
         if bool(options["structure"]) == bool(options["entity"]):
             raise CommandError("Name exactly one of --structure or --entity.")
 
-        organization = Organization.objects.filter(identifier=options["organization"]).first()
+        organization = Organization.objects.filter(
+            identifier=options["organization"]
+        ).first()
         if organization is None:
-            raise CommandError(f"No organization with identifier '{options['organization']}'.")
+            raise CommandError(
+                f"No organization with identifier '{options['organization']}'."
+            )
 
         if options["structure"]:
             plan = self._plan_structure(organization, options["structure"])
@@ -104,19 +127,29 @@ class Command(BaseCommand):
         self._reproject(plan["graphs"])
 
     def _plan_structure(self, organization, structure_id: str) -> dict:
-        structure = evidence_models.Structure.objects.for_organization(organization).filter(pk=structure_id).first()
+        structure = (
+            evidence_models.Structure.objects.for_organization(organization)
+            .filter(pk=structure_id)
+            .first()
+        )
         if structure is None:
             raise CommandError(f"No structure {structure_id} in this organization.")
 
-        metrics = evidence_models.Metric.objects.for_organization(organization).filter(structure=structure)
-        links = evidence_models.Link.objects.for_organization(organization).filter(source_ref=str(structure.pk))
+        metrics = evidence_models.Metric.objects.for_organization(organization).filter(
+            structure=structure
+        )
+        links = evidence_models.Link.objects.for_organization(organization).filter(
+            source_ref=str(structure.pk)
+        )
         refs = sorted({str(ref) for ref in links.values_list("target_ref", flat=True)})
 
         def destroy() -> None:
             # State rows are folded statistics over these metrics, so they have to
             # be dropped and refolded rather than left holding a contribution
             # whose source no longer exists.
-            evidence_models.State.objects.for_organization(organization).filter(claim_ref__in=refs).delete()
+            evidence_models.State.objects.for_organization(organization).filter(
+                claim_ref__in=refs
+            ).delete()
             links.delete()
             structure.delete()  # cascades to its metrics
 
@@ -139,13 +172,25 @@ class Command(BaseCommand):
         }
 
     def _plan_entity(self, organization, ref: str) -> dict:
-        node = evidence_models.Instance.objects.for_organization(organization).filter(id=ref).first()
+        node = (
+            evidence_models.Instance.objects.for_organization(organization)
+            .filter(id=ref)
+            .first()
+        )
         if node is None:
             raise CommandError(f"No node with ref '{ref}' in this organization.")
 
-        links = evidence_models.Link.objects.for_organization(organization).filter(source_ref=ref) | evidence_models.Link.objects.for_organization(organization).filter(target_ref=ref)
-        states = evidence_models.State.objects.for_organization(organization).filter(claim_ref=ref)
-        lifecycle = evidence_models.Standing.objects.for_organization(organization).filter(target_id=ref)
+        links = evidence_models.Link.objects.for_organization(organization).filter(
+            source_ref=ref
+        ) | evidence_models.Link.objects.for_organization(organization).filter(
+            target_ref=ref
+        )
+        states = evidence_models.State.objects.for_organization(organization).filter(
+            claim_ref=ref
+        )
+        lifecycle = evidence_models.Standing.objects.for_organization(
+            organization
+        ).filter(target_id=ref)
 
         def destroy() -> None:
             states.delete()
@@ -185,8 +230,15 @@ class Command(BaseCommand):
         # graph — a `dict[ref, graph]` could only record the last one. This called
         # `.values()` on that list, so `redact` raised `AttributeError` the moment
         # it reached the reprojection step and the command was broken outright.
-        graph_ids = {graph_id for _, graph_id in selector_module.graph_ids_for_instance_ids(organization, refs)}
-        return list(models.Graph.objects.filter(organization=organization, pk__in=graph_ids))
+        graph_ids = {
+            graph_id
+            for _, graph_id in selector_module.graph_ids_for_instance_ids(
+                organization, refs
+            )
+        }
+        return list(
+            models.Graph.objects.filter(organization=organization, pk__in=graph_ids)
+        )
 
     def _reproject(self, graphs: list[models.Graph]) -> None:
         """Rebuild every projection that referenced the destroyed evidence.
@@ -202,4 +254,3 @@ class Command(BaseCommand):
         for graph in graphs:
             self.stdout.write(f"rebuilding {graph.name} ({graph.age_name})…")
             controller.rebuild_projection(graph)
-

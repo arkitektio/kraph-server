@@ -9,19 +9,24 @@ of the other six was one-way through the API.
 """
 
 from __future__ import annotations
+
 import uuid
+from datetime import UTC, datetime
+
 import kante
 import pytest
 from kante.context import HttpContext
+
 from core import models as core_models
-from evidence import models as evidence_models
 from evidence import claims as claims_module
+from evidence import models as evidence_models
 from evidence import writer
 from tests.support import claims, reads, writes
-from datetime import datetime, timezone
 
 
-async def _structure_kind(test_graph: core_models.Graph) -> evidence_models.StructureKind:
+async def _structure_kind(
+    test_graph: core_models.Graph,
+) -> evidence_models.StructureKind:
     kind, _ = await evidence_models.StructureKind.all_objects.aget_or_create(
         organization=test_graph.organization,
         identifier="roi_attest",
@@ -29,7 +34,9 @@ async def _structure_kind(test_graph: core_models.Graph) -> evidence_models.Stru
     return kind
 
 
-async def _make_structure(api_schema: kante.Schema, ctx: HttpContext, test_graph: core_models.Graph) -> str:
+async def _make_structure(
+    api_schema: kante.Schema, ctx: HttpContext, test_graph: core_models.Graph
+) -> str:
     kind = await _structure_kind(test_graph)
     result = await api_schema.execute(
         """
@@ -41,7 +48,9 @@ async def _make_structure(api_schema: kante.Schema, ctx: HttpContext, test_graph
             "input": {
                 "identifier": kind.identifier,
                 "object": f"obj_{uuid.uuid4().hex[:8]}",
-                "metrics": [{"key": "vector_length", "value": 12.5, "valueKind": "FLOAT"}],
+                "metrics": [
+                    {"key": "vector_length", "value": 12.5, "valueKind": "FLOAT"}
+                ],
             }
         },
         context_value=ctx,
@@ -52,7 +61,9 @@ async def _make_structure(api_schema: kante.Schema, ctx: HttpContext, test_graph
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_a_retracted_structure_can_be_attested(api_schema, simple_api_context, test_graph):
+async def test_a_retracted_structure_can_be_attested(
+    api_schema, simple_api_context, test_graph
+):
     structure_id = await _make_structure(api_schema, simple_api_context, test_graph)
 
     retracted = await api_schema.execute(
@@ -80,12 +91,16 @@ async def test_a_retracted_structure_can_be_attested(api_schema, simple_api_cont
     )
     assert standings.errors is None, f"GraphQL errors: {standings.errors}"
     positions = [s["stands"] for s in standings.data["standings"]]
-    assert True in positions and False in positions, f"Both positions should survive, got {positions}"
+    assert True in positions and False in positions, (
+        f"Both positions should survive, got {positions}"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_a_retracted_metric_can_be_attested(api_schema, simple_api_context, test_graph):
+async def test_a_retracted_metric_can_be_attested(
+    api_schema, simple_api_context, test_graph
+):
     structure_id = await _make_structure(api_schema, simple_api_context, test_graph)
 
     metrics = await api_schema.execute(
@@ -115,18 +130,28 @@ async def test_a_retracted_metric_can_be_attested(api_schema, simple_api_context
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_a_retracted_link_can_be_attested(api_schema, simple_api_context, test_graph):
+async def test_a_retracted_link_can_be_attested(
+    api_schema, simple_api_context, test_graph
+):
     """One mutation for every `Link.Kind` — here a relation between two entities.
 
     A relation rather than a classification: `connections` deliberately reports
     neither labels nor merges, so a CLASSIFIES claim is not reachable that way —
     it surfaces as `labels` instead.
     """
-    category = await core_models.EntityCategory.objects.filter(graph=test_graph).afirst()
-    assert category is not None, "The bio schema must materialize at least one entity category"
+    category = await core_models.EntityCategory.objects.filter(
+        graph=test_graph
+    ).afirst()
+    assert category is not None, (
+        "The bio schema must materialize at least one entity category"
+    )
 
-    relation_category = await core_models.RelationCategory.objects.filter(graph=test_graph).afirst()
-    assert relation_category is not None, "The bio schema must materialize at least one relation category"
+    relation_category = await core_models.RelationCategory.objects.filter(
+        graph=test_graph
+    ).afirst()
+    assert relation_category is not None, (
+        "The bio schema must materialize at least one relation category"
+    )
 
     async def _entity() -> str:
         created = await api_schema.execute(
@@ -141,7 +166,13 @@ async def test_a_retracted_link_can_be_attested(api_schema, simple_api_context, 
 
     related = await api_schema.execute(
         "mutation Rel($input: AssertRelationExistsInput!) { assertRelationExists(input: $input) { link { id kind } } }",
-        variable_values={"input": {"sourceId": source_id, "targetId": target_id, "term": relation_category.key}},
+        variable_values={
+            "input": {
+                "sourceId": source_id,
+                "targetId": target_id,
+                "term": relation_category.key,
+            }
+        },
         context_value=simple_api_context,
     )
     assert related.errors is None, f"GraphQL errors: {related.errors}"
@@ -174,19 +205,41 @@ def test_the_cache_agrees_with_the_fold(organization, roi_kind) -> None:
     all, and no test would have noticed.
     """
     minting = writer.create_assertion(organization, subject="minter", app_id="app")
-    structures = [writer.ensure_structure(organization, kind=roi_kind, object=f"roi-agree-{index}", assertion=minting) for index in range(4)]
+    structures = [
+        writer.ensure_structure(
+            organization, kind=roi_kind, object=f"roi-agree-{index}", assertion=minting
+        )
+        for index in range(4)
+    ]
 
-    writer.retract(organization, structures[1], writer.create_assertion(organization, subject="a", app_id="app"))
-    writer.retract(organization, structures[2], writer.create_assertion(organization, subject="b", app_id="app"))
-    writer.attest(organization, structures[2], writer.create_assertion(organization, subject="c", app_id="app"))
+    writer.retract(
+        organization,
+        structures[1],
+        writer.create_assertion(organization, subject="a", app_id="app"),
+    )
+    writer.retract(
+        organization,
+        structures[2],
+        writer.create_assertion(organization, subject="b", app_id="app"),
+    )
+    writer.attest(
+        organization,
+        structures[2],
+        writer.create_assertion(organization, subject="c", app_id="app"),
+    )
 
     ids = [str(structure.pk) for structure in structures]
     folded = claims_module.stands_for(organization, "structure", ids)
-    cached = {target_id: claims_module.current(organization, "structure", target_id) for target_id in ids}
+    cached = {
+        target_id: claims_module.current(organization, "structure", target_id)
+        for target_id in ids
+    }
 
     assert cached == folded, "The cache and the fold must be the same answer"
     assert folded[ids[1]] is False
-    assert folded[ids[2]] is True, "Re-attesting after a retraction restores it — and both claims stay on the record"
+    assert folded[ids[2]] is True, (
+        "Re-attesting after a retraction restores it — and both claims stay on the record"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -198,14 +251,33 @@ def test_a_rebuild_reproduces_the_cache(organization, roi_kind) -> None:
     replaying against an unproved cache would prove nothing.
     """
     minting = writer.create_assertion(organization, subject="minter", app_id="app")
-    structures = [writer.ensure_structure(organization, kind=roi_kind, object=f"roi-replay-{index}", assertion=minting) for index in range(3)]
-    writer.retract(organization, structures[0], writer.create_assertion(organization, subject="a", app_id="app"))
+    structures = [
+        writer.ensure_structure(
+            organization, kind=roi_kind, object=f"roi-replay-{index}", assertion=minting
+        )
+        for index in range(3)
+    ]
+    writer.retract(
+        organization,
+        structures[0],
+        writer.create_assertion(organization, subject="a", app_id="app"),
+    )
 
-    before = {str(row.target_id): row.stands for row in evidence_models.CurrentStanding.objects.for_organization(organization)}
+    before = {
+        str(row.target_id): row.stands
+        for row in evidence_models.CurrentStanding.objects.for_organization(
+            organization
+        )
+    }
 
     claims_module.refold_current(organization)
 
-    after = {str(row.target_id): row.stands for row in evidence_models.CurrentStanding.objects.for_organization(organization)}
+    after = {
+        str(row.target_id): row.stands
+        for row in evidence_models.CurrentStanding.objects.for_organization(
+            organization
+        )
+    }
     assert after == before, "A replay of the projection must reproduce it exactly"
 
 
@@ -218,9 +290,15 @@ def test_the_standing_cache_is_total(test_graph) -> None:
     org = test_graph.organization
     node = claims.mint(org, "AIS", "peter")
     assert claims_module.current(org, "node", node) is True
-    writer.retract(org, evidence_models.Instance.all_objects.get(pk=node), writer.create_assertion(org, subject="peter", app_id="pytest"))
+    writer.retract(
+        org,
+        evidence_models.Instance.all_objects.get(pk=node),
+        writer.create_assertion(org, subject="peter", app_id="pytest"),
+    )
     assert claims_module.current(org, "node", node) is False
-    assert not claims_module.standing(evidence_models.Instance.objects.for_organization(org).filter(pk=node), "node").exists()
+    assert not claims_module.standing(
+        evidence_models.Instance.objects.for_organization(org).filter(pk=node), "node"
+    ).exists()
 
 
 @pytest.mark.django_db(transaction=True)
@@ -248,13 +326,23 @@ async def test_a_retraction_shows_up_as_a_standing(
     assert retracted.errors is None, f"GraphQL errors: {retracted.errors}"
     payload = retracted.data["retractEntity"]
 
-    assert [row["stands"] for row in payload["instance"]["standings"]] == [False], "The retraction is on the record, newest first, with its own assertion"
+    assert [row["stands"] for row in payload["instance"]["standings"]] == [False], (
+        "The retraction is on the record, newest first, with its own assertion"
+    )
     assert payload["drawings"] == [], "No view draws it any more"
 
-    read = await api_schema.execute(reads.INSTANCE_STANDINGS, variable_values={"id": entity_id}, context_value=simple_api_context)
+    read = await api_schema.execute(
+        reads.INSTANCE_STANDINGS,
+        variable_values={"id": entity_id},
+        context_value=simple_api_context,
+    )
     assert read.errors is None, f"GraphQL errors: {read.errors}"
-    assert [row["stands"] for row in read.data["instance"]["standings"]] == [False], "and the same answer is readable afterwards, without the write"
-    assert read.data["instance"]["term"]["key"] == "AIS", "The claim outlives the drawing it lost"
+    assert [row["stands"] for row in read.data["instance"]["standings"]] == [False], (
+        "and the same answer is readable afterwards, without the write"
+    )
+    assert read.data["instance"]["term"]["key"] == "AIS", (
+        "The claim outlives the drawing it lost"
+    )
 
     # **Then attest it again.** Both positions stay on the record and the newest is
     # first, by `(at, assertion.seq)` — there is no "reinstate" operation, only more
@@ -267,8 +355,12 @@ async def test_a_retraction_shows_up_as_a_standing(
     assert attested.errors is None, f"GraphQL errors: {attested.errors}"
     claim = attested.data["attestEntity"]["instance"]
 
-    assert [row["stands"] for row in claim["standings"]] == [True, False], "Newest first: it holds again, and the retraction is still on the record"
-    assert attested.data["attestEntity"]["drawings"], "and the view that admits the word draws it again"
+    assert [row["stands"] for row in claim["standings"]] == [True, False], (
+        "Newest first: it holds again, and the retraction is still on the record"
+    )
+    assert attested.data["attestEntity"]["drawings"], (
+        "and the view that admits the word draws it again"
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -504,27 +596,47 @@ async def test_retracting_an_entity_returns_it_from_the_log(
     payload = archive_result.data["retractEntity"]
     archived = payload["instance"]
 
-    assert archived["id"] == entity_id, "The id is the entity's uuid and survives the projection it was removed from"
+    assert archived["id"] == entity_id, (
+        "The id is the entity's uuid and survives the projection it was removed from"
+    )
     assert archived["term"]["key"] == "AIS"
 
     # What a state flag used to say, said by the shape instead. The
     # field is gone: a node read out of a graph is one the evidence says exists,
     # so a flag beside it could only agree with its own presence, and a node with
     # no vertex was answering from the claims — two questions under one name.
-    assert payload["drawings"] == [], "No view draws it any more, which is what retracting it means"
-    assert payload["assertion"]["id"], "And the retraction is itself a claim, with an assertion behind it"
+    assert payload["drawings"] == [], (
+        "No view draws it any more, which is what retracting it means"
+    )
+    assert payload["assertion"]["id"], (
+        "And the retraction is itself a claim, with an assertion behind it"
+    )
 
 
-TREATMENT = datetime(2026, 6, 1, tzinfo=timezone.utc)
+TREATMENT = datetime(2026, 6, 1, tzinfo=UTC)
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_a_retraction_may_say_when_it_took_effect(api_schema, simple_api_context) -> None:
+async def test_a_retraction_may_say_when_it_took_effect(
+    api_schema, simple_api_context
+) -> None:
     """`at` on a retract input is `Standing.at` — the cell died in June, whenever
     that was recorded."""
-    ref = (await writes.execute(api_schema, simple_api_context, writes.ASSERT_ENTITY_OBSERVED, {"input": {"term": "Cell"}}))["assertEntityExists"]["instance"]["id"]
-    data = await writes.execute(api_schema, simple_api_context, writes.RETRACT_ENTITY_AT, {"input": {"id": ref, "at": TREATMENT.isoformat()}})
+    ref = (
+        await writes.execute(
+            api_schema,
+            simple_api_context,
+            writes.ASSERT_ENTITY_OBSERVED,
+            {"input": {"term": "Cell"}},
+        )
+    )["assertEntityExists"]["instance"]["id"]
+    data = await writes.execute(
+        api_schema,
+        simple_api_context,
+        writes.RETRACT_ENTITY_AT,
+        {"input": {"id": ref, "at": TREATMENT.isoformat()}},
+    )
     (standing,) = data["retractEntity"]["instance"]["standings"]
     assert standing["stands"] is False
     assert datetime.fromisoformat(standing["at"]) == TREATMENT
@@ -543,15 +655,34 @@ ATTEST_EVENT = {
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 @pytest.mark.parametrize("protocol", [False, True], ids=["natural", "protocol"])
-async def test_a_retracted_event_can_be_attested(api_schema, simple_api_context, test_graph: core_models.Graph, protocol: bool) -> None:
+async def test_a_retracted_event_can_be_attested(
+    api_schema, simple_api_context, test_graph: core_models.Graph, protocol: bool
+) -> None:
     """A3 for events: `attestNaturalEvent` and `attestProtocolEvent` are positions
     like any other. The retraction stays on the record, the attestation is the
     newer position, and a view declaring the word draws the event again."""
-    event = await writes.create_event(api_schema, simple_api_context, "Mitosis" if not protocol else "Staining", protocol=protocol)
-    await writes.execute(api_schema, simple_api_context, RETRACT_EVENT[protocol], {"input": {"id": event}})
-    attested = await writes.execute(api_schema, simple_api_context, ATTEST_EVENT[protocol], {"input": {"id": event}})
+    event = await writes.create_event(
+        api_schema,
+        simple_api_context,
+        "Mitosis" if not protocol else "Staining",
+        protocol=protocol,
+    )
+    await writes.execute(
+        api_schema,
+        simple_api_context,
+        RETRACT_EVENT[protocol],
+        {"input": {"id": event}},
+    )
+    attested = await writes.execute(
+        api_schema, simple_api_context, ATTEST_EVENT[protocol], {"input": {"id": event}}
+    )
     payload = attested["attestProtocolEvent" if protocol else "attestNaturalEvent"]
 
-    assert [row["stands"] for row in payload["instance"]["standings"]] == [True, False], "both positions are on the record, newest first"
+    assert [row["stands"] for row in payload["instance"]["standings"]] == [
+        True,
+        False,
+    ], "both positions are on the record, newest first"
     if not protocol:
-        assert [row["graph"]["id"] for row in payload["drawings"]] == [str(test_graph.pk)], "the view declaring Mitosis draws the event again"
+        assert [row["graph"]["id"] for row in payload["drawings"]] == [
+            str(test_graph.pk)
+        ], "the view declaring Mitosis draws the event again"

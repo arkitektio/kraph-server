@@ -16,16 +16,25 @@ from kante.types import Info
 from api.mutations._scoped import accessible_graph, scoped
 from core import models as core_models
 from graph_engine import query_ir
-from graph_engine.input_models import BuilderArgsInput, ColumnInput, CreateGraphTableQueryInput, UpdateGraphTableQueryInput
+from graph_engine.input_models import (
+    BuilderArgsInput,
+    ColumnInput,
+    CreateGraphTableQueryInput,
+    UpdateGraphTableQueryInput,
+)
 from graph_engine.query_ir import PlanShape, TableQueryPlan
 
 
-def plan_from_input(plan_input: PlanShape, columns: Sequence[ColumnInput] | None) -> TableQueryPlan:
+def plan_from_input(
+    plan_input: PlanShape, columns: Sequence[ColumnInput] | None
+) -> TableQueryPlan:
     """A validated plan from the mutation's input — `graph_engine.query_ir.plan_from_input`, kept under its old name here."""
     return query_ir.plan_from_input(plan_input, columns)
 
 
-def plan_from_builder_args(builder_args: BuilderArgsInput, columns: Sequence[ColumnInput] | None) -> TableQueryPlan:
+def plan_from_builder_args(
+    builder_args: BuilderArgsInput, columns: Sequence[ColumnInput] | None
+) -> TableQueryPlan:
     """The builder's spelling (`match_paths` / `where_clauses` / `return_statements`) as a plan."""
 
     class _Shim:
@@ -36,7 +45,9 @@ def plan_from_builder_args(builder_args: BuilderArgsInput, columns: Sequence[Col
     return plan_from_input(_Shim, columns)
 
 
-def create_saved_query[Row: core_models.GraphQuery](info: Info, model: CreateGraphTableQueryInput, django_model: type[Row], what: str) -> Row:
+def create_saved_query[Row: core_models.GraphQuery](
+    info: Info, model: CreateGraphTableQueryInput, django_model: type[Row], what: str
+) -> Row:
     """Save a new table query against the graph it names.
 
     `accessible_graph` before anything is written: the graph id arrives from the
@@ -58,7 +69,9 @@ def create_saved_query[Row: core_models.GraphQuery](info: Info, model: CreateGra
     )
 
 
-def update_saved_query[Row: core_models.GraphQuery](info: Info, model: UpdateGraphTableQueryInput, django_model: type[Row], what: str) -> Row:
+def update_saved_query[Row: core_models.GraphQuery](
+    info: Info, model: UpdateGraphTableQueryInput, django_model: type[Row], what: str
+) -> Row:
     """Change a saved query the caller is allowed to reach. Patches only what was sent."""
     item = scoped(info, django_model, model.id, what=what)
 
@@ -74,7 +87,9 @@ def update_saved_query[Row: core_models.GraphQuery](info: Info, model: UpdateGra
         item.columns = [column.model_dump(mode="json") for column in columns]
 
     if model.plan is not None:
-        plan = plan_from_input(model.plan, columns if columns is not None else item.columns)
+        plan = plan_from_input(
+            model.plan, columns if columns is not None else item.columns
+        )
         item.plan = plan.to_stored()
         # A row that gets a plan stops being legacy; its stored Cypher is no
         # longer what renders and is cleared so the two cannot disagree.

@@ -64,7 +64,9 @@ def euclidean_range(state: StateVector) -> float | None:
 
     first, last = _as_point(state.first_value), _as_point(state.last_value)
     if len(first) != len(last):
-        raise ValueError(f"Cannot measure distance between {len(first)}D and {len(last)}D points")
+        raise ValueError(
+            f"Cannot measure distance between {len(first)}D and {len(last)}D points"
+        )
     return math.dist(first, last)
 
 
@@ -122,7 +124,9 @@ class UnsupportedRule(ValueError):
     """A derivation rule the state vector's grain cannot express."""
 
 
-def validate_rule(rule: DerivationRuleInput, forbidden_sources: set[str] | None = None) -> None:
+def validate_rule(
+    rule: DerivationRuleInput, forbidden_sources: set[str] | None = None
+) -> None:
     """Reject rules the state vector cannot compute, at schema-validation time.
 
     The grain is `(entity, source_category, key)` over *metrics*, reached through
@@ -140,7 +144,9 @@ def validate_rule(rule: DerivationRuleInput, forbidden_sources: set[str] | None 
         raise UnsupportedRule("A rollup rule must name an aggregation function")
 
     if not rule.key:
-        raise UnsupportedRule(f"Rollup over '{rule.source_node}' with aggregation {rule.aggregation.value} names no metric key. A rollup folds measurements, so it has to say which measurement.")
+        raise UnsupportedRule(
+            f"Rollup over '{rule.source_node}' with aggregation {rule.aggregation.value} names no metric key. A rollup folds measurements, so it has to say which measurement."
+        )
 
     # A positive list of structure kinds cannot be checked here: structures are
     # resolved dynamically at write time and a schema never enumerates them. The

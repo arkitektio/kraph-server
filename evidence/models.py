@@ -51,8 +51,8 @@ from __future__ import annotations
 
 import uuid
 
-from authentikate.models import Organization
 from arkitekt_datalayer import models as datalayer_models
+from authentikate.models import Organization
 from django.db import models
 
 from core.enums import ValueKind
@@ -62,7 +62,6 @@ from evidence.managers import OrganizationScopedManager
 # without a second import; they are defined in `evidence.values`, which imports
 # no Django, because the projection seam needs them too and may not import this.
 from evidence.values import JSONValue, Ref  # noqa: F401
-
 
 #: The kinds of claim a :class:`Standing` can be about — one per table that holds
 #: recorded statements. A plain tuple rather than a `TextChoices`, because the
@@ -180,7 +179,7 @@ class Assertion(models.Model):
         return f"Assertion by {self.subject} via {self.app_id} at {self.asserted_at}"
 
 
-def _default_observed_at(claim: "Instance | Link | Metric") -> None:
+def _default_observed_at(claim: Instance | Link | Metric) -> None:
     """Fill a claim's ``observed_at`` from its assertion when the claimant gave none.
 
     Called from :meth:`Instance.save` and :meth:`Link.save` — the column is NOT
@@ -206,7 +205,8 @@ def _confidence_constraint(table: str) -> models.CheckConstraint:
     """The database refuses a confidence outside [0, 1]. The input layer refuses
     it first; this is for every writer that is not the API."""
     return models.CheckConstraint(
-        condition=models.Q(confidence__isnull=True) | models.Q(confidence__gte=0.0, confidence__lte=1.0),
+        condition=models.Q(confidence__isnull=True)
+        | models.Q(confidence__gte=0.0, confidence__lte=1.0),
         name=f"{table}_confidence_in_unit_interval",
     )
 
@@ -267,7 +267,9 @@ class Term(models.Model):
         blank=True,
         help_text="Persistent URL, where this term corresponds to a published ontology term.",
     )
-    color = models.JSONField(max_length=1000, null=True, blank=True, help_text="Display colour as RGBA.")
+    color = models.JSONField(
+        max_length=1000, null=True, blank=True, help_text="Display colour as RGBA."
+    )
     image = models.ForeignKey(
         datalayer_models.MediaStore,
         on_delete=models.SET_NULL,
@@ -298,7 +300,12 @@ class Term(models.Model):
     class Meta:
         base_manager_name = "all_objects"
         default_manager_name = "all_objects"
-        constraints = [models.UniqueConstraint(fields=["organization", "kind", "key"], name="unique_term_per_organization")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization", "kind", "key"],
+                name="unique_term_per_organization",
+            )
+        ]
 
     def __str__(self) -> str:
         return f"{self.kind}:{self.key}"
@@ -341,7 +348,9 @@ class StructureKind(models.Model):
         blank=True,
         help_text="Persistent URL, where this kind corresponds to a published ontology term.",
     )
-    color = models.JSONField(max_length=1000, null=True, blank=True, help_text="Display colour as RGBA.")
+    color = models.JSONField(
+        max_length=1000, null=True, blank=True, help_text="Display colour as RGBA."
+    )
     image = models.ForeignKey(
         datalayer_models.MediaStore,
         on_delete=models.SET_NULL,
@@ -356,7 +365,12 @@ class StructureKind(models.Model):
     class Meta:
         base_manager_name = "all_objects"
         default_manager_name = "all_objects"
-        constraints = [models.UniqueConstraint(fields=["organization", "identifier"], name="unique_structure_kind_per_organization")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization", "identifier"],
+                name="unique_structure_kind_per_organization",
+            )
+        ]
 
     def __str__(self) -> str:
         return self.identifier
@@ -408,7 +422,9 @@ class MetricKind(models.Model):
         related_name="metric_kinds",
         help_text="The kind of structure this measurement describes.",
     )
-    key = models.CharField(max_length=1000, help_text="The measurement key, e.g. 'vector_length'.")
+    key = models.CharField(
+        max_length=1000, help_text="The measurement key, e.g. 'vector_length'."
+    )
     value_kind = models.CharField(
         max_length=32,
         choices=[(k.value, k.value) for k in ValueKind],
@@ -606,7 +622,9 @@ class Metric(models.Model):
 
     observed_at = models.DateTimeField(
         db_index=True,
-        help_text=("When the world was observed. The axis a scientist means by 'when'. Was `measured_at` until RFC 0015 gave every claim the same column under one name."),
+        help_text=(
+            "When the world was observed. The axis a scientist means by 'when'. Was `measured_at` until RFC 0015 gave every claim the same column under one name."
+        ),
     )
     asserted_at = models.DateTimeField(
         db_index=True,
@@ -677,7 +695,9 @@ class Metric(models.Model):
         """
         column = self.VALUE_COLUMN_FOR_KIND.get(self.value_kind)
         if column is None:
-            raise ValueError(f"Metric {self.pk} has unknown value_kind {self.value_kind!r}")
+            raise ValueError(
+                f"Metric {self.pk} has unknown value_kind {self.value_kind!r}"
+            )
 
         raw = getattr(self, column)
         if self.value_kind == ValueKind.INT.value and raw is not None:
@@ -790,7 +810,9 @@ class Link(models.Model):
     )
     observed_at = models.DateTimeField(
         db_index=True,
-        help_text=("When the world was in this state: a relation held, a participation happened, a classification applied. Defaults to the assertion's `asserted_at` on save when the claimant gave no other time (RFC 0015), so `OBSERVED_AT` rules are total."),
+        help_text=(
+            "When the world was in this state: a relation held, a participation happened, a classification applied. Defaults to the assertion's `asserted_at` on save when the claimant gave no other time (RFC 0015), so `OBSERVED_AT` rules are total."
+        ),
     )
     confidence = _confidence_field()
     #: No cached `stands`, and deliberately. It used to live here: `writer.record_standing`
@@ -959,7 +981,9 @@ class Standing(models.Model):
     stands = models.BooleanField(
         help_text="Whether the claimant says this stands. True attests, False retracts. Deliberately not nullable: a claim with no position is not a claim.",
     )
-    at = models.DateTimeField(help_text="When the claim took effect. World time, the axis a scientist means.")
+    at = models.DateTimeField(
+        help_text="When the claim took effect. World time, the axis a scientist means."
+    )
     confidence = _confidence_field()
     recorded_at = models.DateTimeField(
         auto_now_add=True,
@@ -986,7 +1010,9 @@ class Standing(models.Model):
             # The fold's access path: every claim about one target, newest first.
             # `-at` then the assertion, which the fold joins to for `seq` — see
             # `evidence.claims._LATEST`.
-            models.Index(fields=["organization", "target_type", "target_id", "-at", "-assertion"]),
+            models.Index(
+                fields=["organization", "target_type", "target_id", "-at", "-assertion"]
+            ),
         ]
         constraints = [_confidence_constraint("standing")]
 
@@ -1058,7 +1084,10 @@ class CurrentStanding(models.Model):
         base_manager_name = "all_objects"
         default_manager_name = "all_objects"
         constraints = [
-            models.UniqueConstraint(fields=["organization", "target_type", "target_id"], name="one_current_answer_per_target"),
+            models.UniqueConstraint(
+                fields=["organization", "target_type", "target_id"],
+                name="one_current_answer_per_target",
+            ),
         ]
         indexes = [
             # The access path every "does this stand" narrowing takes: the
@@ -1074,7 +1103,10 @@ class CurrentStanding(models.Model):
             # path; an index matching the query that is actually issued is the
             # smaller and more honest fix. `target_id` rides along so the
             # subquery is answered from the index without touching the heap.
-            models.Index(fields=["target_type", "stands", "target_id"], name="currentstanding_retracted_idx"),
+            models.Index(
+                fields=["target_type", "stands", "target_id"],
+                name="currentstanding_retracted_idx",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -1147,7 +1179,9 @@ class State(models.Model):
         related_name="states",
         help_text="The kind of structure the measurements came through.",
     )
-    key = models.CharField(max_length=1000, help_text="The measurement key being folded.")
+    key = models.CharField(
+        max_length=1000, help_text="The measurement key being folded."
+    )
     value_kind = models.CharField(
         max_length=32,
         choices=[(k.value, k.value) for k in ValueKind],
@@ -1155,7 +1189,9 @@ class State(models.Model):
     )
 
     # --- The monoid ---
-    n = models.PositiveIntegerField(default=0, help_text="Count of contributing metrics. COUNT reads this.")
+    n = models.PositiveIntegerField(
+        default=0, help_text="Count of contributing metrics. COUNT reads this."
+    )
     sum = models.FloatField(
         null=True,
         blank=True,
@@ -1164,14 +1200,24 @@ class State(models.Model):
     min = models.FloatField(null=True, blank=True)
     max = models.FloatField(null=True, blank=True)
 
-    first_ts = models.DateTimeField(null=True, blank=True, help_text="observed_at of the earliest contributing metric.")
-    last_ts = models.DateTimeField(null=True, blank=True, help_text="observed_at of the latest contributing metric.")
+    first_ts = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="observed_at of the earliest contributing metric.",
+    )
+    last_ts = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="observed_at of the latest contributing metric.",
+    )
     first_value = models.JSONField(
         null=True,
         blank=True,
         help_text="Value at first_ts. JSON rather than typed because LATEST is defined over strings and vectors too, and EUCLIDEAN_RANGE reads this as a point — which is why there is no separate first_pt column duplicating it.",
     )
-    last_value = models.JSONField(null=True, blank=True, help_text="Value at last_ts. LATEST reads this.")
+    last_value = models.JSONField(
+        null=True, blank=True, help_text="Value at last_ts. LATEST reads this."
+    )
 
     high_water_assertion = models.ForeignKey(
         Assertion,
@@ -1195,7 +1241,13 @@ class State(models.Model):
         default_manager_name = "all_objects"
         constraints = [
             models.UniqueConstraint(
-                fields=["organization", "claim_ref", "source_kind", "key", "value_kind"],
+                fields=[
+                    "organization",
+                    "claim_ref",
+                    "source_kind",
+                    "key",
+                    "value_kind",
+                ],
                 name="unique_state_per_claim_source_kind_key_value_kind",
             )
         ]
@@ -1264,7 +1316,9 @@ class Instance(models.Model):
     )
     observed_at = models.DateTimeField(
         db_index=True,
-        help_text=("When the world contained this individual — for an event, when it happened; for an entity, when it was seen. A point, not an interval: a duration is a metric. Defaults to the assertion's `asserted_at` on save (RFC 0015)."),
+        help_text=(
+            "When the world contained this individual — for an event, when it happened; for an entity, when it was seen. A point, not an interval: a duration is a metric. Defaults to the assertion's `asserted_at` on save (RFC 0015)."
+        ),
     )
     confidence = _confidence_field()
     # No cached `stands` column, like every claim table. The trust-everyone
@@ -1357,7 +1411,9 @@ class InstanceIdentity(models.Model):
     )
     needs_recompute = models.BooleanField(
         default=False,
-        help_text=("Set when a retraction may have split this component. Union is O(α) and incremental; un-union is not expressible incrementally, so the affected component is rebuilt from its surviving claims instead. Same escape hatch as `State.needs_recompute`."),
+        help_text=(
+            "Set when a retraction may have split this component. Union is O(α) and incremental; un-union is not expressible incrementally, so the affected component is rebuilt from its surviving claims instead. Same escape hatch as `State.needs_recompute`."
+        ),
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

@@ -83,9 +83,14 @@ def run_once(
         if watermark.pending_count(organization) == 0:
             passes.append(Pass(organization=organization, idle=True))
             continue
-        with locks.organization_projection_lock(organization, wait=wait_for_lock) as held:
+        with locks.organization_projection_lock(
+            organization, wait=wait_for_lock
+        ) as held:
             if not held:
-                logger.info("%s: projection lock held elsewhere; leaving this pass to whoever holds it", organization.identifier)
+                logger.info(
+                    "%s: projection lock held elsewhere; leaving this pass to whoever holds it",
+                    organization.identifier,
+                )
                 passes.append(Pass(organization=organization, locked_elsewhere=True))
                 continue
             report = projector.replay(controller, organization, older_than=older_than)
@@ -106,7 +111,14 @@ def _log(organization: Organization, report: ReplayReport) -> None:
         len(report.graphs),
     )
     for entry in report.skipped:
-        logger.warning("%s: graph #%s %r skipped, %s — needs a full `reproject --graph %s`", organization.identifier, entry.graph.pk, entry.graph.name, entry.status, entry.graph.pk)
+        logger.warning(
+            "%s: graph #%s %r skipped, %s — needs a full `reproject --graph %s`",
+            organization.identifier,
+            entry.graph.pk,
+            entry.graph.name,
+            entry.status,
+            entry.graph.pk,
+        )
 
 
 @dataclass
@@ -137,7 +149,9 @@ def run_forever(
     poison-pill row does not turn every pass into the same traceback.
     """
     state = Loop()
-    while not stop.is_set() and (max_iterations is None or state.passes < max_iterations):
+    while not stop.is_set() and (
+        max_iterations is None or state.passes < max_iterations
+    ):
         state.passes += 1
         try:
             organizations = list(Organization.objects.all().order_by("id"))
@@ -147,14 +161,20 @@ def run_forever(
                     state.backoff[org.pk] -= 1
             for org in due:
                 try:
-                    run_once(controller, [org], wait_for_lock=False, older_than=older_than)
+                    run_once(
+                        controller, [org], wait_for_lock=False, older_than=older_than
+                    )
                     state.backoff.pop(org.pk, None)
                 except Exception:  # noqa: BLE001 - the loop must outlive one organization's bad row
                     state.failures += 1
                     strikes = state.backoff.get(org.pk, 0)
                     skip = min(2 ** min(strikes, 6), 64)
                     state.backoff[org.pk] = skip
-                    logger.exception("%s: runner pass failed; skipping the next %d pass(es)", org.identifier, skip)
+                    logger.exception(
+                        "%s: runner pass failed; skipping the next %d pass(es)",
+                        org.identifier,
+                        skip,
+                    )
                     connections.close_all()
         except Exception:  # noqa: BLE001 - see above
             state.failures += 1

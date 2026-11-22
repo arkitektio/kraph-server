@@ -6,9 +6,10 @@ recorded, the node it was about, and every view that draws that node afterwards.
 See `graph_engine/results.py`.
 """
 
-from api import inputs, types, context
-from core import enums
 from kante import Info
+
+from api import context, inputs, types
+from core import enums
 
 
 def assert_entity_exists(
@@ -39,7 +40,9 @@ def assert_entity_exists(
     context.assert_can_access_organization(info, organization)
 
     controller = context.get_controller()
-    term = controller.ensure_term(organization, enums.CategoryKindChoices.ENTITY, input_model.term)
+    term = controller.ensure_term(
+        organization, enums.CategoryKindChoices.ENTITY, input_model.term
+    )
 
     return types.AssertedEntity(
         _value=controller.create_entity(
@@ -74,7 +77,11 @@ def retract_entity(
     # `get_accessible_graph` call to make here. Authorization comes from the row:
     # `retract_node` resolves the node and checks the caller belongs to its
     # organization.
-    return types.AssertedEntity(_value=controller.retract_node(model.id, info=info, at=model.at, confidence=model.confidence))
+    return types.AssertedEntity(
+        _value=controller.retract_node(
+            model.id, info=info, at=model.at, confidence=model.confidence
+        )
+    )
 
 
 def attest_entity(
@@ -96,4 +103,8 @@ def attest_entity(
     controller = context.get_controller()
 
     model = input.to_pydantic()
-    return types.AssertedEntity(_value=controller.attest_node(model.id, info=info, at=model.at, confidence=model.confidence))
+    return types.AssertedEntity(
+        _value=controller.attest_node(
+            model.id, info=info, at=model.at, confidence=model.confidence
+        )
+    )

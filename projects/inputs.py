@@ -1,7 +1,5 @@
 """Inputs for writing projects; validated by pydantic, the way todo inputs are."""
 
-from typing import Optional
-
 import strawberry
 from pydantic import BaseModel, ConfigDict, Field
 from strawberry.experimental import pydantic
@@ -15,26 +13,28 @@ class _Strict(BaseModel):
 
 class CreateProjectInputModel(_Strict):
     name: str = Field(description="The name of the project")
-    description: Optional[str] = Field(default=None, description="What the project is about")
+    description: str | None = Field(
+        default=None, description="What the project is about"
+    )
 
 
 @pydantic.input(CreateProjectInputModel, description="Input for creating a project")
 class CreateProjectInput:
     name: str
-    description: Optional[str] = None
+    description: str | None = None
 
 
 class UpdateProjectInputModel(_Strict):
     id: int = Field(description="The project to change")
     name: str = Field(description="Its new name")
-    description: Optional[str] = Field(default=None, description="Its new description")
+    description: str | None = Field(default=None, description="Its new description")
 
 
 @pydantic.input(UpdateProjectInputModel, description="Input for changing a project")
 class UpdateProjectInput:
     id: strawberry.ID
     name: str
-    description: Optional[str] = None
+    description: str | None = None
 
 
 class ProjectIdInputModel(_Strict):

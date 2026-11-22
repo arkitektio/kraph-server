@@ -9,14 +9,15 @@ which the controller reduced to that category's term before writing anything.
 """
 
 import uuid
+
 import kante
 import pytest
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
+
 from core import models as core_models
 from evidence import models as evidence_models
 from tests.support import writes
-
 
 WRITE_INPUTS = [
     "AssertEntityExistsInput",
@@ -27,8 +28,12 @@ WRITE_INPUTS = [
     "AssertStructureRelationExistsInput",
     "ClassificationInput",
 ]
+
+
 @pytest.mark.parametrize("type_name", WRITE_INPUTS)
-def test_no_write_input_names_a_category(api_schema: kante.Schema, type_name: str) -> None:
+def test_no_write_input_names_a_category(
+    api_schema: kante.Schema, type_name: str
+) -> None:
     """The SDL itself, so a category cannot come back by accident.
 
     Every one of these took a graph-scoped `*Category` id. A schema assertion is
@@ -39,7 +44,11 @@ def test_no_write_input_names_a_category(api_schema: kante.Schema, type_name: st
 
     assert "term" in fields, f"{type_name} must name the organization's word"
     for leaked in ("category", "entityCategory", "eventCategory", "graph"):
-        assert leaked not in fields, f"{type_name} still names a view through `{leaked}`"
+        assert leaked not in fields, (
+            f"{type_name} still names a view through `{leaked}`"
+        )
+
+
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_claim_under_a_word_no_view_declares_is_recorded(
@@ -63,15 +72,29 @@ async def test_a_claim_under_a_word_no_view_declares_is_recorded(
     @sync_to_async
     def recorded() -> tuple[int, int, int]:
         organization = test_graph.organization
-        nodes = evidence_models.Instance.objects.for_organization(organization).filter(pk=entity_id).count()
-        terms = evidence_models.Term.objects.for_organization(organization).filter(kind="ENTITY", key=word).count()
+        nodes = (
+            evidence_models.Instance.objects.for_organization(organization)
+            .filter(pk=entity_id)
+            .count()
+        )
+        terms = (
+            evidence_models.Term.objects.for_organization(organization)
+            .filter(kind="ENTITY", key=word)
+            .count()
+        )
         categories = core_models.Category.objects.filter(term__key=word).count()
         return nodes, terms, categories
 
     nodes, terms, categories = await recorded()
     assert nodes == 1, "The node is in the log"
-    assert terms == 1, "And the word was minted for the organization, as structure kinds are"
-    assert categories == 0, "But no view has a rule for it, which is the state under test"
+    assert terms == 1, (
+        "And the word was minted for the organization, as structure kinds are"
+    )
+    assert categories == 0, (
+        "But no view has a rule for it, which is the state under test"
+    )
+
+
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_classifying_an_event_claims_an_event_word(
@@ -95,23 +118,35 @@ async def test_classifying_an_event_claims_an_event_word(
             classifyNodes(input: $input) { instances { kind id } }
         }
         """,
-        variable_values={"input": {"classifications": [{"node": event_id, "term": word}]}},
+        variable_values={
+            "input": {"classifications": [{"node": event_id, "term": word}]}
+        },
         context_value=simple_api_context,
     )
     assert classified.errors is None, f"GraphQL errors: {classified.errors}"
 
     @sync_to_async
     def minted_kinds() -> list[str]:
-        return list(evidence_models.Term.objects.for_organization(test_graph.organization).filter(key=word).values_list("kind", flat=True))
+        return list(
+            evidence_models.Term.objects.for_organization(test_graph.organization)
+            .filter(key=word)
+            .values_list("kind", flat=True)
+        )
 
-    assert await minted_kinds() == ["NATURAL_EVENT"], "The kind follows the node it is claimed about"
+    assert await minted_kinds() == ["NATURAL_EVENT"], (
+        "The kind follows the node it is claimed about"
+    )
 
     # And the payload agrees. `classifyNodes` used to wrap every classified node in
     # `Entity` regardless of what it was, so classifying an event reported it as an
     # entity — visible only if you asked for `__typename`, since `id` is on the `Node`
     # interface and resolves either way. The claim carries its own `kind` now, so the
     # question needs no type name to ask.
-    assert classified.data["classifyNodes"]["instances"][0]["kind"] == "NATURAL_EVENT", "A classified event comes back as an event"
+    assert (
+        classified.data["classifyNodes"]["instances"][0]["kind"] == "NATURAL_EVENT"
+    ), "A classified event comes back as an event"
+
+
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_an_edge_under_an_undeclared_word_is_recorded_too(
@@ -130,18 +165,26 @@ async def test_an_edge_under_an_undeclared_word_is_recorded_too(
     source = await writes.create_entity(api_schema, simple_api_context, "Cell")
     target = await writes.create_entity(api_schema, simple_api_context, "Cell")
 
-    relation_id = await writes.create_relation(api_schema, simple_api_context, word, source, target)
+    relation_id = await writes.create_relation(
+        api_schema, simple_api_context, word, source, target
+    )
 
     @sync_to_async
     def recorded() -> tuple[int, int]:
         organization = test_graph.organization
-        links = evidence_models.Link.objects.for_organization(organization).filter(pk=relation_id).count()
+        links = (
+            evidence_models.Link.objects.for_organization(organization)
+            .filter(pk=relation_id)
+            .count()
+        )
         categories = core_models.Category.objects.filter(term__key=word).count()
         return links, categories
 
     links, categories = await recorded()
     assert links == 1, "The relation claim is in the log"
     assert categories == 0, "Under a word no view has a rule for"
+
+
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_attesting_a_node_no_view_draws_does_not_fail(
@@ -173,4 +216,6 @@ async def test_attesting_a_node_no_view_draws_does_not_fail(
         context_value=simple_api_context,
     )
     assert attested.errors is None, f"GraphQL errors: {attested.errors}"
-    assert attested.data["attestEntity"]["instance"]["id"] == entity_id, "The node comes back as the log has it"
+    assert attested.data["attestEntity"]["instance"]["id"] == entity_id, (
+        "The node comes back as the log has it"
+    )

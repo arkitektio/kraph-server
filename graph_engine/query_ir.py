@@ -22,12 +22,20 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Optional, Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from evidence.values import JSONValue
-from graph_engine.input_models import ColumnInput, MatchPathInput, PairEndInput, PairsQueryPlanInput, ReturnStatementInput, WhereClauseInput, WhereOperator
+from graph_engine.input_models import (
+    ColumnInput,
+    MatchPathInput,
+    PairEndInput,
+    PairsQueryPlanInput,
+    ReturnStatementInput,
+    WhereClauseInput,
+    WhereOperator,
+)
 
 if TYPE_CHECKING:
     from graph_engine.projection.protocol import Projector
@@ -43,13 +51,25 @@ class TableQueryPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     version: int = Field(default=PLAN_VERSION, description="Shape version of this plan")
-    matches: list[MatchPathInput] = Field(default_factory=list, description="The paths to match; the first node of the first path is the default subject")
-    wheres: list[WhereClauseInput] = Field(default_factory=list, description="Predicates over matched nodes' properties")
-    returns: list[ReturnStatementInput] = Field(default_factory=list, description="What to return, each under an alias a column can name")
-    columns: list[ColumnInput] = Field(default_factory=list, description="How the returned aliases are presented")
+    matches: list[MatchPathInput] = Field(
+        default_factory=list,
+        description="The paths to match; the first node of the first path is the default subject",
+    )
+    wheres: list[WhereClauseInput] = Field(
+        default_factory=list, description="Predicates over matched nodes' properties"
+    )
+    returns: list[ReturnStatementInput] = Field(
+        default_factory=list,
+        description="What to return, each under an alias a column can name",
+    )
+    columns: list[ColumnInput] = Field(
+        default_factory=list, description="How the returned aliases are presented"
+    )
 
     @classmethod
-    def from_stored(cls, value: Mapping[str, JSONValue] | None) -> Optional["TableQueryPlan"]:
+    def from_stored(
+        cls, value: Mapping[str, JSONValue] | None
+    ) -> TableQueryPlan | None:
         """The plan a row carries, or None for a legacy row that stores only Cypher."""
         if not value:
             return None
@@ -73,7 +93,11 @@ class PlanShape(Protocol):
     returns: Sequence[ReturnStatementInput] | None
 
 
-def plan_from_input(plan_input: PlanShape, columns: Sequence[ColumnInput] | None, projector: "Projector | None" = None) -> TableQueryPlan:
+def plan_from_input(
+    plan_input: PlanShape,
+    columns: Sequence[ColumnInput] | None,
+    projector: Projector | None = None,
+) -> TableQueryPlan:
     """A validated plan from a client's input, with the columns folded in.
 
     Validated once, against nothing, so a plan that cannot be compiled is
@@ -99,7 +123,14 @@ def plan_from_input(plan_input: PlanShape, columns: Sequence[ColumnInput] | None
 
 #: The aliases a pairs plan lowers its two ends to. `id` is the vertex's ref; `identifier`
 #: and `object` are what a drawn structure carries (RFC 0027), null on a drawn instance.
-PAIR_ALIASES = ("source_ref", "source_identifier", "source_object", "target_ref", "target_identifier", "target_object")
+PAIR_ALIASES = (
+    "source_ref",
+    "source_identifier",
+    "source_object",
+    "target_ref",
+    "target_identifier",
+    "target_object",
+)
 
 
 class PairsQueryPlan(BaseModel):
@@ -112,13 +143,19 @@ class PairsQueryPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     version: int = Field(default=PLAN_VERSION, description="Shape version of this plan")
-    matches: list[MatchPathInput] = Field(default_factory=list, description="The paths to match")
-    wheres: list[WhereClauseInput] = Field(default_factory=list, description="Predicates over matched nodes' properties")
+    matches: list[MatchPathInput] = Field(
+        default_factory=list, description="The paths to match"
+    )
+    wheres: list[WhereClauseInput] = Field(
+        default_factory=list, description="Predicates over matched nodes' properties"
+    )
     source: PairEndInput = Field(..., description="The node every pair starts from")
     target: PairEndInput = Field(..., description="The node every pair ends at")
 
     @classmethod
-    def from_stored(cls, value: Mapping[str, JSONValue] | None) -> Optional["PairsQueryPlan"]:
+    def from_stored(
+        cls, value: Mapping[str, JSONValue] | None
+    ) -> PairsQueryPlan | None:
         """The plan a row carries, or None when it carries none."""
         if not value:
             return None
@@ -131,9 +168,19 @@ class PairsQueryPlan(BaseModel):
         """The table plan returning both ends' ref, identifier and object."""
         returns: list[ReturnStatementInput] = []
         for side, end in (("source", self.source), ("target", self.target)):
-            for prop, alias in (("id", f"{side}_ref"), ("identifier", f"{side}_identifier"), ("object", f"{side}_object")):
-                returns.append(ReturnStatementInput(path=end.path, node=end.node, property=prop, alias=alias))
-        return TableQueryPlan(matches=list(self.matches), wheres=list(self.wheres), returns=returns)
+            for prop, alias in (
+                ("id", f"{side}_ref"),
+                ("identifier", f"{side}_identifier"),
+                ("object", f"{side}_object"),
+            ):
+                returns.append(
+                    ReturnStatementInput(
+                        path=end.path, node=end.node, property=prop, alias=alias
+                    )
+                )
+        return TableQueryPlan(
+            matches=list(self.matches), wheres=list(self.wheres), returns=returns
+        )
 
     def end_category(self, end: PairEndInput) -> str | None:
         """The vertex label the plan constrains one end to, if it does."""
@@ -147,9 +194,16 @@ class PairsQueryPlan(BaseModel):
         return None
 
 
-def pairs_plan_from_input(plan_input: PairsQueryPlanInput, projector: "Projector | None" = None) -> PairsQueryPlan:
+def pairs_plan_from_input(
+    plan_input: PairsQueryPlanInput, projector: Projector | None = None
+) -> PairsQueryPlan:
     """A validated pairs plan from a client's input: refused at save time if its lowering cannot compile."""
-    plan = PairsQueryPlan(matches=list(plan_input.matches), wheres=list(plan_input.wheres or []), source=plan_input.source, target=plan_input.target)
+    plan = PairsQueryPlan(
+        matches=list(plan_input.matches),
+        wheres=list(plan_input.wheres or []),
+        source=plan_input.source,
+        target=plan_input.target,
+    )
     if projector is None:
         from graph_engine.projection.context import current_or_default
 
@@ -172,4 +226,13 @@ def is_identifier(value: str) -> bool:
     return bool(_IDENTIFIER.match(str(value)))
 
 
-__all__ = ["PAIR_ALIASES", "PLAN_VERSION", "PairsQueryPlan", "TableQueryPlan", "WhereOperator", "is_identifier", "pairs_plan_from_input", "sanitize_identifier"]
+__all__ = [
+    "PAIR_ALIASES",
+    "PLAN_VERSION",
+    "PairsQueryPlan",
+    "TableQueryPlan",
+    "WhereOperator",
+    "is_identifier",
+    "pairs_plan_from_input",
+    "sanitize_identifier",
+]

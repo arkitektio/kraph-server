@@ -30,9 +30,10 @@ from typing import TYPE_CHECKING, Protocol, TypeVar
 from api import context
 
 if TYPE_CHECKING:
-    from core.models import Graph
     from django.db.models import Model
     from kante.types import Info
+
+    from core.models import Graph
 
 T = TypeVar("T")
 
@@ -86,7 +87,9 @@ def scoped(info, model, pk, *, what: str):
 
     graph = graph_of(item)
     if graph is None:
-        raise PermissionError(f"Cannot establish which graph this {what} belongs to, so it cannot be authorized.")
+        raise PermissionError(
+            f"Cannot establish which graph this {what} belongs to, so it cannot be authorized."
+        )
 
     context.validate_graph_access(info, graph)
     return item
@@ -108,7 +111,9 @@ def accessible_graph(info, pk):
     return graph
 
 
-def schema_scoped[Row: Model](info: "Info", model: type[Row], identifier: str | int, *, what: str) -> Row:
+def schema_scoped[Row: Model](
+    info: "Info", model: type[Row], identifier: str | int, *, what: str
+) -> Row:
     """`scoped`, plus the definition-editing RBAC (RFC 0013).
 
     For the mutations that change what a graph's words mean. Tenancy first

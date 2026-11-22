@@ -7,25 +7,68 @@ the same commit, and no installer has to learn of it.
 
 from __future__ import annotations
 
-from arkitekt_service.contract import JSON, Contract, Description, Descriptor, Facts, Hosts, Job, Needs, Offers, Role, Scope, Signal, Start, Structure, blocks
+from arkitekt_service.contract import (
+    JSON,
+    Contract,
+    Description,
+    Descriptor,
+    Facts,
+    Hosts,
+    Job,
+    Needs,
+    Offers,
+    Role,
+    Scope,
+    Signal,
+    Start,
+    Structure,
+    blocks,
+)
 
 from kraph_server.configuration import Settings
 
 #: What an app may do here on a user's behalf: defined at the coordination server when the hub
 #: enrols. Every root field of the schema asks for one of them (`AuthExtension(scopes=...)`).
 SCOPES = [
-    Scope(key="kraph_read", description="Browse the knowledge graph and run graph queries and views."),
-    Scope(key="kraph_assert", description="Record facts in the knowledge graph (entities, structures, metrics, measurements, relations, events, comments) and retract or supersede them."),
-    Scope(key="kraph_insights", description="Create and change graphs, table queries, plots and todo lists."),
-    Scope(key="kraph_schema", description="Change the graph's vocabulary: entity, structure, metric, relation and event categories and terms."),
-    Scope(key="kraph_all", description="Do everything in Kraph on your behalf.", is_all_scope=True),
+    Scope(
+        key="kraph_read",
+        description="Browse the knowledge graph and run graph queries and views.",
+    ),
+    Scope(
+        key="kraph_assert",
+        description="Record facts in the knowledge graph (entities, structures, metrics, measurements, relations, events, comments) and retract or supersede them.",
+    ),
+    Scope(
+        key="kraph_insights",
+        description="Create and change graphs, table queries, plots and todo lists.",
+    ),
+    Scope(
+        key="kraph_schema",
+        description="Change the graph's vocabulary: entity, structure, metric, relation and event categories and terms.",
+    ),
+    Scope(
+        key="kraph_all",
+        description="Do everything in Kraph on your behalf.",
+        is_all_scope=True,
+    ),
 ]
 
 #: What a member of an organization may do here.
 ROLES = [
-    Role(key="kraph_admin", description="Full control of Kraph in this organization.", is_admin_role=True),
-    Role(key="kraph_editor", description="Record facts and build graphs and queries.", is_default_role=True),
-    Role(key="kraph_curator", description="Curate the graph's vocabulary of categories and terms."),
+    Role(
+        key="kraph_admin",
+        description="Full control of Kraph in this organization.",
+        is_admin_role=True,
+    ),
+    Role(
+        key="kraph_editor",
+        description="Record facts and build graphs and queries.",
+        is_default_role=True,
+    ),
+    Role(
+        key="kraph_curator",
+        description="Curate the graph's vocabulary of categories and terms.",
+    ),
 ]
 
 #: The role every write asks for, the one a change to the vocabulary asks for instead, and the one
@@ -53,57 +96,160 @@ def render(facts: Facts) -> dict[str, JSON]:
         document["rekuest_hook"] = hook
     mikro = facts.peers.get("mikro")
     if mikro is not None and FEED in mikro.offers:
-        document["mikro"] = {"url": mikro.offers[FEED], "identifier": mikro.identifier or "mikro"}
+        document["mikro"] = {
+            "url": mikro.offers[FEED],
+            "identifier": mikro.identifier or "mikro",
+        }
     return document
 
 
 #: What a todo item says about itself, for a trigger to test: "an item of this project finished".
 TODO_ITEM_DESCRIPTORS = [
-    Descriptor(key="@kraph/status", type="STRING", description="Its board column: TODO, DOING or DONE"),
-    Descriptor(key="@kraph/done", type="INT", description="How many of its objects are done"),
-    Descriptor(key="@kraph/total", type="INT", description="How many objects it is about"),
-    Descriptor(key="@kraph/list", type="STRING", description="The id of the todo list it is on"),
-    Descriptor(key="@kraph/project", type="STRING", description="The id of the project its list belongs to"),
-    Descriptor(key="@kraph/assignee", type="STRING", description="Who it is for (a sub): its own assignee, else its list's"),
+    Descriptor(
+        key="@kraph/status",
+        type="STRING",
+        description="Its board column: TODO, DOING or DONE",
+    ),
+    Descriptor(
+        key="@kraph/done", type="INT", description="How many of its objects are done"
+    ),
+    Descriptor(
+        key="@kraph/total", type="INT", description="How many objects it is about"
+    ),
+    Descriptor(
+        key="@kraph/list", type="STRING", description="The id of the todo list it is on"
+    ),
+    Descriptor(
+        key="@kraph/project",
+        type="STRING",
+        description="The id of the project its list belongs to",
+    ),
+    Descriptor(
+        key="@kraph/assignee",
+        type="STRING",
+        description="Who it is for (a sub): its own assignee, else its list's",
+    ),
 ]
 
 #: What one object on an item says, for a trigger to test: "an image of this item is done".
 TODO_OBJECT_DESCRIPTORS = [
-    Descriptor(key="@kraph/identifier", type="STRING", description="The structure identifier of the object, e.g. @mikro/arraydataset"),
-    Descriptor(key="@kraph/object", type="STRING", description="The object's id within its structure"),
-    Descriptor(key="@kraph/status", type="STRING", description="How far along this object is: TODO, DOING or DONE"),
-    Descriptor(key="@kraph/done_by", type="STRING", description="Who ticked it (a sub), once it is done"),
-    Descriptor(key="@kraph/item", type="STRING", description="The id of the todo item it is on"),
-    Descriptor(key="@kraph/list", type="STRING", description="The id of the todo list its item is on"),
-    Descriptor(key="@kraph/project", type="STRING", description="The id of the project its list belongs to"),
+    Descriptor(
+        key="@kraph/identifier",
+        type="STRING",
+        description="The structure identifier of the object, e.g. @mikro/arraydataset",
+    ),
+    Descriptor(
+        key="@kraph/object",
+        type="STRING",
+        description="The object's id within its structure",
+    ),
+    Descriptor(
+        key="@kraph/status",
+        type="STRING",
+        description="How far along this object is: TODO, DOING or DONE",
+    ),
+    Descriptor(
+        key="@kraph/done_by",
+        type="STRING",
+        description="Who ticked it (a sub), once it is done",
+    ),
+    Descriptor(
+        key="@kraph/item", type="STRING", description="The id of the todo item it is on"
+    ),
+    Descriptor(
+        key="@kraph/list",
+        type="STRING",
+        description="The id of the todo list its item is on",
+    ),
+    Descriptor(
+        key="@kraph/project",
+        type="STRING",
+        description="The id of the project its list belongs to",
+    ),
 ]
 
 #: What a pairs query (an insight over a view) says about itself, for a training action to
 #: require: "pairs of images". The identifiers are the ones the plan constrains its ends to.
 PAIRS_QUERY_DESCRIPTORS = [
-    Descriptor(key="@kraph/graph", type="STRING", description="The id of the graph (view) the query reads"),
-    Descriptor(key="@kraph/source_identifier", type="STRING", description="The structure identifier the plan constrains the source to (e.g. @mikro/arraylens); null when it does not, which no EQUALS matches"),
-    Descriptor(key="@kraph/target_identifier", type="STRING", description="The structure identifier the plan constrains the target to; null when it does not"),
+    Descriptor(
+        key="@kraph/graph",
+        type="STRING",
+        description="The id of the graph (view) the query reads",
+    ),
+    Descriptor(
+        key="@kraph/source_identifier",
+        type="STRING",
+        description="The structure identifier the plan constrains the source to (e.g. @mikro/arraylens); null when it does not, which no EQUALS matches",
+    ),
+    Descriptor(
+        key="@kraph/target_identifier",
+        type="STRING",
+        description="The structure identifier the plan constrains the target to; null when it does not",
+    ),
 ]
 
 #: What a run of a pairs query says about itself: what it read, where the drawing stood, and its pairs.
 PAIRS_RUN_DESCRIPTORS = [
-    Descriptor(key="@kraph/graph", type="STRING", description="The id of the graph (view) the run read"),
-    Descriptor(key="@kraph/query", type="STRING", description="The id of the pairs query that was run"),
+    Descriptor(
+        key="@kraph/graph",
+        type="STRING",
+        description="The id of the graph (view) the run read",
+    ),
+    Descriptor(
+        key="@kraph/query",
+        type="STRING",
+        description="The id of the pairs query that was run",
+    ),
     Descriptor(key="@kraph/n_pairs", type="INT", description="How many pairs it holds"),
-    Descriptor(key="@kraph/as_of_seq", type="INT", description="Where the drawing stood: everything the log committed at or below it was drawn"),
-    Descriptor(key="@kraph/source_identifier", type="STRING", description="The structure identifier every source shares (e.g. @mikro/arraylens); null when they differ, which no EQUALS matches"),
-    Descriptor(key="@kraph/target_identifier", type="STRING", description="The structure identifier every target shares; null when they differ"),
+    Descriptor(
+        key="@kraph/as_of_seq",
+        type="INT",
+        description="Where the drawing stood: everything the log committed at or below it was drawn",
+    ),
+    Descriptor(
+        key="@kraph/source_identifier",
+        type="STRING",
+        description="The structure identifier every source shares (e.g. @mikro/arraylens); null when they differ, which no EQUALS matches",
+    ),
+    Descriptor(
+        key="@kraph/target_identifier",
+        type="STRING",
+        description="The structure identifier every target shares; null when they differ",
+    ),
 ]
 
 #: What a trained model says about itself, for a prediction action to require: "a CARE model trained on image pairs".
 MODEL_DESCRIPTORS = [
-    Descriptor(key="@kraph/framework", type="STRING", description="What the weights are for, e.g. care or cellpose"),
-    Descriptor(key="@kraph/trained_on", type="STRING", description="The id of the pairs query run it was trained on; null for weights from elsewhere"),
-    Descriptor(key="@kraph/query", type="STRING", description="The id of the pairs query its training run ran; null without a run"),
-    Descriptor(key="@kraph/as_of_seq", type="INT", description="Where the drawing stood when its training run read it; null without a run"),
-    Descriptor(key="@kraph/source_identifier", type="STRING", description="The structure identifier every source of its training pairs shares; null when they differ or there is no run"),
-    Descriptor(key="@kraph/target_identifier", type="STRING", description="The structure identifier every target of its training pairs shares; null when they differ or there is no run"),
+    Descriptor(
+        key="@kraph/framework",
+        type="STRING",
+        description="What the weights are for, e.g. care or cellpose",
+    ),
+    Descriptor(
+        key="@kraph/trained_on",
+        type="STRING",
+        description="The id of the pairs query run it was trained on; null for weights from elsewhere",
+    ),
+    Descriptor(
+        key="@kraph/query",
+        type="STRING",
+        description="The id of the pairs query its training run ran; null without a run",
+    ),
+    Descriptor(
+        key="@kraph/as_of_seq",
+        type="INT",
+        description="Where the drawing stood when its training run read it; null without a run",
+    ),
+    Descriptor(
+        key="@kraph/source_identifier",
+        type="STRING",
+        description="The structure identifier every source of its training pairs shares; null when they differ or there is no run",
+    ),
+    Descriptor(
+        key="@kraph/target_identifier",
+        type="STRING",
+        description="The structure identifier every target of its training pairs shares; null when they differ or there is no run",
+    ),
 ]
 
 #: What exists on a hub because kraph is there, said as data so the hub knows it from the image.
@@ -164,10 +310,21 @@ contract = Contract(
         identifier="live.arkitekt.kraph",
         summary="The graph that ties samples, images and measurements together.",
         # The instance key signs the hook agent's reports and its reads of mikro's change feed.
-        needs=Needs(scopes=SCOPES, roles=ROLES, storage=["media", "zarr", "bigfile"], instance_key=True, peers=["rekuest", "mikro"]),
+        needs=Needs(
+            scopes=SCOPES,
+            roles=ROLES,
+            storage=["media", "zarr", "bigfile"],
+            instance_key=True,
+            peers=["rekuest", "mikro"],
+        ),
         # `rekuest_hook`: the hook agent (`kraph_server.hook_agent`), whose `ingest_metrics` a
         # trigger on mikro's metrics and a schedule run (internal network only).
-        offers=Offers(endpoints={"rekuest_hook": "_rekuest/hook", "rekuest_service": "_rekuest/service"}),
+        offers=Offers(
+            endpoints={
+                "rekuest_hook": "_rekuest/hook",
+                "rekuest_service": "_rekuest/service",
+            }
+        ),
         hosts=HOSTS,
         # rekuest 8 registers a hook action's ports: without them the wiregram's trigger on
         # @mikro/metric is refused, and its import with it.
@@ -177,19 +334,58 @@ contract = Contract(
     render=render,
     # How this service is started: there is no script beside it. `arkitekt-service serve`
     # (and `debug`) become these, so they get the container's signals themselves.
-    serve=Start(("daphne", "-b", "0.0.0.0", "-p", "80", "--websocket_timeout", "-1", "kraph_server.asgi:application")),
+    serve=Start(
+        (
+            "daphne",
+            "-b",
+            "0.0.0.0",
+            "-p",
+            "80",
+            "--websocket_timeout",
+            "-1",
+            "kraph_server.asgi:application",
+        )
+    ),
     debug=Start(("python", "manage.py", "runserver", "0.0.0.0:80")),
     jobs={
-        "ensureadmin": Job(("ensureadmin",), "Create the operator account the config names"),
-        "restore_descriptors": Job(("restore_descriptors",), "Store the descriptors of every hosted row (todos, pairs queries, runs, models) that misses one its structure declares (--all: of every row)"),
-        "reproject": Job(("reproject",), "Rebuild a graph's projection from the evidence, or converge what is owed: --graph, --all, --incremental"),
-        "rematerialize": Job(("rematerialize",), "Redraw the vertices of categories whose rules moved on without them: --graph, --stale"),
-        "refresh_namespaces": Job(("refresh_namespaces",), "Rebuild graphs' queryable namespaces from their categories: --graph, --all"),
-        "rebuild_identity": Job(("rebuild_identity",), "Rebuild the instance-identity fold from the sameness claims that stand: --check, --stale"),
-        "rebuild_asserted_terms": Job(("rebuild_asserted_terms",), "Rebuild the index of the words each category's definition derives from: --check"),
-        "backfill_schema": Job(("backfill_schema",), "Apply a schema change to the data it affects: --graph, --to-version"),
-        "list_legacy_queries": Job(("list_legacy_queries",), "Name the saved queries that still store raw Cypher instead of a plan"),
-        "redact": Job(("redact",), "Destroy evidence on purpose, logged: what no mutation can do"),
+        "ensureadmin": Job(
+            ("ensureadmin",), "Create the operator account the config names"
+        ),
+        "restore_descriptors": Job(
+            ("restore_descriptors",),
+            "Store the descriptors of every hosted row (todos, pairs queries, runs, models) that misses one its structure declares (--all: of every row)",
+        ),
+        "reproject": Job(
+            ("reproject",),
+            "Rebuild a graph's projection from the evidence, or converge what is owed: --graph, --all, --incremental",
+        ),
+        "rematerialize": Job(
+            ("rematerialize",),
+            "Redraw the vertices of categories whose rules moved on without them: --graph, --stale",
+        ),
+        "refresh_namespaces": Job(
+            ("refresh_namespaces",),
+            "Rebuild graphs' queryable namespaces from their categories: --graph, --all",
+        ),
+        "rebuild_identity": Job(
+            ("rebuild_identity",),
+            "Rebuild the instance-identity fold from the sameness claims that stand: --check, --stale",
+        ),
+        "rebuild_asserted_terms": Job(
+            ("rebuild_asserted_terms",),
+            "Rebuild the index of the words each category's definition derives from: --check",
+        ),
+        "backfill_schema": Job(
+            ("backfill_schema",),
+            "Apply a schema change to the data it affects: --graph, --to-version",
+        ),
+        "list_legacy_queries": Job(
+            ("list_legacy_queries",),
+            "Name the saved queries that still store raw Cypher instead of a plan",
+        ),
+        "redact": Job(
+            ("redact",), "Destroy evidence on purpose, logged: what no mutation can do"
+        ),
     },
     # `restore_descriptors`: todo rows from before a descriptor key existed are given it, announcing nothing.
     setup=("ensureadmin", "restore_descriptors"),

@@ -1,7 +1,5 @@
 """Node query resolvers."""
 
-from typing import List
-
 import strawberry
 from kante.types import Info
 
@@ -16,7 +14,7 @@ def nodes(
     filters: filters.NodeFilters | None = None,
     ordering: list[order.NodeOrder] | None = None,
     pagination: pagination.NodePaginationInput | None = None,
-) -> List[types.Node]:
+) -> list[types.Node]:
     """Every node this view holds, from the claims.
 
     View-scoped, which is what a `graph` argument means: membership is
@@ -35,11 +33,21 @@ def nodes(
 
     filter_model = filters.to_pydantic() if filters else input_models.NodeFilters()
     ordering_models = [entry.to_pydantic() for entry in ordering] if ordering else []
-    pagination_model = pagination.to_pydantic() if pagination else input_models.NodePagination()
+    pagination_model = (
+        pagination.to_pydantic() if pagination else input_models.NodePagination()
+    )
 
-    rows = _nodes.narrow(_nodes.rows_in_graph(graph_model), filter_model, ordering_models, pagination_model)
+    rows = _nodes.narrow(
+        _nodes.rows_in_graph(graph_model),
+        filter_model,
+        ordering_models,
+        pagination_model,
+    )
 
-    return [types.Node.to_subtype(node) for node in _nodes.retrieved_in(controller, graph_model, rows)]
+    return [
+        types.Node.to_subtype(node)
+        for node in _nodes.retrieved_in(controller, graph_model, rows)
+    ]
 
 
 def node(info: Info, id: strawberry.ID, graph: strawberry.ID) -> types.Node:

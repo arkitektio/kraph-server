@@ -5,9 +5,10 @@ ordering is the log's, and a filter the drawing could only approximate is
 refused rather than narrowed silently.
 """
 
-import pytest
 import kante
+import pytest
 from kante.context import HttpContext
+
 from core import models as core_models
 from tests.support import claims, reads, writes
 
@@ -176,14 +177,22 @@ async def test_list_structures_with_filters_ordering_and_pagination(
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_claim_lists_order_by_the_logs_own_order(api_schema, simple_api_context, test_graph) -> None:
+async def test_claim_lists_order_by_the_logs_own_order(
+    api_schema, simple_api_context, test_graph
+) -> None:
     first = await writes.create_entity(api_schema, simple_api_context, "AIS")
     second = await writes.create_entity(api_schema, simple_api_context, "AIS")
 
-    read = await api_schema.execute(reads.NODES_BY_SEQ, variable_values={"graph": str(test_graph.pk)}, context_value=simple_api_context)
+    read = await api_schema.execute(
+        reads.NODES_BY_SEQ,
+        variable_values={"graph": str(test_graph.pk)},
+        context_value=simple_api_context,
+    )
     assert read.errors is None, f"GraphQL errors: {read.errors}"
     ids = [row["id"] for row in read.data["nodes"]]
-    assert ids.index(second) < ids.index(first), "the later act comes first under seq DESC"
+    assert ids.index(second) < ids.index(first), (
+        "the later act comes first under seq DESC"
+    )
 
 
 def test_the_page_window_is_clamped() -> None:
@@ -194,16 +203,31 @@ def test_the_page_window_is_clamped() -> None:
     from api import pagination
 
     assert pagination.window(None) == (0, pagination.DEFAULT_LIMIT)
-    assert pagination.window(type("P", (), {"offset": 20, "limit": 5000})()) == (20, pagination.MAX_LIMIT)
-    assert pagination.window(type("P", (), {"offset": -3, "limit": 0})()) == (0, pagination.DEFAULT_LIMIT)
+    assert pagination.window(type("P", (), {"offset": 20, "limit": 5000})()) == (
+        20,
+        pagination.MAX_LIMIT,
+    )
+    assert pagination.window(type("P", (), {"offset": -3, "limit": 0})()) == (
+        0,
+        pagination.DEFAULT_LIMIT,
+    )
     assert pagination.MAX_LIMIT == 1000
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_a_limit_above_the_ceiling_is_not_an_error(api_schema, simple_api_context, test_graph) -> None:
+async def test_a_limit_above_the_ceiling_is_not_an_error(
+    api_schema, simple_api_context, test_graph
+) -> None:
     await writes.create_entity(api_schema, simple_api_context, "AIS")
 
-    result = await api_schema.execute(reads.NODES_PAGED, variable_values={"graph": str(test_graph.id), "pagination": {"limit": 5000, "offset": 0}}, context_value=simple_api_context)
+    result = await api_schema.execute(
+        reads.NODES_PAGED,
+        variable_values={
+            "graph": str(test_graph.id),
+            "pagination": {"limit": 5000, "offset": 0},
+        },
+        context_value=simple_api_context,
+    )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     assert 1 <= len(result.data["nodes"]) <= 1000

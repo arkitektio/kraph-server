@@ -13,9 +13,18 @@ from __future__ import annotations
 from strawberry.extensions import SchemaExtension
 
 from graph_engine.projection import Projector
-from graph_engine.projection.context import current_or_default, current_projector, get_current_projector
+from graph_engine.projection.context import (
+    current_or_default,
+    current_projector,
+    get_current_projector,
+)
 
-__all__ = ["ProjectionExtension", "current_or_default", "current_projector", "get_current_projector"]
+__all__ = [
+    "ProjectionExtension",
+    "current_or_default",
+    "current_projector",
+    "get_current_projector",
+]
 
 
 class ProjectionExtension(SchemaExtension):

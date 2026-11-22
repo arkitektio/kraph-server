@@ -20,6 +20,7 @@ from kante.types import Info
 
 from api import inputs, types
 from core import models
+
 from ._category import create_category, delete_category, update_category
 
 
@@ -39,7 +40,9 @@ def create_natural_event_category(
     return cast(types.NaturalEventCategory, category)
 
 
-def update_natural_event_category(info: Info, input: inputs.UpdateNaturalEventCategoryInput) -> types.NaturalEventCategory:
+def update_natural_event_category(
+    info: Info, input: inputs.UpdateNaturalEventCategoryInput
+) -> types.NaturalEventCategory:
     """Change a natural event category's label, colour, image, pin or rule."""
     model = input.to_pydantic()
     item = update_category(

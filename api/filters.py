@@ -1,18 +1,22 @@
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
-import strawberry
-from core import models, enums
-from evidence import models as evidence_models
-from django.db.models import Q, QuerySet
+
 import kante
-from graph_engine import input_models
+import strawberry
+from django.db.models import Q, QuerySet
+
 from api import inputs
 from api.context import get_active_organization, get_controller
-from graph_engine import namespace
+from core import enums, models
+from evidence import models as evidence_models
+from graph_engine import input_models, namespace
 
 
-@kante.pydantic_input(input_models.PropertyMatch, all_fields=True, description="A property match condition for filtering structures")
+@kante.pydantic_input(
+    input_models.PropertyMatch,
+    all_fields=True,
+    description="A property match condition for filtering structures",
+)
 class PropertyMatch:
     """The condition to match for a specific property when filtering structures."""
 
@@ -45,30 +49,56 @@ class PropertyMatch:
 # again, the structure's `object`.
 
 
-@kante.pydantic_input(input_models.EntityFilters, description="Filter options for querying entities")
+@kante.pydantic_input(
+    input_models.EntityFilters, description="Filter options for querying entities"
+)
 class EntityFilter:
     """Filter options for entity queries."""
 
-    ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific entity IDs")
-    search: Optional[str] = kante.field(default=None, description="Substring match on the claim's term key or label — the word the organization uses for it. A column of the log, not a derived property: a node this view admits but has not drawn yet is still found")
+    ids: list[strawberry.ID] | None = kante.field(
+        default=None, description="Filter by specific entity IDs"
+    )
+    search: str | None = kante.field(
+        default=None,
+        description="Substring match on the claim's term key or label — the word the organization uses for it. A column of the log, not a derived property: a node this view admits but has not drawn yet is still found",
+    )
 
 
-@kante.pydantic_input(input_models.NodeFilters, description="Filter options for querying nodes")
+@kante.pydantic_input(
+    input_models.NodeFilters, description="Filter options for querying nodes"
+)
 class NodeFilters:
     """Filter options for node queries."""
 
-    ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific node IDs")
-    search: Optional[str] = kante.field(default=None, description="Substring match on the claim's term key or label — the word the organization uses for it. A column of the log, not a derived property: a node this view admits but has not drawn yet is still found")
+    ids: list[strawberry.ID] | None = kante.field(
+        default=None, description="Filter by specific node IDs"
+    )
+    search: str | None = kante.field(
+        default=None,
+        description="Substring match on the claim's term key or label — the word the organization uses for it. A column of the log, not a derived property: a node this view admits but has not drawn yet is still found",
+    )
 
 
-@kante.pydantic_input(input_models.StructureFilters, description="Filter options for querying structures")
+@kante.pydantic_input(
+    input_models.StructureFilters, description="Filter options for querying structures"
+)
 class StructureFilter:
     """Filter options for structure queries."""
 
-    ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific structure IDs")
-    has_property: Optional[str] = kante.field(default=None, description="Filter structures that have a specific property")
-    search: Optional[str] = kante.field(default=None, description="Substring match on the structure's `object` — the external datum it points at. Not its properties: `hasProperty` and `matches` are the ones that go over metrics")
-    matches: Optional[List[PropertyMatch]] = kante.field(default=None, description="Filter structures that match specific property conditions")
+    ids: list[strawberry.ID] | None = kante.field(
+        default=None, description="Filter by specific structure IDs"
+    )
+    has_property: str | None = kante.field(
+        default=None, description="Filter structures that have a specific property"
+    )
+    search: str | None = kante.field(
+        default=None,
+        description="Substring match on the structure's `object` — the external datum it points at. Not its properties: `hasProperty` and `matches` are the ones that go over metrics",
+    )
+    matches: list[PropertyMatch] | None = kante.field(
+        default=None,
+        description="Filter structures that match specific property conditions",
+    )
 
 
 # `MetricFilter` used to sit here — four fields, referenced by no root field:
@@ -76,41 +106,71 @@ class StructureFilter:
 # `api/queries/metric.py`, and nothing else ever took one.
 
 
-@kante.pydantic_input(input_models.NaturalEventFilters, description="Filter options for querying natural events")
+@kante.pydantic_input(
+    input_models.NaturalEventFilters,
+    description="Filter options for querying natural events",
+)
 class NaturalEventFilter:
     """Filter options for natural event queries."""
 
-    ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific natural event IDs")
-    search: Optional[str] = kante.field(default=None, description="Substring match on the claim's term key or label — the word the organization uses for it. A column of the log, not a derived property: a node this view admits but has not drawn yet is still found")
+    ids: list[strawberry.ID] | None = kante.field(
+        default=None, description="Filter by specific natural event IDs"
+    )
+    search: str | None = kante.field(
+        default=None,
+        description="Substring match on the claim's term key or label — the word the organization uses for it. A column of the log, not a derived property: a node this view admits but has not drawn yet is still found",
+    )
 
 
-@kante.pydantic_input(input_models.ProtocolEventFilters, description="Filter options for querying protocol events")
+@kante.pydantic_input(
+    input_models.ProtocolEventFilters,
+    description="Filter options for querying protocol events",
+)
 class ProtocolEventFilter:
     """Filter options for protocol event queries."""
 
-    ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific protocol event IDs")
-    search: Optional[str] = kante.field(default=None, description="Substring match on the claim's term key or label — the word the organization uses for it. A column of the log, not a derived property: a node this view admits but has not drawn yet is still found")
+    ids: list[strawberry.ID] | None = kante.field(
+        default=None, description="Filter by specific protocol event IDs"
+    )
+    search: str | None = kante.field(
+        default=None,
+        description="Substring match on the claim's term key or label — the word the organization uses for it. A column of the log, not a derived property: a node this view admits but has not drawn yet is still found",
+    )
 
 
-@kante.pydantic_input(input_models.MeasurementFilters, description="Filter options for querying measurements")
+@kante.pydantic_input(
+    input_models.MeasurementFilters,
+    description="Filter options for querying measurements",
+)
 class MeasurementFilter:
     """Filter options for measurement queries."""
 
-    ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific measurement IDs")
+    ids: list[strawberry.ID] | None = kante.field(
+        default=None, description="Filter by specific measurement IDs"
+    )
 
 
-@kante.pydantic_input(input_models.StructureRelationFilters, description="Filter options for querying structure relations")
+@kante.pydantic_input(
+    input_models.StructureRelationFilters,
+    description="Filter options for querying structure relations",
+)
 class StructureRelationFilter:
     """Filter options for structure relation queries."""
 
-    ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific structure relation IDs")
+    ids: list[strawberry.ID] | None = kante.field(
+        default=None, description="Filter by specific structure relation IDs"
+    )
 
 
-@kante.pydantic_input(input_models.RelationFilters, description="Filter options for querying relations")
+@kante.pydantic_input(
+    input_models.RelationFilters, description="Filter options for querying relations"
+)
 class RelationFilter:
     """Filter options for relation queries."""
 
-    ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific relation IDs")
+    ids: list[strawberry.ID] | None = kante.field(
+        default=None, description="Filter by specific relation IDs"
+    )
 
 
 @kante.filter_type(models.Graph)
@@ -129,13 +189,19 @@ class GraphFilter:
 
     @kante.filter_field(description="Filter by list of IDs")
     def search(self, value: str, prefix: str) -> Q:
-        return Q(**{f"{prefix}name__search": value}) | Q(**{f"{prefix}description__search": value})
+        return Q(**{f"{prefix}name__search": value}) | Q(
+            **{f"{prefix}description__search": value}
+        )
 
-    @kante.filter_field(description="Only the graphs this member made, by their lok sub")
+    @kante.filter_field(
+        description="Only the graphs this member made, by their lok sub"
+    )
     def creator(self, value: strawberry.ID, prefix: str) -> Q:
         return Q(**{f"{prefix}user__sub": value})
 
-    @kante.filter_field(description="Only archived graphs, or only live ones. Omitted shows both")
+    @kante.filter_field(
+        description="Only archived graphs, or only live ones. Omitted shows both"
+    )
     def is_archived(self, value: bool, prefix: str) -> Q:
         """The read half of archiving.
 
@@ -172,7 +238,9 @@ class EntityCategoryFilter(CategoryFilter):
     pass
 
     @kante.filter_field(description="Filter by list of IDs")
-    def matches_descriptor(self, info: kante.Info, value: inputs.EntityDescriptorInput, prefix: str) -> Q:
+    def matches_descriptor(
+        self, info: kante.Info, value: inputs.EntityDescriptorInput, prefix: str
+    ) -> Q:
         """Filter entity categories by whether they match a specific identifier pattern."""
         return Q(**{f"{prefix}key__in": value.keys})
 
@@ -205,14 +273,16 @@ class MetricKindFilter:
     # strawberry_django as `Q(<name>=value)`, and neither `ids` nor `search` is a
     # column — every use raised `FieldError`. The log filters below say the same.
     @kante.filter_field(description="Filter by list of IDs")
-    def ids(self, info: kante.Info, value: List[strawberry.ID], prefix: str) -> Q:
+    def ids(self, info: kante.Info, value: list[strawberry.ID], prefix: str) -> Q:
         return Q(**{f"{prefix}id__in": [str(v) for v in value]})
 
     @kante.filter_field(description="Search label and key")
     def search(self, info: kante.Info, value: str, prefix: str) -> Q:
         return _text_search(prefix, value, "key", "label", "description")
 
-    @kante.filter_field(description="Filter by the kind of value this measurement carries")
+    @kante.filter_field(
+        description="Filter by the kind of value this measurement carries"
+    )
     def value_kind(self, info: kante.Info, value: enums.ValueKind, prefix: str) -> Q:
         """Filter metric kinds by the kind of value they represent."""
         return Q(**{f"{prefix}value_kind": value})
@@ -223,39 +293,71 @@ class MetricKindFilter:
         return Q(**{f"{prefix}structure_kind_id": value})
 
 
-@strawberry.input(description="The two ends a relation would connect: entity category ids, in one graph")
+@strawberry.input(
+    description="The two ends a relation would connect: entity category ids, in one graph"
+)
 class RelationEndsInput:
-    source: strawberry.ID = strawberry.field(description="The entity category of the source end")
-    target: strawberry.ID = strawberry.field(description="The entity category of the target end")
+    source: strawberry.ID = strawberry.field(
+        description="The entity category of the source end"
+    )
+    target: strawberry.ID = strawberry.field(
+        description="The entity category of the target end"
+    )
 
 
-@strawberry.input(description="The two ends a structure relation would connect: structure kind identifiers")
+@strawberry.input(
+    description="The two ends a structure relation would connect: structure kind identifiers"
+)
 class StructureRelationEndsInput:
-    source: str = strawberry.field(description="The structure kind identifier of the source end, e.g. `@mikro/roi`")
-    target: str = strawberry.field(description="The structure kind identifier of the target end")
+    source: str = strawberry.field(
+        description="The structure kind identifier of the source end, e.g. `@mikro/roi`"
+    )
+    target: str = strawberry.field(
+        description="The structure kind identifier of the target end"
+    )
 
 
-@strawberry.input(description="The two claims a relation would connect: instance ids, whichever views draw them")
+@strawberry.input(
+    description="The two claims a relation would connect: instance ids, whichever views draw them"
+)
 class RelationInstancesInput:
-    source: strawberry.ID = strawberry.field(description="The instance at the source end")
-    target: strawberry.ID = strawberry.field(description="The instance at the target end")
+    source: strawberry.ID = strawberry.field(
+        description="The instance at the source end"
+    )
+    target: strawberry.ID = strawberry.field(
+        description="The instance at the target end"
+    )
 
 
 @kante.filter_type(models.Category)
 class RelationCategoryFilter(CategoryFilter):
-    @kante.filter_field(description="Only the relation categories whose source and target descriptors admit these two entity categories — what the write would accept, in one query")
+    @kante.filter_field(
+        description="Only the relation categories whose source and target descriptors admit these two entity categories — what the write would accept, in one query"
+    )
     def admits(self, value: RelationEndsInput, prefix: str) -> Q:
-        return Q(**{f"{prefix}id__in": namespace.relation_categories_admitting(int(value.source), int(value.target))})
+        return Q(
+            **{
+                f"{prefix}id__in": namespace.relation_categories_admitting(
+                    int(value.source), int(value.target)
+                )
+            }
+        )
 
     @kante.filter_field(
         description=(
-            "Only the relation categories that could connect these two claims: in every view that draws both, the categories admitting the categories that view draws them under. "
-            "`admits` asked once per view the two share, in one query"
+            "Only the relation categories that could connect these two claims: in every view that draws both, the categories admitting the categories that view draws them under. `admits` asked once per view the two share, in one query"
         )
     )
-    def admits_instances(self, info: kante.Info, value: RelationInstancesInput, prefix: str) -> Q:
+    def admits_instances(
+        self, info: kante.Info, value: RelationInstancesInput, prefix: str
+    ) -> Q:
         organization = get_active_organization(info)
-        ends = {str(row.pk): row for row in evidence_models.Instance.objects.for_organization(organization).filter(pk__in=[str(value.source), str(value.target)])}
+        ends = {
+            str(row.pk): row
+            for row in evidence_models.Instance.objects.for_organization(
+                organization
+            ).filter(pk__in=[str(value.source), str(value.target)])
+        }
         source, target = ends.get(str(value.source)), ends.get(str(value.target))
         if source is None or target is None:
             return Q(**{f"{prefix}id__in": []})
@@ -265,13 +367,19 @@ class RelationCategoryFilter(CategoryFilter):
         for source_drawing in controller.drawings_for_instance(source):
             for target_drawing in target_drawings:
                 if source_drawing.graph.pk == target_drawing.graph.pk:
-                    admitted.update(namespace.relation_categories_admitting(source_drawing.category.pk, target_drawing.category.pk))
+                    admitted.update(
+                        namespace.relation_categories_admitting(
+                            source_drawing.category.pk, target_drawing.category.pk
+                        )
+                    )
         return Q(**{f"{prefix}id__in": sorted(admitted)})
 
 
 @kante.filter_type(models.Category)
 class MeasurementCategoryFilter(CategoryFilter):
-    @kante.filter_field(description="Filter by the structure identifier this measurement's source selects")
+    @kante.filter_field(
+        description="Filter by the structure identifier this measurement's source selects"
+    )
     def source_identifier(self, info: kante.Info, value: str, prefix: str) -> Q:
         """Filter measurement categories by the structure identifier they measure.
 
@@ -301,7 +409,7 @@ class TermFilter:
     """
 
     @kante.filter_field(description="Filter by list of IDs")
-    def ids(self, info: kante.Info, value: List[strawberry.ID], prefix: str) -> Q:
+    def ids(self, info: kante.Info, value: list[strawberry.ID], prefix: str) -> Q:
         return Q(**{f"{prefix}id__in": [str(v) for v in value]})
 
     @kante.filter_field(description="Search key, label and description")
@@ -309,16 +417,18 @@ class TermFilter:
         return _text_search(prefix, value, "key", "label", "description")
 
     @kante.filter_field(description="Filter by what sort of thing the word names")
-    def kinds(self, info: kante.Info, value: List[enums.TermKind], prefix: str) -> Q:
+    def kinds(self, info: kante.Info, value: list[enums.TermKind], prefix: str) -> Q:
         """Narrow to terms of these kinds."""
         return Q(**{f"{prefix}kind__in": [str(kind.value) for kind in value]})
 
     @kante.filter_field(description="Filter by the words themselves")
-    def keys(self, info: kante.Info, value: List[str], prefix: str) -> Q:
+    def keys(self, info: kante.Info, value: list[str], prefix: str) -> Q:
         """Narrow to these exact words."""
         return Q(**{f"{prefix}key__in": value})
 
-    @kante.filter_field(description="Filter to terms at least one graph declares a category for")
+    @kante.filter_field(
+        description="Filter to terms at least one graph declares a category for"
+    )
     def declared(self, info: kante.Info, value: bool, prefix: str) -> Q:
         """Whether any view speaks this word.
 
@@ -327,7 +437,9 @@ class TermFilter:
         """
         return Q(**{f"{prefix}categories__isnull": not value})
 
-    @kante.filter_field(description="Only hidden words, or only offered ones. Omitted shows both")
+    @kante.filter_field(
+        description="Only hidden words, or only offered ones. Omitted shows both"
+    )
     def hidden(self, info: kante.Info, value: bool, prefix: str) -> Q:
         """The read half of hiding.
 
@@ -359,22 +471,26 @@ class AssertionFilter:
     """
 
     @kante.filter_field(description="Filter by assertion ids")
-    def ids(self, info: kante.Info, value: List[strawberry.ID], prefix: str) -> Q:
+    def ids(self, info: kante.Info, value: list[strawberry.ID], prefix: str) -> Q:
         return Q(**{f"{prefix}id__in": [str(id) for id in value]})
 
-    @kante.filter_field(description="Who made the claims — user ids, or the identities of automated agents")
-    def subjects(self, info: kante.Info, value: List[str], prefix: str) -> Q:
+    @kante.filter_field(
+        description="Who made the claims — user ids, or the identities of automated agents"
+    )
+    def subjects(self, info: kante.Info, value: list[str], prefix: str) -> Q:
         return Q(**{f"{prefix}subject__in": value})
 
     @kante.filter_field(description="Which applications made them")
-    def app_ids(self, info: kante.Info, value: List[str], prefix: str) -> Q:
+    def app_ids(self, info: kante.Info, value: list[str], prefix: str) -> Q:
         return Q(**{f"{prefix}app_id__in": value})
 
     @kante.filter_field(description="Which actions within those applications")
-    def action_ids(self, info: kante.Info, value: List[str], prefix: str) -> Q:
+    def action_ids(self, info: kante.Info, value: list[str], prefix: str) -> Q:
         return Q(**{f"{prefix}action_id__in": value})
 
-    @kante.filter_field(description="Claims made at or after this moment — belief time, the axis `as_of` reads")
+    @kante.filter_field(
+        description="Claims made at or after this moment — belief time, the axis `as_of` reads"
+    )
     def asserted_since(self, info: kante.Info, value: datetime, prefix: str) -> Q:
         return Q(**{f"{prefix}asserted_at__gte": value})
 
@@ -382,7 +498,9 @@ class AssertionFilter:
     def asserted_before(self, info: kante.Info, value: datetime, prefix: str) -> Q:
         return Q(**{f"{prefix}asserted_at__lt": value})
 
-    @kante.filter_field(description="Only positions in the log strictly after this seq. For reading forward, prefer `changes(afterSeq:)`, which also withholds what may still be committing")
+    @kante.filter_field(
+        description="Only positions in the log strictly after this seq. For reading forward, prefer `changes(afterSeq:)`, which also withholds what may still be committing"
+    )
     def seq_after(self, info: kante.Info, value: int, prefix: str) -> Q:
         return Q(**{f"{prefix}seq__gt": int(value)})
 
@@ -400,7 +518,13 @@ class StandingTargetType(str, Enum):
 
 #: API name → stored `Standing.target_type`. The one asymmetry is `INSTANCE`,
 #: which the writer spells `'node'`.
-STANDING_TARGET_TYPES: dict[str, str] = {"INSTANCE": "node", "LINK": "link", "STRUCTURE": "structure", "METRIC": "metric", "COMMENT": "comment"}
+STANDING_TARGET_TYPES: dict[str, str] = {
+    "INSTANCE": "node",
+    "LINK": "link",
+    "STRUCTURE": "structure",
+    "METRIC": "metric",
+    "COMMENT": "comment",
+}
 
 
 @kante.filter_type(evidence_models.Standing)
@@ -408,26 +532,34 @@ class StandingFilter:
     """Positions by who took them, on what kind of claim, and when."""
 
     @kante.filter_field(description="Who took the position")
-    def subjects(self, info: kante.Info, value: List[str], prefix: str) -> Q:
+    def subjects(self, info: kante.Info, value: list[str], prefix: str) -> Q:
         return Q(**{f"{prefix}assertion__subject__in": value})
 
     @kante.filter_field(description="With which application")
-    def app_ids(self, info: kante.Info, value: List[str], prefix: str) -> Q:
+    def app_ids(self, info: kante.Info, value: list[str], prefix: str) -> Q:
         return Q(**{f"{prefix}assertion__app_id__in": value})
 
     @kante.filter_field(description="What kind of claim the position is about")
-    def target_type(self, info: kante.Info, value: StandingTargetType, prefix: str) -> Q:
+    def target_type(
+        self, info: kante.Info, value: StandingTargetType, prefix: str
+    ) -> Q:
         return Q(**{f"{prefix}target_type": STANDING_TARGET_TYPES[str(value.value)]})
 
-    @kante.filter_field(description="Positions that took effect at or after this moment — `Standing.at`, world time")
+    @kante.filter_field(
+        description="Positions that took effect at or after this moment — `Standing.at`, world time"
+    )
     def since(self, info: kante.Info, value: datetime, prefix: str) -> Q:
         return Q(**{f"{prefix}at__gte": value})
 
-    @kante.filter_field(description="Positions that took effect strictly before this moment")
+    @kante.filter_field(
+        description="Positions that took effect strictly before this moment"
+    )
     def until(self, info: kante.Info, value: datetime, prefix: str) -> Q:
         return Q(**{f"{prefix}at__lt": value})
 
-    @kante.filter_field(description="Only attestations (true) or only retractions (false)")
+    @kante.filter_field(
+        description="Only attestations (true) or only retractions (false)"
+    )
     def stands(self, info: kante.Info, value: bool, prefix: str) -> Q:
         return Q(**{f"{prefix}stands": bool(value)})
 
@@ -437,7 +569,7 @@ class StructureKindFilter:
     """Filter options for structure kind queries. Standalone — see `MetricKindFilter`."""
 
     @kante.filter_field(description="Filter by list of IDs")
-    def ids(self, info: kante.Info, value: List[strawberry.ID], prefix: str) -> Q:
+    def ids(self, info: kante.Info, value: list[strawberry.ID], prefix: str) -> Q:
         return Q(**{f"{prefix}id__in": [str(v) for v in value]})
 
     @kante.filter_field(description="Search label and identifier")
@@ -445,32 +577,51 @@ class StructureKindFilter:
         return _text_search(prefix, value, "identifier", "label", "description")
 
     @kante.filter_field(description="Filter by structure identifiers")
-    def identifiers(self, info: kante.Info, value: List[str], prefix: str) -> Q:
+    def identifiers(self, info: kante.Info, value: list[str], prefix: str) -> Q:
         """Filter structure kinds by identifier."""
         return Q(**{f"{prefix}identifier__in": value})
 
     @kante.filter_field(description="Filter by whether the kind matches a descriptor")
-    def matches_descriptor(self, info: kante.Info, value: inputs.StructureDescriptorInput, prefix: str) -> Q:
+    def matches_descriptor(
+        self, info: kante.Info, value: inputs.StructureDescriptorInput, prefix: str
+    ) -> Q:
         """Filter structure kinds by identifier pattern."""
         return Q(**{f"{prefix}identifier__in": value.identifiers})
 
 
 @kante.filter_type(models.Category)
 class StructureCategoryFilter(CategoryFilter):
-    @kante.filter_field(description="The categories mounting one of these structure identifiers")
+    @kante.filter_field(
+        description="The categories mounting one of these structure identifiers"
+    )
     def identifiers(self, value: list[str], prefix: str) -> Q:
         return Q(**{f"{prefix}structure_kind__identifier__in": value})
 
 
 @kante.filter_type(models.Category)
 class StructureRelationCategoryFilter(CategoryFilter):
-    @kante.filter_field(description="Only the structure relation categories whose ends admit these two structure kinds")
-    def admits(self, info: kante.Info, value: StructureRelationEndsInput, prefix: str) -> Q:
-        scoped = models.Category.objects.filter(graph__organization=get_active_organization(info))
-        return Q(**{f"{prefix}id__in": namespace.structure_relation_categories_admitting(scoped, value.source, value.target)})
+    @kante.filter_field(
+        description="Only the structure relation categories whose ends admit these two structure kinds"
+    )
+    def admits(
+        self, info: kante.Info, value: StructureRelationEndsInput, prefix: str
+    ) -> Q:
+        scoped = models.Category.objects.filter(
+            graph__organization=get_active_organization(info)
+        )
+        return Q(
+            **{
+                f"{prefix}id__in": namespace.structure_relation_categories_admitting(
+                    scoped, value.source, value.target
+                )
+            }
+        )
 
 
-@kante.pydantic_input(input_models.RelationFilters, description="Filter options for querying participation claims")
+@kante.pydantic_input(
+    input_models.RelationFilters,
+    description="Filter options for querying participation claims",
+)
 class ParticipationFilter:
     """Filter options for participation queries.
 
@@ -482,7 +633,9 @@ class ParticipationFilter:
     (`_edges.narrow`) reads `ids` and nothing else on any of them.
     """
 
-    ids: Optional[List[strawberry.ID]] = kante.field(default=None, description="Filter by specific participation IDs")
+    ids: list[strawberry.ID] | None = kante.field(
+        default=None, description="Filter by specific participation IDs"
+    )
 
 
 @kante.filter_type(models.GraphQuery)
@@ -495,9 +648,13 @@ class GraphQueryFilter:
 
     @kante.filter_field(description="Full-text search over label and description")
     def search(self, value: str, prefix: str) -> Q:
-        return Q(**{f"{prefix}label__search": value}) | Q(**{f"{prefix}description__search": value})
+        return Q(**{f"{prefix}label__search": value}) | Q(
+            **{f"{prefix}description__search": value}
+        )
 
-    @kante.filter_field(description="Only archived queries, or only live ones. Omitted shows both")
+    @kante.filter_field(
+        description="Only archived queries, or only live ones. Omitted shows both"
+    )
     def archived(self, value: bool, prefix: str) -> Q:
         """Opt-in, for the same reason as `GraphFilter.is_archived`."""
         return Q(**{f"{prefix}archived": value})
@@ -524,7 +681,13 @@ class GraphPairsQueryFilter(GraphQueryFilter):
             "(e.g. `@kraph/source_identifier` EQUALS `@mikro/arraylens`). Answered in SQL from the descriptors stored on every pairs query. A key a pairs query does not declare is refused rather than ignored"
         )
     )
-    def requires(self, info: kante.Info, queryset: QuerySet, value: list[inputs.DescriptorConstraintInput], prefix: str) -> tuple[QuerySet, Q]:
+    def requires(
+        self,
+        info: kante.Info,
+        queryset: QuerySet,
+        value: list[inputs.DescriptorConstraintInput],
+        prefix: str,
+    ) -> tuple[QuerySet, Q]:
         from kraph_server.service import service
 
         return queryset, service.requires(models.GraphPairsQuery, value, prefix)
@@ -535,7 +698,9 @@ class ScatterPlotFilter:
     id: strawberry.auto
     name: strawberry.auto
 
-    @kante.filter_field(description="Only the plots drawn from this graph's saved queries")
+    @kante.filter_field(
+        description="Only the plots drawn from this graph's saved queries"
+    )
     def graph(self, value: strawberry.ID, prefix: str) -> Q:
         return Q(**{f"{prefix}graph_query__graph_id": value})
 
@@ -549,4 +714,6 @@ class ScatterPlotFilter:
 
     @kante.filter_field(description="Full-text search over label and description")
     def search(self, value: str, prefix: str) -> Q:
-        return Q(**{f"{prefix}name__search": value}) | Q(**{f"{prefix}description__search": value})
+        return Q(**{f"{prefix}name__search": value}) | Q(
+            **{f"{prefix}description__search": value}
+        )

@@ -6,7 +6,7 @@ imports none of them.
 """
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Annotated, List, Optional
+from typing import TYPE_CHECKING, Annotated
 
 import kante
 import strawberry
@@ -41,14 +41,22 @@ class ProjectFilter:
 
     @kante.filter_field(description="Search the name and description")
     def search(self, value: str, prefix: str) -> Q:
-        return Q(**{f"{prefix}name__icontains": value}) | Q(**{f"{prefix}description__icontains": value})
+        return Q(**{f"{prefix}name__icontains": value}) | Q(
+            **{f"{prefix}description__icontains": value}
+        )
 
-    @kante.filter_field(description="Projects this member (a sub) works on: ones they made, or holding a todo list or item assigned to them")
+    @kante.filter_field(
+        description="Projects this member (a sub) works on: ones they made, or holding a todo list or item assigned to them"
+    )
     def member(self, value: strawberry.ID, prefix: str) -> Q:
         # A subquery rather than a join: a member with three assigned lists in one
         # project would otherwise list that project three times.
         sub = str(value)
-        working_on = models.Project.objects.filter(Q(creator__sub=sub) | Q(todo_lists__assignee=sub) | Q(todo_lists__items__assignee=sub)).values("pk")
+        working_on = models.Project.objects.filter(
+            Q(creator__sub=sub)
+            | Q(todo_lists__assignee=sub)
+            | Q(todo_lists__items__assignee=sub)
+        ).values("pk")
         return Q(**{f"{prefix}id__in": working_on})
 
 
@@ -59,10 +67,24 @@ class ProjectOrder:
 
 
 @_fenced
-@kante.django_type(models.Project, filters=ProjectFilter, pagination=True, ordering=ProjectOrder, description="One piece of work in an organization: the anchor its todo lists hang off")
+@kante.django_type(
+    models.Project,
+    filters=ProjectFilter,
+    pagination=True,
+    ordering=ProjectOrder,
+    description="One piece of work in an organization: the anchor its todo lists hang off",
+)
 class Project:
-    id: strawberry.ID = strawberry_django.field(description="Database ID of the project")
+    id: strawberry.ID = strawberry_django.field(
+        description="Database ID of the project"
+    )
     name: str = strawberry_django.field(description="The name of the project")
-    description: Optional[str] = strawberry_django.field(description="What the project is about")
-    created_at: datetime = strawberry_django.field(description="When the project was made")
-    todo_lists: List[Annotated["TodoList", strawberry.lazy("todos.types")]] = strawberry_django.field(description="The project's todo lists")
+    description: str | None = strawberry_django.field(
+        description="What the project is about"
+    )
+    created_at: datetime = strawberry_django.field(
+        description="When the project was made"
+    )
+    todo_lists: list[Annotated["TodoList", strawberry.lazy("todos.types")]] = (
+        strawberry_django.field(description="The project's todo lists")
+    )

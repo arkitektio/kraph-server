@@ -36,7 +36,12 @@ COMBINED: dict = {
     "extensions": {
         "entities": [
             {"key": "Cell"},
-            {"key": "CuratedAIS", "definition": rules.definition(rules.rule(rules.word("AIS", "AxonInitialSegment")))},
+            {
+                "key": "CuratedAIS",
+                "definition": rules.definition(
+                    rules.rule(rules.word("AIS", "AxonInitialSegment"))
+                ),
+            },
         ],
         "relations": [
             {
@@ -50,7 +55,9 @@ COMBINED: dict = {
             {
                 "key": "Division",
                 "kind": "INTRINSIC",
-                "definition": rules.definition(rules.rule(rules.word("Mitosis"), rules.via("event-annotator"))),
+                "definition": rules.definition(
+                    rules.rule(rules.word("Mitosis"), rules.via("event-annotator"))
+                ),
                 "inputs": [],
                 "outputs": [],
             }
@@ -75,25 +82,50 @@ async def test_a_claim_under_a_defined_categorys_word_is_drawn_under_it(
 
     graph = await _combined(api_schema, simple_api_context)
 
-    written = (await writes.execute(api_schema, simple_api_context, writes.ASSERT_ENTITY_DRAWN, {"input": {"term": "CuratedAIS"}}))["assertEntityExists"]
+    written = (
+        await writes.execute(
+            api_schema,
+            simple_api_context,
+            writes.ASSERT_ENTITY_DRAWN,
+            {"input": {"term": "CuratedAIS"}},
+        )
+    )["assertEntityExists"]
     own = written["instance"]["id"]
     derived = await writes.create_entity(api_schema, simple_api_context, "AIS")
 
-    curated = await sync_to_async(core_models.EntityCategory.objects.get)(graph=graph, key="CuratedAIS")
-    assert [d["category"]["id"] for d in written["drawings"]] == [str(curated.pk)], "the write reports where it landed: under its own word's category"
+    curated = await sync_to_async(core_models.EntityCategory.objects.get)(
+        graph=graph, key="CuratedAIS"
+    )
+    assert [d["category"]["id"] for d in written["drawings"]] == [str(curated.pk)], (
+        "the write reports where it landed: under its own word's category"
+    )
 
-    listed = await writes.execute(api_schema, simple_api_context, ENTITIES, {"category": str(curated.pk)})
-    assert sorted(row["id"] for row in listed["entities"]) == sorted([own, derived]), "the category lists both: its own word and what its rules derive from"
+    listed = await writes.execute(
+        api_schema, simple_api_context, ENTITIES, {"category": str(curated.pk)}
+    )
+    assert sorted(row["id"] for row in listed["entities"]) == sorted([own, derived]), (
+        "the category lists both: its own word and what its rules derive from"
+    )
 
-    in_view = await writes.execute(api_schema, simple_api_context, reads.NODES_PAGED, {"graph": str(graph.pk)})
+    in_view = await writes.execute(
+        api_schema, simple_api_context, reads.NODES_PAGED, {"graph": str(graph.pk)}
+    )
     assert own in {row["id"] for row in in_view["nodes"]}, "the view lists it"
-    single = await writes.execute(api_schema, simple_api_context, reads.NODE, {"id": own, "graph": str(graph.pk)})
-    assert single["node"]["id"] == own, "and answers for it by id, as the plural read does"
+    single = await writes.execute(
+        api_schema, simple_api_context, reads.NODE, {"id": own, "graph": str(graph.pk)}
+    )
+    assert single["node"]["id"] == own, (
+        "and answers for it by id, as the plural read does"
+    )
 
     @sync_to_async
     def after_rebuild() -> tuple[int, int, set[str]]:
         result = graphs.rebuild(graph, table_projector)
-        return result.unclassified, drawing.vertex_count(graph, curated.age_name), drawing.labels_of(graph, own)
+        return (
+            result.unclassified,
+            drawing.vertex_count(graph, curated.age_name),
+            drawing.labels_of(graph, own),
+        )
 
     unclassified, count, labels = await after_rebuild()
     assert unclassified == 0, "nothing in the view is left undrawn"
@@ -110,7 +142,12 @@ async def test_rules_that_name_their_own_word_govern_it(
 ) -> None:
     """The worked example's AIS counts Peter's AIS claims and not a student's."""
 
-    graph_id = await graphs.graph_declaring(api_schema, simple_api_context, "AIS", definition=rules.definition(rules.rule(rules.word("AIS"), rules.by("peter"))))
+    graph_id = await graphs.graph_declaring(
+        api_schema,
+        simple_api_context,
+        "AIS",
+        definition=rules.definition(rules.rule(rules.word("AIS"), rules.by("peter"))),
+    )
 
     @sync_to_async
     def claim_and_rebuild() -> tuple[str, str, int]:
@@ -124,10 +161,14 @@ async def test_rules_that_name_their_own_word_govern_it(
 
     @sync_to_async
     def drawn(ref: str) -> int:
-        return drawing.vertices_with_ref(core_models.Graph.objects.get(pk=graph_id), ref)
+        return drawing.vertices_with_ref(
+            core_models.Graph.objects.get(pk=graph_id), ref
+        )
 
     assert await drawn(peters) == 1
-    assert await drawn(students) == 0, "the rules name AIS, so they — not the implicit own-word clause — decide who counts"
+    assert await drawn(students) == 0, (
+        "the rules name AIS, so they — not the implicit own-word clause — decide who counts"
+    )
     assert unclassified == 1
 
 
@@ -150,8 +191,15 @@ async def test_a_relation_under_a_defined_categorys_word_is_drawn_and_listed(
         derived = claims.relate(organization, "TOUCHES", b, c, "student")
         graphs.rebuild(graph, table_projector)
         linked = core_models.RelationCategory.objects.get(graph=graph, key="LINKED")
-        listed = {str(link.pk) for link in _edges.links_for_category(organization, linked, evidence_models.Link.Kind.RELATION)}
-        assert listed == {str(own.pk), str(derived.pk)}, "the edge list agrees with the drawing"
+        listed = {
+            str(link.pk)
+            for link in _edges.links_for_category(
+                organization, linked, evidence_models.Link.Kind.RELATION
+            )
+        }
+        assert listed == {str(own.pk), str(derived.pk)}, (
+            "the edge list agrees with the drawing"
+        )
         return drawing.edge_count(graph, linked.age_name)
 
     edges = await relate_and_rebuild()
@@ -172,13 +220,33 @@ async def test_an_event_under_a_defined_categorys_word_is_drawn_under_it(
     @sync_to_async
     def claim_and_rebuild() -> tuple[set[str], int, int]:
         organization = graph.organization
-        own = claims.mint(organization, "Division", "student", app_id="some-other-app", kind="NATURAL_EVENT")
-        claims.mint(organization, "Mitosis", "student", app_id="some-other-app", kind="NATURAL_EVENT")
+        own = claims.mint(
+            organization,
+            "Division",
+            "student",
+            app_id="some-other-app",
+            kind="NATURAL_EVENT",
+        )
+        claims.mint(
+            organization,
+            "Mitosis",
+            "student",
+            app_id="some-other-app",
+            kind="NATURAL_EVENT",
+        )
         result = graphs.rebuild(graph, table_projector)
-        division = core_models.NaturalEventCategory.objects.get(graph=graph, key="Division")
-        return drawing.labels_of(graph, own), drawing.vertex_count(graph, division.age_name), result.unclassified
+        division = core_models.NaturalEventCategory.objects.get(
+            graph=graph, key="Division"
+        )
+        return (
+            drawing.labels_of(graph, own),
+            drawing.vertex_count(graph, division.age_name),
+            result.unclassified,
+        )
 
     labels, count, unclassified = await claim_and_rebuild()
     assert labels == {"Division"}
-    assert count == 1, "the Mitosis from the wrong app stays out: the rules still govern the words they name"
+    assert count == 1, (
+        "the Mitosis from the wrong app stays out: the rules still govern the words they name"
+    )
     assert unclassified == 1

@@ -14,7 +14,9 @@ from kante.types import Info
 from api import context, inputs, types
 
 
-def assert_participation(info: Info, input: inputs.AssertParticipationInput) -> types.AssertedParticipation:
+def assert_participation(
+    info: Info, input: inputs.AssertParticipationInput
+) -> types.AssertedParticipation:
     """Claim that an entity took part in an event, without displacing anyone else's claim."""
     model = input.to_pydantic()
     controller = context.get_controller()
@@ -33,7 +35,9 @@ def assert_participation(info: Info, input: inputs.AssertParticipationInput) -> 
     )
 
 
-def retract_participation(info: Info, input: inputs.RetractParticipationInput) -> types.AssertedParticipation:
+def retract_participation(
+    info: Info, input: inputs.RetractParticipationInput
+) -> types.AssertedParticipation:
     """Retract one participation claim. The edge survives while another still stands.
 
     Which is what `drawings` reports: non-empty means somebody else's claim still
@@ -42,10 +46,19 @@ def retract_participation(info: Info, input: inputs.RetractParticipationInput) -
     model = input.to_pydantic()
     controller = context.get_controller()
 
-    return types.AssertedParticipation(_value=controller.retract_participation(participation_id=str(model.id), info=info, at=model.at, confidence=model.confidence))
+    return types.AssertedParticipation(
+        _value=controller.retract_participation(
+            participation_id=str(model.id),
+            info=info,
+            at=model.at,
+            confidence=model.confidence,
+        )
+    )
 
 
-def assert_participations(info: Info, input: inputs.AssertParticipationsInput) -> types.AssertedLinks:
+def assert_participations(
+    info: Info, input: inputs.AssertParticipationsInput
+) -> types.AssertedLinks:
     """Claim that several entities took part in one event, as one act.
 
     One assertion covers the batch, and the result says so: a single

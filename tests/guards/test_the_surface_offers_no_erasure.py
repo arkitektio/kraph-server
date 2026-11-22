@@ -12,10 +12,9 @@ status active, so `reproject` resurrected every deleted entity. The in-place
 `update*` mutations went the same way: a correction is a new claim.
 """
 
-
 import pytest
-from api.schema import schema
 
+from api.schema import schema
 from tests.support import sdl
 
 #: Every mutation that used to destroy instance data.
@@ -90,10 +89,16 @@ def test_the_additive_correction_path_remains() -> None:
     reclassification is a claim rather than a new node. Neither touches identity.
     """
     fields = sdl.mutation_fields()
-    assert "assertInforms" in fields, "attaching evidence to an existing entity is how a correction is made"
+    assert "assertInforms" in fields, (
+        "attaching evidence to an existing entity is how a correction is made"
+    )
     assert "assertMetricValue" in fields
-    assert "assertParticipation" in fields, "changing who took part in an event must not require replacing the event"
-    assert "retractParticipation" in fields, "and withdrawing that claim must not require deleting it"
+    assert "assertParticipation" in fields, (
+        "changing who took part in an event must not require replacing the event"
+    )
+    assert "retractParticipation" in fields, (
+        "and withdrawing that claim must not require deleting it"
+    )
 
 
 def test_no_inert_sticky_properties_input() -> None:
@@ -111,4 +116,6 @@ def test_redact_is_a_management_command_not_a_mutation() -> None:
     from django.core.management import get_commands
 
     assert get_commands().get("redact") == "core"
-    assert not any(field.lower().startswith("redact") for field in sdl.mutation_fields())
+    assert not any(
+        field.lower().startswith("redact") for field in sdl.mutation_fields()
+    )

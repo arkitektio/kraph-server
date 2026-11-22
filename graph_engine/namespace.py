@@ -31,10 +31,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from django.db.models import QuerySet
-from evidence.values import JSONValue
 
 from core import enums as core_enums
 from core import models as core_models
+from evidence.values import JSONValue
 from graph_engine.input_models import EntityDescriptorInput
 
 #: Refuse to build a namespace above this many element tables. An open
@@ -114,13 +114,18 @@ class NamespaceSpecError(ValueError):
 
 
 def _guard_label(label: str, *, category: core_models.Category | None = None) -> str:
-    where = f" (category #{category.pk}, key {category.key!r})" if category is not None else ""
+    where = (
+        f" (category #{category.pk}, key {category.key!r})"
+        if category is not None
+        else ""
+    )
     if "\x00" in label:
-        raise NamespaceSpecError(f"label {label!r}{where} contains a NUL byte, which no identifier can carry")
+        raise NamespaceSpecError(
+            f"label {label!r}{where} contains a NUL byte, which no identifier can carry"
+        )
     if len(label.encode()) > _MAX_IDENTIFIER_BYTES:
         raise NamespaceSpecError(
-            f"label {label!r}{where} is longer than {_MAX_IDENTIFIER_BYTES} bytes; Postgres would silently "
-            "truncate it, letting two long labels collide — rename the category"
+            f"label {label!r}{where} is longer than {_MAX_IDENTIFIER_BYTES} bytes; Postgres would silently truncate it, letting two long labels collide — rename the category"
         )
     return label
 
@@ -131,11 +136,16 @@ def _descriptor(value: dict[str, JSONValue] | None) -> EntityDescriptorInput:
     return EntityDescriptorInput(**value)
 
 
-def _matched(descriptor: EntityDescriptorInput, candidates: Sequence[core_models.Category]) -> list[core_models.Category]:
+def _matched(
+    descriptor: EntityDescriptorInput, candidates: Sequence[core_models.Category]
+) -> list[core_models.Category]:
     return [candidate for candidate in candidates if descriptor.matches(candidate)]
 
 
-def _role_endpoints(roles: Sequence[dict[str, JSONValue]] | None, candidates: Sequence[core_models.Category]) -> list[core_models.Category]:
+def _role_endpoints(
+    roles: Sequence[dict[str, JSONValue]] | None,
+    candidates: Sequence[core_models.Category],
+) -> list[core_models.Category]:
     """The entity-like categories a role list admits; an absent or empty list admits all.
 
     A role's descriptor narrows the endpoint the same way a relation's does; the
@@ -162,29 +172,48 @@ def relation_categories_admitting(source_pk: int, target_pk: int) -> list[int]:
     """
     ends = {
         category.pk: category
-        for category in core_models.Category.objects.filter(pk__in=[source_pk, target_pk], kind__in=[str(k) for k in _ENTITY_LIKE_KINDS]).prefetch_related("ontology_references")
+        for category in core_models.Category.objects.filter(
+            pk__in=[source_pk, target_pk], kind__in=[str(k) for k in _ENTITY_LIKE_KINDS]
+        ).prefetch_related("ontology_references")
     }
     source, target = ends.get(source_pk), ends.get(target_pk)
     if source is None or target is None or source.graph_id != target.graph_id:
         return []
-    candidates = core_models.Category.objects.filter(graph_id=source.graph_id, kind=str(core_enums.CategoryKindChoices.RELATION)).order_by("pk")
+    candidates = core_models.Category.objects.filter(
+        graph_id=source.graph_id, kind=str(core_enums.CategoryKindChoices.RELATION)
+    ).order_by("pk")
     return [
         candidate.pk
         for candidate in candidates
-        if _matched(_descriptor(candidate.source_definition), [source]) and _matched(_descriptor(candidate.target_definition), [target])
+        if _matched(_descriptor(candidate.source_definition), [source])
+        and _matched(_descriptor(candidate.target_definition), [target])
     ]
 
 
-def structure_relation_categories_admitting(categories: QuerySet[core_models.Category], source_identifier: str, target_identifier: str) -> list[int]:
+def structure_relation_categories_admitting(
+    categories: QuerySet[core_models.Category],
+    source_identifier: str,
+    target_identifier: str,
+) -> list[int]:
     """The structure relation categories among `categories` whose ends admit these two structure kinds.
 
     An end naming no identifiers admits every mounted one, as in `namespace_spec`.
     """
     admitted: list[int] = []
-    for candidate in categories.filter(kind=str(core_enums.CategoryKindChoices.STRUCTURE_RELATION)).order_by("pk"):
-        source_named = [str(value) for value in ((candidate.source_definition or {}).get("identifiers") or [])]
-        target_named = [str(value) for value in ((candidate.target_definition or {}).get("identifiers") or [])]
-        if (not source_named or source_identifier in source_named) and (not target_named or target_identifier in target_named):
+    for candidate in categories.filter(
+        kind=str(core_enums.CategoryKindChoices.STRUCTURE_RELATION)
+    ).order_by("pk"):
+        source_named = [
+            str(value)
+            for value in ((candidate.source_definition or {}).get("identifiers") or [])
+        ]
+        target_named = [
+            str(value)
+            for value in ((candidate.target_definition or {}).get("identifiers") or [])
+        ]
+        if (not source_named or source_identifier in source_named) and (
+            not target_named or target_identifier in target_named
+        ):
             admitted.append(candidate.pk)
     return admitted
 
@@ -202,21 +231,37 @@ def namespace_spec(graph: core_models.Graph) -> NamespaceSpec:
         .order_by("pk")
     )
     # Vertex categories: the node kinds, and the STRUCTURE categories a view mounts (RFC 0027).
-    node_categories = [c for c in categories if c.kind in {str(k) for k in core_enums.VERTEX_CATEGORY_KINDS}]
-    entity_like = [c for c in node_categories if c.kind in {str(k) for k in _ENTITY_LIKE_KINDS}]
+    node_categories = [
+        c
+        for c in categories
+        if c.kind in {str(k) for k in core_enums.VERTEX_CATEGORY_KINDS}
+    ]
+    entity_like = [
+        c for c in node_categories if c.kind in {str(k) for k in _ENTITY_LIKE_KINDS}
+    ]
     # Mounted identifier -> its STRUCTURE category, what a structure relation's ends resolve to.
-    mounted = {str(c.structure_kind.identifier): c for c in categories if c.kind == str(core_enums.CategoryKindChoices.STRUCTURE) and c.structure_kind_id is not None}
+    mounted = {
+        str(c.structure_kind.identifier): c
+        for c in categories
+        if c.kind == str(core_enums.CategoryKindChoices.STRUCTURE)
+        and c.structure_kind_id is not None
+    }
 
-    participation_labels = {label for labels in _PARTICIPATION.values() for label in labels[:2]}
+    participation_labels = {
+        label for labels in _PARTICIPATION.values() for label in labels[:2]
+    }
     vertices: list[VertexElement] = []
     for category in node_categories:
         label = _guard_label(str(category.age_name), category=category)
         if label in participation_labels:
             raise NamespaceSpecError(
-                f"category #{category.pk} (key {category.key!r}) is labeled {label!r}, which is a "
-                "participation edge label — the namespace cannot carry it as both a vertex and an edge label"
+                f"category #{category.pk} (key {category.key!r}) is labeled {label!r}, which is a participation edge label — the namespace cannot carry it as both a vertex and an edge label"
             )
-        vertices.append(VertexElement(view_name=f"v{category.pk}", label=label, category_pk=category.pk))
+        vertices.append(
+            VertexElement(
+                view_name=f"v{category.pk}", label=label, category_pk=category.pk
+            )
+        )
 
     edges: list[EdgeElement] = []
     for category in categories:
@@ -264,8 +309,17 @@ def namespace_spec(graph: core_models.Graph) -> NamespaceSpec:
             label = _guard_label(str(category.age_name), category=category)
             ends = []
             for definition in (category.source_definition, category.target_definition):
-                named = [str(value) for value in ((definition or {}).get("identifiers") or [])]
-                ends.append([mounted[identifier] for identifier in (named or sorted(mounted)) if identifier in mounted])
+                named = [
+                    str(value)
+                    for value in ((definition or {}).get("identifiers") or [])
+                ]
+                ends.append(
+                    [
+                        mounted[identifier]
+                        for identifier in (named or sorted(mounted))
+                        if identifier in mounted
+                    ]
+                )
             for source in ends[0]:
                 for target in ends[1]:
                     edges.append(
@@ -294,18 +348,22 @@ def namespace_spec(graph: core_models.Graph) -> NamespaceSpec:
         open_events = [
             f"#{c.pk} ({c.key!r})"
             for c in categories
-            if c.kind in (str(core_enums.CategoryKindChoices.NATURAL_EVENT), str(core_enums.CategoryKindChoices.PROTOCOL_EVENT))
+            if c.kind
+            in (
+                str(core_enums.CategoryKindChoices.NATURAL_EVENT),
+                str(core_enums.CategoryKindChoices.PROTOCOL_EVENT),
+            )
             and (not (c.source_entity_roles or []) or not (c.target_entity_roles or []))
         ]
         offenders = []
         if open_relations:
             offenders.append(f"relation categories {', '.join(open_relations)}")
         if open_events:
-            offenders.append(f"event categories with open roles {', '.join(open_events)}")
+            offenders.append(
+                f"event categories with open roles {', '.join(open_events)}"
+            )
         raise NamespaceSpecError(
-            f"graph #{graph.pk} would need {total} element tables (cap {NAMESPACE_MAX_ELEMENT_TABLES}): "
-            f"open source/target descriptors and role lists expand over every entity category — narrow "
-            f"{'; '.join(offenders) or 'the descriptors (none open — many categories)'}"
+            f"graph #{graph.pk} would need {total} element tables (cap {NAMESPACE_MAX_ELEMENT_TABLES}): open source/target descriptors and role lists expand over every entity category — narrow {'; '.join(offenders) or 'the descriptors (none open — many categories)'}"
         )
 
     return NamespaceSpec(
@@ -328,4 +386,6 @@ def declared_labels(graph: core_models.Graph) -> tuple[frozenset[str], frozenset
 
 def participation_edge_labels() -> frozenset[str]:
     """The four participation labels, which exist in every graph with event categories."""
-    return frozenset(label for labels in _PARTICIPATION.values() for label in labels[:2])
+    return frozenset(
+        label for labels in _PARTICIPATION.values() for label in labels[:2]
+    )

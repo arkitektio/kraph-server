@@ -1,7 +1,5 @@
 """Rendering a table plan that is not saved."""
 
-from typing import Optional
-
 import strawberry
 from kante.types import Info
 
@@ -13,9 +11,9 @@ def render_table_plan(
     info: Info,
     graph: strawberry.ID,
     plan: inputs.TableQueryPlanInput,
-    filters: Optional[inputs.RenderGraphTableFilter] = None,
-    pagination: Optional[inputs.RenderGraphTablePagination] = None,
-    order: Optional[inputs.RenderGraphTableOrder] = None,
+    filters: inputs.RenderGraphTableFilter | None = None,
+    pagination: inputs.RenderGraphTablePagination | None = None,
+    order: inputs.RenderGraphTableOrder | None = None,
 ) -> types.TablePlanRender:
     """Run a plan against a view without saving it, and return its rows.
 
@@ -38,4 +36,8 @@ def render_table_plan(
         pagination=pagination.to_pydantic() if pagination else None,
         info=info,
     )
-    return types.TablePlanRender(_value=retrieved.RetrievedTablePlanRender(graph_id=int(graph_model.pk), plan=plan_model, rows=rows))
+    return types.TablePlanRender(
+        _value=retrieved.RetrievedTablePlanRender(
+            graph_id=int(graph_model.pk), plan=plan_model, rows=rows
+        )
+    )

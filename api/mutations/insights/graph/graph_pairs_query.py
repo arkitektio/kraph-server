@@ -15,7 +15,9 @@ from core import models
 from graph_engine import query_ir
 
 
-def create_graph_pairs_query(info: Info, input: inputs.CreateGraphPairsQueryInput) -> types.GraphPairsQuery:
+def create_graph_pairs_query(
+    info: Info, input: inputs.CreateGraphPairsQueryInput
+) -> types.GraphPairsQuery:
     """Save a pairs query against the view it names."""
     model = input.to_pydantic()
     graph = accessible_graph(info, model.graph)
@@ -30,7 +32,9 @@ def create_graph_pairs_query(info: Info, input: inputs.CreateGraphPairsQueryInpu
     )
 
 
-def update_graph_pairs_query(info: Info, input: inputs.UpdateGraphPairsQueryInput) -> types.GraphPairsQuery:
+def update_graph_pairs_query(
+    info: Info, input: inputs.UpdateGraphPairsQueryInput
+) -> types.GraphPairsQuery:
     """Change a saved pairs query. Its runs keep the plan they were run with."""
     model = input.to_pydantic()
     item = scoped(info, models.GraphPairsQuery, model.id, what="pairs query")
@@ -46,12 +50,16 @@ def update_graph_pairs_query(info: Info, input: inputs.UpdateGraphPairsQueryInpu
     return item  # type: ignore[return-value]
 
 
-def delete_graph_pairs_query(info: Info, input: inputs.DeleteGraphTableQueryInput) -> strawberry.ID:
+def delete_graph_pairs_query(
+    info: Info, input: inputs.DeleteGraphTableQueryInput
+) -> strawberry.ID:
     """Delete a pairs query, refused while it has runs: they are what models were trained on."""
     model = input.to_pydantic()
     item = scoped(info, models.GraphPairsQuery, model.id, what="pairs query")
     try:
         item.delete()
     except RestrictedError as error:
-        raise ValueError(f"Pairs query {model.id} has {len(error.restricted_objects)} run(s): delete them first") from error
+        raise ValueError(
+            f"Pairs query {model.id} has {len(error.restricted_objects)} run(s): delete them first"
+        ) from error
     return model.id

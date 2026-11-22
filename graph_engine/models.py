@@ -34,9 +34,8 @@ report 102 while 101, committed late, was still outstanding. The cursor is
 
 from __future__ import annotations
 
-from django.db import models
-
 from authentikate.models import Organization
+from django.db import models
 
 
 class Projection(models.Model):
@@ -52,15 +51,21 @@ class Projection(models.Model):
         #: an empty graph".
         REBUILDING = "rebuilding", "Rebuilding"
 
-    graph = models.OneToOneField("core.Graph", on_delete=models.CASCADE, related_name="projection")
-    kind = models.CharField(max_length=32, default="table", help_text="Which kind of projection this is. Only the table kind exists today; the column is the seam for a second kind.")
-    status = models.CharField(max_length=32, choices=Status.choices, default=Status.NEEDS_BACKFILL)
+    graph = models.OneToOneField(
+        "core.Graph", on_delete=models.CASCADE, related_name="projection"
+    )
+    kind = models.CharField(
+        max_length=32,
+        default="table",
+        help_text="Which kind of projection this is. Only the table kind exists today; the column is the seam for a second kind.",
+    )
+    status = models.CharField(
+        max_length=32, choices=Status.choices, default=Status.NEEDS_BACKFILL
+    )
     derived_through_seq = models.BigIntegerField(
         default=0,
         help_text=(
-            "Informational: `Max(Assertion.seq)` of the organization when the last bulk operation "
-            "(rebuild, backfill, incremental replay) read the log. Not the cursor — that is derived, "
-            "see `graph_engine.watermark.cursor`."
+            "Informational: `Max(Assertion.seq)` of the organization when the last bulk operation (rebuild, backfill, incremental replay) read the log. Not the cursor — that is derived, see `graph_engine.watermark.cursor`."
         ),
     )
     schema_hash = models.CharField(
@@ -68,13 +73,19 @@ class Projection(models.Model):
         null=True,
         blank=True,
         help_text=(
-            "`GraphSchema.hash` this drawing was last fully derived under. Differs from the active "
-            "schema's hash when a category's rules moved and the vertices have not been redrawn — "
-            "what `manage.py rematerialize --stale` selects on."
+            "`GraphSchema.hash` this drawing was last fully derived under. Differs from the active schema's hash when a category's rules moved and the vertices have not been redrawn — what `manage.py rematerialize --stale` selects on."
         ),
     )
-    derived_at = models.DateTimeField(null=True, blank=True, help_text="When `projector.project` last wrote derived properties into this drawing.")
-    rebuilt_at = models.DateTimeField(null=True, blank=True, help_text="When this drawing was last dropped and replayed in full.")
+    derived_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When `projector.project` last wrote derived properties into this drawing.",
+    )
+    rebuilt_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When this drawing was last dropped and replayed in full.",
+    )
 
     class Meta:
         default_related_name = "projections"
@@ -111,14 +122,29 @@ class ProjectionVertex(models.Model):
     carried on `RetrievedNode.vertex_id`, never identity.
     """
 
-    graph = models.ForeignKey("core.Graph", on_delete=models.CASCADE, related_name="projection_vertices")
-    ref = models.UUIDField(help_text="The drawn claim's uuid. A value, not a FK: the drawing never holds evidence in place.")
-    kind = models.CharField(max_length=32, help_text="The claim's `Instance.Kind` (ENTITY, NATURAL_EVENT, PROTOCOL_EVENT).")
-    properties = models.JSONField(default=dict, blank=True, help_text="Derived properties only; identity lives in the columns.")
+    graph = models.ForeignKey(
+        "core.Graph", on_delete=models.CASCADE, related_name="projection_vertices"
+    )
+    ref = models.UUIDField(
+        help_text="The drawn claim's uuid. A value, not a FK: the drawing never holds evidence in place."
+    )
+    kind = models.CharField(
+        max_length=32,
+        help_text="The claim's `Instance.Kind` (ENTITY, NATURAL_EVENT, PROTOCOL_EVENT).",
+    )
+    properties = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Derived properties only; identity lives in the columns.",
+    )
 
     class Meta:
         default_related_name = "projection_vertices"
-        constraints = [models.UniqueConstraint(fields=["graph", "ref"], name="one_vertex_per_ref_per_view")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["graph", "ref"], name="one_vertex_per_ref_per_view"
+            )
+        ]
 
     def __str__(self) -> str:
         return f"vertex {self.ref} in graph #{self.graph_id}"
@@ -144,14 +170,30 @@ class ProjectionLabel(models.Model):
     drawn under nothing is a node the view does not admit.
     """
 
-    graph = models.ForeignKey("core.Graph", on_delete=models.CASCADE, related_name="projection_labels")
-    vertex = models.ForeignKey(ProjectionVertex, on_delete=models.CASCADE, related_name="labels")
-    label = models.CharField(max_length=1000, help_text="The view's word for the category (`Category.age_name`).")
-    category_pk = models.BigIntegerField(null=True, blank=True, help_text="The category row that admitted this node; composite FK to `core_category (graph_id, id)` in SQL (migration 0009). RFC 0006, RFC 0019.")
+    graph = models.ForeignKey(
+        "core.Graph", on_delete=models.CASCADE, related_name="projection_labels"
+    )
+    vertex = models.ForeignKey(
+        ProjectionVertex, on_delete=models.CASCADE, related_name="labels"
+    )
+    label = models.CharField(
+        max_length=1000,
+        help_text="The view's word for the category (`Category.age_name`).",
+    )
+    category_pk = models.BigIntegerField(
+        null=True,
+        blank=True,
+        help_text="The category row that admitted this node; composite FK to `core_category (graph_id, id)` in SQL (migration 0009). RFC 0006, RFC 0019.",
+    )
 
     class Meta:
         default_related_name = "projection_labels"
-        constraints = [models.UniqueConstraint(fields=["vertex", "category_pk"], name="one_label_per_category_per_vertex")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["vertex", "category_pk"],
+                name="one_label_per_category_per_vertex",
+            )
+        ]
         indexes = [
             models.Index(fields=["graph", "label"]),
             # Serves both the composite FK's delete-cascade lookups and the
@@ -161,7 +203,9 @@ class ProjectionLabel(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"label {self.label} on vertex #{self.vertex_id} in graph #{self.graph_id}"
+        return (
+            f"label {self.label} on vertex #{self.vertex_id} in graph #{self.graph_id}"
+        )
 
 
 class ProjectionMember(models.Model):
@@ -175,16 +219,28 @@ class ProjectionMember(models.Model):
     the lookup never joins through the vertex. Cascades with the vertex.
     """
 
-    graph = models.ForeignKey("core.Graph", on_delete=models.CASCADE, related_name="projection_members")
-    vertex = models.ForeignKey(ProjectionVertex, on_delete=models.CASCADE, related_name="members")
-    ref = models.UUIDField(help_text="An `evidence.Instance` uuid this vertex stands for.")
+    graph = models.ForeignKey(
+        "core.Graph", on_delete=models.CASCADE, related_name="projection_members"
+    )
+    vertex = models.ForeignKey(
+        ProjectionVertex, on_delete=models.CASCADE, related_name="members"
+    )
+    ref = models.UUIDField(
+        help_text="An `evidence.Instance` uuid this vertex stands for."
+    )
 
     class Meta:
         default_related_name = "projection_members"
-        constraints = [models.UniqueConstraint(fields=["graph", "ref"], name="one_vertex_per_member_per_view")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["graph", "ref"], name="one_vertex_per_member_per_view"
+            )
+        ]
 
     def __str__(self) -> str:
-        return f"member {self.ref} of vertex #{self.vertex_id} in graph #{self.graph_id}"
+        return (
+            f"member {self.ref} of vertex #{self.vertex_id} in graph #{self.graph_id}"
+        )
 
 
 class ProjectionEdge(models.Model):
@@ -200,15 +256,29 @@ class ProjectionEdge(models.Model):
     listing a view's edges never join through a vertex.
     """
 
-    graph = models.ForeignKey("core.Graph", on_delete=models.CASCADE, related_name="projection_edges")
-    source = models.ForeignKey(ProjectionVertex, on_delete=models.CASCADE, related_name="outgoing_edges")
-    target = models.ForeignKey(ProjectionVertex, on_delete=models.CASCADE, related_name="incoming_edges")
-    label = models.CharField(max_length=1000, help_text="The view's word for the edge category (`Category.age_name`).")
+    graph = models.ForeignKey(
+        "core.Graph", on_delete=models.CASCADE, related_name="projection_edges"
+    )
+    source = models.ForeignKey(
+        ProjectionVertex, on_delete=models.CASCADE, related_name="outgoing_edges"
+    )
+    target = models.ForeignKey(
+        ProjectionVertex, on_delete=models.CASCADE, related_name="incoming_edges"
+    )
+    label = models.CharField(
+        max_length=1000,
+        help_text="The view's word for the edge category (`Category.age_name`).",
+    )
     properties = models.JSONField(default=dict, blank=True)
 
     class Meta:
         default_related_name = "projection_edges"
-        constraints = [models.UniqueConstraint(fields=["source", "target", "label"], name="one_edge_per_endpoints_and_label")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["source", "target", "label"],
+                name="one_edge_per_endpoints_and_label",
+            )
+        ]
         indexes = [models.Index(fields=["graph", "label"])]
 
     def __str__(self) -> str:
@@ -227,8 +297,15 @@ class PendingProjection(models.Model):
     assertion nobody drew.
     """
 
-    assertion = models.OneToOneField("evidence.Assertion", on_delete=models.CASCADE, primary_key=True, related_name="pending_projection")
-    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="pending_projections")
+    assertion = models.OneToOneField(
+        "evidence.Assertion",
+        on_delete=models.CASCADE,
+        primary_key=True,
+        related_name="pending_projection",
+    )
+    organization = models.ForeignKey(
+        Organization, on_delete=models.CASCADE, related_name="pending_projections"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

@@ -41,9 +41,9 @@ from django.db.models import Q, QuerySet
 
 from evidence import claims as claims_module
 from evidence import models as evidence_models
+from evidence import selector as selector_module
 from graph_engine import input_models
 from graph_engine.input_models import ClaimFilterModel, ClaimOrderModel, PageModel
-from evidence import selector as selector_module
 
 if TYPE_CHECKING:
     from core.models import Category, Graph
@@ -57,12 +57,18 @@ _VERTEX_ONLY_FILTERS = ("has_property", "search", "matches")
 
 def refuse_vertex_filters(filter_model: ClaimFilterModel) -> None:
     """Reject filters that only applied to a projected edge's properties."""
-    offending = [name for name in _VERTEX_ONLY_FILTERS if getattr(filter_model, name, None)]
+    offending = [
+        name for name in _VERTEX_ONLY_FILTERS if getattr(filter_model, name, None)
+    ]
     if offending:
-        raise ValueError(f"{', '.join(offending)} filtered on properties of a projected edge. Edges are read from the evidence log now, and a claim carries no such properties — filter on `ids`, or read the endpoints' properties instead.")
+        raise ValueError(
+            f"{', '.join(offending)} filtered on properties of a projected edge. Edges are read from the evidence log now, and a claim carries no such properties — filter on `ids`, or read the endpoints' properties instead."
+        )
 
 
-def links_of_kind(organization: Organization, kind: evidence_models.Link.Kind) -> QuerySet[evidence_models.Link]:
+def links_of_kind(
+    organization: Organization, kind: evidence_models.Link.Kind
+) -> QuerySet[evidence_models.Link]:
     """Every standing claim of one kind in the organization."""
     return claims_module.standing(
         evidence_models.Link.objects.for_organization(organization).filter(kind=kind),
@@ -70,7 +76,9 @@ def links_of_kind(organization: Organization, kind: evidence_models.Link.Kind) -
     ).select_related("assertion", "term")
 
 
-def links_for_category(organization: Organization, category: Category, kind: evidence_models.Link.Kind) -> QuerySet[evidence_models.Link]:
+def links_for_category(
+    organization: Organization, category: Category, kind: evidence_models.Link.Kind
+) -> QuerySet[evidence_models.Link]:
     """Standing claims of one kind, under the category's rule.
 
     A primitive category lists every claim naming its word, standings
@@ -89,20 +97,32 @@ def links_for_category(organization: Organization, category: Category, kind: evi
     own_word = links_of_kind(organization, kind).filter(term_id=category.term_id)
     if category.definition:
         admitted = claims_module.standing(
-            evidence_models.Link.objects.for_organization(organization).filter(kind=kind, term__kind=str(category.kind)).filter(selector_module.classification_filter(category.definition)),
+            evidence_models.Link.objects.for_organization(organization)
+            .filter(kind=kind, term__kind=str(category.kind))
+            .filter(selector_module.classification_filter(category.definition)),
             "link",
-            predicate=selector_module.trust_predicate(category.definition, kind="EXISTENCE"),
+            predicate=selector_module.trust_predicate(
+                category.definition, kind="EXISTENCE"
+            ),
         )
         if selector_module.admits_own_word(category):
             # Its own word counts too, unless its rules name it (RFC 0026) — the
             # same union `projector._admitted_by` draws, so the list and the
             # drawing agree.
-            return evidence_models.Link.objects.for_organization(organization).filter(Q(pk__in=admitted.values("pk")) | Q(pk__in=own_word.values("pk"))).select_related("assertion", "term")
+            return (
+                evidence_models.Link.objects.for_organization(organization)
+                .filter(
+                    Q(pk__in=admitted.values("pk")) | Q(pk__in=own_word.values("pk"))
+                )
+                .select_related("assertion", "term")
+            )
         return admitted.select_related("assertion", "term")
     return own_word
 
 
-def links_in_graph(graph: Graph, kind: evidence_models.Link.Kind, *, ref_field: str) -> QuerySet[evidence_models.Link]:
+def links_in_graph(
+    graph: Graph, kind: evidence_models.Link.Kind, *, ref_field: str
+) -> QuerySet[evidence_models.Link]:
     """Standing claims of one kind touching a node this graph contains, folded
     under each claim's category rule.
 
@@ -119,14 +139,31 @@ def links_in_graph(graph: Graph, kind: evidence_models.Link.Kind, *, ref_field: 
     """
     from graph_engine import projector as projector_module
 
-    base = evidence_models.Link.objects.for_organization(graph.organization).filter(kind=kind).filter(**{f"{ref_field}__in": selector_module.instance_refs_for(graph)})
+    base = (
+        evidence_models.Link.objects.for_organization(graph.organization)
+        .filter(kind=kind)
+        .filter(**{f"{ref_field}__in": selector_module.instance_refs_for(graph)})
+    )
 
-    surviving = set(projector_module.admitting_categories(projector_module.categories_drawing(graph, kind), base))
+    surviving = set(
+        projector_module.admitting_categories(
+            projector_module.categories_drawing(graph, kind), base
+        )
+    )
 
-    return evidence_models.Link.objects.for_organization(graph.organization).filter(pk__in=surviving).select_related("assertion", "term")
+    return (
+        evidence_models.Link.objects.for_organization(graph.organization)
+        .filter(pk__in=surviving)
+        .select_related("assertion", "term")
+    )
 
 
-def narrow(links: QuerySet[evidence_models.Link], filter_model: ClaimFilterModel, ordering_models: Iterable[ClaimOrderModel], pagination_model: PageModel | None) -> list[evidence_models.Link]:
+def narrow(
+    links: QuerySet[evidence_models.Link],
+    filter_model: ClaimFilterModel,
+    ordering_models: Iterable[ClaimOrderModel],
+    pagination_model: PageModel | None,
+) -> list[evidence_models.Link]:
     """Apply the ids filter, the ordering and the page. Returns rows.
 
     Ordering is over the log's own columns. `created_at` is when the row was
@@ -154,7 +191,10 @@ def narrow(links: QuerySet[evidence_models.Link], filter_model: ClaimFilterModel
     if not order_by:
         order_by = ["-assertion__seq", "-id"]
 
-    offset, limit = input_models.clamp_window(getattr(pagination_model, "offset", None), getattr(pagination_model, "limit", None))
+    offset, limit = input_models.clamp_window(
+        getattr(pagination_model, "offset", None),
+        getattr(pagination_model, "limit", None),
+    )
     return list(links.order_by(*order_by)[offset : offset + limit])
 
 

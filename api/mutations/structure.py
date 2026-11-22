@@ -7,10 +7,9 @@ only in the relational evidence base. Nothing projects one into Apache AGE, so
 absence is a permanent property of the model rather than a per-call answer.
 """
 
-
 from kante.types import Info
 
-from api import types, inputs, context
+from api import context, inputs, types
 
 
 def assert_structure_exists(
@@ -79,7 +78,11 @@ def attest_structure(
     controller = context.get_controller()
 
     model = input.to_pydantic()
-    return types.AssertedStructure(_value=controller.attest_structure(str(model.id), info=info, at=model.at, confidence=model.confidence))
+    return types.AssertedStructure(
+        _value=controller.attest_structure(
+            str(model.id), info=info, at=model.at, confidence=model.confidence
+        )
+    )
 
 
 def assert_informs(

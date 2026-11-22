@@ -28,8 +28,14 @@ def _receiver_modules(signal, sender) -> set[str]:
 def test_the_projection_receivers_are_still_connected_after_collection() -> None:
     gc.collect()
 
-    assert "graph_engine.apps" in _receiver_modules(pre_delete, core_models.Graph), "deleting a graph must still drop its namespace"
+    assert "graph_engine.apps" in _receiver_modules(pre_delete, core_models.Graph), (
+        "deleting a graph must still drop its namespace"
+    )
     assert "graph_engine.apps" in _receiver_modules(post_delete, core_models.Graph)
     for model in (core_models.Category, *core_models.CATEGORY_PROXIES.values()):
-        assert "graph_engine.apps" in _receiver_modules(post_save, model), f"a {model.__name__} write must still refresh the namespace"
-        assert "graph_engine.apps" in _receiver_modules(post_delete, model), f"a {model.__name__} delete must still refresh the namespace"
+        assert "graph_engine.apps" in _receiver_modules(post_save, model), (
+            f"a {model.__name__} write must still refresh the namespace"
+        )
+        assert "graph_engine.apps" in _receiver_modules(post_delete, model), (
+            f"a {model.__name__} delete must still refresh the namespace"
+        )

@@ -5,49 +5,58 @@ This module assembles the complete GraphQL schema from its queries and
 mutations.
 """
 
-from strawberry.schema.config import StrawberryConfig
-from kraph_server.logs import QuietErrorsSchema
-from strawberry.extensions import QueryDepthLimiter
 from collections.abc import Callable
-from typing import Optional
-from authentikate.strawberry.extension import AuthentikateExtension
 
-from .extensions.projection import ProjectionExtension
-from .loaders import LoaderExtension
 import kante
-from graph_engine.projection import Projector, TableProjector
-
-
 import strawberry
-
-
-from api import queries, types, mutations
-from api.subscriptions import Subscription
 from arkitekt_datalayer import mutations as datalayer_mutations
 from arkitekt_datalayer import scalars as datalayer_scalars
 from arkitekt_datalayer.datalayer import load_config
 from arkitekt_service.graphql import TelemetryExtension
 from authentikate.catch_alls import declare_catch_alls
 from authentikate.strawberry.directives import AuthExtension
-from graph_engine import scalars
-from kraph_server.contract import CURATOR, EDITOR, contract
-from projects import resolvers as project_resolvers
-from projects import types as project_types
+from authentikate.strawberry.extension import AuthentikateExtension
+from strawberry.extensions import QueryDepthLimiter
+from strawberry.schema.config import StrawberryConfig
+
+from api import mutations, queries, types
+from api.subscriptions import Subscription
 from datasets import resolvers as dataset_resolvers
 from datasets import types as dataset_types
+from graph_engine import scalars
+from graph_engine.projection import Projector, TableProjector
+from kraph_server.contract import CURATOR, EDITOR, contract
+from kraph_server.logs import QuietErrorsSchema
+from projects import resolvers as project_resolvers
+from projects import types as project_types
 from todos import resolvers as todo_resolvers
 from todos import types as todo_types
 
+from .extensions.projection import ProjectionExtension
+from .loaders import LoaderExtension
 
-def field(resolver: Callable[..., object] | None = None, *, scope: str = "kraph_read", **kwargs):  # noqa: ANN003, ANN201
+
+def field(
+    resolver: Callable[..., object] | None = None,
+    *,
+    scope: str = "kraph_read",
+    **kwargs,
+):  # noqa: ANN003, ANN201
     """A field an app needs ``scope`` for (``kraph_read``, unless it says otherwise)."""
-    return kante.django_field(resolver, extensions=[AuthExtension(scopes=[scope])], **kwargs)
+    return kante.django_field(
+        resolver, extensions=[AuthExtension(scopes=[scope])], **kwargs
+    )
 
 
-def mutation(scope: str = "kraph_assert", roles: list[str] | None = None, **kwargs) -> strawberry.mutation:  # noqa: ANN003
+def mutation(
+    scope: str = "kraph_assert", roles: list[str] | None = None, **kwargs
+) -> strawberry.mutation:  # noqa: ANN003
     """A write: an app needs ``scope`` for it, a member one of ``roles`` (``kraph_editor`` unless it says
     otherwise; ``kraph_admin`` holds every role). Tenancy is still the resolver's own check."""
-    return kante.django_mutation(extensions=[AuthExtension(scopes=[scope], any_role_of=roles or [EDITOR])], **kwargs)
+    return kante.django_mutation(
+        extensions=[AuthExtension(scopes=[scope], any_role_of=roles or [EDITOR])],
+        **kwargs,
+    )
 
 
 def schema_mutation(**kwargs) -> strawberry.mutation:  # noqa: ANN003
@@ -57,7 +66,9 @@ def schema_mutation(**kwargs) -> strawberry.mutation:  # noqa: ANN003
 
 def access_mutation(**kwargs) -> strawberry.mutation:  # noqa: ANN003
     """A mutation that hands out read credentials: a read, for whoever may see what it reads."""
-    return kante.django_mutation(extensions=[AuthExtension(scopes=["kraph_read"])], **kwargs)
+    return kante.django_mutation(
+        extensions=[AuthExtension(scopes=["kraph_read"])], **kwargs
+    )
 
 
 @strawberry.type(description="Graph Engine Queries")
@@ -69,50 +80,157 @@ class Query:
     # `node(id:, graph:)` answers with a drawing — how the named view holds the
     # thing. These answer with the recorded statement, which is what a write
     # returns and what exists whether or not any view draws it.
-    instance = field(queries.instance, description="Get one claimed individual by ID, as the log has it")
-    link = field(queries.link, description="Get one claim relating two things by ID, as the log has it")
-    standings = field(queries.standings, description="Every position anyone has taken on one claim, newest first")
-    comment = field(queries.comment, description="Get one remark by ID, as the log has it")
-    comments_for = field(queries.comments_for, description="Every remark about one external datum, addressed by (identifier, object), newest first — resolved ones included. `pagination` reads one page")
-    my_mentions = field(queries.my_mentions, description="Every remark that mentions the caller, newest first. `resolved` narrows to resolved or open remarks; omitted lists both")
-    my_mention_count = field(queries.my_mention_count, description="How many remarks mention the caller, past any page. `resolved: false` counts the open ones — the badge")
+    instance = field(
+        queries.instance,
+        description="Get one claimed individual by ID, as the log has it",
+    )
+    link = field(
+        queries.link,
+        description="Get one claim relating two things by ID, as the log has it",
+    )
+    standings = field(
+        queries.standings,
+        description="Every position anyone has taken on one claim, newest first",
+    )
+    comment = field(
+        queries.comment, description="Get one remark by ID, as the log has it"
+    )
+    comments_for = field(
+        queries.comments_for,
+        description="Every remark about one external datum, addressed by (identifier, object), newest first — resolved ones included. `pagination` reads one page",
+    )
+    my_mentions = field(
+        queries.my_mentions,
+        description="Every remark that mentions the caller, newest first. `resolved` narrows to resolved or open remarks; omitted lists both",
+    )
+    my_mention_count = field(
+        queries.my_mention_count,
+        description="How many remarks mention the caller, past any page. `resolved: false` counts the open ones — the badge",
+    )
 
     # Entity Type Section
     # =========================
-    node = field(queries.node, description="Get a node by ID, as the named view holds it. Refused when that view does not admit the node; the claim itself is `instance(id:)`")
-    nodes = field(queries.nodes, description="List the individuals a view holds, as it draws them — view grain: one row per individual, membership from the view's rule, properties as of the view's cursor")
+    node = field(
+        queries.node,
+        description="Get a node by ID, as the named view holds it. Refused when that view does not admit the node; the claim itself is `instance(id:)`",
+    )
+    nodes = field(
+        queries.nodes,
+        description="List the individuals a view holds, as it draws them — view grain: one row per individual, membership from the view's rule, properties as of the view's cursor",
+    )
 
-    entity = field(queries.entity, description="Get an entity by ID, as the named view holds it — see `node`")
-    entities = field(queries.entities, description="List the entities a category's view holds, as it draws them — view grain: one row per individual")
-    structure = field(queries.structure, description="Get a structure by ID — a bare uuid, its evidence primary key")
-    structures = field(queries.structures, description="List structures with optional filters, ordering, and pagination")
-    structure_by_identifier = field(queries.structure_by_identifier, description="Get a structure by identifier and object. No graph: a structure belongs to the organization; a view draws it only where it mounts its kind (RFC 0027)")
-    informing_structures = field(queries.informing_structures, description="List the structures that are evidence for an entity")
-    natural_event = field(queries.natural_event, description="Get a natural event by ID, as the named view holds it — see `node`")
-    natural_events = field(queries.natural_events, description="List the natural events a category's view holds — view grain: one row per individual")
-    protocol_event = field(queries.protocol_event, description="Get a protocol event by ID, as the named view holds it — see `node`")
-    protocol_events = field(queries.protocol_events, description="List the protocol events a category's view holds — view grain: one row per individual")
-    measurement = field(queries.measurement, description="Get a measurement claim by ID — a bare uuid, its `Link` primary key")
-    measurements = field(queries.measurements, description="List the measurement claims a category's rule admits — log grain")
-    description = field(queries.description, description="Get an INFORMS claim by ID — a bare uuid, its `Link` primary key")
-    input_participation = field(queries.input_participation, description="Get an input participation claim by ID — a bare uuid, its `Link` primary key")
-    input_participations = field(queries.input_participations, description="List the input participation claims a view admits — log grain, under the view's event categories' rules")
-    output_participation = field(queries.output_participation, description="Get an output participation claim by ID — a bare uuid, its `Link` primary key")
-    output_participations = field(queries.output_participations, description="List the output participation claims a view admits — log grain, under the view's event categories' rules")
+    entity = field(
+        queries.entity,
+        description="Get an entity by ID, as the named view holds it — see `node`",
+    )
+    entities = field(
+        queries.entities,
+        description="List the entities a category's view holds, as it draws them — view grain: one row per individual",
+    )
+    structure = field(
+        queries.structure,
+        description="Get a structure by ID — a bare uuid, its evidence primary key",
+    )
+    structures = field(
+        queries.structures,
+        description="List structures with optional filters, ordering, and pagination",
+    )
+    structure_by_identifier = field(
+        queries.structure_by_identifier,
+        description="Get a structure by identifier and object. No graph: a structure belongs to the organization; a view draws it only where it mounts its kind (RFC 0027)",
+    )
+    informing_structures = field(
+        queries.informing_structures,
+        description="List the structures that are evidence for an entity",
+    )
+    natural_event = field(
+        queries.natural_event,
+        description="Get a natural event by ID, as the named view holds it — see `node`",
+    )
+    natural_events = field(
+        queries.natural_events,
+        description="List the natural events a category's view holds — view grain: one row per individual",
+    )
+    protocol_event = field(
+        queries.protocol_event,
+        description="Get a protocol event by ID, as the named view holds it — see `node`",
+    )
+    protocol_events = field(
+        queries.protocol_events,
+        description="List the protocol events a category's view holds — view grain: one row per individual",
+    )
+    measurement = field(
+        queries.measurement,
+        description="Get a measurement claim by ID — a bare uuid, its `Link` primary key",
+    )
+    measurements = field(
+        queries.measurements,
+        description="List the measurement claims a category's rule admits — log grain",
+    )
+    description = field(
+        queries.description,
+        description="Get an INFORMS claim by ID — a bare uuid, its `Link` primary key",
+    )
+    input_participation = field(
+        queries.input_participation,
+        description="Get an input participation claim by ID — a bare uuid, its `Link` primary key",
+    )
+    input_participations = field(
+        queries.input_participations,
+        description="List the input participation claims a view admits — log grain, under the view's event categories' rules",
+    )
+    output_participation = field(
+        queries.output_participation,
+        description="Get an output participation claim by ID — a bare uuid, its `Link` primary key",
+    )
+    output_participations = field(
+        queries.output_participations,
+        description="List the output participation claims a view admits — log grain, under the view's event categories' rules",
+    )
     # The log itself (RFC 0020). `assertion` / `assertions` existed once before,
     # running Cypher for an AGE `Assertion` edge nothing had ever written, and
     # were removed for it. These read `evidence.Assertion`.
-    assertions = field(queries.assertions, description="The acts of claiming, newest first, by who made them, with what tool and when")
-    assertion = field(queries.assertion, description="One act of claiming, with every claim it recorded")
-    changes = field(queries.changes, description="The log forward from a seq, ascending, cut at the committed horizon — the read a consumer polls without ever skipping a late-committing act")
-    relation = field(queries.relation, description="Get a relation claim by ID — a bare uuid, its `Link` primary key")
-    relations = field(queries.relations, description="List the relation claims a category's rule admits — log grain: every claim, standings folded under the category's rule, however the view draws them")
-    structure_relation = field(queries.structure_relation, description="Get a structure relation claim by ID — a bare uuid, its `Link` primary key")
-    structure_relations = field(queries.structure_relations, description="List the structure relation claims a category's rule admits — log grain")
+    assertions = field(
+        queries.assertions,
+        description="The acts of claiming, newest first, by who made them, with what tool and when",
+    )
+    assertion = field(
+        queries.assertion,
+        description="One act of claiming, with every claim it recorded",
+    )
+    changes = field(
+        queries.changes,
+        description="The log forward from a seq, ascending, cut at the committed horizon — the read a consumer polls without ever skipping a late-committing act",
+    )
+    relation = field(
+        queries.relation,
+        description="Get a relation claim by ID — a bare uuid, its `Link` primary key",
+    )
+    relations = field(
+        queries.relations,
+        description="List the relation claims a category's rule admits — log grain: every claim, standings folded under the category's rule, however the view draws them",
+    )
+    structure_relation = field(
+        queries.structure_relation,
+        description="Get a structure relation claim by ID — a bare uuid, its `Link` primary key",
+    )
+    structure_relations = field(
+        queries.structure_relations,
+        description="List the structure relation claims a category's rule admits — log grain",
+    )
     metric = field(queries.metric, description="Get a metric by ID")
-    metrics = field(queries.metrics, description="List every un-retracted metric recorded under one metric kind")
-    metrics_for_structure = field(queries.metrics_for_structure, description="List every un-retracted metric describing a structure")
-    metrics_for_assertion = field(queries.metrics_for_assertion, description="List every metric recorded under one assertion")
+    metrics = field(
+        queries.metrics,
+        description="List every un-retracted metric recorded under one metric kind",
+    )
+    metrics_for_structure = field(
+        queries.metrics_for_structure,
+        description="List every un-retracted metric describing a structure",
+    )
+    metrics_for_assertion = field(
+        queries.metrics_for_assertion,
+        description="List every metric recorded under one assertion",
+    )
 
     # =========================
     # Schema Section
@@ -120,28 +238,65 @@ class Query:
     graph: types.Graph = field(description="Get a graph by ID")
     graphs: list[types.Graph] = field(description="List all graphs in the graph engine")
 
-    entity_categories: list[types.EntityCategory] = field(description="List all entity categories")
-    entity_category: types.EntityCategory = field(description="Get a single entity category by ID")
+    entity_categories: list[types.EntityCategory] = field(
+        description="List all entity categories"
+    )
+    entity_category: types.EntityCategory = field(
+        description="Get a single entity category by ID"
+    )
     # Explicit resolvers: kinds have no graph, so `CategoryFilter.graph` — which
     # was the only thing scoping these before — no longer exists to fence them.
-    terms = field(queries.terms, description="List the organization's words — its vocabulary, independent of any graph")
+    terms = field(
+        queries.terms,
+        description="List the organization's words — its vocabulary, independent of any graph",
+    )
     term = field(queries.term, description="Get one of the organization's words by ID")
-    structure_kinds = field(queries.structure_kinds, description="List the organization's structure kinds")
-    structure_kind = field(queries.structure_kind, description="Get one structure kind by ID")
-    metric_kinds = field(queries.metric_kinds, description="List the organization's metric kinds")
+    structure_kinds = field(
+        queries.structure_kinds, description="List the organization's structure kinds"
+    )
+    structure_kind = field(
+        queries.structure_kind, description="Get one structure kind by ID"
+    )
+    metric_kinds = field(
+        queries.metric_kinds, description="List the organization's metric kinds"
+    )
     metric_kind = field(queries.metric_kind, description="Get one metric kind by ID")
-    measurement_categories: list[types.MeasurementCategory] = field(description="List all measurement categories")
-    measurement_category: types.MeasurementCategory = field(description="Get a single measurement category by ID")
-    relation_categories: list[types.RelationCategory] = field(description="List all relation categories")
-    relation_category: types.RelationCategory = field(description="Get a single relation category by ID")
-    structure_categories: list[types.StructureCategory] = field(description="List the structure kinds graphs mount (RFC 0027)")
-    structure_category: types.StructureCategory = field(description="Get a single mounted structure kind by ID")
-    structure_relation_categories: list[types.StructureRelationCategory] = field(description="List all structure relation categories")
-    structure_relation_category: types.StructureRelationCategory = field(description="Get a single structure relation category by ID")
-    natural_event_categories: list[types.NaturalEventCategory] = field(description="List all natural event categories")
-    natural_event_category: types.NaturalEventCategory = field(description="Get a single natural event category by ID")
-    protocol_event_categories: list[types.ProtocolEventCategory] = field(description="List all protocol event categories")
-    protocol_event_category: types.ProtocolEventCategory = field(description="Get a single protocol event category by ID")
+    measurement_categories: list[types.MeasurementCategory] = field(
+        description="List all measurement categories"
+    )
+    measurement_category: types.MeasurementCategory = field(
+        description="Get a single measurement category by ID"
+    )
+    relation_categories: list[types.RelationCategory] = field(
+        description="List all relation categories"
+    )
+    relation_category: types.RelationCategory = field(
+        description="Get a single relation category by ID"
+    )
+    structure_categories: list[types.StructureCategory] = field(
+        description="List the structure kinds graphs mount (RFC 0027)"
+    )
+    structure_category: types.StructureCategory = field(
+        description="Get a single mounted structure kind by ID"
+    )
+    structure_relation_categories: list[types.StructureRelationCategory] = field(
+        description="List all structure relation categories"
+    )
+    structure_relation_category: types.StructureRelationCategory = field(
+        description="Get a single structure relation category by ID"
+    )
+    natural_event_categories: list[types.NaturalEventCategory] = field(
+        description="List all natural event categories"
+    )
+    natural_event_category: types.NaturalEventCategory = field(
+        description="Get a single natural event category by ID"
+    )
+    protocol_event_categories: list[types.ProtocolEventCategory] = field(
+        description="List all protocol event categories"
+    )
+    protocol_event_category: types.ProtocolEventCategory = field(
+        description="Get a single protocol event category by ID"
+    )
 
     # The eight `materialized*` fields are gone. They read `MaterializedEdge` — a
     # stored cross-product of the category pairs an edge category permits — which
@@ -156,31 +311,74 @@ class Query:
     # saved analyses, pins and mentions answer neither from the log nor
     # from a drawing (RFC 0025).
     # ------------------------------------------------------------------
-    graph_stats: types.GraphStats = field(description="Get aggregated graph stats with optional filters", resolver=types.GraphStatsResolver)
-    entity_category_stats: types.EntityCategoryStats = field(description="Get aggregated entity-category stats with optional filters", resolver=types.EntityCategoryStatsResolver)
-    structure_kind_stats: types.StructureKindStats = field(description="Aggregated structure-kind stats", resolver=types.StructureKindStatsResolver)
-    metric_kind_stats: types.MetricKindStats = field(description="Aggregated metric-kind stats", resolver=types.MetricKindStatsResolver)
-    measurement_category_stats: types.MeasurementCategoryStats = field(description="Get aggregated measurement-category stats with optional filters", resolver=types.MeasurementCategoryStatsResolver)
-    relation_category_stats: types.RelationCategoryStats = field(description="Get aggregated relation-category stats with optional filters", resolver=types.RelationCategoryStatsResolver)
-    structure_relation_category_stats: types.StructureRelationCategoryStats = field(description="Get aggregated structure-relation-category stats with optional filters", resolver=types.StructureRelationCategoryStatsResolver)
-    protocol_event_category_stats: types.ProtocolEventCategoryStats = field(description="Get aggregated protocol-event-category stats with optional filters", resolver=types.ProtocolEventCategoryStatsResolver)
-    natural_event_category_stats: types.NaturalEventCategoryStats = field(description="Get aggregated natural-event-category stats with optional filters", resolver=types.NaturalEventCategoryStatsResolver)
+    graph_stats: types.GraphStats = field(
+        description="Get aggregated graph stats with optional filters",
+        resolver=types.GraphStatsResolver,
+    )
+    entity_category_stats: types.EntityCategoryStats = field(
+        description="Get aggregated entity-category stats with optional filters",
+        resolver=types.EntityCategoryStatsResolver,
+    )
+    structure_kind_stats: types.StructureKindStats = field(
+        description="Aggregated structure-kind stats",
+        resolver=types.StructureKindStatsResolver,
+    )
+    metric_kind_stats: types.MetricKindStats = field(
+        description="Aggregated metric-kind stats",
+        resolver=types.MetricKindStatsResolver,
+    )
+    measurement_category_stats: types.MeasurementCategoryStats = field(
+        description="Get aggregated measurement-category stats with optional filters",
+        resolver=types.MeasurementCategoryStatsResolver,
+    )
+    relation_category_stats: types.RelationCategoryStats = field(
+        description="Get aggregated relation-category stats with optional filters",
+        resolver=types.RelationCategoryStatsResolver,
+    )
+    structure_relation_category_stats: types.StructureRelationCategoryStats = field(
+        description="Get aggregated structure-relation-category stats with optional filters",
+        resolver=types.StructureRelationCategoryStatsResolver,
+    )
+    protocol_event_category_stats: types.ProtocolEventCategoryStats = field(
+        description="Get aggregated protocol-event-category stats with optional filters",
+        resolver=types.ProtocolEventCategoryStatsResolver,
+    )
+    natural_event_category_stats: types.NaturalEventCategoryStats = field(
+        description="Get aggregated natural-event-category stats with optional filters",
+        resolver=types.NaturalEventCategoryStatsResolver,
+    )
 
     # =========================
     # Insights Section
     # =========================
-    graph_queries: list[types.GraphQuery] = field(description="Show all saved graph queries")
-    graph_query: types.GraphQuery = field(description="Show a single saved graph query by ID")
-    graph_table_queries: list[types.GraphTableQuery] = field(description="Show all saved graph table queries")
-    graph_table_query: types.GraphTableQuery = field(description="Show a single saved graph table query by ID")
-    graph_pairs_queries: list[types.GraphPairsQuery] = field(description="The saved pairs queries: insights whose runs are training sets; `requires` narrows to the ones a port accepts")
-    graph_pairs_query: types.GraphPairsQuery = field(description="One saved pairs query by ID")
-    render_graph_pairs = field(queries.render_graph_pairs, description="The pairs a saved pairs query answers now, from the view's drawing: a preview. A run (`runPairsQuery`) stores the same answer with where the drawing stood")
+    graph_queries: list[types.GraphQuery] = field(
+        description="Show all saved graph queries"
+    )
+    graph_query: types.GraphQuery = field(
+        description="Show a single saved graph query by ID"
+    )
+    graph_table_queries: list[types.GraphTableQuery] = field(
+        description="Show all saved graph table queries"
+    )
+    graph_table_query: types.GraphTableQuery = field(
+        description="Show a single saved graph table query by ID"
+    )
+    graph_pairs_queries: list[types.GraphPairsQuery] = field(
+        description="The saved pairs queries: insights whose runs are training sets; `requires` narrows to the ones a port accepts"
+    )
+    graph_pairs_query: types.GraphPairsQuery = field(
+        description="One saved pairs query by ID"
+    )
+    render_graph_pairs = field(
+        queries.render_graph_pairs,
+        description="The pairs a saved pairs query answers now, from the view's drawing: a preview. A run (`runPairsQuery`) stores the same answer with where the drawing stood",
+    )
     # `GraphPathQuery` had a type, a dataloader and all four mutations, and no way
     # to read one back — the only member of the family missing its root fields.
 
     render_graph_table = field(
-        queries.render_graph_table, description="Render a saved table query. Answers from the **drawing**: a page of the view's property graph as of its cursor, filtered, ordered and paged there — the one read with no log path. `Graph.projection { lag }` says how far behind the log it is"
+        queries.render_graph_table,
+        description="Render a saved table query. Answers from the **drawing**: a page of the view's property graph as of its cursor, filtered, ordered and paged there — the one read with no log path. `Graph.projection { lag }` says how far behind the log it is",
     )
 
     render_table_plan = field(
@@ -188,22 +386,36 @@ class Query:
         description="Render a table plan **without saving it** — the plan a client is still writing, against one view. Same compile path as `renderGraphTable`: answers from the drawing, labels resolved against the view's namespace, filtered, ordered and paged there. Nothing is written; the plan comes back as compiled",
     )
 
-    scatter_plots: list[types.ScatterPlot] = field(description="Show all saved scatter plots")
-    scatter_plot: types.ScatterPlot = field(description="Show a single saved scatter plot by ID")
+    scatter_plots: list[types.ScatterPlot] = field(
+        description="Show all saved scatter plots"
+    )
+    scatter_plot: types.ScatterPlot = field(
+        description="Show a single saved scatter plot by ID"
+    )
 
     # Runs of pairs queries (stored training sets) and trained models, see `datasets/models.py`.
-    pairs_query_runs: list[dataset_types.PairsQueryRun] = field(description="The runs of pairs queries: stored training sets; `requires` narrows to the ones a port accepts, `auto: false` hides the ones made for models")
+    pairs_query_runs: list[dataset_types.PairsQueryRun] = field(
+        description="The runs of pairs queries: stored training sets; `requires` narrows to the ones a port accepts, `auto: false` hides the ones made for models"
+    )
     pairs_query_run: dataset_types.PairsQueryRun = field(description="One run by ID")
-    models: list[dataset_types.Model] = field(description="The organization's trained models; `requires` narrows to the ones a port accepts")
+    models: list[dataset_types.Model] = field(
+        description="The organization's trained models; `requires` narrows to the ones a port accepts"
+    )
     model: dataset_types.Model = field(description="One trained model by ID")
 
     # Projects: the organization's anchor for a piece of work, see `projects/models.py`.
-    projects: list[project_types.Project] = field(description="The organization's projects")
+    projects: list[project_types.Project] = field(
+        description="The organization's projects"
+    )
     project: project_types.Project = field(description="One project by ID")
     # Todo lists: product state, see `todos/models.py`.
-    todo_lists: list[todo_types.TodoList] = field(description="Todo lists; `mine` narrows to the caller's")
+    todo_lists: list[todo_types.TodoList] = field(
+        description="Todo lists; `mine` narrows to the caller's"
+    )
     todo_list: todo_types.TodoList = field(description="One todo list by ID")
-    todo_items: list[todo_types.TodoItem] = field(description="Todo items across lists; `mine` narrows to those whose effective assignee is the caller, `identifier` + `object` to those that carry an object")
+    todo_items: list[todo_types.TodoItem] = field(
+        description="Todo items across lists; `mine` narrows to those whose effective assignee is the caller, `identifier` + `object` to those that carry an object"
+    )
     todo_item: todo_types.TodoItem = field(description="One todo item by ID")
     todo_item_structures: list[todo_types.TodoItemStructure] = field(
         description="Objects on todo items, one row per (item, object). `identifier` + `object` is an object's own todo track: its row on every item it is on, without the item's other objects"
@@ -223,7 +435,10 @@ def upload_mutation(**kwargs) -> strawberry.mutation:  # noqa: ANN003
     scope of the editors who make graphs.
     """
     roles = load_config().upload_roles or [EDITOR]
-    return kante.django_mutation(extensions=[AuthExtension(scopes=["kraph_insights"], any_role_of=roles)], **kwargs)
+    return kante.django_mutation(
+        extensions=[AuthExtension(scopes=["kraph_insights"], any_role_of=roles)],
+        **kwargs,
+    )
 
 
 @strawberry.type(description="Graph Engine Mutations")
@@ -780,7 +995,7 @@ class Schema(QuietErrorsSchema, kante.Schema):
 
 def create_schema(
     max_depth: int = 10,
-    projector: Optional[Projector] = None,
+    projector: Projector | None = None,
 ) -> kante.Schema:
     """Build the served GraphQL schema.
 
@@ -812,7 +1027,9 @@ def create_schema(
 
     # `kraph_all` passes every scope check here and `kraph_admin` every role check (authentikate's
     # catch-alls). kraph serves no hosted structures, so this is all `annotate_schema` would do.
-    declare_catch_alls(scope=contract.description.all_scope, role=contract.description.admin_role)
+    declare_catch_alls(
+        scope=contract.description.all_scope, role=contract.description.admin_role
+    )
 
     return Schema(
         query=Query,

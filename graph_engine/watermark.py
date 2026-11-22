@@ -42,10 +42,10 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from authentikate.models import Organization
-from core.models import Graph
 from django.db.models import Max, Min
 from django.utils import timezone
 
+from core.models import Graph
 from evidence import models as evidence_models
 from graph_engine import models as projection_models
 
@@ -63,19 +63,25 @@ def projection_for(graph: Graph) -> projection_models.Projection:
 
 def max_seq(organization: Organization) -> int:
     """The highest assertion seq the organization has committed; 0 when none."""
-    value = evidence_models.Assertion.objects.for_organization(organization).aggregate(value=Max("seq"))["value"]
+    value = evidence_models.Assertion.objects.for_organization(organization).aggregate(
+        value=Max("seq")
+    )["value"]
     return int(value or 0)
 
 
 def min_pending_seq(organization: Organization) -> int | None:
     """The lowest outstanding assertion seq, or None when nothing is pending."""
-    value = projection_models.PendingProjection.objects.filter(organization=organization).aggregate(value=Min("assertion__seq"))["value"]
+    value = projection_models.PendingProjection.objects.filter(
+        organization=organization
+    ).aggregate(value=Min("assertion__seq"))["value"]
     return int(value) if value is not None else None
 
 
 def pending_count(organization: Organization) -> int:
     """How many assertions nobody has finished drawing."""
-    return projection_models.PendingProjection.objects.filter(organization=organization).count()
+    return projection_models.PendingProjection.objects.filter(
+        organization=organization
+    ).count()
 
 
 @dataclass(frozen=True)
@@ -94,7 +100,9 @@ class Position:
     rebuilt_at: datetime.datetime | None
 
 
-def cursor_from(status: str, organization_max_seq: int, organization_min_pending: int | None) -> int:
+def cursor_from(
+    status: str, organization_max_seq: int, organization_min_pending: int | None
+) -> int:
     """The cursor, from the three numbers it depends on. Pure, so it can be tested alone."""
     if status != projection_models.Projection.Status.CONSISTENT:
         return 0
@@ -143,14 +151,21 @@ def position(graph: Graph) -> Position:
 def positions(graphs: Iterable[Graph]) -> dict[int, Position]:
     """`position` for many graphs, with the per-organization numbers computed once each."""
     graphs = list(graphs)
-    rows = {row.graph_id: row for row in projection_models.Projection.objects.filter(graph__in=graphs)}
+    rows = {
+        row.graph_id: row
+        for row in projection_models.Projection.objects.filter(graph__in=graphs)
+    }
     by_org: dict[int, tuple[int, int | None, int]] = {}
     out: dict[int, Position] = {}
     for graph in graphs:
         row = rows.get(graph.pk) or projection_for(graph)
         org_key = graph.organization_id
         if org_key not in by_org:
-            by_org[org_key] = (max_seq(graph.organization), min_pending_seq(graph.organization), pending_count(graph.organization))
+            by_org[org_key] = (
+                max_seq(graph.organization),
+                min_pending_seq(graph.organization),
+                pending_count(graph.organization),
+            )
         top, lowest_pending, outstanding = by_org[org_key]
         where = cursor_from(row.status, top, lowest_pending)
         out[graph.pk] = Position(
@@ -175,7 +190,9 @@ def positions(graphs: Iterable[Graph]) -> dict[int, Position]:
 
 def expect(assertion: evidence_models.Assertion) -> None:
     """Record that this assertion's projection is owed. Call **inside** the evidence transaction."""
-    projection_models.PendingProjection.objects.get_or_create(assertion=assertion, defaults={"organization": assertion.organization})
+    projection_models.PendingProjection.objects.get_or_create(
+        assertion=assertion, defaults={"organization": assertion.organization}
+    )
 
 
 def settle(assertion: evidence_models.Assertion) -> None:
@@ -203,7 +220,9 @@ def mark_rebuilding(graph: Graph) -> projection_models.Projection:
     return row
 
 
-def mark_consistent(graph: Graph, *, through_seq: int, schema_hash: str | None, rebuilt: bool = False) -> projection_models.Projection:
+def mark_consistent(
+    graph: Graph, *, through_seq: int, schema_hash: str | None, rebuilt: bool = False
+) -> projection_models.Projection:
     """A bulk operation finished: the drawing reflects the log up to `through_seq` under `schema_hash`."""
     row = projection_for(graph)
     row.status = projection_models.Projection.Status.CONSISTENT
@@ -221,7 +240,9 @@ def mark_consistent(graph: Graph, *, through_seq: int, schema_hash: str | None, 
 
 def mark_derived(graph: Graph) -> None:
     """`projector.project` wrote properties here just now. One UPDATE per call, not per node."""
-    projection_models.Projection.objects.filter(graph=graph).update(derived_at=timezone.now())
+    projection_models.Projection.objects.filter(graph=graph).update(
+        derived_at=timezone.now()
+    )
 
 
 def record_schema_hash(graph: Graph, schema_hash: str | None) -> None:

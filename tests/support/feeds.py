@@ -28,32 +28,80 @@ BODIES: dict[str, dict[str, Any]] = {}
 ISSUER = "https://lok.example/o"
 
 
-def body(identifier: str, object: str, key: str, *, magnitude: float | None = None, unit: str | None = None, code: str | None = None, user: str | None = "mikro-user-1", app: str | None = "ais_suite", task: str | None = None, supersedes: uuid.UUID | None = None) -> dict[str, Any]:
+def body(
+    identifier: str,
+    object: str,
+    key: str,
+    *,
+    magnitude: float | None = None,
+    unit: str | None = None,
+    code: str | None = None,
+    user: str | None = "mikro-user-1",
+    app: str | None = "ais_suite",
+    task: str | None = None,
+    supersedes: uuid.UUID | None = None,
+) -> dict[str, Any]:
     """A metric as mikro renders it into its feed."""
     return {
-        "target": {"identifier": identifier, "object": object, "uuid": str(uuid.uuid4())},
+        "target": {
+            "identifier": identifier,
+            "object": object,
+            "uuid": str(uuid.uuid4()),
+        },
         "key": key,
         "magnitude": magnitude,
         "unit": unit,
         "code": code,
-        "producer": {"app": app, "version": "0.4.1", "client": "ais-client", "user": user, "issuer": ISSUER if user else None},
+        "producer": {
+            "app": app,
+            "version": "0.4.1",
+            "client": "ais-client",
+            "user": user,
+            "issuer": ISSUER if user else None,
+        },
         "task": {"task_id": task, "root_task_id": task} if task else None,
         "supersedes": None if supersedes is None else str(supersedes),
-        "created_at": datetime.datetime(2026, 10, 19, 9, 12, 3, tzinfo=datetime.UTC).isoformat(),
+        "created_at": datetime.datetime(
+            2026, 10, 19, 9, 12, 3, tzinfo=datetime.UTC
+        ).isoformat(),
     }
 
 
 _next_id = iter(range(1, 10**9))
 
 
-def entry(xid: int, metric_body: dict[str, Any] | None, *, uid: uuid.UUID | None = None, organization: str = "static_issuer#evidence-org") -> RemoteEntry:
+def entry(
+    xid: int,
+    metric_body: dict[str, Any] | None,
+    *,
+    uid: uuid.UUID | None = None,
+    organization: str = "static_issuer#evidence-org",
+) -> RemoteEntry:
     """A CREATED entry of mikro's transaction ``xid``; a None body is a metric deleted before it was read."""
-    return RemoteEntry(xid=xid, id=next(_next_id), kind="CREATED", object=str(next(_next_id)), uuid=uid or uuid.uuid4(), organization=organization, body=metric_body)
+    return RemoteEntry(
+        xid=xid,
+        id=next(_next_id),
+        kind="CREATED",
+        object=str(next(_next_id)),
+        uuid=uid or uuid.uuid4(),
+        organization=organization,
+        body=metric_body,
+    )
 
 
-def withdrawal(xid: int, uid: uuid.UUID, *, organization: str = "static_issuer#evidence-org") -> RemoteEntry:
+def withdrawal(
+    xid: int, uid: uuid.UUID, *, organization: str = "static_issuer#evidence-org"
+) -> RemoteEntry:
     """A DELETED entry: mikro withdrawing the metric ``uid``."""
-    return RemoteEntry(xid=xid, id=next(_next_id), kind="DELETED", object="0", uuid=uid, organization=organization, body=None)
+    return RemoteEntry(
+        xid=xid,
+        id=next(_next_id),
+        kind="DELETED",
+        object="0",
+        uuid=uid,
+        organization=organization,
+        body=None,
+    )
 
 
 def apply(organization: Organization, entries: list[RemoteEntry]) -> ingest.Recorded:
@@ -68,6 +116,11 @@ def serve(organization: str, bodies: list[dict[str, Any]]) -> list[uuid.UUID]:
     uids = [uuid.uuid4() for _ in bodies]
     with transaction.atomic():
         objects = [str(1000 + len(BODIES) + i) for i in range(len(bodies))]
-        record_changes([Change(ingest.FEED, "CREATED", obj, organization, uuid=uid) for obj, uid in zip(objects, uids, strict=True)])
+        record_changes(
+            [
+                Change(ingest.FEED, "CREATED", obj, organization, uuid=uid)
+                for obj, uid in zip(objects, uids, strict=True)
+            ]
+        )
     BODIES.update(zip(objects, bodies, strict=True))
     return uids

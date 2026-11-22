@@ -35,12 +35,16 @@ def property_graph_labels(schema: str) -> set[str]:
         return {row[0] for row in cursor.fetchall()}
 
 
-def graph_table(graph: Any, body: str, params: list[Any] | None = None) -> list[tuple[Any, ...]]:
+def graph_table(
+    graph: Any, body: str, params: list[Any] | None = None
+) -> list[tuple[Any, ...]]:
     """Run one GRAPH_TABLE query against a graph's namespace and return its rows.
 
     `body` is everything inside the parentheses after the graph reference —
     `MATCH … COLUMNS (…)` — written by the test itself.
     """
     with connection.cursor() as cursor:
-        cursor.execute(f'SELECT * FROM GRAPH_TABLE ("{graph.age_name}".graph {body})', params or [])
+        cursor.execute(
+            f'SELECT * FROM GRAPH_TABLE ("{graph.age_name}".graph {body})', params or []
+        )
         return list(cursor.fetchall())

@@ -15,7 +15,9 @@ from kante.types import Info
 from api import context, inputs, types
 
 
-def assert_same_instance(info: Info, input: inputs.AssertSameInstanceInput) -> types.AssertedSameness:
+def assert_same_instance(
+    info: Info, input: inputs.AssertSameInstanceInput
+) -> types.AssertedSameness:
     """Claim that several already-recorded instances are one thing.
 
     Sameness is an equivalence with no primary, so the order of the ids carries
@@ -28,10 +30,21 @@ def assert_same_instance(info: Info, input: inputs.AssertSameInstanceInput) -> t
     organization = context.get_active_organization(info)
     context.assert_can_access_organization(info, organization)
 
-    return types.AssertedSameness(_value=controller.assert_same_instance(organization=organization, instance_refs=model.instances, info=info, observed_at=model.observed_at, confidence=model.confidence, derived_from=model.derived_from))
+    return types.AssertedSameness(
+        _value=controller.assert_same_instance(
+            organization=organization,
+            instance_refs=model.instances,
+            info=info,
+            observed_at=model.observed_at,
+            confidence=model.confidence,
+            derived_from=model.derived_from,
+        )
+    )
 
 
-def retract_same_instance(info: Info, input: inputs.RetractSameInstanceInput) -> types.AssertedSameness:
+def retract_same_instance(
+    info: Info, input: inputs.RetractSameInstanceInput
+) -> types.AssertedSameness:
     """Withdraw one sameness claim.
 
     The component it held together is rebuilt from the claims that survive, which
@@ -41,10 +54,16 @@ def retract_same_instance(info: Info, input: inputs.RetractSameInstanceInput) ->
     model = input.to_pydantic()
     controller = context.get_controller()
 
-    return types.AssertedSameness(_value=controller.retract_same_instance(str(model.id), info=info, at=model.at, confidence=model.confidence))
+    return types.AssertedSameness(
+        _value=controller.retract_same_instance(
+            str(model.id), info=info, at=model.at, confidence=model.confidence
+        )
+    )
 
 
-def assert_different_instance(info: Info, input: inputs.AssertDifferentInstanceInput) -> types.AssertedDifference:
+def assert_different_instance(
+    info: Info, input: inputs.AssertDifferentInstanceInput
+) -> types.AssertedDifference:
     """Claim that several already-recorded instances are distinct things.
 
     A standing, trusted difference vetoes every direct sameness between its two
@@ -57,12 +76,27 @@ def assert_different_instance(info: Info, input: inputs.AssertDifferentInstanceI
     organization = context.get_active_organization(info)
     context.assert_can_access_organization(info, organization)
 
-    return types.AssertedDifference(_value=controller.assert_different_instance(organization=organization, instance_refs=model.instances, info=info, observed_at=model.observed_at, confidence=model.confidence, derived_from=model.derived_from))
+    return types.AssertedDifference(
+        _value=controller.assert_different_instance(
+            organization=organization,
+            instance_refs=model.instances,
+            info=info,
+            observed_at=model.observed_at,
+            confidence=model.confidence,
+            derived_from=model.derived_from,
+        )
+    )
 
 
-def retract_different_instance(info: Info, input: inputs.RetractDifferentInstanceInput) -> types.AssertedDifference:
+def retract_different_instance(
+    info: Info, input: inputs.RetractDifferentInstanceInput
+) -> types.AssertedDifference:
     """Withdraw one difference claim. The sameness it vetoed counts again."""
     model = input.to_pydantic()
     controller = context.get_controller()
 
-    return types.AssertedDifference(_value=controller.retract_different_instance(str(model.id), info=info, at=model.at, confidence=model.confidence))
+    return types.AssertedDifference(
+        _value=controller.retract_different_instance(
+            str(model.id), info=info, at=model.at, confidence=model.confidence
+        )
+    )

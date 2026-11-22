@@ -12,11 +12,13 @@ there is no AGE edge for a measurement to be drawn as.
 
 from kante.types import Info
 
-from api import types, inputs, context
+from api import context, inputs, types
 from core import enums
 
 
-def assert_measurement_exists(info: Info, input: inputs.AssertMeasurementExistsInput) -> types.AssertedMeasurement:
+def assert_measurement_exists(
+    info: Info, input: inputs.AssertMeasurementExistsInput
+) -> types.AssertedMeasurement:
     """Assert that a structure measures an entity, under one of the organization's words.
 
     Names a term rather than a measurement category — see `assert_entity_exists`.
@@ -29,7 +31,9 @@ def assert_measurement_exists(info: Info, input: inputs.AssertMeasurementExistsI
     organization = context.get_active_organization(info)
     context.assert_can_access_organization(info, organization)
 
-    term = controller.ensure_term(organization, enums.CategoryKindChoices.MEASUREMENT, payload.term)
+    term = controller.ensure_term(
+        organization, enums.CategoryKindChoices.MEASUREMENT, payload.term
+    )
 
     return types.AssertedMeasurement(
         _value=controller.create_measurement(
@@ -41,7 +45,9 @@ def assert_measurement_exists(info: Info, input: inputs.AssertMeasurementExistsI
     )
 
 
-def retract_measurement(info: Info, input: inputs.RetractMeasurementInput) -> types.AssertedMeasurement:
+def retract_measurement(
+    info: Info, input: inputs.RetractMeasurementInput
+) -> types.AssertedMeasurement:
     """Retract a measurement assertion without destroying it."""
     controller = context.get_controller()
 
@@ -49,4 +55,11 @@ def retract_measurement(info: Info, input: inputs.RetractMeasurementInput) -> ty
     link = controller.resolve_edge_link(str(model.id), info)
     context.assert_can_access_organization(info, link.organization)
 
-    return types.AssertedMeasurement(_value=controller.retract_relation(relation_id=str(model.id), info=info, at=model.at, confidence=model.confidence))
+    return types.AssertedMeasurement(
+        _value=controller.retract_relation(
+            relation_id=str(model.id),
+            info=info,
+            at=model.at,
+            confidence=model.confidence,
+        )
+    )

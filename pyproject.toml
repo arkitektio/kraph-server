@@ -37,11 +37,11 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "basedpyright>=1.39.8",
-    # Declared, not merely resolved. `lint.yaml` runs `uv run ruff`, and until now
+    "basedpyright==1.40.2",
+    # Declared, not merely resolved. CI (`quality.yaml`) runs `uv run ruff`, and until now
     # ruff reached the environment only as somebody else's transitive dependency —
     # so a dependency bump elsewhere could silently take the linter out of CI.
-    "ruff>=0.14.0",
+    "ruff==0.17.6",
     "pytest-cov>=7.1.0",
     "python-semantic-release>=9.21.0",
     "django-stubs>=5.2.0",
@@ -53,72 +53,9 @@ dev = [
     "types-boto3[essential,sts]>=1.42.46",
 ]
 
-[tool.django-stubs]
-django_settings_module = "kraph_server.settings"
-
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "kraph_server.settings_test"
 
-
-[tool.ruff]
-# Same as Black.
-line-length = 300
-target-version = "py312"
-
-# `core-backup-do-not-delete/` is a legacy snapshot of `core/` that nobody will
-# ever fix; linting it only buries the findings that matter (it carried 1,488 of
-# the 5,221 findings this config used to report). Migrations are generated code.
-extend-exclude = [
-    "core-backup-do-not-delete",
-    "**/migrations",
-    "examples",
-]
-
-[tool.ruff.lint]
-# These settings used to live at the top level of `[tool.ruff]`, where ruff has
-# deprecated them: every run printed "the top-level linter settings are
-# deprecated" and one release from now they would have been dropped silently,
-# leaving the repo linted by whatever ruff's defaults happened to be. That is
-# the same shape as the `[tool.mypy]` block that configured a checker nothing
-# ran — see the note at the bottom of this file.
-#
-# **This set is the required check.** `uv run ruff check .` passes on a clean
-# tree, so a violation means something new and a developer can believe the
-# green. Every family here is about a defect, not a preference:
-select = [
-    "E9",    # the file does not parse, or cannot be read
-    "F",     # pyflakes: undefined names, unused imports, shadowed bindings
-    "PLE",   # pylint's error class — constructs that raise at runtime
-    "ASYNC", # blocking work inside `async def`; this server is ASGI end to end
-    "DTZ",   # naive datetimes — the evidence log's whole order is time
-    "LOG",   # logging misuse
-    "T10",   # a `breakpoint()` left in the source
-    "ISC",   # implicit string concatenation: a forgotten comma in a list is a
-             # silent join, and this repo builds SQL and rule documents in lists
-]
-
-ignore = [
-    # Style, not a defect: a `timeout` keyword on an async def is exactly what
-    # the test helper in `tests/log/` means to offer.
-    "ASYNC109",
-]
-
-# NOT selected, deliberately, and not merely unburned:
-#
-# - `FA` would have us add `from __future__ import annotations`, and PEP 563
-#   breaks Strawberry's runtime annotation resolution — the schema stops
-#   building. Same reason `UP006`/`UP007`/`UP045` (rewriting `Optional[X]` and
-#   `List[X]` in place) stay out of the gate: those annotations are read at
-#   runtime by Strawberry and by pydantic, where an annotation is the validator.
-# - `ANN`, `D1`, `I`, `UP`, `B`, `SIM`, `TRY`, `RET`, `PT`, `RUF` and the rest
-#   are real but unburned debt (~3.7k findings). `lint.yaml` reports them in a
-#   second, advisory step so the number is visible and can be driven down a
-#   family at a time, rather than blocking every PR today.
-
-[tool.ruff.lint.per-file-ignores]
-# A test's name *is* its documentation here (see `tests/README.md`), and the
-# suite is not part of the public surface.
-"tests/**" = ["D1"]
 
 [tool.semantic_release]
 # This server is deployed as Docker images, not a PyPI package — so a release

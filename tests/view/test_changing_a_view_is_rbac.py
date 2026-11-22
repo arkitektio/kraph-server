@@ -5,13 +5,13 @@ Reads and instance writes are untouched: they stay organization-scoped.
 History: `Graph.rules`, per-action allow/deny lists, are gone.
 """
 
-import pytest
-from authentikate.models import Membership, User
-from core import models as core_models
 import kante
+import pytest
 from asgiref.sync import sync_to_async
+from authentikate.models import Membership, User
 from kante.context import HttpContext
 
+from core import models as core_models
 
 UPDATE_ENTITY_CATEGORY = """
     mutation U($input: UpdateEntityCategoryInput!) {
@@ -29,73 +29,121 @@ def _info_for(user: User, organization, membership: Membership):
     """
     from types import SimpleNamespace
 
-    request = SimpleNamespace(user=user, membership=membership, organization=organization)
+    request = SimpleNamespace(
+        user=user, membership=membership, organization=organization
+    )
     return SimpleNamespace(context=SimpleNamespace(request=request))
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_the_owner_may_edit_the_definition(api_schema, simple_api_context, test_graph: core_models.Graph, table_projector) -> None:
+async def test_the_owner_may_edit_the_definition(
+    api_schema, simple_api_context, test_graph: core_models.Graph, table_projector
+) -> None:
     """End to end: the request identity owns `test_graph`, so the mutation passes."""
-    category_id = str((await core_models.EntityCategory.objects.aget(graph=test_graph, key="Cell")).pk)
+    category_id = str(
+        (await core_models.EntityCategory.objects.aget(graph=test_graph, key="Cell")).pk
+    )
     updated = await api_schema.execute(
         UPDATE_ENTITY_CATEGORY,
-        variable_values={"input": {"id": category_id, "description": "the owner may say what this means"}},
+        variable_values={
+            "input": {
+                "id": category_id,
+                "description": "the owner may say what this means",
+            }
+        },
         context_value=simple_api_context,
     )
     assert updated.errors is None, f"GraphQL errors: {updated.errors}"
 
 
 @pytest.mark.django_db(transaction=True)
-def test_a_plain_colleague_may_not(test_graph: core_models.Graph, table_projector) -> None:
+def test_a_plain_colleague_may_not(
+    test_graph: core_models.Graph, table_projector
+) -> None:
     """Same organization, so reads work — but the schema is not theirs to change."""
-    user, _ = User.objects.get_or_create(username="plain-colleague", defaults={"sub": "colleague", "iss": "static_issuer"})
-    membership, _ = Membership.objects.get_or_create(user=user, organization=test_graph.organization)
+    user, _ = User.objects.get_or_create(
+        username="plain-colleague",
+        defaults={"sub": "colleague", "iss": "static_issuer"},
+    )
+    membership, _ = Membership.objects.get_or_create(
+        user=user, organization=test_graph.organization
+    )
 
     with pytest.raises(PermissionError, match="owner, a curator or Kraph's admin"):
-        test_graph.validate_definition_editable(_info_for(user, test_graph.organization, membership))
+        test_graph.validate_definition_editable(
+            _info_for(user, test_graph.organization, membership)
+        )
 
 
 @pytest.mark.django_db(transaction=True)
 def test_an_admin_may(test_graph: core_models.Graph, table_projector) -> None:
-    user, _ = User.objects.get_or_create(username="org-admin", defaults={"sub": "org-admin", "iss": "static_issuer"})
-    membership, _ = Membership.objects.get_or_create(user=user, organization=test_graph.organization)
+    user, _ = User.objects.get_or_create(
+        username="org-admin", defaults={"sub": "org-admin", "iss": "static_issuer"}
+    )
+    membership, _ = Membership.objects.get_or_create(
+        user=user, organization=test_graph.organization
+    )
     membership.roles = ["kraph_admin"]
     membership.save()
 
-    test_graph.validate_definition_editable(_info_for(user, test_graph.organization, membership))
+    test_graph.validate_definition_editable(
+        _info_for(user, test_graph.organization, membership)
+    )
 
 
 @pytest.mark.django_db(transaction=True)
 def test_a_curator_may(test_graph: core_models.Graph, table_projector) -> None:
     """Curating the vocabulary is the curator's role, whoever owns the graph."""
-    user, _ = User.objects.get_or_create(username="org-curator", defaults={"sub": "org-curator", "iss": "static_issuer"})
-    membership, _ = Membership.objects.get_or_create(user=user, organization=test_graph.organization)
+    user, _ = User.objects.get_or_create(
+        username="org-curator", defaults={"sub": "org-curator", "iss": "static_issuer"}
+    )
+    membership, _ = Membership.objects.get_or_create(
+        user=user, organization=test_graph.organization
+    )
     membership.roles = ["kraph_curator"]
     membership.save()
 
-    test_graph.validate_definition_editable(_info_for(user, test_graph.organization, membership))
+    test_graph.validate_definition_editable(
+        _info_for(user, test_graph.organization, membership)
+    )
 
 
 @pytest.mark.django_db(transaction=True)
-def test_the_generic_admin_role_grants_nothing(test_graph: core_models.Graph, table_projector) -> None:
+def test_the_generic_admin_role_grants_nothing(
+    test_graph: core_models.Graph, table_projector
+) -> None:
     """Only kraph's own roles count here: a generic `admin` is no curator."""
-    user, _ = User.objects.get_or_create(username="generic-admin", defaults={"sub": "generic-admin", "iss": "static_issuer"})
-    membership, _ = Membership.objects.get_or_create(user=user, organization=test_graph.organization)
+    user, _ = User.objects.get_or_create(
+        username="generic-admin",
+        defaults={"sub": "generic-admin", "iss": "static_issuer"},
+    )
+    membership, _ = Membership.objects.get_or_create(
+        user=user, organization=test_graph.organization
+    )
     membership.roles = ["admin"]
     membership.save()
 
     with pytest.raises(PermissionError):
-        test_graph.validate_definition_editable(_info_for(user, test_graph.organization, membership))
+        test_graph.validate_definition_editable(
+            _info_for(user, test_graph.organization, membership)
+        )
 
 
 @pytest.mark.django_db(transaction=True)
-def test_an_admin_of_another_organization_may_not(test_graph: core_models.Graph, table_projector) -> None:
+def test_an_admin_of_another_organization_may_not(
+    test_graph: core_models.Graph, table_projector
+) -> None:
     """The admin role is per organization, not global."""
     from authentikate.models import Organization
 
-    other, _ = Organization.objects.get_or_create(identifier="static_issuer#somewhere-else")
-    user, _ = User.objects.get_or_create(username="foreign-admin", defaults={"sub": "foreign-admin", "iss": "static_issuer"})
+    other, _ = Organization.objects.get_or_create(
+        identifier="static_issuer#somewhere-else"
+    )
+    user, _ = User.objects.get_or_create(
+        username="foreign-admin",
+        defaults={"sub": "foreign-admin", "iss": "static_issuer"},
+    )
     membership, _ = Membership.objects.get_or_create(user=user, organization=other)
     membership.roles = ["kraph_admin"]
     membership.save()
@@ -106,29 +154,48 @@ def test_an_admin_of_another_organization_may_not(test_graph: core_models.Graph,
 
 @pytest.mark.django_db(transaction=True)
 def test_a_superuser_may(test_graph: core_models.Graph, table_projector) -> None:
-    user, _ = User.objects.get_or_create(username="the-superuser", defaults={"sub": "root", "iss": "static_issuer", "is_superuser": True})
+    user, _ = User.objects.get_or_create(
+        username="the-superuser",
+        defaults={"sub": "root", "iss": "static_issuer", "is_superuser": True},
+    )
     user.is_superuser = True
     user.save()
-    test_graph.validate_definition_editable(_info_for(user, test_graph.organization, None))
+    test_graph.validate_definition_editable(
+        _info_for(user, test_graph.organization, None)
+    )
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_graph_rules_are_gone_from_the_schema(api_schema, simple_api_context) -> None:
+async def test_graph_rules_are_gone_from_the_schema(
+    api_schema, simple_api_context
+) -> None:
     made = await api_schema.execute(
         "mutation G($input: CreateGraphInput!) { createGraph(input: $input) { id } }",
-        variable_values={"input": {"name": "no-rules", "definition": {"rules": [{"action": "AUTO_ADD_STRUCTURES", "allow": False}], "extensions": {"entities": [{"key": "X"}]}}}},
+        variable_values={
+            "input": {
+                "name": "no-rules",
+                "definition": {
+                    "rules": [{"action": "AUTO_ADD_STRUCTURES", "allow": False}],
+                    "extensions": {"entities": [{"key": "X"}]},
+                },
+            }
+        },
         context_value=simple_api_context,
     )
     assert made.errors is not None, "the per-action rule list is not an input any more"
 
 
 @pytest.fixture
-def outsider_graph(db, backend_stack, test_graph: core_models.Graph) -> core_models.Graph:
+def outsider_graph(
+    db, backend_stack, test_graph: core_models.Graph
+) -> core_models.Graph:
     """A graph in a tenant the requesting user is not a member of."""
     from authentikate.models import Membership, Organization, User
 
-    other, _ = Organization.objects.get_or_create(identifier="static_issuer#a-rival-lab")
+    other, _ = Organization.objects.get_or_create(
+        identifier="static_issuer#a-rival-lab"
+    )
     stranger, _ = User.objects.get_or_create(username="stranger", sub="stranger-sub")
     membership, _ = Membership.objects.get_or_create(user=stranger, organization=other)
 
@@ -143,11 +210,17 @@ def outsider_graph(db, backend_stack, test_graph: core_models.Graph) -> core_mod
 @pytest.fixture
 def outsider_category(outsider_graph: core_models.Graph) -> core_models.EntityCategory:
     """A category owned by that other tenant."""
-    return core_models.EntityCategory.objects.create(graph=outsider_graph, key="Secret", age_name="secret")
+    return core_models.EntityCategory.objects.create(
+        graph=outsider_graph, key="Secret", age_name="secret"
+    )
 
 
-async def _run(api_schema: kante.Schema, ctx: HttpContext, document: str, variables: dict):
-    return await api_schema.execute(document, variable_values=variables, context_value=ctx)
+async def _run(
+    api_schema: kante.Schema, ctx: HttpContext, document: str, variables: dict
+):
+    return await api_schema.execute(
+        document, variable_values=variables, context_value=ctx
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -170,7 +243,9 @@ async def test_another_tenants_category_cannot_be_deleted(
     )
 
     assert result.errors, "Another tenant's category must not be deletable"
-    assert await core_models.EntityCategory.objects.filter(pk=outsider_category.pk).aexists(), "And the refusal must actually refuse"
+    assert await core_models.EntityCategory.objects.filter(
+        pk=outsider_category.pk
+    ).aexists(), "And the refusal must actually refuse"
 
 
 @pytest.mark.django_db(transaction=True)
@@ -214,8 +289,12 @@ async def test_a_category_cannot_be_created_in_another_tenants_graph(
         {"input": {"graph": str(outsider_graph.pk), "key": "Trespass"}},
     )
 
-    assert result.errors, "Writing vocabulary into another tenant's graph must be refused"
-    assert not await core_models.EntityCategory.objects.filter(graph=outsider_graph, key="Trespass").aexists()
+    assert result.errors, (
+        "Writing vocabulary into another tenant's graph must be refused"
+    )
+    assert not await core_models.EntityCategory.objects.filter(
+        graph=outsider_graph, key="Trespass"
+    ).aexists()
 
 
 @pytest.mark.django_db(transaction=True)
@@ -272,8 +351,12 @@ async def test_a_colleague_may_rename_a_graph_but_not_archive_it(
 
     @sync_to_async
     def a_colleagues_graph() -> core_models.Graph:
-        colleague, _ = User.objects.get_or_create(username="colleague-in-org", sub="colleague-in-org-sub")
-        membership, _ = Membership.objects.get_or_create(user=colleague, organization=test_graph.organization)
+        colleague, _ = User.objects.get_or_create(
+            username="colleague-in-org", sub="colleague-in-org-sub"
+        )
+        membership, _ = Membership.objects.get_or_create(
+            user=colleague, organization=test_graph.organization
+        )
         # Same tenant, different owner — which is the whole scenario.
         return core_models.Graph.objects.create(
             name="a_colleagues_graph",
@@ -290,7 +373,9 @@ async def test_a_colleague_may_rename_a_graph_but_not_archive_it(
         "mutation U($input: UpdateGraphInput!) { updateGraph(input: $input) { id name } }",
         {"input": {"id": str(graph.pk), "name": "Renamed by a colleague"}},
     )
-    assert renamed.errors is None, f"A colleague may curate a shared view: {renamed.errors}"
+    assert renamed.errors is None, (
+        f"A colleague may curate a shared view: {renamed.errors}"
+    )
     assert renamed.data["updateGraph"]["name"] == "Renamed by a colleague"
 
     archived = await _run(
@@ -299,7 +384,9 @@ async def test_a_colleague_may_rename_a_graph_but_not_archive_it(
         "mutation U($input: UpdateGraphInput!) { updateGraph(input: $input) { id isArchived } }",
         {"input": {"id": str(graph.pk), "archived": True}},
     )
-    assert archived.errors, "But archiving is the step before deletion, and stays with the owner"
+    assert archived.errors, (
+        "But archiving is the step before deletion, and stays with the owner"
+    )
     assert "archiving is the step before deletion" in str(archived.errors[0])
 
     reloaded = await core_models.Graph.objects.aget(pk=graph.pk)
@@ -326,7 +413,12 @@ async def test_another_tenants_saved_query_cannot_be_deleted(
 
     @sync_to_async
     def make() -> int:
-        return core_models.GraphTableQuery.objects.create(graph=outsider_graph, key="secret", label="Secret", query="MATCH (n) RETURN n").pk
+        return core_models.GraphTableQuery.objects.create(
+            graph=outsider_graph,
+            key="secret",
+            label="Secret",
+            query="MATCH (n) RETURN n",
+        ).pk
 
     pk = await make()
 
@@ -339,7 +431,9 @@ async def test_another_tenants_saved_query_cannot_be_deleted(
 
     assert result.errors, "Another tenant's saved query must not be deletable"
     message = str(result.errors[0])
-    assert "allowed to access" in message, f"The refusal must come from the tenancy check, not from the kind filter or a missing row: {message}"
+    assert "allowed to access" in message, (
+        f"The refusal must come from the tenancy check, not from the kind filter or a missing row: {message}"
+    )
     assert await core_models.GraphTableQuery.objects.filter(pk=pk).aexists()
 
 
@@ -370,7 +464,9 @@ async def test_the_guard_still_lets_the_owner_through(
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
     assert result.data["createEntityCategory"]["key"] == "Mine"
-    assert await core_models.EntityCategory.objects.filter(graph=test_graph, key="Mine").aexists(), "And it lands in the caller's own graph"
+    assert await core_models.EntityCategory.objects.filter(
+        graph=test_graph, key="Mine"
+    ).aexists(), "And it lands in the caller's own graph"
 
 
 @pytest.mark.django_db(transaction=True)
@@ -390,9 +486,15 @@ async def test_a_plot_belongs_to_the_person_who_made_it(
 
     @sync_to_async
     def make() -> int:
-        colleague, _ = User.objects.get_or_create(username="colleague", sub="colleague-sub")
-        query = core_models.GraphTableQuery.objects.create(graph=test_graph, key="q", label="Q", query="MATCH (n) RETURN n")
-        return core_models.ScatterPlot.objects.create(graph_query=query, name="Theirs", creator=colleague).pk
+        colleague, _ = User.objects.get_or_create(
+            username="colleague", sub="colleague-sub"
+        )
+        query = core_models.GraphTableQuery.objects.create(
+            graph=test_graph, key="q", label="Q", query="MATCH (n) RETURN n"
+        )
+        return core_models.ScatterPlot.objects.create(
+            graph_query=query, name="Theirs", creator=colleague
+        ).pk
 
     pk = await make()
 

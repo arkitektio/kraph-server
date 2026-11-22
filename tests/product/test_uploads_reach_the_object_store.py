@@ -1,5 +1,4 @@
-"""Uploads reach the object store (C7): a presigned grant is honoured end to end.
-"""
+"""Uploads reach the object store (C7): a presigned grant is honoured end to end."""
 
 import boto3
 

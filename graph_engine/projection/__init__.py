@@ -9,8 +9,32 @@ and plugs in where `TableProjector` does: `api/schema.py`, `api/context.py`,
 and the management commands.
 """
 
-from graph_engine.projection.context import current_or_default, current_projector, get_current_projector
-from graph_engine.projection.protocol import DrawnEdge, DrawnOrder, IncidentEdge, IncidentEdgesSpec, ListDrawnSpec, Projector, PropertyPredicate
+from graph_engine.projection.context import (
+    current_or_default,
+    current_projector,
+    get_current_projector,
+)
+from graph_engine.projection.protocol import (
+    DrawnEdge,
+    DrawnOrder,
+    IncidentEdge,
+    IncidentEdgesSpec,
+    ListDrawnSpec,
+    Projector,
+    PropertyPredicate,
+)
 from graph_engine.projection.table import TableProjector
 
-__all__ = ["DrawnEdge", "DrawnOrder", "IncidentEdge", "IncidentEdgesSpec", "ListDrawnSpec", "Projector", "PropertyPredicate", "TableProjector", "current_or_default", "current_projector", "get_current_projector"]
+__all__ = [
+    "DrawnEdge",
+    "DrawnOrder",
+    "IncidentEdge",
+    "IncidentEdgesSpec",
+    "ListDrawnSpec",
+    "Projector",
+    "PropertyPredicate",
+    "TableProjector",
+    "current_or_default",
+    "current_projector",
+    "get_current_projector",
+]

@@ -24,14 +24,18 @@ TESTS = pathlib.Path(__file__).resolve().parent.parent
 
 RETIRED = {
     "the graph database": re.compile(r"\bAGE\b|Apache AGE|agtype|cypher\("),
-    "the view-level selector": re.compile(r"graph\.selector|\"selector\"|selector\w*Input|def test_\w*selector"),
+    "the view-level selector": re.compile(
+        r"graph\.selector|\"selector\"|selector\w*Input|def test_\w*selector"
+    ),
     "the lifecycle flag": re.compile(r"\blifecycle\b|__lifecycle_state"),
     "a lowercase rollup": re.compile(r"(?<![A-Z_.\"])rollup"),
     "archiving a claim": re.compile(
         r"archiv(?:ed|ing|e|es)?(?:_an?|_the)?_(?:entity|structure|metric|relation|measurement|natural_?event|protocol_?event|link|node|claim|instance|participation|sameness|comment)"
         r"|ARCHIVE_\w*(?:ENTITY|STRUCTURE|METRIC|RELATION|EVENT)"
     ),
-    "an in-place update": re.compile(r"update_?(?:Entity|Structure|Metric|Relation|NaturalEvent|ProtocolEvent|entity|structure|metric|relation|natural_event|protocol_event)(?![A-Za-z_])"),
+    "an in-place update": re.compile(
+        r"update_?(?:Entity|Structure|Metric|Relation|NaturalEvent|ProtocolEvent|entity|structure|metric|relation|natural_event|protocol_event)(?![A-Za-z_])"
+    ),
 }
 
 
@@ -61,5 +65,7 @@ def test_no_test_speaks_a_retired_word() -> None:
         for number, line in _checked_lines(path.read_text()):
             for word, pattern in RETIRED.items():
                 if pattern.search(line):
-                    offences.append(f"{path.relative_to(TESTS.parent)}:{number}: {word}: {line.strip()[:100]}")
+                    offences.append(
+                        f"{path.relative_to(TESTS.parent)}:{number}: {word}: {line.strip()[:100]}"
+                    )
     assert not offences, "retired vocabulary in the suite:\n" + "\n".join(offences)

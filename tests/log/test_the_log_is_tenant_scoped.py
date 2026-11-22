@@ -10,21 +10,22 @@ query against graph A physically could not read graph B's rows; sharing gave
 that structural guarantee up for a tested one.
 """
 
-import pytest
-from django.db import models
-from evidence import models as evidence_models
-from evidence.managers import UnscopedEvidenceAccess
-from authentikate.models import Organization
-from datetime import datetime, timezone
-from core.enums import ValueKind
-import kante
-from asgiref.sync import sync_to_async
-from kante.context import HttpContext
-from core import models as core_models
-from evidence import writer as evidence_writer
-from tests.support import reads, writes
-from evidence import writer
+from datetime import UTC, datetime
 
+import kante
+import pytest
+from asgiref.sync import sync_to_async
+from authentikate.models import Organization
+from django.db import models
+from kante.context import HttpContext
+
+from core import models as core_models
+from core.enums import ValueKind
+from evidence import models as evidence_models
+from evidence import writer
+from evidence import writer as evidence_writer
+from evidence.managers import UnscopedEvidenceAccess
+from tests.support import reads, writes
 
 EVIDENCE_MODELS = [
     evidence_models.Assertion,
@@ -54,12 +55,19 @@ def test_unscoped_filter_raises(model: type[models.Model]) -> None:
 
 
 @pytest.mark.parametrize("model", EVIDENCE_MODELS, ids=lambda m: m.__name__)
-def test_scoped_access_returns_a_queryset(model: type[models.Model], organization: Organization) -> None:
+def test_scoped_access_returns_a_queryset(
+    model: type[models.Model], organization: Organization
+) -> None:
     """`for_organization` is the supported entry point and must work."""
     assert isinstance(model.objects.for_organization(organization), models.QuerySet)
 
 
-def test_structures_of_one_organization_are_invisible_to_another(organization: Organization, other_organization: Organization, roi_category_a: evidence_models.StructureKind, assertion: evidence_models.Assertion) -> None:
+def test_structures_of_one_organization_are_invisible_to_another(
+    organization: Organization,
+    other_organization: Organization,
+    roi_category_a: evidence_models.StructureKind,
+    assertion: evidence_models.Assertion,
+) -> None:
     """The leak this whole mechanism exists to prevent."""
     evidence_models.Structure.objects.create_for_organization(
         organization=organization,
@@ -70,10 +78,17 @@ def test_structures_of_one_organization_are_invisible_to_another(organization: O
     )
 
     assert evidence_models.Structure.objects.for_organization(organization).count() == 1
-    assert evidence_models.Structure.objects.for_organization(other_organization).count() == 0
+    assert (
+        evidence_models.Structure.objects.for_organization(other_organization).count()
+        == 0
+    )
 
 
-def test_all_objects_is_the_only_unrestricted_path(organization: Organization, roi_category_a: evidence_models.StructureKind, assertion: evidence_models.Assertion) -> None:
+def test_all_objects_is_the_only_unrestricted_path(
+    organization: Organization,
+    roi_category_a: evidence_models.StructureKind,
+    assertion: evidence_models.Assertion,
+) -> None:
     """The escape hatch exists and is deliberately awkward to reach for.
 
     Django's own internals (cascade deletion, reverse descriptors) need an
@@ -92,7 +107,11 @@ def test_all_objects_is_the_only_unrestricted_path(organization: Organization, r
     assert evidence_models.Structure.all_objects.count() == 1
 
 
-def test_django_internals_use_the_unrestricted_manager(organization: Organization, roi_category_a: evidence_models.StructureKind, assertion: evidence_models.Assertion) -> None:
+def test_django_internals_use_the_unrestricted_manager(
+    organization: Organization,
+    roi_category_a: evidence_models.StructureKind,
+    assertion: evidence_models.Assertion,
+) -> None:
     """Reverse accessors must not trip the guard.
 
     If `_base_manager` / `_default_manager` resolved to the raising manager, the
@@ -121,13 +140,21 @@ def test_django_internals_use_the_unrestricted_manager(organization: Organizatio
     with pytest.raises(ProtectedError):
         roi_category_a.delete()
 
-    assert evidence_models.Structure.all_objects.count() == 1, "Deleting vocabulary must not delete the evidence expressed in it"
+    assert evidence_models.Structure.all_objects.count() == 1, (
+        "Deleting vocabulary must not delete the evidence expressed in it"
+    )
 
 
-OBSERVED_AT = datetime(2026, 3, 3, 10, 0, tzinfo=timezone.utc)
+OBSERVED_AT = datetime(2026, 3, 3, 10, 0, tzinfo=UTC)
 
 
-def test_a_metric_recorded_under_one_graph_is_readable_under_another(organization: Organization, roi_category_a: evidence_models.StructureKind, roi_category_b: evidence_models.StructureKind, length_category: evidence_models.MetricKind, assertion: evidence_models.Assertion) -> None:
+def test_a_metric_recorded_under_one_graph_is_readable_under_another(
+    organization: Organization,
+    roi_category_a: evidence_models.StructureKind,
+    roi_category_b: evidence_models.StructureKind,
+    length_category: evidence_models.MetricKind,
+    assertion: evidence_models.Assertion,
+) -> None:
     """The win that does not need entity identity.
 
     Experiment A records a length for an ROI. A projection built for experiment
@@ -165,19 +192,38 @@ def test_a_metric_recorded_under_one_graph_is_readable_under_another(organizatio
     assert [m.value for m in seen_from_b.metrics.all()] == [45.2]
 
 
-def test_provenance_scoping_is_a_filter_not_a_fork(organization: Organization, roi_category_a: evidence_models.StructureKind, length_category: evidence_models.MetricKind) -> None:
+def test_provenance_scoping_is_a_filter_not_a_fork(
+    organization: Organization,
+    roi_category_a: evidence_models.StructureKind,
+    length_category: evidence_models.MetricKind,
+) -> None:
     """'Only what AI_Model_X asserted before March 3rd' is a WHERE clause.
 
     Under per-graph silos this needed a separate graph. Over shared evidence it
     is an indexed filter, which is what makes a category's rule — and the `as_of`
     that falls out of it — cheap enough to be routine.
     """
-    early = datetime(2026, 3, 1, tzinfo=timezone.utc)
-    late = datetime(2026, 3, 5, tzinfo=timezone.utc)
+    early = datetime(2026, 3, 1, tzinfo=UTC)
+    late = datetime(2026, 3, 5, tzinfo=UTC)
 
-    trusted = evidence_models.Assertion.objects.create_for_organization(organization=organization, subject="AI_Model_X", app_id="mikro", asserted_at=early)
-    later_revision = evidence_models.Assertion.objects.create_for_organization(organization=organization, subject="AI_Model_X", app_id="mikro", asserted_at=late)
-    someone_else = evidence_models.Assertion.objects.create_for_organization(organization=organization, subject="AI_Model_Y", app_id="mikro", asserted_at=early)
+    trusted = evidence_models.Assertion.objects.create_for_organization(
+        organization=organization,
+        subject="AI_Model_X",
+        app_id="mikro",
+        asserted_at=early,
+    )
+    later_revision = evidence_models.Assertion.objects.create_for_organization(
+        organization=organization,
+        subject="AI_Model_X",
+        app_id="mikro",
+        asserted_at=late,
+    )
+    someone_else = evidence_models.Assertion.objects.create_for_organization(
+        organization=organization,
+        subject="AI_Model_Y",
+        app_id="mikro",
+        asserted_at=early,
+    )
 
     structure = evidence_models.Structure.objects.create_for_organization(
         organization=organization,
@@ -233,13 +279,19 @@ async def test_a_claim_cannot_reach_into_another_organization(
 
     @sync_to_async
     def foreign_node() -> str:
-        other, _ = Organization.objects.get_or_create(identifier="static_issuer#a-different-tenant")
+        other, _ = Organization.objects.get_or_create(
+            identifier="static_issuer#a-different-tenant"
+        )
         # The caller is a member of *both* tenants. That is the whole scenario:
         # `_assert_can_access` passes for rows in either, so membership alone cannot
         # stop a claim in one from naming rows in the other. Without this line the
         # write is refused for lack of membership and the guard under test never runs.
-        Membership.objects.get_or_create(user=simple_api_context.request._user, organization=other)
-        assertion = evidence_writer.create_assertion(other, subject="someone-else", app_id="elsewhere")
+        Membership.objects.get_or_create(
+            user=simple_api_context.request._user, organization=other
+        )
+        assertion = evidence_writer.create_assertion(
+            other, subject="someone-else", app_id="elsewhere"
+        )
         term = evidence_writer.ensure_term(other, "ENTITY", "Cell")
         node = evidence_models.Instance.objects.create_for_organization(
             organization=other,
@@ -255,13 +307,17 @@ async def test_a_claim_cannot_reach_into_another_organization(
     def attempt() -> str:
         controller = controller_module.GraphController(projector=None)
         try:
-            controller._resolve_instance(outsider, None, organization=test_graph.organization)
+            controller._resolve_instance(
+                outsider, None, organization=test_graph.organization
+            )
         except PermissionError as error:
             return str(error)
         return ""
 
     refusal = await attempt()
-    assert "another organization" in refusal, "A node from another tenant must be refused, not linked"
+    assert "another organization" in refusal, (
+        "A node from another tenant must be refused, not linked"
+    )
 
     # And through a real mutation, not only the guard in isolation: the guard
     # existing proves nothing if a call site forgets to pass the organization, and a
@@ -272,11 +328,21 @@ async def test_a_claim_cannot_reach_into_another_organization(
             assertRelationExists(input: $input) { link { id } }
         }
         """,
-        variable_values={"input": {"term": "IS_CONNECTED_TO", "sourceId": source, "targetId": outsider}},
+        variable_values={
+            "input": {
+                "term": "IS_CONNECTED_TO",
+                "sourceId": source,
+                "targetId": outsider,
+            }
+        },
         context_value=simple_api_context,
     )
-    assert attempted.errors, "createRelation must refuse an endpoint from another tenant"
-    assert "another organization" in str(attempted.errors[0]), f"Refused for the wrong reason: {attempted.errors[0]}"
+    assert attempted.errors, (
+        "createRelation must refuse an endpoint from another tenant"
+    )
+    assert "another organization" in str(attempted.errors[0]), (
+        f"Refused for the wrong reason: {attempted.errors[0]}"
+    )
 
     # And the same node is fine when the write is made in its own organization.
     @sync_to_async
@@ -285,7 +351,9 @@ async def test_a_claim_cannot_reach_into_another_organization(
 
         controller = controller_module.GraphController(projector=None)
         other = Org.objects.get(identifier="static_issuer#a-different-tenant")
-        return controller._resolve_instance(outsider, None, organization=other) is not None
+        return (
+            controller._resolve_instance(outsider, None, organization=other) is not None
+        )
 
     assert await allowed(), "The guard is about the tenant, not about the node"
     assert source, "The in-tenant write that set this up still succeeded"
@@ -293,19 +361,40 @@ async def test_a_claim_cannot_reach_into_another_organization(
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_the_log_is_tenant_scoped(api_schema, simple_api_context, test_graph, other_organization) -> None:  # noqa: F811
-    foreign = await sync_to_async(writer.create_assertion)(other_organization, subject="1", app_id="test")
+async def test_the_log_is_tenant_scoped(
+    api_schema, simple_api_context, test_graph, other_organization
+) -> None:  # noqa: F811
+    foreign = await sync_to_async(writer.create_assertion)(
+        other_organization, subject="1", app_id="test"
+    )
     own = await writes.assert_entity(api_schema, simple_api_context, "AIS")
 
-    listed = (await writes.execute(api_schema, simple_api_context, reads.ASSERTIONS))["assertions"]
+    listed = (await writes.execute(api_schema, simple_api_context, reads.ASSERTIONS))[
+        "assertions"
+    ]
     assert str(foreign.pk) not in [row["id"] for row in listed]
 
-    feed = (await writes.execute(api_schema, simple_api_context, reads.CHANGES, {"afterSeq": 0}))["changes"]
+    feed = (
+        await writes.execute(
+            api_schema, simple_api_context, reads.CHANGES, {"afterSeq": 0}
+        )
+    )["changes"]
     assert str(foreign.pk) not in [row["id"] for row in feed["assertions"]]
     assert own["assertion"]["id"] in [row["id"] for row in feed["assertions"]]
 
-    result = await api_schema.execute(reads.ASSERTION, variable_values={"id": str(foreign.pk)}, context_value=simple_api_context)
+    result = await api_schema.execute(
+        reads.ASSERTION,
+        variable_values={"id": str(foreign.pk)},
+        context_value=simple_api_context,
+    )
     assert result.errors, "another tenant's assertion is refused by id"
 
-    positions = (await writes.execute(api_schema, simple_api_context, reads.STANDINGS_FILTERED, {"filters": {"subjects": ["1"]}}))["standings"]
+    positions = (
+        await writes.execute(
+            api_schema,
+            simple_api_context,
+            reads.STANDINGS_FILTERED,
+            {"filters": {"subjects": ["1"]}},
+        )
+    )["standings"]
     assert all(row["target"]["id"] != str(foreign.pk) for row in positions)

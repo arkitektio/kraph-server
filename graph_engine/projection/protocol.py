@@ -39,7 +39,11 @@ if TYPE_CHECKING:
     # projection kind implements, so it must name the schema's rows and the
     # plan's shape without importing Django or the query compiler at runtime.
     from core.models import Graph
-    from graph_engine.input_models import RenderGraphTableFilter, RenderGraphTableOrder, RenderGraphTablePagination
+    from graph_engine.input_models import (
+        RenderGraphTableFilter,
+        RenderGraphTableOrder,
+        RenderGraphTablePagination,
+    )
     from graph_engine.query_ir import TableQueryPlan
 
 
@@ -80,7 +84,22 @@ class IncidentEdge:
 #: The comparisons a drawing-scoped list may ask for. The canonical spellings —
 #: the controller normalizes its API's aliases (``EQ``, ``=``, …) before a spec
 #: is built, so an implementation compiles exactly these and refuses the rest.
-LIST_OPERATORS = frozenset({"EQUALS", "NOT_EQUALS", "GREATER_THAN", "LESS_THAN", "GREATER_OR_EQUAL", "LESS_OR_EQUAL", "IN", "NOT_IN", "CONTAINS", "STARTS_WITH", "ENDS_WITH", "IS_NOT_NULL"})
+LIST_OPERATORS = frozenset(
+    {
+        "EQUALS",
+        "NOT_EQUALS",
+        "GREATER_THAN",
+        "LESS_THAN",
+        "GREATER_OR_EQUAL",
+        "LESS_OR_EQUAL",
+        "IN",
+        "NOT_IN",
+        "CONTAINS",
+        "STARTS_WITH",
+        "ENDS_WITH",
+        "IS_NOT_NULL",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -182,7 +201,14 @@ class Projector(Protocol):
 
     # ------------------------------------------------------------------ writer: nodes
 
-    def draw_node(self, graph: Graph, ref: str, categories: Sequence[tuple[str, int]], kind: str, members: Iterable[str]) -> None:
+    def draw_node(
+        self,
+        graph: Graph,
+        ref: str,
+        categories: Sequence[tuple[str, int]],
+        kind: str,
+        members: Iterable[str],
+    ) -> None:
         """Draw (or re-draw) one node under every `(label, category_id)` in `categories`, carrying `{id, category_ids, type}`, standing for `members`.
 
         `ref` is the individual's representative and `members` every instance
@@ -197,7 +223,9 @@ class Projector(Protocol):
         """
         ...
 
-    def write_properties(self, graph: Graph, ref: str, values: Mapping[str, JSONValue]) -> bool:
+    def write_properties(
+        self, graph: Graph, ref: str, values: Mapping[str, JSONValue]
+    ) -> bool:
         """Set derived properties on the drawn node holding `ref`. Returns whether the node was there to write onto.
 
         A `None` value **removes** the key: a derived property whose evidence no
@@ -206,7 +234,9 @@ class Projector(Protocol):
         """
         ...
 
-    def clear_properties(self, graph: Graph, label: str, refs: Iterable[str], keys: Iterable[str]) -> None:
+    def clear_properties(
+        self, graph: Graph, label: str, refs: Iterable[str], keys: Iterable[str]
+    ) -> None:
         """Remove these property keys from these drawn nodes, where drawn under `label`. The sweep before a redraw."""
         ...
 
@@ -216,7 +246,14 @@ class Projector(Protocol):
 
     # ------------------------------------------------------------------ writer: edges
 
-    def draw_edge(self, graph: Graph, source_ref: str, target_ref: str, label: str, properties: Mapping[str, JSONValue]) -> bool:
+    def draw_edge(
+        self,
+        graph: Graph,
+        source_ref: str,
+        target_ref: str,
+        label: str,
+        properties: Mapping[str, JSONValue],
+    ) -> bool:
         """Draw (or re-draw) one edge source → target under `label`, setting `properties`.
 
         Either endpoint may be any member of its individual; the edge lands on
@@ -226,7 +263,14 @@ class Projector(Protocol):
         """
         ...
 
-    def erase_edge(self, graph: Graph, source_ref: str, target_ref: str, label: str, match: Mapping[str, JSONValue] | None = None) -> None:
+    def erase_edge(
+        self,
+        graph: Graph,
+        source_ref: str,
+        target_ref: str,
+        label: str,
+        match: Mapping[str, JSONValue] | None = None,
+    ) -> None:
         """Remove the edge source → target under `label` whose properties match `match` (if given)."""
         ...
 
@@ -249,7 +293,9 @@ class Projector(Protocol):
         """
         ...
 
-    def drawn_edges_incident(self, graph: Graph, refs: Iterable[str], spec: IncidentEdgesSpec) -> dict[str, list[IncidentEdge]]:
+    def drawn_edges_incident(
+        self, graph: Graph, refs: Iterable[str], spec: IncidentEdgesSpec
+    ) -> dict[str, list[IncidentEdge]]:
         """Every drawn edge touching the vertex holding each ref, keyed by the ref **asked for**.
 
         Any member addresses its vertex (RFC 0018). A self-edge appears once. A
@@ -257,7 +303,9 @@ class Projector(Protocol):
         """
         ...
 
-    def drawn_edge(self, graph: Graph, source_ref: str, target_ref: str, label: str) -> DrawnEdge | None:
+    def drawn_edge(
+        self, graph: Graph, source_ref: str, target_ref: str, label: str
+    ) -> DrawnEdge | None:
         """The ids of the edge source → target under `label`, or None if this view does not draw it."""
         ...
 
@@ -265,6 +313,14 @@ class Projector(Protocol):
         """The drawn records matching `spec` — the drawing-scoped list, compiled by the kind."""
         ...
 
-    def render_table(self, graph: Graph, plan: TableQueryPlan, *, filters: RenderGraphTableFilter | None = None, order: RenderGraphTableOrder | None = None, pagination: RenderGraphTablePagination | None = None) -> list[dict[str, JSONValue]]:
+    def render_table(
+        self,
+        graph: Graph,
+        plan: TableQueryPlan,
+        *,
+        filters: RenderGraphTableFilter | None = None,
+        order: RenderGraphTableOrder | None = None,
+        pagination: RenderGraphTablePagination | None = None,
+    ) -> list[dict[str, JSONValue]]:
         """Compile a `TableQueryPlan` for this projection kind, run it, and hand back its rows."""
         ...

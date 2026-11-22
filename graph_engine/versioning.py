@@ -23,22 +23,26 @@ from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
 from django.contrib.auth.models import AbstractBaseUser
+
 from evidence.values import JSONValue
 
 if TYPE_CHECKING:
     from kante.types import Info
 
+import logging
+
 from django.db import transaction
 
 from core import models as core_models
 from graph_engine.materialize import compute_definition_hash
-import logging
 
 # Versioning is driven by a signal rather than by call sites, so that "no code
 # path mutates a category without emitting a schema" is true of *every* path —
 # the eight mutation modules, the managers, the admin, and anything written
 # later — rather than of the paths somebody remembered to annotate.
-_suspended: contextvars.ContextVar[bool] = contextvars.ContextVar("schema_versioning_suspended", default=False)
+_suspended: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "schema_versioning_suspended", default=False
+)
 
 
 @contextlib.contextmanager
@@ -82,7 +86,17 @@ def snapshot_definition(graph: core_models.Graph) -> dict[str, JSONValue]:
     # the snapshot: a trust edit is a schema change, versioned like one. (This
     # closes the RFC 0007 open item for the predicate; rule evidence filters
     # ride `property_definitions` and were always included.)
-    entities = [{"key": category.key, "description": category.description, "property_definitions": _property_definitions(category), **({"definition": dict(category.definition)} if category.definition else {})} for category in graph.entity_categories.order_by("key")]
+    entities = [
+        {
+            "key": category.key,
+            "description": category.description,
+            "property_definitions": _property_definitions(category),
+            **(
+                {"definition": dict(category.definition)} if category.definition else {}
+            ),
+        }
+        for category in graph.entity_categories.order_by("key")
+    ]
 
     relations = [
         {
@@ -91,7 +105,9 @@ def snapshot_definition(graph: core_models.Graph) -> dict[str, JSONValue]:
             "source": category.source_definition,
             "target": category.target_definition,
             "properties": _property_definitions(category),
-            **({"definition": dict(category.definition)} if category.definition else {}),
+            **(
+                {"definition": dict(category.definition)} if category.definition else {}
+            ),
         }
         for category in graph.relation_categories.order_by("key")
     ]
@@ -108,15 +124,29 @@ def snapshot_definition(graph: core_models.Graph) -> dict[str, JSONValue]:
             "inputs": list(category.source_entity_roles or []),
             "outputs": list(category.target_entity_roles or []),
             "properties": _property_definitions(category),
-            **({"definition": dict(category.definition)} if category.definition else {}),
+            **(
+                {"definition": dict(category.definition)} if category.definition else {}
+            ),
         }
-        for kind, categories in (("INTRINSIC", graph.natural_event_categories), ("EXTRINSIC", graph.protocol_event_categories))
+        for kind, categories in (
+            ("INTRINSIC", graph.natural_event_categories),
+            ("EXTRINSIC", graph.protocol_event_categories),
+        )
         for category in categories.order_by("key")
     ]
 
     # The structure kinds the view mounts (RFC 0027), before the relations whose ends name
     # them: `materialize` refuses an end naming an identifier nothing mounts.
-    structures = [{"key": category.key, "identifier": category.identifier, "description": category.description} for category in graph.structure_categories.select_related("structure_kind").order_by("key")]
+    structures = [
+        {
+            "key": category.key,
+            "identifier": category.identifier,
+            "description": category.description,
+        }
+        for category in graph.structure_categories.select_related(
+            "structure_kind"
+        ).order_by("key")
+    ]
 
     structure_relations = [
         {
@@ -125,7 +155,9 @@ def snapshot_definition(graph: core_models.Graph) -> dict[str, JSONValue]:
             "source": category.source_definition,
             "target": category.target_definition,
             "properties": _property_definitions(category),
-            **({"definition": dict(category.definition)} if category.definition else {}),
+            **(
+                {"definition": dict(category.definition)} if category.definition else {}
+            ),
         }
         for category in graph.structure_relation_categories.order_by("key")
     ]
@@ -137,7 +169,9 @@ def snapshot_definition(graph: core_models.Graph) -> dict[str, JSONValue]:
             "source": category.source_definition,
             "target": category.target_definition,
             "properties": _property_definitions(category),
-            **({"definition": dict(category.definition)} if category.definition else {}),
+            **(
+                {"definition": dict(category.definition)} if category.definition else {}
+            ),
         }
         for category in graph.measurement_categories.order_by("key")
     ]
@@ -196,20 +230,30 @@ def graph_of(category: core_models.Category) -> core_models.Graph:
     return category.graph
 
 
-def record_change(category_or_graph: core_models.Category | core_models.Graph, description: str, info: "Info | None" = None) -> core_models.GraphSchema | None:
+def record_change(
+    category_or_graph: core_models.Category | core_models.Graph,
+    description: str,
+    info: Info | None = None,
+) -> core_models.GraphSchema | None:
     """Convenience wrapper used by the category mutations.
 
     Accepts a category or a graph so call sites stay one line, which matters when
     there are two dozen of them and every missed one is a version that silently
     never got recorded.
     """
-    graph = category_or_graph if isinstance(category_or_graph, core_models.Graph) else graph_of(category_or_graph)
+    graph = (
+        category_or_graph
+        if isinstance(category_or_graph, core_models.Graph)
+        else graph_of(category_or_graph)
+    )
     user = getattr(getattr(info, "context", None), "request", None)
     user = getattr(user, "user", None) if user is not None else None
     return emit_schema_version(graph, description=description, user=user)
 
 
-def on_category_changed(sender: type[core_models.Category], instance: core_models.Category, **kwargs: object) -> None:
+def on_category_changed(
+    sender: type[core_models.Category], instance: core_models.Category, **kwargs: object
+) -> None:
     """Signal handler: a category was saved or deleted.
 
     Deliberately tolerant. A failure to record a version must not roll back the
@@ -232,8 +276,9 @@ def on_category_changed(sender: type[core_models.Category], instance: core_model
     try:
         emit_schema_version(graph, description=f"{sender.__name__} changed")
     except Exception as error:  # noqa: BLE001 - see docstring
-
-        logging.getLogger(__name__).warning("Could not record a schema version for graph %s: %s", graph.pk, error)
+        logging.getLogger(__name__).warning(
+            "Could not record a schema version for graph %s: %s", graph.pk, error
+        )
 
 
 def connect() -> None:
@@ -282,9 +327,25 @@ def connect() -> None:
         *models_module.CATEGORY_PROXIES.values(),
     }
     for model in category_classes:
-        post_save.connect(on_category_changed, sender=model, dispatch_uid=f"schema_version_{model.__name__}_save")
-        post_delete.connect(on_category_changed, sender=model, dispatch_uid=f"schema_version_{model.__name__}_delete")
+        post_save.connect(
+            on_category_changed,
+            sender=model,
+            dispatch_uid=f"schema_version_{model.__name__}_save",
+        )
+        post_delete.connect(
+            on_category_changed,
+            sender=model,
+            dispatch_uid=f"schema_version_{model.__name__}_delete",
+        )
 
     for model in category_classes:
-        post_save.connect(asserted_terms.on_category_saved, sender=model, dispatch_uid=f"asserted_terms_{model.__name__}_save")
-        post_delete.connect(asserted_terms.on_category_deleted, sender=model, dispatch_uid=f"asserted_terms_{model.__name__}_delete")
+        post_save.connect(
+            asserted_terms.on_category_saved,
+            sender=model,
+            dispatch_uid=f"asserted_terms_{model.__name__}_save",
+        )
+        post_delete.connect(
+            asserted_terms.on_category_deleted,
+            sender=model,
+            dispatch_uid=f"asserted_terms_{model.__name__}_delete",
+        )

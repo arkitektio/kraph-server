@@ -4,25 +4,37 @@ Queries submodule for the API.
 Contains all GraphQL query resolvers for the graph engine.
 """
 
-from .entity import entity, entities
-from .structure import structure, structures, structure_by_identifier, informing_structures
-from .kinds import structure_kinds, structure_kind, metric_kinds, metric_kind, terms, term
-from .metric import metrics_for_structure, metric, metrics, metrics_for_assertion
-from .measurement import measurement, measurements
-from .relation import relation, relations
-from .structure_relation import structure_relation, structure_relations
+from .claim import instance, link, standings
+from .comment import comment, comments_for, my_mention_count, my_mentions
 from .description import description
+from .entity import entities, entity
 from .input_participation import input_participation, input_participations
-from .output_participation import output_participation, output_participations
-from .natural_event import natural_event, natural_events
-from .protocol_event import protocol_event, protocol_events
+from .insights.graph_pairs import render_graph_pairs
 from .insights.graph_table import render_graph_table
 from .insights.table_plan import render_table_plan
-from .insights.graph_pairs import render_graph_pairs
+from .kinds import (
+    metric_kind,
+    metric_kinds,
+    structure_kind,
+    structure_kinds,
+    term,
+    terms,
+)
+from .log import assertion, assertions, changes
+from .measurement import measurement, measurements
+from .metric import metric, metrics, metrics_for_assertion, metrics_for_structure
+from .natural_event import natural_event, natural_events
 from .node import node, nodes
-from .claim import instance, link, standings
-from .log import assertions, assertion, changes
-from .comment import comment, comments_for, my_mention_count, my_mentions
+from .output_participation import output_participation, output_participations
+from .protocol_event import protocol_event, protocol_events
+from .relation import relation, relations
+from .structure import (
+    informing_structures,
+    structure,
+    structure_by_identifier,
+    structures,
+)
+from .structure_relation import structure_relation, structure_relations
 
 __all__ = [
     # The claims themselves, read back as claims

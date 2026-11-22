@@ -19,11 +19,9 @@ Two deliberate departures from lok:
 
 from __future__ import annotations
 
-from typing import List, Optional
+from pydantic import BaseModel, ConfigDict, Field
 
 from evidence.values import JSONValue
-
-from pydantic import BaseModel, ConfigDict, Field
 
 
 class DescendantNode(BaseModel):
@@ -37,18 +35,25 @@ class DescendantNode(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    kind: str = Field(description="LEAF, MENTION or PARAGRAPH — see `core.enums.DescendantKind`")
-    children: Optional[List["DescendantNode"]] = Field(default=None, description="The children of this node. Always empty for leafs")
+    kind: str = Field(
+        description="LEAF, MENTION or PARAGRAPH — see `core.enums.DescendantKind`"
+    )
+    children: list[DescendantNode] | None = Field(
+        default=None, description="The children of this node. Always empty for leafs"
+    )
     # LEAF
-    text: Optional[str] = Field(default=None, description="The text of a leaf")
-    bold: Optional[bool] = None
-    italic: Optional[bool] = None
-    underline: Optional[bool] = None
-    code: Optional[bool] = None
+    text: str | None = Field(default=None, description="The text of a leaf")
+    bold: bool | None = None
+    italic: bool | None = None
+    underline: bool | None = None
+    code: bool | None = None
     # MENTION
-    user: Optional[str] = Field(default=None, description="The mentioned subject id — `Assertion.subject`'s vocabulary. Named `user` for shape-compatibility with lok's tree")
+    user: str | None = Field(
+        default=None,
+        description="The mentioned subject id — `Assertion.subject`'s vocabulary. Named `user` for shape-compatibility with lok's tree",
+    )
     # PARAGRAPH
-    size: Optional[str] = Field(default=None, description="The size of a paragraph")
+    size: str | None = Field(default=None, description="The size of a paragraph")
 
 
 DescendantNode.model_rebuild()
@@ -56,7 +61,7 @@ DescendantNode.model_rebuild()
 _VALID_KINDS = frozenset({"LEAF", "MENTION", "PARAGRAPH"})
 
 
-def validate_descendants(raw: List[dict[str, JSONValue]]) -> List[dict[str, JSONValue]]:
+def validate_descendants(raw: list[dict[str, JSONValue]]) -> list[dict[str, JSONValue]]:
     """Validate a raw descendant tree and return it in stored form.
 
     Raises ``ValueError`` on an unknown kind or an unknown key, because a stored
@@ -67,7 +72,9 @@ def validate_descendants(raw: List[dict[str, JSONValue]]) -> List[dict[str, JSON
 
     def check(node: DescendantNode) -> None:
         if node.kind not in _VALID_KINDS:
-            raise ValueError(f"Unknown descendant kind '{node.kind}'. One of: {sorted(_VALID_KINDS)}")
+            raise ValueError(
+                f"Unknown descendant kind '{node.kind}'. One of: {sorted(_VALID_KINDS)}"
+            )
         for child in node.children or []:
             check(child)
 
@@ -77,7 +84,7 @@ def validate_descendants(raw: List[dict[str, JSONValue]]) -> List[dict[str, JSON
     return [node.model_dump(exclude_none=True) for node in nodes]
 
 
-def extract_mentions(descendants: List[dict[str, JSONValue]]) -> List[str]:
+def extract_mentions(descendants: list[dict[str, JSONValue]]) -> list[str]:
     """Every subject the tree mentions, in first-mention order, deduplicated."""
     seen: dict[str, None] = {}
 
@@ -92,7 +99,7 @@ def extract_mentions(descendants: List[dict[str, JSONValue]]) -> List[str]:
     return list(seen)
 
 
-def plain_text(descendants: List[dict[str, JSONValue]]) -> str:
+def plain_text(descendants: list[dict[str, JSONValue]]) -> str:
     """The leaves of the tree, flattened to searchable text.
 
     Paragraphs separate their contents with newlines and mentions render as

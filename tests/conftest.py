@@ -13,7 +13,7 @@ A test that mixes the two writes evidence the API caller cannot see. Pick one.
 
 import os
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import boto3
 import psycopg
@@ -38,7 +38,13 @@ from tests.support.identity import static_identity
 @pytest.fixture(scope="function")
 def aws_credentials(monkeypatch) -> None:
     """Mocked AWS credentials for moto, restored after the test."""
-    for key, value in (("AWS_ACCESS_KEY_ID", "testing"), ("AWS_SECRET_ACCESS_KEY", "testing"), ("AWS_SECURITY_TOKEN", "testing"), ("AWS_SESSION_TOKEN", "testing"), ("AWS_DEFAULT_REGION", "us-east-1")):
+    for key, value in (
+        ("AWS_ACCESS_KEY_ID", "testing"),
+        ("AWS_SECRET_ACCESS_KEY", "testing"),
+        ("AWS_SECURITY_TOKEN", "testing"),
+        ("AWS_SESSION_TOKEN", "testing"),
+        ("AWS_DEFAULT_REGION", "us-east-1"),
+    ):
         monkeypatch.setenv(key, value)
 
 
@@ -68,7 +74,9 @@ def backend_stack():
     so two runs at once, or a stack a crashed run left behind, cannot be in each
     other's way -- which a pinned host port would undo.
     """
-    docker_compose_path = os.path.join(os.path.dirname(__file__), "integration", "docker-compose.yaml")
+    docker_compose_path = os.path.join(
+        os.path.dirname(__file__), "integration", "docker-compose.yaml"
+    )
 
     with testing(docker_compose_path) as e:
         e.up()
@@ -81,7 +89,14 @@ def backend_stack():
             try:
                 if db_port is None:
                     db_port = e.get_port("db", 5432)
-                with psycopg.connect(dbname="testdb", user="test", password="test", host="localhost", port=db_port, connect_timeout=1) as connection:
+                with psycopg.connect(
+                    dbname="testdb",
+                    user="test",
+                    password="test",
+                    host="localhost",
+                    port=db_port,
+                    connect_timeout=1,
+                ) as connection:
                     connection.execute("SELECT 1")
                 break
             except (psycopg.OperationalError, PortNotFoundError):
@@ -122,7 +137,12 @@ def api_context(db, backend_stack) -> HttpContext:
     )
     request.set_membership(membership)  # type: ignore
 
-    return HttpContext(request=request, response=TemporalResponse(), headers={"Authorization": "Bearer test"}, type="http")
+    return HttpContext(
+        request=request,
+        response=TemporalResponse(),
+        headers={"Authorization": "Bearer test"},
+        type="http",
+    )
 
 
 @pytest.fixture(scope="function")
@@ -160,15 +180,47 @@ def bio_graph_schema() -> models.GraphDefinitionInput:
                 models.EntityDefinitionInput(
                     key="AIS",
                     property_definitions=[
-                        models.PropertyDefinitionInput(key="avg_length", type=models.PropertyType.FLOAT, derivation=models.DerivationType.ROLLUP, rule=models.DerivationRuleInput(source_node="ROI", key="vector_length", aggregation=models.AggregationFunction.MEAN)),
-                        models.PropertyDefinitionInput(key="name", type=models.PropertyType.STRING, derivation=models.DerivationType.ROLLUP, rule=models.DerivationRuleInput(source_node="ToldYouSo", key="name", aggregation=models.AggregationFunction.LATEST)),
+                        models.PropertyDefinitionInput(
+                            key="avg_length",
+                            type=models.PropertyType.FLOAT,
+                            derivation=models.DerivationType.ROLLUP,
+                            rule=models.DerivationRuleInput(
+                                source_node="ROI",
+                                key="vector_length",
+                                aggregation=models.AggregationFunction.MEAN,
+                            ),
+                        ),
+                        models.PropertyDefinitionInput(
+                            key="name",
+                            type=models.PropertyType.STRING,
+                            derivation=models.DerivationType.ROLLUP,
+                            rule=models.DerivationRuleInput(
+                                source_node="ToldYouSo",
+                                key="name",
+                                aggregation=models.AggregationFunction.LATEST,
+                            ),
+                        ),
                     ],
                 ),
-                models.EntityDefinitionInput(key="Soma", property_definitions=[models.PropertyDefinitionInput(key="centroid", type=models.PropertyType.POINT_3D, derivation=models.DerivationType.LATEST, rule=models.DerivationRuleInput(source_node="ROI", key="centroid"))]),
+                models.EntityDefinitionInput(
+                    key="Soma",
+                    property_definitions=[
+                        models.PropertyDefinitionInput(
+                            key="centroid",
+                            type=models.PropertyType.POINT_3D,
+                            derivation=models.DerivationType.LATEST,
+                            rule=models.DerivationRuleInput(
+                                source_node="ROI", key="centroid"
+                            ),
+                        )
+                    ],
+                ),
                 models.EntityDefinitionInput(
                     key="Cell",
                     property_definitions=[
-                        models.PropertyDefinitionInput(key="id", type=models.PropertyType.STRING),
+                        models.PropertyDefinitionInput(
+                            key="id", type=models.PropertyType.STRING
+                        ),
                         # These originally counted/summarised evidence reached through
                         # another node kind (a Mitosis event, an AIS entity). The state
                         # vector's grain is (entity, source_category, key) over metrics
@@ -176,8 +228,26 @@ def bio_graph_schema() -> models.GraphDefinitionInput:
                         # so cross-entity derivations are not expressible — and are now
                         # rejected at materialization rather than silently never computing.
                         # Modelled here as metric keys on the supporting structure.
-                        models.PropertyDefinitionInput(key="mitosis_count", type=models.PropertyType.INTEGER, derivation=models.DerivationType.ROLLUP, rule=models.DerivationRuleInput(key="mitosis_event", source_node="ROI", aggregation=models.AggregationFunction.COUNT)),
-                        models.PropertyDefinitionInput(key="ais_length_summary", type=models.PropertyType.FLOAT, derivation=models.DerivationType.ROLLUP, rule=models.DerivationRuleInput(key="vector_length", source_node="ROI", aggregation=models.AggregationFunction.LATEST)),
+                        models.PropertyDefinitionInput(
+                            key="mitosis_count",
+                            type=models.PropertyType.INTEGER,
+                            derivation=models.DerivationType.ROLLUP,
+                            rule=models.DerivationRuleInput(
+                                key="mitosis_event",
+                                source_node="ROI",
+                                aggregation=models.AggregationFunction.COUNT,
+                            ),
+                        ),
+                        models.PropertyDefinitionInput(
+                            key="ais_length_summary",
+                            type=models.PropertyType.FLOAT,
+                            derivation=models.DerivationType.ROLLUP,
+                            rule=models.DerivationRuleInput(
+                                key="vector_length",
+                                source_node="ROI",
+                                aggregation=models.AggregationFunction.LATEST,
+                            ),
+                        ),
                     ],
                 ),
             ],
@@ -195,16 +265,48 @@ def bio_graph_schema() -> models.GraphDefinitionInput:
                     # suite runs against contained a rule nothing executed, and
                     # nothing failed. `validate_derivation_rules` now refuses it.
                 ),
-                models.RelationDefinitionInput(key="PART_OF", source=models.EntityDescriptorInput(keys=["AIS", "Soma"]), target=models.EntityDescriptorInput(keys=["Cell"])),
+                models.RelationDefinitionInput(
+                    key="PART_OF",
+                    source=models.EntityDescriptorInput(keys=["AIS", "Soma"]),
+                    target=models.EntityDescriptorInput(keys=["Cell"]),
+                ),
             ],
             # --- 4. EVENTS ---
             events=[
                 models.EventDefinitionInput(
                     key="Mitosis",
                     kind=models.EventKind.INTRINSIC,
-                    inputs=[models.EventRoleInput(key="Cell", role="a", descriptor=models.EntityDescriptorInput(keys=["Cell"]))],
-                    outputs=[models.EventRoleInput(key="Cell", role="a", descriptor=models.EntityDescriptorInput(keys=["Cell"])), models.EventRoleInput(key="Cell", role="b", descriptor=models.EntityDescriptorInput(keys=["Cell"]))],
-                    properties=[models.PropertyDefinitionInput(key="cell_count", type=models.PropertyType.INTEGER, derivation=models.DerivationType.ROLLUP, rule=models.DerivationRuleInput(source_node="ROI", key="cell_marker", aggregation=models.AggregationFunction.COUNT))],
+                    inputs=[
+                        models.EventRoleInput(
+                            key="Cell",
+                            role="a",
+                            descriptor=models.EntityDescriptorInput(keys=["Cell"]),
+                        )
+                    ],
+                    outputs=[
+                        models.EventRoleInput(
+                            key="Cell",
+                            role="a",
+                            descriptor=models.EntityDescriptorInput(keys=["Cell"]),
+                        ),
+                        models.EventRoleInput(
+                            key="Cell",
+                            role="b",
+                            descriptor=models.EntityDescriptorInput(keys=["Cell"]),
+                        ),
+                    ],
+                    properties=[
+                        models.PropertyDefinitionInput(
+                            key="cell_count",
+                            type=models.PropertyType.INTEGER,
+                            derivation=models.DerivationType.ROLLUP,
+                            rule=models.DerivationRuleInput(
+                                source_node="ROI",
+                                key="cell_marker",
+                                aggregation=models.AggregationFunction.COUNT,
+                            ),
+                        )
+                    ],
                 )
             ],
         ),
@@ -212,7 +314,9 @@ def bio_graph_schema() -> models.GraphDefinitionInput:
 
 
 @pytest.fixture(scope="function")
-def test_graph(transactional_db, table_projector, bio_graph_schema, authenticated_context) -> core_models.Graph:
+def test_graph(
+    transactional_db, table_projector, bio_graph_schema, authenticated_context
+) -> core_models.Graph:
     """
     Create a test graph with the bio_graph schema.
 
@@ -242,7 +346,9 @@ def graph_controller(transactional_db, table_projector, test_graph) -> GraphCont
 
 
 @pytest.fixture(scope="function")
-def bio_graph(transactional_db, table_projector, bio_graph_schema, authenticated_context) -> core_models.Graph:
+def bio_graph(
+    transactional_db, table_projector, bio_graph_schema, authenticated_context
+) -> core_models.Graph:
     """
     Create a biological graph with the provided schema.
     Uses transactional_db to maintain database state across the fixture.
@@ -283,13 +389,19 @@ def minimal_schema() -> models.GraphDefinitionInput:
                             key="name",
                             type=models.PropertyType.STRING,
                             derivation=models.DerivationType.LATEST,
-                            rule=models.DerivationRuleInput(source_node="ROI", key="name"),
+                            rule=models.DerivationRuleInput(
+                                source_node="ROI", key="name"
+                            ),
                         ),
                         models.PropertyDefinitionInput(
                             key="age",
                             type=models.PropertyType.INTEGER,
                             derivation=models.DerivationType.ROLLUP,
-                            rule=models.DerivationRuleInput(source_node="ROI", key="age", aggregation=models.AggregationFunction.LATEST),
+                            rule=models.DerivationRuleInput(
+                                source_node="ROI",
+                                key="age",
+                                aggregation=models.AggregationFunction.LATEST,
+                            ),
                         ),
                     ],
                 )
@@ -338,15 +450,26 @@ def minimal_graph_schema() -> models.GraphDefinitionInput:
     return models.GraphDefinitionInput(
         system_version="1.0.0",
         extensions=models.GraphExtensionsInput(
-            entities=[models.EntityDefinitionInput(key="Specimen", property_definitions=[])],
+            entities=[
+                models.EntityDefinitionInput(key="Specimen", property_definitions=[])
+            ],
         ),
     )
 
 
 @pytest.fixture(scope="function")
-def minimal_graph(transactional_db, table_projector, minimal_graph_schema, authenticated_context) -> core_models.Graph:
+def minimal_graph(
+    transactional_db, table_projector, minimal_graph_schema, authenticated_context
+) -> core_models.Graph:
     request = authenticated_context.request
-    return materialize(minimal_graph_schema, table_projector, user=request._user, organization=request._organization, membership=request.membership, name="minimal")
+    return materialize(
+        minimal_graph_schema,
+        table_projector,
+        user=request._user,
+        organization=request._organization,
+        membership=request.membership,
+        name="minimal",
+    )
 
 
 @pytest.fixture
@@ -366,17 +489,34 @@ def interactome_graph_schema() -> models.GraphDefinitionInput:
                 models.EntityDefinitionInput(key="Site", property_definitions=[]),
             ],
             relations=[
-                models.RelationDefinitionInput(key="interacts_with", source=models.EntityDescriptorInput(), target=models.EntityDescriptorInput()),
-                models.RelationDefinitionInput(key="binds", source=models.EntityDescriptorInput(keys=["Protein"]), target=models.EntityDescriptorInput(keys=["Site"])),
+                models.RelationDefinitionInput(
+                    key="interacts_with",
+                    source=models.EntityDescriptorInput(),
+                    target=models.EntityDescriptorInput(),
+                ),
+                models.RelationDefinitionInput(
+                    key="binds",
+                    source=models.EntityDescriptorInput(keys=["Protein"]),
+                    target=models.EntityDescriptorInput(keys=["Site"]),
+                ),
             ],
         ),
     )
 
 
 @pytest.fixture(scope="function")
-def interactome_graph(transactional_db, table_projector, interactome_graph_schema, authenticated_context) -> core_models.Graph:
+def interactome_graph(
+    transactional_db, table_projector, interactome_graph_schema, authenticated_context
+) -> core_models.Graph:
     request = authenticated_context.request
-    return materialize(interactome_graph_schema, table_projector, user=request._user, organization=request._organization, membership=request.membership, name="interactome")
+    return materialize(
+        interactome_graph_schema,
+        table_projector,
+        user=request._user,
+        organization=request._organization,
+        membership=request.membership,
+        name="interactome",
+    )
 
 
 @pytest.fixture
@@ -397,16 +537,29 @@ def lab_graph_schema() -> models.GraphDefinitionInput:
 
 
 @pytest.fixture(scope="function")
-def lab_graph(transactional_db, table_projector, lab_graph_schema, authenticated_context) -> core_models.Graph:
+def lab_graph(
+    transactional_db, table_projector, lab_graph_schema, authenticated_context
+) -> core_models.Graph:
     request = authenticated_context.request
-    graph = materialize(lab_graph_schema, table_projector, user=request._user, organization=request._organization, membership=request.membership, name="lab")
+    graph = materialize(
+        lab_graph_schema,
+        table_projector,
+        user=request._user,
+        organization=request._organization,
+        membership=request.membership,
+        name="lab",
+    )
     core_models.ProtocolEventCategory.objects.create(
         graph=graph,
         key="Fixation",
         age_name="Fixation",
         label="Fixation",
-        source_entity_roles=[{"key": "Sample", "role": "specimen", "descriptor": {"keys": ["Sample"]}}],
-        target_entity_roles=[{"key": "Slide", "role": "mounted", "descriptor": {"keys": ["Slide"]}}],
+        source_entity_roles=[
+            {"key": "Sample", "role": "specimen", "descriptor": {"keys": ["Sample"]}}
+        ],
+        target_entity_roles=[
+            {"key": "Slide", "role": "mounted", "descriptor": {"keys": ["Slide"]}}
+        ],
     )
     return graph
 
@@ -426,13 +579,26 @@ def cytology_graph_schema() -> models.GraphDefinitionInput:
                 models.EntityDefinitionInput(
                     key="Cell",
                     property_definitions=[
-                        models.PropertyDefinitionInput(key="size", type=models.PropertyType.FLOAT, derivation=models.DerivationType.ROLLUP, rule=models.DerivationRuleInput(source_node="ROI", key="size", aggregation=models.AggregationFunction.MEAN)),
+                        models.PropertyDefinitionInput(
+                            key="size",
+                            type=models.PropertyType.FLOAT,
+                            derivation=models.DerivationType.ROLLUP,
+                            rule=models.DerivationRuleInput(
+                                source_node="ROI",
+                                key="size",
+                                aggregation=models.AggregationFunction.MEAN,
+                            ),
+                        ),
                     ],
                 ),
                 models.EntityDefinitionInput(key="Nucleus", property_definitions=[]),
             ],
             relations=[
-                models.RelationDefinitionInput(key="has_nucleus", source=models.EntityDescriptorInput(keys=["Cell"]), target=models.EntityDescriptorInput(keys=["Nucleus"])),
+                models.RelationDefinitionInput(
+                    key="has_nucleus",
+                    source=models.EntityDescriptorInput(keys=["Cell"]),
+                    target=models.EntityDescriptorInput(keys=["Nucleus"]),
+                ),
             ],
         ),
     )
@@ -449,32 +615,65 @@ def oncology_graph_schema() -> models.GraphDefinitionInput:
                 models.EntityDefinitionInput(
                     key="Cell",
                     property_definitions=[
-                        models.PropertyDefinitionInput(key="size", type=models.PropertyType.FLOAT, derivation=models.DerivationType.ROLLUP, rule=models.DerivationRuleInput(source_node="ROI", key="size", aggregation=models.AggregationFunction.MAX)),
+                        models.PropertyDefinitionInput(
+                            key="size",
+                            type=models.PropertyType.FLOAT,
+                            derivation=models.DerivationType.ROLLUP,
+                            rule=models.DerivationRuleInput(
+                                source_node="ROI",
+                                key="size",
+                                aggregation=models.AggregationFunction.MAX,
+                            ),
+                        ),
                     ],
                 ),
                 models.EntityDefinitionInput(key="Tumor", property_definitions=[]),
             ],
             relations=[
-                models.RelationDefinitionInput(key="part_of", source=models.EntityDescriptorInput(keys=["Cell"]), target=models.EntityDescriptorInput(keys=["Tumor"])),
+                models.RelationDefinitionInput(
+                    key="part_of",
+                    source=models.EntityDescriptorInput(keys=["Cell"]),
+                    target=models.EntityDescriptorInput(keys=["Tumor"]),
+                ),
             ],
         ),
     )
 
 
 @pytest.fixture(scope="function")
-def cytology_graph(transactional_db, table_projector, cytology_graph_schema, authenticated_context) -> core_models.Graph:
+def cytology_graph(
+    transactional_db, table_projector, cytology_graph_schema, authenticated_context
+) -> core_models.Graph:
     request = authenticated_context.request
-    return materialize(cytology_graph_schema, table_projector, user=request._user, organization=request._organization, membership=request.membership, name="cytology")
+    return materialize(
+        cytology_graph_schema,
+        table_projector,
+        user=request._user,
+        organization=request._organization,
+        membership=request.membership,
+        name="cytology",
+    )
 
 
 @pytest.fixture(scope="function")
-def oncology_graph(transactional_db, table_projector, oncology_graph_schema, authenticated_context) -> core_models.Graph:
+def oncology_graph(
+    transactional_db, table_projector, oncology_graph_schema, authenticated_context
+) -> core_models.Graph:
     request = authenticated_context.request
-    return materialize(oncology_graph_schema, table_projector, user=request._user, organization=request._organization, membership=request.membership, name="oncology")
+    return materialize(
+        oncology_graph_schema,
+        table_projector,
+        user=request._user,
+        organization=request._organization,
+        membership=request.membership,
+        name="oncology",
+    )
 
 
 @pytest.fixture(scope="function")
-def census_graph(transactional_db, table_projector, authenticated_context) -> core_models.Graph:
+def census_graph(
+    transactional_db, table_projector, authenticated_context
+) -> core_models.Graph:
     """A view that declares no word of its own — its one category **derives**
     from the word `Cell` (a rule whose WORD condition names it, RFC 0010),
     so it reads other views' claims under its own name. Declared in the schema
@@ -488,7 +687,9 @@ def census_graph(transactional_db, table_projector, authenticated_context) -> co
                     models.EntityDefinitionInput(
                         key="ObservedCell",
                         label="Observed cell",
-                        definition=models.CategoryDefinitionInput.model_validate(rules.definition(rules.rule(rules.word("Cell")))),
+                        definition=models.CategoryDefinitionInput.model_validate(
+                            rules.definition(rules.rule(rules.word("Cell")))
+                        ),
                     ),
                 ],
             ),
@@ -502,7 +703,9 @@ def census_graph(transactional_db, table_projector, authenticated_context) -> co
 
 
 @pytest.fixture(scope="function")
-def literal_graph(transactional_db, table_projector, authenticated_context) -> core_models.Graph:
+def literal_graph(
+    transactional_db, table_projector, authenticated_context
+) -> core_models.Graph:
     """Declares `Cell` and `StemCell` primitively — membership is whatever was
     asserted, under each word's own label. The contrast for `subsumption_graph`."""
     request = authenticated_context.request
@@ -512,7 +715,9 @@ def literal_graph(transactional_db, table_projector, authenticated_context) -> c
             extensions=models.GraphExtensionsInput(
                 entities=[
                     models.EntityDefinitionInput(key="Cell", property_definitions=[]),
-                    models.EntityDefinitionInput(key="StemCell", property_definitions=[]),
+                    models.EntityDefinitionInput(
+                        key="StemCell", property_definitions=[]
+                    ),
                 ],
             ),
         ),
@@ -525,12 +730,14 @@ def literal_graph(transactional_db, table_projector, authenticated_context) -> c
 
 
 @pytest.fixture(scope="function")
-def subsumption_graph(transactional_db, table_projector, authenticated_context) -> core_models.Graph:
+def subsumption_graph(
+    transactional_db, table_projector, authenticated_context
+) -> core_models.Graph:
     """One category, a union of clauses: "'Cell' means what Peter called Cell,
     and what Karl called StemCell after Dec 5" (RFC 0007). Declares no word of
     its own — both words arrive through the definition, which the **schema
     itself** carries: a graph's meaning is part of its definition document."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     request = authenticated_context.request
     return materialize(
@@ -543,7 +750,11 @@ def subsumption_graph(transactional_db, table_projector, authenticated_context) 
                         definition=models.CategoryDefinitionInput.model_validate(
                             rules.definition(
                                 rules.rule(rules.word("Cell"), rules.by("peter")),
-                                rules.rule(rules.word("StemCell"), rules.by("karl"), rules.since(datetime(2026, 12, 5, tzinfo=timezone.utc))),
+                                rules.rule(
+                                    rules.word("StemCell"),
+                                    rules.by("karl"),
+                                    rules.since(datetime(2026, 12, 5, tzinfo=UTC)),
+                                ),
                             )
                         ),
                     ),
@@ -575,7 +786,9 @@ def organization(db: None, backend_stack: None) -> Organization:
 @pytest.fixture
 def other_organization(db: None, backend_stack: None) -> Organization:
     """An organization the static test token is **not** a member of. Nothing it owns may be visible to any other tenant."""
-    org, _ = Organization.objects.get_or_create(identifier="static_issuer#a_tenant_you_are_not_in")
+    org, _ = Organization.objects.get_or_create(
+        identifier="static_issuer#a_tenant_you_are_not_in"
+    )
     return org
 
 
@@ -588,8 +801,12 @@ def user(db: None, backend_stack: None) -> User:
 
 def _make_graph(name: str, organization: Organization, user: User) -> core_models.Graph:
     """A bare `Graph` row: categories hang off one, and no projection is built from it here."""
-    membership, _ = Membership.objects.get_or_create(user=user, organization=organization)
-    return core_models.Graph.objects.create(name=name, user=user, membership=membership, organization=organization)
+    membership, _ = Membership.objects.get_or_create(
+        user=user, organization=organization
+    )
+    return core_models.Graph.objects.create(
+        name=name, user=user, membership=membership, organization=organization
+    )
 
 
 @pytest.fixture
@@ -608,7 +825,15 @@ def _category(graph: core_models.Graph, key: str) -> core_models.EntityCategory:
     """A view's category for a word, minting the organization's term for it."""
     from evidence import writer
 
-    return core_models.EntityCategory.objects.create(graph=graph, term=writer.ensure_term(graph.organization, core_models.EntityCategory.KIND, key), key=key, age_name=key, label=key)
+    return core_models.EntityCategory.objects.create(
+        graph=graph,
+        term=writer.ensure_term(
+            graph.organization, core_models.EntityCategory.KIND, key
+        ),
+        key=key,
+        age_name=key,
+        label=key,
+    )
 
 
 @pytest.fixture
@@ -628,7 +853,12 @@ def make_node(organization: Organization, assertion: evidence_models.Assertion):
     """Mint a real instance under a category's word and hand back its ref."""
 
     def _make(category: core_models.Category) -> str:
-        node = evidence_models.Instance.objects.create_for_organization(organization=organization, kind=evidence_models.Instance.Kind.ENTITY, term=category.term, assertion=assertion)
+        node = evidence_models.Instance.objects.create_for_organization(
+            organization=organization,
+            kind=evidence_models.Instance.Kind.ENTITY,
+            term=category.term,
+            assertion=assertion,
+        )
         return node.ref
 
     return _make
@@ -637,35 +867,63 @@ def make_node(organization: Organization, assertion: evidence_models.Assertion):
 @pytest.fixture
 def roi_kind(organization: Organization) -> evidence_models.StructureKind:
     """The ROI kind. One per organization — there is no per-graph variant to have."""
-    return evidence_models.StructureKind.all_objects.create(organization=organization, identifier="@mikro/roi")
+    return evidence_models.StructureKind.all_objects.create(
+        organization=organization, identifier="@mikro/roi"
+    )
 
 
 @pytest.fixture
-def roi_category_a(roi_kind: evidence_models.StructureKind) -> evidence_models.StructureKind:
+def roi_category_a(
+    roi_kind: evidence_models.StructureKind,
+) -> evidence_models.StructureKind:
     """The ROI kind as reached from graph A — the same row as from graph B."""
     return roi_kind
 
 
 @pytest.fixture
-def roi_category_b(roi_kind: evidence_models.StructureKind) -> evidence_models.StructureKind:
+def roi_category_b(
+    roi_kind: evidence_models.StructureKind,
+) -> evidence_models.StructureKind:
     """The same kind, reached from graph B. Deliberately identical to `roi_category_a`."""
     return roi_kind
 
 
 @pytest.fixture
-def length_category(organization: Organization, roi_kind: evidence_models.StructureKind) -> evidence_models.MetricKind:
+def length_category(
+    organization: Organization, roi_kind: evidence_models.StructureKind
+) -> evidence_models.MetricKind:
     """A float-valued measurement kind describing an ROI."""
-    return evidence_models.MetricKind.all_objects.create(organization=organization, structure_kind=roi_kind, key="vector_length", value_kind=ValueKind.FLOAT.value)
+    return evidence_models.MetricKind.all_objects.create(
+        organization=organization,
+        structure_kind=roi_kind,
+        key="vector_length",
+        value_kind=ValueKind.FLOAT.value,
+    )
 
 
 @pytest.fixture
 def assertion(organization: Organization) -> evidence_models.Assertion:
     """An act every other fixture can hang evidence off."""
-    return evidence_models.Assertion.objects.create_for_organization(organization=organization, subject="tester", app_id="pytest", action_name="record_evidence", asserted_at=datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc))
+    return evidence_models.Assertion.objects.create_for_organization(
+        organization=organization,
+        subject="tester",
+        app_id="pytest",
+        action_name="record_evidence",
+        asserted_at=datetime(2026, 1, 15, 12, 0, tzinfo=UTC),
+    )
 
 
 @pytest.fixture
-def second_graph(test_graph: core_models.Graph, bio_graph_schema, table_projector, api_context) -> core_models.Graph:
+def second_graph(
+    test_graph: core_models.Graph, bio_graph_schema, table_projector, api_context
+) -> core_models.Graph:
     """A second full view over the same organization's evidence, from the same schema as `test_graph`."""
     request = api_context.request
-    return materialize(bio_graph_schema, table_projector, user=request._user, organization=request._organization, membership=request.membership, name="second_graph")
+    return materialize(
+        bio_graph_schema,
+        table_projector,
+        user=request._user,
+        organization=request._organization,
+        membership=request.membership,
+        name="second_graph",
+    )

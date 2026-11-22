@@ -92,7 +92,9 @@ class Label:
 # the claim-grain reads (no graph) keep the organization's cached answer.
 
 
-def components_for(organization: Organization, refs: Iterable[str], graph: Graph | None = None) -> dict[str, list[str]]:
+def components_for(
+    organization: Organization, refs: Iterable[str], graph: Graph | None = None
+) -> dict[str, list[str]]:
     """The component each ref belongs to. Two queries for the whole page — or,
     with a view in scope, the per-category walk (RFC 0011)."""
     if graph is not None:
@@ -111,7 +113,9 @@ def _touching(refs: Iterable[str]) -> Q:
     return Q(source_ref__in=wanted) | Q(target_ref__in=wanted)
 
 
-def labels_for(organization: Organization, refs: Iterable[str]) -> dict[str, list[Label]]:
+def labels_for(
+    organization: Organization, refs: Iterable[str]
+) -> dict[str, list[Label]]:
     """What anyone has called each of these nodes, grouped by node.
 
     Two queries for the whole page, however many nodes it holds: the grouped
@@ -129,12 +133,10 @@ def labels_for(organization: Organization, refs: Iterable[str]) -> dict[str, lis
 
     rows = (
         claims_module.standing(
-            evidence_models.Link.objects.for_organization(organization)
-            .filter(
+            evidence_models.Link.objects.for_organization(organization).filter(
                 kind=evidence_models.Link.Kind.CLASSIFIES,
                 source_ref__in=wanted,
-            )
-            ,
+            ),
             "link",
         )
         .values("source_ref", "term_id")
@@ -147,7 +149,10 @@ def labels_for(organization: Organization, refs: Iterable[str]) -> dict[str, lis
         # and cannot tie; two claims written in one request share a timestamp
         # often enough that "latest" would otherwise be whichever row Postgres
         # happened to return.
-        .annotate(assertion_count=Count("assertion_id", distinct=True), latest_seq=Max("assertion__seq"))
+        .annotate(
+            assertion_count=Count("assertion_id", distinct=True),
+            latest_seq=Max("assertion__seq"),
+        )
         .order_by("-assertion_count", "term_id")
     )
 
@@ -157,7 +162,14 @@ def labels_for(organization: Organization, refs: Iterable[str]) -> dict[str, lis
     by_seq: dict[int, uuid.UUID] = {}
     seqs = [row["latest_seq"] for row in rows if row["latest_seq"] is not None]
     if seqs:
-        by_seq = {int(seq): assertion_id for seq, assertion_id in evidence_models.Assertion.objects.for_organization(organization).filter(seq__in=seqs).values_list("seq", "id")}
+        by_seq = {
+            int(seq): assertion_id
+            for seq, assertion_id in evidence_models.Assertion.objects.for_organization(
+                organization
+            )
+            .filter(seq__in=seqs)
+            .values_list("seq", "id")
+        }
 
     grouped: dict[str, list[Label]] = defaultdict(list)
     for row in rows:
@@ -166,13 +178,17 @@ def labels_for(organization: Organization, refs: Iterable[str]) -> dict[str, lis
                 node_ref=str(row["source_ref"]),
                 term_id=row["term_id"],
                 assertion_count=int(row["assertion_count"]),
-                latest_assertion_id=by_seq.get(int(row["latest_seq"])) if row["latest_seq"] is not None else None,
+                latest_assertion_id=by_seq.get(int(row["latest_seq"]))
+                if row["latest_seq"] is not None
+                else None,
             )
         )
     return dict(grouped)
 
 
-def sameness_for(organization: Organization, refs: Iterable[str], graph: Graph | None = None) -> dict[str, list[evidence_models.Link]]:
+def sameness_for(
+    organization: Organization, refs: Iterable[str], graph: Graph | None = None
+) -> dict[str, list[evidence_models.Link]]:
     """The standing sameness claims touching each ref. One query — or, with a
     view in scope, the claims its categories admit (RFC 0011).
 
@@ -182,16 +198,28 @@ def sameness_for(organization: Organization, refs: Iterable[str], graph: Graph |
     difference vetoes (RFC 0019) is still listed — it still stands, and it is
     the claim a reader may want to withdraw.
     """
-    return _identity_for(organization, refs, graph, kind=evidence_models.Link.Kind.SAME_AS)
+    return _identity_for(
+        organization, refs, graph, kind=evidence_models.Link.Kind.SAME_AS
+    )
 
 
-def difference_for(organization: Organization, refs: Iterable[str], graph: Graph | None = None) -> dict[str, list[evidence_models.Link]]:
+def difference_for(
+    organization: Organization, refs: Iterable[str], graph: Graph | None = None
+) -> dict[str, list[evidence_models.Link]]:
     """The standing `DIFFERENT_FROM` claims touching each ref (RFC 0019), under
     the same scope rule as :func:`sameness_for`."""
-    return _identity_for(organization, refs, graph, kind=evidence_models.Link.Kind.DIFFERENT_FROM)
+    return _identity_for(
+        organization, refs, graph, kind=evidence_models.Link.Kind.DIFFERENT_FROM
+    )
 
 
-def _identity_for(organization: Organization, refs: Iterable[str], graph: Graph | None, *, kind: evidence_models.Link.Kind) -> dict[str, list[evidence_models.Link]]:
+def _identity_for(
+    organization: Organization,
+    refs: Iterable[str],
+    graph: Graph | None,
+    *,
+    kind: evidence_models.Link.Kind,
+) -> dict[str, list[evidence_models.Link]]:
     wanted = [str(ref) for ref in refs]
     if not wanted:
         return {}
@@ -200,14 +228,18 @@ def _identity_for(organization: Organization, refs: Iterable[str], graph: Graph 
         links = identity_module.view_identity_links(graph, wanted, kinds=(kind,))
     else:
         links = claims_module.standing(
-            evidence_models.Link.objects.for_organization(organization).filter(_touching(wanted), kind=kind),
+            evidence_models.Link.objects.for_organization(organization).filter(
+                _touching(wanted), kind=kind
+            ),
             "link",
         ).select_related("assertion")
 
     return _group_by_endpoint(links, wanted)
 
 
-def connections_for(organization: Organization, refs: Iterable[str]) -> dict[str, list[evidence_models.Link]]:
+def connections_for(
+    organization: Organization, refs: Iterable[str]
+) -> dict[str, list[evidence_models.Link]]:
     """Every standing claim connecting these refs to something else. One query.
 
     Relations, participations and INFORMS alike — they are all `Link` rows, and
@@ -224,14 +256,18 @@ def connections_for(organization: Organization, refs: Iterable[str]) -> dict[str
         return {}
 
     links = claims_module.standing(
-        evidence_models.Link.objects.for_organization(organization).filter(_touching(wanted), kind__in=list(_CONNECTION_KINDS)),
+        evidence_models.Link.objects.for_organization(organization).filter(
+            _touching(wanted), kind__in=list(_CONNECTION_KINDS)
+        ),
         "link",
     ).select_related("assertion", "term")
 
     return _group_by_endpoint(links, wanted)
 
 
-def informed_nodes(structure_refs: Iterable[str]) -> list[list[evidence_models.Instance]]:
+def informed_nodes(
+    structure_refs: Iterable[str],
+) -> list[list[evidence_models.Instance]]:
     """The nodes each structure is evidence for. Two queries for the whole page.
 
     Batched rather than resolved per structure, and that is what makes the rest of
@@ -254,7 +290,11 @@ def informed_nodes(structure_refs: Iterable[str]) -> list[list[evidence_models.I
     # index is `(organization, kind, source_ref)`, and skipping its leading column
     # turns a seek into a scan. One lookup to find the tenants, which a page of
     # subjects shares.
-    organization_ids = set(evidence_models.Structure.all_objects.filter(pk__in=wanted).values_list("organization_id", flat=True))
+    organization_ids = set(
+        evidence_models.Structure.all_objects.filter(pk__in=wanted).values_list(
+            "organization_id", flat=True
+        )
+    )
     if not organization_ids:
         return [[] for _ in wanted]
 
@@ -273,12 +313,22 @@ def informed_nodes(structure_refs: Iterable[str]) -> list[list[evidence_models.I
         refs_by_structure[str(source_ref)].append(str(target_ref))
         every_target.add(str(target_ref))
 
-    nodes = {str(node.pk): node for node in evidence_models.Instance.all_objects.filter(pk__in=every_target).select_related("term", "organization").order_by("created_at")}
+    nodes = {
+        str(node.pk): node
+        for node in evidence_models.Instance.all_objects.filter(pk__in=every_target)
+        .select_related("term", "organization")
+        .order_by("created_at")
+    }
 
-    return [[nodes[ref] for ref in refs_by_structure.get(structure_ref, ()) if ref in nodes] for structure_ref in wanted]
+    return [
+        [nodes[ref] for ref in refs_by_structure.get(structure_ref, ()) if ref in nodes]
+        for structure_ref in wanted
+    ]
 
 
-def informing_structures(instance_refs: Iterable[str]) -> list[list[evidence_models.Structure]]:
+def informing_structures(
+    instance_refs: Iterable[str],
+) -> list[list[evidence_models.Structure]]:
     """The structures that are evidence for each instance — `informed_nodes` the other way.
 
     Two queries for the whole page, for the same reason. Per instance, not over
@@ -290,7 +340,11 @@ def informing_structures(instance_refs: Iterable[str]) -> list[list[evidence_mod
     if not wanted:
         return []
 
-    organization_ids = set(evidence_models.Instance.all_objects.filter(pk__in=wanted).values_list("organization_id", flat=True))
+    organization_ids = set(
+        evidence_models.Instance.all_objects.filter(pk__in=wanted).values_list(
+            "organization_id", flat=True
+        )
+    )
     if not organization_ids:
         return [[] for _ in wanted]
 
@@ -310,9 +364,21 @@ def informing_structures(instance_refs: Iterable[str]) -> list[list[evidence_mod
             refs_by_instance[str(target_ref)].append(str(source_ref))
         every_source.add(str(source_ref))
 
-    structures = {str(row.pk): row for row in evidence_models.Structure.all_objects.filter(pk__in=every_source).order_by("created_at")}
+    structures = {
+        str(row.pk): row
+        for row in evidence_models.Structure.all_objects.filter(
+            pk__in=every_source
+        ).order_by("created_at")
+    }
 
-    return [[structures[ref] for ref in refs_by_instance.get(instance_ref, ()) if ref in structures] for instance_ref in wanted]
+    return [
+        [
+            structures[ref]
+            for ref in refs_by_instance.get(instance_ref, ())
+            if ref in structures
+        ]
+        for instance_ref in wanted
+    ]
 
 
 @dataclass(frozen=True)
@@ -356,7 +422,9 @@ def known_about(refs: Iterable[str], graph: Graph | None = None) -> list[Known]:
 
     by_organization: dict[int, list[str]] = defaultdict(list)
     organizations: dict[int, Organization] = {}
-    for node in evidence_models.Instance.all_objects.filter(pk__in=wanted).select_related("organization"):
+    for node in evidence_models.Instance.all_objects.filter(
+        pk__in=wanted
+    ).select_related("organization"):
         by_organization[node.organization_id].append(str(node.pk))
         organizations[node.organization_id] = node.organization
 
@@ -367,7 +435,9 @@ def known_about(refs: Iterable[str], graph: Graph | None = None) -> list[Known]:
         components = components_for(organization, node_refs, graph=graph)
         # Every member of every component on the page, asked for once. The three
         # reads below are one query each regardless of how many nodes that is.
-        every_member = sorted({member for members in components.values() for member in members})
+        every_member = sorted(
+            {member for members in components.values() for member in members}
+        )
 
         labels = labels_for(organization, every_member)
         sameness = sameness_for(organization, every_member, graph=graph)
@@ -381,17 +451,39 @@ def known_about(refs: Iterable[str], graph: Graph | None = None) -> list[Known]:
             known[ref] = Known(
                 node_ref=ref,
                 component=members,
-                labels=[label for member in members for label in labels.get(member, ())],
+                labels=[
+                    label for member in members for label in labels.get(member, ())
+                ],
                 sameness=_distinct_links(sameness, members),
                 differences=distinct_differences,
-                conflicts=[link for link in distinct_differences if str(link.source_ref) in inside and str(link.target_ref) in inside],
+                conflicts=[
+                    link
+                    for link in distinct_differences
+                    if str(link.source_ref) in inside and str(link.target_ref) in inside
+                ],
                 connections=_distinct_links(connections, members),
             )
 
-    return [known.get(ref, Known(node_ref=ref, component=[ref], labels=[], sameness=[], differences=[], conflicts=[], connections=[])) for ref in wanted]
+    return [
+        known.get(
+            ref,
+            Known(
+                node_ref=ref,
+                component=[ref],
+                labels=[],
+                sameness=[],
+                differences=[],
+                conflicts=[],
+                connections=[],
+            ),
+        )
+        for ref in wanted
+    ]
 
 
-def _distinct_links(grouped: dict[str, list[evidence_models.Link]], members: Iterable[str]) -> list[evidence_models.Link]:
+def _distinct_links(
+    grouped: dict[str, list[evidence_models.Link]], members: Iterable[str]
+) -> list[evidence_models.Link]:
     """The links touching any member of one component, each listed once.
 
     De-duplicated here and not in :func:`_group_by_endpoint`: a claim with both
@@ -405,7 +497,9 @@ def _distinct_links(grouped: dict[str, list[evidence_models.Link]], members: Ite
     return list(seen.values())
 
 
-def _group_by_endpoint(links: Iterable[evidence_models.Link], wanted: list[str]) -> dict[str, list[evidence_models.Link]]:
+def _group_by_endpoint(
+    links: Iterable[evidence_models.Link], wanted: list[str]
+) -> dict[str, list[evidence_models.Link]]:
     """Index links by whichever of their ends the caller asked about.
 
     A claim with *both* ends in the page appears under both, which is correct: it

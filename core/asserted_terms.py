@@ -26,13 +26,14 @@ fixed once.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 from authentikate.models import Organization
 from django.db import transaction
+
 from core import models as core_models
-import logging
 
 if TYPE_CHECKING:
     # Imported inside every function body at runtime — this module is loaded
@@ -80,7 +81,11 @@ def sync_category(category: Category) -> int:
     # `organization_id` off the graph rather than the category: a category has no
     # organization of its own, and the denormalization is what keeps the
     # organization-wide map a scan of this table instead of a join to `Graph`.
-    organization_id = core_models.Graph.objects.filter(pk=category.graph_id).values_list("organization_id", flat=True).first()
+    organization_id = (
+        core_models.Graph.objects.filter(pk=category.graph_id)
+        .values_list("organization_id", flat=True)
+        .first()
+    )
     if organization_id is None:
         return 0
 
@@ -112,7 +117,9 @@ def forget_category(category: Category) -> None:
     core_models.CategoryAssertedTerm.objects.filter(category_id=category.pk).delete()
 
 
-def graph_ids_by_key(organization: Organization, keys: Iterable[str] | None = None) -> dict[str, list[int]]:
+def graph_ids_by_key(
+    organization: Organization, keys: Iterable[str] | None = None
+) -> dict[str, list[int]]:
     """Which graphs derive from each word — the read this table exists for.
 
     ``keys`` narrows it to an indexed seek on ``(organization, key)``, which is
@@ -138,7 +145,12 @@ def graph_ids_by_key(organization: Organization, keys: Iterable[str] | None = No
 def keys_for_graph(graph: Graph) -> set[str]:
     """Every word this graph's categories derive from. One indexed lookup."""
 
-    return {str(key) for key in core_models.CategoryAssertedTerm.objects.filter(graph=graph).values_list("key", flat=True)}
+    return {
+        str(key)
+        for key in core_models.CategoryAssertedTerm.objects.filter(
+            graph=graph
+        ).values_list("key", flat=True)
+    }
 
 
 def keys_and_kinds_for_graph(graph: Graph) -> set[tuple[str, str]]:
@@ -149,7 +161,12 @@ def keys_and_kinds_for_graph(graph: Graph) -> set[tuple[str, str]]:
     needs; the key alone admitted words of the wrong kind.
     """
 
-    return {(str(key), str(kind)) for key, kind in core_models.CategoryAssertedTerm.objects.filter(graph=graph).values_list("key", "category__kind")}
+    return {
+        (str(key), str(kind))
+        for key, kind in core_models.CategoryAssertedTerm.objects.filter(
+            graph=graph
+        ).values_list("key", "category__kind")
+    }
 
 
 def expected(organization: Organization) -> set[tuple[int, str]]:
@@ -160,7 +177,9 @@ def expected(organization: Organization) -> set[tuple[int, str]]:
     """
 
     pairs: set[tuple[int, str]] = set()
-    for category_id, definition in core_models.Category.objects.filter(graph__organization=organization).values_list("id", "definition"):
+    for category_id, definition in core_models.Category.objects.filter(
+        graph__organization=organization
+    ).values_list("id", "definition"):
         for key in keys_in(definition):
             pairs.add((category_id, key))
     return pairs
@@ -169,7 +188,12 @@ def expected(organization: Organization) -> set[tuple[int, str]]:
 def stored(organization: Organization) -> set[tuple[int, str]]:
     """The ``(category_id, key)`` pairs currently in the table."""
 
-    return {(category_id, str(key)) for category_id, key in core_models.CategoryAssertedTerm.objects.filter(organization=organization).values_list("category_id", "key")}
+    return {
+        (category_id, str(key))
+        for category_id, key in core_models.CategoryAssertedTerm.objects.filter(
+            organization=organization
+        ).values_list("category_id", "key")
+    }
 
 
 @transaction.atomic
@@ -189,7 +213,14 @@ def refold(organization: Organization) -> int:
     # rewrite a disagreement between those two rather than resolve it, and
     # `--check` would report drift it could not explain.
     rows: list[CategoryAssertedTerm] = []
-    for category_id, graph_id, organization_id, definition in core_models.Category.objects.filter(graph__organization=organization).values_list("id", "graph_id", "graph__organization_id", "definition"):
+    for (
+        category_id,
+        graph_id,
+        organization_id,
+        definition,
+    ) in core_models.Category.objects.filter(
+        graph__organization=organization
+    ).values_list("id", "graph_id", "graph__organization_id", "definition"):
         rows.extend(
             core_models.CategoryAssertedTerm(
                 organization_id=organization_id,
@@ -204,7 +235,9 @@ def refold(organization: Organization) -> int:
     return len(rows)
 
 
-def on_category_saved(sender: type[Category], instance: Category, **kwargs: object) -> None:
+def on_category_saved(
+    sender: type[Category], instance: Category, **kwargs: object
+) -> None:
     """Signal handler: a category was saved.
 
     Deliberately tolerant, for the same reason `versioning.on_category_changed`
@@ -215,11 +248,14 @@ def on_category_saved(sender: type[Category], instance: Category, **kwargs: obje
     try:
         sync_category(instance)
     except Exception as error:  # noqa: BLE001 - see docstring
+        logging.getLogger(__name__).warning(
+            "Could not index asserted terms for category %s: %s", instance.pk, error
+        )
 
-        logging.getLogger(__name__).warning("Could not index asserted terms for category %s: %s", instance.pk, error)
 
-
-def on_category_deleted(sender: type[Category], instance: Category, **kwargs: object) -> None:
+def on_category_deleted(
+    sender: type[Category], instance: Category, **kwargs: object
+) -> None:
     """Signal handler: a category was deleted.
 
     The cascade from `CategoryAssertedTerm.category` already removes the rows when
@@ -230,5 +266,6 @@ def on_category_deleted(sender: type[Category], instance: Category, **kwargs: ob
     try:
         forget_category(instance)
     except Exception as error:  # noqa: BLE001 - see docstring
-
-        logging.getLogger(__name__).warning("Could not drop asserted terms for category %s: %s", instance.pk, error)
+        logging.getLogger(__name__).warning(
+            "Could not drop asserted terms for category %s: %s", instance.pk, error
+        )

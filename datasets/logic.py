@@ -36,7 +36,9 @@ class RunRefused(ValueError):
 
 def horizon(organization: Organization) -> int:
     """The highest seq every act of the organization at or below which is committed."""
-    return log_module.horizon(evidence_models.Assertion.objects.for_organization(organization))
+    return log_module.horizon(
+        evidence_models.Assertion.objects.for_organization(organization)
+    )
 
 
 def pairs_plan(query: core_models.GraphQuery) -> query_ir.PairsQueryPlan:
@@ -54,10 +56,31 @@ def _end(identifier: Any, obj: Any, ref: Any) -> tuple[str, str]:  # noqa: ANN40
     return ENTITY_IDENTIFIER, str(ref)
 
 
-def render_pairs(controller: GraphController, query: core_models.GraphQuery, *, info: Any = None) -> list[tuple[tuple[str, str], tuple[str, str]]]:  # noqa: ANN401
+def render_pairs(
+    controller: GraphController, query: core_models.GraphQuery, *, info: Any = None
+) -> list[tuple[tuple[str, str], tuple[str, str]]]:  # noqa: ANN401
     """Every distinct pair the query answers now, in a stable order: ``((src identifier, object), (tgt identifier, object))``."""
-    rows = controller.render_table_plan(query.graph, pairs_plan(query).to_table_plan(), order=RenderGraphTableOrder(key="source_ref"), info=info)
-    pairs = {(_end(row.get("source_identifier"), row.get("source_object"), row.get("source_ref")), _end(row.get("target_identifier"), row.get("target_object"), row.get("target_ref"))) for row in rows}
+    rows = controller.render_table_plan(
+        query.graph,
+        pairs_plan(query).to_table_plan(),
+        order=RenderGraphTableOrder(key="source_ref"),
+        info=info,
+    )
+    pairs = {
+        (
+            _end(
+                row.get("source_identifier"),
+                row.get("source_object"),
+                row.get("source_ref"),
+            ),
+            _end(
+                row.get("target_identifier"),
+                row.get("target_object"),
+                row.get("target_ref"),
+            ),
+        )
+        for row in rows
+    }
     return sorted(pairs)
 
 
@@ -83,11 +106,15 @@ def run_pairs_query(
             (a rebuilding view's drawing is partial, so its answer would say nothing).
     """
     if str(query.kind) != core_models.GraphPairsQuery.KIND:
-        raise RunRefused(f"Saved query #{query.pk} is a {query.kind} query; only a pairs query runs into pairs")
+        raise RunRefused(
+            f"Saved query #{query.pk} is a {query.kind} query; only a pairs query runs into pairs"
+        )
     graph = query.graph
     position = watermark.position(graph)
     if position.cursor <= 0:
-        raise RunRefused(f"The view {graph.name!r} is not drawn consistently ({position.status}): its drawing is partial. Run the query once it has converged")
+        raise RunRefused(
+            f"The view {graph.name!r} is not drawn consistently ({position.status}): its drawing is partial. Run the query once it has converged"
+        )
     as_of = min(position.cursor, horizon(graph.organization))
     pairs = render_pairs(controller, query, info=info)
 
@@ -107,7 +134,19 @@ def run_pairs_query(
             target_identifier=_shared([target[0] for _, target in pairs]),
             creator=creator,
         )
-        models.PairsQueryRunEntry.objects.bulk_create([models.PairsQueryRunEntry(run=run, position=index, source_identifier=source[0], source_object=source[1], target_identifier=target[0], target_object=target[1]) for index, (source, target) in enumerate(pairs)])
+        models.PairsQueryRunEntry.objects.bulk_create(
+            [
+                models.PairsQueryRunEntry(
+                    run=run,
+                    position=index,
+                    source_identifier=source[0],
+                    source_object=source[1],
+                    target_identifier=target[0],
+                    target_object=target[1],
+                )
+                for index, (source, target) in enumerate(pairs)
+            ]
+        )
     return run
 
 
@@ -119,7 +158,13 @@ def _end_identifier(query: core_models.GraphQuery, side: str) -> str | None:
     label = plan.end_category(plan.source if side == "source" else plan.target)
     if label is None:
         return None
-    category = core_models.StructureCategory.objects.filter(graph_id=query.graph_id, age_name=label).select_related("structure_kind").first()
+    category = (
+        core_models.StructureCategory.objects.filter(
+            graph_id=query.graph_id, age_name=label
+        )
+        .select_related("structure_kind")
+        .first()
+    )
     return category.identifier if category is not None else None
 
 

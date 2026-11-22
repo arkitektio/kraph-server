@@ -37,25 +37,27 @@ from itertools import combinations
 from typing import Protocol, runtime_checkable
 
 from authentikate.models import Organization
-from django.db.models import Q, QuerySet
+from django.db import transaction
+from django.db.models import Max, Min, Q, QuerySet
+from django.utils import timezone
 
 from core import models as core_models
 from core.enums import ValueKind
 from evidence import claims as claims_module
+from evidence import identity as identity_module
 from evidence import models as evidence_models
 from evidence import selector as selector_module
 from evidence import state as state_module
 from evidence import writer as writer_module
 from evidence.models import JSONValue
-from graph_engine import aggregate
-from graph_engine import locks, watermark
-from graph_engine.input_models import DerivationRuleInput, DerivationType, PropertyDefinitionInput
+from graph_engine import aggregate, locks, watermark
+from graph_engine.input_models import (
+    DerivationRuleInput,
+    DerivationType,
+    PropertyDefinitionInput,
+)
 from graph_engine.projection.protocol import Projector
 from graph_engine.reports import DrawCounts, GraphReplay, ReplayReport, SkippedGraph
-from evidence import identity as identity_module
-from django.db.models import Max, Min
-from django.db import transaction
-from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +80,7 @@ class DrawingHost(Protocol):
         """The projection kind this host draws through."""
         ...
 
+
 #: INT and FLOAT are distinct *terms* — a cell count and a length are different
 #: declarations — but they are the same quantity to every aggregation: both live
 #: in `value_num` and `state._numeric` accepts both. A rule naming FLOAT that
@@ -96,7 +99,9 @@ def value_kind_family(value_kind: str) -> frozenset[str]:
     return NUMERIC_FAMILY if value_kind in NUMERIC_FAMILY else frozenset({value_kind})
 
 
-def dirty(graph: core_models.Graph, structure_ids: Iterable[evidence_models.Ref]) -> list[str]:
+def dirty(
+    graph: core_models.Graph, structure_ids: Iterable[evidence_models.Ref]
+) -> list[str]:
     """The entity refs invalidated by a change to the given structures.
 
     An indexed lookup, not a traversal: one query against
@@ -133,7 +138,9 @@ def is_derived(prop: PropertyDefinitionInput) -> bool:
     return rule is not None and bool(getattr(rule, "source_node", None))
 
 
-def refs_informed_by(organization: Organization, structure_ids: Iterable[evidence_models.Ref]) -> list[str]:
+def refs_informed_by(
+    organization: Organization, structure_ids: Iterable[evidence_models.Ref]
+) -> list[str]:
     """Everything in the organization these structures are evidence for.
 
     Ingest names no graph, so a measurement has to reach every projection that
@@ -163,7 +170,9 @@ def refs_informed_by(organization: Organization, structure_ids: Iterable[evidenc
     ]
 
 
-def graphs_for_refs(organization: Organization, refs: Iterable[str]) -> dict[int, list[str]]:
+def graphs_for_refs(
+    organization: Organization, refs: Iterable[str]
+) -> dict[int, list[str]]:
     """Group node refs by the graph that projects them.
 
     Replaces splitting the ref on `:`. A ref is a bare uuid now, so which view
@@ -176,7 +185,9 @@ def graphs_for_refs(organization: Organization, refs: Iterable[str]) -> dict[int
     """
 
     by_graph_id: dict[int, list[str]] = {}
-    for node_ref, graph_id in selector_module.graph_ids_for_instance_ids(organization, refs):
+    for node_ref, graph_id in selector_module.graph_ids_for_instance_ids(
+        organization, refs
+    ):
         by_graph_id.setdefault(graph_id, []).append(node_ref)
 
     if not by_graph_id:
@@ -191,7 +202,9 @@ def graphs_for_refs(organization: Organization, refs: Iterable[str]) -> dict[int
     return {graph: by_graph_id[graph.pk] for graph in graphs}
 
 
-def _derived_properties(category: core_models.Category) -> list[PropertyDefinitionInput]:
+def _derived_properties(
+    category: core_models.Category,
+) -> list[PropertyDefinitionInput]:
     """The property definitions on a category that come from evidence."""
     return [prop for prop in (category.defined_properties or []) if is_derived(prop)]
 
@@ -209,7 +222,11 @@ def _refs(value: str | Iterable[str]) -> list[str]:
     return [str(ref) for ref in value]
 
 
-def _structure_ids_informing(graph: core_models.Graph, claim_ref: str | Iterable[str], definition: selector_module.Definition | None = None) -> list[uuid.UUID]:
+def _structure_ids_informing(
+    graph: core_models.Graph,
+    claim_ref: str | Iterable[str],
+    definition: selector_module.Definition | None = None,
+) -> list[uuid.UUID]:
     """The structure primary keys whose measurements reach this individual — any of its members.
 
     ``definition`` is the node's category rule (RFC 0009): whose INFORMS claims
@@ -223,13 +240,25 @@ def _structure_ids_informing(graph: core_models.Graph, claim_ref: str | Iterable
     a failure means a link was written with the wrong kind, which is worth
     hearing about rather than skipping.
     """
-    refs = selector_module.informs_links_for(graph, definition=definition).filter(target_ref__in=_refs(claim_ref)).values_list("source_ref", flat=True).distinct()
+    refs = (
+        selector_module.informs_links_for(graph, definition=definition)
+        .filter(target_ref__in=_refs(claim_ref))
+        .values_list("source_ref", flat=True)
+        .distinct()
+    )
     structure_ids = [uuid.UUID(str(ref)) for ref in refs]
     if not structure_ids:
         return []
     # Datums that stand (RFC 0023): a retracted structure informs nothing.
 
-    return list(claims_module.standing(evidence_models.Structure.objects.for_organization(graph.organization).filter(pk__in=structure_ids), "structure").values_list("pk", flat=True))
+    return list(
+        claims_module.standing(
+            evidence_models.Structure.objects.for_organization(
+                graph.organization
+            ).filter(pk__in=structure_ids),
+            "structure",
+        ).values_list("pk", flat=True)
+    )
 
 
 def _priority_scoped_value(
@@ -258,7 +287,11 @@ def _priority_scoped_value(
 
     rule = prop.rule
     by_tool = prop.derivation == DerivationType.LATEST_ASSERTION_TOOL
-    ordering = list(getattr(rule, "tool_priority", []) if by_tool else getattr(rule, "subject_priority", []))
+    ordering = list(
+        getattr(rule, "tool_priority", [])
+        if by_tool
+        else getattr(rule, "subject_priority", [])
+    )
     field = "assertion__app_id" if by_tool else "assertion__subject"
 
     structure_ids = _structure_ids_informing(graph, claim_ref, category.definition)
@@ -271,7 +304,9 @@ def _priority_scoped_value(
     # the property's own rule — `rule.evidence` when present, else the owning
     # category's clauses (RFC 0009) — so an excluded source cannot win even
     # when `subject_priority` ranks it first.
-    metric_q, standing_predicate = selector_module.metric_scope(category.definition, rule)
+    metric_q, standing_predicate = selector_module.metric_scope(
+        category.definition, rule
+    )
     base = claims_module.standing(
         evidence_models.Metric.objects.for_organization(graph.organization).filter(
             metric_q,
@@ -296,7 +331,9 @@ def _priority_scoped_value(
     return latest.value if latest else None
 
 
-def _structure_kind_for_rule(graph: core_models.Graph, rule: DerivationRuleInput) -> evidence_models.StructureKind | None:
+def _structure_kind_for_rule(
+    graph: core_models.Graph, rule: DerivationRuleInput
+) -> evidence_models.StructureKind | None:
     """Resolve a rule's `source_node` to one of the organization's structure kinds.
 
     Identifier only. The old lookup also fell back to `key`, which a structure
@@ -305,10 +342,19 @@ def _structure_kind_for_rule(graph: core_models.Graph, rule: DerivationRuleInput
     """
     if not rule or not rule.source_node:
         return None
-    return evidence_models.StructureKind.objects.for_organization(graph.organization).filter(identifier=rule.source_node).first()
+    return (
+        evidence_models.StructureKind.objects.for_organization(graph.organization)
+        .filter(identifier=rule.source_node)
+        .first()
+    )
 
 
-def _value_kinds_for_rule(graph: core_models.Graph, source_kind: evidence_models.StructureKind, key: str, rule: DerivationRuleInput) -> frozenset[str] | None:
+def _value_kinds_for_rule(
+    graph: core_models.Graph,
+    source_kind: evidence_models.StructureKind,
+    key: str,
+    rule: DerivationRuleInput,
+) -> frozenset[str] | None:
     """Which value kinds this rule reads, or None when that is ambiguous.
 
     Symmetric with :func:`evidence.writer.ensure_metric_kind` on the write side:
@@ -319,11 +365,20 @@ def _value_kinds_for_rule(graph: core_models.Graph, source_kind: evidence_models
     EUCLIDEAN_RANGE to FLOAT regardless of what the sources are — so using it to
     pick the source row would pick the wrong one precisely where it differs.
     """
-    declared = writer_module.canonical_value_kind(getattr(rule, "source_value_kind", None))
+    declared = writer_module.canonical_value_kind(
+        getattr(rule, "source_value_kind", None)
+    )
     if declared is not None:
         return value_kind_family(declared)
 
-    terms = sorted(str(term) for term in evidence_models.MetricKind.objects.for_organization(graph.organization).filter(structure_kind=source_kind, key=key).values_list("value_kind", flat=True))
+    terms = sorted(
+        str(term)
+        for term in evidence_models.MetricKind.objects.for_organization(
+            graph.organization
+        )
+        .filter(structure_kind=source_kind, key=key)
+        .values_list("value_kind", flat=True)
+    )
 
     families = {value_kind_family(term) for term in terms}
 
@@ -415,7 +470,15 @@ def _property_statistics(
         if value_kinds is None:
             continue
 
-        state = _scoped_state(graph, claim_ref, source_kind, key, value_kinds, category, prop) if _rule_constrains(category, prop) else state_module.state_for_many(graph.organization, _refs(claim_ref), source_kind, key, value_kinds)
+        state = (
+            _scoped_state(
+                graph, claim_ref, source_kind, key, value_kinds, category, prop
+            )
+            if _rule_constrains(category, prop)
+            else state_module.state_for_many(
+                graph.organization, _refs(claim_ref), source_kind, key, value_kinds
+            )
+        )
         if state is None:
             continue
 
@@ -489,10 +552,23 @@ def derive_properties(
             # deriving.
             continue
 
-        if prop.derivation in (DerivationType.PRIORITY_LATEST, DerivationType.LATEST_ASSERTION_TOOL):
-            value = _priority_scoped_value(graph, claim_ref, source_kind, key, value_kinds, prop, category)
+        if prop.derivation in (
+            DerivationType.PRIORITY_LATEST,
+            DerivationType.LATEST_ASSERTION_TOOL,
+        ):
+            value = _priority_scoped_value(
+                graph, claim_ref, source_kind, key, value_kinds, prop, category
+            )
         else:
-            state = _scoped_state(graph, claim_ref, source_kind, key, value_kinds, category, prop) if _rule_constrains(category, prop) else state_module.state_for_many(organization, _refs(claim_ref), source_kind, key, value_kinds)
+            state = (
+                _scoped_state(
+                    graph, claim_ref, source_kind, key, value_kinds, category, prop
+                )
+                if _rule_constrains(category, prop)
+                else state_module.state_for_many(
+                    organization, _refs(claim_ref), source_kind, key, value_kinds
+                )
+            )
 
             aggregation = rule.aggregation if rule and rule.aggregation else None
             if prop.derivation == DerivationType.LATEST and aggregation is None:
@@ -512,7 +588,9 @@ def derive_properties(
     return values
 
 
-def _rule_constrains(category: core_models.Category, prop: PropertyDefinitionInput) -> bool:
+def _rule_constrains(
+    category: core_models.Category, prop: PropertyDefinitionInput
+) -> bool:
     """Whether this property's fold must bypass the cached org-grain vector.
 
     True when the property carries its own `rule.evidence`, or the owning
@@ -523,7 +601,10 @@ def _rule_constrains(category: core_models.Category, prop: PropertyDefinitionInp
     """
     if getattr(prop.rule, "evidence", None) is not None:
         return True
-    return selector_module.trust_predicate(category.definition, kind="MEASUREMENT") is not None
+    return (
+        selector_module.trust_predicate(category.definition, kind="MEASUREMENT")
+        is not None
+    )
 
 
 def _scoped_state(
@@ -554,7 +635,9 @@ def _scoped_state(
     if not structure_ids:
         return None
 
-    metric_q, standing_predicate = selector_module.metric_scope(category.definition, rule)
+    metric_q, standing_predicate = selector_module.metric_scope(
+        category.definition, rule
+    )
     metrics = claims_module.standing(
         evidence_models.Metric.objects.for_organization(graph.organization).filter(
             metric_q,
@@ -583,7 +666,11 @@ def _scoped_state(
     return state_module.fold(metrics, vector)
 
 
-def _observation_window(graph: core_models.Graph, claim_ref: str | Iterable[str], category: core_models.Category) -> dict[str, JSONValue]:
+def _observation_window(
+    graph: core_models.Graph,
+    claim_ref: str | Iterable[str],
+    category: core_models.Category,
+) -> dict[str, JSONValue]:
     """When the evidence behind this node was observed.
 
     `valid_from` and `valid_to` are read by six GraphQL fields that have always
@@ -604,14 +691,21 @@ def _observation_window(graph: core_models.Graph, claim_ref: str | Iterable[str]
     # property's `rule.evidence` — the per-property windows are the
     # `__stat__X__from/to` statistics, which inherit the rule in
     # `_property_statistics`.
-    trust = selector_module.trust_filter(category.definition, kind="MEASUREMENT", asserted_at_column="asserted_at", include_metric_fields=True)
+    trust = selector_module.trust_filter(
+        category.definition,
+        kind="MEASUREMENT",
+        asserted_at_column="asserted_at",
+        include_metric_fields=True,
+    )
     window = claims_module.standing(
         evidence_models.Metric.objects.for_organization(graph.organization).filter(
             trust,
             structure_id__in=structure_ids,
         ),
         "metric",
-        predicate=selector_module.trust_predicate(category.definition, kind="MEASUREMENT"),
+        predicate=selector_module.trust_predicate(
+            category.definition, kind="MEASUREMENT"
+        ),
     ).aggregate(earliest=Min("observed_at"), latest=Max("observed_at"))
 
     return {
@@ -620,7 +714,9 @@ def _observation_window(graph: core_models.Graph, claim_ref: str | Iterable[str]
     }
 
 
-def _widen_window(left: dict[str, JSONValue], right: dict[str, JSONValue]) -> dict[str, JSONValue]:
+def _widen_window(
+    left: dict[str, JSONValue], right: dict[str, JSONValue]
+) -> dict[str, JSONValue]:
     """The observation window over two categories' evidence: earliest from, latest to (RFC 0019).
 
     ISO strings compare as timestamps — `_observation_window` renders them in
@@ -630,9 +726,20 @@ def _widen_window(left: dict[str, JSONValue], right: dict[str, JSONValue]) -> di
         return dict(right)
     if not right:
         return dict(left)
-    froms = [value for value in (left.get("valid_from"), right.get("valid_from")) if value is not None]
-    tos = [value for value in (left.get("valid_to"), right.get("valid_to")) if value is not None]
-    return {"valid_from": min(froms) if froms else None, "valid_to": max(tos) if tos else None}
+    froms = [
+        value
+        for value in (left.get("valid_from"), right.get("valid_from"))
+        if value is not None
+    ]
+    tos = [
+        value
+        for value in (left.get("valid_to"), right.get("valid_to"))
+        if value is not None
+    ]
+    return {
+        "valid_from": min(froms) if froms else None,
+        "valid_to": max(tos) if tos else None,
+    }
 
 
 def project(
@@ -663,7 +770,11 @@ def project(
     schema_version = active_schema.hash if active_schema else None
 
     refs = [str(ref) for ref in instance_refs]
-    nodes = list(evidence_models.Instance.objects.for_organization(graph.organization).filter(id__in=refs))
+    nodes = list(
+        evidence_models.Instance.objects.for_organization(graph.organization).filter(
+            id__in=refs
+        )
+    )
     # Which categories a node projects under is this graph's question to answer,
     # and the properties are theirs. Resolved once for the batch rather than per
     # node.
@@ -729,7 +840,9 @@ def project(
         for category in categories:
             values.update(derive_properties(graph, members, category))
             values.update(_property_statistics(graph, members, category))
-            window = _widen_window(window, _observation_window(graph, members, category))
+            window = _widen_window(
+                window, _observation_window(graph, members, category)
+            )
         values.update(window)
         values["__schema_version"] = schema_version
         # No `__last_derived` any more. It was a wall-clock millisecond on every
@@ -762,7 +875,9 @@ def project(
 #: traversal sees the connection once while the evidence base keeps both claims.
 #: Collapsing them at write time instead would make agreement uncountable, and
 #: keeping them apart in AGE would make every path query return duplicates.
-def proposition_key(link: evidence_models.Link, canon: Mapping[str, str] | None = None) -> tuple[str, str, uuid.UUID | None]:
+def proposition_key(
+    link: evidence_models.Link, canon: Mapping[str, str] | None = None
+) -> tuple[str, str, uuid.UUID | None]:
     """What makes two relation assertions claims about the same edge.
 
     The two endpoints and the *word* — not a graph's category for it. Two views
@@ -778,7 +893,9 @@ def proposition_key(link: evidence_models.Link, canon: Mapping[str, str] | None 
     return (canon.get(source, source), canon.get(target, target), link.term_id)
 
 
-def representatives_for(controller: DrawingHost, graph: core_models.Graph, refs: Iterable[str]) -> dict[str, str]:
+def representatives_for(
+    controller: DrawingHost, graph: core_models.Graph, refs: Iterable[str]
+) -> dict[str, str]:
     """Member ref → the representative of the individual this view draws it as.
 
     Asked of the drawing — the one legitimate cache read on the write path,
@@ -793,7 +910,9 @@ def representatives_for(controller: DrawingHost, graph: core_models.Graph, refs:
     return {ref: str(record.properties["id"]) for ref, record in records.items()}
 
 
-def _admitted_by(categories: Iterable[core_models.Category], base: QuerySet[evidence_models.Link]) -> dict[int, list[evidence_models.Link]]:
+def _admitted_by(
+    categories: Iterable[core_models.Category], base: QuerySet[evidence_models.Link]
+) -> dict[int, list[evidence_models.Link]]:
     """Each category → the standing claims from `base` it admits, under its own rule.
 
     The one implementation of "which claims draw this category's edges" (RFC 0009):
@@ -809,17 +928,32 @@ def _admitted_by(categories: Iterable[core_models.Category], base: QuerySet[evid
     for category in categories:
         links: dict[uuid.UUID, evidence_models.Link] = {}
         if category.definition:
-            claims = base.filter(selector_module.classification_filter(category.definition), term__kind=str(category.kind))
-            predicate = selector_module.trust_predicate(category.definition, kind="EXISTENCE")
-            links.update((link.pk, link) for link in claims_module.standing(claims, "link", predicate=predicate).select_related("term"))
+            claims = base.filter(
+                selector_module.classification_filter(category.definition),
+                term__kind=str(category.kind),
+            )
+            predicate = selector_module.trust_predicate(
+                category.definition, kind="EXISTENCE"
+            )
+            links.update(
+                (link.pk, link)
+                for link in claims_module.standing(
+                    claims, "link", predicate=predicate
+                ).select_related("term")
+            )
         if selector_module.admits_own_word(category):
             own = base.filter(term_id=category.term_id)
-            links.update((link.pk, link) for link in claims_module.standing(own, "link").select_related("term"))
+            links.update(
+                (link.pk, link)
+                for link in claims_module.standing(own, "link").select_related("term")
+            )
         admitted[category] = list(links.values())
     return admitted
 
 
-def admitting_categories(categories: Iterable[core_models.Category], base: QuerySet[evidence_models.Link]) -> dict[uuid.UUID, tuple[evidence_models.Link, list[core_models.Category]]]:
+def admitting_categories(
+    categories: Iterable[core_models.Category], base: QuerySet[evidence_models.Link]
+) -> dict[uuid.UUID, tuple[evidence_models.Link, list[core_models.Category]]]:
     """Link pk → `(link, every category admitting it)`, over `base`.
 
     A claim is drawn under **every** category that admits it — edges included
@@ -836,15 +970,27 @@ def admitting_categories(categories: Iterable[core_models.Category], base: Query
 
 def relation_categories(graph: core_models.Graph) -> list[core_models.RelationCategory]:
     """This view's relation categories that declare a word."""
-    return list(core_models.RelationCategory.objects.filter(graph=graph, term_id__isnull=False))
+    return list(
+        core_models.RelationCategory.objects.filter(graph=graph, term_id__isnull=False)
+    )
 
 
 def event_categories(graph: core_models.Graph) -> list[core_models.Category]:
     """This view's event categories that declare a word, both kinds."""
-    return list(core_models.NaturalEventCategory.objects.filter(graph=graph, term_id__isnull=False)) + list(core_models.ProtocolEventCategory.objects.filter(graph=graph, term_id__isnull=False))
+    return list(
+        core_models.NaturalEventCategory.objects.filter(
+            graph=graph, term_id__isnull=False
+        )
+    ) + list(
+        core_models.ProtocolEventCategory.objects.filter(
+            graph=graph, term_id__isnull=False
+        )
+    )
 
 
-def categories_drawing(graph: core_models.Graph, kind: str) -> list[core_models.Category]:
+def categories_drawing(
+    graph: core_models.Graph, kind: str
+) -> list[core_models.Category]:
     """The categories of this view that can draw a link of `kind`."""
     if kind == evidence_models.Link.Kind.RELATION:
         return relation_categories(graph)
@@ -856,22 +1002,41 @@ def categories_drawing(graph: core_models.Graph, kind: str) -> list[core_models.
 def active_relation_links(graph: core_models.Graph) -> list[evidence_models.Link]:
     """Every live relation claim this graph projects — admitted by at least one of
     its relation categories, under that category's rule (RFC 0009)."""
-    base = evidence_models.Link.objects.for_organization(graph.organization).filter(kind=evidence_models.Link.Kind.RELATION)
-    return [link for link, _ in admitting_categories(relation_categories(graph), base).values()]
+    base = evidence_models.Link.objects.for_organization(graph.organization).filter(
+        kind=evidence_models.Link.Kind.RELATION
+    )
+    return [
+        link
+        for link, _ in admitting_categories(relation_categories(graph), base).values()
+    ]
 
 
-def structure_relation_categories(graph: core_models.Graph) -> list[core_models.StructureRelationCategory]:
+def structure_relation_categories(
+    graph: core_models.Graph,
+) -> list[core_models.StructureRelationCategory]:
     """This view's structure-relation categories that declare a word."""
-    return list(core_models.StructureRelationCategory.objects.filter(graph=graph, term_id__isnull=False))
+    return list(
+        core_models.StructureRelationCategory.objects.filter(
+            graph=graph, term_id__isnull=False
+        )
+    )
 
 
 def graphs_drawing_structures(organization: Organization) -> list[core_models.Graph]:
     """Every view of the organization that can draw a structure relation, in a stable order."""
-    ids = core_models.StructureRelationCategory.objects.filter(graph__organization=organization, term_id__isnull=False).values_list("graph_id", flat=True).distinct()
+    ids = (
+        core_models.StructureRelationCategory.objects.filter(
+            graph__organization=organization, term_id__isnull=False
+        )
+        .values_list("graph_id", flat=True)
+        .distinct()
+    )
     return list(core_models.Graph.objects.filter(pk__in=list(ids)).order_by("pk"))
 
 
-def _end_admits(end: object, identifier: str, mounted: Mapping[str, core_models.StructureCategory]) -> bool:
+def _end_admits(
+    end: object, identifier: str, mounted: Mapping[str, core_models.StructureCategory]
+) -> bool:
     """Whether one end of a structure-relation category admits a structure of ``identifier``.
 
     It must be mounted (RFC 0027: it is drawn under the view's STRUCTURE category for it),
@@ -886,7 +1051,10 @@ def _end_admits(end: object, identifier: str, mounted: Mapping[str, core_models.
 def admitted_structure_relations(
     graph: core_models.Graph,
     base: QuerySet[evidence_models.Link],
-) -> tuple[dict[uuid.UUID, tuple[evidence_models.Link, list[core_models.Category]]], dict[str, evidence_models.Structure]]:
+) -> tuple[
+    dict[uuid.UUID, tuple[evidence_models.Link, list[core_models.Category]]],
+    dict[str, evidence_models.Structure],
+]:
     """The structure-relation claims from ``base`` this view draws, and their standing endpoints.
 
     A claim is drawn under every structure-relation category that admits it (RFC 0027):
@@ -907,19 +1075,39 @@ def admitted_structure_relations(
     if not admitted:
         return {}, {}
     mounted = core_models.mounted_structure_categories(graph)
-    refs = {str(ref) for link, _ in admitted.values() for ref in (link.source_ref, link.target_ref)}
-    standing = {str(row.pk): row for row in claims_module.standing(evidence_models.Structure.objects.for_organization(graph.organization).filter(id__in=refs), "structure")}
+    refs = {
+        str(ref)
+        for link, _ in admitted.values()
+        for ref in (link.source_ref, link.target_ref)
+    }
+    standing = {
+        str(row.pk): row
+        for row in claims_module.standing(
+            evidence_models.Structure.objects.for_organization(
+                graph.organization
+            ).filter(id__in=refs),
+            "structure",
+        )
+    }
 
     out: dict[uuid.UUID, tuple[evidence_models.Link, list[core_models.Category]]] = {}
     structures: dict[str, evidence_models.Structure] = {}
     for pk, (link, admitting) in admitted.items():
-        source, target = standing.get(str(link.source_ref)), standing.get(str(link.target_ref))
+        source, target = (
+            standing.get(str(link.source_ref)),
+            standing.get(str(link.target_ref)),
+        )
         if source is None or target is None:
             continue
         keep = [
             category
             for category in admitting
-            if _end_admits(category.source_definition_model, str(source.identifier), mounted) and _end_admits(category.target_definition_model, str(target.identifier), mounted)
+            if _end_admits(
+                category.source_definition_model, str(source.identifier), mounted
+            )
+            and _end_admits(
+                category.target_definition_model, str(target.identifier), mounted
+            )
         ]
         if keep:
             out[pk] = (link, keep)
@@ -928,7 +1116,11 @@ def admitted_structure_relations(
     return out, structures
 
 
-def project_structure_relations(controller: DrawingHost, graph: core_models.Graph, links: Iterable[evidence_models.Link]) -> tuple[int, int]:
+def project_structure_relations(
+    controller: DrawingHost,
+    graph: core_models.Graph,
+    links: Iterable[evidence_models.Link],
+) -> tuple[int, int]:
     """Draw these structure-relation claims: their endpoint structures, then their edges.
 
     A structure is a vertex only where an admitted claim touches it, labelled by the
@@ -941,7 +1133,9 @@ def project_structure_relations(controller: DrawingHost, graph: core_models.Grap
     pks = [link.pk for link in links]
     if not pks:
         return 0, 0
-    base = evidence_models.Link.objects.for_organization(graph.organization).filter(kind=evidence_models.Link.Kind.STRUCTURE_RELATION, pk__in=pks)
+    base = evidence_models.Link.objects.for_organization(graph.organization).filter(
+        kind=evidence_models.Link.Kind.STRUCTURE_RELATION, pk__in=pks
+    )
     admitted, structures = admitted_structure_relations(graph, base)
     if not admitted:
         return 0, 0
@@ -949,8 +1143,14 @@ def project_structure_relations(controller: DrawingHost, graph: core_models.Grap
     mounted = core_models.mounted_structure_categories(graph)
     for ref, structure in sorted(structures.items()):
         category = mounted[str(structure.identifier)]
-        controller.projector.draw_node(graph, ref, [(category.age_name, category.pk)], "STRUCTURE", [ref])
-        controller.projector.write_properties(graph, ref, {"identifier": str(structure.identifier), "object": str(structure.object)})
+        controller.projector.draw_node(
+            graph, ref, [(category.age_name, category.pk)], "STRUCTURE", [ref]
+        )
+        controller.projector.write_properties(
+            graph,
+            ref,
+            {"identifier": str(structure.identifier), "object": str(structure.object)},
+        )
 
     grouped: dict[tuple[str, str, int], tuple[core_models.Category, int]] = {}
     for link, categories in admitted.values():
@@ -960,12 +1160,20 @@ def project_structure_relations(controller: DrawingHost, graph: core_models.Grap
 
     edges = 0
     for (source_ref, target_ref, _), (category, count) in sorted(grouped.items()):
-        if controller.projector.draw_edge(graph, source_ref, target_ref, category.age_name, {"category_id": category.pk, "__assertion_count": count}):
+        if controller.projector.draw_edge(
+            graph,
+            source_ref,
+            target_ref,
+            category.age_name,
+            {"category_id": category.pk, "__assertion_count": count},
+        ):
             edges += 1
     return len(structures), edges
 
 
-def project_structure_refs(controller: DrawingHost, graph: core_models.Graph, refs: Iterable[str]) -> tuple[int, int]:
+def project_structure_refs(
+    controller: DrawingHost, graph: core_models.Graph, refs: Iterable[str]
+) -> tuple[int, int]:
     """Make this view's drawing of these structures equal what a rebuild would draw.
 
     The structure half of `converge`. The set widens one hop, to every structure a
@@ -979,14 +1187,27 @@ def project_structure_refs(controller: DrawingHost, graph: core_models.Graph, re
     refs = {str(ref) for ref in refs}
     if not refs:
         return 0, 0
-    claims = evidence_models.Link.objects.for_organization(graph.organization).filter(kind=evidence_models.Link.Kind.STRUCTURE_RELATION)
-    touching = claims.filter(Q(source_ref__in=refs) | Q(target_ref__in=refs)).values_list("source_ref", "target_ref")
+    claims = evidence_models.Link.objects.for_organization(graph.organization).filter(
+        kind=evidence_models.Link.Kind.STRUCTURE_RELATION
+    )
+    touching = claims.filter(
+        Q(source_ref__in=refs) | Q(target_ref__in=refs)
+    ).values_list("source_ref", "target_ref")
     scope = refs | {str(ref) for pair in touching for ref in pair}
-    scope = {str(pk) for pk in evidence_models.Structure.all_objects.filter(organization=graph.organization, id__in=scope).values_list("id", flat=True)}
+    scope = {
+        str(pk)
+        for pk in evidence_models.Structure.all_objects.filter(
+            organization=graph.organization, id__in=scope
+        ).values_list("id", flat=True)
+    }
     if not scope:
         return 0, 0
     controller.projector.erase_nodes(graph, scope)
-    return project_structure_relations(controller, graph, claims.filter(Q(source_ref__in=scope) | Q(target_ref__in=scope)))
+    return project_structure_relations(
+        controller,
+        graph,
+        claims.filter(Q(source_ref__in=scope) | Q(target_ref__in=scope)),
+    )
 
 
 def project_edges(
@@ -1018,7 +1239,9 @@ def project_edges(
     if not links:
         return 0
 
-    base = evidence_models.Link.objects.for_organization(graph.organization).filter(kind=evidence_models.Link.Kind.RELATION, pk__in=[link.pk for link in links])
+    base = evidence_models.Link.objects.for_organization(graph.organization).filter(
+        kind=evidence_models.Link.Kind.RELATION, pk__in=[link.pk for link in links]
+    )
     admitted = admitting_categories(relation_categories(graph), base)
     for link in links:
         if link.pk not in admitted:
@@ -1026,14 +1249,31 @@ def project_edges(
             # that speaks it refuses this claim under its rule — so there is no
             # label to draw it under, and an unlabelled edge is unreachable by
             # every query the schema generates.
-            logger.warning("Relation link %s is admitted by no relation category of graph #%s; it cannot be projected here.", link.pk, graph.pk)
+            logger.warning(
+                "Relation link %s is admitted by no relation category of graph #%s; it cannot be projected here.",
+                link.pk,
+                graph.pk,
+            )
 
-    canon = representatives_for(controller, graph, [ref for link, _ in admitted.values() for ref in (link.source_ref, link.target_ref)])
-    grouped: dict[tuple[str, str, uuid.UUID | None], tuple[core_models.Category, list[evidence_models.Link]]] = {}
+    canon = representatives_for(
+        controller,
+        graph,
+        [
+            ref
+            for link, _ in admitted.values()
+            for ref in (link.source_ref, link.target_ref)
+        ],
+    )
+    grouped: dict[
+        tuple[str, str, uuid.UUID | None],
+        tuple[core_models.Category, list[evidence_models.Link]],
+    ] = {}
     for link, categories in admitted.values():
         source_ref, target_ref, _ = proposition_key(link, canon)
         for category in categories:
-            grouped.setdefault((source_ref, target_ref, category.pk), (category, []))[1].append(link)
+            grouped.setdefault((source_ref, target_ref, category.pk), (category, []))[
+                1
+            ].append(link)
 
     projected = 0
     for (source_ref, target_ref, _), (category, assertions) in grouped.items():
@@ -1068,7 +1308,9 @@ def project_edges(
     return projected
 
 
-def property_conflicts(categories: Iterable[core_models.Category]) -> dict[frozenset[int], str]:
+def property_conflicts(
+    categories: Iterable[core_models.Category],
+) -> dict[frozenset[int], str]:
     """Which pairs of categories cannot draw one node together, and why (RFC 0019).
 
     A node drawn under two categories carries the union of their properties, so
@@ -1085,17 +1327,23 @@ def property_conflicts(categories: Iterable[core_models.Category]) -> dict[froze
     for index, (left, left_props) in enumerate(listed):
         for right, right_props in listed[index + 1 :]:
             for key in sorted(set(left_props) & set(right_props)):
-                same_property = left_props[key].model_dump() == right_props[key].model_dump()
+                same_property = (
+                    left_props[key].model_dump() == right_props[key].model_dump()
+                )
                 same_rule = (left.definition or None) == (right.definition or None)
                 if same_property and same_rule:
                     continue
                 first, second = sorted((left.key, right.key))
-                conflicts[frozenset((left.pk, right.pk))] = f"property {key!r} is defined by both {first} and {second} and would not mean one thing on one vertex"
+                conflicts[frozenset((left.pk, right.pk))] = (
+                    f"property {key!r} is defined by both {first} and {second} and would not mean one thing on one vertex"
+                )
                 break
     return conflicts
 
 
-def resolve_categories(graph: core_models.Graph, nodes: list[evidence_models.Instance]) -> tuple[dict[str, list[core_models.Category]], dict[str, str]]:
+def resolve_categories(
+    graph: core_models.Graph, nodes: list[evidence_models.Instance]
+) -> tuple[dict[str, list[core_models.Category]], dict[str, str]]:
     """Which categories each node projects under, and why some project under none.
 
     Returns `(ref -> categories, ref -> reason)`. A ref appears in exactly one of
@@ -1145,12 +1393,18 @@ def resolve_categories(graph: core_models.Graph, nodes: list[evidence_models.Ins
     # This graph's categories, indexed by the organization term each declares.
     # That index is the whole join: a claim names a word, and this is where the
     # word becomes *this view's* rule for it.
-    categories = list(core_models.Category.objects.filter(graph=graph).select_related("term"))
+    categories = list(
+        core_models.Category.objects.filter(graph=graph).select_related("term")
+    )
     defined = [category for category in categories if category.definition]
     by_term = {category.term_id: category for category in categories}
     # The categories a claim under their own word admits — every primitive one,
     # and every defined one whose rules do not name its word (RFC 0026).
-    own_word = {category.pk for category in categories if selector_module.admits_own_word(category)}
+    own_word = {
+        category.pk
+        for category in categories
+        if selector_module.admits_own_word(category)
+    }
 
     # The unfolded claim base, built once. A defined category folds the claims
     # *and their standings* under its own clauses; a primitive category folds
@@ -1175,11 +1429,18 @@ def resolve_categories(graph: core_models.Graph, nodes: list[evidence_models.Ins
     matched_by_definition: dict[int, set[str]] = {}
     for category in defined:
         matched = claims_module.standing(
-            claim_base.filter(selector_module.classification_filter(category.definition), term__kind=str(category.kind)),
+            claim_base.filter(
+                selector_module.classification_filter(category.definition),
+                term__kind=str(category.kind),
+            ),
             "link",
-            predicate=selector_module.trust_predicate(category.definition, kind="CLASSIFICATION"),
+            predicate=selector_module.trust_predicate(
+                category.definition, kind="CLASSIFICATION"
+            ),
         )
-        matched_by_definition[category.pk] = {str(ref) for ref in matched.values_list("source_ref", flat=True)}
+        matched_by_definition[category.pk] = {
+            str(ref) for ref in matched.values_list("source_ref", flat=True)
+        }
 
     by_pk = {category.pk: category for category in categories}
     conflicts = property_conflicts(categories)
@@ -1213,10 +1474,21 @@ def resolve_categories(graph: core_models.Graph, nodes: list[evidence_models.Ins
             admitted[own.pk] = own
 
         if not admitted:
-            skipped[ref] = "no category in this graph admits it: every term it was asserted as is defined, and none of those definitions match"
+            skipped[ref] = (
+                "no category in this graph admits it: every term it was asserted as is defined, and none of those definitions match"
+            )
             continue
 
-        conflict = next((conflicts[pair] for pair in (frozenset(pks) for pks in combinations(sorted(admitted), 2)) if pair in conflicts), None)
+        conflict = next(
+            (
+                conflicts[pair]
+                for pair in (
+                    frozenset(pks) for pks in combinations(sorted(admitted), 2)
+                )
+                if pair in conflicts
+            ),
+            None,
+        )
         if conflict is not None:
             # Reported, not logged. This is read by the *read* paths too
             # (`refs_admitted_by`), and a warning here would fire on every list
@@ -1245,15 +1517,23 @@ def resolve_categories(graph: core_models.Graph, nodes: list[evidence_models.Ins
             "node",
             refs,
             # Over `Standing` rows: world time is the standing's own `at`.
-            selector_module.trust_filter(category.definition, kind="EXISTENCE", observed_at_column="at"),
+            selector_module.trust_filter(
+                category.definition, kind="EXISTENCE", observed_at_column="at"
+            ),
         )
         for ref in retracted:
-            remaining = [category for category in resolved.get(ref, []) if category.pk != category_pk]
+            remaining = [
+                category
+                for category in resolved.get(ref, [])
+                if category.pk != category_pk
+            ]
             if remaining:
                 resolved[ref] = remaining
             else:
                 resolved.pop(ref, None)
-                skipped[ref] = "the claims this node's categories count say it does not exist"
+                skipped[ref] = (
+                    "the claims this node's categories count say it does not exist"
+                )
 
     return resolved, skipped
 
@@ -1285,18 +1565,30 @@ def refs_admitted_by(category: core_models.Category) -> set[str]:
     # so the wordless-matches-everything branch is gone with the clause shape.
     # A category admits its own word unless its rules name it (RFC 0026), so
     # the own-word claims are candidates beside whatever the rules derive from.
-    asserted_as = selector_module.asserted_as_keys(category.definition) if category.definition else []
+    asserted_as = (
+        selector_module.asserted_as_keys(category.definition)
+        if category.definition
+        else []
+    )
     words = Q(term__key__in=asserted_as) if asserted_as else Q(pk__in=[])
     if selector_module.admits_own_word(category):
         words |= Q(term_id=category.term_id)
     claimed = standing_claims.filter(words)
     claimed_refs = {str(ref) for ref in claimed.values_list("source_ref", flat=True)}
 
-    candidates = list(selector_module.instances_for(graph).filter(Q(term_id=category.term_id) | Q(id__in=claimed_refs)).select_related("term"))
+    candidates = list(
+        selector_module.instances_for(graph)
+        .filter(Q(term_id=category.term_id) | Q(id__in=claimed_refs))
+        .select_related("term")
+    )
     resolved, _ = resolve_categories(graph, candidates)
 
     # A node counts in every category it holds (RFC 0019).
-    return {ref for ref, drawn_as in resolved.items() if any(drawn.pk == category.pk for drawn in drawn_as)}
+    return {
+        ref
+        for ref, drawn_as in resolved.items()
+        if any(drawn.pk == category.pk for drawn in drawn_as)
+    }
 
 
 def representatives_admitted_by(category: core_models.Category) -> set[str]:
@@ -1314,7 +1606,9 @@ def representatives_admitted_by(category: core_models.Category) -> set[str]:
     """
 
     admitted = refs_admitted_by(category)
-    components = identity_module.component_refs_for_view(category.graph, sorted(admitted))
+    components = identity_module.component_refs_for_view(
+        category.graph, sorted(admitted)
+    )
     return {min(str(member) for member in members) for members in components.values()}
 
 
@@ -1364,7 +1658,9 @@ def representative_in_graph(graph: core_models.Graph, ref: str) -> str:
     same whether or not the projection has caught up.
     """
 
-    members = identity_module.component_refs_for_view(graph, [str(ref)]).get(str(ref)) or [str(ref)]
+    members = identity_module.component_refs_for_view(graph, [str(ref)]).get(
+        str(ref)
+    ) or [str(ref)]
     return min(str(member) for member in members)
 
 
@@ -1379,7 +1675,9 @@ PARTICIPATION_KINDS = (
 )
 
 
-def edge_pattern_for(category: core_models.Category, link: evidence_models.Link) -> tuple[str, bool]:
+def edge_pattern_for(
+    category: core_models.Category, link: evidence_models.Link
+) -> tuple[str, bool]:
     """How this graph draws one link: `(edge label, does it run target → source)`.
 
     The single answer to "what does this claim look like in AGE", shared by the
@@ -1403,16 +1701,25 @@ def edge_pattern_for(category: core_models.Category, link: evidence_models.Link)
     Finding nothing is not an error at either call site, so the mismatch could not
     surface as a failure — only as a permanently empty result.
     """
-    if link.kind in (evidence_models.Link.Kind.PARTICIPATES_AS_INPUT, evidence_models.Link.Kind.PARTICIPATES_AS_OUTPUT):
+    if link.kind in (
+        evidence_models.Link.Kind.PARTICIPATES_AS_INPUT,
+        evidence_models.Link.Kind.PARTICIPATES_AS_OUTPUT,
+    ):
         event_category = category.as_kind()
         is_input = link.kind == evidence_models.Link.Kind.PARTICIPATES_AS_INPUT
-        label = event_category.AGE_INPUT_EDGE if is_input else event_category.AGE_OUTPUT_EDGE
+        label = (
+            event_category.AGE_INPUT_EDGE
+            if is_input
+            else event_category.AGE_OUTPUT_EDGE
+        )
         return str(label), not is_input
 
     return str(category.age_name), False
 
 
-def participation_key(link: evidence_models.Link, canon: Mapping[str, str] | None = None) -> tuple[str, str, str, uuid.UUID | None]:
+def participation_key(
+    link: evidence_models.Link, canon: Mapping[str, str] | None = None
+) -> tuple[str, str, str, uuid.UUID | None]:
     """What makes two participation claims claims about the same thing.
 
     The entity, the event, which side, and the role. Not the category: an event
@@ -1422,14 +1729,23 @@ def participation_key(link: evidence_models.Link, canon: Mapping[str, str] | Non
     """
     canon = canon or {}
     source, target = str(link.source_ref), str(link.target_ref)
-    return (canon.get(source, source), canon.get(target, target), str(link.kind), link.role)
+    return (
+        canon.get(source, source),
+        canon.get(target, target),
+        str(link.kind),
+        link.role,
+    )
 
 
 def active_participation_links(graph: core_models.Graph) -> list[evidence_models.Link]:
     """Every live participation claim this graph projects — admitted by at least
     one of its event categories, under that category's rule (RFC 0009)."""
-    base = evidence_models.Link.objects.for_organization(graph.organization).filter(kind__in=PARTICIPATION_KINDS)
-    return [link for link, _ in admitting_categories(event_categories(graph), base).values()]
+    base = evidence_models.Link.objects.for_organization(graph.organization).filter(
+        kind__in=PARTICIPATION_KINDS
+    )
+    return [
+        link for link, _ in admitting_categories(event_categories(graph), base).values()
+    ]
 
 
 def project_participation(
@@ -1455,17 +1771,36 @@ def project_participation(
     # of the event *kind* (`AGE_INPUT_EDGE` / `AGE_OUTPUT_EDGE`), not of the
     # category, so every category admitting a claim draws the same edge — the
     # first names it, and the claims are grouped once per drawn edge.
-    base = evidence_models.Link.objects.for_organization(graph.organization).filter(kind__in=PARTICIPATION_KINDS, pk__in=[link.pk for link in links])
+    base = evidence_models.Link.objects.for_organization(graph.organization).filter(
+        kind__in=PARTICIPATION_KINDS, pk__in=[link.pk for link in links]
+    )
     admitted = admitting_categories(event_categories(graph), base)
     for link in links:
         if link.pk not in admitted:
-            logger.warning("Participation link %s is admitted by no event category of graph #%s; nothing says which edge label it projects to.", link.pk, graph.pk)
+            logger.warning(
+                "Participation link %s is admitted by no event category of graph #%s; nothing says which edge label it projects to.",
+                link.pk,
+                graph.pk,
+            )
 
     projected = 0
-    canon = representatives_for(controller, graph, [ref for link, _ in admitted.values() for ref in (link.source_ref, link.target_ref)])
-    grouped: dict[tuple[str, str, str, uuid.UUID | None], tuple[core_models.Category, list[evidence_models.Link]]] = {}
+    canon = representatives_for(
+        controller,
+        graph,
+        [
+            ref
+            for link, _ in admitted.values()
+            for ref in (link.source_ref, link.target_ref)
+        ],
+    )
+    grouped: dict[
+        tuple[str, str, str, uuid.UUID | None],
+        tuple[core_models.Category, list[evidence_models.Link]],
+    ] = {}
     for link, categories in admitted.values():
-        grouped.setdefault(participation_key(link, canon), (categories[0], []))[1].append(link)
+        grouped.setdefault(participation_key(link, canon), (categories[0], []))[
+            1
+        ].append(link)
 
     for (source_ref, target_ref, kind, role), (category, claims) in grouped.items():
         # A foreign key hands back a base `Category`, which carries every field
@@ -1481,7 +1816,9 @@ def project_participation(
 
         entity_uuid = str(source_ref)
         event_uuid = str(target_ref)
-        left, right = (entity_uuid, event_uuid) if is_input else (event_uuid, entity_uuid)
+        left, right = (
+            (entity_uuid, event_uuid) if is_input else (event_uuid, entity_uuid)
+        )
 
         # Participation is contestable like everything else: two people claiming
         # the same cell went into the same event are two rows and one edge, and
@@ -1491,7 +1828,11 @@ def project_participation(
             left,
             right,
             label,
-            {"role": role, "category_id": category.pk, "__assertion_count": len(claims)},
+            {
+                "role": role,
+                "category_id": category.pk,
+                "__assertion_count": len(claims),
+            },
         )
 
         # See `project_edges`: an endpoint not in this projection draws nothing,
@@ -1529,7 +1870,12 @@ def _write_properties(
     return controller.projector.write_properties(graph, str(claim_ref), values)
 
 
-def create_vertex(controller: DrawingHost, graph: core_models.Graph, nodes: list[evidence_models.Instance], categories: Sequence[core_models.Category]) -> str:
+def create_vertex(
+    controller: DrawingHost,
+    graph: core_models.Graph,
+    nodes: list[evidence_models.Instance],
+    categories: Sequence[core_models.Category],
+) -> str:
     """Draw one individual into the projection: one vertex for these member instances.
 
     Shared by `rebuild` and `reproject_refs` so that a replayed vertex and a
@@ -1560,18 +1906,27 @@ def create_vertex(controller: DrawingHost, graph: core_models.Graph, nodes: list
     members = sorted(str(node.ref) for node in nodes)
     representative = members[0]
     by_pk = {category.pk: category for category in categories}
-    labelled = [(category.age_name, category.pk) for _, category in sorted(by_pk.items())]
+    labelled = [
+        (category.age_name, category.pk) for _, category in sorted(by_pk.items())
+    ]
     # Converging: drawing an individual that is already drawn — `attest_node` on
     # a standing node, `project_all` over a populated namespace, an incremental
     # replay — leaves one vertex. One whose *label* or *membership* moved still
     # needs its old vertex cleared first; `reproject_refs` does that, `rebuild`
     # drops the namespace, and `project_all` relies on one of the two having
     # happened.
-    controller.projector.draw_node(graph, representative, labelled, str(nodes[0].kind).upper(), members)
+    controller.projector.draw_node(
+        graph, representative, labelled, str(nodes[0].kind).upper(), members
+    )
     return representative
 
 
-def draw_components(controller: DrawingHost, graph: core_models.Graph, nodes: Iterable[evidence_models.Instance], resolved: Mapping[str, Sequence[core_models.Category]]) -> dict[str, list[str]]:
+def draw_components(
+    controller: DrawingHost,
+    graph: core_models.Graph,
+    nodes: Iterable[evidence_models.Instance],
+    resolved: Mapping[str, Sequence[core_models.Category]],
+) -> dict[str, list[str]]:
     """Draw every individual among the resolved nodes; returns representative → members.
 
     The one place the component fold meets the drawing: `identity.view_components`
@@ -1584,12 +1939,21 @@ def draw_components(controller: DrawingHost, graph: core_models.Graph, nodes: It
     by_ref = {str(node.ref): node for node in nodes}
     components = identity_module.view_components(graph, resolved)
     for representative, members in components.items():
-        categories = {category.pk: category for member in members for category in resolved[member]}
-        create_vertex(controller, graph, [by_ref[member] for member in members], [categories[pk] for pk in sorted(categories)])
+        categories = {
+            category.pk: category for member in members for category in resolved[member]
+        }
+        create_vertex(
+            controller,
+            graph,
+            [by_ref[member] for member in members],
+            [categories[pk] for pk in sorted(categories)],
+        )
     return components
 
 
-def unproject(controller: DrawingHost, graph: core_models.Graph, instance_refs: Iterable[str]) -> int:
+def unproject(
+    controller: DrawingHost, graph: core_models.Graph, instance_refs: Iterable[str]
+) -> int:
     """Remove nodes from the projection. Returns how many vertices went.
 
     The counterpart of :func:`project`, and the node-side analogue of the
@@ -1606,7 +1970,9 @@ def unproject(controller: DrawingHost, graph: core_models.Graph, instance_refs: 
     return controller.projector.erase_nodes(graph, [str(ref) for ref in instance_refs])
 
 
-def reproject_refs(controller: DrawingHost, graph: core_models.Graph, refs: Iterable[str]) -> bool:
+def reproject_refs(
+    controller: DrawingHost, graph: core_models.Graph, refs: Iterable[str]
+) -> bool:
     """Draw these nodes back into the projection, individuals, edges and all.
 
     Everything `rebuild` would do for these nodes, using the same functions —
@@ -1657,15 +2023,27 @@ def project_all(controller: DrawingHost, graph: core_models.Graph) -> DrawCounts
 
     # Edges after nodes: `MATCH (s) ... MATCH (t)` needs both endpoints to exist.
     edges = project_edges(controller, graph, active_relation_links(graph))
-    participations = project_participation(controller, graph, active_participation_links(graph))
+    participations = project_participation(
+        controller, graph, active_participation_links(graph)
+    )
     # Structures after instances, though they share nothing: a structure is a vertex
     # only where an admitted structure relation touches it (RFC 0027).
-    structures, structure_edges = project_structure_relations(controller, graph, evidence_models.Link.objects.for_organization(graph.organization).filter(kind=evidence_models.Link.Kind.STRUCTURE_RELATION))
+    structures, structure_edges = project_structure_relations(
+        controller,
+        graph,
+        evidence_models.Link.objects.for_organization(graph.organization).filter(
+            kind=evidence_models.Link.Kind.STRUCTURE_RELATION
+        ),
+    )
 
     projected = project(controller, graph, list(components))
 
     if skipped:
-        logger.warning("graph #%s: %d node(s) admitted by no category in this graph and left unprojected.", graph.pk, len(skipped))
+        logger.warning(
+            "graph #%s: %d node(s) admitted by no category in this graph and left unprojected.",
+            graph.pk,
+            len(skipped),
+        )
         # Each reason, once, here — where somebody can act on it. `resolve_categories`
         # used to log the ambiguous case itself, which meant every read that consults
         # the rule logged it too.
@@ -1687,7 +2065,9 @@ def project_all(controller: DrawingHost, graph: core_models.Graph) -> DrawCounts
     )
 
 
-def refs_drawn_as(graph: core_models.Graph, category: core_models.Category) -> list[str]:
+def refs_drawn_as(
+    graph: core_models.Graph, category: core_models.Category
+) -> list[str]:
     """The refs this graph currently draws under one category.
 
     Asked of `resolve_categories` rather than of a column, because which category
@@ -1696,7 +2076,11 @@ def refs_drawn_as(graph: core_models.Graph, category: core_models.Category) -> l
     """
     nodes = list(selector_module.instances_for(graph).select_related("term"))
     resolved, _ = resolve_categories(graph, nodes)
-    return [ref for ref, categories in resolved.items() if any(drawn.pk == category.pk for drawn in categories)]
+    return [
+        ref
+        for ref, categories in resolved.items()
+        if any(drawn.pk == category.pk for drawn in categories)
+    ]
 
 
 def rematerialize_category(
@@ -1819,7 +2203,9 @@ def rebuild(controller: DrawingHost, graph: core_models.Graph) -> DrawCounts:
         # an empty namespace and an exception, with nothing left to fall back on.
         # `project_all` resolves again after the drop; one redundant pass is the price
         # of the guarantee, and rebuild is the expensive operation either way.
-        resolve_categories(graph, list(selector_module.instances_for(graph).select_related("term")))
+        resolve_categories(
+            graph, list(selector_module.instances_for(graph).select_related("term"))
+        )
 
         # Marked *before* the drop. A rebuild that dies between here and the end
         # leaves an empty namespace; `REBUILDING` makes the cursor report everything
@@ -1829,9 +2215,16 @@ def rebuild(controller: DrawingHost, graph: core_models.Graph) -> DrawCounts:
         controller.projector.drop_namespace(graph)
         controller.projector.refresh_namespace(graph)
 
-        counts = project_all(controller, graph).with_refolds(claims=claims_current, states=states)
+        counts = project_all(controller, graph).with_refolds(
+            claims=claims_current, states=states
+        )
 
-        watermark.mark_consistent(graph, through_seq=head, schema_hash=watermark.active_schema_hash(graph), rebuilt=True)
+        watermark.mark_consistent(
+            graph,
+            through_seq=head,
+            schema_hash=watermark.active_schema_hash(graph),
+            rebuilt=True,
+        )
         return counts
 
 
@@ -1893,9 +2286,18 @@ def refold_state(organization: Organization) -> int:
         # retracted structure's metrics (`state.refold` → `_structures_informing`),
         # and this fold has to agree with it. It used to filter the metric's own
         # standing only, so a rebuild fed every retracted datum back in.
-        standing_metrics = claims_module.standing(evidence_models.Metric.objects.for_organization(organization), "metric")
-        standing_structures = claims_module.standing(evidence_models.Structure.objects.for_organization(organization), "structure").values("pk")
-        for metric in standing_metrics.filter(structure__in=standing_structures).select_related("structure", "structure__kind", "assertion").order_by("assertion__seq"):
+        standing_metrics = claims_module.standing(
+            evidence_models.Metric.objects.for_organization(organization), "metric"
+        )
+        standing_structures = claims_module.standing(
+            evidence_models.Structure.objects.for_organization(organization),
+            "structure",
+        ).values("pk")
+        for metric in (
+            standing_metrics.filter(structure__in=standing_structures)
+            .select_related("structure", "structure__kind", "assertion")
+            .order_by("assertion__seq")
+        ):
             refs = refs_informed_by(organization, [metric.structure_id])
             if refs:
                 state_module.merge(metric, refs)
@@ -1919,7 +2321,11 @@ def refold_stale(organization: Organization) -> int:
 # ---------------------------------------------------------------------------
 
 
-def touched_refs(organization: Organization, assertion_ids: Iterable[uuid.UUID], since_seq: int | None = None) -> tuple[set[str], bool]:
+def touched_refs(
+    organization: Organization,
+    assertion_ids: Iterable[uuid.UUID],
+    since_seq: int | None = None,
+) -> tuple[set[str], bool]:
     """Every node ref whose drawing one of these assertions could have changed.
 
     Returns ``(refs, saw_same_as)``. The closure is taken per claim table, each
@@ -1955,11 +2361,25 @@ def touched_refs(organization: Organization, assertion_ids: Iterable[uuid.UUID],
     refs: set[str] = set()
     saw_same_as = False
 
-    refs.update(str(pk) for pk in evidence_models.Instance.objects.for_organization(organization).filter(predicate).values_list("id", flat=True))
+    refs.update(
+        str(pk)
+        for pk in evidence_models.Instance.objects.for_organization(organization)
+        .filter(predicate)
+        .values_list("id", flat=True)
+    )
 
-    both = {evidence_models.Link.Kind.RELATION, evidence_models.Link.Kind.STRUCTURE_RELATION, evidence_models.Link.Kind.PARTICIPATES_AS_INPUT, evidence_models.Link.Kind.PARTICIPATES_AS_OUTPUT, *identity_module.IDENTITY_KINDS}
+    both = {
+        evidence_models.Link.Kind.RELATION,
+        evidence_models.Link.Kind.STRUCTURE_RELATION,
+        evidence_models.Link.Kind.PARTICIPATES_AS_INPUT,
+        evidence_models.Link.Kind.PARTICIPATES_AS_OUTPUT,
+        *identity_module.IDENTITY_KINDS,
+    }
     source_side = {evidence_models.Link.Kind.CLASSIFIES}
-    target_side = {evidence_models.Link.Kind.INFORMS, evidence_models.Link.Kind.MEASUREMENT}
+    target_side = {
+        evidence_models.Link.Kind.INFORMS,
+        evidence_models.Link.Kind.MEASUREMENT,
+    }
 
     def _link_refs(links: Iterable[tuple[str, str, str]]) -> None:
         """The `(kind, source_ref, target_ref)` triples of a `values_list`, not `Link` rows — the query is narrowed to three columns on purpose."""
@@ -1975,36 +2395,69 @@ def touched_refs(organization: Organization, assertion_ids: Iterable[uuid.UUID],
             elif kind in target_side:
                 refs.add(str(target_ref))
 
-    _link_refs(evidence_models.Link.objects.for_organization(organization).filter(predicate).values_list("kind", "source_ref", "target_ref"))
+    _link_refs(
+        evidence_models.Link.objects.for_organization(organization)
+        .filter(predicate)
+        .values_list("kind", "source_ref", "target_ref")
+    )
 
-    structure_ids: set[uuid.UUID] = set(evidence_models.Structure.objects.for_organization(organization).filter(predicate).values_list("id", flat=True))
-    structure_ids.update(evidence_models.Metric.objects.for_organization(organization).filter(predicate).values_list("structure_id", flat=True))
+    structure_ids: set[uuid.UUID] = set(
+        evidence_models.Structure.objects.for_organization(organization)
+        .filter(predicate)
+        .values_list("id", flat=True)
+    )
+    structure_ids.update(
+        evidence_models.Metric.objects.for_organization(organization)
+        .filter(predicate)
+        .values_list("structure_id", flat=True)
+    )
 
-    standings = list(evidence_models.Standing.objects.for_organization(organization).filter(predicate).values_list("target_type", "target_id"))
+    standings = list(
+        evidence_models.Standing.objects.for_organization(organization)
+        .filter(predicate)
+        .values_list("target_type", "target_id")
+    )
     by_type: dict[str, set[str]] = {}
     for target_type, target_id in standings:
         by_type.setdefault(str(target_type), set()).add(str(target_id))
     refs.update(by_type.get("node", set()))
     if by_type.get("link"):
-        _link_refs(evidence_models.Link.objects.for_organization(organization).filter(id__in=by_type["link"]).values_list("kind", "source_ref", "target_ref"))
+        _link_refs(
+            evidence_models.Link.objects.for_organization(organization)
+            .filter(id__in=by_type["link"])
+            .values_list("kind", "source_ref", "target_ref")
+        )
     if by_type.get("metric"):
-        structure_ids.update(evidence_models.Metric.objects.for_organization(organization).filter(id__in=by_type["metric"]).values_list("structure_id", flat=True))
+        structure_ids.update(
+            evidence_models.Metric.objects.for_organization(organization)
+            .filter(id__in=by_type["metric"])
+            .values_list("structure_id", flat=True)
+        )
     if by_type.get("structure"):
         structure_ids.update(by_type["structure"])
 
     if structure_ids:
-        refs.update(str(ref) for ref in refs_informed_by(organization, list(structure_ids)))
+        refs.update(
+            str(ref) for ref in refs_informed_by(organization, list(structure_ids))
+        )
         # A structure is drawn itself where a structure relation touches it (RFC 0027), so a
         # structure's standing moves its own vertex too. Only those: a structure no relation
         # names is drawn nowhere, and redrawing it would be work for nothing.
         named = {str(pk) for pk in structure_ids}
-        related = evidence_models.Link.objects.for_organization(organization).filter(kind=evidence_models.Link.Kind.STRUCTURE_RELATION).filter(Q(source_ref__in=named) | Q(target_ref__in=named)).values_list("source_ref", "target_ref")
+        related = (
+            evidence_models.Link.objects.for_organization(organization)
+            .filter(kind=evidence_models.Link.Kind.STRUCTURE_RELATION)
+            .filter(Q(source_ref__in=named) | Q(target_ref__in=named))
+            .values_list("source_ref", "target_ref")
+        )
         refs.update(named & {str(ref) for pair in related for ref in pair})
 
     return refs, saw_same_as
 
 
-def converge(controller: DrawingHost, graph: core_models.Graph, refs: Iterable[str]) -> DrawCounts:
+def converge(
+    controller: DrawingHost, graph: core_models.Graph, refs: Iterable[str]
+) -> DrawCounts:
     """Make this graph's drawing of these nodes equal what a rebuild would draw.
 
     The body of `reproject_refs`; batched so the category resolution and the
@@ -2030,24 +2483,60 @@ def converge(controller: DrawingHost, graph: core_models.Graph, refs: Iterable[s
 
     for record in controller.projector.drawn_nodes(graph, touched).values():
         touched.update(str(member) for member in record.members)
-    for members in identity_module.component_refs_for_view(graph, list(touched)).values():
+    for members in identity_module.component_refs_for_view(
+        graph, list(touched)
+    ).values():
         touched.update(str(member) for member in members)
 
-    nodes = list(evidence_models.Instance.objects.for_organization(graph.organization).filter(id__in=touched).select_related("term"))
+    nodes = list(
+        evidence_models.Instance.objects.for_organization(graph.organization)
+        .filter(id__in=touched)
+        .select_related("term")
+    )
     erased = unproject(controller, graph, touched)
 
     resolved, _ = resolve_categories(graph, nodes)
     components = draw_components(controller, graph, nodes, resolved)
 
-    edges = project_edges(controller, graph, [link for link in active_relation_links(graph) if str(link.source_ref) in touched or str(link.target_ref) in touched])
-    participations = project_participation(controller, graph, [link for link in active_participation_links(graph) if str(link.source_ref) in touched or str(link.target_ref) in touched])
+    edges = project_edges(
+        controller,
+        graph,
+        [
+            link
+            for link in active_relation_links(graph)
+            if str(link.source_ref) in touched or str(link.target_ref) in touched
+        ],
+    )
+    participations = project_participation(
+        controller,
+        graph,
+        [
+            link
+            for link in active_participation_links(graph)
+            if str(link.source_ref) in touched or str(link.target_ref) in touched
+        ],
+    )
     structures, structure_edges = project_structure_refs(controller, graph, touched)
     projected = project(controller, graph, list(components))
 
-    return DrawCounts(nodes=len(resolved), individuals=len(components), edges=edges, participations=participations, structures=structures, structure_edges=structure_edges, projected=projected, erased=erased)
+    return DrawCounts(
+        nodes=len(resolved),
+        individuals=len(components),
+        edges=edges,
+        participations=participations,
+        structures=structures,
+        structure_edges=structure_edges,
+        projected=projected,
+        erased=erased,
+    )
 
 
-def replay(controller: DrawingHost, organization: Organization, *, older_than: datetime.timedelta | None = None) -> ReplayReport:
+def replay(
+    controller: DrawingHost,
+    organization: Organization,
+    *,
+    older_than: datetime.timedelta | None = None,
+) -> ReplayReport:
     """Apply every outstanding assertion of the organization to every consistent graph.
 
     The incremental counterpart of :func:`rebuild`. Organization-scoped by
@@ -2069,7 +2558,9 @@ def replay(controller: DrawingHost, organization: Organization, *, older_than: d
     # `older_than` is the runner's grace: a row younger than that belongs to a
     # request that may still be drawing, and is left for the next pass. Rows
     # are still settled exactly as read.
-    outstanding = projection_models.PendingProjection.objects.filter(organization=organization)
+    outstanding = projection_models.PendingProjection.objects.filter(
+        organization=organization
+    )
     if older_than is not None:
         outstanding = outstanding.filter(created_at__lt=timezone.now() - older_than)
     pending = list(outstanding.select_related("assertion"))
@@ -2085,11 +2576,18 @@ def replay(controller: DrawingHost, organization: Organization, *, older_than: d
         # components the touched nodes sit in — sameness is a property of the
         # component, and `_reproject_claim` redraws all of them for the same reason.
         identity_module.recompute_stale(organization)
-        for members in identity_module.component_refs(organization, list(refs)).values():
+        for members in identity_module.component_refs(
+            organization, list(refs)
+        ).values():
             refs.update(str(ref) for ref in members)
 
-    graphs = list(core_models.Graph.objects.filter(organization=organization).order_by("id"))
-    rows = {row.graph_id: row for row in projection_models.Projection.objects.filter(graph__in=graphs)}
+    graphs = list(
+        core_models.Graph.objects.filter(organization=organization).order_by("id")
+    )
+    rows = {
+        row.graph_id: row
+        for row in projection_models.Projection.objects.filter(graph__in=graphs)
+    }
     processed: list[GraphReplay] = []
     skipped: list[SkippedGraph] = []
 

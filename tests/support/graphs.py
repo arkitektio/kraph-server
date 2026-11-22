@@ -5,7 +5,7 @@ through the API — the door a client uses — and `rebuild` re-derives its draw
 from the log, which is the honesty test every projection property comes down to.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from asgiref.sync import sync_to_async
@@ -20,9 +20,9 @@ from tests.support import rules
 from tests.support.writes import CREATE_GRAPH, execute
 
 #: Three moments the rule examples bound on: before, at, and after "Dec 5".
-DEC5 = datetime(2026, 12, 5, tzinfo=timezone.utc)
-BEFORE = datetime(2026, 11, 1, tzinfo=timezone.utc)
-AFTER = datetime(2026, 12, 20, tzinfo=timezone.utc)
+DEC5 = datetime(2026, 12, 5, tzinfo=UTC)
+BEFORE = datetime(2026, 11, 1, tzinfo=UTC)
+AFTER = datetime(2026, 12, 20, tzinfo=UTC)
 
 #: The worked example of RFC 0009: an `AIS` category whose rule names two words,
 #: two annotators and a date; a relation and an event category with rules of
@@ -38,16 +38,42 @@ EXAMPLE_DEFINITION: dict[str, Any] = {
                         {
                             "when": [
                                 {"field": "WORD", "operator": "IS", "value": "AIS"},
-                                {"field": "SUBJECT", "operator": "IS", "value": "peter"},
-                                {"field": "ASSERTED_AT", "operator": "BEFORE", "value": DEC5.isoformat()},
+                                {
+                                    "field": "SUBJECT",
+                                    "operator": "IS",
+                                    "value": "peter",
+                                },
+                                {
+                                    "field": "ASSERTED_AT",
+                                    "operator": "BEFORE",
+                                    "value": DEC5.isoformat(),
+                                },
                             ],
-                            "unless": [{"when": [{"field": "APP", "operator": "IS", "value": "sloppy-import"}]}],
+                            "unless": [
+                                {
+                                    "when": [
+                                        {
+                                            "field": "APP",
+                                            "operator": "IS",
+                                            "value": "sloppy-import",
+                                        }
+                                    ]
+                                }
+                            ],
                         },
                         {
                             "when": [
-                                {"field": "WORD", "operator": "IS", "value": "AxonInitialSegment"},
+                                {
+                                    "field": "WORD",
+                                    "operator": "IS",
+                                    "value": "AxonInitialSegment",
+                                },
                                 {"field": "SUBJECT", "operator": "IS", "value": "karl"},
-                                {"field": "ASSERTED_AT", "operator": "SINCE", "value": DEC5.isoformat()},
+                                {
+                                    "field": "ASSERTED_AT",
+                                    "operator": "SINCE",
+                                    "value": DEC5.isoformat(),
+                                },
                             ]
                         },
                     ]
@@ -61,7 +87,19 @@ EXAMPLE_DEFINITION: dict[str, Any] = {
                             "sourceNode": "ROI",
                             "key": "vector_length",
                             "aggregation": "MEAN",
-                            "evidence": {"rules": [{"when": [{"field": "APP", "operator": "IS", "value": "segmenter-v3"}]}]},
+                            "evidence": {
+                                "rules": [
+                                    {
+                                        "when": [
+                                            {
+                                                "field": "APP",
+                                                "operator": "IS",
+                                                "value": "segmenter-v3",
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
                         },
                     }
                 ],
@@ -77,9 +115,17 @@ EXAMPLE_DEFINITION: dict[str, Any] = {
                     "rules": [
                         {
                             "when": [
-                                {"field": "WORD", "operator": "IS", "value": "IS_CONNECTED_TO"},
+                                {
+                                    "field": "WORD",
+                                    "operator": "IS",
+                                    "value": "IS_CONNECTED_TO",
+                                },
                                 {"field": "SUBJECT", "operator": "IS", "value": "karl"},
-                                {"field": "ASSERTED_AT", "operator": "SINCE", "value": DEC5.isoformat()},
+                                {
+                                    "field": "ASSERTED_AT",
+                                    "operator": "SINCE",
+                                    "value": DEC5.isoformat(),
+                                },
                             ]
                         }
                     ]
@@ -95,25 +141,46 @@ EXAMPLE_DEFINITION: dict[str, Any] = {
                         {
                             "when": [
                                 {"field": "WORD", "operator": "IS", "value": "Mitosis"},
-                                {"field": "APP", "operator": "IS", "value": "event-annotator"},
+                                {
+                                    "field": "APP",
+                                    "operator": "IS",
+                                    "value": "event-annotator",
+                                },
                             ]
                         }
                     ]
                 },
-                "inputs": [{"key": "Cell", "role": "mother", "descriptor": {"keys": ["Cell"]}}],
-                "outputs": [{"key": "Cell", "role": "daughter", "descriptor": {"keys": ["Cell"]}}],
+                "inputs": [
+                    {"key": "Cell", "role": "mother", "descriptor": {"keys": ["Cell"]}}
+                ],
+                "outputs": [
+                    {
+                        "key": "Cell",
+                        "role": "daughter",
+                        "descriptor": {"keys": ["Cell"]},
+                    }
+                ],
             }
         ],
     },
 }
 
 
-async def graph_with(api_schema: Any, ctx: Any, name: str, definition: dict[str, Any], *, sameness_rule: dict[str, Any] | None = None) -> str:
+async def graph_with(
+    api_schema: Any,
+    ctx: Any,
+    name: str,
+    definition: dict[str, Any],
+    *,
+    sameness_rule: dict[str, Any] | None = None,
+) -> str:
     """Create a view from a definition document through the API. Returns its id."""
     payload: dict[str, Any] = {"name": name, "definition": definition}
     if sameness_rule is not None:
         payload["samenessRule"] = sameness_rule
-    return (await execute(api_schema, ctx, CREATE_GRAPH, {"input": payload}))["createGraph"]["id"]
+    return (await execute(api_schema, ctx, CREATE_GRAPH, {"input": payload}))[
+        "createGraph"
+    ]["id"]
 
 
 async def example_graph(api_schema: Any, ctx: Any, name: str) -> str:
@@ -121,12 +188,24 @@ async def example_graph(api_schema: Any, ctx: Any, name: str) -> str:
     return await graph_with(api_schema, ctx, name, EXAMPLE_DEFINITION)
 
 
-async def graph_declaring(api_schema: Any, ctx: Any, word: str, *, name: str | None = None, definition: dict[str, Any] | None = None) -> str:
+async def graph_declaring(
+    api_schema: Any,
+    ctx: Any,
+    word: str,
+    *,
+    name: str | None = None,
+    definition: dict[str, Any] | None = None,
+) -> str:
     """A view declaring one entity word, primitively or under `definition`."""
     entity: dict[str, Any] = {"key": word}
     if definition is not None:
         entity["definition"] = definition
-    return await graph_with(api_schema, ctx, name or f"view-of-{word}", {"extensions": {"entities": [entity]}})
+    return await graph_with(
+        api_schema,
+        ctx,
+        name or f"view-of-{word}",
+        {"extensions": {"entities": [entity]}},
+    )
 
 
 def rebuild(graph: Any, table_projector: Any) -> DrawCounts:
@@ -148,14 +227,29 @@ def merge_as(organization: Any, left: str, right: str, subject: str) -> None:
     """A sameness claim by a named annotator, folded into the organization-grain
     cache exactly as the controller folds it."""
     assertion = writer.create_assertion(organization, subject=subject, app_id="pytest")
-    writer.create_link(organization, kind=evidence_models.Link.Kind.SAME_AS, source_ref=left, target_ref=right, assertion=assertion)
+    writer.create_link(
+        organization,
+        kind=evidence_models.Link.Kind.SAME_AS,
+        source_ref=left,
+        target_ref=right,
+        assertion=assertion,
+    )
     identity_module.merge(organization, left, right)
 
 
-def define_entity(graph: Any, key: str, definition: dict[str, Any], properties: list[dict[str, Any]] | None = None) -> Any:
+def define_entity(
+    graph: Any,
+    key: str,
+    definition: dict[str, Any],
+    properties: list[dict[str, Any]] | None = None,
+) -> Any:
     """A defined entity category over a word, created or redefined in place."""
-    category, _ = core_models.EntityCategory.objects.get_or_create(graph=graph, key=key, defaults={"age_name": key.lower(), "label": key})
-    category.age_name = key.lower()  # the fixture's AIS is labelled "AIS"; one spelling for every assertion
+    category, _ = core_models.EntityCategory.objects.get_or_create(
+        graph=graph, key=key, defaults={"age_name": key.lower(), "label": key}
+    )
+    category.age_name = (
+        key.lower()
+    )  # the fixture's AIS is labelled "AIS"; one spelling for every assertion
     category.definition = definition
     if properties is not None:
         category.property_definitions = properties
@@ -164,7 +258,7 @@ def define_entity(graph: Any, key: str, definition: dict[str, Any], properties: 
 
 
 #: A treatment at a known moment, for rules that bound world time (RFC 0015).
-TREATMENT = datetime(2026, 6, 1, tzinfo=timezone.utc)
+TREATMENT = datetime(2026, 6, 1, tzinfo=UTC)
 BEFORE_TREATMENT = TREATMENT - timedelta(days=30)
 AFTER_TREATMENT = TREATMENT + timedelta(days=30)
 
@@ -181,7 +275,10 @@ TREATMENT_DEFINITION: dict[str, Any] = {
                         # No KIND: the bound applies to every kind of claim about a
                         # Cell — a classification by when the cell was seen, a
                         # death by when it took effect (`Standing.at`).
-                        rules.rule({"field": "WORD", "operator": "IS", "value": "Cell"}, rules.observed_before(TREATMENT)),
+                        rules.rule(
+                            {"field": "WORD", "operator": "IS", "value": "Cell"},
+                            rules.observed_before(TREATMENT),
+                        ),
                     ]
                 },
             }
@@ -191,16 +288,42 @@ TREATMENT_DEFINITION: dict[str, Any] = {
                 "key": "IS_CONNECTED_TO",
                 "source": {"keys": ["Cell"]},
                 "target": {"keys": ["Cell"]},
-                "definition": {"rules": [rules.rule({"field": "WORD", "operator": "IS", "value": "IS_CONNECTED_TO"}, rules.observed_before(TREATMENT))]},
+                "definition": {
+                    "rules": [
+                        rules.rule(
+                            {
+                                "field": "WORD",
+                                "operator": "IS",
+                                "value": "IS_CONNECTED_TO",
+                            },
+                            rules.observed_before(TREATMENT),
+                        )
+                    ]
+                },
             }
         ],
         "events": [
             {
                 "key": "Mitosis",
                 "kind": "INTRINSIC",
-                "definition": {"rules": [rules.rule({"field": "WORD", "operator": "IS", "value": "Mitosis"}, rules.observed_since(TREATMENT))]},
-                "inputs": [{"key": "Cell", "role": "mother", "descriptor": {"keys": ["Cell"]}}],
-                "outputs": [{"key": "Cell", "role": "daughter", "descriptor": {"keys": ["Cell"]}}],
+                "definition": {
+                    "rules": [
+                        rules.rule(
+                            {"field": "WORD", "operator": "IS", "value": "Mitosis"},
+                            rules.observed_since(TREATMENT),
+                        )
+                    ]
+                },
+                "inputs": [
+                    {"key": "Cell", "role": "mother", "descriptor": {"keys": ["Cell"]}}
+                ],
+                "outputs": [
+                    {
+                        "key": "Cell",
+                        "role": "daughter",
+                        "descriptor": {"keys": ["Cell"]},
+                    }
+                ],
             }
         ],
     },

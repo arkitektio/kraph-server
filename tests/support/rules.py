@@ -21,11 +21,19 @@ def condition(field: str, operator: str, value: Any) -> dict:
 
 
 def word(*words: str) -> dict:
-    return condition("WORD", "IS", words[0]) if len(words) == 1 else condition("WORD", "IN", list(words))
+    return (
+        condition("WORD", "IS", words[0])
+        if len(words) == 1
+        else condition("WORD", "IN", list(words))
+    )
 
 
 def by(*subjects: str) -> dict:
-    return condition("SUBJECT", "IS", subjects[0]) if len(subjects) == 1 else condition("SUBJECT", "IN", list(subjects))
+    return (
+        condition("SUBJECT", "IS", subjects[0])
+        if len(subjects) == 1
+        else condition("SUBJECT", "IN", list(subjects))
+    )
 
 
 def not_by(*subjects: str) -> dict:
@@ -33,11 +41,19 @@ def not_by(*subjects: str) -> dict:
 
 
 def via(*apps: str) -> dict:
-    return condition("APP", "IS", apps[0]) if len(apps) == 1 else condition("APP", "IN", list(apps))
+    return (
+        condition("APP", "IS", apps[0])
+        if len(apps) == 1
+        else condition("APP", "IN", list(apps))
+    )
 
 
 def by_action(*names: str) -> dict:
-    return condition("ACTION", "IS", names[0]) if len(names) == 1 else condition("ACTION", "IN", list(names))
+    return (
+        condition("ACTION", "IS", names[0])
+        if len(names) == 1
+        else condition("ACTION", "IN", list(names))
+    )
 
 
 def before(moment: Any) -> dict:
@@ -59,7 +75,11 @@ def observed_since(moment: Any) -> dict:
 
 def key(*keys: str) -> dict:
     """The metric key — measurement rules only (RFC 0014)."""
-    return condition("KEY", "IS", keys[0]) if len(keys) == 1 else condition("KEY", "IN", list(keys))
+    return (
+        condition("KEY", "IS", keys[0])
+        if len(keys) == 1
+        else condition("KEY", "IN", list(keys))
+    )
 
 
 def not_key(*keys: str) -> dict:
@@ -85,7 +105,11 @@ def evidence(*rules: dict) -> dict:
 
 def of_kind(*kinds: str) -> dict:
     """This rule covers only these claim kinds."""
-    return condition("KIND", "IS", kinds[0]) if len(kinds) == 1 else condition("KIND", "IN", list(kinds))
+    return (
+        condition("KIND", "IS", kinds[0])
+        if len(kinds) == 1
+        else condition("KIND", "IN", list(kinds))
+    )
 
 
 def not_kind(*kinds: str) -> dict:
