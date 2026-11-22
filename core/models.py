@@ -13,6 +13,7 @@ from arkitekt_datalayer import models as datalayer_models
 from authentikate.models import Organization, Membership
 from kraph_server.contract import ADMIN, CURATOR
 from django.db.models import Q, QuerySet
+from django.db.models.functions import Now
 # Create your models here.
 
 from graph_engine.input_models import EntityDescriptorInput, StructureDescriptorInput
@@ -114,6 +115,16 @@ class Graph(models.Model):
         max_length=2000,
         help_text="The description of the entity group",
         null=True,
+    )
+    created_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_default=Now(),
+        help_text=(
+            "When the view was created. Assigned by the database, so a release that predates "
+            "the column still stamps the graphs it creates. Null for a graph made before the "
+            "column existed whose creation the history does not record."
+        ),
     )
     provenance = ProvenanceField()
     age_name = models.CharField(

@@ -3,11 +3,14 @@
 
 from typing import Set
 import pytest
+from asgiref.sync import sync_to_async
 from api.schema import schema
 from core import models as core_models
 from core.models import Graph
 from graph_engine import input_models
 from kante.context import HttpContext
+from tests.support.reads import ADMITTING_RELATIONS
+from tests.support.writes import execute
 
 
 @pytest.mark.django_db(transaction=True)
@@ -126,3 +129,21 @@ async def test_graph(db: object, authenticated_context: HttpContext) -> None:
     assert sub.data, sub.errors
 
     assert sub.data["graph"]["name"] == "Test Model"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_a_pair_of_entity_categories_lists_the_relations_that_admit_it(api_schema, test_graph: Graph, authenticated_context: HttpContext) -> None:
+    """`RelationCategoryFilter.admits`: the descriptors the namespace draws with, asked from the two ends in one query."""
+    def ids() -> dict[str, str]:
+        return {category.key: str(category.pk) for category in core_models.EntityCategory.objects.filter(graph=test_graph)}
+
+    by_key = await sync_to_async(ids)()
+
+    async def admitting(source: str, target: str) -> list[str]:
+        data = await execute(api_schema, authenticated_context, ADMITTING_RELATIONS, {"source": by_key[source], "target": by_key[target]})
+        return sorted(row["label"] for row in data["relationCategories"])
+
+    assert await admitting("AIS", "Cell") == ["PART_OF"]
+    assert await admitting("Cell", "Cell") == ["IS_CONNECTED_TO"]
+    assert await admitting("Cell", "AIS") == [], "Direction matters: PART_OF runs from the part to the cell"

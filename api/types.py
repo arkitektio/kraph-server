@@ -11,6 +11,8 @@ This module follows the pattern from core/types.py where:
 """
 
 
+import asyncio
+
 import strawberry
 from strawberry.scalars import JSON
 from asgiref.sync import sync_to_async
@@ -337,6 +339,7 @@ class Graph:
     image: MediaStore | None = strawberry.field(description="An image representing this graph, for visualization purposes")
     # Readable, because a flag a client can write and never observe is how
     # `archiveGraph` managed to do nothing for as long as it did.
+    created_at: Optional[datetime] = strawberry.field(default=None, description="When the graph was created. Null for a graph older than the column whose history does not record its creation")
     is_archived: bool = strawberry.field(description="Whether this graph has been archived. Archiving is the reversible alternative to deleting it — a delete destroys every rule for reading the evidence, which survives without them")
 
     @strawberry.field(description="Whose sameness claims this view counts when folding its nodes into individuals (RFC 0024). Identity is the view's, not a category's: one answer per view to how many things are here. Null means everyone's claims count")
@@ -2174,6 +2177,18 @@ class Instance:
         known = await loaders.known_about_node_loader.load((None, str(cast(evidence_models.Instance, self).pk)))
         return [cast(strawberry.ID, ref) for ref in known.component]
 
+    @strawberry.field(description="Every instance claimed to be this same thing, this one included, as instances rather than ids — so each member's own `evidence` can be read in the same request. `component` lists the same members")
+    async def members(self) -> List["Instance"]:
+        known = await loaders.known_about_node_loader.load((None, str(cast(evidence_models.Instance, self).pk)))
+        rows = await asyncio.gather(*(loaders.instance_by_id_loader.load(ref) for ref in known.component))
+        return [cast("Instance", row) for row in rows if row is not None]
+
+    @strawberry.field(description="The structures that are evidence for this instance itself — the data behind it — oldest first. Not unioned over the component: read `members { evidence }` to see which member each datum belongs to")
+    async def evidence(self) -> List["Structure"]:
+        rows = await loaders.informing_structures_by_instance_loader.load(str(cast(evidence_models.Instance, self).pk))
+        controller = get_controller()
+        return [Structure(_value=RetrievedStructure.from_row(controller, row)) for row in rows]
+
     @strawberry.field(description="What anyone has called this thing, with how many assertions say so. Two words means two people disagreed; one word with a count of two means they agreed")
     async def labels(self) -> List["Label"]:
         known = await loaders.known_about_node_loader.load((None, str(cast(evidence_models.Instance, self).pk)))
@@ -3338,14 +3353,16 @@ GraphStats, GraphStatsResolver = create_stats_type(
 )
 
 
+# A category has no creation time, so its stats aggregate over `id` only and
+# offer no series. They named a `created_at` column categories never had, and
+# every aggregate but `count` raised.
 EntityCategoryStats, EntityCategoryStatsResolver = create_stats_type(
     model=models.EntityCategory,
     scope=lambda info: models.EntityCategory.objects.filter(graph__organization=get_active_organization(info)),
     filters=filters.EntityCategoryFilter,
     allowed_fields={
-        "created_at": "created_at",
+        "id": "id",
     },
-    allowed_datetime_fields={"created_at": "created_at"},
 )
 
 
@@ -3376,9 +3393,8 @@ MeasurementCategoryStats, MeasurementCategoryStatsResolver = create_stats_type(
     scope=lambda info: models.MeasurementCategory.objects.filter(graph__organization=get_active_organization(info)),
     filters=filters.MeasurementCategoryFilter,
     allowed_fields={
-        "created_at": "created_at",
+        "id": "id",
     },
-    allowed_datetime_fields={"created_at": "created_at"},
 )
 
 
@@ -3387,9 +3403,8 @@ RelationCategoryStats, RelationCategoryStatsResolver = create_stats_type(
     scope=lambda info: models.RelationCategory.objects.filter(graph__organization=get_active_organization(info)),
     filters=filters.RelationCategoryFilter,
     allowed_fields={
-        "created_at": "created_at",
+        "id": "id",
     },
-    allowed_datetime_fields={"created_at": "created_at"},
 )
 
 
@@ -3398,9 +3413,8 @@ StructureRelationCategoryStats, StructureRelationCategoryStatsResolver = create_
     scope=lambda info: models.StructureRelationCategory.objects.filter(graph__organization=get_active_organization(info)),
     filters=filters.StructureRelationCategoryFilter,
     allowed_fields={
-        "created_at": "created_at",
+        "id": "id",
     },
-    allowed_datetime_fields={"created_at": "created_at"},
 )
 
 
@@ -3409,9 +3423,8 @@ ProtocolEventCategoryStats, ProtocolEventCategoryStatsResolver = create_stats_ty
     scope=lambda info: models.ProtocolEventCategory.objects.filter(graph__organization=get_active_organization(info)),
     filters=filters.ProtocolEventCategoryFilter,
     allowed_fields={
-        "created_at": "created_at",
+        "id": "id",
     },
-    allowed_datetime_fields={"created_at": "created_at"},
 )
 
 
@@ -3420,7 +3433,6 @@ NaturalEventCategoryStats, NaturalEventCategoryStatsResolver = create_stats_type
     scope=lambda info: models.NaturalEventCategory.objects.filter(graph__organization=get_active_organization(info)),
     filters=filters.NaturalEventCategoryFilter,
     allowed_fields={
-        "created_at": "created_at",
+        "id": "id",
     },
-    allowed_datetime_fields={"created_at": "created_at"},
 )

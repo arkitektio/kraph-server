@@ -29,6 +29,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+
+from django.db.models import QuerySet
 from evidence.values import JSONValue
 
 from core import enums as core_enums
@@ -147,6 +149,44 @@ def _role_endpoints(roles: Sequence[dict[str, JSONValue]] | None, candidates: Se
         for candidate in _matched(descriptor, candidates):
             admitted[candidate.pk] = candidate
     return list(admitted.values())
+
+
+def relation_categories_admitting(source_pk: int, target_pk: int) -> list[int]:
+    """The relation categories that may connect these two entity categories.
+
+    The pairs `namespace_spec` draws edge views for, asked from the ends: same
+    graph, both ends entity-like, and each end admitted by the relation's own
+    descriptor — `_matched`, the one implementation of that predicate. Ends in
+    two different graphs admit nothing, because a relation category belongs to
+    one view.
+    """
+    ends = {
+        category.pk: category
+        for category in core_models.Category.objects.filter(pk__in=[source_pk, target_pk], kind__in=[str(k) for k in _ENTITY_LIKE_KINDS]).prefetch_related("ontology_references")
+    }
+    source, target = ends.get(source_pk), ends.get(target_pk)
+    if source is None or target is None or source.graph_id != target.graph_id:
+        return []
+    candidates = core_models.Category.objects.filter(graph_id=source.graph_id, kind=str(core_enums.CategoryKindChoices.RELATION)).order_by("pk")
+    return [
+        candidate.pk
+        for candidate in candidates
+        if _matched(_descriptor(candidate.source_definition), [source]) and _matched(_descriptor(candidate.target_definition), [target])
+    ]
+
+
+def structure_relation_categories_admitting(categories: QuerySet[core_models.Category], source_identifier: str, target_identifier: str) -> list[int]:
+    """The structure relation categories among `categories` whose ends admit these two structure kinds.
+
+    An end naming no identifiers admits every mounted one, as in `namespace_spec`.
+    """
+    admitted: list[int] = []
+    for candidate in categories.filter(kind=str(core_enums.CategoryKindChoices.STRUCTURE_RELATION)).order_by("pk"):
+        source_named = [str(value) for value in ((candidate.source_definition or {}).get("identifiers") or [])]
+        target_named = [str(value) for value in ((candidate.target_definition or {}).get("identifiers") or [])]
+        if (not source_named or source_identifier in source_named) and (not target_named or target_identifier in target_named):
+            admitted.append(candidate.pk)
+    return admitted
 
 
 def namespace_spec(graph: core_models.Graph) -> NamespaceSpec:

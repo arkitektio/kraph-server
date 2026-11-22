@@ -250,6 +250,15 @@ def _batch_informed_nodes() -> Callable[[list[PKType]], Awaitable[list[list[evid
     return load
 
 
+def _batch_informing_structures() -> Callable[[list[PKType]], Awaitable[list[list[evidence_models.Structure]]]]:
+    """The structures each instance is evidence-backed by — `informed_nodes_by_structure` reversed."""
+
+    async def load(keys: list[PKType]) -> list[list[evidence_models.Structure]]:
+        return await sync_to_async(panel.informing_structures)([str(key) for key in keys])
+
+    return load
+
+
 #: Loaders whose batch is a hand-written function rather than a query over one
 #: model. Third table because the two above are declarative and this cannot be.
 #:
@@ -259,6 +268,7 @@ def _batch_informed_nodes() -> Callable[[list[PKType]], Awaitable[list[list[evid
 _CUSTOM_LOADER_FACTORIES: dict[str, Callable[[], Callable[[list[PKType]], Awaitable[list[object]]]]] = {
     "known_about_node": _batch_known_about_nodes,
     "informed_nodes_by_structure": _batch_informed_nodes,
+    "informing_structures_by_instance": _batch_informing_structures,
 }
 
 
@@ -366,3 +376,4 @@ standings_by_assertion_loader = _LoaderProxy("standings_by_assertion")
 comments_by_assertion_loader = _LoaderProxy("comments_by_assertion")
 known_about_node_loader = _LoaderProxy("known_about_node")
 informed_nodes_by_structure_loader = _LoaderProxy("informed_nodes_by_structure")
+informing_structures_by_instance_loader = _LoaderProxy("informing_structures_by_instance")

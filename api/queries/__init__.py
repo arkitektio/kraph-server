@@ -22,7 +22,7 @@ from .insights.graph_pairs import render_graph_pairs
 from .node import node, nodes
 from .claim import instance, link, standings
 from .log import assertions, assertion, changes
-from .comment import comment, comments_for, my_mentions
+from .comment import comment, comments_for, my_mention_count, my_mentions
 
 __all__ = [
     # The claims themselves, read back as claims
@@ -36,6 +36,7 @@ __all__ = [
     "comment",
     "comments_for",
     "my_mentions",
+    "my_mention_count",
     # Entity queries
     "entity",
     "node",

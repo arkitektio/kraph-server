@@ -437,3 +437,27 @@ async def test_overdue_is_past_due_and_not_done(api_schema, api_context) -> None
     assert [item["id"] for item in overdue] == [late["id"]]
     assert len(dated) == 3
     assert summary["overdue"] == 1
+
+
+async def test_a_members_projects_are_the_ones_they_made_or_work_in(api_schema, api_context) -> None:
+    """`ProjectFilter.member`: made by them, or holding a list or an item assigned to them — each project once."""
+
+    async def project(name: str) -> str:
+        return (await _run(api_schema, api_context, writes.CREATE_PROJECT, input={"name": name}))["createProject"]["id"]
+
+    async def todo_list(project_id: str, assignee: str | None) -> str:
+        created = await _run(api_schema, api_context, writes.CREATE_TODO_LIST, input={"project": project_id, "name": "list", "assignee": assignee})
+        return created["createTodoList"]["id"]
+
+    lists_for_tiago = await project("Two lists for tiago")
+    await todo_list(lists_for_tiago, "tiago")
+    await todo_list(lists_for_tiago, "tiago")
+    an_item_for_tiago = await project("An item for tiago")
+    await _item(api_schema, api_context, await todo_list(an_item_for_tiago, "maria"), assignee="tiago")
+    await project("Nothing for tiago")
+
+    tiagos = await _run(api_schema, api_context, reads.PROJECTS_OF, member="tiago")
+    assert sorted(row["id"] for row in tiagos["projects"]) == sorted([lists_for_tiago, an_item_for_tiago])
+
+    made_by_me = await _run(api_schema, api_context, reads.PROJECTS_OF, member="1")
+    assert len(made_by_me["projects"]) == 3, "The static token's sub made all three"

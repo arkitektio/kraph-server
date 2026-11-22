@@ -12,7 +12,7 @@ import uuid
 import kante
 import pytest
 
-from tests.support import rules, writes
+from tests.support import reads, rules, writes
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 
@@ -389,3 +389,30 @@ async def test_the_panel_does_not_scale_with_the_number_of_subjects(
 
     assert len(batches) == 1, f"Five subjects, one batched read of the panel — got {len(batches)}"
     assert len(batches[0]) == 5, "and every subject in it"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_each_member_of_a_component_shows_its_own_evidence(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+) -> None:
+    """`Instance.evidence` is the instance's own data; `members { evidence }` says whose each datum is.
+
+    Read in one request for the whole component, where a client used to ask
+    `informingStructures` once per member.
+    """
+    _, first_object = await _structure(api_schema, simple_api_context)
+    _, second_object = await _structure(api_schema, simple_api_context)
+    first = await _entity(api_schema, simple_api_context, "AIS", evidence_object=first_object)
+    second = await _entity(api_schema, simple_api_context, "AIS", evidence_object=second_object, same_as=[first])
+    bare = await _entity(api_schema, simple_api_context, "AIS", same_as=[first])
+
+    result = await api_schema.execute(reads.MEMBERS_EVIDENCE, variable_values={"id": first}, context_value=simple_api_context)
+    assert result.errors is None, f"GraphQL errors: {result.errors}"
+    instance = result.data["instance"]
+
+    assert [row["object"] for row in instance["evidence"]] == [first_object], "Not unioned over the component"
+    by_member = {member["id"]: [row["object"] for row in member["evidence"]] for member in instance["members"]}
+    assert by_member == {first: [first_object], second: [second_object], bare: []}

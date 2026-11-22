@@ -250,3 +250,42 @@ MODELS = """
         models(filters: $filters) { id name }
     }
 """
+
+GRAPHS_BY = """
+    query GraphsBy($creator: ID!) {
+        graphs(filters: { creator: $creator }, ordering: [{ createdAt: DESC }]) { id name createdAt }
+    }
+"""
+
+GRAPH_STATS = """
+    query GraphStats {
+        graphStats {
+            count
+            series(field: CREATED_AT, timestampField: CREATED_AT, by: DAY) { ts count }
+        }
+    }
+"""
+
+PROJECTS_OF = """
+    query ProjectsOf($member: ID!) {
+        projects(filters: { member: $member }) { id name }
+    }
+"""
+
+MEMBERS_EVIDENCE = """
+    query MembersEvidence($id: ID!) {
+        instance(id: $id) { id evidence { object } members { id evidence { identifier object } } }
+    }
+"""
+
+ADMITTING_RELATIONS = """
+    query AdmittingRelations($source: ID!, $target: ID!) {
+        relationCategories(filters: { admits: { source: $source, target: $target } }) { id label }
+    }
+"""
+
+ADMITTING_STRUCTURE_RELATIONS = """
+    query AdmittingStructureRelations($source: String!, $target: String!) {
+        structureRelationCategories(filters: { admits: { source: $source, target: $target } }) { id label }
+    }
+"""

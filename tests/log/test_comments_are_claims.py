@@ -220,6 +220,47 @@ async def test_my_mentions_finds_the_caller_by_subject(
     assert [row["mentions"] for row in result.data["myMentions"]] == [[me]], "Only the remark that mentions the caller"
 
 
+MENTIONS = """
+    query Mentions($resolved: Boolean, $pagination: LogPaginationInput) {
+        myMentions(resolved: $resolved, pagination: $pagination) { id text }
+        open: myMentionCount(resolved: false)
+        all: myMentionCount
+    }
+"""
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_resolving_a_mention_clears_it_from_the_inbox_and_the_badge(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+) -> None:
+    """`resolved: false` is the inbox and its count is the badge; a resolved remark leaves both, and stays in the history."""
+    me = str(simple_api_context.request.user.id)
+    first = await _comment(api_schema, simple_api_context, "roi_inbox", "first", mention=me)
+    second = await _comment(api_schema, simple_api_context, "roi_inbox", "second", mention=me)
+    third = await _comment(api_schema, simple_api_context, "roi_inbox", "third", mention=me)
+    first_id, second_id, third_id = (row["comment"]["id"] for row in (first, second, third))
+
+    resolved = await api_schema.execute(RETRACT, variable_values={"input": {"id": first_id}}, context_value=simple_api_context)
+    assert resolved.errors is None, f"GraphQL errors: {resolved.errors}"
+
+    async def read(variables: dict) -> dict:
+        result = await api_schema.execute(MENTIONS, variable_values=variables, context_value=simple_api_context)
+        assert result.errors is None, f"GraphQL errors: {result.errors}"
+        return result.data
+
+    inbox = await read({"resolved": False})
+    assert [row["id"] for row in inbox["myMentions"]] == [third_id, second_id]
+    assert (inbox["open"], inbox["all"]) == (2, 3), "The badge counts open remarks past any page"
+
+    done = await read({"resolved": True})
+    assert [row["id"] for row in done["myMentions"]] == [first_id]
+
+    page = await read({"pagination": {"limit": 1, "offset": 1}})
+    assert [row["id"] for row in page["myMentions"]] == [second_id], "Pages walk the whole history, newest first"
+
+
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_an_unknown_descendant_kind_is_refused_at_the_door(

@@ -167,3 +167,14 @@ async def test_a_mount_is_made_read_and_kept_while_an_end_names_it(api_schema, a
     refused = await api_schema.execute(UNMOUNT, variable_values={"input": {"id": str(image)}}, context_value=api_context)
     assert refused.errors and f"is named by {WORD}" in str(refused.errors[0]), "an end still names it"
     await _run(api_schema, api_context, UNMOUNT, input={"id": mounted["id"]})
+
+
+async def test_a_pair_of_structure_kinds_lists_the_relations_that_admit_it(api_schema, api_context, table_projector) -> None:
+    """`admits` answers from the ends, as the namespace does: a named identifier, or any mounted one."""
+    await _view(api_context, table_projector, mounts=(("Image", IMAGE), ("Roi", ROI)), ends=(IMAGE,))
+
+    images = await _run(api_schema, api_context, reads.ADMITTING_STRUCTURE_RELATIONS, source=IMAGE, target=IMAGE)
+    assert [row["label"] for row in images["structureRelationCategories"]] == [WORD]
+
+    mixed = await _run(api_schema, api_context, reads.ADMITTING_STRUCTURE_RELATIONS, source=ROI, target=IMAGE)
+    assert mixed["structureRelationCategories"] == [], "An end naming `@mikro/arraylens` does not admit an ROI"

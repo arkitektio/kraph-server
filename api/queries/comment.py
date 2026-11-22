@@ -6,12 +6,15 @@ tenant the client names. `commentsFor` and `myMentions` mirror lok's komment
 queries so a lok client can move over field-for-field.
 """
 
-from typing import List
+from typing import List, Optional
 
 import strawberry
+from django.db.models import QuerySet
 from kante.types import Info
 
 from api import context, types, pagination
+from api import pagination as api_pagination
+from evidence import claims
 from evidence import models as evidence_models
 
 
@@ -37,13 +40,36 @@ def comments_for(info: Info, identifier: str, object: strawberry.ID) -> List[typ
     return list(evidence_models.Comment.objects.for_organization(organization).filter(structure=structure).select_related("assertion").order_by("-created_at")[: pagination.MAX_LIMIT])  # type: ignore[arg-type]
 
 
-def my_mentions(info: Info) -> List[types.Comment]:
-    """Every remark that mentions the caller, newest first.
+def _mentions(info: Info, resolved: Optional[bool]) -> QuerySet[evidence_models.Comment]:
+    """The remarks mentioning the caller, narrowed by whether they were resolved.
 
     Matched on the caller's subject id — the same string the write path put into
     `mentions` when it walked the descendant tree, and the same one
-    `Assertion.subject` records.
+    `Assertion.subject` records. Resolution is the organization-wide fold
+    (`CurrentStanding`), the same answer `Comment.resolved` gives: a remark whose
+    winning position says it no longer stands.
     """
     organization = context.get_active_organization(info)
     subject = str(info.context.request.user.id)
-    return list(evidence_models.Comment.objects.for_organization(organization).filter(mentions__contains=[subject]).select_related("assertion").order_by("-created_at")[: pagination.MAX_LIMIT])  # type: ignore[arg-type]
+    mentioning = evidence_models.Comment.objects.for_organization(organization).filter(mentions__contains=[subject])
+    if resolved is None:
+        return mentioning
+    open_ones = claims.standing(mentioning, "comment")
+    if resolved:
+        return mentioning.exclude(pk__in=open_ones.values("pk"))
+    return open_ones
+
+
+def my_mentions(
+    info: Info,
+    resolved: Optional[bool] = None,
+    pagination: Optional[api_pagination.LogPaginationInput] = None,
+) -> List[types.Comment]:
+    """Every remark that mentions the caller, newest first. `resolved: false` is the inbox."""
+    queryset = _mentions(info, resolved).select_related("assertion").order_by("-created_at")
+    return api_pagination.slice_window(queryset, pagination)  # type: ignore[return-value]
+
+
+def my_mention_count(info: Info, resolved: Optional[bool] = None) -> int:
+    """How many remarks mention the caller — past any page. `resolved: false` is the badge."""
+    return _mentions(info, resolved).count()

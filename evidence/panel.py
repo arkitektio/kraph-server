@@ -278,6 +278,43 @@ def informed_nodes(structure_refs: Iterable[str]) -> list[list[evidence_models.I
     return [[nodes[ref] for ref in refs_by_structure.get(structure_ref, ()) if ref in nodes] for structure_ref in wanted]
 
 
+def informing_structures(instance_refs: Iterable[str]) -> list[list[evidence_models.Structure]]:
+    """The structures that are evidence for each instance — `informed_nodes` the other way.
+
+    Two queries for the whole page, for the same reason. Per instance, not over
+    its component: a caller listing a component's members by the datum behind
+    each needs to know which member a datum belongs to, and the component-wide
+    union is already `connections`. Organization-wide, like INFORMS itself.
+    """
+    wanted = [str(ref) for ref in instance_refs]
+    if not wanted:
+        return []
+
+    organization_ids = set(evidence_models.Instance.all_objects.filter(pk__in=wanted).values_list("organization_id", flat=True))
+    if not organization_ids:
+        return [[] for _ in wanted]
+
+    links = claims_module.standing(
+        evidence_models.Link.all_objects.filter(
+            organization_id__in=organization_ids,
+            kind=evidence_models.Link.Kind.INFORMS,
+            target_ref__in=wanted,
+        ),
+        "link",
+    ).values_list("target_ref", "source_ref")
+
+    refs_by_instance: dict[str, list[str]] = defaultdict(list)
+    every_source: set[str] = set()
+    for target_ref, source_ref in links:
+        if str(source_ref) not in refs_by_instance[str(target_ref)]:
+            refs_by_instance[str(target_ref)].append(str(source_ref))
+        every_source.add(str(source_ref))
+
+    structures = {str(row.pk): row for row in evidence_models.Structure.all_objects.filter(pk__in=every_source).order_by("created_at")}
+
+    return [[structures[ref] for ref in refs_by_instance.get(instance_ref, ()) if ref in structures] for instance_ref in wanted]
+
+
 @dataclass(frozen=True)
 class Known:
     """Everything the log has to say about one node, over its whole component."""

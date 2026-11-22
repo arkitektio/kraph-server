@@ -43,6 +43,14 @@ class ProjectFilter:
     def search(self, value: str, prefix: str) -> Q:
         return Q(**{f"{prefix}name__icontains": value}) | Q(**{f"{prefix}description__icontains": value})
 
+    @kante.filter_field(description="Projects this member (a sub) works on: ones they made, or holding a todo list or item assigned to them")
+    def member(self, value: strawberry.ID, prefix: str) -> Q:
+        # A subquery rather than a join: a member with three assigned lists in one
+        # project would otherwise list that project three times.
+        sub = str(value)
+        working_on = models.Project.objects.filter(Q(creator__sub=sub) | Q(todo_lists__assignee=sub) | Q(todo_lists__items__assignee=sub)).values("pk")
+        return Q(**{f"{prefix}id__in": working_on})
+
 
 @strawberry_django.order_type(models.Project)
 class ProjectOrder:

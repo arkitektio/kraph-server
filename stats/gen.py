@@ -6,7 +6,7 @@ import kante
 import strawberry
 import strawberry_django
 from strawberry.types import Info
-from django.db.models import Avg, Count, Max, Min, Model, QuerySet, Sum
+from django.db.models import Aggregate, Avg, Count, DecimalField, FloatField, IntegerField, Max, Min, Model, QuerySet, Sum
 
 from evidence.values import JSONValue
 from django.db.models.functions import (
@@ -72,6 +72,22 @@ def create_stats_type(
         (StatsType, resolver_function)
     """
 
+    # 0. Refuse a field the model does not have, here rather than per request:
+    # a stats type over a column that does not exist builds and serves `count`
+    # fine and raises a FieldError on every other field.
+    for column in [*allowed_fields.values(), *(allowed_datetime_fields or {}).values()]:
+        model._meta.get_field(column)
+
+    # max/min/avg/sum are Floats: they are taken of numeric columns only. Over a
+    # timestamp `AVG` does not exist in Postgres and `MAX` is not a float, so a
+    # non-numeric field answers them with null and still counts its distinct values.
+    numeric = {column for column in allowed_fields.values() if isinstance(model._meta.get_field(column), (IntegerField, FloatField, DecimalField))}
+
+    def _aggregates(column: str) -> Dict[str, Aggregate]:
+        if column in numeric:
+            return {"max": Max(column), "min": Min(column), "avg": Avg(column), "sum": Sum(column)}
+        return {}
+
     # 1. Create the Field Enum (Numeric fields)
     _enum_name = enum_name or f"{model.__name__}Field"
     # We create a native Python Enum first
@@ -119,7 +135,6 @@ def create_stats_type(
 
     _type_name = type_name or f"{model.__name__}Stats"
 
-    @strawberry.type(name=_type_name)
     class StatsType:
         _qs: strawberry.Private[QuerySet]
         # Cache structure: { 'field_name': { 'avg': 10, 'sum': 20... } }
@@ -137,13 +152,7 @@ def create_stats_type(
 
             # Compute all scalar stats for this field in one query
             # We use standard aliases (avg, sum, etc.)
-            stats = self._qs.aggregate(
-                distinctCount=Count(model_field, distinct=True),
-                max=Max(model_field),
-                min=Min(model_field),
-                avg=Avg(model_field),
-                sum=Sum(model_field),
-            )
+            stats = self._qs.aggregate(distinctCount=Count(model_field, distinct=True), **_aggregates(model_field))
             self._cache[model_field] = stats
             return stats
 
@@ -159,19 +168,19 @@ def create_stats_type(
 
         @kante.django_field(description="Maximum value")
         def max(self, field: FieldEnum) -> Optional[float]:  # type: ignore
-            return self._get_field_stats(field)["max"]
+            return self._get_field_stats(field).get("max")
 
         @kante.django_field(description="Minimum value")
         def min(self, field: FieldEnum) -> Optional[float]:  # type: ignore
-            return self._get_field_stats(field)["min"]
+            return self._get_field_stats(field).get("min")
 
         @kante.django_field(description="Average value")
         def avg(self, field: FieldEnum) -> Optional[float]:  # type: ignore
-            return self._get_field_stats(field)["avg"]
+            return self._get_field_stats(field).get("avg")
 
         @kante.django_field(description="Sum of values")
         def sum(self, field: FieldEnum) -> Optional[float]:  # type: ignore
-            return self._get_field_stats(field)["sum"]
+            return self._get_field_stats(field).get("sum")
 
     # 5. Inject 'series' field only if timestamps are allowed
     if TimestampEnum:
@@ -191,14 +200,7 @@ def create_stats_type(
             qs_data = (
                 self._qs.annotate(bucket=trunc_expr)
                 .values("bucket")
-                .annotate(
-                    count=Count("pk"),
-                    distinctCount=Count(mf, distinct=True),
-                    max=Max(mf),
-                    min=Min(mf),
-                    avg=Avg(mf),
-                    sum=Sum(mf),
-                )
+                .annotate(count=Count("pk"), distinctCount=Count(mf, distinct=True), **_aggregates(mf))
                 .order_by("bucket")
             )
 
@@ -213,10 +215,10 @@ def create_stats_type(
                         ts=row["bucket"],
                         count=row["count"],
                         distinctCount=row["distinctCount"],
-                        max=row["max"],
-                        min=row["min"],
-                        avg=row["avg"],
-                        sum=row["sum"],
+                        max=row.get("max"),
+                        min=row.get("min"),
+                        avg=row.get("avg"),
+                        sum=row.get("sum"),
                     )
                 )
             return results
@@ -237,6 +239,11 @@ def create_stats_type(
                 return _wrapper
 
             setattr(StatsType, name, make_custom_resolver())
+
+    # Decorated last: strawberry reads the class's fields when it is decorated,
+    # so `series` and the custom resolvers have to be on it by then. They used to
+    # be attached afterwards, and no stats type ever offered them.
+    StatsType = strawberry.type(name=_type_name)(StatsType)
 
     # 7. Create the Root Resolver
     def stats_resolver(root: Any, info: Info, filters: Optional[filters] = None) -> StatsType:

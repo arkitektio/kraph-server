@@ -8,6 +8,8 @@ from django.db.models import Q, QuerySet
 import kante
 from graph_engine import input_models
 from api import inputs
+from api.context import get_active_organization
+from graph_engine import namespace
 
 
 @kante.pydantic_input(input_models.PropertyMatch, all_fields=True, description="A property match condition for filtering structures")
@@ -129,6 +131,10 @@ class GraphFilter:
     def search(self, value: str, prefix: str) -> Q:
         return Q(**{f"{prefix}name__search": value}) | Q(**{f"{prefix}description__search": value})
 
+    @kante.filter_field(description="Only the graphs this member made, by their lok sub")
+    def creator(self, value: strawberry.ID, prefix: str) -> Q:
+        return Q(**{f"{prefix}user__sub": value})
+
     @kante.filter_field(description="Only archived graphs, or only live ones. Omitted shows both")
     def is_archived(self, value: bool, prefix: str) -> Q:
         """The read half of archiving.
@@ -217,9 +223,23 @@ class MetricKindFilter:
         return Q(**{f"{prefix}structure_kind_id": value})
 
 
+@strawberry.input(description="The two ends a relation would connect: entity category ids, in one graph")
+class RelationEndsInput:
+    source: strawberry.ID = strawberry.field(description="The entity category of the source end")
+    target: strawberry.ID = strawberry.field(description="The entity category of the target end")
+
+
+@strawberry.input(description="The two ends a structure relation would connect: structure kind identifiers")
+class StructureRelationEndsInput:
+    source: str = strawberry.field(description="The structure kind identifier of the source end, e.g. `@mikro/roi`")
+    target: str = strawberry.field(description="The structure kind identifier of the target end")
+
+
 @kante.filter_type(models.Category)
 class RelationCategoryFilter(CategoryFilter):
-    pass
+    @kante.filter_field(description="Only the relation categories whose source and target descriptors admit these two entity categories — what the write would accept, in one query")
+    def admits(self, value: RelationEndsInput, prefix: str) -> Q:
+        return Q(**{f"{prefix}id__in": namespace.relation_categories_admitting(int(value.source), int(value.target))})
 
 
 @kante.filter_type(models.Category)
@@ -417,7 +437,10 @@ class StructureCategoryFilter(CategoryFilter):
 
 @kante.filter_type(models.Category)
 class StructureRelationCategoryFilter(CategoryFilter):
-    pass
+    @kante.filter_field(description="Only the structure relation categories whose ends admit these two structure kinds")
+    def admits(self, info: kante.Info, value: StructureRelationEndsInput, prefix: str) -> Q:
+        scoped = models.Category.objects.filter(graph__organization=get_active_organization(info))
+        return Q(**{f"{prefix}id__in": namespace.structure_relation_categories_admitting(scoped, value.source, value.target)})
 
 
 @kante.pydantic_input(input_models.RelationFilters, description="Filter options for querying participation claims")

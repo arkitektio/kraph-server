@@ -120,6 +120,7 @@ class RelationOrder:
 class GraphOrder:
     name: auto
     id: auto
+    created_at: auto
 
 
 @strawberry_django.order_type(models.Category)
