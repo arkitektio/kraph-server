@@ -73,7 +73,7 @@ class Query:
     link = field(queries.link, description="Get one claim relating two things by ID, as the log has it")
     standings = field(queries.standings, description="Every position anyone has taken on one claim, newest first")
     comment = field(queries.comment, description="Get one remark by ID, as the log has it")
-    comments_for = field(queries.comments_for, description="Every remark about one external datum, addressed by (identifier, object), newest first — resolved ones included")
+    comments_for = field(queries.comments_for, description="Every remark about one external datum, addressed by (identifier, object), newest first — resolved ones included. `pagination` reads one page")
     my_mentions = field(queries.my_mentions, description="Every remark that mentions the caller, newest first. `resolved` narrows to resolved or open remarks; omitted lists both")
     my_mention_count = field(queries.my_mention_count, description="How many remarks mention the caller, past any page. `resolved: false` counts the open ones — the badge")
 

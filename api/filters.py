@@ -8,7 +8,7 @@ from django.db.models import Q, QuerySet
 import kante
 from graph_engine import input_models
 from api import inputs
-from api.context import get_active_organization
+from api.context import get_active_organization, get_controller
 from graph_engine import namespace
 
 
@@ -235,11 +235,38 @@ class StructureRelationEndsInput:
     target: str = strawberry.field(description="The structure kind identifier of the target end")
 
 
+@strawberry.input(description="The two claims a relation would connect: instance ids, whichever views draw them")
+class RelationInstancesInput:
+    source: strawberry.ID = strawberry.field(description="The instance at the source end")
+    target: strawberry.ID = strawberry.field(description="The instance at the target end")
+
+
 @kante.filter_type(models.Category)
 class RelationCategoryFilter(CategoryFilter):
     @kante.filter_field(description="Only the relation categories whose source and target descriptors admit these two entity categories — what the write would accept, in one query")
     def admits(self, value: RelationEndsInput, prefix: str) -> Q:
         return Q(**{f"{prefix}id__in": namespace.relation_categories_admitting(int(value.source), int(value.target))})
+
+    @kante.filter_field(
+        description=(
+            "Only the relation categories that could connect these two claims: in every view that draws both, the categories admitting the categories that view draws them under. "
+            "`admits` asked once per view the two share, in one query"
+        )
+    )
+    def admits_instances(self, info: kante.Info, value: RelationInstancesInput, prefix: str) -> Q:
+        organization = get_active_organization(info)
+        ends = {str(row.pk): row for row in evidence_models.Instance.objects.for_organization(organization).filter(pk__in=[str(value.source), str(value.target)])}
+        source, target = ends.get(str(value.source)), ends.get(str(value.target))
+        if source is None or target is None:
+            return Q(**{f"{prefix}id__in": []})
+        controller = get_controller()
+        target_drawings = controller.drawings_for_instance(target)
+        admitted: set[int] = set()
+        for source_drawing in controller.drawings_for_instance(source):
+            for target_drawing in target_drawings:
+                if source_drawing.graph.pk == target_drawing.graph.pk:
+                    admitted.update(namespace.relation_categories_admitting(source_drawing.category.pk, target_drawing.category.pk))
+        return Q(**{f"{prefix}id__in": sorted(admitted)})
 
 
 @kante.filter_type(models.Category)
@@ -507,6 +534,14 @@ class GraphPairsQueryFilter(GraphQueryFilter):
 class ScatterPlotFilter:
     id: strawberry.auto
     name: strawberry.auto
+
+    @kante.filter_field(description="Only the plots drawn from this graph's saved queries")
+    def graph(self, value: strawberry.ID, prefix: str) -> Q:
+        return Q(**{f"{prefix}graph_query__graph_id": value})
+
+    @kante.filter_field(description="Only the plots drawn from this saved table query")
+    def query(self, value: strawberry.ID, prefix: str) -> Q:
+        return Q(**{f"{prefix}graph_query_id": value})
 
     @kante.filter_field(description="Filter by list of IDs")
     def ids(self, value: list[strawberry.ID], prefix: str) -> Q:

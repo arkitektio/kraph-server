@@ -416,3 +416,29 @@ async def test_each_member_of_a_component_shows_its_own_evidence(
     assert [row["object"] for row in instance["evidence"]] == [first_object], "Not unioned over the component"
     by_member = {member["id"]: [row["object"] for row in member["evidence"]] for member in instance["members"]}
     assert by_member == {first: [first_object], second: [second_object], bare: []}
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_connections_read_in_pages_that_add_up_to_the_whole(api_schema, simple_api_context, test_graph: core_models.Graph) -> None:
+    """`connections(pagination:)` and `connectionCount`, on the claim and on its drawing.
+
+    History: `connections` had no page, so a thing informed by a thousand datums
+    answered all of them to every page that showed it.
+    """
+    hub = await writes.create_entity(api_schema, simple_api_context, "Cell")
+    for _ in range(3):
+        spoke = await writes.create_entity(api_schema, simple_api_context, "Cell")
+        await writes.create_relation(api_schema, simple_api_context, "IS_CONNECTED_TO", hub, spoke)
+
+    async def page(offset: int) -> dict:
+        return await writes.execute(api_schema, simple_api_context, reads.CONNECTIONS_PAGE, {"id": hub, "graph": str(test_graph.pk), "limit": 2, "offset": offset})
+
+    first, second = await page(0), await page(2)
+    everything = sorted(row["id"] for row in first["all"]["connections"])
+    assert len(everything) == 3
+    for grain in ("instance", "node"):
+        assert first[grain]["connectionCount"] == 3, "the count is past any page"
+        ids = [row["id"] for row in first[grain]["connections"]] + [row["id"] for row in second[grain]["connections"]]
+        assert len(first[grain]["connections"]) == 2
+        assert sorted(ids) == everything, "two pages are the whole list, each connection once"

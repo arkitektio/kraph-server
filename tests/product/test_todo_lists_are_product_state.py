@@ -291,6 +291,52 @@ async def test_marking_all_of_an_item_s_objects_done_at_once_finishes_it(api_sch
     assert await todo_models.TodoItemStructure.objects.filter(item_id=item["id"], done=True, done_by__isnull=False).acount() == 3
 
 
+async def test_marking_whole_items_done_names_the_items_not_their_objects(api_schema, api_context) -> None:
+    """`items`: "mark all done" for a selection of cards, without reading their objects first.
+
+    History: the app read every selected item with all of its objects, one request per item,
+    only to collect the ids of the ones not yet done.
+    """
+    todo_list = await _list(api_schema, api_context)
+    first = await _item(api_schema, api_context, todo_list, "First", structures=IMAGES)
+    second = await _item(api_schema, api_context, todo_list, "Second", structures=IMAGES[:1])
+    untouched = await _item(api_schema, api_context, todo_list, "Untouched", structures=IMAGES[:2])
+
+    data = await _run(api_schema, api_context, writes.SET_TODO_STRUCTURES_STATUS, input={"items": [first["id"], second["id"]], "status": "DONE"})
+
+    assert sorted((row["id"], row["status"]) for row in data["setTodoStructuresStatus"]) == sorted([(first["id"], "DONE"), (second["id"], "DONE")])
+    assert await todo_models.TodoItemStructure.objects.filter(item_id__in=[first["id"], second["id"]], done=False).acount() == 0
+    assert await todo_models.TodoItemStructure.objects.filter(item_id=untouched["id"], done=True).acount() == 0
+
+
+async def test_a_bulk_status_change_names_something(api_schema, api_context) -> None:
+    result = await api_schema.execute(writes.SET_TODO_STRUCTURES_STATUS, variable_values={"input": {"status": "DONE"}}, context_value=api_context)
+    assert result.errors
+
+
+async def test_a_bulk_status_change_with_a_foreign_item_changes_nothing(api_schema, api_context, other_organization: Organization) -> None:
+    item = await _item(api_schema, api_context, await _list(api_schema, api_context), structures=IMAGES[:1])
+
+    @sync_to_async
+    def foreign_item() -> int:
+        user, _ = User.objects.get_or_create(username="foreign", sub="foreign-sub")
+        project = project_models.Project.objects.create(organization=other_organization, name="Theirs", creator=user)
+        theirs = todo_models.TodoList.objects.create(project=project, name="Theirs", creator=user)
+        foreign = todo_models.TodoItem.objects.create(list=theirs, title="Theirs", creator=user)
+        todo_models.TodoItemStructure.objects.create(item=foreign, identifier="@mikro/image", object="9")
+        return foreign.pk
+
+    foreign = await foreign_item()
+    result = await api_schema.execute(
+        writes.SET_TODO_STRUCTURES_STATUS,
+        variable_values={"input": {"items": [item["id"], str(foreign)], "status": "DONE"}},
+        context_value=api_context,
+    )
+
+    assert result.errors
+    assert await todo_models.TodoItemStructure.objects.filter(done=True).acount() == 0
+
+
 async def test_a_bulk_status_change_with_a_foreign_object_changes_nothing(api_schema, api_context, other_organization: Organization) -> None:
     item = await _item(api_schema, api_context, await _list(api_schema, api_context), structures=IMAGES[:1])
 
@@ -393,6 +439,50 @@ async def test_a_board_does_not_hear_another_list(api_schema, api_context) -> No
         heard = await _next(received)
         assert heard["item"]["title"] == "Here"
         assert received.empty()
+    finally:
+        await live.close(task)
+
+
+OBJECT_TODO_CHANGED = """
+    subscription ObjectTodoChanged($identifier: String, $object: ID) {
+        todoChanged(identifier: $identifier, object: $object) { kind itemId item { id title } }
+    }
+"""
+
+
+async def test_an_object_hears_the_items_it_is_on_and_the_one_that_lets_it_go(api_schema, api_context) -> None:
+    """`identifier` + `object`: a page's todo track hears its own object's items, not the organization's.
+
+    Detaching the object, or deleting its item, is still heard, though the item no longer carries it.
+
+    History: every datum page listened to every todo change in the organization and read all
+    its todo listings again on each one.
+    """
+    from tests.support import live
+    from todos import channel as todo_channel
+    from tests.support.identity import static_identity
+
+    _, org, _ = await sync_to_async(static_identity)()
+    todo_list = await _list(api_schema, api_context)
+    watched = {"identifier": "@mikro/image", "object": "1"}
+    task, received = await live.subscribe(api_schema, OBJECT_TODO_CHANGED, todo_channel.room(org), watched)
+    try:
+        await _item(api_schema, api_context, todo_list, "Other object", structures=[IMAGES[1]])
+        carrying = await _item(api_schema, api_context, todo_list, "Carries it", structures=IMAGES[:2])
+        heard = await _next(received)
+        assert (heard["kind"], heard["itemId"]) == ("CHANGED", carrying["id"])
+        assert received.empty(), "an item without the object is not news for it"
+
+        row = next(s for s in carrying["structures"] if s["object"] == "1")
+        await _run(api_schema, api_context, writes.DETACH_FROM_TODO_ITEM, input={"id": row["id"]})
+        detached = await _next(received)
+        assert (detached["kind"], detached["itemId"]) == ("CHANGED", carrying["id"])
+
+        again = await _item(api_schema, api_context, todo_list, "Carries it again", structures=IMAGES[:1])
+        assert (await _next(received))["itemId"] == again["id"]
+        await _run(api_schema, api_context, writes.DELETE_TODO_ITEM, id=again["id"])
+        gone = await _next(received)
+        assert (gone["kind"], gone["itemId"]) == ("DELETED", again["id"])
     finally:
         await live.close(task)
 

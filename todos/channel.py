@@ -10,7 +10,7 @@ The broadcast is `transaction.on_commit`: a write that rolls back announces noth
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Iterable, Literal, Optional
 
 from authentikate.models import Organization
 from kante.channel import build_channel
@@ -24,6 +24,10 @@ class TodoChanged(BaseModel):
     list: str
     item: Optional[str] = None
     organization: int
+    objects: list[tuple[str, str]] = []
+    """`(identifier, object)` pairs the change took away: an object detached, or every object of a
+    deleted item or list. A subscriber narrowed to one object cannot ask the database about those
+    any more; an object still on the item is asked about instead."""
 
 
 todo_channel = build_channel(TodoChanged, name="todo")
@@ -35,13 +39,23 @@ def room(organization: Organization | int) -> str:
     return f"todo.org.{int(organization_id)}"
 
 
-def announce(organization: Organization | int, todo_list: int | str, item: int | str | None = None, *, deleted: bool = False) -> None:
-    """Tell the organization's room that a list (or one of its items) changed, once the transaction commits."""
+def announce(
+    organization: Organization | int,
+    todo_list: int | str,
+    item: int | str | None = None,
+    *,
+    deleted: bool = False,
+    objects: Iterable[tuple[str, str]] = (),
+) -> None:
+    """Tell the organization's room that a list (or one of its items) changed, once the transaction commits.
+
+    `objects` names the objects the change took away (see `TodoChanged.objects`)."""
     organization_id = int(getattr(organization, "id", organization))
     message = TodoChanged(
         kind="DELETED" if deleted else "CHANGED",
         list=str(todo_list),
         item=None if item is None else str(item),
         organization=organization_id,
+        objects=sorted({(str(identifier), str(object_id)) for identifier, object_id in objects}),
     )
     todo_channel.broadcast_on_commit(message, groups=[room(organization_id)])

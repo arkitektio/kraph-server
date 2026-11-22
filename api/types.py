@@ -14,6 +14,7 @@ This module follows the pattern from core/types.py where:
 import asyncio
 
 import strawberry
+import strawberry_django
 from strawberry.scalars import JSON
 from asgiref.sync import sync_to_async
 from enum import Enum
@@ -818,10 +819,12 @@ def _scatter_plot_scoped(cls):
 @_scatter_plot_scoped
 @kante.django_type(models.ScatterPlot, filters=filters.ScatterPlotFilter, pagination=True, ordering=order.ScatterPlotOrder, description="A saved scatter-plot configuration over a graph query")
 class ScatterPlot:
-    @strawberry.field(description="Label/name of the scatter plot definition")
+    @strawberry_django.field(only=["name"], description="Label/name of the scatter plot definition")
     def label(self) -> str:
         # The column is `name`; this field was declared `label` over a model
-        # attribute that does not exist, and raised on select.
+        # attribute that does not exist, and raised on select. `only` tells the
+        # optimizer to select `name`: without it the column was deferred, and
+        # reading it was a query from inside the async resolver, which failed.
         return cast(models.ScatterPlot, self).name
 
     description: Optional[str] = strawberry.field(default=None, description="Description of the scatter plot definition")
@@ -1151,10 +1154,20 @@ class Node:
         known = await loaders.known_about_node_loader.load((self._value.graph_id, self._value.unique_id))
         return [Difference(_value=RetrievedEdge.from_link(get_controller(), link)) for link in known.conflicts]
 
-    @strawberry.field(description="Every standing claim connecting this thing to something else — relations, participations and the datums that inform it. **Organization grain** — every claim in the log, not only what this view draws (RFC 0024)")
-    async def connections(self) -> List["Edge"]:
+    @strawberry.field(
+        description=(
+            "Every standing claim connecting this thing to something else — relations, participations and the datums that inform it. **Organization grain** — every claim in the log, not only what this view draws (RFC 0024). "
+            "`pagination` reads one page of them, in a stable order; `connectionCount` is how many there are"
+        )
+    )
+    async def connections(self, pagination: Optional[pagination_module.TraversalPaginationInput] = None) -> List["Edge"]:
         known = await loaders.known_about_node_loader.load((self._value.graph_id, self._value.unique_id))
-        return [cast(Edge, cast_edge_to_graphql_type(RetrievedEdge.from_link(get_controller(), link))) for link in known.connections]
+        return [cast(Edge, cast_edge_to_graphql_type(RetrievedEdge.from_link(get_controller(), link))) for link in _page_of(_oldest_first(known.connections), pagination)]
+
+    @strawberry.field(description="How many standing claims connect this thing to something else: the length of `connections`, past any page")
+    async def connection_count(self) -> int:
+        known = await loaders.known_about_node_loader.load((self._value.graph_id, self._value.unique_id))
+        return len(known.connections)
 
     @kante.django_field(description="Every view that actually draws this thing, and the category it draws it under. Read back from each projection, so a graph that declares the word but whose definition refuses the node is not listed")
     async def drawn_in(self, info: kante.Info) -> List["NodeDrawing"]:
@@ -2209,10 +2222,20 @@ class Instance:
         known = await loaders.known_about_node_loader.load((None, str(cast(evidence_models.Instance, self).pk)))
         return cast(List["Link"], list(known.conflicts))
 
-    @strawberry.field(description="Every standing claim connecting this thing to something else — relations, participations, classifications and the structures that inform it")
-    async def connections(self) -> List["Link"]:
+    @strawberry.field(
+        description=(
+            "Every standing claim connecting this thing to something else — relations, participations, classifications and the structures that inform it. "
+            "`pagination` reads one page of them, in a stable order; `connectionCount` is how many there are"
+        )
+    )
+    async def connections(self, pagination: Optional[pagination_module.TraversalPaginationInput] = None) -> List["Link"]:
         known = await loaders.known_about_node_loader.load((None, str(cast(evidence_models.Instance, self).pk)))
-        return cast(List["Link"], list(known.connections))
+        return cast(List["Link"], _page_of(_oldest_first(known.connections), pagination))
+
+    @strawberry.field(description="How many standing claims connect this thing to something else: the length of `connections`, past any page")
+    async def connection_count(self) -> int:
+        known = await loaders.known_about_node_loader.load((None, str(cast(evidence_models.Instance, self).pk)))
+        return len(known.connections)
 
     @kante.django_field(description="Every view that actually draws this claim, and the category it draws it under. Empty means no view does, which is an ordinary answer")
     async def drawn_in(self, info: kante.Info) -> List["NodeDrawing"]:
@@ -2910,6 +2933,19 @@ class Label:
             return None
         return cast(Optional["Assertion"], await loaders.assertion_by_id_loader.load(str(self._value.latest_assertion_id)))
 
+
+
+def _oldest_first(links: Sequence[evidence_models.Link]) -> list[evidence_models.Link]:
+    """Connections in the order they were claimed, so pages do not overlap."""
+    return sorted(links, key=lambda link: (link.created_at, str(link.pk)))
+
+
+def _page_of[Row](rows: Sequence[Row], page: Optional[pagination_module.TraversalPaginationInput]) -> list[Row]:
+    """One page of an already-ordered list; no `pagination` is the whole list, as before it was paged."""
+    if page is None:
+        return list(rows)
+    offset, limit = pagination_module.window(page)
+    return list(rows[offset : offset + limit])
 
 @sync_to_async
 def _drawings_for_ref(ref: str, info: kante.Info) -> List[results.NodeDrawing]:

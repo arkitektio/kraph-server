@@ -33,15 +33,37 @@ def _list_is_ours(organization, list_id: str) -> bool:
     return todo_models.TodoList.objects.filter(pk=list_id, project__organization=organization).exists()
 
 
+@sync_to_async
+def _carries(item: todo_models.TodoItem, identifier: str, object_id: str) -> bool:
+    return item.structures.filter(identifier=identifier, object=object_id).exists()
+
+
+async def _concerns(message: channel.TodoChanged, row: Optional[todo_models.TodoItem], identifier: str, object_id: str) -> bool:
+    """Whether a change is news for one object's track: it took the object away, or the item still carries it."""
+    if (identifier, object_id) in {tuple(pair) for pair in message.objects}:
+        return True
+    return row is not None and await _carries(row, identifier, object_id)
+
+
 @kante.type(description="Todo lists, as they change")
 class TodoSubscription:
     @kante.subscription(
         extensions=[AuthSubscribeExtension(scopes=["kraph_read"])],
-        description="Each change to the organization's todo lists and items as its transaction commits; `list` or `item` narrow it to one board or one card",
+        description=(
+            "Each change to the organization's todo lists and items as its transaction commits; `list` or `item` narrow it to one board or one card, "
+            "`identifier` and `object` (given together) to the items one object is on, including the change that takes it off"
+        ),
     )
     async def todo_changed(
-        self, info: Info, list: Optional[strawberry.ID] = None, item: Optional[strawberry.ID] = None
+        self,
+        info: Info,
+        list: Optional[strawberry.ID] = None,
+        item: Optional[strawberry.ID] = None,
+        identifier: Optional[str] = None,
+        object: Optional[strawberry.ID] = None,
     ) -> AsyncGenerator[todo_types.TodoChange, None]:
+        if (identifier is None) != (object is None):
+            raise ValueError("`identifier` and `object` name one object together: give both or neither")
         organization = context.get_active_organization(info)
         await sync_to_async(context.assert_can_access_organization)(info, organization)
         async for message in channel.todo_channel.listen(info, [channel.room(organization)]):
@@ -56,5 +78,7 @@ class TodoSubscription:
                 if row is None:
                     continue  # not this organization's (or gone already): the message is not trusted
             elif not await _list_is_ours(organization, message.list) and kind == todo_types.TodoChangeKind.CHANGED:
+                continue
+            if identifier is not None and object is not None and not await _concerns(message, row, identifier, str(object)):
                 continue
             yield todo_types.TodoChange(kind=kind, list_id=strawberry.ID(message.list), item_id=None if message.item is None else strawberry.ID(message.item), item=row)  # type: ignore[arg-type]

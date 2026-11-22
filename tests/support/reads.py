@@ -289,3 +289,23 @@ ADMITTING_STRUCTURE_RELATIONS = """
         structureRelationCategories(filters: { admits: { source: $source, target: $target } }) { id label }
     }
 """
+
+ADMITTING_RELATIONS_BETWEEN_CLAIMS = """
+    query AdmittingRelationsBetweenClaims($source: ID!, $target: ID!) {
+        relationCategories(filters: { admitsInstances: { source: $source, target: $target } }) { id label graph { id } }
+    }
+"""
+
+CONNECTIONS_PAGE = """
+    query ConnectionsPage($id: ID!, $graph: ID!, $limit: Int!, $offset: Int!) {
+        instance(id: $id) { connectionCount connections(pagination: { limit: $limit, offset: $offset }) { id } }
+        node(id: $id, graph: $graph) { connectionCount connections(pagination: { limit: $limit, offset: $offset }) { id } }
+        all: instance(id: $id) { connections { id } }
+    }
+"""
+
+SCATTER_PLOTS_OF = """
+    query ScatterPlotsOf($graph: ID, $query: ID) {
+        scatterPlots(filters: { graph: $graph, query: $query }) { id label xColumn yColumn }
+    }
+"""

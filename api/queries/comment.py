@@ -12,7 +12,7 @@ import strawberry
 from django.db.models import QuerySet
 from kante.types import Info
 
-from api import context, types, pagination
+from api import context, types
 from api import pagination as api_pagination
 from evidence import claims
 from evidence import models as evidence_models
@@ -24,8 +24,15 @@ def comment(info: Info, id: strawberry.ID) -> types.Comment:
     return controller._resolve_comment(str(id), info)  # type: ignore[return-value]
 
 
-def comments_for(info: Info, identifier: str, object: strawberry.ID) -> List[types.Comment]:
+def comments_for(
+    info: Info,
+    identifier: str,
+    object: strawberry.ID,
+    pagination: Optional[api_pagination.LogPaginationInput] = None,
+) -> List[types.Comment]:
     """Every remark about one external datum, newest first, resolved ones included.
+
+    `pagination` reads one page; without it the newest `MAX_LIMIT` are the answer, as before.
 
     Addressed the way lok addresses a comment — `(identifier, object)` — which is
     a structure's identity, so this is `Structure.comments` for callers holding
@@ -37,7 +44,9 @@ def comments_for(info: Info, identifier: str, object: strawberry.ID) -> List[typ
     structure = evidence_models.Structure.objects.for_organization(organization).filter(identifier=identifier, object=str(object)).first()
     if structure is None:
         return []
-    return list(evidence_models.Comment.objects.for_organization(organization).filter(structure=structure).select_related("assertion").order_by("-created_at")[: pagination.MAX_LIMIT])  # type: ignore[arg-type]
+    queryset = evidence_models.Comment.objects.for_organization(organization).filter(structure=structure).select_related("assertion").order_by("-created_at", "-pk")
+    offset, limit = api_pagination.window(pagination, default=api_pagination.MAX_LIMIT)
+    return list(queryset[offset : offset + limit])  # type: ignore[arg-type]
 
 
 def _mentions(info: Info, resolved: Optional[bool]) -> QuerySet[evidence_models.Comment]:

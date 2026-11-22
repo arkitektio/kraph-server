@@ -2556,9 +2556,14 @@ type Entity implements Node {
   conflicts: [Difference!]!
 
   """
-  Every standing claim connecting this thing to something else — relations, participations and the datums that inform it. **Organization grain** — every claim in the log, not only what this view draws (RFC 0024)
+  Every standing claim connecting this thing to something else — relations, participations and the datums that inform it. **Organization grain** — every claim in the log, not only what this view draws (RFC 0024). `pagination` reads one page of them, in a stable order; `connectionCount` is how many there are
   """
-  connections: [Edge!]!
+  connections(pagination: TraversalPaginationInput = null): [Edge!]!
+
+  """
+  How many standing claims connect this thing to something else: the length of `connections`, past any page
+  """
+  connectionCount: Int!
 
   """
   Every view that actually draws this thing, and the category it draws it under. Read back from each projection, so a graph that declares the word but whose definition refuses the node is not listed
@@ -3568,9 +3573,14 @@ type Instance @key(fields: "id", resolvable: true) {
   conflicts: [Link!]!
 
   """
-  Every standing claim connecting this thing to something else — relations, participations, classifications and the structures that inform it
+  Every standing claim connecting this thing to something else — relations, participations, classifications and the structures that inform it. `pagination` reads one page of them, in a stable order; `connectionCount` is how many there are
   """
-  connections: [Link!]!
+  connections(pagination: TraversalPaginationInput = null): [Link!]!
+
+  """
+  How many standing claims connect this thing to something else: the length of `connections`, past any page
+  """
+  connectionCount: Int!
 
   """
   Every view that actually draws this claim, and the category it draws it under. Empty means no view does, which is an ordinary answer
@@ -4918,9 +4928,14 @@ type NaturalEvent implements Node & Event {
   conflicts: [Difference!]!
 
   """
-  Every standing claim connecting this thing to something else — relations, participations and the datums that inform it. **Organization grain** — every claim in the log, not only what this view draws (RFC 0024)
+  Every standing claim connecting this thing to something else — relations, participations and the datums that inform it. **Organization grain** — every claim in the log, not only what this view draws (RFC 0024). `pagination` reads one page of them, in a stable order; `connectionCount` is how many there are
   """
-  connections: [Edge!]!
+  connections(pagination: TraversalPaginationInput = null): [Edge!]!
+
+  """
+  How many standing claims connect this thing to something else: the length of `connections`, past any page
+  """
+  connectionCount: Int!
 
   """
   Every view that actually draws this thing, and the category it draws it under. Read back from each projection, so a graph that declares the word but whose definition refuses the node is not listed
@@ -5188,9 +5203,14 @@ interface Node {
   conflicts: [Difference!]!
 
   """
-  Every standing claim connecting this thing to something else — relations, participations and the datums that inform it. **Organization grain** — every claim in the log, not only what this view draws (RFC 0024)
+  Every standing claim connecting this thing to something else — relations, participations and the datums that inform it. **Organization grain** — every claim in the log, not only what this view draws (RFC 0024). `pagination` reads one page of them, in a stable order; `connectionCount` is how many there are
   """
-  connections: [Edge!]!
+  connections(pagination: TraversalPaginationInput = null): [Edge!]!
+
+  """
+  How many standing claims connect this thing to something else: the length of `connections`, past any page
+  """
+  connectionCount: Int!
 
   """
   Every view that actually draws this thing, and the category it draws it under. Read back from each projection, so a graph that declares the word but whose definition refuses the node is not listed
@@ -5871,9 +5891,14 @@ type ProtocolEvent implements Node & Event {
   conflicts: [Difference!]!
 
   """
-  Every standing claim connecting this thing to something else — relations, participations and the datums that inform it. **Organization grain** — every claim in the log, not only what this view draws (RFC 0024)
+  Every standing claim connecting this thing to something else — relations, participations and the datums that inform it. **Organization grain** — every claim in the log, not only what this view draws (RFC 0024). `pagination` reads one page of them, in a stable order; `connectionCount` is how many there are
   """
-  connections: [Edge!]!
+  connections(pagination: TraversalPaginationInput = null): [Edge!]!
+
+  """
+  How many standing claims connect this thing to something else: the length of `connections`, past any page
+  """
+  connectionCount: Int!
 
   """
   Every view that actually draws this thing, and the category it draws it under. Read back from each projection, so a graph that declares the word but whose definition refuses the node is not listed
@@ -6242,9 +6267,9 @@ type Query {
   comment(id: ID!): Comment! @auth(required_scopes: ["kraph_read"])
 
   """
-  Every remark about one external datum, addressed by (identifier, object), newest first — resolved ones included
+  Every remark about one external datum, addressed by (identifier, object), newest first — resolved ones included. `pagination` reads one page
   """
-  commentsFor(identifier: String!, object: ID!): [Comment!]! @auth(required_scopes: ["kraph_read"])
+  commentsFor(identifier: String!, object: ID!, pagination: LogPaginationInput = null): [Comment!]! @auth(required_scopes: ["kraph_read"])
 
   """
   Every remark that mentions the caller, newest first. `resolved` narrows to resolved or open remarks; omitted lists both
@@ -6545,6 +6570,11 @@ input RelationCategoryFilter {
   Only the relation categories whose source and target descriptors admit these two entity categories — what the write would accept, in one query
   """
   admits: RelationEndsInput
+
+  """
+  Only the relation categories that could connect these two claims: in every view that draws both, the categories admitting the categories that view draws them under. `admits` asked once per view the two share, in one query
+  """
+  admitsInstances: RelationInstancesInput
 }
 
 input RelationCategoryOrder @oneOf {
@@ -6630,6 +6660,17 @@ input RelationEndsInput {
 input RelationFilter {
   """Filter by specific relation IDs"""
   ids: [ID!] = null
+}
+
+"""
+The two claims a relation would connect: instance ids, whichever views draw them
+"""
+input RelationInstancesInput {
+  """The instance at the source end"""
+  source: ID!
+
+  """The instance at the target end"""
+  target: ID!
 }
 
 """Ordering options for relation queries"""
@@ -7124,6 +7165,12 @@ input ScatterPlotFilter {
   NOT: ScatterPlotFilter
   DISTINCT: Boolean
 
+  """Only the plots drawn from this graph's saved queries"""
+  graph: ID
+
+  """Only the plots drawn from this saved table query"""
+  query: ID
+
   """Filter by list of IDs"""
   ids: [ID!]
 
@@ -7168,7 +7215,10 @@ input SetTodoStructureStatusInput {
 """Input for moving several objects on todo items to one status at once"""
 input SetTodoStructuresStatusInput {
   """The objects on items (TodoItemStructures)"""
-  ids: [ID!]!
+  ids: [ID!]! = []
+
+  """Items whose every object moves, however many they carry"""
+  items: [ID!]! = []
 
   """To do, Doing or Done, for all of them"""
   status: TodoStatus!
@@ -7837,9 +7887,9 @@ type Subscription {
   assertionRecorded: Assertion! @auth(required_scopes: ["kraph_read"])
 
   """
-  Each change to the organization's todo lists and items as its transaction commits; `list` or `item` narrow it to one board or one card
+  Each change to the organization's todo lists and items as its transaction commits; `list` or `item` narrow it to one board or one card, `identifier` and `object` (given together) to the items one object is on, including the change that takes it off
   """
-  todoChanged(list: ID = null, item: ID = null): TodoChange! @auth(required_scopes: ["kraph_read"])
+  todoChanged(list: ID = null, item: ID = null, identifier: String = null, object: ID = null): TodoChange! @auth(required_scopes: ["kraph_read"])
 }
 
 """Input for superseding a metric value"""

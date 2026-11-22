@@ -497,6 +497,12 @@ ASSIGN_TODO_LIST = """
     }
 """
 
+DETACH_FROM_TODO_ITEM = """
+    mutation DetachFromTodoItem($input: TodoIdInput!) {
+        detachFromTodoItem(input: $input) { id progress { done total } }
+    }
+"""
+
 DELETE_TODO_ITEM = """
     mutation DeleteTodoItem($id: ID!) {
         deleteTodoItem(input: { id: $id })

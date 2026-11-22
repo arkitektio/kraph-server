@@ -5,7 +5,7 @@ from enum import Enum
 from typing import List, Optional
 
 import strawberry
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from strawberry.experimental import pydantic
 
 
@@ -150,13 +150,21 @@ class SetTodoStructureStatusInput:
 
 
 class SetTodoStructuresStatusInputModel(_Strict):
-    ids: List[int] = Field(min_length=1, max_length=1000, description="The objects on items (TodoItemStructures)")
+    ids: List[int] = Field(default_factory=list, max_length=1000, description="The objects on items (TodoItemStructures)")
+    items: List[int] = Field(default_factory=list, max_length=1000, description="Items whose every object moves, however many they carry")
     status: TodoStatus = Field(description="To do, Doing or Done, for all of them")
+
+    @model_validator(mode="after")
+    def _names_something(self) -> "SetTodoStructuresStatusInputModel":
+        if not self.ids and not self.items:
+            raise ValueError("Name the objects (`ids`) or the items (`items`) to move")
+        return self
 
 
 @pydantic.input(SetTodoStructuresStatusInputModel, description="Input for moving several objects on todo items to one status at once")
 class SetTodoStructuresStatusInput:
-    ids: List[strawberry.ID]
+    ids: List[strawberry.ID] = strawberry.field(default_factory=list, description="The objects on items (TodoItemStructures)")
+    items: List[strawberry.ID] = strawberry.field(default_factory=list, description="Items whose every object moves: \"mark all done\" without reading the objects first")
     status: TodoStatus
 
 

@@ -17,7 +17,7 @@ from typing import Iterable, Optional, TypeVar
 import strawberry
 import strawberry_django.filters
 from django.db import transaction
-from django.db.models import Count, Max, Model, Q
+from django.db.models import Count, Max, Model, Q, QuerySet
 from django.utils import timezone
 from kante.types import Info
 
@@ -62,9 +62,14 @@ def _fetch(info: Info, model: type[M], pk: int, path: str, what: str, *, lock: b
     return item
 
 
-def _announce(info: Info, item: models.TodoItem, *, deleted: bool = False) -> None:
+def _announce(info: Info, item: models.TodoItem, *, deleted: bool = False, objects: Iterable[tuple[str, str]] = ()) -> None:
     """An item changed (or left): its list's board, the object chips and the dashboards follow."""
-    announce(get_active_organization(info), item.list_id, item.pk, deleted=deleted)
+    announce(get_active_organization(info), item.list_id, item.pk, deleted=deleted, objects=objects)
+
+
+def _objects_of(items: QuerySet[models.TodoItem]) -> list[tuple[str, str]]:
+    """The `(identifier, object)` pairs on these items, read before they go."""
+    return list(models.TodoItemStructure.objects.filter(item__in=items).values_list("identifier", "object").distinct())
 
 
 def _list(info: Info, pk: int) -> models.TodoList:
@@ -183,8 +188,10 @@ def schedule_todo_list(info: Info, input: inputs.ScheduleTodoInput) -> types.Tod
 
 def delete_todo_list(info: Info, input: inputs.TodoIdInput) -> strawberry.ID:
     model = input.to_pydantic()
-    _list(info, model.id).delete()
-    announce(get_active_organization(info), model.id, deleted=True)
+    todo_list = _list(info, model.id)
+    objects = _objects_of(models.TodoItem.objects.filter(list=todo_list))
+    todo_list.delete()
+    announce(get_active_organization(info), model.id, deleted=True, objects=objects)
     return strawberry.ID(str(model.id))
 
 
@@ -245,8 +252,9 @@ def schedule_todo_item(info: Info, input: inputs.ScheduleTodoInput) -> types.Tod
 def delete_todo_item(info: Info, input: inputs.TodoIdInput) -> strawberry.ID:
     model = input.to_pydantic()
     item = _item(info, model.id)
+    objects = _objects_of(models.TodoItem.objects.filter(pk=item.pk))
     item.delete()
-    announce(get_active_organization(info), item.list_id, model.id, deleted=True)
+    announce(get_active_organization(info), item.list_id, model.id, deleted=True, objects=objects)
     return strawberry.ID(str(model.id))
 
 
@@ -298,10 +306,11 @@ def detach_from_todo_item(info: Info, input: inputs.TodoIdInput) -> types.TodoIt
     with transaction.atomic():
         structure = _fetch(info, models.TodoItemStructure, model.id, "item__list__project__organization", "object on a todo item")
         item = _item(info, structure.item_id, lock=True)
+        detached = (structure.identifier, structure.object)
         structure.delete()
         _settle(item)
         _service().restore(item)
-        _announce(info, item)
+        _announce(info, item, objects=[detached])
     return item
 
 
@@ -349,15 +358,22 @@ def set_todo_structure_done(info: Info, input: inputs.SetTodoStructureDoneInput)
 
 
 def set_todo_structures_status(info: Info, input: inputs.SetTodoStructuresStatusInput) -> list[types.TodoItem]:
-    """Move several objects to one status at once ("mark all done"). Every id must be of this
-    organization, or nothing changes. Each touched item settles once. Returns the touched items."""
+    """Move several objects to one status at once ("mark all done"): the objects `ids` names and every
+    object on the items `items` names. Every id must be of this organization, or nothing changes. Each
+    touched item settles once. Returns the touched items."""
     model = input.to_pydantic()
     status = models.TodoStatus(model.status.value)
+    organization = get_active_organization(info)
     wanted = set(model.ids)
+    named_items = set(model.items)
     with transaction.atomic():
+        found_items = set(models.TodoItem.objects.filter(pk__in=named_items, list__project__organization=organization).values_list("pk", flat=True))
+        missing_items = named_items - found_items
+        if missing_items:
+            raise ValueError(f"No todo item with id {min(missing_items)} in this organization")
         rows = list(
             models.TodoItemStructure.objects.select_for_update()
-            .filter(pk__in=wanted, item__list__project__organization=get_active_organization(info))
+            .filter(Q(pk__in=wanted) | Q(item_id__in=found_items), item__list__project__organization=organization)
             .order_by("pk")
         )
         missing = wanted - {row.pk for row in rows}
@@ -366,7 +382,7 @@ def set_todo_structures_status(info: Info, input: inputs.SetTodoStructuresStatus
         items = {
             item.pk: item
             for item in models.TodoItem.objects.select_for_update()
-            .filter(pk__in={row.item_id for row in rows})
+            .filter(pk__in={row.item_id for row in rows} | found_items)
             .select_related("list")
             .order_by("pk")
         }

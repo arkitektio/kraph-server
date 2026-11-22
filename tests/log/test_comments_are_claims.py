@@ -303,3 +303,29 @@ async def test_the_resolution_cache_replays_from_the_log(
         return claims_module.current(organization, "comment", comment_id)
 
     assert await destroy_and_refold() is False, "The replayed fold must still say the remark is resolved"
+
+
+READ_PAGE = """
+    query CommentsPage($identifier: String!, $object: ID!, $limit: Int!, $offset: Int!) {
+        commentsFor(identifier: $identifier, object: $object, pagination: { limit: $limit, offset: $offset }) { id text }
+    }
+"""
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_a_discussion_reads_in_pages_newest_first(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+) -> None:
+    """`commentsFor(pagination:)`: a long discussion is read a page at a time, newest first."""
+    for text in ("first", "second", "third"):
+        await _comment(api_schema, simple_api_context, "roi_paged", text)
+
+    async def page(offset: int) -> list[str]:
+        result = await api_schema.execute(READ_PAGE, variable_values={"identifier": "@mikro/roi", "object": "roi_paged", "limit": 2, "offset": offset}, context_value=simple_api_context)
+        assert result.errors is None, f"GraphQL errors: {result.errors}"
+        return [row["text"] for row in result.data["commentsFor"]]
+
+    assert await page(0) == ["third", "second"]
+    assert await page(2) == ["first"]
