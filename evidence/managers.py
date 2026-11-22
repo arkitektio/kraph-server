@@ -14,7 +14,7 @@ organization's rows. The only way to get a queryset is to name an organization.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Generic, TypeVar
 
 from django.db import models
 
@@ -22,11 +22,14 @@ if TYPE_CHECKING:
     from authentikate.models import Organization
 
 
+_Row = TypeVar("_Row", bound=models.Model, infer_variance=True)
+
+
 class UnscopedEvidenceAccess(RuntimeError):
     """Raised when evidence is queried without naming an organization."""
 
 
-class OrganizationScopedManager[Row: models.Model](models.Manager):
+class OrganizationScopedManager(models.Manager, Generic[_Row]):
     """A manager with no usable default queryset.
 
     Generic in its row type, and parameterized at each declaration
@@ -44,7 +47,7 @@ class OrganizationScopedManager[Row: models.Model](models.Manager):
     framework keeps working while application code stays fenced in.
     """
 
-    def get_queryset(self) -> models.QuerySet[Row]:
+    def get_queryset(self) -> models.QuerySet[_Row]:
         raise UnscopedEvidenceAccess(
             f"{self.model.__name__}.objects has no default queryset because evidence is "
             f"organization-scoped. Use {self.model.__name__}.objects.for_organization(org).\n"
@@ -55,12 +58,12 @@ class OrganizationScopedManager[Row: models.Model](models.Manager):
 
     def for_organization(
         self, organization: Organization | int
-    ) -> models.QuerySet[Row]:
+    ) -> models.QuerySet[_Row]:
         """The only supported entry point for reading evidence."""
         return super().get_queryset().filter(organization=organization)
 
     def create_for_organization(
         self, organization: Organization, **kwargs: object
-    ) -> Row:
+    ) -> _Row:
         """Create a row with the organization bound explicitly."""
         return super().get_queryset().create(organization=organization, **kwargs)

@@ -10,6 +10,7 @@ by itself.
 """
 
 from collections.abc import Sequence
+from typing import TypeVar
 
 from kante.types import Info
 
@@ -23,6 +24,8 @@ from graph_engine.input_models import (
     UpdateGraphTableQueryInput,
 )
 from graph_engine.query_ir import PlanShape, TableQueryPlan
+
+_Query = TypeVar("_Query", bound=core_models.GraphQuery)
 
 
 def plan_from_input(
@@ -45,9 +48,9 @@ def plan_from_builder_args(
     return plan_from_input(_Shim, columns)
 
 
-def create_saved_query[Row: core_models.GraphQuery](
-    info: Info, model: CreateGraphTableQueryInput, django_model: type[Row], what: str
-) -> Row:
+def create_saved_query(
+    info: Info, model: CreateGraphTableQueryInput, django_model: type[_Query], what: str
+) -> _Query:
     """Save a new table query against the graph it names.
 
     `accessible_graph` before anything is written: the graph id arrives from the
@@ -69,9 +72,9 @@ def create_saved_query[Row: core_models.GraphQuery](
     )
 
 
-def update_saved_query[Row: core_models.GraphQuery](
-    info: Info, model: UpdateGraphTableQueryInput, django_model: type[Row], what: str
-) -> Row:
+def update_saved_query(
+    info: Info, model: UpdateGraphTableQueryInput, django_model: type[_Query], what: str
+) -> _Query:
     """Change a saved query the caller is allowed to reach. Patches only what was sent."""
     item = scoped(info, django_model, model.id, what=what)
 

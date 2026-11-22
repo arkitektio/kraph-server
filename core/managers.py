@@ -17,9 +17,10 @@ if TYPE_CHECKING:
 
 
 T = TypeVar("T", bound="core_models.Category")
+_Row = TypeVar("_Row", bound=models.Model, infer_variance=True)
 
 
-class KindedManager[Row: models.Model](models.Manager):
+class KindedManager(models.Manager, Generic[_Row]):
     """Manager for a proxy model that owns a subset of its table's ``kind`` values.
 
     Multi-table inheritance used to do this work: each subclass had its own table, so
@@ -29,7 +30,7 @@ class KindedManager[Row: models.Model](models.Manager):
     ``KINDS`` (the concrete base) is left alone and sees every row.
     """
 
-    def get_queryset(self) -> models.QuerySet[Row]:
+    def get_queryset(self) -> models.QuerySet[_Row]:
         queryset = super().get_queryset()
         kinds = getattr(self.model, "KINDS", None)
         return queryset.filter(kind__in=kinds) if kinds else queryset
@@ -48,19 +49,19 @@ class KindedManager[Row: models.Model](models.Manager):
             values.setdefault("kind", kind)
         return values
 
-    def create(self, **kwargs: object) -> Row:
+    def create(self, **kwargs: object) -> _Row:
         return super().create(**self._stamped(kwargs))
 
     def get_or_create(
         self, defaults: dict[str, object] | None = None, **kwargs: object
-    ) -> tuple[Row, bool]:
+    ) -> tuple[_Row, bool]:
         return super().get_or_create(
             defaults=self._stamped(dict(defaults or {})), **kwargs
         )
 
     def update_or_create(
         self, defaults: dict[str, object] | None = None, **kwargs: object
-    ) -> tuple[Row, bool]:
+    ) -> tuple[_Row, bool]:
         return super().update_or_create(
             defaults=self._stamped(dict(defaults or {})), **kwargs
         )

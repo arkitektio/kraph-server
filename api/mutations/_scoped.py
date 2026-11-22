@@ -112,9 +112,9 @@ def accessible_graph(info: "Info", pk: str | int) -> "Graph":
     return graph
 
 
-def schema_scoped[Row: Model](
-    info: "Info", model: type[Row], identifier: str | int, *, what: str
-) -> Row:
+def schema_scoped(
+    info: "Info", model: type[RowT], identifier: str | int, *, what: str
+) -> RowT:
     """`scoped`, plus the definition-editing RBAC (RFC 0013).
 
     For the mutations that change what a graph's words mean. Tenancy first

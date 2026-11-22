@@ -25,6 +25,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Iterable, Iterator
 from contextvars import ContextVar
+from typing import TypeAlias, TypeVar
 
 from asgiref.sync import sync_to_async
 from django.db.models import Model, QuerySet
@@ -36,22 +37,23 @@ from evidence import models as evidence_models
 from evidence import panel
 
 PKType = int | str
+_Row = TypeVar("_Row", bound=Model)
 
 #: What a grouped loader's spec may do to its queryset before grouping — apply
 #: the standing anti-join, an ordering, a `select_related`. One alias rather than
 #: `Any` at four sites, and deliberately not more precise than that: the specs
 #: table holds narrowers for six different row types, and a table of
 #: heterogeneous callables cannot be given one exact element type.
-type Narrow = Callable[[QuerySet[Model]], QuerySet[Model]]
+Narrow: TypeAlias = Callable[[QuerySet[Model]], QuerySet[Model]]
 
 _loaders: ContextVar[dict[str, DataLoader[PKType, object]] | None] = ContextVar(
     "api_loaders", default=None
 )
 
 
-def _batch_by_pk[Row: Model](
-    model: type[Row], field: str = "id"
-) -> Callable[[list[PKType]], Awaitable[list[Row | None]]]:
+def _batch_by_pk(
+    model: type[_Row], field: str = "id"
+) -> Callable[[list[PKType]], Awaitable[list[_Row | None]]]:
     """A load function that fetches every requested row in one query.
 
     Returns results in the order asked for, with `None` where a row is missing —
@@ -61,11 +63,11 @@ def _batch_by_pk[Row: Model](
 
     manager = getattr(model, "all_objects", None) or model.objects
 
-    async def load(keys: list[PKType]) -> list[Row | None]:
+    async def load(keys: list[PKType]) -> list[_Row | None]:
         # `all_objects` where the model has one: evidence models raise on an
         # unscoped `objects`, and a loader is keyed by primary key, which is
         # already globally unique. Authorization happens at the resolver.
-        found: dict[str, Row] = {}
+        found: dict[str, _Row] = {}
         async for instance in manager.filter(**{f"{field}__in": list(keys)}):
             found[str(getattr(instance, field))] = instance
         return [found.get(str(key)) for key in keys]
@@ -73,9 +75,9 @@ def _batch_by_pk[Row: Model](
     return load
 
 
-def _batch_grouped_by[Row: Model](
-    model: type[Row], field: str, narrow: Narrow | None = None
-) -> Callable[[list[PKType]], Awaitable[list[list[Row]]]]:
+def _batch_grouped_by(
+    model: type[_Row], field: str, narrow: Narrow | None = None
+) -> Callable[[list[PKType]], Awaitable[list[list[_Row]]]]:
     """A load function for a **one-to-many** relation: every row per key, in one query.
 
     The sibling `_batch_by_pk` cannot do this and fails silently if asked to:
@@ -95,12 +97,12 @@ def _batch_grouped_by[Row: Model](
 
     manager = getattr(model, "all_objects", None) or model.objects
 
-    async def load(keys: list[PKType]) -> list[list[Row]]:
+    async def load(keys: list[PKType]) -> list[list[_Row]]:
         queryset = manager.filter(**{f"{field}__in": list(keys)})
         if narrow is not None:
             queryset = narrow(queryset)
 
-        grouped: dict[str, list[Row]] = {}
+        grouped: dict[str, list[_Row]] = {}
         async for instance in queryset:
             grouped.setdefault(str(getattr(instance, field)), []).append(instance)
         return [grouped.get(str(key), []) for key in keys]

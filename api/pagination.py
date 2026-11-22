@@ -1,9 +1,11 @@
-from typing import Protocol
+from typing import Protocol, TypeVar
 
 import kante
 from django.db.models import Model, QuerySet
 
 from graph_engine import input_models
+
+_Row = TypeVar("_Row", bound=Model)
 
 
 class Page(Protocol):
@@ -39,7 +41,7 @@ def window(
     return offset, max(1, min(limit, maximum))
 
 
-def slice_window[Row: Model](queryset: QuerySet[Row], page: Page | None) -> list[Row]:
+def slice_window(queryset: QuerySet[_Row], page: Page | None) -> list[_Row]:
     """`window` applied to a queryset (or any sliceable)."""
     offset, limit = window(page)
     return list(queryset[offset : offset + limit])

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterable
+from typing import TypeVar
 
 from authentikate.models import Organization
 from django.db import transaction
@@ -35,6 +36,8 @@ from evidence import models as evidence_models
 
 #: A claim's primary key as callers hold it: the uuid, or its text.
 Ref = str | uuid.UUID
+
+_Claim = TypeVar("_Claim", bound=Model)
 
 #: Newest first. Both keys, always — see the module docstring.
 _LATEST = ("-at", "-assertion__seq")
@@ -139,9 +142,9 @@ def retracted_ids(
 CACHED_TARGETS = ("node", "structure", "metric", "link", "comment")
 
 
-def standing[Claim: Model](
-    queryset: QuerySet[Claim], target_type: str, predicate: Q | None = None
-) -> QuerySet[Claim]:
+def standing(
+    queryset: QuerySet[_Claim], target_type: str, predicate: Q | None = None
+) -> QuerySet[_Claim]:
     """Narrow a queryset of log rows to the ones that currently stand.
 
     The replacement for `.filter(stands=True)`, which used to read a boolean on

@@ -68,6 +68,7 @@ from stats.gen import create_stats_type
 
 #: A GraphQL type class, handed through the decorators below unchanged.
 TypeClass = TypeVar("TypeClass", bound=type)
+_PageRow = TypeVar("_PageRow")
 
 
 #: How each declaratively-served model reaches the organization that owns it.
@@ -4127,9 +4128,9 @@ def _oldest_first(links: Sequence[evidence_models.Link]) -> list[evidence_models
     return sorted(links, key=lambda link: (link.created_at, str(link.pk)))
 
 
-def _page_of[Row](
-    rows: Sequence[Row], page: pagination_module.TraversalPaginationInput | None
-) -> list[Row]:
+def _page_of(
+    rows: Sequence[_PageRow], page: pagination_module.TraversalPaginationInput | None
+) -> list[_PageRow]:
     """One page of an already-ordered list; no `pagination` is the whole list, as before it was paged."""
     if page is None:
         return list(rows)

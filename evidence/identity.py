@@ -40,7 +40,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeAlias
 
 from authentikate.models import Organization
 from django.db import transaction
@@ -57,7 +57,7 @@ if TYPE_CHECKING:
 #: A sameness or difference claim, as every fold here takes them.
 IdentityLink = evidence_models.Link
 #: What one node resolved to in a view: `projector.resolve_categories`' answer.
-type Resolved = Mapping[str, Sequence[Category]]
+Resolved: TypeAlias = Mapping[str, Sequence["Category"]]
 
 #: What a component is folded from. Kept as a name rather than inlined so the
 #: fold, the rebuild and the consistency test cannot drift apart about it.

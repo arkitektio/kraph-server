@@ -12,6 +12,8 @@ no-op `metrics(metricKindId:)` was stripped of, recorded in
 order), so the honest signature offers the two that are implemented.
 """
 
+from typing import TypeVar
+
 import strawberry
 import strawberry_django
 from django.db.models import Model, QuerySet
@@ -20,10 +22,12 @@ from kante.types import Info
 from api import context, filters, pagination, types
 from evidence import models as evidence_models
 
+_Row = TypeVar("_Row", bound=Model)
 
-def _page[Row: Model](
-    queryset: QuerySet[Row], page: pagination.VocabularyPaginationInput | None
-) -> list[Row]:
+
+def _page(
+    queryset: QuerySet[_Row], page: pagination.VocabularyPaginationInput | None
+) -> list[_Row]:
     """The offset/limit window — first hundred by default, clamped at `pagination.MAX_LIMIT`."""
     return pagination.slice_window(queryset, page)
 

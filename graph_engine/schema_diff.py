@@ -23,7 +23,7 @@ The distinction that matters, and the reason this module exists:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeAlias
 
 import jsonpatch
 
@@ -33,9 +33,9 @@ if TYPE_CHECKING:
     from core.models import GraphSchema
 
 #: One graph definition document, as `GraphSchema.definition` stores it.
-type Definition = dict[str, JSONValue]
+Definition: TypeAlias = dict[str, JSONValue]
 #: One property definition inside it.
-type PropertyDefinition = dict[str, JSONValue]
+PropertyDefinition: TypeAlias = dict[str, JSONValue]
 
 # The keys of a property definition that change *what is computed*, as opposed to
 # how it is displayed or aggregated.

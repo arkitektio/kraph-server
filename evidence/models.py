@@ -50,6 +50,7 @@ two provenance systems over the same rows would eventually disagree.
 from __future__ import annotations
 
 import uuid
+from typing import TypeAlias
 
 from arkitekt_datalayer import models as datalayer_models
 from authentikate.models import Organization
@@ -1446,4 +1447,4 @@ class InstanceIdentity(models.Model):
 #:
 #: `Standing` is deliberately **not** a member: a position on a claim is not
 #: itself a claim, which is the distinction `retractLinks` was renamed for.
-type Claim = Instance | Link | Structure | Metric | Comment
+Claim: TypeAlias = Instance | Link | Structure | Metric | Comment
