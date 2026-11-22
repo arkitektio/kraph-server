@@ -23,38 +23,36 @@ uv run pytest                       # full suite
 uv run pytest tests/view/test_the_definition_document_is_the_views_meaning.py::test_name   # single test
 uv run pytest --cov --cov-branch    # coverage (CI: coverage.yaml)
 
-uv run ruff check .                 # lint      (CI: REQUIRED — must stay green)
-uv run ruff format --check .        # format    (CI: advisory)
-uv run basedpyright                 # typecheck (CI: advisory)
+uv run ruff check .                 # lint      (CI: required)
+uv run ruff format --check .        # format    (CI: required, line length 88)
+uv run basedpyright                 # typecheck (CI: required, against .basedpyright/baseline.json)
 
 python manage.py validate_settings  # load+validate config, print it with secrets redacted
 ```
 
 Notes:
-- **`uv run ruff check .` is a required check, and it passes.** The selected set is in
-  `[tool.ruff.lint]` and every family in it names a defect rather than a preference: `E9`
-  (does not parse), `F` (pyflakes), `PLE` (raises at runtime), `ASYNC` (blocking work in an
-  `async def`, on a server that is ASGI end to end), `DTZ` (naive datetimes, when the log's
-  whole order is time), `LOG`, `T10` (a stray `breakpoint()`), `ISC` (a forgotten comma in a
-  list is a silent string join, and this repo builds SQL and rule documents in lists). So a
-  red Lint job means *this branch* broke something; it is not a backlog to scroll past.
-  Those settings used to sit at the top level of `[tool.ruff]`, where ruff has deprecated
-  them — every run printed a warning and one release from now they would have been dropped in
-  silence, leaving the repo linted by whatever the defaults were. Same shape as the
-  `[tool.mypy]` block below.
-- **The rest is an advisory backlog**, ~4.9k findings across `ANN`/`D1`/`I`/`B`/`SIM`/`UP`/…,
-  printed as counts by `lint.yaml`'s second step. Burn a family to zero, then move it into
-  `select` — that is the only way into the required check.
-- **Never select `FA`, `UP006`, `UP007` or `UP045`.** They rewrite annotations that Strawberry
-  and pydantic read at *runtime* (a pydantic field's annotation **is** its validator), and
-  `from __future__ import annotations` stops the schema building at all. They are excluded
-  from the advisory lane too, so nobody burns them down by accident.
-- `core-backup-do-not-delete/` is excluded from linting (`extend-exclude`), as it is from every
-  search: it carried 1,488 of the 5,221 findings the old config reported, none of them ever
-  going to be fixed.
+- **Lint, format and type check follow the arkitekt Python standard** (arkitektio/.github,
+  `python/`): `ruff.shared.toml` and `pyright.shared.json` are synced copies — never edit
+  them here; `ruff.toml` / `pyrightconfig.json` extend them with what is this repo's own.
+  CI is the shared `python-quality` workflow (`.github/workflows/quality.yaml`); all three
+  checks are required. The rules: correctness (`F`, `E9`, `PLE`, `B`, `ASYNC`, `DTZ`, `LOG`,
+  `T10`, `ISC`), autofixable modernizations (`I`, `UP`), and `ANN` — every argument and
+  return annotated, no `Any`. No docstring rules, no PEP 695 syntax, no `Self`.
+- **Never add `from __future__ import annotations`** (ruff's `FA`, not selected) to a module
+  Strawberry or pydantic reads: their annotations are evaluated at runtime (a pydantic
+  field's annotation **is** its validator) and string annotations stop the schema building.
+  The `UP` rewrites (`Optional[X]` → `X | None`, `List[X]` → `list[X]`) are runtime-equal on
+  3.12 and were applied when the standard was adopted: the printed SDL stayed byte-identical
+  (`python manage.py print_schema` against `test.graphql`) — check that again after any
+  sweeping annotation change.
+- **basedpyright's baseline** (`.basedpyright/baseline.json`) holds the errors that predate
+  the standard; CI fails on any other. Fix one, run `uv run basedpyright --writebaseline`,
+  and the baseline shrinks; it never grows back.
+- `core-backup-do-not-delete/` is excluded from linting and type checking (`ruff.toml`,
+  `pyrightconfig.json`), as it is from every search.
 - **basedpyright is the only type checker.** `[tool.mypy]` used to sit in `pyproject.toml` set to
   `strict = true` with no CI job running it — a standard nothing checked — and is gone along with
-  the `mypy` dev dependency. basedpyright runs unscoped over the whole repo, advisory.
+  the `mypy` dev dependency. basedpyright runs over the whole repo (`pyrightconfig.json`), required against its baseline.
 - Serving: `arkitekt-service serve` (daphne on :80, production) / `arkitekt-service debug` (`runserver` on :80). Both
   only serve: the database is prepared by a job of its own, `arkitekt-service run migrate`
   (`wait_for_database` → `migrate` → the contract's setup, which is `ensureadmin` from
@@ -582,7 +580,7 @@ The managers are generic: `OrganizationScopedManager[Instance]` and `KindedManag
 `for_organization(...)` hands back a `QuerySet[Instance]` instead of the `QuerySet[Any]` that made
 every read of evidence untyped from its first line.
 
-**basedpyright is advisory and its unscoped count is not the target.** Replacing `Any` with real
+**basedpyright runs against a baseline, and its total is not the target.** Replacing `Any` with real
 types *surfaces* mismatches that were silenced before — unguarded indexing into a JSON value,
 mostly — so `reportArgumentType` and friends go up while `reportExplicitAny` collapses. That is the
 pass working, not regressing.
